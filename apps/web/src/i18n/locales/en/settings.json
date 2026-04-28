@@ -1,0 +1,22 @@
+{
+  "settings": "Settings",
+  "columns": "Columns",
+  "modules": "Modules",
+  "squads": "Squads",
+  "tags": "Tags",
+  "members": "Members",
+  "newColumn": "New column",
+  "columnName": "Column name",
+  "statusBase": "Base status",
+  "newModule": "New module",
+  "newTag": "New tag",
+  "tagColor": "Color",
+  "theme": "Theme",
+  "themeLight": "Light",
+  "themeDark": "Dark",
+  "language": "Language",
+  "apiKeys": "API Keys",
+  "newApiKey": "Generate key",
+  "apiKeyName": "Key name",
+  "apiKeyWarning": "Copy now — it won't be shown again"
+}

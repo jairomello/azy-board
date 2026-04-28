@@ -1,0 +1,22 @@
+{
+  "settings": "Configurações",
+  "columns": "Colunas",
+  "modules": "Módulos",
+  "squads": "Squads",
+  "tags": "Tags",
+  "members": "Membros",
+  "newColumn": "Nova coluna",
+  "columnName": "Nome da coluna",
+  "statusBase": "Status base",
+  "newModule": "Novo módulo",
+  "newTag": "Nova tag",
+  "tagColor": "Cor",
+  "theme": "Tema",
+  "themeLight": "Claro",
+  "themeDark": "Escuro",
+  "language": "Idioma",
+  "apiKeys": "Chaves de API",
+  "newApiKey": "Gerar chave",
+  "apiKeyName": "Nome da chave",
+  "apiKeyWarning": "Copie agora — não será exibida novamente"
+}

@@ -1,0 +1,22 @@
+{
+  "newTask": "Nova task",
+  "newEpic": "Novo épico",
+  "newStory": "Nova história",
+  "orphanTasks": "Tasks Órfãs",
+  "claim": "Pegar",
+  "release": "Liberar",
+  "claimedBy": "Com {{name}}",
+  "moveBlocked": "Esta task possui subtasks — mova as subtasks individualmente",
+  "kanbanView": "Kanban",
+  "treeView": "Árvore",
+  "filterModule": "Módulo",
+  "filterSprint": "Sprint",
+  "filterAssignee": "Responsável",
+  "filterTags": "Tags",
+  "showSubtasks": "Mostrar subtasks",
+  "allModules": "Todos os módulos",
+  "activeSprint": "Sprint ativa",
+  "allSprints": "Todas",
+  "noActiveSprint": "Sem sprint ativa",
+  "epicProgress": "{{percent}}% concluído — {{points}} pts"
+}

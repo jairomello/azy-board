@@ -1,0 +1,45 @@
+schema: spec-driven
+
+context: |
+  Produto: Azy Board — Kanban board AI-native para equipes mistas (humanos + agentes de IA).
+  Idioma: Todo o código, comentários, commits e documentação em português do Brasil (PT-BR).
+
+  Stack (todas as licenças MIT / Apache 2.0 / Public Domain):
+    - Frontend: React 18 + Vite + TypeScript, shadcn/ui, Tailwind CSS (darkMode: 'class'), dnd-kit
+    - Backend: Bun + Hono
+    - ORM: Drizzle ORM (SQLite local em dev → PostgreSQL ou Supabase em produção)
+    - Realtime: WebSocket nativo do Bun
+    - Rich text: Tiptap (MIT)
+    - i18n: i18next + react-i18next (PT-BR padrão, EN, ES)
+    - Lightbox: yet-another-react-lightbox (MIT)
+    - MCP: @modelcontextprotocol/sdk (MIT)
+
+  Arquitetura multi-tenant:
+    - Shared schema com tenant_id em TODAS as tabelas de negócio
+    - Middleware resolve tenant_id do JWT (usuários) ou da API Key (agentes)
+    - Helper withTenant(tenantId) obrigatório em toda query — nunca acessar o banco sem ele
+    - Tenant criado apenas via script CLI (bun run setup) — sem UI, sem endpoint de API
+
+  Leaf Rule (regra central do Kanban):
+    - Apenas tasks SEM filhos (tasks folha) aparecem como cards móveis no Kanban
+    - Tasks pai são agregadoras de progresso e pontos — não são cards móveis
+    - ancestry_path é desnormalizado em JSON para renderização O(1) do breadcrumb
+
+  Segurança:
+    - JWT HS256 em cookie HttpOnly; Secure; SameSite=Strict
+    - RBAC server-side em toda operação (ADMIN / MEMBER / VIEWER)
+    - Anti-IDOR: toda query inclui userId E tenant_id como filtros obrigatórios
+    - Arquivos servidos com verificação de membership — nunca estáticos públicos
+
+  Licenças: usar APENAS dependências MIT, Apache 2.0, BSD, ISC ou Public Domain.
+  Nunca adicionar: AGPL, GPL, LGPL, BSL ou licenças comerciais.
+
+rules:
+  tasks:
+    - Inserir comentário `// [TENANT] <motivo>` em todo ponto onde tenant_id é resolvido,
+      aplicado em query ou onde sua ausência seria um bug de isolamento cross-tenant
+    - Inserir comentário `// [DB-SWAP] <instrução>` em todo ponto onde o driver de banco,
+      adapter de storage ou configuração deve ser trocado ao migrar de SQLite para PostgreSQL/Supabase
+    - Todo código gerado deve compilar sem erros de TypeScript (strict mode)
+    - Preferir funções pequenas e nomeadas a blocos inline longos
+    - Nenhum segredo (senha, chave) hardcoded fora de variável de ambiente ou arquivo de seed explicitamente marcado

@@ -1,0 +1,36 @@
+{
+  "appName": "Azy Board",
+  "save": "Guardar",
+  "cancel": "Cancelar",
+  "delete": "Eliminar",
+  "edit": "Editar",
+  "create": "Crear",
+  "confirm": "Confirmar",
+  "loading": "Cargando...",
+  "error": "Error",
+  "success": "Éxito",
+  "search": "Buscar",
+  "noResults": "Sin resultados",
+  "required": "Requerido",
+  "optional": "Opcional",
+  "back": "Volver",
+  "next": "Siguiente",
+  "close": "Cerrar",
+  "expandAll": "Expandir todo",
+  "collapseAll": "Colapsar todo",
+  "points": "puntos",
+  "progress": "Progreso",
+  "priority": {
+    "LOW": "Baja",
+    "MEDIUM": "Media",
+    "HIGH": "Alta",
+    "CRITICAL": "Crítica"
+  },
+  "status": {
+    "NOT_STARTED": "No iniciada",
+    "IN_PROGRESS": "En progreso",
+    "BLOCKED": "Bloqueada",
+    "DONE": "Completada",
+    "CANCELLED": "Cancelada"
+  }
+}

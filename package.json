@@ -1,0 +1,18 @@
+{
+  "name": "azy-board",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev:api": "bun run --cwd apps/api dev",
+    "dev:web": "bun run --cwd apps/web dev",
+    "dev:mcp": "bun run --cwd apps/mcp dev",
+    "dev": "bun run dev:api & bun run dev:web",
+    "build:web": "bun run --cwd apps/web build",
+    "build:api": "bun run --cwd apps/api build",
+    "db:generate": "bun run --cwd apps/api db:generate",
+    "db:migrate": "bun run --cwd apps/api db:migrate",
+    "db:seed": "bun run --cwd apps/api db:seed",
+    "setup": "bun run --cwd apps/api setup",
+    "typecheck": "bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck"
+  }
+}
