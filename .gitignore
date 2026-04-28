@@ -27,3 +27,4 @@ bun-debug.log*
 *.db
 *.db-shm
 *.db-wal
+.claude/
