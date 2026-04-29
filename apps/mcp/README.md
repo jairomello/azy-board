@@ -31,6 +31,10 @@ Adicione ao seu `.claude/settings.json`:
 | `move_task` | Move card para outra coluna pelo nome |
 | `complete_task` | Marca task como concluída |
 | `create_task` | Cria nova task (pode criar subtasks via `parentId`) |
+| `list_checklists` | Lista checklists de um card com itens e progresso |
+| `create_checklist` | Cria um checklist nomeado em um card |
+| `add_checklist_item` | Adiciona um item a um checklist existente |
+| `check_item` | Marca item de checklist como concluído ou não |
 
 ## Exemplo de fluxo de um agente
 

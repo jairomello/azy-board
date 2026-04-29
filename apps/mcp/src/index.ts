@@ -94,7 +94,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'complete_task',
-      description: 'Marca uma task como concluída (DONE).',
+      description: 'Marca qualquer item como concluído (DONE). Para TASK/BUG folha move para a coluna DONE; para EPIC/STORY atualiza o status diretamente.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -106,16 +106,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     },
     {
       name: 'create_task',
-      description: 'Cria uma nova task no projeto.',
+      description: 'Cria um novo item no projeto. O tipo padrão é TASK; use type=STORY para histórias ou type=EPIC para épicos. Subtasks são criadas via parentId.',
       inputSchema: {
         type: 'object',
         properties: {
           projectId: { type: 'string' },
           title: { type: 'string' },
           description: { type: 'string' },
+          type: { type: 'string', enum: ['TASK', 'BUG', 'STORY', 'EPIC'], description: 'Tipo do item (padrão: TASK)' },
           priority: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] },
-          parentId: { type: 'string', description: 'ID da task pai (para subtasks)' },
-          storyId: { type: 'string' },
+          parentId: { type: 'string', description: 'ID do item pai (para criar filhos de EPIC, STORY ou subtasks)' },
+          moduleId: { type: 'string', description: 'ID do módulo (obrigatório para EPICs sem parentId)' },
           points: { type: 'number' },
         },
         required: ['projectId', 'title'],
@@ -187,9 +188,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { projectId, sprintId, onlyLeaves = true } = args as {
           projectId: string; sprintId?: string; onlyLeaves?: boolean
         }
-        const params = new URLSearchParams({ onlyLeaves: String(onlyLeaves) })
+        const params = new URLSearchParams({ leaf: String(onlyLeaves) })
         if (sprintId) params.set('sprintId', sprintId)
-        const tasks = await apiCall(`/projects/${projectId}/tasks?${params}`)
+        const tasks = await apiCall(`/projects/${projectId}/items?${params}`)
         return { content: [{ type: 'text', text: JSON.stringify(tasks, null, 2) }] }
       }
 
@@ -201,7 +202,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'claim_task': {
         const { projectId, taskId } = args as { projectId: string; taskId: string }
-        const result = await apiCall(`/projects/${projectId}/tasks/${taskId}/claim`, 'PATCH')
+        const result = await apiCall(`/projects/${projectId}/items/${taskId}/claim`, 'PATCH')
         return { content: [{ type: 'text', text: JSON.stringify(result) }] }
       }
 
@@ -213,23 +214,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const cols = await apiCall(`/projects/${projectId}/columns`) as Array<{ id: string; name: string }>
         const col = cols.find(c => c.name === columnName)
         if (!col) throw new Error(`Coluna "${columnName}" não encontrada`)
-        const result = await apiCall(`/projects/${projectId}/tasks/${taskId}/move`, 'PATCH', { columnId: col.id })
+        const result = await apiCall(`/projects/${projectId}/items/${taskId}/move`, 'PATCH', { columnId: col.id })
         return { content: [{ type: 'text', text: JSON.stringify(result) }] }
       }
 
       case 'complete_task': {
         const { projectId, taskId } = args as { projectId: string; taskId: string }
-        // Encontrar coluna mapeada para DONE
-        const cols = await apiCall(`/projects/${projectId}/columns`) as Array<{ id: string; baseStatus: string }>
-        const doneCol = cols.find(c => c.baseStatus === 'DONE')
-        if (!doneCol) throw new Error('Nenhuma coluna mapeada para DONE no projeto')
-        const result = await apiCall(`/projects/${projectId}/tasks/${taskId}/move`, 'PATCH', { columnId: doneCol.id })
+        // Para TASK/BUG folha: mover para coluna DONE (mantém columnId correto no board)
+        // Para EPIC/STORY: atualizar status diretamente via PATCH
+        const item = await apiCall(`/projects/${projectId}/items/${taskId}`) as { type: string; isLeaf: boolean }
+        if (['TASK', 'BUG'].includes(item.type) && item.isLeaf) {
+          const cols = await apiCall(`/projects/${projectId}/columns`) as Array<{ id: string; baseStatus: string }>
+          const doneCol = cols.find(c => c.baseStatus === 'DONE')
+          if (!doneCol) throw new Error('Nenhuma coluna mapeada para DONE no projeto')
+          const result = await apiCall(`/projects/${projectId}/items/${taskId}/move`, 'PATCH', { columnId: doneCol.id })
+          return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+        }
+        const result = await apiCall(`/projects/${projectId}/items/${taskId}`, 'PATCH', { status: 'DONE' })
         return { content: [{ type: 'text', text: JSON.stringify(result) }] }
       }
 
       case 'create_task': {
         const { projectId, ...taskData } = args as { projectId: string; [key: string]: unknown }
-        const result = await apiCall(`/projects/${projectId}/tasks`, 'POST', taskData)
+        const result = await apiCall(`/projects/${projectId}/items`, 'POST', taskData)
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
       }
 
