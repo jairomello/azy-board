@@ -18,5 +18,19 @@
   "apiKeys": "Claves de API",
   "newApiKey": "Generar clave",
   "apiKeyName": "Nombre de clave",
-  "apiKeyWarning": "Copia ahora — no se mostrará nuevamente"
+  "apiKeyWarning": "Copia ahora — no se mostrará nuevamente",
+  "versions": "Versiones",
+  "newVersion": "Nueva versión",
+  "noVersions": "Sin versiones creadas",
+  "versionStatus": "Situación",
+  "versionReleaseDate": "Fecha de lanzamiento",
+  "versionStatusPlanned": "Planificada",
+  "versionStatusInDev": "En desarrollo",
+  "versionStatusReleased": "Lanzada",
+  "versionStatusCancelled": "Cancelada",
+  "viewVersion": "Ver versión",
+  "versionItems": "Elementos de esta versión",
+  "noVersionItems": "Sin elementos vinculados a esta versión",
+  "noModules": "Sin módulos creados",
+  "createModule": "Crear módulo"
 }

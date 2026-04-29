@@ -18,5 +18,21 @@
   "activeSprint": "Sprint activo",
   "allSprints": "Todos",
   "noActiveSprint": "Sin sprint activo",
-  "epicProgress": "{{percent}}% completado — {{points}} pts"
+  "epicProgress": "{{percent}}% completado — {{points}} pts",
+  "card": {
+    "author": "Autor",
+    "history": "Historial",
+    "subtasks": "Subtareas",
+    "noSubtasks": "Sin subtareas creadas",
+    "hoursWorked": "{{hours}}h {{minutes}}min trabajadas",
+    "registerActivity": "Registrar actividad",
+    "activity": "Actividad",
+    "durationMin": "Duración (min)",
+    "addLog": "+ Registrar",
+    "loadMore": "Cargar más",
+    "back": "← Volver",
+    "logTypeAuto": "Automático",
+    "logTypeManual": "Manual",
+    "unknownAuthor": "Desconocido"
+  }
 }

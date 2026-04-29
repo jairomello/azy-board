@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
 interface Epic { id: string; title: string }
 
@@ -19,8 +19,34 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
   const [creating, setCreating] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [localStories, setLocalStories] = useState(stories)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({})
 
   const selected = localStories.find(s => s.id === value)
+
+  // Posição fixa calculada para evitar clipping por overflow:hidden da modal
+  function openDropdown() {
+    const rect = buttonRef.current?.getBoundingClientRect()
+    if (rect) {
+      setDropdownStyle({
+        position: 'fixed',
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+        zIndex: 9999,
+      })
+    }
+    setOpen(true)
+  }
+
+  useEffect(() => {
+    if (!open) return
+    function handleOutside(e: MouseEvent) {
+      if (!buttonRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [open])
 
   async function handleCreate() {
     if (!newTitle.trim() || !newEpicId) return
@@ -40,8 +66,9 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
   return (
     <div className="relative">
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => open ? setOpen(false) : openDropdown()}
         className="w-full flex items-center justify-between px-3 py-2 text-sm bg-background border border-border rounded-lg hover:border-primary transition text-left"
       >
         <span className={selected ? 'text-foreground' : 'text-muted-foreground'}>
@@ -54,11 +81,12 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
 
       {open && (
         <div
-          className="absolute top-full left-0 right-0 z-50 mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-64 overflow-y-auto"
-          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          style={dropdownStyle}
+          className="bg-card border border-border rounded-lg shadow-xl max-h-64 overflow-y-auto"
         >
           <button
             type="button"
+            onMouseDown={e => e.preventDefault()}
             onClick={() => { onChange(null); setOpen(false) }}
             className="w-full text-left px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
           >
@@ -77,8 +105,9 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
                   <button
                     key={story.id}
                     type="button"
+                    onMouseDown={e => e.preventDefault()}
                     onClick={() => { onChange(story.id); setOpen(false) }}
-                    className="w-full text-left px-4 py-2 text-sm hover:bg-muted"
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-muted ${value === story.id ? 'bg-primary/10 text-primary font-medium' : 'text-foreground'}`}
                   >
                     {story.title}
                   </button>
@@ -90,13 +119,14 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
           {!showCreate ? (
             <button
               type="button"
+              onMouseDown={e => e.preventDefault()}
               onClick={() => setShowCreate(true)}
               className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-muted border-t border-border"
             >
               + Nova história
             </button>
           ) : (
-            <div className="p-3 border-t border-border space-y-2">
+            <div className="p-3 border-t border-border space-y-2" onMouseDown={e => e.stopPropagation()}>
               <input
                 value={newTitle}
                 onChange={e => setNewTitle(e.target.value)}
@@ -110,9 +140,7 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
                 onChange={e => setNewEpicId(e.target.value)}
                 className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded outline-none"
               >
-                {epics.map(e => (
-                  <option key={e.id} value={e.id}>{e.title}</option>
-                ))}
+                {epics.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
               </select>
               <div className="flex gap-2">
                 <button

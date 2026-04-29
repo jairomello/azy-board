@@ -5,10 +5,12 @@ interface Props {
   onSave: (value: string) => void
   onEditStart?: () => void
   className?: string
+  autoEdit?: boolean   // entra direto em modo edição (ex: modal de novo item)
+  placeholder?: string
 }
 
-export function InlineEdit({ value, onSave, onEditStart, className = '' }: Props) {
-  const [editing, setEditing] = useState(false)
+export function InlineEdit({ value, onSave, onEditStart, className = '', autoEdit = false, placeholder }: Props) {
+  const [editing, setEditing] = useState(autoEdit)
   const [text, setText] = useState(value)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -45,6 +47,7 @@ export function InlineEdit({ value, onSave, onEditStart, className = '' }: Props
           if (e.key === 'Escape') { e.preventDefault(); cancel() }
         }}
         onClick={e => e.stopPropagation()}
+        placeholder={placeholder}
         className={`w-full bg-transparent border-b border-primary outline-none text-sm font-medium ${className}`}
       />
     )
@@ -53,9 +56,10 @@ export function InlineEdit({ value, onSave, onEditStart, className = '' }: Props
   return (
     <p
       onDoubleClick={e => { e.stopPropagation(); onEditStart?.(); setEditing(true) }}
-      className={`cursor-text select-none text-sm font-medium leading-snug line-clamp-2 ${className}`}
+      onClick={e => { e.stopPropagation(); onEditStart?.(); setEditing(true) }}
+      className={`cursor-text select-none text-sm font-medium leading-snug line-clamp-2 ${className} ${!value ? 'text-muted-foreground italic' : ''}`}
     >
-      {value}
+      {value || placeholder || 'Clique para editar'}
     </p>
   )
 }

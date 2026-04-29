@@ -28,7 +28,7 @@ import { UserAvatar } from '../components/UserAvatar'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { LanguageSelector } from '../components/LanguageSelector'
 import { AddCardForm } from '../components/AddCardForm'
-import { ItemModal, type FullItemData, type ProjectMember } from '../components/ItemModal'
+import { ItemModal, type FullItemData, type ProjectMember, type ProjectVersion } from '../components/ItemModal'
 import { EpicModal, type EpicData } from '../components/EpicModal'
 import { StoryModal, type StoryData } from '../components/StoryModal'
 import { BoardFilters, type BoardFilterState } from '../components/BoardFilters'
@@ -87,6 +87,7 @@ export default function BoardPage() {
   const [sprints, setSprints] = useState<Sprint[]>([])
   const [members, setMembers] = useState<ProjectMember[]>([])
   const [projectTags, setProjectTags] = useState<Tag[]>([])
+  const [projectVersions, setProjectVersions] = useState<ProjectVersion[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [collapsedEpics, setCollapsedEpics] = useState<Set<string>>(new Set())
   const [view, setView] = useState<'kanban' | 'tree'>('kanban')
@@ -100,7 +101,7 @@ export default function BoardPage() {
   const [filters, setFilters] = useState<BoardFilterState>({
     moduleId: '', sprintId: '', assigneeId: '', types: [], tagIds: [],
   })
-  const [newItemCreation, setNewItemCreation] = useState<{ type: 'TASK' | 'BUG'; columnId?: string } | null>(null)
+  const [newItemCreation, setNewItemCreation] = useState<{ type: 'TASK' | 'BUG'; columnId?: string; title?: string } | null>(null)
 
   // Ref para preservar o over ID mais recente durante o drag (evita perder o alvo no momento do drop)
   const lastOverRef = useRef<string | null>(null)
@@ -124,13 +125,15 @@ export default function BoardPage() {
       api.get<Tag[]>(`/projects/${projectId}/tags`),
       api.get<Sprint[]>(`/projects/${projectId}/sprints`).catch(() => [] as Sprint[]),
       api.get<ProjectMember[]>(`/projects/${projectId}/members`).catch(() => [] as ProjectMember[]),
-    ]).then(([cols, its, mods, tags, sprs, mbrs]) => {
+      api.get<ProjectVersion[]>(`/projects/${projectId}/versions`).catch(() => [] as ProjectVersion[]),
+    ]).then(([cols, its, mods, tags, sprs, mbrs, vers]) => {
       setColumns(cols)
       setAllItems(computeIsLeaf(its))
       setModules(mods)
       setProjectTags(tags)
       setSprints(sprs)
       setMembers(mbrs)
+      setProjectVersions(vers)
     }).finally(() => setLoading(false))
   }, [projectId])
 
@@ -402,18 +405,18 @@ export default function BoardPage() {
 
   const handleModalSave = useCallback(async (itemId: string, changes: Partial<FullItemData>, tagIds: string[]) => {
     if (!projectId) return
-    // [isLeaf] parentId pode ter mudado no modal → recalcular folhas
-    setAllItems(prev => computeIsLeaf(prev.map(i => i.id === itemId ? { ...i, ...(changes as Partial<ItemData>) } : i)))
     try {
       await api.patch(`/projects/${projectId}/items/${itemId}`, changes)
       await api.post(`/projects/${projectId}/items/${itemId}/tags`, { tagIds })
-      const tagObjs = projectTags.filter(t => tagIds.includes(t.id)).map(tag => ({ tag }))
-      setAllItems(prev => prev.map(i => i.id === itemId ? { ...i, itemTags: tagObjs } : i))
+      // Recarregar todos os itens quando parentId mudou (ancestryPath muda no servidor)
+      // ou sempre para garantir consistência após salvar pela modal
+      const its = await api.get<ItemData[]>(`/projects/${projectId}/items`)
+      setAllItems(computeIsLeaf(its))
     } catch {
       toast('Erro ao salvar item', 'error')
       throw new Error('failed')
     }
-  }, [projectId, toast, projectTags])
+  }, [projectId, toast])
 
   const handleAddSubtask = useCallback(async (parentId: string, title: string, type: ItemType) => {
     if (!projectId) return
@@ -651,14 +654,14 @@ export default function BoardPage() {
               Nova História
             </button>
             <button
-              onClick={() => setNewItemCreation({ type: 'TASK', columnId: columns[0]?.id })}
+              onClick={() => setNewItemCreation({ type: 'TASK', columnId: columns[0]?.id, title: 'Nova Task' })}
               className="flex items-center gap-1.5 text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition"
             >
               <CheckSquare className="w-3.5 h-3.5" />
               Nova Task
             </button>
             <button
-              onClick={() => setNewItemCreation({ type: 'BUG', columnId: columns[0]?.id })}
+              onClick={() => setNewItemCreation({ type: 'BUG', columnId: columns[0]?.id, title: 'Novo Bug' })}
               className="flex items-center gap-1.5 text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition"
             >
               <Bug className="w-3.5 h-3.5" />
@@ -708,8 +711,8 @@ export default function BoardPage() {
                 />
               )}
 
-              {/* Swimlanes por épico */}
-              {epicGroups.filter(g => g.tasks.length > 0).map(({ epic, tasks: epicTasks }) => (
+              {/* Swimlanes por épico — exibe todos os épicos, inclusive os sem tasks */}
+              {epicGroups.map(({ epic, tasks: epicTasks }) => (
                 <Swimlane
                   key={epic.id}
                   swimlaneId={epic.id}
@@ -759,6 +762,8 @@ export default function BoardPage() {
           stories={storiesForSelector}
           projectTags={projectTags}
           members={members}
+          currentUserId={user?.id}
+          projectVersions={projectVersions}
           onClose={() => setItemModalId(null)}
           onSave={handleModalSave}
           onAddSubtask={handleAddSubtask}
@@ -773,6 +778,7 @@ export default function BoardPage() {
         <EpicModal
           modules={modules}
           epic={epicModalData.epic}
+          projectVersions={projectVersions}
           onSave={handleEpicSave}
           onClose={() => setEpicModalData(null)}
         />
@@ -783,6 +789,7 @@ export default function BoardPage() {
         <StoryModal
           epics={epicsForModal}
           story={storyModalData.story}
+          projectVersions={projectVersions}
           onSave={handleStorySave}
           onClose={() => setStoryModalData(null)}
         />
@@ -793,7 +800,7 @@ export default function BoardPage() {
         <ItemModal
           item={{
             id: '__new__',
-            title: '',
+            title: newItemCreation.title ?? '',
             status: 'NOT_STARTED',
             priority: 'MEDIUM',
             type: newItemCreation.type,
@@ -814,6 +821,8 @@ export default function BoardPage() {
           stories={storiesForSelector}
           projectTags={projectTags}
           members={members}
+          currentUserId={user?.id}
+          projectVersions={projectVersions}
           onClose={() => setNewItemCreation(null)}
           onSave={handleModalCreate}
           onAddSubtask={handleAddSubtask}

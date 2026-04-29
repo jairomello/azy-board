@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { RichTextEditor } from './RichTextEditor'
+import type { ProjectVersion } from './ItemModal'
 
 interface Epic { id: string; title: string }
 
@@ -13,18 +14,21 @@ export interface StoryData {
   acceptanceCriteria?: string | null
   notes?: string | null
   description?: string | null
+  versionId?: string | null
 }
 
 interface Props {
   epics: Epic[]
   story?: StoryData | null
+  projectVersions?: ProjectVersion[]
   onSave: (data: StoryData) => Promise<void>
   onClose: () => void
 }
 
-export function StoryModal({ epics, story, onSave, onClose }: Props) {
+export function StoryModal({ epics, story, projectVersions = [], onSave, onClose }: Props) {
   const [title, setTitle] = useState(story?.title ?? '')
   const [epicId, setEpicId] = useState(story?.epicId ?? epics[0]?.id ?? '')
+  const [versionId, setVersionId] = useState(story?.versionId ?? '')
   const [persona, setPersona] = useState(story?.persona ?? '')
   const [goal, setGoal] = useState(story?.goal ?? '')
   const [benefit, setBenefit] = useState(story?.benefit ?? '')
@@ -47,6 +51,7 @@ export function StoryModal({ epics, story, onSave, onClose }: Props) {
         benefit: benefit || null,
         acceptanceCriteria: acceptanceCriteria || null,
         notes: notes || null,
+        versionId: versionId || null,
       })
       onClose()
     } catch {
@@ -96,6 +101,18 @@ export function StoryModal({ epics, story, onSave, onClose }: Props) {
               </select>
             </div>
           </div>
+
+          {/* Campo Versão — exibido apenas quando há versões no projeto */}
+          {projectVersions.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Versão</label>
+              <select value={versionId} onChange={e => setVersionId(e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
+                <option value="">Sem versão</option>
+                {projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+            </div>
+          )}
 
           {/* Campos ágeis padrão */}
           <div className="bg-muted/20 border border-border rounded-lg p-4 space-y-3">

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { ProjectVersion } from './ItemModal'
 
 interface Module { id: string; name: string }
 
@@ -7,26 +8,35 @@ export interface EpicData {
   title: string
   moduleId: string
   description?: string | null
+  versionId?: string | null
 }
 
 interface Props {
   modules: Module[]
   epic?: EpicData | null
+  projectVersions?: ProjectVersion[]
   onSave: (data: EpicData) => Promise<void>
   onClose: () => void
 }
 
-export function EpicModal({ modules, epic, onSave, onClose }: Props) {
+export function EpicModal({ modules, epic, projectVersions = [], onSave, onClose }: Props) {
   const [title, setTitle] = useState(epic?.title ?? '')
   const [moduleId, setModuleId] = useState(epic?.moduleId ?? modules[0]?.id ?? '')
   const [description, setDescription] = useState(epic?.description ?? '')
+  const [versionId, setVersionId] = useState(epic?.versionId ?? '')
   const [loading, setLoading] = useState(false)
 
   async function handleSave() {
     if (!title.trim()) return
     setLoading(true)
     try {
-      await onSave({ id: epic?.id, title: title.trim(), moduleId, description: description || undefined })
+      await onSave({
+        id: epic?.id,
+        title: title.trim(),
+        moduleId,
+        description: description || undefined,
+        versionId: versionId || null,
+      })
       onClose()
     } finally {
       setLoading(false)
@@ -44,51 +54,44 @@ export function EpicModal({ modules, epic, onSave, onClose }: Props) {
         <div className="space-y-3">
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Título</label>
-            <input
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSave()}
-              autoFocus
-              className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
-            />
+            <input value={title} onChange={e => setTitle(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSave()} autoFocus
+              className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary" />
           </div>
 
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Módulo</label>
-            <select
-              value={moduleId}
-              onChange={e => setModuleId(e.target.value)}
-              className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
-            >
-              {modules.map(m => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
+            <select value={moduleId} onChange={e => setModuleId(e.target.value)}
+              className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
+              {modules.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </div>
 
+          {projectVersions.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Versão</label>
+              <select value={versionId} onChange={e => setVersionId(e.target.value)}
+                className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
+                <option value="">Sem versão</option>
+                {projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Descrição</label>
-            <textarea
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              rows={3}
-              className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary resize-none"
-            />
+            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
+              className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary resize-none" />
           </div>
         </div>
 
         <div className="flex gap-2 pt-2">
-          <button
-            onClick={handleSave}
-            disabled={loading || !title.trim()}
-            className="flex-1 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition"
-          >
+          <button onClick={handleSave} disabled={loading || !title.trim()}
+            className="flex-1 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition">
             {loading ? 'Salvando...' : 'Salvar'}
           </button>
-          <button
-            onClick={onClose}
-            className="flex-1 py-2 text-sm border border-border rounded-lg hover:bg-muted text-muted-foreground transition"
-          >
+          <button onClick={onClose}
+            className="flex-1 py-2 text-sm border border-border rounded-lg hover:bg-muted text-muted-foreground transition">
             Cancelar
           </button>
         </div>

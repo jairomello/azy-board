@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { eq, and, inArray, asc, sql } from 'drizzle-orm'
+import { eq, and, inArray, asc, sql, desc } from 'drizzle-orm'
 import { db } from '../db/index'
-import { items, columns, itemTags, itemSprints, modules, checklists, checklistItems, attachments } from '../db/schema'
+import { items, columns, itemTags, itemSprints, modules, checklists, checklistItems, attachments, itemLogs, projectVersions } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import { buildAncestryPath, calculateProgress, calculatePoints, updateDescendantAncestry } from '../services/ancestry'
@@ -11,6 +11,23 @@ import type { RequestContext, Priority, ItemType } from '@azy-board/types'
 
 export const itemsRouter = new Hono<HonoEnv>()
 itemsRouter.use('*', authMiddleware)
+
+// Tarefa 4.4 — cria log automático de atividade em operações do sistema
+// [TENANT] tenantId obrigatório para isolamento cross-tenant
+async function createAutoLog(itemId: string, tenantId: string, authorId: string, activity: string) {
+  const now = new Date().toISOString()
+  await db.insert(itemLogs).values({
+    id: generateId(),
+    tenantId,
+    itemId,
+    authorId,
+    type: 'auto',
+    activity,
+    durationMin: null,
+    createdAt: now,
+    updatedAt: now,
+  })
+}
 
 // Verifica se item é folha (sem filhos) — Leaf Rule
 async function isLeaf(tenantId: string, itemId: string): Promise<boolean> {
@@ -174,6 +191,8 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
       itemTags: { with: { tag: true } },
       assignee: { columns: { id: true, name: true, avatarUrl: true } },
       assigneeApiKey: { columns: { id: true, name: true, aiModelName: true } },
+      author: { columns: { id: true, name: true, avatarUrl: true } },
+      version: { columns: { id: true, name: true, status: true } },
     },
     orderBy: (i, { asc }) => [asc(i.position)],
   })
@@ -261,6 +280,8 @@ itemsRouter.get('/:itemId', requireRole('VIEWER'), async (c) => {
       attachments: true,
       assignee: { columns: { id: true, name: true, avatarUrl: true } },
       assigneeApiKey: { columns: { id: true, name: true, aiModelName: true } },
+      author: { columns: { id: true, name: true, avatarUrl: true } },
+      version: { columns: { id: true, name: true, status: true } },
       children: { columns: { id: true, title: true, type: true, status: true, priority: true, points: true } },
       checklists: {
         with: { checklistItems: { orderBy: (ci) => [asc(ci.position)] } },
@@ -308,6 +329,7 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     assigneeId?: string | null
     startDate?: string | null
     dueDate?: string | null
+    versionId?: string | null
   }>()
 
   const type: ItemType = body.type ?? 'TASK'
@@ -333,6 +355,7 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     : []
 
   // [TENANT] tenantId vem do JWT — nunca do body
+  // authorId capturado do contexto de autenticação (humano ou agente de IA)
   await db.insert(items).values({
     id,
     tenantId: ctx.tenantId,
@@ -353,6 +376,8 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     priority: body.priority ?? 'MEDIUM',
     points: body.points,
     assigneeId: body.assigneeId ?? null,
+    authorId: ctx.userId,
+    versionId: body.versionId ?? null,
     startDate: body.startDate ?? null,
     dueDate: body.dueDate ?? null,
     position: 0,
@@ -379,7 +404,7 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
 
   const item = await db.query.items.findFirst({
     where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
-    columns: { id: true, type: true },
+    columns: { id: true, type: true, columnId: true },
   })
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
@@ -397,9 +422,22 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
   })
   if (!col) return c.json({ error: 'Coluna não encontrada' }, 404)
 
+  // Buscar nome da coluna de origem para log — [TENANT] filtro por tenantId
+  let fromColName = 'desconhecida'
+  if (item.columnId) {
+    const fromCol = await db.query.columns.findFirst({
+      where: (c) => and(eq(c.id, item.columnId!), eq(c.tenantId, ctx.tenantId)),
+      columns: { name: true },
+    })
+    fromColName = fromCol?.name ?? fromColName
+  }
+
   await db.update(items)
     .set({ columnId: body.columnId, status: col.baseStatus, updatedAt: new Date().toISOString() })
     .where(and(eq(items.id, itemId), eq(items.tenantId, ctx.tenantId)))
+
+  // Tarefa 5.2 — log automático de movimentação de coluna
+  await createAutoLog(itemId, ctx.tenantId, ctx.userId, `Movido de '${fromColName}' para '${col.name}'`)
 
   broadcast(projectId, {
     type: 'CARD_MOVED',
@@ -467,14 +505,26 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     benefit?: string | null
     acceptanceCriteria?: string | null
     notes?: string | null
+    authorId?: unknown
+    versionId?: string | null
   }>()
 
-  const updates: Record<string, unknown> = { ...body, updatedAt: new Date().toISOString() }
+  // Tarefa 2.2 — authorId nunca é alterado via PATCH
+  const { authorId: _ignoredAuthorId, ...safeBody } = body
+  const updates: Record<string, unknown> = { ...safeBody, updatedAt: new Date().toISOString() }
+
+  // Tarefa 5.1 — buscar estado anterior para gerar log automático
+  const LOGGABLE_FIELDS = ['title', 'description', 'priority', 'assigneeId', 'points', 'startDate', 'dueDate', 'status'] as const
+  type LoggableField = typeof LOGGABLE_FIELDS[number]
+  const prevItem = await db.query.items.findFirst({
+    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
+    columns: { title: true, description: true, priority: true, assigneeId: true, points: true, startDate: true, dueDate: true, status: true },
+  })
 
   // Se parentId mudou, recalcular ancestryPath
-  if (body.parentId !== undefined) {
-    const newPath = body.parentId
-      ? await buildAncestryPath(ctx.tenantId, body.parentId)
+  if (safeBody.parentId !== undefined) {
+    const newPath = safeBody.parentId
+      ? await buildAncestryPath(ctx.tenantId, safeBody.parentId)
       : []
     updates.ancestryPath = JSON.stringify(newPath)
     // Atualizar descendentes em cascata
@@ -487,11 +537,28 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     .where(and(eq(items.id, itemId), eq(items.tenantId, ctx.tenantId)))
 
   // Se título mudou, atualizar ancestryPath dos filhos
-  if (body.title) {
+  if (safeBody.title) {
     await updateDescendantAncestry(ctx.tenantId, itemId)
   }
 
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemId, ...body } })
+  // Tarefa 5.1 — gerar log automático apenas se algum campo loggável mudou
+  if (prevItem) {
+    const fieldLabels: Record<LoggableField, string> = {
+      title: 'Título', description: 'Descrição', priority: 'Prioridade',
+      assigneeId: 'Responsável', points: 'Pontos', startDate: 'Início', dueDate: 'Fim', status: 'Status',
+    }
+    const changes: string[] = []
+    for (const field of LOGGABLE_FIELDS) {
+      if (field in safeBody && String(safeBody[field]) !== String(prevItem[field])) {
+        changes.push(`${fieldLabels[field]}: "${prevItem[field] ?? ''}" → "${safeBody[field] ?? ''}"`)
+      }
+    }
+    if (changes.length > 0) {
+      await createAutoLog(itemId, ctx.tenantId, ctx.userId, `Campos alterados: ${changes.join('; ')}`)
+    }
+  }
+
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemId, ...safeBody } })
   return c.json({ ok: true })
 })
 
@@ -576,6 +643,137 @@ itemsRouter.post('/:itemId/sprint', requireRole('MEMBER'), async (c) => {
   await db.insert(itemSprints)
     .values({ itemId, sprintId: body.sprintId })
     .onConflictDoNothing()
+
+  return c.json({ ok: true })
+})
+
+// ---------------------------------------------------------------------------
+// Tarefa 3.1, 3.2, 3.3 — GET filhos diretos de um item
+// ---------------------------------------------------------------------------
+
+// GET /projects/:projectId/items/:itemId/children
+itemsRouter.get('/:itemId/children', requireRole('VIEWER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const { itemId } = c.req.param()
+
+  // [TENANT] Anti-IDOR: verificar ownership do item pai
+  const parent = await db.query.items.findFirst({
+    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!parent) return c.json({ error: 'Item não encontrado' }, 404)
+
+  // [TENANT] filtra filhos diretos por tenantId + parentId
+  const children = await db.query.items.findMany({
+    where: (i) => and(eq(i.parentId, itemId), eq(i.tenantId, ctx.tenantId)),
+    with: {
+      assignee: { columns: { id: true, name: true, avatarUrl: true } },
+      column: { columns: { id: true, name: true } },
+    },
+    columns: {
+      id: true, title: true, type: true, priority: true, status: true, points: true,
+      assigneeId: true, columnId: true,
+    },
+    orderBy: (i, { asc }) => [asc(i.position)],
+  })
+
+  return c.json({ data: children, total: children.length })
+})
+
+// ---------------------------------------------------------------------------
+// Tarefas 4.1, 4.2, 4.3 — Endpoints de logs de atividade
+// ---------------------------------------------------------------------------
+
+// GET /projects/:projectId/items/:itemId/logs
+itemsRouter.get('/:itemId/logs', requireRole('VIEWER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const { itemId } = c.req.param()
+  const page = parseInt(c.req.query('page') ?? '1')
+  const limit = parseInt(c.req.query('limit') ?? '20')
+  const offset = (page - 1) * limit
+
+  // [TENANT] Anti-IDOR
+  const item = await db.query.items.findFirst({
+    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
+
+  // [TENANT] filtra logs por tenantId + itemId
+  const logs = await db.query.itemLogs.findMany({
+    where: (l) => and(eq(l.itemId, itemId), eq(l.tenantId, ctx.tenantId)),
+    with: { author: { columns: { id: true, name: true, avatarUrl: true } } },
+    orderBy: (l) => [desc(l.createdAt)],
+    limit,
+    offset,
+  })
+
+  const totalRow = await db.select({ count: sql<number>`COUNT(*)` })
+    .from(itemLogs)
+    .where(and(eq(itemLogs.itemId, itemId), eq(itemLogs.tenantId, ctx.tenantId)))
+  const total = totalRow[0]?.count ?? 0
+
+  return c.json({ data: logs, total, page, limit })
+})
+
+// POST /projects/:projectId/items/:itemId/logs — criar log manual
+itemsRouter.post('/:itemId/logs', requireRole('MEMBER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const { itemId } = c.req.param()
+  const body = await c.req.json<{ activity: string; durationMin?: number | null }>()
+
+  if (!body.activity?.trim()) return c.json({ error: 'activity é obrigatório' }, 400)
+
+  // [TENANT] Anti-IDOR
+  const item = await db.query.items.findFirst({
+    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
+
+  const now = new Date().toISOString()
+  const id = generateId()
+  // [TENANT] tenantId vem do middleware JWT
+  await db.insert(itemLogs).values({
+    id,
+    tenantId: ctx.tenantId,
+    itemId,
+    authorId: ctx.userId,
+    type: 'manual',
+    activity: body.activity.trim(),
+    durationMin: body.durationMin ?? null,
+    createdAt: now,
+    updatedAt: now,
+  })
+
+  return c.json({ id }, 201)
+})
+
+// PATCH /projects/:projectId/items/:itemId/logs/:logId — editar log manual
+itemsRouter.patch('/:itemId/logs/:logId', requireRole('MEMBER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const { itemId, logId } = c.req.param()
+  const memberRole = c.get('memberRole') as string
+  const body = await c.req.json<{ activity?: string; durationMin?: number | null }>()
+
+  // [TENANT] Anti-IDOR: buscar log verificando tenantId
+  const log = await db.query.itemLogs.findFirst({
+    where: (l) => and(eq(l.id, logId), eq(l.itemId, itemId), eq(l.tenantId, ctx.tenantId)),
+  })
+  if (!log) return c.json({ error: 'Log não encontrado' }, 404)
+
+  if (log.type === 'auto') return c.json({ error: 'Logs automáticos não podem ser editados' }, 403)
+  if (log.authorId !== ctx.userId && memberRole !== 'ADMIN') {
+    return c.json({ error: 'Sem permissão para editar este log' }, 403)
+  }
+
+  const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() }
+  if (body.activity !== undefined) updates.activity = body.activity.trim()
+  if (body.durationMin !== undefined) updates.durationMin = body.durationMin
+
+  await db.update(itemLogs)
+    .set(updates)
+    .where(and(eq(itemLogs.id, logId), eq(itemLogs.tenantId, ctx.tenantId)))
 
   return c.json({ ok: true })
 })

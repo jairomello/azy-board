@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { eq, and, asc } from 'drizzle-orm'
+import { eq, and, asc, inArray } from 'drizzle-orm'
 import { db } from '../db/index'
-import { projects, memberships, modules, squads, users } from '../db/schema'
+import { projects, memberships, modules, squads, users, items, itemTags, itemSprints, attachments, projectVersions } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import type { RequestContext } from '@azy-board/types'
@@ -146,6 +146,59 @@ projectsRouter.patch('/:id/modules/:moduleId', requireRole('ADMIN'), async (c) =
     .set({ ...(body.name && { name: body.name }), ...(body.position !== undefined && { position: body.position }) })
     .where(and(eq(modules.id, moduleId), eq(modules.tenantId, ctx.tenantId)))
 
+  return c.json({ ok: true })
+})
+
+// DELETE /projects/:id/modules/:moduleId — Tarefas 2.1-2.4
+projectsRouter.delete('/:id/modules/:moduleId', requireRole('ADMIN'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const { moduleId } = c.req.param()
+
+  // [TENANT] Anti-IDOR: verificar ownership do módulo
+  const mod = await db.query.modules.findFirst({
+    where: (m) => and(eq(m.id, moduleId), eq(m.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!mod) return c.json({ error: 'Módulo não encontrado' }, 404)
+
+  const epics = await db.select({ id: items.id })
+    .from(items)
+    .where(and(eq(items.moduleId, moduleId), eq(items.tenantId, ctx.tenantId)))
+
+  const epicCount = epics.length
+
+  let body: { targetModuleId?: string; cascade?: boolean } = {}
+  try { body = await c.req.json() } catch { /* body vazio */ }
+
+  if (epicCount > 0 && !body.targetModuleId && !body.cascade) {
+    return c.json({ error: 'Módulo possui épicos vinculados', epicCount }, 409)
+  }
+
+  if (epicCount > 0 && body.targetModuleId) {
+    // [TENANT] mover épicos para módulo destino
+    await db.update(items)
+      .set({ moduleId: body.targetModuleId })
+      .where(and(eq(items.moduleId, moduleId), eq(items.tenantId, ctx.tenantId)))
+  } else if (epicCount > 0 && body.cascade) {
+    // excluir em cascata via BFS
+    const allIds: string[] = epics.map(e => e.id)
+    const queue = [...allIds]
+    while (queue.length > 0) {
+      const parentId = queue.shift()!
+      const children = await db.select({ id: items.id })
+        .from(items)
+        .where(and(eq(items.parentId, parentId), eq(items.tenantId, ctx.tenantId)))
+      for (const child of children) { allIds.push(child.id); queue.push(child.id) }
+    }
+    await db.transaction(async (tx) => {
+      await tx.delete(itemTags).where(inArray(itemTags.itemId, allIds))
+      await tx.delete(itemSprints).where(inArray(itemSprints.itemId, allIds))
+      await tx.delete(attachments).where(inArray(attachments.itemId, allIds))
+      await tx.delete(items).where(and(inArray(items.id, allIds), eq(items.tenantId, ctx.tenantId)))
+    })
+  }
+
+  await db.delete(modules).where(and(eq(modules.id, moduleId), eq(modules.tenantId, ctx.tenantId)))
   return c.json({ ok: true })
 })
 

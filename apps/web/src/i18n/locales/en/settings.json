@@ -18,5 +18,19 @@
   "apiKeys": "API Keys",
   "newApiKey": "Generate key",
   "apiKeyName": "Key name",
-  "apiKeyWarning": "Copy now — it won't be shown again"
+  "apiKeyWarning": "Copy now — it won't be shown again",
+  "versions": "Versions",
+  "newVersion": "New version",
+  "noVersions": "No versions created",
+  "versionStatus": "Status",
+  "versionReleaseDate": "Release date",
+  "versionStatusPlanned": "Planned",
+  "versionStatusInDev": "In development",
+  "versionStatusReleased": "Released",
+  "versionStatusCancelled": "Cancelled",
+  "viewVersion": "View version",
+  "versionItems": "Items in this version",
+  "noVersionItems": "No items linked to this version",
+  "noModules": "No modules created",
+  "createModule": "Create module"
 }

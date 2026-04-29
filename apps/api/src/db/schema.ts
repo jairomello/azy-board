@@ -180,8 +180,53 @@ export const items = sqliteTable('items', {
   position: integer('position').notNull().default(0),
   startDate: text('start_date'),
   dueDate: text('due_date'),
+  // Autor original (quem criou) — distinto do assignee (quem executa)
+  authorId: text('author_id').references(() => users.id),
+  // Versão de entrega prevista — opcional, ON DELETE SET NULL
+  versionId: text('version_id').references(() => projectVersions.id),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
   updatedAt: text('updated_at').notNull().default(new Date().toISOString()),
+})
+
+// ---------------------------------------------------------------------------
+// PROJECT_VERSIONS — versões de entrega do projeto
+//
+// Permite associar épicos, histórias, tasks e bugs a uma versão prevista de entrega.
+//
+// [TENANT] tenant_id obrigatório em toda query
+// [DB-SWAP] status como TEXT CHECK; em PostgreSQL pode usar ENUM nativo
+// ---------------------------------------------------------------------------
+export const projectVersions = sqliteTable('project_versions', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  releaseDate: text('release_date'),
+  description: text('description'),
+  status: text('status', { enum: ['PLANNED', 'IN_DEV', 'RELEASED', 'CANCELLED'] }).notNull().default('PLANNED'),
+  position: integer('position').notNull().default(0),
+  createdAt: text('created_at').notNull(),
+})
+
+// ---------------------------------------------------------------------------
+// ITEM_LOGS — histórico de atividades de cada item (auto + manual)
+//
+// type 'auto'   → gerado pelo sistema em edições/movimentações; não editável
+// type 'manual' → inserido por humanos com progresso livre + horas trabalhadas
+//
+// [TENANT] tenant_id obrigatório em toda query
+// [DB-SWAP] type como TEXT CHECK; em PostgreSQL pode usar ENUM nativo
+// ---------------------------------------------------------------------------
+export const itemLogs = sqliteTable('item_logs', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id),
+  itemId: text('item_id').notNull().references(() => items.id, { onDelete: 'cascade' }),
+  authorId: text('author_id').references(() => users.id),
+  type: text('type', { enum: ['auto', 'manual'] }).notNull(),
+  activity: text('activity').notNull(),
+  durationMin: integer('duration_min'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
 })
 
 // ---------------------------------------------------------------------------
@@ -271,6 +316,8 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   memberships: many(memberships),
   apiKeys: many(apiKeys),
   assignedItems: many(items, { relationName: 'assignee' }),
+  authoredItems: many(items, { relationName: 'author' }),
+  itemLogs: many(itemLogs, { relationName: 'logAuthor' }),
 }))
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
@@ -293,6 +340,8 @@ export const itemsRelations = relations(items, ({ one, many }) => ({
   column: one(columns, { fields: [items.columnId], references: [columns.id] }),
   assignee: one(users, { fields: [items.assigneeId], references: [users.id], relationName: 'assignee' }),
   assigneeApiKey: one(apiKeys, { fields: [items.assigneeApiKeyId], references: [apiKeys.id] }),
+  author: one(users, { fields: [items.authorId], references: [users.id], relationName: 'author' }),
+  version: one(projectVersions, { fields: [items.versionId], references: [projectVersions.id] }),
   // Auto-referência para hierarquia
   parent: one(items, { fields: [items.parentId], references: [items.id], relationName: 'children' }),
   children: many(items, { relationName: 'children' }),
@@ -300,6 +349,17 @@ export const itemsRelations = relations(items, ({ one, many }) => ({
   itemSprints: many(itemSprints),
   attachments: many(attachments),
   checklists: many(checklists),
+  logs: many(itemLogs),
+}))
+
+export const projectVersionsRelations = relations(projectVersions, ({ one, many }) => ({
+  project: one(projects, { fields: [projectVersions.projectId], references: [projects.id] }),
+  items: many(items),
+}))
+
+export const itemLogsRelations = relations(itemLogs, ({ one }) => ({
+  item: one(items, { fields: [itemLogs.itemId], references: [items.id] }),
+  author: one(users, { fields: [itemLogs.authorId], references: [users.id], relationName: 'logAuthor' }),
 }))
 
 export const checklistsRelations = relations(checklists, ({ one, many }) => ({
