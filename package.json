@@ -13,6 +13,7 @@
     "db:migrate": "bun run --cwd apps/api db:migrate",
     "db:seed": "bun run --cwd apps/api db:seed",
     "setup": "bun run --cwd apps/api setup",
+    "test:mcp": "bun run --cwd apps/mcp test",
     "typecheck": "bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck"
   }
 }

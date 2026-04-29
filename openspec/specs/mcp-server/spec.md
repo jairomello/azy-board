@@ -136,3 +136,20 @@ O sistema SHALL expor ferramenta `check_item` para marcar um item de checklist c
 #### Scenario: Agente marca passo como concluído
 - **WHEN** agente invoca `check_item` com `{ projectId, itemId, checklistId, checklistItemId, checked: true }`
 - **THEN** sistema atualiza `checked` e emite evento WebSocket `CHECKLIST_UPDATED`; humanos acompanhando o board veem o progresso atualizar em tempo real
+
+---
+
+### Requirement: Suíte automatizada de regressão MCP
+O sistema SHALL manter testes automatizados executáveis por `bun run test:mcp` para validar o comportamento das ferramentas MCP sem depender de servidor externo, banco ou credenciais reais.
+
+#### Scenario: Fluxo completo de board via MCP
+- **WHEN** a suíte de regressão MCP executa contra uma API fake em memória
+- **THEN** ela cria um projeto de teste, consulta módulos e sprint, cria EPIC, STORY, TASK e subtarefa, reivindica e move task entre etapas, cria checklist, adiciona itens, marca progresso e conclui a task
+
+#### Scenario: Proteção contra regressões de hierarquia
+- **WHEN** a suíte tenta criar TASK filha direta de EPIC ou STORY filha de item não-EPIC
+- **THEN** as ferramentas rejeitam a operação antes de criar item na API e retornam erro acionável
+
+#### Scenario: Execução recorrente ao fim de implementação
+- **WHEN** uma rodada de implementação termina
+- **THEN** o comando `bun run test:mcp` pode ser executado para verificar que os fluxos principais do MCP continuam íntegros

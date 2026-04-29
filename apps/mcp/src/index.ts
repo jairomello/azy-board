@@ -24,6 +24,19 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
+import {
+  toolListTasks,
+  toolListModules,
+  toolGetCurrentSprint,
+  toolClaimTask,
+  toolMoveTask,
+  toolCompleteTask,
+  toolCreateTask,
+  toolListChecklists,
+  toolCreateChecklist,
+  toolAddChecklistItem,
+  toolCheckItem,
+} from './tools.js'
 
 // [TENANT] API Key autentica o agente como o Owner humano vinculado — resolvido pelo middleware da API
 const API_KEY = process.env.EASYBOARD_API_KEY
@@ -34,23 +47,27 @@ if (!API_KEY) {
   process.exit(1)
 }
 
-async function apiCall(path: string, method = 'GET', body?: unknown) {
-  const res = await fetch(`${API_URL}/api${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      // [TENANT] API Key identifica o agente e o tenant — resolvido pelo authMiddleware
-      Authorization: `Bearer ${API_KEY}`,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  })
+export async function makeApiCall(apiUrl: string, apiKey: string) {
+  return async function apiCall(path: string, method = 'GET', body?: unknown) {
+    const res = await fetch(`${apiUrl}/api${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        // [TENANT] API Key identifica o agente e o tenant — resolvido pelo authMiddleware
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    })
 
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`API error ${res.status}: ${err}`)
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`API error ${res.status}: ${err}`)
+    }
+    return res.json()
   }
-  return res.json()
 }
+
+const apiCall = await makeApiCall(API_URL, API_KEY)
 
 const server = new Server(
   { name: 'azy-board', version: '1.0.0' },
@@ -333,139 +350,57 @@ Use checked=true ao completar um passo, checked=false para reverter.`,
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params
 
+  function ok(data: unknown) {
+    return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] }
+  }
+
   try {
     switch (name) {
-      case 'list_tasks': {
-        const { projectId, sprintId, type, onlyLeaves = true } = args as {
-          projectId: string; sprintId?: string; type?: string; onlyLeaves?: boolean
-        }
-        const params = new URLSearchParams({ leaf: String(onlyLeaves) })
-        if (sprintId) params.set('sprintId', sprintId)
-        if (type) params.set('type', type)
-        const tasks = await apiCall(`/projects/${projectId}/items?${params}`)
-        return { content: [{ type: 'text', text: JSON.stringify(tasks, null, 2) }] }
-      }
+      case 'list_tasks':
+        return ok(await toolListTasks(apiCall, args as Parameters<typeof toolListTasks>[1]))
 
-      case 'list_modules': {
-        const { projectId } = args as { projectId: string }
-        const mods = await apiCall(`/projects/${projectId}/modules`)
-        return { content: [{ type: 'text', text: JSON.stringify(mods, null, 2) }] }
-      }
+      case 'list_modules':
+        return ok(await toolListModules(apiCall, (args as { projectId: string }).projectId))
 
-      case 'get_current_sprint': {
-        const { projectId } = args as { projectId: string }
-        const sprint = await apiCall(`/projects/${projectId}/sprints/current`)
-        return { content: [{ type: 'text', text: JSON.stringify(sprint, null, 2) }] }
-      }
+      case 'get_current_sprint':
+        return ok(await toolGetCurrentSprint(apiCall, (args as { projectId: string }).projectId))
 
       case 'claim_task': {
         const { projectId, taskId } = args as { projectId: string; taskId: string }
-        const result = await apiCall(`/projects/${projectId}/items/${taskId}/claim`, 'PATCH')
-        return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+        return ok(await toolClaimTask(apiCall, projectId, taskId))
       }
 
       case 'move_task': {
-        const { projectId, taskId, columnName } = args as {
-          projectId: string; taskId: string; columnName: string
-        }
-        const cols = await apiCall(`/projects/${projectId}/columns`) as Array<{ id: string; name: string }>
-        const col = cols.find(c => c.name === columnName)
-        if (!col) {
-          const available = cols.map(c => `"${c.name}"`).join(', ')
-          throw new Error(`Coluna "${columnName}" não encontrada. Colunas disponíveis: ${available}`)
-        }
-        const result = await apiCall(`/projects/${projectId}/items/${taskId}/move`, 'PATCH', { columnId: col.id })
-        return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+        const { projectId, taskId, columnName } = args as { projectId: string; taskId: string; columnName: string }
+        return ok(await toolMoveTask(apiCall, projectId, taskId, columnName))
       }
 
       case 'complete_task': {
         const { projectId, taskId } = args as { projectId: string; taskId: string }
-        const item = await apiCall(`/projects/${projectId}/items/${taskId}`) as { type: string; isLeaf: boolean }
-        if (['TASK', 'BUG'].includes(item.type) && item.isLeaf) {
-          const cols = await apiCall(`/projects/${projectId}/columns`) as Array<{ id: string; baseStatus: string }>
-          const doneCol = cols.find(c => c.baseStatus === 'DONE')
-          if (!doneCol) throw new Error('Nenhuma coluna mapeada para DONE no projeto')
-          const result = await apiCall(`/projects/${projectId}/items/${taskId}/move`, 'PATCH', { columnId: doneCol.id })
-          return { content: [{ type: 'text', text: JSON.stringify(result) }] }
-        }
-        const result = await apiCall(`/projects/${projectId}/items/${taskId}`, 'PATCH', { status: 'DONE' })
-        return { content: [{ type: 'text', text: JSON.stringify(result) }] }
+        return ok(await toolCompleteTask(apiCall, projectId, taskId))
       }
 
-      case 'create_task': {
-        const { projectId, ...taskData } = args as { projectId: string; [key: string]: unknown }
-        const type = (taskData.type ?? 'TASK') as string
-
-        // Pré-validar hierarquia antes de chamar a API para dar erro acionável
-        if (taskData.parentId) {
-          let parent: { type: string; title?: string }
-          try {
-            parent = await apiCall(`/projects/${projectId}/items/${taskData.parentId}`) as { type: string; title?: string }
-          } catch {
-            throw new Error(`parentId "${taskData.parentId}" não encontrado no projeto ${projectId}.`)
-          }
-
-          if (type === 'STORY' && parent.type !== 'EPIC') {
-            throw new Error(
-              `Hierarquia inválida: STORY deve ser filha de EPIC, mas "${parent.title ?? taskData.parentId}" é ${parent.type}.\n` +
-              `Use list_tasks(projectId, type=EPIC) para obter os IDs dos EPICs disponíveis.`
-            )
-          }
-
-          if ((type === 'TASK' || type === 'BUG') && parent.type === 'EPIC') {
-            throw new Error(
-              `Hierarquia inválida: ${type} não pode ser filho direto de EPIC ("${parent.title ?? taskData.parentId}").\n\n` +
-              `Fluxo correto:\n` +
-              `  1. Crie uma STORY: create_task(projectId="${projectId}", title="...", type="STORY", parentId="${taskData.parentId}")\n` +
-              `  2. Crie a ${type}: create_task(projectId="${projectId}", title="...", type="${type}", parentId=<ID da STORY acima>)\n\n` +
-              `Ou crie uma ${type} órfã sem parentId — ela vai direto para o Backlog.`
-            )
-          }
-        }
-
-        // EPIC sem moduleId → resolver automaticamente com o primeiro módulo do projeto
-        if (type === 'EPIC' && !taskData.moduleId) {
-          const mods = await apiCall(`/projects/${projectId}/modules`) as Array<{ id: string; name: string }>
-          if (mods.length === 0) {
-            throw new Error(`O projeto ${projectId} não possui módulos. Crie um módulo antes de criar EPICs.`)
-          }
-          taskData.moduleId = mods[0]!.id
-        }
-
-        const result = await apiCall(`/projects/${projectId}/items`, 'POST', { type, ...taskData })
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
-      }
+      case 'create_task':
+        return ok(await toolCreateTask(apiCall, args as Parameters<typeof toolCreateTask>[1]))
 
       case 'list_checklists': {
         const { projectId, itemId } = args as { projectId: string; itemId: string }
-        const result = await apiCall(`/projects/${projectId}/items/${itemId}/checklists`)
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
+        return ok(await toolListChecklists(apiCall, projectId, itemId))
       }
 
       case 'create_checklist': {
         const { projectId, itemId, name } = args as { projectId: string; itemId: string; name: string }
-        const result = await apiCall(`/projects/${projectId}/items/${itemId}/checklists`, 'POST', { name })
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
+        return ok(await toolCreateChecklist(apiCall, projectId, itemId, name))
       }
 
       case 'add_checklist_item': {
-        const { projectId, itemId, checklistId, text } = args as {
-          projectId: string; itemId: string; checklistId: string; text: string
-        }
-        const result = await apiCall(`/projects/${projectId}/items/${itemId}/checklists/${checklistId}/items`, 'POST', { text })
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
+        const { projectId, itemId, checklistId, text } = args as { projectId: string; itemId: string; checklistId: string; text: string }
+        return ok(await toolAddChecklistItem(apiCall, projectId, itemId, checklistId, text))
       }
 
       case 'check_item': {
-        const { projectId, itemId, checklistId, checklistItemId, checked } = args as {
-          projectId: string; itemId: string; checklistId: string; checklistItemId: string; checked: boolean
-        }
-        const result = await apiCall(
-          `/projects/${projectId}/items/${itemId}/checklists/${checklistId}/items/${checklistItemId}`,
-          'PATCH',
-          { checked }
-        )
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
+        const { projectId, itemId, checklistId, checklistItemId, checked } = args as { projectId: string; itemId: string; checklistId: string; checklistItemId: string; checked: boolean }
+        return ok(await toolCheckItem(apiCall, projectId, itemId, checklistId, checklistItemId, checked))
       }
 
       default:
@@ -473,7 +408,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   } catch (error) {
     return {
-      content: [{ type: 'text', text: `Erro: ${error instanceof Error ? error.message : String(error)}` }],
+      content: [{ type: 'text' as const, text: `Erro: ${error instanceof Error ? error.message : String(error)}` }],
       isError: true,
     }
   }
