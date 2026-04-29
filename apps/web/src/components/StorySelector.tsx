@@ -20,6 +20,7 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
   const [showCreate, setShowCreate] = useState(false)
   const [localStories, setLocalStories] = useState(stories)
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({})
 
   const selected = localStories.find(s => s.id === value)
@@ -42,7 +43,10 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
   useEffect(() => {
     if (!open) return
     function handleOutside(e: MouseEvent) {
-      if (!buttonRef.current?.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (!buttonRef.current?.contains(t) && !dropdownRef.current?.contains(t)) {
+        setOpen(false)
+      }
     }
     document.addEventListener('mousedown', handleOutside)
     return () => document.removeEventListener('mousedown', handleOutside)
@@ -81,12 +85,13 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
 
       {open && (
         <div
+          ref={dropdownRef}
           style={dropdownStyle}
           className="bg-card border border-border rounded-lg shadow-xl max-h-64 overflow-y-auto"
         >
           <button
             type="button"
-            onMouseDown={e => e.preventDefault()}
+
             onClick={() => { onChange(null); setOpen(false) }}
             className="w-full text-left px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
           >
@@ -105,7 +110,7 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
                   <button
                     key={story.id}
                     type="button"
-                    onMouseDown={e => e.preventDefault()}
+        
                     onClick={() => { onChange(story.id); setOpen(false) }}
                     className={`w-full text-left px-4 py-2 text-sm hover:bg-muted ${value === story.id ? 'bg-primary/10 text-primary font-medium' : 'text-foreground'}`}
                   >
@@ -119,7 +124,7 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
           {!showCreate ? (
             <button
               type="button"
-              onMouseDown={e => e.preventDefault()}
+  
               onClick={() => setShowCreate(true)}
               className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-muted border-t border-border"
             >
