@@ -35,7 +35,7 @@ import { BoardFilters, type BoardFilterState } from '../components/BoardFilters'
 import { useToast } from '../components/Toast'
 import { TreeViewPage } from './TreeViewPage'
 import { useAuth } from '../contexts/AuthContext'
-import { Layers, BookOpen, CheckSquare, Bug, Plus, Pencil } from 'lucide-react'
+import { Layers, BookOpen, CheckSquare, Bug, Plus, Pencil, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
 import type { WsEvent, ItemType, AncestorNode } from '@azy-board/types'
 import type { Tag } from '../components/TagSelector'
 
@@ -628,6 +628,27 @@ export default function BoardPage() {
         >
           Histórias no board
         </button>
+        {view === 'kanban' && (
+          <>
+            <span className="w-px h-4 bg-border flex-shrink-0" />
+            <button
+              onClick={() => setCollapsedEpics(new Set())}
+              title="Expandir todos os épicos"
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition flex-shrink-0"
+            >
+              <ChevronsUpDown className="w-3.5 h-3.5" />
+              Expandir tudo
+            </button>
+            <button
+              onClick={() => setCollapsedEpics(new Set([...epics.map(e => e.id), 'orphan']))}
+              title="Recolher todos os épicos"
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition flex-shrink-0"
+            >
+              <ChevronsDownUp className="w-3.5 h-3.5" />
+              Recolher tudo
+            </button>
+          </>
+        )}
         <span className="w-px h-4 bg-border flex-shrink-0" />
         <BoardFilters
           modules={modules}

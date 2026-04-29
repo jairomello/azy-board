@@ -47,25 +47,29 @@ async function validateHierarchy(
   moduleId: string | null | undefined
 ): Promise<string | null> {
   if (type === 'EPIC') {
-    if (parentId) return 'EPIC não pode ter parentId'
-    if (!moduleId) return 'EPIC requer moduleId'
+    if (parentId) return 'EPIC não pode ter parentId — EPICs são raiz da hierarquia'
+    if (!moduleId) return 'EPIC requer moduleId — use GET /projects/:id/modules para listar os módulos disponíveis'
     return null
   }
   // STORY exige pai EPIC; TASK/BUG podem ser órfãos (sem parentId = card direto no projeto)
-  if (type === 'STORY' && !parentId) return 'STORY requer parentId apontando para um EPIC'
+  if (type === 'STORY' && !parentId) return 'STORY requer parentId apontando para um EPIC — use GET /projects/:id/items?type=EPIC para listar os EPICs'
   if (!parentId) return null  // TASK/BUG sem pai = item órfão — permitido
 
   const parent = await db.query.items.findFirst({
     where: (i) => and(eq(i.id, parentId), eq(i.tenantId, tenantId)),
-    columns: { type: true },
+    columns: { id: true, type: true, title: true },
   })
-  if (!parent) return 'parentId não encontrado'
+  if (!parent) return `parentId "${parentId}" não encontrado neste projeto`
 
   if (type === 'STORY' && parent.type !== 'EPIC') {
-    return `STORY deve ser filha de EPIC (pai atual: ${parent.type})`
+    return `STORY deve ser filha de EPIC, mas "${parent.title}" (${parentId}) é ${parent.type}`
   }
   if ((type === 'TASK' || type === 'BUG') && !['STORY', 'TASK', 'BUG'].includes(parent.type)) {
-    return `${type} deve ser filho de STORY, TASK ou BUG (pai atual: ${parent.type})`
+    return (
+      `${type} não pode ser filho direto de ${parent.type} ("${parent.title}"). ` +
+      `Hierarquia: EPIC → STORY → TASK/BUG. ` +
+      `Crie uma STORY filha do EPIC e use o ID da STORY como parentId.`
+    )
   }
   return null
 }

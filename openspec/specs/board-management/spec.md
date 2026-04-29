@@ -134,3 +134,20 @@ O sistema SHALL oferecer toggle no toolbar para alternar entre "mostrar apenas i
 #### Scenario: Toggle ativado (mostrar por nível)
 - **WHEN** usuário ativa o toggle de subtasks
 - **THEN** board exibe o primeiro nível de items TASK/BUG de cada STORY, independente de terem filhos
+
+---
+
+### Requirement: Controles globais de expansão de swimlanes
+O sistema SHALL exibir no toolbar dois botões para controlar o estado de expansão de todas as swimlanes simultaneamente: "Expandir tudo" e "Recolher tudo". Esses controles são visíveis apenas na view Kanban.
+
+#### Scenario: Expandir tudo
+- **WHEN** usuário clica em "Expandir tudo"
+- **THEN** todas as swimlanes de EPICs e a swimlane de items órfãos são expandidas de uma só vez
+
+#### Scenario: Recolher tudo
+- **WHEN** usuário clica em "Recolher tudo"
+- **THEN** todas as swimlanes de EPICs e a swimlane de items órfãos são recolhidas, exibindo apenas os headers com título e contagem por coluna
+
+#### Scenario: Controles ocultos na view Árvore
+- **WHEN** usuário está na view Árvore
+- **THEN** botões "Expandir tudo" e "Recolher tudo" não são exibidos na toolbar

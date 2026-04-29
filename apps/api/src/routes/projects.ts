@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { eq, and, asc, inArray } from 'drizzle-orm'
 import { db } from '../db/index'
-import { projects, memberships, modules, squads, users, items, itemTags, itemSprints, attachments, projectVersions } from '../db/schema'
+import { projects, memberships, modules, columns, squads, users, items, itemTags, itemSprints, attachments, projectVersions } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import type { RequestContext } from '@azy-board/types'
@@ -44,6 +44,26 @@ projectsRouter.post('/', async (c) => {
     name: 'Geral',
     position: 0,
   })
+
+  // Colunas padrão do board — criadas na ordem de fluxo natural de trabalho
+  const defaultColumns: Array<{ name: string; baseStatus: 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE' }> = [
+    { name: 'Backlog',     baseStatus: 'NOT_STARTED' },
+    { name: 'A Fazer',     baseStatus: 'NOT_STARTED' },
+    { name: 'Fazendo',     baseStatus: 'IN_PROGRESS' },
+    { name: 'A Testar',    baseStatus: 'IN_PROGRESS' },
+    { name: 'Testando',    baseStatus: 'IN_PROGRESS' },
+    { name: 'Concluídas',  baseStatus: 'DONE'        },
+  ]
+  await db.insert(columns).values(
+    defaultColumns.map((col, position) => ({
+      id: generateId(),
+      tenantId: ctx.tenantId,
+      projectId,
+      name: col.name,
+      baseStatus: col.baseStatus,
+      position,
+    }))
+  )
 
   return c.json({ id: projectId, name: body.name }, 201)
 })

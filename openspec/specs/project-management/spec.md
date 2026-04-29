@@ -3,9 +3,13 @@
 ### Requirement: Criar projeto
 O sistema SHALL permitir que um usuário autenticado crie um novo projeto informando nome e descrição opcional.
 
-#### Scenario: Criação bem-sucedida
+#### Scenario: Criação bem-sucedida com colunas padrão
 - **WHEN** usuário envia nome do projeto
-- **THEN** sistema cria o projeto, associa o criador como administrador e retorna os dados do projeto criado
+- **THEN** sistema cria o projeto, associa o criador como administrador, cria o módulo padrão "Geral" e provisiona automaticamente 6 colunas em ordem de fluxo: Backlog (NOT_STARTED), A Fazer (NOT_STARTED), Fazendo (IN_PROGRESS), A Testar (IN_PROGRESS), Testando (IN_PROGRESS), Concluídas (DONE)
+
+#### Scenario: Board pronto para uso imediato
+- **WHEN** usuário acessa o board de um projeto recém-criado
+- **THEN** as 6 colunas padrão já estão presentes e o board aceita criação de cards sem configuração adicional
 
 #### Scenario: Nome duplicado no mesmo workspace
 - **WHEN** usuário tenta criar projeto com nome já existente no workspace
