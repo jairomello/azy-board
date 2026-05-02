@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Autenticação de humanos via login fixo (MVP)
-O sistema SHALL autenticar usuários humanos via e-mail e senha. No MVP, as credenciais são hardcoded: `jairo.silva@ntconsult.com.br` / `123456`. A senha SHALL ser armazenada como hash bcrypt, nunca em texto plano.
+O sistema SHALL autenticar usuários humanos via e-mail e senha. No seed de desenvolvimento, as credenciais de exemplo são `admin@example.com` / `change-me-admin-password`. A senha SHALL ser armazenada como hash bcrypt, nunca em texto plano.
 
 #### Scenario: Login bem-sucedido
 - **WHEN** usuário envia e-mail e senha corretos

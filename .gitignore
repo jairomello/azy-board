@@ -8,6 +8,8 @@ build/
 .next/
 .vite/
 coverage/
+*.tsbuildinfo
+*.d.ts.map
 
 # Logs
 *.log
@@ -21,10 +23,40 @@ bun-debug.log*
 .env.*
 !.env.example
 
+# Secrets and local credentials
+.git-credentials
+.netrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+id_rsa*
+id_ed25519*
+
 # OS/editor
 .DS_Store
 .vscode/
+*.local
+*.local.*
+
+# Runtime data
 *.db
 *.db-shm
 *.db-wal
+*.sqlite
+*.sqlite3
+uploads/
+
+# Local AI/tooling state
 .claude/
+.cursor/
+.continue/
+.aider*
+.gemini/
+.windsurf/
+.roo/
+.mcp.json
+.mcp.*
+.codex
+.codex/

@@ -14,7 +14,7 @@ Items marked ★ are critical — a failed check must block the push.
       that are not test fixtures.
 - [ ] **Environment hygiene**: `.env.example` is present and up to date for
       every new environment variable introduced. Required keys at minimum:
-      `DATABASE_URL`, `AUTH_SECRET`, `MCP_PORT`, `TENANT_SETUP_KEY`.
+      `DATABASE_URL`, `JWT_SECRET`, `PORT`, `FRONTEND_URL`.
       Values in `.env.example` must be obviously dummy (`your-secret-here`,
       `change-me`, etc.).
 - [ ] **Secret isolation**: `.env`, `.env.*`, `*.pem`, `*.key`, and any

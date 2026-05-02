@@ -109,20 +109,22 @@ bun run setup
 # 3. Apply database migrations
 bun run db:migrate
 
-# 4. Start API, web app, and MCP server concurrently
+# 4. Start the API and web app
 bun run dev
 ```
 
 Run services individually when needed:
 
 ```bash
-bun run dev:api    # Hono API on :3001
+bun run dev:api    # Hono API on :3000
 bun run dev:web    # Vite dev server on :5173
-bun run dev:mcp    # MCP server on :3002
+bun run dev:mcp    # MCP stdio server for configured agent clients
 ```
 
-**Environment**: copy `.env.example` in `apps/api/` and fill in the required
-values before running `setup`. Never commit `.env` files.
+**Environment**: copy `apps/api/.env.example` to `apps/api/.env` and fill in
+the required values before running `setup`. For MCP usage, copy
+`apps/mcp/.env.example` to `apps/mcp/.env` and set an API key generated in the
+web app. Never commit `.env` files.
 
 ---
 
@@ -140,4 +142,4 @@ bun test            # Bun test runner
 Licensed under the [Business Source License 1.1](LICENSE). Free for
 non-commercial use, internal business use, and self-hosted deployments.
 Commercial exploitation or managed-service resale requires a separate agreement.
-Converts to Apache 2.0 on **2030-04-26**.
+Converts to Apache 2.0 on **2032-04-26**.

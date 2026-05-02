@@ -197,11 +197,11 @@ projectsRouter.patch('/:id/modules/:moduleId', requireRole('ADMIN'), async (c) =
 // DELETE /projects/:id/modules/:moduleId — Tarefas 2.1-2.4
 projectsRouter.delete('/:id/modules/:moduleId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const { moduleId } = c.req.param()
+  const { id: projectId, moduleId } = c.req.param()
 
   // [TENANT] Anti-IDOR: verificar ownership do módulo
   const mod = await db.query.modules.findFirst({
-    where: (m) => and(eq(m.id, moduleId), eq(m.tenantId, ctx.tenantId)),
+    where: (m) => and(eq(m.id, moduleId), eq(m.projectId, projectId), eq(m.tenantId, ctx.tenantId)),
     columns: { id: true },
   })
   if (!mod) return c.json({ error: 'Módulo não encontrado' }, 404)
@@ -220,6 +220,12 @@ projectsRouter.delete('/:id/modules/:moduleId', requireRole('ADMIN'), async (c) 
   }
 
   if (epicCount > 0 && body.targetModuleId) {
+    const targetModule = await db.query.modules.findFirst({
+      where: (m) => and(eq(m.id, body.targetModuleId!), eq(m.projectId, projectId), eq(m.tenantId, ctx.tenantId)),
+      columns: { id: true },
+    })
+    if (!targetModule) return c.json({ error: 'Módulo destino não encontrado' }, 400)
+
     // [TENANT] mover épicos para módulo destino
     await db.update(items)
       .set({ moduleId: body.targetModuleId })

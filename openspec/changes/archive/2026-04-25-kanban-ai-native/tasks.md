@@ -39,7 +39,7 @@
 
 ## 5. Backend — Auth
 
-- [x] 3.1 Implementar `POST /auth/login`: validar credenciais hardcoded, emitir JWT em cookie HttpOnly
+- [x] 3.1 Implementar `POST /auth/login`: validar credenciais provisionadas, emitir JWT em cookie HttpOnly
 - [x] 3.2 Implementar middleware de autenticação: validar JWT em todas as rotas protegidas
 - [x] 3.3 Implementar middleware de autenticação por API Key: header `Authorization: Bearer`
 - [x] 3.4 Implementar middleware RBAC: verificar perfil do usuário no projeto antes de cada operação

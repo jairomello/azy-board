@@ -51,7 +51,7 @@ Stakeholders: times de desenvolvimento que usam agentes de IA (Claude Code, Code
 
 **Anti-IDOR:** Toda query inclui `WHERE project_id IN (SELECT project_id FROM memberships WHERE user_id = ?)`. Nenhum endpoint retorna registro sem confirmar membership.
 
-**MVP:** Usuário hardcoded em memória. A troca para banco de usuários real não muda a lógica de autorização.
+**MVP:** Usuário provisionado por seed/setup local. A troca para banco de usuários real não muda a lógica de autorização.
 
 ---
 

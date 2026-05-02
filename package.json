@@ -9,11 +9,15 @@
     "dev": "bun run dev:api & bun run dev:web",
     "build:web": "bun run --cwd apps/web build",
     "build:api": "bun run --cwd apps/api build",
+    "build:mcp": "bun run --cwd apps/mcp build",
+    "build": "bun run build:api && bun run build:web && bun run build:mcp",
     "db:generate": "bun run --cwd apps/api db:generate",
     "db:migrate": "bun run --cwd apps/api db:migrate",
     "db:seed": "bun run --cwd apps/api db:seed",
     "setup": "bun run --cwd apps/api setup",
+    "test": "bun test",
     "test:mcp": "bun run --cwd apps/mcp test",
-    "typecheck": "bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck"
+    "typecheck": "bun run --cwd packages/types typecheck && bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck && bun run --cwd apps/mcp typecheck",
+    "check": "bun run typecheck && bun test && bun run build"
   }
 }

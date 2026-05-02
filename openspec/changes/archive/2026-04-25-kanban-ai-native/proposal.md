@@ -48,7 +48,7 @@ A maioria das ferramentas foi feita para humanos **reportarem** trabalho. O **Az
 - `ai-api`: REST AI-friendly + Shadow Markdown (`GET/PATCH /projects/{id}/board.md`)
 - `mcp-server`: Servidor MCP nativo com ferramentas de board para agentes de IA
 - `realtime-sync`: WebSocket para sincronização em tempo real do estado do board
-- `auth`: Login fixo (e-mail/senha hardcoded) para MVP; RBAC server-side; anti-IDOR; API Key vinculada a Owner humano para agentes de IA; foto de perfil ou avatar por iniciais
+- `auth`: Login por e-mail/senha; RBAC server-side; anti-IDOR; API Key vinculada a Owner humano para agentes de IA; foto de perfil ou avatar por iniciais
 
 ### Modified Capabilities
 
@@ -61,5 +61,5 @@ A maioria das ferramentas foi feita para humanos **reportarem** trabalho. O **Az
   - ORM: Drizzle ORM (SQLite local → PostgreSQL em produção, apenas troca o driver)
   - Realtime: WebSocket nativo do Bun
   - MCP: `@modelcontextprotocol/sdk` (MIT)
-- Credenciais MVP: `jairo.silva@ntconsult.com.br` / `123456` (hardcoded, substituído por auth completo em iteração futura)
+- Credenciais de desenvolvimento: `admin@example.com` / `change-me-admin-password` (seed local; substituído por auth completo em iteração futura)
 - Deploy futuro: qualquer VPS/cloud + PostgreSQL gerenciado

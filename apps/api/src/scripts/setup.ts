@@ -16,8 +16,8 @@ const args = Bun.argv.slice(2)
 
 const tenantName = args[0] ?? 'Minha Empresa'
 const tenantSlug = args[1] ?? 'minha-empresa'
-const adminEmail = args[2] ?? 'jairo.silva@ntconsult.com.br'
-const adminPassword = args[3] ?? '123456'
+const adminEmail = args[2] ?? 'admin@example.com'
+const adminPassword = args[3] ?? 'change-me-admin-password'
 const adminName = args[4] ?? 'Administrador'
 
 console.log('\n🚀 Azy Board — Setup Inicial\n')

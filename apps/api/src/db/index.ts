@@ -10,7 +10,7 @@ import * as schema from './schema'
 //   5. export const db = drizzle(pool, { schema })
 //
 // Para Supabase especificamente:
-//   DATABASE_URL=postgresql://postgres:[password]@db.[project].supabase.co:5432/postgres
+//   DATABASE_URL=<postgres connection string>
 
 const dbPath = process.env.DATABASE_URL ?? './dev.db'
 

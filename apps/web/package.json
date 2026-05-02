@@ -1,6 +1,7 @@
 {
   "name": "@azy-board/web",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

@@ -56,10 +56,16 @@ tagsRouter.patch('/:tagId', requireRole('MEMBER'), async (c) => {
 // DELETE /projects/:projectId/tags/:tagId
 tagsRouter.delete('/:tagId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const tagId = c.req.param('tagId')!
+  const { projectId, tagId } = c.req.param()
+
+  const tag = await db.query.tags.findFirst({
+    where: (t) => and(eq(t.id, tagId), eq(t.projectId, projectId), eq(t.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!tag) return c.json({ error: 'Tag não encontrada' }, 404)
 
   await db.transaction(async (tx) => {
-    // Desassociar de todos os items antes de excluir
+    // item_tags não possui tenantId; a tag acima já foi validada por tenant + projeto.
     await tx.delete(itemTags).where(eq(itemTags.tagId, tagId))
     await tx.delete(tags).where(and(eq(tags.id, tagId), eq(tags.tenantId, ctx.tenantId)))
   })

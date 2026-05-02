@@ -3,7 +3,7 @@
 All notable changes to Azy Board are documented in this file.
 
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
-Versioning: Semantic Versioning before the BSL change date (2030-04-26).
+Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ---
 

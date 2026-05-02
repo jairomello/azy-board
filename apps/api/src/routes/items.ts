@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { eq, and, inArray, asc, desc, sql } from 'drizzle-orm'
 import { db } from '../db/index'
-import { items, columns, itemTags, itemSprints, modules, checklists, checklistItems, attachments, itemLogs, projectVersions, projectCostCenters } from '../db/schema'
+import { items, columns, itemTags, itemSprints, modules, checklists, checklistItems, attachments, itemLogs, projectVersions, projectCostCenters, tags, sprints } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import { buildAncestryPath, calculateProgress, calculatePoints, updateDescendantAncestry } from '../services/ancestry'
@@ -679,20 +679,36 @@ itemsRouter.delete('/:itemId', requireRole('MEMBER'), async (c) => {
 // POST /projects/:projectId/items/:itemId/tags
 itemsRouter.post('/:itemId/tags', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const itemId = c.req.param('itemId')!
+  const { projectId, itemId } = c.req.param()
   const body = await c.req.json<{ tagIds: string[] }>()
 
   // Verificar que item pertence ao tenant — [TENANT] Anti-IDOR
   const item = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
     columns: { id: true },
   })
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
+  const uniqueTagIds = [...new Set(body.tagIds)]
+  if (uniqueTagIds.length > 0) {
+    const validTags = await db.select({ id: tags.id })
+      .from(tags)
+      .where(and(
+        inArray(tags.id, uniqueTagIds),
+        eq(tags.projectId, projectId),
+        eq(tags.tenantId, ctx.tenantId)
+      ))
+
+    if (validTags.length !== uniqueTagIds.length) {
+      return c.json({ error: 'Uma ou mais tags não existem neste projeto' }, 400)
+    }
+  }
+
   await db.transaction(async (tx) => {
+    // item_tags não possui tenantId; o item acima já foi validado por tenant + projeto.
     await tx.delete(itemTags).where(eq(itemTags.itemId, itemId))
-    if (body.tagIds.length > 0) {
-      await tx.insert(itemTags).values(body.tagIds.map(tagId => ({ itemId, tagId })))
+    if (uniqueTagIds.length > 0) {
+      await tx.insert(itemTags).values(uniqueTagIds.map(tagId => ({ itemId, tagId })))
     }
   })
 
@@ -702,15 +718,21 @@ itemsRouter.post('/:itemId/tags', requireRole('MEMBER'), async (c) => {
 // POST /projects/:projectId/items/:itemId/sprint
 itemsRouter.post('/:itemId/sprint', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const itemId = c.req.param('itemId')!
+  const { projectId, itemId } = c.req.param()
   const body = await c.req.json<{ sprintId: string }>()
 
   // [TENANT] Verificar ownership antes de inserir
   const item = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
     columns: { id: true },
   })
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
+
+  const sprint = await db.query.sprints.findFirst({
+    where: (s) => and(eq(s.id, body.sprintId), eq(s.projectId, projectId), eq(s.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!sprint) return c.json({ error: 'Sprint não encontrada neste projeto' }, 400)
 
   await db.insert(itemSprints)
     .values({ itemId, sprintId: body.sprintId })

@@ -12,16 +12,16 @@ function ancestry(...nodes: { id: string; title: string; type: string }[]) {
 // [TENANT] Tenant de desenvolvimento
 const tenantId = generateId()
 await db.insert(tenants).values({
-  id: tenantId, name: 'NTConsult', slug: 'ntconsult',
+  id: tenantId, name: 'Demo Workspace', slug: 'demo',
   createdAt: new Date().toISOString(),
 })
 
 const userId = generateId()
 await db.insert(users).values({
   id: userId, tenantId,
-  email: 'jairo.silva@ntconsult.com.br',
-  passwordHash: await hashPassword('123456'),
-  name: 'Jairo Silva',
+  email: 'admin@example.com',
+  passwordHash: await hashPassword('change-me-admin-password'),
+  name: 'Demo Admin',
   theme: 'light', language: 'pt-BR',
   createdAt: new Date().toISOString(),
 })
@@ -152,5 +152,5 @@ await db.insert(items).values([
 ])
 
 console.log('✅ Seed concluído!')
-console.log('   jairo.silva@ntconsult.com.br / 123456')
+console.log('   admin@example.com / change-me-admin-password')
 console.log('   2 EPICs · 2 STORYs · 4 TASKs · 2 BUGs\n')
