@@ -55,6 +55,8 @@ export const projects = sqliteTable('projects', {
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
   name: text('name').notNull(),
   description: text('description'),
+  // Gerente Geral do Projeto — campo informativo, sem RBAC adicional
+  managerUserId: text('manager_user_id'),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
 })
 
@@ -67,6 +69,27 @@ export const squads = sqliteTable('squads', {
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
   projectId: text('project_id').notNull().references(() => projects.id),
   name: text('name').notNull(),
+  createdAt: text('created_at').notNull().default(new Date().toISOString()),
+})
+
+// ---------------------------------------------------------------------------
+// PROJECT_COST_CENTERS — centros de custo por projeto
+//
+// Cada projeto pode ter N centros de custo identificados por código único.
+// Usados para rastreabilidade financeira em tasks/subtasks/bugs.
+//
+// [TENANT] tenant_id obrigatório em toda query
+// [DB-SWAP] sort_order integer; em PostgreSQL considerar SEQUENCE para auto-order
+// ---------------------------------------------------------------------------
+export const projectCostCenters = sqliteTable('project_cost_centers', {
+  id: text('id').primaryKey(),
+  // [TENANT] Isolamento cross-tenant obrigatório
+  tenantId: text('tenant_id').notNull().references(() => tenants.id),
+  projectId: text('project_id').notNull().references(() => projects.id),
+  code: text('code', { length: 20 }).notNull(),
+  description: text('description', { length: 200 }),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: text('created_at').notNull().default(new Date().toISOString()),
 })
 
 // ---------------------------------------------------------------------------
@@ -167,9 +190,17 @@ export const items = sqliteTable('items', {
   acceptanceCriteria: text('acceptance_criteria'),
   notes: text('notes'),
   // Campos operacionais de TASK/BUG
+  // [DB-SWAP] ARCHIVED adicionado ao enum; em PostgreSQL usar ALTER TYPE ... ADD VALUE
   status: text('status', {
-    enum: ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'],
+    enum: ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED', 'ARCHIVED'],
   }).notNull().default('NOT_STARTED'),
+  // Status anterior ao arquivamento — permite restauração fiel ao estado original
+  statusBeforeArchive: text('status_before_archive', {
+    enum: ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'],
+  }),
+  // Centro de custo associado ao item — nullable; auto-preenchido server-side na criação
+  // [TENANT] tenant_id já cobre isolamento; costCenterId pertence ao mesmo projeto
+  costCenterId: text('cost_center_id').references(() => projectCostCenters.id),
   priority: text('priority', {
     enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'],
   }).notNull().default('MEDIUM'),
@@ -327,6 +358,13 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   sprints: many(sprints),
   items: many(items),
   memberships: many(memberships),
+  costCenters: many(projectCostCenters),
+  squads: many(squads),
+}))
+
+export const projectCostCentersRelations = relations(projectCostCenters, ({ one, many }) => ({
+  project: one(projects, { fields: [projectCostCenters.projectId], references: [projects.id] }),
+  items: many(items),
 }))
 
 export const modulesRelations = relations(modules, ({ one, many }) => ({
@@ -342,6 +380,7 @@ export const itemsRelations = relations(items, ({ one, many }) => ({
   assigneeApiKey: one(apiKeys, { fields: [items.assigneeApiKeyId], references: [apiKeys.id] }),
   author: one(users, { fields: [items.authorId], references: [users.id], relationName: 'author' }),
   version: one(projectVersions, { fields: [items.versionId], references: [projectVersions.id] }),
+  costCenter: one(projectCostCenters, { fields: [items.costCenterId], references: [projectCostCenters.id] }),
   // Auto-referência para hierarquia
   parent: one(items, { fields: [items.parentId], references: [items.id], relationName: 'children' }),
   children: many(items, { relationName: 'children' }),

@@ -22,12 +22,20 @@ export interface ProjectMember {
   email: string
   avatarUrl?: string | null
   role: string
+  squadId?: string | null
 }
 
 export interface ProjectVersion {
   id: string
   name: string
   status: 'PLANNED' | 'IN_DEV' | 'RELEASED' | 'CANCELLED'
+}
+
+export interface CostCenter {
+  id: string
+  code: string
+  description?: string | null
+  sortOrder: number
 }
 
 export interface FullItemData {
@@ -45,6 +53,7 @@ export interface FullItemData {
   assignee?: { id: string; name: string; avatarUrl: string | null } | null
   author?: { id: string; name: string; avatarUrl: string | null } | null
   versionId?: string | null
+  costCenterId?: string | null
   itemTags?: Array<{ tag: Tag }>
   taskTags?: Array<{ tag: Tag }>
   isLeaf: boolean
@@ -94,6 +103,7 @@ interface Props {
   members: ProjectMember[]
   currentUserId?: string
   projectVersions?: ProjectVersion[]
+  projectCostCenters?: CostCenter[]
   onClose: () => void
   onSave: (itemId: string, changes: Partial<FullItemData>, tagIds: string[]) => Promise<void>
   onAddSubtask: (parentId: string, title: string, type: ItemType) => Promise<void>
@@ -115,6 +125,7 @@ export function ItemModal({
   members,
   currentUserId,
   projectVersions = [],
+  projectCostCenters = [],
   onClose,
   onSave,
   onAddSubtask,
@@ -135,6 +146,7 @@ export function ItemModal({
     (item.itemTags ?? item.taskTags ?? []).map(it => it.tag)
   )
   const [versionId, setVersionId] = useState<string>(item.versionId ?? '')
+  const [costCenterId, setCostCenterId] = useState<string>(item.costCenterId ?? '')
   const [points, setPoints] = useState(item.points?.toString() ?? '')
   const [startDate, setStartDate] = useState(item.startDate ?? '')
   const [dueDate, setDueDate] = useState(item.dueDate ?? '')
@@ -200,6 +212,7 @@ export function ItemModal({
     setParentId(item.parentId ?? null)
     setSelectedTags((item.itemTags ?? item.taskTags ?? []).map(it => it.tag))
     setVersionId(item.versionId ?? '')
+    setCostCenterId(item.costCenterId ?? '')
     setPoints(item.points?.toString() ?? '')
     setStartDate(item.startDate ?? '')
     setDueDate(item.dueDate ?? '')
@@ -262,6 +275,7 @@ export function ItemModal({
         assigneeId: assigneeId || null,
         points: points ? parseInt(points) : null,
         versionId: versionId || null,
+        costCenterId: costCenterId || null,
         startDate: startDate || null,
         dueDate: dueDate || null,
         description: descriptionHtml === '<p></p>' ? null : descriptionHtml,
@@ -361,6 +375,19 @@ export function ItemModal({
                     className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
                     <option value="">Sem versão</option>
                     {projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  </select>
+                </div>
+              )}
+              {/* Campo Centro de Custo — exibido apenas quando o projeto possui centros cadastrados */}
+              {projectCostCenters.length > 0 && (
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Centro de Custo</label>
+                  <select value={costCenterId} onChange={e => setCostCenterId(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
+                    <option value="">— Nenhum —</option>
+                    {projectCostCenters.map(cc => (
+                      <option key={cc.id} value={cc.id}>{cc.code}{cc.description ? ` — ${cc.description}` : ''}</option>
+                    ))}
                   </select>
                 </div>
               )}

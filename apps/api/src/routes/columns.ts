@@ -6,7 +6,7 @@ import { columns, items } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import { broadcast } from '../services/websocket'
-import type { RequestContext, TaskStatus } from '@azy-board/types'
+import type { RequestContext, ColumnBaseStatus } from '@azy-board/types'
 
 export const columnsRouter = new Hono<HonoEnv>()
 columnsRouter.use('*', authMiddleware)
@@ -28,7 +28,7 @@ columnsRouter.get('/', requireRole('VIEWER'), async (c) => {
 columnsRouter.post('/', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
-  const body = await c.req.json<{ name: string; baseStatus: TaskStatus }>()
+  const body = await c.req.json<{ name: string; baseStatus: ColumnBaseStatus }>()
 
   const existing = await db.select().from(columns)
     .where(and(eq(columns.projectId, projectId), eq(columns.tenantId, ctx.tenantId)))
@@ -51,7 +51,7 @@ columnsRouter.post('/', requireRole('ADMIN'), async (c) => {
 columnsRouter.patch('/:colId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const colId = c.req.param('colId')!
-  const body = await c.req.json<{ name?: string; baseStatus?: TaskStatus }>()
+  const body = await c.req.json<{ name?: string; baseStatus?: ColumnBaseStatus }>()
 
   await db.update(columns)
     .set({ ...(body.name && { name: body.name }), ...(body.baseStatus && { baseStatus: body.baseStatus }) })
@@ -84,13 +84,14 @@ columnsRouter.delete('/:colId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const colId = c.req.param('colId')!
   const projectId = c.req.param('projectId')!
-  const body = await c.req.json<{ moveToColumnId: string }>()
+  const body = await c.req.json<{ moveToColumnId: string | null }>()
 
   await db.transaction(async (tx) => {
-    // Mover cards para a coluna destino antes de excluir
-    await tx.update(items)
-      .set({ columnId: body.moveToColumnId })
-      .where(and(eq(items.columnId, colId), eq(items.tenantId, ctx.tenantId)))
+    if (body.moveToColumnId) {
+      await tx.update(items)
+        .set({ columnId: body.moveToColumnId })
+        .where(and(eq(items.columnId, colId), eq(items.tenantId, ctx.tenantId)))
+    }
 
     await tx.delete(columns)
       .where(and(eq(columns.id, colId), eq(columns.tenantId, ctx.tenantId)))

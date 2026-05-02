@@ -1,4 +1,4 @@
-## ADDED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Seção de Membros & Squads nas Settings
 O sistema SHALL exibir a seção "Membros & Squads" na página de configurações do projeto (`SettingsPage`) dividida em duas subseções distintas: "Squads" e "Membros do Projeto", com gerenciamento independente de cada uma.

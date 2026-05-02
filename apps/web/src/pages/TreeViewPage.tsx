@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { Archive } from 'lucide-react'
 import { api } from '../lib/api'
 import type { BoardFilterState } from '../components/BoardFilters'
 
@@ -52,6 +53,32 @@ function collectAllIds(nodes: TreeNode[]): Set<string> {
   return ids
 }
 
+// Tarefa 11.5 — filtra recursivamente a árvore, removendo épicos sem filhos visíveis.
+// Só aplica o filtro em nós do tipo EPIC dentro de módulos.
+// Retorna null quando o nó deve ser removido.
+function filterHideEmptyEpics(node: TreeNode): TreeNode | null {
+  if (node.type === 'module') {
+    const filteredChildren = node.children
+      .map(filterHideEmptyEpics)
+      .filter((c): c is TreeNode => c !== null)
+    return { ...node, children: filteredChildren }
+  }
+  if (node.type === 'EPIC') {
+    // Filtra os filhos do épico (stories/tasks) recursivamente
+    const filteredChildren = node.children
+      .map(filterHideEmptyEpics)
+      .filter((c): c is TreeNode => c !== null)
+    // Oculta épico se não tem filhos visíveis
+    if (filteredChildren.length === 0) return null
+    return { ...node, children: filteredChildren }
+  }
+  // Para STORY, TASK, BUG: mantém o nó, mas filtra filhos recursivamente
+  const filteredChildren = node.children
+    .map(filterHideEmptyEpics)
+    .filter((c): c is TreeNode => c !== null)
+  return { ...node, children: filteredChildren }
+}
+
 interface RowProps {
   depth: number
   label: string
@@ -65,14 +92,16 @@ interface RowProps {
   expanded: boolean
   hasChildren: boolean
   onToggle: () => void
+  // Tarefa 10.2 — callback de arquivamento na tree view (não disponível para módulos)
+  onArchive?: () => void
 }
 
-function Row({ depth, label, type, status, points, progress, startDate, dueDate, assigneeName, expanded, hasChildren, onToggle }: RowProps) {
+function Row({ depth, label, type, status, points, progress, startDate, dueDate, assigneeName, expanded, hasChildren, onToggle, onArchive }: RowProps) {
   const indentPx = depth * 20
   const typeInfo = TYPE_ICON[type.toUpperCase()]
 
   return (
-    <tr className="border-b border-border hover:bg-muted/30 transition-colors">
+    <tr className="border-b border-border hover:bg-muted/30 transition-colors group">
       <td className="py-2 pr-2 text-sm" style={{ paddingLeft: `${16 + indentPx}px` }}>
         <div className="flex items-center gap-2">
           {hasChildren ? (
@@ -123,16 +152,31 @@ function Row({ depth, label, type, status, points, progress, startDate, dueDate,
         ) : '—'}
       </td>
       <td className="py-2 px-2 text-xs text-muted-foreground">{startDate ?? '—'}</td>
-      <td className="py-2 px-2 text-xs text-muted-foreground pr-4">{dueDate ?? '—'}</td>
+      {/* Tarefa 10.2 — coluna de ação com botão de arquivamento */}
+      <td className="py-2 px-2 text-xs text-muted-foreground pr-4">
+        <div className="flex items-center justify-between gap-2">
+          <span>{dueDate ?? '—'}</span>
+          {onArchive && (
+            <button
+              onClick={onArchive}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-muted-foreground hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50"
+              title="Arquivar este item"
+            >
+              <Archive className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </td>
     </tr>
   )
 }
 
-function NodeRows({ nodes, depth, expanded, onToggle }: {
+function NodeRows({ nodes, depth, expanded, onToggle, onArchive }: {
   nodes: TreeNode[]
   depth: number
   expanded: Set<string>
   onToggle: (id: string) => void
+  onArchive: (id: string, childrenCount: number) => void
 }) {
   return (
     <>
@@ -152,6 +196,8 @@ function NodeRows({ nodes, depth, expanded, onToggle }: {
             expanded={expanded.has(node.id)}
             hasChildren={(node.children ?? []).length > 0}
             onToggle={() => onToggle(node.id)}
+            // Módulos não são arquiváveis — só EPICs, STORYs, TASKs e BUGs
+            onArchive={node.type !== 'module' ? () => onArchive(node.id, node.children.length) : undefined}
           />
           {expanded.has(node.id) && (node.children ?? []).length > 0 && (
             <NodeRows
@@ -159,6 +205,7 @@ function NodeRows({ nodes, depth, expanded, onToggle }: {
               depth={depth + 1}
               expanded={expanded}
               onToggle={onToggle}
+              onArchive={onArchive}
             />
           )}
         </>
@@ -170,12 +217,16 @@ function NodeRows({ nodes, depth, expanded, onToggle }: {
 interface Props {
   projectId: string
   filters?: BoardFilterState
+  // Tarefa 10.2 — callback para arquivamento a partir da tree view (opcional, gerenciado no BoardPage)
+  onArchive?: (itemId: string, childrenCount: number) => void
 }
 
-export function TreeViewPage({ projectId, filters }: Props) {
+export function TreeViewPage({ projectId, filters, onArchive }: Props) {
   const [tree, setTree] = useState<TreeNode[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Tarefa 10.2 — confirmação de arquivamento inline na tree view (quando sem callback externo)
+  const [localArchiveConfirm, setLocalArchiveConfirm] = useState<{ itemId: string; childrenCount: number } | null>(null)
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -194,12 +245,46 @@ export function TreeViewPage({ projectId, filters }: Props) {
       .finally(() => setLoading(false))
   }, [projectId, filters?.moduleId, filters?.assigneeId, filters?.sprintId])
 
+  // Tarefa 11.5 — aplicar filtro hideEmptyEpics na árvore
+  const displayTree = filters?.hideEmptyEpics
+    ? tree.map(filterHideEmptyEpics).filter((n): n is TreeNode => n !== null)
+    : tree
+
   function toggleNode(id: string) {
     setExpanded(prev => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
+  }
+
+  // Tarefa 10.2 — handler de arquivamento: delega para prop ou gerencia localmente
+  const handleArchiveRequest = useCallback((itemId: string, childrenCount: number) => {
+    if (onArchive) {
+      onArchive(itemId, childrenCount)
+    } else {
+      if (childrenCount > 0) {
+        setLocalArchiveConfirm({ itemId, childrenCount })
+      } else {
+        executeLocalArchive(itemId)
+      }
+    }
+  }, [onArchive]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function executeLocalArchive(itemId: string) {
+    try {
+      await api.post(`/projects/${projectId}/items/${itemId}/archive`, {})
+      // Remove o nó da árvore local
+      function removeNode(nodes: TreeNode[]): TreeNode[] {
+        return nodes
+          .filter(n => n.id !== itemId)
+          .map(n => ({ ...n, children: removeNode(n.children) }))
+      }
+      setTree(prev => removeNode(prev))
+      setLocalArchiveConfirm(null)
+    } catch {
+      // silently fail — BoardPage mostrará toast
+    }
   }
 
   if (loading) {
@@ -243,16 +328,49 @@ export function TreeViewPage({ projectId, filters }: Props) {
             </tr>
           </thead>
           <tbody>
-            <NodeRows nodes={tree} depth={0} expanded={expanded} onToggle={toggleNode} />
+            <NodeRows
+              nodes={displayTree}
+              depth={0}
+              expanded={expanded}
+              onToggle={toggleNode}
+              onArchive={handleArchiveRequest}
+            />
           </tbody>
         </table>
 
-        {tree.length === 0 && (
+        {displayTree.length === 0 && (
           <div className="text-center py-12 text-muted-foreground text-sm">
             Nenhum item no projeto
           </div>
         )}
       </div>
+
+      {/* Tarefa 10.2 — Dialog de confirmação de arquivamento (gerenciado localmente na tree view) */}
+      {localArchiveConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setLocalArchiveConfirm(null)} />
+          <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="font-semibold text-foreground mb-2">Arquivar item</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Este item possui <strong>{localArchiveConfirm.childrenCount}</strong> filho(s) direto(s) que também serão arquivados em cascata. Deseja continuar?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setLocalArchiveConfirm(null)}
+                className="px-3 py-1.5 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => executeLocalArchive(localArchiveConfirm.itemId)}
+                className="px-4 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition"
+              >
+                Arquivar tudo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

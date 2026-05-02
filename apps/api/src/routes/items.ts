@@ -1,8 +1,8 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { eq, and, inArray, asc, sql, desc } from 'drizzle-orm'
+import { eq, and, inArray, asc, desc, sql } from 'drizzle-orm'
 import { db } from '../db/index'
-import { items, columns, itemTags, itemSprints, modules, checklists, checklistItems, attachments, itemLogs, projectVersions } from '../db/schema'
+import { items, columns, itemTags, itemSprints, modules, checklists, checklistItems, attachments, itemLogs, projectVersions, projectCostCenters } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import { buildAncestryPath, calculateProgress, calculatePoints, updateDescendantAncestry } from '../services/ancestry'
@@ -115,13 +115,13 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
   const filterAssigneeId = c.req.query('assigneeId')
   const filterSprintId = c.req.query('sprintId')
 
-  // [TENANT] Filtra por tenantId + projectId
+  // [TENANT] Filtra por tenantId + projectId; exclui itens arquivados por padrão
   const [allModules, allItems] = await Promise.all([
     db.select().from(modules)
       .where(and(eq(modules.projectId, projectId), eq(modules.tenantId, ctx.tenantId)))
       .orderBy(asc(modules.position)),
     db.select().from(items)
-      .where(and(eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+      .where(and(eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId), sql`${items.status} != 'ARCHIVED'`))
       .orderBy(asc(items.position)),
   ])
 
@@ -201,6 +201,9 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
     orderBy: (i, { asc }) => [asc(i.position)],
   })
 
+  // Excluir itens arquivados por padrão — só aparecem via endpoint dedicado
+  allItems = allItems.filter(i => i.status !== 'ARCHIVED')
+
   if (typeParam) {
     const types = typeParam.split(',') as ItemType[]
     allItems = allItems.filter(i => types.includes(i.type as ItemType))
@@ -270,6 +273,52 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
   return c.json(withProgress)
 })
 
+// GET /projects/:projectId/items/archived — listar todos os items arquivados do projeto
+itemsRouter.get('/archived', requireRole('VIEWER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const projectId = c.req.param('projectId')!
+
+  // [TENANT] Filtra por tenantId + projectId — anti-IDOR
+  const archived = await db
+    .select({
+      id: items.id,
+      type: items.type,
+      title: items.title,
+      ancestryPath: items.ancestryPath,
+      statusBeforeArchive: items.statusBeforeArchive,
+      columnId: items.columnId,
+      updatedAt: items.updatedAt,
+    })
+    .from(items)
+    .where(and(
+      eq(items.projectId, projectId),
+      eq(items.tenantId, ctx.tenantId),
+      sql`${items.status} = 'ARCHIVED'`
+    ))
+    .orderBy(desc(items.updatedAt))
+
+  // Incluir nome da coluna original (via statusBeforeArchive mapeado para nome de coluna)
+  const allColumns = await db.select({ id: columns.id, name: columns.name })
+    .from(columns)
+    .where(and(eq(columns.projectId, projectId), eq(columns.tenantId, ctx.tenantId)))
+  const colMap = new Map(allColumns.map(c => [c.id, c.name]))
+
+  const result = archived.map(item => {
+    const path: Array<{ id: string; title: string; type: string }> = (() => {
+      try { return JSON.parse(item.ancestryPath || '[]') } catch { return [] }
+    })()
+    const epicAncestor = path.find(n => n.type === 'EPIC')
+    return {
+      ...item,
+      ancestryPath: path,
+      epicTitle: epicAncestor?.title ?? null,
+      originalColumnName: item.columnId ? colMap.get(item.columnId) ?? null : null,
+    }
+  })
+
+  return c.json(result)
+})
+
 // GET /projects/:projectId/items/:itemId
 itemsRouter.get('/:itemId', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
@@ -334,6 +383,7 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     startDate?: string | null
     dueDate?: string | null
     versionId?: string | null
+    costCenterId?: string | null
   }>()
 
   const type: ItemType = body.type ?? 'TASK'
@@ -357,6 +407,18 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   const ancestryPath = body.parentId
     ? await buildAncestryPath(ctx.tenantId, body.parentId)
     : []
+
+  // Auto-preenchimento do centro de custo: se o body não informou, buscar o primeiro do projeto
+  // [TENANT] filtra cost centers pelo tenantId + projectId para isolamento cross-tenant
+  let costCenterId = body.costCenterId ?? null
+  if (costCenterId === null) {
+    const firstCostCenter = await db.query.projectCostCenters.findFirst({
+      where: (cc) => and(eq(cc.projectId, projectId), eq(cc.tenantId, ctx.tenantId)),
+      orderBy: (cc, { asc }) => [asc(cc.sortOrder)],
+      columns: { id: true },
+    })
+    costCenterId = firstCostCenter?.id ?? null
+  }
 
   // [TENANT] tenantId vem do JWT — nunca do body
   // authorId capturado do contexto de autenticação (humano ou agente de IA)
@@ -382,6 +444,7 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     assigneeId: body.assigneeId ?? null,
     authorId: ctx.userId,
     versionId: body.versionId ?? null,
+    costCenterId,
     startDate: body.startDate ?? null,
     dueDate: body.dueDate ?? null,
     position: 0,
@@ -408,9 +471,14 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
 
   const item = await db.query.items.findFirst({
     where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
-    columns: { id: true, type: true, columnId: true },
+    columns: { id: true, type: true, columnId: true, status: true },
   })
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
+
+  // Item arquivado não pode ser movido de coluna
+  if (item.status === 'ARCHIVED') {
+    return c.json({ error: 'Item arquivado não pode ser movido' }, 422)
+  }
 
   // Leaf Rule: apenas TASK e BUG são movíveis — [TENANT] Anti-IDOR: projectId + tenantId
   if (!['TASK', 'BUG'].includes(item.type)) {
@@ -780,4 +848,124 @@ itemsRouter.patch('/:itemId/logs/:logId', requireRole('MEMBER'), async (c) => {
     .where(and(eq(itemLogs.id, logId), eq(itemLogs.tenantId, ctx.tenantId)))
 
   return c.json({ ok: true })
+})
+
+// ---------------------------------------------------------------------------
+// Arquivamento e Restauração — status ARCHIVED
+// ---------------------------------------------------------------------------
+
+// POST /projects/:projectId/items/:itemId/archive — arquivar item e descendentes em cascata
+itemsRouter.post('/:itemId/archive', requireRole('MEMBER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const { projectId, itemId } = c.req.param()
+
+  // [TENANT] Anti-IDOR: verificar ownership
+  const rootItem = await db.query.items.findFirst({
+    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId), eq(i.projectId, projectId)),
+    columns: { id: true, status: true },
+  })
+  if (!rootItem) return c.json({ error: 'Item não encontrado' }, 404)
+  if (rootItem.status === 'ARCHIVED') return c.json({ error: 'Item já está arquivado' }, 422)
+
+  // Coletar todos os descendentes via BFS (ancestry_path desnormalizado é String JSON)
+  // [TENANT] filtra descendentes pelo tenantId para isolamento cross-tenant
+  const allIds: string[] = [itemId]
+  const queue = [itemId]
+  while (queue.length > 0) {
+    const parentId = queue.shift()!
+    const children = await db.select({ id: items.id })
+      .from(items)
+      .where(and(eq(items.parentId, parentId), eq(items.tenantId, ctx.tenantId)))
+    for (const child of children) { allIds.push(child.id); queue.push(child.id) }
+  }
+
+  const descendantCount = allIds.length - 1
+  const { confirm } = await c.req.json<{ confirm?: boolean }>().catch(() => ({ confirm: false }))
+  if (descendantCount > 0 && !confirm) {
+    return c.json({ warning: true, descendantCount, message: `${descendantCount} item(s) descendente(s) serão arquivados junto` }, 200)
+  }
+
+  const now = new Date().toISOString()
+  await db.transaction(async (tx) => {
+    // Buscar status atual de cada item antes de arquivar — preservar em status_before_archive
+    // [DB-SWAP] no PostgreSQL usar UPDATE ... FROM ... RETURNING ou CTE para evitar N queries
+    for (const id of allIds) {
+      const current = await tx.query.items.findFirst({
+        where: (i) => and(eq(i.id, id), eq(i.tenantId, ctx.tenantId)),
+        columns: { status: true },
+      })
+      if (current && current.status !== 'ARCHIVED') {
+        await tx.update(items)
+          .set({ status: 'ARCHIVED', statusBeforeArchive: current.status, updatedAt: now })
+          .where(and(eq(items.id, id), eq(items.tenantId, ctx.tenantId)))
+      }
+    }
+  })
+
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { archived: true, ids: allIds } })
+  return c.json({ ok: true, archivedCount: allIds.length })
+})
+
+// POST /projects/:projectId/items/:itemId/unarchive — restaurar item e dependências
+itemsRouter.post('/:itemId/unarchive', requireRole('MEMBER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const { projectId, itemId } = c.req.param()
+
+  // [TENANT] Anti-IDOR: verificar ownership
+  const rootItem = await db.query.items.findFirst({
+    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId), eq(i.projectId, projectId)),
+    columns: { id: true, status: true, statusBeforeArchive: true, ancestryPath: true, parentId: true },
+  })
+  if (!rootItem) return c.json({ error: 'Item não encontrado' }, 404)
+  if (rootItem.status !== 'ARCHIVED') return c.json({ error: 'Item não está arquivado' }, 422)
+
+  // Coletar todos os descendentes arquivados para restaurar em cascata
+  const allIds: string[] = [itemId]
+  const queue = [itemId]
+  while (queue.length > 0) {
+    const parentId = queue.shift()!
+    const children = await db.select({ id: items.id })
+      .from(items)
+      .where(and(eq(items.parentId, parentId), eq(items.tenantId, ctx.tenantId), sql`${items.status} = 'ARCHIVED'`))
+    for (const child of children) { allIds.push(child.id); queue.push(child.id) }
+  }
+
+  // Restaurar também ancestrais arquivados na cadeia até a raiz
+  const ancestorPath: Array<{ id: string }> = (() => {
+    try { return JSON.parse(rootItem.ancestryPath || '[]') } catch { return [] }
+  })()
+  const ancestorIds = ancestorPath.map(a => a.id)
+
+  const now = new Date().toISOString()
+  await db.transaction(async (tx) => {
+    // Restaurar item raiz + descendentes arquivados
+    // [DB-SWAP] no PostgreSQL usar UPDATE ... WHERE id = ANY($1) para operação em bulk
+    for (const id of allIds) {
+      const current = await tx.query.items.findFirst({
+        where: (i) => and(eq(i.id, id), eq(i.tenantId, ctx.tenantId)),
+        columns: { statusBeforeArchive: true },
+      })
+      const restoreStatus = current?.statusBeforeArchive ?? 'NOT_STARTED'
+      await tx.update(items)
+        .set({ status: restoreStatus, statusBeforeArchive: null, updatedAt: now })
+        .where(and(eq(items.id, id), eq(items.tenantId, ctx.tenantId)))
+    }
+
+    // Restaurar ancestrais arquivados para que o item seja visível na hierarquia
+    for (const ancestorId of ancestorIds) {
+      const ancestor = await tx.query.items.findFirst({
+        where: (i) => and(eq(i.id, ancestorId), eq(i.tenantId, ctx.tenantId)),
+        columns: { status: true, statusBeforeArchive: true },
+      })
+      if (ancestor?.status === 'ARCHIVED') {
+        const restoreStatus = ancestor.statusBeforeArchive ?? 'NOT_STARTED'
+        await tx.update(items)
+          .set({ status: restoreStatus, statusBeforeArchive: null, updatedAt: now })
+          .where(and(eq(items.id, ancestorId), eq(items.tenantId, ctx.tenantId)))
+      }
+    }
+  })
+
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { unarchived: true, ids: allIds } })
+  return c.json({ ok: true, restoredCount: allIds.length })
 })

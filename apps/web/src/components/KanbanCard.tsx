@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Trash2, GitBranch } from 'lucide-react'
+import { Trash2, GitBranch, Archive } from 'lucide-react'
 import { UserAvatar } from './UserAvatar'
 import { InlineEdit } from './InlineEdit'
 import type { AncestorNode, Priority, TaskStatus, ItemType, ChecklistProgress } from '@azy-board/types'
@@ -27,6 +27,7 @@ const STATUS_INDICATOR: Record<TaskStatus, string> = {
   BLOCKED: 'border-l-red-500',
   DONE: 'border-l-emerald-500',
   CANCELLED: 'border-l-slate-400 opacity-60',
+  ARCHIVED: 'border-l-slate-300 opacity-40',
 }
 
 export interface CardData {
@@ -51,9 +52,10 @@ interface Props {
   onOpenDetail?: (id: string) => void
   onTitleSave?: (id: string, title: string) => void
   onDelete?: (id: string) => void
+  onArchive?: (id: string) => void
 }
 
-export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete }: Props) {
+export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchive }: Props) {
   const [breadcrumbOpen, setBreadcrumbOpen] = useState(false)
   const [tooltipPos, setTooltipPos] = useState({ top: 0, left: 0 })
   const breadcrumbRef = useRef<HTMLDivElement>(null)
@@ -117,21 +119,35 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete }: Props)
       }}
       className={`relative group flex bg-card border border-border rounded-xl shadow-sm hover:shadow-md transition-shadow border-l-4 ${STATUS_INDICATOR[card.status]} ${!card.isLeaf ? 'opacity-70' : ''}`}
     >
-      {/* Botão excluir — visível só no hover, só quando onDelete está disponível */}
-      {onDelete && (
-        <button
-          className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50"
-          title="Excluir item"
-          onClick={e => {
-            e.stopPropagation()
-            if (window.confirm('Excluir este item e todos os seus filhos (subtasks, checklists)? Esta ação é permanente.')) {
-              onDelete(card.id)
-            }
-          }}
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
-      )}
+      {/* Botões de ação — visíveis só no hover */}
+      <div className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5">
+        {onArchive && (
+          <button
+            className="p-1 rounded text-muted-foreground hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50"
+            title="Arquivar item"
+            onClick={e => {
+              e.stopPropagation()
+              onArchive(card.id)
+            }}
+          >
+            <Archive className="w-3.5 h-3.5" />
+          </button>
+        )}
+        {onDelete && (
+          <button
+            className="p-1 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50"
+            title="Excluir item"
+            onClick={e => {
+              e.stopPropagation()
+              if (window.confirm('Excluir este item e todos os seus filhos (subtasks, checklists)? Esta ação é permanente.')) {
+                onDelete(card.id)
+              }
+            }}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
       {/* ── Grip: único lugar com listeners + setActivatorNodeRef ── */}
       <div
         ref={setActivatorNodeRef}

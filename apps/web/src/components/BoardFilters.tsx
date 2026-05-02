@@ -1,9 +1,12 @@
+import { Layers, LayoutList, Eye, EyeOff, ChevronsDown, ChevronsUp } from 'lucide-react'
 import type { ItemType } from '@azy-board/types'
 import type { Tag } from './TagSelector'
+import { Tooltip } from './ui/Tooltip'
 
 interface Module { id: string; name: string }
 interface Sprint { id: string; name: string; status: string }
 interface Member { userId: string; name: string }
+interface Squad { id: string; name: string }
 
 export interface BoardFilterState {
   moduleId: string
@@ -11,6 +14,8 @@ export interface BoardFilterState {
   assigneeId: string
   types: ItemType[]
   tagIds: string[]
+  hideEmptyEpics: boolean
+  squadId: string
 }
 
 interface Props {
@@ -18,8 +23,16 @@ interface Props {
   sprints: Sprint[]
   members: Member[]
   tags: Tag[]
+  squads?: Squad[]
   filters: BoardFilterState
   onChange: (filters: BoardFilterState) => void
+  showSubtasks: boolean
+  onToggleSubtasks: () => void
+  showStories: boolean
+  onToggleStories: () => void
+  onExpandAll?: () => void
+  onCollapseAll?: () => void
+  showExpandCollapse?: boolean
 }
 
 const TYPE_LABELS: Partial<Record<ItemType, string>> = {
@@ -27,13 +40,35 @@ const TYPE_LABELS: Partial<Record<ItemType, string>> = {
   BUG: 'Bug',
 }
 
-export function BoardFilters({ modules, sprints, members, tags, filters, onChange }: Props) {
+const TYPE_TOOLTIPS: Partial<Record<ItemType, string>> = {
+  TASK: 'Filtrar por Tarefas',
+  BUG: 'Filtrar por Bugs',
+}
+
+const iconBtn = (active: boolean) =>
+  `p-1.5 rounded-lg border transition flex-shrink-0 ${
+    active
+      ? 'bg-primary/10 border-primary/30 text-primary'
+      : 'border-border text-muted-foreground hover:text-foreground hover:border-border/80'
+  }`
+
+const separator = <div className="w-px h-5 bg-border mx-0.5 flex-shrink-0" />
+
+export function BoardFilters({
+  modules, sprints, members, tags, squads = [],
+  filters, onChange,
+  showSubtasks, onToggleSubtasks,
+  showStories, onToggleStories,
+  onExpandAll, onCollapseAll, showExpandCollapse = false,
+}: Props) {
   const activeCount = [
     filters.moduleId,
     filters.sprintId,
     filters.assigneeId,
+    filters.squadId,
     filters.types.length > 0,
     filters.tagIds.length > 0,
+    filters.hideEmptyEpics,
   ].filter(Boolean).length
 
   function update(partial: Partial<BoardFilterState>) {
@@ -41,7 +76,7 @@ export function BoardFilters({ modules, sprints, members, tags, filters, onChang
   }
 
   function clear() {
-    onChange({ moduleId: '', sprintId: '', assigneeId: '', types: [], tagIds: [] })
+    onChange({ moduleId: '', sprintId: '', assigneeId: '', squadId: '', types: [], tagIds: [], hideEmptyEpics: false })
   }
 
   function toggleType(t: ItemType) {
@@ -55,8 +90,50 @@ export function BoardFilters({ modules, sprints, members, tags, filters, onChang
   }
 
   return (
-    <div className="flex items-center gap-2 flex-wrap">
-      {/* Módulo */}
+    <div className="flex items-center gap-1.5 flex-wrap">
+
+      {/* Zona 1 — Visualização */}
+      <Tooltip label={showSubtasks ? 'Ocultar subtasks' : 'Mostrar subtasks'}>
+        <button onClick={onToggleSubtasks} className={iconBtn(showSubtasks)}>
+          <Layers className="w-3.5 h-3.5" />
+        </button>
+      </Tooltip>
+
+      <Tooltip label="Histórias no board">
+        <button onClick={onToggleStories} className={iconBtn(showStories)}>
+          <LayoutList className="w-3.5 h-3.5" />
+        </button>
+      </Tooltip>
+
+      {showExpandCollapse && (
+        <>
+          <Tooltip label="Expandir tudo">
+            <button onClick={onExpandAll} className={iconBtn(false)}>
+              <ChevronsDown className="w-3.5 h-3.5" />
+            </button>
+          </Tooltip>
+          <Tooltip label="Recolher tudo">
+            <button onClick={onCollapseAll} className={iconBtn(false)}>
+              <ChevronsUp className="w-3.5 h-3.5" />
+            </button>
+          </Tooltip>
+        </>
+      )}
+
+      {separator}
+
+      {/* Zona 2 — Filtros */}
+      {squads.length > 0 && (
+        <select
+          value={filters.squadId}
+          onChange={e => update({ squadId: e.target.value })}
+          className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground"
+        >
+          <option value="">Squad</option>
+          {squads.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      )}
+
       {modules.length > 0 && (
         <select
           value={filters.moduleId}
@@ -68,7 +145,6 @@ export function BoardFilters({ modules, sprints, members, tags, filters, onChang
         </select>
       )}
 
-      {/* Sprint */}
       {sprints.length > 0 && (
         <select
           value={filters.sprintId}
@@ -80,7 +156,6 @@ export function BoardFilters({ modules, sprints, members, tags, filters, onChang
         </select>
       )}
 
-      {/* Responsável */}
       {members.length > 0 && (
         <select
           value={filters.assigneeId}
@@ -92,20 +167,21 @@ export function BoardFilters({ modules, sprints, members, tags, filters, onChang
         </select>
       )}
 
-      {/* Tipo (multi) — apenas TASK e BUG filtráveis no board */}
+      {/* Tipo (multi) */}
       <div className="flex items-center gap-1">
         {(['TASK', 'BUG'] as ItemType[]).map(t => (
-          <button
-            key={t}
-            onClick={() => toggleType(t)}
-            className={`text-xs px-2 py-1 rounded-full border transition ${
-              filters.types.includes(t)
-                ? 'bg-primary text-primary-foreground border-primary'
-                : 'border-border text-muted-foreground hover:border-primary/50'
-            }`}
-          >
-            {TYPE_LABELS[t]}
-          </button>
+          <Tooltip key={t} label={TYPE_TOOLTIPS[t] ?? TYPE_LABELS[t] ?? t}>
+            <button
+              onClick={() => toggleType(t)}
+              className={`text-xs px-2 py-1 rounded-full border transition ${
+                filters.types.includes(t)
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'border-border text-muted-foreground hover:border-primary/50'
+              }`}
+            >
+              {TYPE_LABELS[t]}
+            </button>
+          </Tooltip>
         ))}
       </div>
 
@@ -127,11 +203,20 @@ export function BoardFilters({ modules, sprints, members, tags, filters, onChang
         </div>
       )}
 
+      {separator}
+
+      {/* Zona 3 — Ações de conteúdo */}
+      <Tooltip label="Ocultar épicos vazios">
+        <button onClick={() => update({ hideEmptyEpics: !filters.hideEmptyEpics })} className={iconBtn(filters.hideEmptyEpics)}>
+          {filters.hideEmptyEpics ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+        </button>
+      </Tooltip>
+
       {/* Limpar */}
       {activeCount > 0 && (
         <button
           onClick={clear}
-          className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition"
+          className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition ml-1"
         >
           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

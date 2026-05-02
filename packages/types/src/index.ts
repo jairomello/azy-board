@@ -1,6 +1,8 @@
 // Enums de domínio compartilhados entre API, web e MCP
 
-export type TaskStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' | 'CANCELLED'
+export type TaskStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' | 'CANCELLED' | 'ARCHIVED'
+// Status base de coluna — não inclui ARCHIVED (colunas não podem ter este baseStatus)
+export type ColumnBaseStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' | 'CANCELLED'
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 // Mantido para retrocompatibilidade em código legado — usar ItemType nos novos usos
 export type TaskType = 'TASK' | 'BUG' | 'STORY'

@@ -28,16 +28,36 @@ import { UserAvatar } from '../components/UserAvatar'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { LanguageSelector } from '../components/LanguageSelector'
 import { AddCardForm } from '../components/AddCardForm'
-import { ItemModal, type FullItemData, type ProjectMember, type ProjectVersion } from '../components/ItemModal'
+import { ItemModal, type FullItemData, type ProjectMember, type ProjectVersion, type CostCenter } from '../components/ItemModal'
 import { EpicModal, type EpicData } from '../components/EpicModal'
 import { StoryModal, type StoryData } from '../components/StoryModal'
 import { BoardFilters, type BoardFilterState } from '../components/BoardFilters'
 import { useToast } from '../components/Toast'
 import { TreeViewPage } from './TreeViewPage'
 import { useAuth } from '../contexts/AuthContext'
-import { Layers, BookOpen, CheckSquare, Bug, Plus, Pencil, ChevronsDownUp, ChevronsUpDown } from 'lucide-react'
-import type { WsEvent, ItemType, AncestorNode } from '@azy-board/types'
+import { Layers, BookOpen, CheckSquare, Bug, Plus, Pencil, Archive, X } from 'lucide-react'
+import { Tooltip } from '../components/ui/Tooltip'
+import type { WsEvent, ItemType, AncestorNode, TaskStatus } from '@azy-board/types'
 import type { Tag } from '../components/TagSelector'
+
+// Mapa de status para nome legível (para a modal de itens arquivados)
+const STATUS_LABEL: Partial<Record<TaskStatus, string>> = {
+  NOT_STARTED: 'Não iniciada',
+  IN_PROGRESS: 'Em andamento',
+  BLOCKED: 'Bloqueada',
+  DONE: 'Concluída',
+  CANCELLED: 'Cancelada',
+}
+
+// Item arquivado retornado por GET /projects/:id/tasks/archived
+interface ArchivedItem {
+  id: string
+  type: ItemType
+  title: string
+  ancestryPath: string
+  statusBeforeArchive: TaskStatus | null
+  updatedAt: string
+}
 
 interface Column { id: string; name: string; baseStatus: string; position: number }
 interface Module { id: string; name: string }
@@ -88,6 +108,9 @@ export default function BoardPage() {
   const [members, setMembers] = useState<ProjectMember[]>([])
   const [projectTags, setProjectTags] = useState<Tag[]>([])
   const [projectVersions, setProjectVersions] = useState<ProjectVersion[]>([])
+  // Tarefa 9 — centros de custo do projeto
+  const [projectCostCenters, setProjectCostCenters] = useState<CostCenter[]>([])
+  const [projectSquads, setProjectSquads] = useState<{ id: string; name: string }[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [collapsedEpics, setCollapsedEpics] = useState<Set<string>>(new Set())
   const [view, setView] = useState<'kanban' | 'tree'>('kanban')
@@ -99,9 +122,14 @@ export default function BoardPage() {
   const [epicModalData, setEpicModalData] = useState<{ epic?: EpicData } | null>(null)
   const [columnAddForms, setColumnAddForms] = useState<Record<string, boolean>>({})
   const [filters, setFilters] = useState<BoardFilterState>({
-    moduleId: '', sprintId: '', assigneeId: '', types: [], tagIds: [],
+    moduleId: '', sprintId: '', assigneeId: '', squadId: '', types: [], tagIds: [], hideEmptyEpics: false,
   })
   const [newItemCreation, setNewItemCreation] = useState<{ type: 'TASK' | 'BUG'; columnId?: string; title?: string } | null>(null)
+  // Tarefa 10 — arquivamento
+  const [archiveConfirm, setArchiveConfirm] = useState<{ itemId: string; childrenCount: number } | null>(null)
+  const [archivedModal, setArchivedModal] = useState(false)
+  const [archivedItems, setArchivedItems] = useState<ArchivedItem[]>([])
+  const [archivedLoading, setArchivedLoading] = useState(false)
 
   // Ref para preservar o over ID mais recente durante o drag (evita perder o alvo no momento do drop)
   const lastOverRef = useRef<string | null>(null)
@@ -126,7 +154,10 @@ export default function BoardPage() {
       api.get<Sprint[]>(`/projects/${projectId}/sprints`).catch(() => [] as Sprint[]),
       api.get<ProjectMember[]>(`/projects/${projectId}/members`).catch(() => [] as ProjectMember[]),
       api.get<ProjectVersion[]>(`/projects/${projectId}/versions`).catch(() => [] as ProjectVersion[]),
-    ]).then(([cols, its, mods, tags, sprs, mbrs, vers]) => {
+      // Tarefa 9 — carregar centros de custo junto com os demais dados
+      api.get<CostCenter[]>(`/projects/${projectId}/cost-centers`).catch(() => [] as CostCenter[]),
+      api.get<{ id: string; name: string }[]>(`/projects/${projectId}/squads`).catch(() => []),
+    ]).then(([cols, its, mods, tags, sprs, mbrs, vers, ccs, sqs]) => {
       setColumns(cols)
       setAllItems(computeIsLeaf(its))
       setModules(mods)
@@ -134,6 +165,8 @@ export default function BoardPage() {
       setSprints(sprs)
       setMembers(mbrs)
       setProjectVersions(vers)
+      setProjectCostCenters(ccs)
+      setProjectSquads(sqs)
     }).finally(() => setLoading(false))
   }, [projectId])
 
@@ -191,6 +224,18 @@ export default function BoardPage() {
     },
   })
 
+  // Mapa squadId → Set<userId> para filtro de squad O(1)
+  const squadMembersMap = useMemo(() => {
+    const map = new Map<string, Set<string>>()
+    for (const m of members) {
+      if (m.squadId) {
+        if (!map.has(m.squadId)) map.set(m.squadId, new Set())
+        map.get(m.squadId)!.add(m.userId)
+      }
+    }
+    return map
+  }, [members])
+
   // Items derivados por tipo
   const epics = useMemo(() => allItems.filter(i => i.type === 'EPIC'), [allItems])
   const stories = useMemo(() => allItems.filter(i => i.type === 'STORY'), [allItems])
@@ -227,6 +272,13 @@ export default function BoardPage() {
     if (filters.assigneeId) {
       result = result.filter(i => i.assigneeId === filters.assigneeId || i.assignee?.id === filters.assigneeId)
     }
+    if (filters.squadId) {
+      const squadUsers = squadMembersMap.get(filters.squadId)
+      result = result.filter(i => {
+        const uid = i.assigneeId ?? i.assignee?.id
+        return uid != null && squadUsers?.has(uid)
+      })
+    }
     if (filters.types.length > 0) {
       result = result.filter(i => filters.types.includes(i.type as ItemType))
     }
@@ -236,7 +288,7 @@ export default function BoardPage() {
       )
     }
     return result
-  }, [allItems, showSubtasks, storyIdSet, filters, epics])
+  }, [allItems, showSubtasks, storyIdSet, filters, epics, squadMembersMap])
 
   // Cards virtuais de histórias quando toggle "Mostrar histórias" ativo
   const storyVirtualCards: ItemData[] = useMemo(() => {
@@ -255,14 +307,18 @@ export default function BoardPage() {
   // Agrupar por EPIC via ancestryPath.
   // Story-virtual cards têm ancestryPath da story original (contém o EPIC),
   // então getEpicIdFromPath funciona para eles também.
+  // quando hideEmptyEpics ativo ou squad selecionado, oculta épicos sem descendants visíveis
   const epicGroups = useMemo(() => {
-    return epics.map(epic => {
-      const epicCards = allDisplayed.filter(i =>
-        getEpicIdFromPath(i.ancestryPath) === epic.id
-      )
-      return { epic, tasks: epicCards }
-    })
-  }, [epics, allDisplayed])
+    const hideEmpty = filters.hideEmptyEpics || !!filters.squadId
+    return epics
+      .map(epic => {
+        const epicCards = allDisplayed.filter(i =>
+          getEpicIdFromPath(i.ancestryPath) === epic.id
+        )
+        return { epic, tasks: epicCards }
+      })
+      .filter(group => !hideEmpty || group.tasks.length > 0)
+  }, [epics, allDisplayed, filters.hideEmptyEpics, filters.squadId])
 
   const orphanCards = useMemo(() =>
     allDisplayed.filter(i => !getEpicIdFromPath(i.ancestryPath) && !i.id.startsWith('story-virtual-')),
@@ -443,6 +499,73 @@ export default function BoardPage() {
     }
   }, [projectId, toast])
 
+  // Tarefa 10.1 — arquivamento de cards
+  const handleArchiveRequest = useCallback((itemId: string) => {
+    // Conta descendentes não-arquivados para mostrar confirmação quando há filhos
+    const item = allItems.find(i => i.id === itemId)
+    if (!item) return
+    const childrenCount = allItems.filter(i => {
+      try {
+        const path: AncestorNode[] = JSON.parse(i.ancestryPath || '[]')
+        return path.some(a => a.id === itemId)
+      } catch { return false }
+    }).length
+    if (childrenCount > 0) {
+      setArchiveConfirm({ itemId, childrenCount })
+    } else {
+      executeArchive(itemId)
+    }
+  }, [allItems]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function executeArchive(itemId: string) {
+    if (!projectId) return
+    try {
+      await api.post(`/projects/${projectId}/items/${itemId}/archive`, {})
+      // Tarefa 10.3 — remover item e descendentes da UI imediatamente
+      setAllItems(prev => computeIsLeaf(prev.filter(i => {
+        if (i.id === itemId) return false
+        try {
+          const path: AncestorNode[] = JSON.parse(i.ancestryPath || '[]')
+          return !path.some(a => a.id === itemId)
+        } catch { return true }
+      })))
+      setArchiveConfirm(null)
+      toast('Item arquivado', 'success')
+    } catch {
+      toast('Erro ao arquivar item', 'error')
+    }
+  }
+
+  // Tarefa 10.4/10.5 — carregar e exibir itens arquivados
+  async function openArchivedModal() {
+    if (!projectId) return
+    setArchivedModal(true)
+    setArchivedLoading(true)
+    try {
+      const items = await api.get<ArchivedItem[]>(`/projects/${projectId}/items/archived`)
+      setArchivedItems(items)
+    } catch {
+      setArchivedItems([])
+    } finally {
+      setArchivedLoading(false)
+    }
+  }
+
+  // Tarefa 10.6 — restaurar item arquivado
+  async function handleUnarchive(itemId: string) {
+    if (!projectId) return
+    try {
+      await api.post(`/projects/${projectId}/items/${itemId}/unarchive`, {})
+      setArchivedItems(prev => prev.filter(i => i.id !== itemId))
+      // Re-fetch de todos os itens para garantir que o restaurado apareça no board
+      const its = await api.get<ItemData[]>(`/projects/${projectId}/items`)
+      setAllItems(computeIsLeaf(its))
+      toast('Item restaurado', 'success')
+    } catch {
+      toast('Erro ao restaurar item', 'error')
+    }
+  }
+
   const handleCreateTag = useCallback(async (name: string, color: string): Promise<Tag> => {
     if (!projectId) throw new Error('no project')
     const tag = await api.post<Tag>(`/projects/${projectId}/tags`, { name, color })
@@ -607,57 +730,31 @@ export default function BoardPage() {
       </header>
 
       {/* Toolbar */}
-      <div className="border-b border-border bg-card/50 px-6 py-2 flex items-center gap-3 flex-shrink-0 text-sm flex-wrap">
-        <button
-          onClick={() => setShowSubtasks(v => !v)}
-          className={`text-xs px-3 py-1.5 rounded-lg border transition flex-shrink-0 ${
-            showSubtasks
-              ? 'bg-primary/10 border-primary/40 text-primary font-medium'
-              : 'border-border text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          {showSubtasks ? 'Ocultar subtasks' : 'Mostrar subtasks'}
-        </button>
-        <button
-          onClick={() => setShowStories(v => !v)}
-          className={`text-xs px-3 py-1.5 rounded-lg border transition flex-shrink-0 ${
-            showStories
-              ? 'bg-primary/10 border-primary/40 text-primary font-medium'
-              : 'border-border text-muted-foreground hover:text-foreground'
-          }`}
-        >
-          Histórias no board
-        </button>
-        {view === 'kanban' && (
-          <>
-            <span className="w-px h-4 bg-border flex-shrink-0" />
-            <button
-              onClick={() => setCollapsedEpics(new Set())}
-              title="Expandir todos os épicos"
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition flex-shrink-0"
-            >
-              <ChevronsUpDown className="w-3.5 h-3.5" />
-              Expandir tudo
-            </button>
-            <button
-              onClick={() => setCollapsedEpics(new Set([...epics.map(e => e.id), 'orphan']))}
-              title="Recolher todos os épicos"
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition flex-shrink-0"
-            >
-              <ChevronsDownUp className="w-3.5 h-3.5" />
-              Recolher tudo
-            </button>
-          </>
-        )}
-        <span className="w-px h-4 bg-border flex-shrink-0" />
+      <div className="border-b border-border bg-card/50 px-6 py-2 flex items-center gap-1.5 flex-shrink-0 text-sm flex-wrap">
         <BoardFilters
           modules={modules}
           sprints={sprints}
           members={members}
+          squads={projectSquads}
           tags={projectTags}
           filters={filters}
           onChange={setFilters}
+          showSubtasks={showSubtasks}
+          onToggleSubtasks={() => setShowSubtasks(v => !v)}
+          showStories={showStories}
+          onToggleStories={() => setShowStories(v => !v)}
+          showExpandCollapse={view === 'kanban'}
+          onExpandAll={() => setCollapsedEpics(new Set())}
+          onCollapseAll={() => setCollapsedEpics(new Set([...epics.map(e => e.id), 'orphan']))}
         />
+        <Tooltip label="Itens arquivados">
+          <button
+            onClick={openArchivedModal}
+            className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition flex-shrink-0"
+          >
+            <Archive className="w-3.5 h-3.5" />
+          </button>
+        </Tooltip>
         {view === 'kanban' && (
           <div className="ml-auto flex items-center gap-2 flex-shrink-0">
             <button
@@ -665,28 +762,28 @@ export default function BoardPage() {
               className="flex items-center gap-1.5 text-xs bg-amber-500 text-white px-3 py-1.5 rounded-lg hover:bg-amber-600 transition"
             >
               <Layers className="w-3.5 h-3.5" />
-              Novo Épico
+              + Épico
             </button>
             <button
               onClick={() => setStoryModalData({})}
               className="flex items-center gap-1.5 text-xs bg-violet-600 text-white px-3 py-1.5 rounded-lg hover:bg-violet-700 transition"
             >
               <BookOpen className="w-3.5 h-3.5" />
-              Nova História
+              + História
             </button>
             <button
               onClick={() => setNewItemCreation({ type: 'TASK', columnId: columns[0]?.id, title: 'Nova Task' })}
               className="flex items-center gap-1.5 text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition"
             >
               <CheckSquare className="w-3.5 h-3.5" />
-              Nova Task
+              + Task
             </button>
             <button
               onClick={() => setNewItemCreation({ type: 'BUG', columnId: columns[0]?.id, title: 'Novo Bug' })}
               className="flex items-center gap-1.5 text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition"
             >
               <Bug className="w-3.5 h-3.5" />
-              Novo Bug
+              + Bug
             </button>
           </div>
         )}
@@ -695,7 +792,18 @@ export default function BoardPage() {
       {/* Conteúdo principal */}
       <div className="flex-1 overflow-x-auto overflow-y-auto">
         {view === 'tree' && projectId && (
-          <TreeViewPage projectId={projectId} filters={filters} />
+          <TreeViewPage
+            projectId={projectId}
+            filters={filters}
+            // Tarefa 10.2 — passa o handler de arquivamento para a tree view
+            onArchive={(itemId, childrenCount) => {
+              if (childrenCount > 0) {
+                setArchiveConfirm({ itemId, childrenCount })
+              } else {
+                executeArchive(itemId)
+              }
+            }}
+          />
         )}
 
         {view === 'kanban' && (
@@ -728,11 +836,13 @@ export default function BoardPage() {
                   onOpenDetail={handleOpenDetail}
                   onTitleSave={handleTitleSave}
                   onDelete={handleDeleteItem}
+                  onArchive={handleArchiveRequest}
                   onEditEpic={null}
                 />
               )}
 
-              {/* Swimlanes por épico — exibe todos os épicos, inclusive os sem tasks */}
+              {/* Swimlanes por épico — exibe todos os épicos, inclusive os sem tasks
+                  Tarefa 11 — hideEmptyEpics filtra os sem cards em epicGroups (memo acima) */}
               {epicGroups.map(({ epic, tasks: epicTasks }) => (
                 <Swimlane
                   key={epic.id}
@@ -749,6 +859,7 @@ export default function BoardPage() {
                   onOpenDetail={handleOpenDetail}
                   onTitleSave={handleTitleSave}
                   onDelete={handleDeleteItem}
+                  onArchive={handleArchiveRequest}
                   onEditEpic={() => setEpicModalData({
                     epic: { id: epic.id, title: epic.title, moduleId: epic.moduleId ?? '', description: epic.description },
                   })}
@@ -785,6 +896,7 @@ export default function BoardPage() {
           members={members}
           currentUserId={user?.id}
           projectVersions={projectVersions}
+          projectCostCenters={projectCostCenters}
           onClose={() => setItemModalId(null)}
           onSave={handleModalSave}
           onAddSubtask={handleAddSubtask}
@@ -816,6 +928,122 @@ export default function BoardPage() {
         />
       )}
 
+      {/* Tarefa 10.1 — Dialog de confirmação de arquivamento (quando item tem filhos) */}
+      {archiveConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setArchiveConfirm(null)} />
+          <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
+            <h3 className="font-semibold text-foreground mb-2">Arquivar item</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Este item possui <strong>{archiveConfirm.childrenCount}</strong> descendente(s) que também serão arquivados em cascata. Deseja continuar?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setArchiveConfirm(null)}
+                className="px-3 py-1.5 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => executeArchive(archiveConfirm.itemId)}
+                className="px-4 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition"
+              >
+                Arquivar tudo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tarefa 10.5 — Modal "Itens Arquivados" */}
+      {archivedModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setArchivedModal(false)} />
+          <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
+              <h3 className="font-semibold text-foreground flex items-center gap-2">
+                <Archive className="w-4 h-4 text-muted-foreground" />
+                Itens Arquivados
+              </h3>
+              <button onClick={() => setArchivedModal(false)} className="text-muted-foreground hover:text-foreground transition">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 px-6 py-4">
+              {archivedLoading && (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin w-6 h-6 border-3 border-primary border-t-transparent rounded-full" />
+                </div>
+              )}
+              {/* Tarefa 10.7 — estado vazio */}
+              {!archivedLoading && archivedItems.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Archive className="w-10 h-10 text-muted-foreground/30 mb-3" />
+                  <p className="text-sm text-muted-foreground">Nenhum item arquivado neste projeto.</p>
+                </div>
+              )}
+              {!archivedLoading && archivedItems.length > 0 && (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-xs text-muted-foreground uppercase tracking-wide">
+                      <th className="pb-2 text-left font-medium">Tipo</th>
+                      <th className="pb-2 text-left font-medium">Título</th>
+                      <th className="pb-2 text-left font-medium">Coluna original</th>
+                      <th className="pb-2 text-left font-medium">Data</th>
+                      <th className="pb-2" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {archivedItems.map(item => {
+                      let ancestorEpicTitle = ''
+                      try {
+                        const path: AncestorNode[] = JSON.parse(item.ancestryPath || '[]')
+                        ancestorEpicTitle = path.find(n => n.type === 'EPIC')?.title ?? ''
+                      } catch { /* noop */ }
+                      return (
+                        <tr key={item.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="py-2.5 pr-3">
+                            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                              item.type === 'BUG' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' :
+                              item.type === 'TASK' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' :
+                              item.type === 'STORY' ? 'bg-violet-100 text-violet-700 dark:bg-violet-900 dark:text-violet-300' :
+                              'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300'
+                            }`}>
+                              {item.type}
+                            </span>
+                          </td>
+                          <td className="py-2.5 pr-3">
+                            <p className="font-medium text-foreground line-clamp-1">{item.title}</p>
+                            {ancestorEpicTitle && (
+                              <p className="text-xs text-muted-foreground truncate">{ancestorEpicTitle}</p>
+                            )}
+                          </td>
+                          <td className="py-2.5 pr-3 text-muted-foreground text-xs">
+                            {item.statusBeforeArchive ? (STATUS_LABEL[item.statusBeforeArchive] ?? item.statusBeforeArchive) : '—'}
+                          </td>
+                          <td className="py-2.5 pr-3 text-muted-foreground text-xs whitespace-nowrap">
+                            {new Date(item.updatedAt).toLocaleDateString('pt-BR')}
+                          </td>
+                          <td className="py-2.5 text-right">
+                            {/* Tarefa 10.6 — botão Restaurar */}
+                            <button
+                              onClick={() => handleUnarchive(item.id)}
+                              className="text-xs text-primary hover:underline font-medium px-2 py-1 rounded hover:bg-primary/10 transition"
+                            >
+                              Restaurar
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal de criação de TASK/BUG via toolbar */}
       {newItemCreation && projectId && (
         <ItemModal
@@ -836,6 +1064,8 @@ export default function BoardPage() {
             taskTags: [],
             isLeaf: true,
             ancestryPath: '[]',
+            // Tarefa 9.2 — pré-seleciona o primeiro centro de custo (igual ao que o backend atribui)
+            costCenterId: projectCostCenters[0]?.id ?? null,
           }}
           projectId={projectId}
           epics={epicsForModal}
@@ -844,6 +1074,7 @@ export default function BoardPage() {
           members={members}
           currentUserId={user?.id}
           projectVersions={projectVersions}
+          projectCostCenters={projectCostCenters}
           onClose={() => setNewItemCreation(null)}
           onSave={handleModalCreate}
           onAddSubtask={handleAddSubtask}
@@ -872,6 +1103,8 @@ interface SwimlaneProps {
   onOpenDetail: (id: string) => void
   onTitleSave: (id: string, title: string) => void
   onDelete?: (id: string) => void
+  // Tarefa 10.1 — callback de arquivamento passado para os KanbanCards
+  onArchive?: (id: string) => void
   onEditEpic: (() => void) | null
 }
 
@@ -889,6 +1122,7 @@ function Swimlane({
   onOpenDetail,
   onTitleSave,
   onDelete,
+  onArchive,
   onEditEpic,
 }: SwimlaneProps) {
   const countByCol = Object.fromEntries(columns.map(c => [c.id, tasks.filter(t => t.columnId === c.id).length]))
@@ -953,6 +1187,7 @@ function Swimlane({
                             onOpenDetail={onOpenDetail}
                             onTitleSave={onTitleSave}
                             onDelete={onDelete}
+                            onArchive={onArchive}
                           />
                         ))}
                       </SortableContext>
