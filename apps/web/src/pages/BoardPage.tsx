@@ -24,7 +24,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { api } from '../lib/api'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { KanbanCard, type CardData } from '../components/KanbanCard'
-import { UserAvatar } from '../components/UserAvatar'
+import { ProfileDropdown } from '../components/ProfileDropdown'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { LanguageSelector } from '../components/LanguageSelector'
 import { AddCardForm } from '../components/AddCardForm'
@@ -725,7 +725,7 @@ export default function BoardPage() {
           >
             ⚙
           </Link>
-          <UserAvatar user={user!} size="sm" />
+          <ProfileDropdown />
         </div>
       </header>
 

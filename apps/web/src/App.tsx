@@ -42,6 +42,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage'))
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage'))
 const BoardPage = lazy(() => import('./pages/BoardPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const AccountPage = lazy(() => import('./pages/AccountPage'))
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -61,6 +62,7 @@ export default function App() {
           <Route path="/projects" element={<ProtectedRoute><ProjectsPage /></ProtectedRoute>} />
           <Route path="/projects/:projectId/board" element={<ProtectedRoute><BoardPage /></ProtectedRoute>} />
           <Route path="/projects/:projectId/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+          <Route path="/account" element={<ProtectedRoute><AccountPage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/projects" replace />} />
         </Routes>
       </Suspense>

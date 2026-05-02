@@ -9,7 +9,7 @@ import { itemsRouter } from './routes/items'
 import { attachmentsRouter } from './routes/attachments'
 import { checklistsRouter } from './routes/checklists'
 import { shadowMarkdownRouter } from './routes/shadowMarkdown'
-import { apiKeysRouter } from './routes/apiKeys'
+import { apiKeysRouter, userApiKeysRouter } from './routes/apiKeys'
 import { versionsRouter } from './routes/versions'
 import { wsHandler } from './services/websocket'
 import { authMiddleware } from './middleware/auth'
@@ -40,6 +40,7 @@ api.route('/projects/:projectId/items/:itemId/attachments', attachmentsRouter)
 api.route('/projects/:projectId/items/:itemId/checklists', checklistsRouter)
 api.route('/projects/:projectId/board.md', shadowMarkdownRouter)
 api.route('/projects/:projectId/api-keys', apiKeysRouter)
+api.route('/api-keys', userApiKeysRouter)
 api.route('/projects/:projectId/versions', versionsRouter)
 
 // [DB-SWAP] Para servir uploads em produção com S3, remover esta rota estática

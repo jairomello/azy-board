@@ -3,15 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
 import { api } from '../lib/api'
-import { UserAvatar } from '../components/UserAvatar'
 import { ThemeToggle } from '../components/ThemeToggle'
 import { LanguageSelector } from '../components/LanguageSelector'
+import { ProfileDropdown } from '../components/ProfileDropdown'
 
 interface Project { id: string; name: string; description: string | null }
 
 export default function ProjectsPage() {
   const { t } = useTranslation()
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const navigate = useNavigate()
   const [projects, setProjects] = useState<Project[]>([])
   const [showNew, setShowNew] = useState(false)
@@ -45,10 +45,7 @@ export default function ProjectsPage() {
         <div className="flex items-center gap-3">
           <LanguageSelector />
           <ThemeToggle />
-          <UserAvatar user={user!} size="sm" />
-          <button onClick={logout} className="text-sm text-muted-foreground hover:text-foreground transition">
-            {t('auth:logout')}
-          </button>
+          <ProfileDropdown />
         </div>
       </header>
 
