@@ -96,6 +96,10 @@ function computeIsLeaf(allItems: ItemData[]): ItemData[] {
   return allItems.map(i => ({ ...i, isLeaf: !parentIds.has(i.id) }))
 }
 
+const DEFAULT_FILTERS: BoardFilterState = {
+  moduleId: '', sprintId: '', assigneeId: '', squadId: '', types: [], tagIds: [], hideEmptyEpics: false,
+}
+
 export default function BoardPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const { user } = useAuth()
@@ -121,8 +125,14 @@ export default function BoardPage() {
   const [storyModalData, setStoryModalData] = useState<{ story?: StoryData } | null>(null)
   const [epicModalData, setEpicModalData] = useState<{ epic?: EpicData } | null>(null)
   const [columnAddForms, setColumnAddForms] = useState<Record<string, boolean>>({})
-  const [filters, setFilters] = useState<BoardFilterState>({
-    moduleId: '', sprintId: '', assigneeId: '', squadId: '', types: [], tagIds: [], hideEmptyEpics: false,
+  const [filters, setFilters] = useState<BoardFilterState>(() => {
+    if (!projectId) return DEFAULT_FILTERS
+    try {
+      const raw = localStorage.getItem(`board-filters:${projectId}`)
+      return raw ? (JSON.parse(raw) as BoardFilterState) : DEFAULT_FILTERS
+    } catch {
+      return DEFAULT_FILTERS
+    }
   })
   const [newItemCreation, setNewItemCreation] = useState<{ type: 'TASK' | 'BUG'; columnId?: string; title?: string } | null>(null)
   // Tarefa 10 — arquivamento
@@ -133,6 +143,15 @@ export default function BoardPage() {
 
   // Ref para preservar o over ID mais recente durante o drag (evita perder o alvo no momento do drop)
   const lastOverRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!projectId) return
+    try {
+      localStorage.setItem(`board-filters:${projectId}`, JSON.stringify(filters))
+    } catch {
+      // localStorage indisponível (ex.: SecurityError em modo privativo restrito)
+    }
+  }, [filters, projectId])
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 

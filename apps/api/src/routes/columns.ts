@@ -47,21 +47,8 @@ columnsRouter.post('/', requireRole('ADMIN'), async (c) => {
   return c.json({ id, name: body.name, baseStatus: body.baseStatus }, 201)
 })
 
-// PATCH /projects/:projectId/columns/:colId
-columnsRouter.patch('/:colId', requireRole('ADMIN'), async (c) => {
-  const ctx = c.get('ctx') as RequestContext
-  const colId = c.req.param('colId')!
-  const body = await c.req.json<{ name?: string; baseStatus?: ColumnBaseStatus }>()
-
-  await db.update(columns)
-    .set({ ...(body.name && { name: body.name }), ...(body.baseStatus && { baseStatus: body.baseStatus }) })
-    .where(and(eq(columns.id, colId), eq(columns.tenantId, ctx.tenantId)))
-
-  return c.json({ ok: true })
-})
-
-// PATCH /projects/:projectId/columns/reorder
-columnsRouter.patch('/reorder', requireRole('ADMIN'), async (c) => {
+// PATCH /projects/:projectId/columns/reorder — antes de /:colId para não colidir
+columnsRouter.patch('/reorder', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
   const body = await c.req.json<{ order: string[] }>()
@@ -75,6 +62,19 @@ columnsRouter.patch('/reorder', requireRole('ADMIN'), async (c) => {
         .where(and(eq(columns.id, colId), eq(columns.tenantId, ctx.tenantId), eq(columns.projectId, projectId)))
     }
   })
+
+  return c.json({ ok: true })
+})
+
+// PATCH /projects/:projectId/columns/:colId
+columnsRouter.patch('/:colId', requireRole('ADMIN'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const colId = c.req.param('colId')!
+  const body = await c.req.json<{ name?: string; baseStatus?: ColumnBaseStatus }>()
+
+  await db.update(columns)
+    .set({ ...(body.name && { name: body.name }), ...(body.baseStatus && { baseStatus: body.baseStatus }) })
+    .where(and(eq(columns.id, colId), eq(columns.tenantId, ctx.tenantId)))
 
   return c.json({ ok: true })
 })
