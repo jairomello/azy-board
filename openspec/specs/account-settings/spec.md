@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir as preferências de aparência e idioma disponíveis na área de conta do usuário.
+
+## Requirements
 
 ### Requirement: Dropdown de perfil no avatar do usuário
 O sistema SHALL exibir um menu dropdown ao clicar no `UserAvatar` em qualquer header da aplicação. O dropdown SHALL conter as opções "Configurações da conta" e "Sair".

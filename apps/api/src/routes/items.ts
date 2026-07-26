@@ -193,6 +193,7 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
     where: (i) => and(eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
     with: {
       itemTags: { with: { tag: true } },
+      itemSprints: { columns: { sprintId: true } },
       assignee: { columns: { id: true, name: true, avatarUrl: true } },
       assigneeApiKey: { columns: { id: true, name: true, aiModelName: true } },
       author: { columns: { id: true, name: true, avatarUrl: true } },
@@ -480,13 +481,13 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
     return c.json({ error: 'Item arquivado não pode ser movido' }, 422)
   }
 
-  // Leaf Rule: apenas TASK e BUG são movíveis — [TENANT] Anti-IDOR: projectId + tenantId
-  if (!['TASK', 'BUG'].includes(item.type)) {
+  // Leaf Rule: TASK, BUG e STORY sem filhos são movíveis — EPIC nunca é movível
+  if (!['TASK', 'BUG', 'STORY'].includes(item.type)) {
     return c.json({ error: `Items do tipo ${item.type} não são movíveis no Kanban` }, 422)
   }
 
   if (!(await isLeaf(ctx.tenantId, itemId))) {
-    return c.json({ error: 'Este item possui filhos — mova os itens filhos individualmente' }, 422)
+    return c.json({ error: 'Este item possui tarefas filhas — mova as tarefas individualmente' }, 422)
   }
 
   const col = await db.query.columns.findFirst({

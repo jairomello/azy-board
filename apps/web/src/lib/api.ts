@@ -7,9 +7,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...options.headers },
   })
 
-  if (res.status === 401) {
-    // Redirecionar para login quando sessão expirar
-    window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`
+  if (res.status === 401 && path !== '/auth/me') {
+    // Redirecionar para login quando sessão expirar.
+    // Em deploy path-based (ex.: /azyboard/), o href usa window.__BASE_PATH__
+    // (injetado pelo proxy) e o pathname e normalizado para ser relativo ao
+    // base, para que o navigate(redirect) do React Router resolva correto.
+    const BASE_PATH = (window as any).__BASE_PATH__ || ''
+    let currentPath = window.location.pathname
+    if (BASE_PATH && currentPath.startsWith(BASE_PATH)) {
+      currentPath = currentPath.slice(BASE_PATH.length - 1) // mantém "/" inicial
+    }
+    window.location.href = `${BASE_PATH}login?redirect=${encodeURIComponent(currentPath)}`
     throw new Error('Sessão expirada')
   }
 

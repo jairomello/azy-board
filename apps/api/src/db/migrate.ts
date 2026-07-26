@@ -15,7 +15,10 @@ sqlite.exec('PRAGMA foreign_keys = OFF;')
 const db = drizzle(sqlite, { schema })
 
 console.log('Executando migrações...')
-migrate(db, { migrationsFolder: './src/db/migrations' })
+// Em producao o caminho de migrations e configurado via MIGRATIONS_DIR
+// (a imagem Docker move o diretorio para /app/migrations). Em dev local
+// continua apontando para ./src/db/migrations como antes.
+migrate(db, { migrationsFolder: process.env.MIGRATIONS_DIR || './src/db/migrations' })
 console.log('Migrações concluídas.')
 
 sqlite.exec('PRAGMA foreign_keys = ON;')

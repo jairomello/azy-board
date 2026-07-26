@@ -44,5 +44,21 @@
   "versionItems": "Itens desta versão",
   "noVersionItems": "Nenhum item vinculado a esta versão",
   "noModules": "Nenhum módulo cadastrado",
-  "createModule": "Criar módulo"
+  "createModule": "Criar módulo",
+  "appearance": "Aparência",
+  "appearanceDescription": "Personalize o modo e a identidade visual do seu workspace.",
+  "colorMode": "Modo de cor",
+  "lightShellTheme": "Tema do shell claro",
+  "lightThemeDarkHint": "Será aplicado ao voltar ao modo claro",
+  "appearanceSaved": "Preferência salva",
+  "appearanceSaveError": "Não foi possível salvar no servidor. A preferência local foi mantida.",
+  "accountPreferences": "Preferências da conta",
+  "accountPreferencesDescription": "Gerencie sua identidade, aparência e integrações.",
+  "shellThemes": {
+    "petroleum": "Petróleo",
+    "ocean": "Oceano",
+    "emerald": "Esmeralda",
+    "graphite": "Grafite",
+    "classic": "Clássico"
+  }
 }

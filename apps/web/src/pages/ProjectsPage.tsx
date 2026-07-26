@@ -3,9 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
 import { api } from '../lib/api'
-import { ThemeToggle } from '../components/ThemeToggle'
-import { LanguageSelector } from '../components/LanguageSelector'
-import { ProfileDropdown } from '../components/ProfileDropdown'
+import { ArrowUpRight, FolderKanban, Plus } from 'lucide-react'
+import { AppShell } from '../components/AppShell'
 
 interface Project { id: string; name: string; description: string | null }
 
@@ -33,58 +32,53 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-sm font-black text-primary-foreground">A</span>
-          </div>
-          <span className="font-bold text-foreground text-lg">Azy Board</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <LanguageSelector />
-          <ThemeToggle />
-          <ProfileDropdown />
-        </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-6 py-10">
-        <div className="flex items-center justify-between mb-8">
+    <AppShell sectionLabel="Projetos" contextLabel="Seu workspace" contentClassName="overflow-y-auto">
+      <div className="max-w-5xl mx-auto py-6 sm:py-9">
+        <div className="flex items-end justify-between gap-4 mb-7">
           <div>
-            <h2 className="text-2xl font-bold text-foreground">Projetos</h2>
-            <p className="text-muted-foreground text-sm mt-1">Selecione um projeto para abrir o board</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Workspace</p>
+            <h2 className="text-2xl sm:text-3xl font-bold text-foreground mt-1">Olá, {user?.name?.split(' ')[0]}</h2>
+            <p className="text-muted-foreground text-sm mt-1">Escolha onde você quer continuar trabalhando.</p>
           </div>
           <button
             onClick={() => setShowNew(true)}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition"
+            className="h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition flex items-center gap-2 shadow-sm"
           >
-            + {t('create')} projeto
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">{t('create')} projeto</span>
           </button>
         </div>
 
         {loading ? (
-          <div className="text-center py-16 text-muted-foreground">Carregando...</div>
+          <div className="bg-card border border-border rounded-xl text-center py-16 text-muted-foreground">Carregando...</div>
         ) : projects.length === 0 ? (
-          <div className="text-center py-16 border-2 border-dashed border-border rounded-2xl">
+          <div className="text-center py-16 border-2 border-dashed border-border rounded-xl bg-card/50">
+            <FolderKanban className="w-10 h-10 mx-auto mb-3 text-muted-foreground/50" />
             <p className="text-muted-foreground">Nenhum projeto ainda.</p>
             <button onClick={() => setShowNew(true)} className="mt-4 text-primary text-sm font-medium hover:underline">
               Criar primeiro projeto
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {projects.map(p => (
               <button
                 key={p.id}
                 onClick={() => navigate(`/projects/${p.id}/board`)}
-                className="text-left p-5 bg-card border border-border rounded-xl hover:border-primary/50 hover:shadow-md transition-all group"
+                className="relative overflow-hidden text-left p-5 bg-card border border-border rounded-xl hover:border-primary/40 hover:-translate-y-0.5 hover:shadow-lg transition group"
               >
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-3 group-hover:bg-primary/20 transition">
+                <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary to-status-review opacity-60" />
+                <div className="flex items-start justify-between">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition">
                   <span className="text-primary font-bold text-lg">{p.name[0]?.toUpperCase()}</span>
+                  </div>
+                  <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition" />
                 </div>
                 <h3 className="font-semibold text-foreground">{p.name}</h3>
-                {p.description && <p className="text-muted-foreground text-xs mt-1 line-clamp-2">{p.description}</p>}
+                <p className="text-muted-foreground text-xs mt-1 line-clamp-2 min-h-8">
+                  {p.description || 'Board, planejamento e colaboração em um só lugar.'}
+                </p>
+                <span className="inline-flex mt-4 text-[11px] font-medium text-primary">Abrir board</span>
               </button>
             ))}
           </div>
@@ -111,7 +105,7 @@ export default function ProjectsPage() {
             </form>
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    </AppShell>
   )
 }

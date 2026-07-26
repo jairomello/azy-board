@@ -43,6 +43,7 @@ await db.insert(users).values({
   passwordHash,
   name: adminName,
   theme: 'light',
+  lightShellTheme: 'petroleum',
   language: 'pt-BR',
   createdAt: new Date().toISOString(),
 })

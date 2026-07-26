@@ -1,7 +1,11 @@
-## ADDED Requirements
+## Purpose
+
+Definir os filtros, controles de visualização e regras de ocultação aplicados ao conteúdo do Board.
+
+## Requirements
 
 ### Requirement: Filtros no toolbar do board
-O sistema SHALL exibir filtros no toolbar do board organizados em zonas visuais. Os toggles de estado (Mostrar subtasks, Histórias no board, Ocultar épicos vazios) SHALL ser exibidos como ícones com tooltip. Os filtros de conteúdo com valor selecionável (Squad, Módulo, Responsável, tipos) SHALL manter label visível por necessidade de legibilidade do valor ativo. As ações "Expandir tudo" e "Recolher tudo" SHALL ser ícones com tooltip. O estado dos filtros SHALL ser persistido no `localStorage` e restaurado automaticamente nas visitas subsequentes ao board.
+O sistema SHALL exibir filtros em um painel acionado pela command bar. Os controles de visualização SHALL incluir Mostrar subtasks, alternância de histórias entre lanes e cards, Expandir tudo e Recolher tudo. Os filtros de conteúdo com valor selecionável (Squad, Módulo, Sprint, Responsável, tipos e tags) SHALL manter identificação acessível. O estado SHALL ser persistido no `localStorage` e restaurado nas visitas subsequentes ao board.
 
 #### Scenario: Filtro por módulo
 - **WHEN** o usuário seleciona um módulo no filtro
@@ -16,7 +20,7 @@ O sistema SHALL exibir filtros no toolbar do board organizados em zonas visuais.
 - **THEN** apenas cards atribuídos ao responsável selecionado são exibidos
 
 #### Scenario: Filtro por tipo de card
-- **WHEN** o usuário seleciona um ou mais tipos (Story, Task, Bug) no filtro
+- **WHEN** o usuário seleciona um ou mais tipos (`TASK`, `BUG`) no filtro
 - **THEN** apenas cards dos tipos selecionados são exibidos
 
 #### Scenario: Filtro por tag
@@ -29,7 +33,9 @@ O sistema SHALL exibir filtros no toolbar do board organizados em zonas visuais.
 
 #### Scenario: Limpar filtros
 - **WHEN** o usuário clica em "Limpar filtros"
-- **THEN** todos os filtros são removidos, o board volta ao estado padrão, e o `localStorage` é atualizado com o estado padrão (sem filtros)
+- **THEN** filtros de conteúdo e ocultações de lanes vazias são removidos
+- **AND** `showSubtasks` e `storyDisplay` são preservados
+- **AND** o `localStorage` é atualizado
 
 #### Scenario: Indicador de filtro ativo
 - **WHEN** pelo menos um filtro está ativo
@@ -37,6 +43,11 @@ O sistema SHALL exibir filtros no toolbar do board organizados em zonas visuais.
 
 ### Requirement: Filtros aplicados client-side
 Os filtros SHALL ser aplicados sobre a lista de tasks em memória (`displayedTasks`), sem re-fetch da API ao mudar filtros.
+
+#### Scenario: Alterar filtro sem recarregar itens
+- **WHEN** o usuário altera qualquer filtro do Board
+- **THEN** a lista visível é recalculada a partir dos itens já carregados
+- **AND** nenhuma nova consulta de itens é necessária
 
 ---
 
@@ -62,3 +73,24 @@ O sistema SHALL oferecer um toggle "Ocultar épicos vazios" na barra de filtros 
 #### Scenario: Limpar filtros desativa o toggle
 - **WHEN** usuário clica em "Limpar filtros"
 - **THEN** toggle "Ocultar épicos vazios" é desativado junto com os demais filtros
+
+---
+
+### Requirement: Toggle "Ocultar histórias vazias"
+O sistema SHALL oferecer `hideEmptyStories` somente quando `storyDisplay = lanes`. Quando ativado, lanes de STORY sem cards visíveis após os filtros SHALL ser omitidas. O toggle SHALL iniciar desligado.
+
+#### Scenario: Controle disponível no modo de lanes
+- **WHEN** `storyDisplay = lanes`
+- **THEN** o painel de filtros exibe o controle "Histórias vazias"
+
+#### Scenario: Controle indisponível no modo de cards
+- **WHEN** `storyDisplay = cards`
+- **THEN** o controle "Histórias vazias" não é exibido e não contribui para a contagem de filtros ativos
+
+#### Scenario: Ocultar história sem cards visíveis
+- **WHEN** usuário ativa `hideEmptyStories`
+- **THEN** cada STORY com zero cards após os demais filtros é omitida
+
+#### Scenario: Limpar filtros restaura histórias vazias
+- **WHEN** usuário limpa os filtros
+- **THEN** `hideEmptyStories` retorna a `false`

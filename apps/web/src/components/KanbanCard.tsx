@@ -22,10 +22,10 @@ const TYPE_STYLES: Record<ItemType, { label: string; cls: string }> = {
 }
 
 const STATUS_INDICATOR: Record<TaskStatus, string> = {
-  NOT_STARTED: '',
-  IN_PROGRESS: 'border-l-blue-500',
-  BLOCKED: 'border-l-red-500',
-  DONE: 'border-l-emerald-500',
+  NOT_STARTED: 'border-l-slate-300 dark:border-l-slate-600',
+  IN_PROGRESS: 'border-l-status-progress',
+  BLOCKED: 'border-l-status-blocked',
+  DONE: 'border-l-status-done',
   CANCELLED: 'border-l-slate-400 opacity-60',
   ARCHIVED: 'border-l-slate-300 opacity-40',
 }
@@ -101,7 +101,8 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
   } = useSortable({
     id: card.id,
     // EPIC e STORY não são cards móveis; TASK/BUG pai (não folha) também não
-    disabled: !card.isLeaf || (card.type != null && ['EPIC', 'STORY'].includes(card.type)),
+    // EPIC nunca é arrastável; STORY folha (sem filhos) pode ser arrastada como task
+    disabled: !card.isLeaf || card.type === 'EPIC',
   })
 
   const ancestry: AncestorNode[] = JSON.parse(card.ancestryPath || '[]')
@@ -117,7 +118,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
         transition,
         opacity: isDragging ? 0.4 : 1,
       }}
-      className={`relative group flex bg-card border border-border rounded-xl shadow-sm hover:shadow-md transition-shadow border-l-4 ${STATUS_INDICATOR[card.status]} ${!card.isLeaf ? 'opacity-70' : ''}`}
+      className={`relative group flex bg-card border border-border rounded-lg shadow-sm hover:-translate-y-px hover:shadow-md transition border-l-[3px] ${STATUS_INDICATOR[card.status]} ${!card.isLeaf ? 'opacity-70' : ''}`}
     >
       {/* Botões de ação — visíveis só no hover */}
       <div className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5">
@@ -173,7 +174,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
 
       {/* ── Conteúdo: clique abre modal (exceto na área do título) ── */}
       <div
-        className={`flex-1 py-3 space-y-2 min-w-0 ${onDelete ? 'pr-7' : 'pr-3'} ${onOpenDetail ? 'cursor-pointer' : ''}`}
+        className={`kanban-card-content flex-1 py-2.5 space-y-2 min-w-0 ${onDelete ? 'pr-7' : 'pr-3'} ${onOpenDetail ? 'cursor-pointer' : ''}`}
         onClick={openDetail}
       >
         {/* Breadcrumb — tooltip via portal para evitar clipping por stacking context do DnD */}
@@ -202,6 +203,11 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
           </div>,
           document.body
         )}
+
+        <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+          {card.type && <span>{TYPE_STYLES[card.type]?.label}</span>}
+          <span className="font-mono normal-case tracking-normal opacity-80">#{card.id.slice(0, 8)}</span>
+        </div>
 
         {/* Título — stopPropagation para NÃO abrir modal ao clicar; duplo clique = editar */}
         <div

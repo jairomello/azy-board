@@ -1,0 +1,375 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Proposta visual do Board do AzyBoard - modo escuro</title>
+  <desc id="desc">Interface escura com navegação lateral flutuante, barra superior translúcida, comandos compactos, quatro colunas Kanban e cards informativos.</desc>
+  <defs>
+    <filter id="shadow-lg" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000000" flood-opacity="0.10"/>
+    </filter>
+    <filter id="shadow-sm" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="4" stdDeviation="7" flood-color="#000000" flood-opacity="0.08"/>
+    </filter>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#59616D" opacity="0.22"/>
+    </pattern>
+    <style>
+      text { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+      .ink { fill: #F2F4F7; }
+      .muted { fill: #A4ACB9; }
+      .quiet { fill: #7D8695; }
+      .label { font-size: 12px; font-weight: 650; }
+      .small { font-size: 11px; font-weight: 550; }
+      .body { font-size: 13px; font-weight: 560; }
+      .nav { font-size: 13px; font-weight: 620; }
+      .title { font-size: 17px; font-weight: 750; }
+      .heading { font-size: 21px; font-weight: 780; }
+      .icon { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1000" fill="#0E1013"/>
+  <rect x="242" width="1358" height="1000" fill="url(#dots)"/>
+
+  <!-- Navegacao lateral -->
+  <g filter="url(#shadow-lg)">
+    <rect x="20" y="20" width="214" height="960" rx="8" fill="#171A1F" fill-opacity="0.96" stroke="#30343B"/>
+  </g>
+  <rect x="36" y="36" width="42" height="42" rx="8" fill="#8B7CFF"/>
+  <path d="M48 64 57 46h2l9 18h-5l-1.7-4H54.4L52.8 64Zm8-8h3.8L58 51.4Z" fill="#FFFFFF"/>
+  <text x="92" y="54" class="ink title">AzyBoard</text>
+  <text x="92" y="70" class="muted small">Produto Digital</text>
+  <path d="m210 55-4 4-4-4" class="icon" stroke="#A4ACB9"/>
+
+  <text x="38" y="115" class="quiet small">WORKSPACE</text>
+  <rect x="32" y="132" width="190" height="44" rx="8" fill="#29263D"/>
+  <rect x="32" y="140" width="3" height="28" rx="1.5" fill="#8B7CFF"/>
+  <g transform="translate(48 145)" color="#8B7CFF"><rect x="1" y="2" width="17" height="15" rx="2" class="icon"/><path d="M7 2v15M12 2v15" class="icon"/></g>
+  <text x="78" y="159" class="nav" fill="#B7AFFF">Board</text>
+  <text x="196" y="159" class="small" fill="#8B7CFF">24</text>
+
+  <g transform="translate(48 196)" color="#A4ACB9"><circle cx="5" cy="5" r="3" class="icon"/><circle cx="15" cy="5" r="3" class="icon"/><circle cx="10" cy="15" r="3" class="icon"/><path d="M7.5 7.2 9 12M12.5 7.2 11 12" class="icon"/></g>
+  <text x="78" y="211" class="nav muted">Árvore</text>
+  <g transform="translate(48 242)" color="#A4ACB9"><rect x="1" y="3" width="18" height="15" rx="2" class="icon"/><path d="M5 1v4M15 1v4M1 8h18M6 12h3M12 12h3" class="icon"/></g>
+  <text x="78" y="257" class="nav muted">Timeline</text>
+  <g transform="translate(48 288)" color="#A4ACB9"><path d="M2 17V9M8 17V4M14 17v-6M20 17V1" class="icon"/></g>
+  <text x="78" y="303" class="nav muted">Insights</text>
+  <g transform="translate(48 334)" color="#A4ACB9"><circle cx="7" cy="6" r="3" class="icon"/><circle cx="16" cy="7" r="2.5" class="icon"/><path d="M1.5 18c.8-4 3-6 5.5-6s4.7 2 5.5 6M12 18c.5-3 2-4.5 4-4.5 2.2 0 3.7 1.5 4.3 4.5" class="icon"/></g>
+  <text x="78" y="349" class="nav muted">Pessoas</text>
+  <g transform="translate(48 380)" color="#A4ACB9"><path d="M4 4h12v12H4zM1 8h3M16 8h3M8 1v3M8 16v3M6.5 7h3v3h-3z" class="icon"/></g>
+  <text x="78" y="395" class="nav muted">Automações</text>
+  <rect x="182" y="381" width="28" height="18" rx="6" fill="#183A30"/>
+  <text x="196" y="394" text-anchor="middle" class="small" fill="#69E0B5">AI</text>
+
+  <text x="38" y="457" class="quiet small">FAVORITOS</text>
+  <circle cx="53" cy="487" r="5" fill="#F6C35C"/>
+  <text x="68" y="492" class="nav muted">Sprint 12</text>
+  <circle cx="53" cy="525" r="5" fill="#39A0A8"/>
+  <text x="68" y="530" class="nav muted">Lançamento 2.4</text>
+
+  <line x1="36" y1="834" x2="218" y2="834" stroke="#2A2E35"/>
+  <g transform="translate(48 858)" color="#A4ACB9"><circle cx="10" cy="10" r="8" class="icon"/><path d="M8 8a2.2 2.2 0 1 1 3.5 1.8c-1 .7-1.5 1.1-1.5 2.2M10 15h.01" class="icon"/></g>
+  <text x="78" y="873" class="nav muted">Ajuda</text>
+  <g transform="translate(48 900)" color="#A4ACB9"><circle cx="10" cy="10" r="3" class="icon"/><path d="M17.5 12.5 20 14l-2 3.5-2.8-1a8 8 0 0 1-2.2 1.3L12.5 21h-5L7 17.8a8 8 0 0 1-2.2-1.3l-2.8 1L0 14l2.5-1.5a8 8 0 0 1 0-5L0 6l2-3.5 2.8 1A8 8 0 0 1 7 2.2L7.5-1h5l.5 3.2a8 8 0 0 1 2.2 1.3l2.8-1L20 6l-2.5 1.5a8 8 0 0 1 0 5Z" class="icon" transform="translate(0 1) scale(.95)"/></g>
+  <text x="78" y="915" class="nav muted">Configurações</text>
+  <circle cx="52" cy="950" r="16" fill="#3A3555"/>
+  <text x="52" y="955" text-anchor="middle" class="label" fill="#B7AFFF">JM</text>
+  <text x="78" y="947" class="ink label">Jairo Martins</text>
+  <text x="78" y="963" class="muted small">Product owner</text>
+  <circle cx="207" cy="950" r="4" fill="#35D49A" stroke="#FFFFFF" stroke-width="2"/>
+
+  <!-- Barra superior -->
+  <g filter="url(#shadow-lg)">
+    <rect x="250" y="20" width="1330" height="72" rx="8" fill="#191C21" fill-opacity="0.96" stroke="#30343B"/>
+  </g>
+  <text x="274" y="49" class="ink title">Produto Digital</text>
+  <text x="274" y="70" class="muted small">Board  /  Sprint 12</text>
+  <rect x="444" y="37" width="114" height="30" rx="8" fill="#172D27" stroke="#275444"/>
+  <circle cx="460" cy="52" r="4" fill="#35D49A"/>
+  <text x="471" y="56" class="small" fill="#69E0B5">Sprint ativa</text>
+
+  <rect x="644" y="34" width="414" height="40" rx="8" fill="#25292F" stroke="#30343B"/>
+  <g transform="translate(662 45)" color="#A4ACB9"><circle cx="8" cy="8" r="6" class="icon"/><path d="m12.5 12.5 4 4" class="icon"/></g>
+  <text x="692" y="59" class="muted body">Buscar itens, pessoas ou comandos...</text>
+  <rect x="1008" y="44" width="34" height="20" rx="5" fill="#20242A" stroke="#30343B"/>
+  <text x="1025" y="58" text-anchor="middle" class="small muted">⌘ K</text>
+
+  <g transform="translate(1080 41)">
+    <circle cx="16" cy="16" r="16" fill="#1B3A38"/>
+    <path d="M10 16a6 6 0 0 1 10.5-4M22 16a6 6 0 0 1-10.5 4" class="icon" stroke="#65D1CC"/>
+    <path d="m19 8 2 3-3 .3M13 24l-2-3 3-.3" class="icon" stroke="#65D1CC"/>
+  </g>
+  <text x="1118" y="51" class="ink small">Sincronizado</text>
+  <text x="1118" y="67" class="muted small">agora</text>
+  <circle cx="1211" cy="56" r="15" fill="#472929" stroke="#FFFFFF" stroke-width="2"/>
+  <text x="1211" y="61" text-anchor="middle" class="small" fill="#FF9A91">AB</text>
+  <circle cx="1235" cy="56" r="15" fill="#20423B" stroke="#FFFFFF" stroke-width="2"/>
+  <text x="1235" y="61" text-anchor="middle" class="small" fill="#69E0B5">CR</text>
+  <circle cx="1259" cy="56" r="15" fill="#332E4A" stroke="#FFFFFF" stroke-width="2"/>
+  <text x="1259" y="61" text-anchor="middle" class="small" fill="#B7AFFF">+2</text>
+  <g transform="translate(1300 43)" color="#A4ACB9"><path d="M5 16h14l-2-3V9a5 5 0 0 0-10 0v4ZM10 19a2 2 0 0 0 4 0" class="icon"/></g>
+  <circle cx="1318" cy="43" r="4" fill="#FF7979" stroke="#FFFFFF" stroke-width="2"/>
+  <rect x="1350" y="36" width="1" height="40" fill="#343942"/>
+  <circle cx="1390" cy="56" r="18" fill="#3A3555"/>
+  <text x="1390" y="61" text-anchor="middle" class="label" fill="#B7AFFF">JM</text>
+  <text x="1418" y="51" class="ink label">Jairo</text>
+  <text x="1418" y="67" class="muted small">Admin</text>
+  <path d="m1494 52 4 4 4-4" class="icon" stroke="#A4ACB9"/>
+  <g transform="translate(1530 44)" color="#A4ACB9"><circle cx="10" cy="10" r="4" class="icon"/><path d="M10 1v2M10 17v2M1 10h2M17 10h2M3.6 3.6 5 5M15 15l1.4 1.4M16.4 3.6 15 5M5 15l-1.4 1.4" class="icon"/></g>
+
+  <!-- Barra de comandos -->
+  <g filter="url(#shadow-sm)">
+    <rect x="250" y="108" width="1330" height="62" rx="8" fill="#191C21" fill-opacity="0.96" stroke="#30343B"/>
+  </g>
+  <rect x="264" y="119" width="174" height="40" rx="8" fill="#25292F"/>
+  <rect x="268" y="123" width="83" height="32" rx="6" fill="#20242A" stroke="#30343B"/>
+  <g transform="translate(279 131)" color="#8B7CFF"><rect x="0" y="1" width="14" height="14" rx="2" class="icon"/><path d="M5 1v14M9 1v14" class="icon"/></g>
+  <text x="302" y="145" class="label" fill="#B7AFFF">Board</text>
+  <g transform="translate(365 131)" color="#A4ACB9"><circle cx="3" cy="3" r="2" class="icon"/><circle cx="11" cy="3" r="2" class="icon"/><circle cx="7" cy="12" r="2" class="icon"/><path d="m4.5 4.5 1.3 5M9.5 4.5 8.2 10" class="icon"/></g>
+  <text x="388" y="145" class="label muted">Árvore</text>
+  <line x1="454" y1="121" x2="454" y2="157" stroke="#343942"/>
+  <rect x="468" y="122" width="118" height="34" rx="8" fill="#29263D" stroke="#4A436D"/>
+  <g transform="translate(480 131)" color="#8B7CFF"><path d="M1 2h15l-6 7v5l-3 2V9Z" class="icon"/></g>
+  <text x="504" y="144" class="label" fill="#B7AFFF">Filtros</text>
+  <circle cx="566" cy="139" r="10" fill="#8B7CFF"/>
+  <text x="566" y="143" text-anchor="middle" class="small" fill="#FFFFFF">3</text>
+  <rect x="596" y="122" width="116" height="34" rx="8" fill="#20242A" stroke="#30343B"/>
+  <text x="612" y="144" class="label muted">Squad Core</text>
+  <path d="m688 136 4 4 4-4" class="icon" stroke="#A4ACB9"/>
+  <rect x="722" y="122" width="128" height="34" rx="8" fill="#20242A" stroke="#30343B"/>
+  <text x="738" y="144" class="label muted">Módulo: Todos</text>
+  <path d="m826 136 4 4 4-4" class="icon" stroke="#A4ACB9"/>
+  <text x="866" y="144" class="label" fill="#FF9A91">Limpar</text>
+  <line x1="925" y1="121" x2="925" y2="157" stroke="#343942"/>
+  <g transform="translate(942 130)" color="#A4ACB9"><path d="M2 4h16M5 9h10M8 14h4" class="icon"/></g>
+  <text x="970" y="144" class="label muted">Densidade</text>
+  <g transform="translate(1064 130)" color="#A4ACB9"><circle cx="3" cy="9" r="1" fill="currentColor"/><circle cx="9" cy="9" r="1" fill="currentColor"/><circle cx="15" cy="9" r="1" fill="currentColor"/></g>
+  <rect x="1448" y="119" width="118" height="40" rx="8" fill="#8B7CFF"/>
+  <path d="M1466 139h14M1473 132v14" class="icon" stroke="#FFFFFF" stroke-width="2"/>
+  <text x="1491" y="144" class="label" fill="#FFFFFF">Criar</text>
+  <path d="m1542 136 4 4 4-4" class="icon" stroke="#FFFFFF"/>
+
+  <!-- Contexto do sprint -->
+  <text x="258" y="213" class="ink heading">Sprint 12 · Entrega colaborativa</text>
+  <text x="258" y="236" class="muted body">18 de 24 itens concluídos</text>
+  <rect x="466" y="226" width="224" height="6" rx="3" fill="#343942"/>
+  <rect x="466" y="226" width="168" height="6" rx="3" fill="#35D49A"/>
+  <text x="700" y="233" class="small" fill="#69E0B5">75%</text>
+  <rect x="1258" y="199" width="126" height="34" rx="8" fill="#20242A" stroke="#30343B"/>
+  <circle cx="1276" cy="216" r="4" fill="#35D49A"/>
+  <text x="1288" y="220" class="label muted">4 online</text>
+  <rect x="1394" y="199" width="172" height="34" rx="8" fill="#20242A" stroke="#30343B"/>
+  <g transform="translate(1410 208)" color="#A4ACB9"><path d="M2 1h14v11H8l-4 3v-3H2Z" class="icon"/></g>
+  <text x="1436" y="220" class="label muted">Atividade recente</text>
+
+  <!-- Cabecalho da swimlane -->
+  <rect x="250" y="258" width="1330" height="48" rx="8" fill="#1C1F24" stroke="#30343B"/>
+  <rect x="250" y="258" width="5" height="48" rx="2.5" fill="#F6C35C"/>
+  <path d="m270 278 5 5 5-5" class="icon" stroke="#A4ACB9"/>
+  <rect x="294" y="270" width="28" height="24" rx="6" fill="#43351D"/>
+  <g transform="translate(301 276)" color="#FFD27A"><path d="M1 1h12v10H1zM4 4h6M4 7h4" class="icon"/></g>
+  <text x="334" y="287" class="ink title">Autenticação e acesso</text>
+  <rect x="528" y="270" width="116" height="24" rx="6" fill="#1C3635"/>
+  <text x="586" y="286" text-anchor="middle" class="small" fill="#65D1CC">Módulo Conta</text>
+  <text x="1210" y="286" class="muted small">12 itens</text>
+  <rect x="1272" y="277" width="108" height="6" rx="3" fill="#343942"/>
+  <rect x="1272" y="277" width="73" height="6" rx="3" fill="#F6C35C"/>
+  <text x="1390" y="286" class="small" fill="#FFD27A">68%</text>
+  <g transform="translate(1518 271)" color="#A4ACB9"><circle cx="3" cy="11" r="1.3" fill="currentColor"/><circle cx="9" cy="11" r="1.3" fill="currentColor"/><circle cx="15" cy="11" r="1.3" fill="currentColor"/></g>
+
+  <!-- Colunas -->
+  <g>
+    <rect x="250" y="318" width="322" height="560" rx="8" fill="#15181C" stroke="#30343B"/>
+    <rect x="586" y="318" width="322" height="560" rx="8" fill="#16191F" stroke="#30343B"/>
+    <rect x="922" y="318" width="322" height="560" rx="8" fill="#19171D" stroke="#30343B"/>
+    <rect x="1258" y="318" width="322" height="560" rx="8" fill="#151B19" stroke="#30343B"/>
+  </g>
+  <circle cx="270" cy="344" r="5" fill="#7D8695"/>
+  <text x="284" y="349" class="ink label">A fazer</text>
+  <rect x="352" y="334" width="26" height="20" rx="6" fill="#2B3037"/>
+  <text x="365" y="348" text-anchor="middle" class="small muted">4</text>
+  <text x="532" y="349" class="quiet small">WIP 6</text>
+  <circle cx="606" cy="344" r="5" fill="#64A0FF"/>
+  <text x="620" y="349" class="ink label">Em andamento</text>
+  <rect x="724" y="334" width="26" height="20" rx="6" fill="#243957"/>
+  <text x="737" y="348" text-anchor="middle" class="small" fill="#8BB5FF">3</text>
+  <text x="869" y="349" class="small" fill="#8BB5FF">WIP 3/4</text>
+  <circle cx="942" cy="344" r="5" fill="#AE81FF"/>
+  <text x="956" y="349" class="ink label">Em revisão</text>
+  <rect x="1045" y="334" width="26" height="20" rx="6" fill="#392E4B"/>
+  <text x="1058" y="348" text-anchor="middle" class="small" fill="#C4A6FF">2</text>
+  <text x="1204" y="349" class="quiet small">WIP 4</text>
+  <circle cx="1278" cy="344" r="5" fill="#35D49A"/>
+  <text x="1292" y="349" class="ink label">Concluído</text>
+  <rect x="1370" y="334" width="26" height="20" rx="6" fill="#183A30"/>
+  <text x="1383" y="348" text-anchor="middle" class="small" fill="#69E0B5">3</text>
+  <text x="1537" y="349" class="quiet small">Hoje</text>
+
+  <!-- Cards: A fazer -->
+  <g filter="url(#shadow-sm)">
+    <rect x="264" y="370" width="294" height="144" rx="8" fill="#20242A" stroke="#30343B"/>
+  </g>
+  <rect x="264" y="370" width="4" height="144" rx="2" fill="#FF7979"/>
+  <rect x="278" y="384" width="48" height="22" rx="6" fill="#472929"/>
+  <text x="302" y="399" text-anchor="middle" class="small" fill="#FF9A91">BUG</text>
+  <text x="338" y="399" class="quiet small">AZY-128</text>
+  <circle cx="530" cy="395" r="2" fill="#7D8695"/><circle cx="538" cy="395" r="2" fill="#7D8695"/><circle cx="546" cy="395" r="2" fill="#7D8695"/>
+  <text x="278" y="431" class="ink body">Corrigir expiração silenciosa</text>
+  <text x="278" y="449" class="ink body">da sessão no navegador</text>
+  <rect x="278" y="462" width="72" height="22" rx="6" fill="#43351D"/>
+  <text x="314" y="477" text-anchor="middle" class="small" fill="#FFD27A">Alta</text>
+  <rect x="358" y="462" width="72" height="22" rx="6" fill="#2B2F36"/>
+  <text x="394" y="477" text-anchor="middle" class="small muted">Backend</text>
+  <g transform="translate(278 492)" color="#A4ACB9"><path d="M1 2h13v11H1zM4 6l2 2 4-4" class="icon"/></g>
+  <text x="299" y="505" class="small muted">2/5</text>
+  <text x="462" y="505" class="small muted">5 pts</text>
+  <circle cx="536" cy="499" r="13" fill="#472929"/>
+  <text x="536" y="503" text-anchor="middle" class="small" fill="#FF9A91">AB</text>
+
+  <g filter="url(#shadow-sm)"><rect x="264" y="526" width="294" height="128" rx="8" fill="#20242A" stroke="#30343B"/></g>
+  <rect x="264" y="526" width="4" height="128" rx="2" fill="#64A0FF"/>
+  <rect x="278" y="540" width="50" height="22" rx="6" fill="#332E4A"/>
+  <text x="303" y="555" text-anchor="middle" class="small" fill="#B7AFFF">STORY</text>
+  <text x="340" y="555" class="quiet small">AZY-134</text>
+  <text x="278" y="587" class="ink body">Recuperação de acesso com</text>
+  <text x="278" y="605" class="ink body">validação em duas etapas</text>
+  <rect x="278" y="620" width="82" height="22" rx="6" fill="#1C3635"/>
+  <text x="319" y="635" text-anchor="middle" class="small" fill="#65D1CC">Conta</text>
+  <text x="478" y="635" class="small muted">8 pts</text>
+  <circle cx="536" cy="630" r="13" fill="#332E4A"/>
+  <text x="536" y="634" text-anchor="middle" class="small" fill="#B7AFFF">CR</text>
+
+  <rect x="264" y="666" width="294" height="42" rx="8" fill="#20242A" fill-opacity="0.65" stroke="#30343B" stroke-dasharray="4 4"/>
+  <path d="M282 687h12M288 681v12" class="icon" stroke="#A4ACB9"/>
+  <text x="304" y="691" class="label muted">Adicionar item</text>
+
+  <!-- Cards: Em andamento -->
+  <g filter="url(#shadow-sm)"><rect x="600" y="370" width="294" height="154" rx="8" fill="#20242A" stroke="#365172"/></g>
+  <rect x="600" y="370" width="4" height="154" rx="2" fill="#64A0FF"/>
+  <rect x="614" y="384" width="48" height="22" rx="6" fill="#203551"/>
+  <text x="638" y="399" text-anchor="middle" class="small" fill="#8BB5FF">TASK</text>
+  <text x="674" y="399" class="quiet small">AZY-121</text>
+  <rect x="812" y="384" width="66" height="22" rx="6" fill="#1B3A38"/>
+  <circle cx="825" cy="395" r="3" fill="#65D1CC"/>
+  <text x="848" y="399" text-anchor="middle" class="small" fill="#65D1CC">AI ativa</text>
+  <text x="614" y="431" class="ink body">Implementar refresh token</text>
+  <text x="614" y="449" class="ink body">com rotação segura</text>
+  <rect x="614" y="463" width="76" height="22" rx="6" fill="#2B2F36"/>
+  <text x="652" y="478" text-anchor="middle" class="small muted">Segurança</text>
+  <rect x="698" y="463" width="68" height="22" rx="6" fill="#29263D"/>
+  <text x="732" y="478" text-anchor="middle" class="small" fill="#B7AFFF">API</text>
+  <rect x="614" y="496" width="180" height="5" rx="2.5" fill="#343942"/>
+  <rect x="614" y="496" width="108" height="5" rx="2.5" fill="#64A0FF"/>
+  <text x="802" y="503" class="small" fill="#8BB5FF">60%</text>
+  <text x="614" y="518" class="small muted">Atualizado há 8 min</text>
+  <circle cx="872" cy="508" r="13" fill="#20423B"/>
+  <text x="872" y="512" text-anchor="middle" class="small" fill="#69E0B5">AI</text>
+
+  <g filter="url(#shadow-sm)"><rect x="600" y="536" width="294" height="132" rx="8" fill="#20242A" stroke="#30343B"/></g>
+  <rect x="600" y="536" width="4" height="132" rx="2" fill="#F6C35C"/>
+  <rect x="614" y="550" width="48" height="22" rx="6" fill="#203551"/>
+  <text x="638" y="565" text-anchor="middle" class="small" fill="#8BB5FF">TASK</text>
+  <text x="674" y="565" class="quiet small">AZY-126</text>
+  <text x="614" y="597" class="ink body">Revisar mensagens de erro</text>
+  <text x="614" y="615" class="ink body">do fluxo de login</text>
+  <rect x="614" y="631" width="80" height="22" rx="6" fill="#43351D"/>
+  <text x="654" y="646" text-anchor="middle" class="small" fill="#FFD27A">Conteúdo</text>
+  <text x="815" y="646" class="small muted">3 pts</text>
+  <circle cx="872" cy="642" r="13" fill="#3A3555"/>
+  <text x="872" y="646" text-anchor="middle" class="small" fill="#B7AFFF">JM</text>
+
+  <rect x="600" y="680" width="294" height="42" rx="8" fill="#20242A" fill-opacity="0.65" stroke="#30343B" stroke-dasharray="4 4"/>
+  <path d="M618 701h12M624 695v12" class="icon" stroke="#A4ACB9"/>
+  <text x="640" y="705" class="label muted">Adicionar item</text>
+
+  <!-- Cards: Revisao -->
+  <g filter="url(#shadow-sm)"><rect x="936" y="370" width="294" height="142" rx="8" fill="#20242A" stroke="#59446F"/></g>
+  <rect x="936" y="370" width="4" height="142" rx="2" fill="#AE81FF"/>
+  <rect x="950" y="384" width="48" height="22" rx="6" fill="#203551"/>
+  <text x="974" y="399" text-anchor="middle" class="small" fill="#8BB5FF">TASK</text>
+  <text x="1010" y="399" class="quiet small">AZY-119</text>
+  <text x="950" y="431" class="ink body">Adicionar proteção contra</text>
+  <text x="950" y="449" class="ink body">tentativas excessivas</text>
+  <rect x="950" y="463" width="76" height="22" rx="6" fill="#2B2F36"/>
+  <text x="988" y="478" text-anchor="middle" class="small muted">Segurança</text>
+  <rect x="1034" y="463" width="72" height="22" rx="6" fill="#392E4B"/>
+  <text x="1070" y="478" text-anchor="middle" class="small" fill="#C4A6FF">Review</text>
+  <g transform="translate(950 492)" color="#A4ACB9"><path d="M2 2h14v10H7l-3 3v-3H2Z" class="icon"/></g>
+  <text x="974" y="505" class="small muted">3 comentários</text>
+  <circle cx="1208" cy="498" r="13" fill="#472929"/>
+  <text x="1208" y="502" text-anchor="middle" class="small" fill="#FF9A91">AB</text>
+
+  <g filter="url(#shadow-sm)"><rect x="936" y="524" width="294" height="126" rx="8" fill="#20242A" stroke="#30343B"/></g>
+  <rect x="936" y="524" width="4" height="126" rx="2" fill="#AE81FF"/>
+  <rect x="950" y="538" width="48" height="22" rx="6" fill="#472929"/>
+  <text x="974" y="553" text-anchor="middle" class="small" fill="#FF9A91">BUG</text>
+  <text x="1010" y="553" class="quiet small">AZY-130</text>
+  <text x="950" y="585" class="ink body">Ajustar feedback visual</text>
+  <text x="950" y="603" class="ink body">ao renovar a sessão</text>
+  <rect x="950" y="617" width="64" height="22" rx="6" fill="#2B2F36"/>
+  <text x="982" y="632" text-anchor="middle" class="small muted">Web</text>
+  <text x="1151" y="632" class="small muted">2 pts</text>
+  <circle cx="1208" cy="628" r="13" fill="#20423B"/>
+  <text x="1208" y="632" text-anchor="middle" class="small" fill="#69E0B5">CR</text>
+
+  <rect x="936" y="662" width="294" height="42" rx="8" fill="#20242A" fill-opacity="0.65" stroke="#30343B" stroke-dasharray="4 4"/>
+  <path d="M954 683h12M960 677v12" class="icon" stroke="#A4ACB9"/>
+  <text x="976" y="687" class="label muted">Adicionar item</text>
+
+  <!-- Cards: Concluido -->
+  <g filter="url(#shadow-sm)"><rect x="1272" y="370" width="294" height="126" rx="8" fill="#20242A" stroke="#315847"/></g>
+  <rect x="1272" y="370" width="4" height="126" rx="2" fill="#35D49A"/>
+  <circle cx="1294" cy="395" r="9" fill="#183A30"/>
+  <path d="m1289 395 3 3 6-7" class="icon" stroke="#69E0B5"/>
+  <text x="1312" y="399" class="quiet small">AZY-112</text>
+  <text x="1286" y="431" class="ink body">Criar tela de autenticação</text>
+  <text x="1286" y="449" class="ink body">com credenciais</text>
+  <rect x="1286" y="463" width="66" height="22" rx="6" fill="#1C3635"/>
+  <text x="1319" y="478" text-anchor="middle" class="small" fill="#65D1CC">Conta</text>
+  <text x="1486" y="478" class="small" fill="#69E0B5">5 pts</text>
+  <circle cx="1544" cy="474" r="13" fill="#3A3555"/>
+  <text x="1544" y="478" text-anchor="middle" class="small" fill="#B7AFFF">JM</text>
+
+  <g filter="url(#shadow-sm)"><rect x="1272" y="508" width="294" height="132" rx="8" fill="#20242A" stroke="#315847"/></g>
+  <rect x="1272" y="508" width="4" height="132" rx="2" fill="#35D49A"/>
+  <circle cx="1294" cy="533" r="9" fill="#183A30"/>
+  <path d="m1289 533 3 3 6-7" class="icon" stroke="#69E0B5"/>
+  <text x="1312" y="537" class="quiet small">AZY-115</text>
+  <text x="1286" y="569" class="ink body">Persistir preferência de</text>
+  <text x="1286" y="587" class="ink body">tema e idioma</text>
+  <rect x="1286" y="601" width="86" height="22" rx="6" fill="#29263D"/>
+  <text x="1329" y="616" text-anchor="middle" class="small" fill="#B7AFFF">Preferências</text>
+  <text x="1486" y="616" class="small" fill="#69E0B5">3 pts</text>
+  <circle cx="1544" cy="612" r="13" fill="#472929"/>
+  <text x="1544" y="616" text-anchor="middle" class="small" fill="#FF9A91">AB</text>
+
+  <g filter="url(#shadow-sm)"><rect x="1272" y="652" width="294" height="110" rx="8" fill="#20242A" stroke="#315847"/></g>
+  <rect x="1272" y="652" width="4" height="110" rx="2" fill="#35D49A"/>
+  <circle cx="1294" cy="677" r="9" fill="#183A30"/>
+  <path d="m1289 677 3 3 6-7" class="icon" stroke="#69E0B5"/>
+  <text x="1312" y="681" class="quiet small">AZY-117</text>
+  <text x="1286" y="713" class="ink body">Documentar política de sessão</text>
+  <rect x="1286" y="728" width="92" height="22" rx="6" fill="#43351D"/>
+  <text x="1332" y="743" text-anchor="middle" class="small" fill="#FFD27A">Documentação</text>
+  <circle cx="1544" cy="738" r="13" fill="#20423B"/>
+  <text x="1544" y="742" text-anchor="middle" class="small" fill="#69E0B5">CR</text>
+
+  <!-- Segunda swimlane e barra de status -->
+  <rect x="250" y="892" width="1330" height="44" rx="8" fill="#1C1F24" stroke="#30343B"/>
+  <rect x="250" y="892" width="5" height="44" rx="2.5" fill="#AE81FF"/>
+  <path d="m270 908 5 5 5-5" class="icon" stroke="#A4ACB9"/>
+  <rect x="294" y="902" width="28" height="24" rx="6" fill="#392E4B"/>
+  <g transform="translate(301 908)" color="#C4A6FF"><path d="M1 1h12v10H1zM4 4h6M4 7h4" class="icon"/></g>
+  <text x="334" y="920" class="ink title">Gestão do perfil</text>
+  <rect x="485" y="902" width="110" height="24" rx="6" fill="#29263D"/>
+  <text x="540" y="918" text-anchor="middle" class="small" fill="#B7AFFF">6 itens · 40%</text>
+  <text x="1536" y="919" text-anchor="end" class="muted small">Expandir</text>
+
+  <g filter="url(#shadow-sm)">
+    <rect x="1156" y="950" width="424" height="30" rx="8" fill="#191C21" fill-opacity="0.96" stroke="#30343B"/>
+  </g>
+  <circle cx="1174" cy="965" r="4" fill="#35D49A"/>
+  <text x="1186" y="969" class="small muted">Tempo real ativo</text>
+  <line x1="1284" y1="958" x2="1284" y2="972" stroke="#343942"/>
+  <text x="1298" y="969" class="small muted">Última atualização: agora</text>
+  <line x1="1442" y1="958" x2="1442" y2="972" stroke="#343942"/>
+  <text x="1456" y="969" class="small muted">24 itens visíveis</text>
+</svg>

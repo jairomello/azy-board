@@ -22,7 +22,7 @@ await db.insert(users).values({
   email: 'admin@example.com',
   passwordHash: await hashPassword('change-me-admin-password'),
   name: 'Demo Admin',
-  theme: 'light', language: 'pt-BR',
+  theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR',
   createdAt: new Date().toISOString(),
 })
 

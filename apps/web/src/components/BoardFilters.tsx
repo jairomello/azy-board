@@ -15,7 +15,10 @@ export interface BoardFilterState {
   types: ItemType[]
   tagIds: string[]
   hideEmptyEpics: boolean
+  hideEmptyStories: boolean
   squadId: string
+  showSubtasks: boolean
+  storyDisplay: 'lanes' | 'cards'
 }
 
 interface Props {
@@ -28,8 +31,8 @@ interface Props {
   onChange: (filters: BoardFilterState) => void
   showSubtasks: boolean
   onToggleSubtasks: () => void
-  showStories: boolean
-  onToggleStories: () => void
+  storiesAsCards: boolean
+  onToggleStoryDisplay: () => void
   onExpandAll?: () => void
   onCollapseAll?: () => void
   showExpandCollapse?: boolean
@@ -52,13 +55,11 @@ const iconBtn = (active: boolean) =>
       : 'border-border text-muted-foreground hover:text-foreground hover:border-border/80'
   }`
 
-const separator = <div className="w-px h-5 bg-border mx-0.5 flex-shrink-0" />
-
 export function BoardFilters({
   modules, sprints, members, tags, squads = [],
   filters, onChange,
   showSubtasks, onToggleSubtasks,
-  showStories, onToggleStories,
+  storiesAsCards, onToggleStoryDisplay,
   onExpandAll, onCollapseAll, showExpandCollapse = false,
 }: Props) {
   const activeCount = [
@@ -69,6 +70,7 @@ export function BoardFilters({
     filters.types.length > 0,
     filters.tagIds.length > 0,
     filters.hideEmptyEpics,
+    !storiesAsCards && filters.hideEmptyStories,
   ].filter(Boolean).length
 
   function update(partial: Partial<BoardFilterState>) {
@@ -76,7 +78,18 @@ export function BoardFilters({
   }
 
   function clear() {
-    onChange({ moduleId: '', sprintId: '', assigneeId: '', squadId: '', types: [], tagIds: [], hideEmptyEpics: false })
+    onChange({
+      moduleId: '',
+      sprintId: '',
+      assigneeId: '',
+      squadId: '',
+      types: [],
+      tagIds: [],
+      hideEmptyEpics: false,
+      hideEmptyStories: false,
+      showSubtasks: filters.showSubtasks,
+      storyDisplay: filters.storyDisplay,
+    })
   }
 
   function toggleType(t: ItemType) {
@@ -90,41 +103,73 @@ export function BoardFilters({
   }
 
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
+    <div className="space-y-4">
 
       {/* Zona 1 — Visualização */}
-      <Tooltip label={showSubtasks ? 'Ocultar subtasks' : 'Mostrar subtasks'}>
-        <button onClick={onToggleSubtasks} className={iconBtn(showSubtasks)}>
-          <Layers className="w-3.5 h-3.5" />
-        </button>
-      </Tooltip>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="w-20 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Exibição</span>
+        <Tooltip label={showSubtasks ? 'Ocultar subtasks' : 'Mostrar subtasks'}>
+          <button aria-pressed={showSubtasks} aria-label="Mostrar subtasks" onClick={onToggleSubtasks} className={iconBtn(showSubtasks)}>
+            <Layers className="w-3.5 h-3.5" />
+          </button>
+        </Tooltip>
 
-      <Tooltip label="Histórias no board">
-        <button onClick={onToggleStories} className={iconBtn(showStories)}>
-          <LayoutList className="w-3.5 h-3.5" />
-        </button>
-      </Tooltip>
+        <Tooltip label={storiesAsCards ? 'Exibir histórias como lanes' : 'Exibir histórias como cards'}>
+          <button
+            aria-pressed={storiesAsCards}
+            aria-label={storiesAsCards ? 'Exibir histórias como lanes' : 'Exibir histórias como cards'}
+            onClick={onToggleStoryDisplay}
+            className={iconBtn(storiesAsCards)}
+          >
+            <LayoutList className="w-3.5 h-3.5" />
+          </button>
+        </Tooltip>
 
-      {showExpandCollapse && (
-        <>
-          <Tooltip label="Expandir tudo">
-            <button onClick={onExpandAll} className={iconBtn(false)}>
-              <ChevronsDown className="w-3.5 h-3.5" />
+        {showExpandCollapse && (
+          <>
+            <Tooltip label="Expandir tudo">
+              <button aria-label="Expandir tudo" onClick={onExpandAll} className={iconBtn(false)}>
+                <ChevronsDown className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
+            <Tooltip label="Recolher tudo">
+              <button aria-label="Recolher tudo" onClick={onCollapseAll} className={iconBtn(false)}>
+                <ChevronsUp className="w-3.5 h-3.5" />
+              </button>
+            </Tooltip>
+          </>
+        )}
+        <Tooltip label="Ocultar épicos vazios">
+          <button
+            aria-label="Ocultar épicos vazios"
+            aria-pressed={filters.hideEmptyEpics}
+            onClick={() => update({ hideEmptyEpics: !filters.hideEmptyEpics })}
+            className={`${iconBtn(filters.hideEmptyEpics)} flex items-center gap-1.5 px-2`}
+          >
+            {filters.hideEmptyEpics ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            <span className="text-[11px]">Épicos vazios</span>
+          </button>
+        </Tooltip>
+        {!storiesAsCards && (
+          <Tooltip label="Ocultar histórias vazias">
+            <button
+              aria-label="Ocultar histórias vazias"
+              aria-pressed={filters.hideEmptyStories}
+              onClick={() => update({ hideEmptyStories: !filters.hideEmptyStories })}
+              className={`${iconBtn(filters.hideEmptyStories)} flex items-center gap-1.5 px-2`}
+            >
+              {filters.hideEmptyStories ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              <span className="text-[11px]">Histórias vazias</span>
             </button>
           </Tooltip>
-          <Tooltip label="Recolher tudo">
-            <button onClick={onCollapseAll} className={iconBtn(false)}>
-              <ChevronsUp className="w-3.5 h-3.5" />
-            </button>
-          </Tooltip>
-        </>
-      )}
-
-      {separator}
+        )}
+      </div>
 
       {/* Zona 2 — Filtros */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
       {squads.length > 0 && (
         <select
+          aria-label="Squad"
           value={filters.squadId}
           onChange={e => update({ squadId: e.target.value })}
           className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground"
@@ -136,6 +181,7 @@ export function BoardFilters({
 
       {modules.length > 0 && (
         <select
+          aria-label="Módulo"
           value={filters.moduleId}
           onChange={e => update({ moduleId: e.target.value })}
           className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground"
@@ -147,6 +193,7 @@ export function BoardFilters({
 
       {sprints.length > 0 && (
         <select
+          aria-label="Sprint"
           value={filters.sprintId}
           onChange={e => update({ sprintId: e.target.value })}
           className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground"
@@ -158,6 +205,7 @@ export function BoardFilters({
 
       {members.length > 0 && (
         <select
+          aria-label="Responsável"
           value={filters.assigneeId}
           onChange={e => update({ assigneeId: e.target.value })}
           className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground"
@@ -166,13 +214,16 @@ export function BoardFilters({
           {members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
         </select>
       )}
+      </div>
 
       {/* Tipo (multi) */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="w-20 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Tipo</span>
         {(['TASK', 'BUG'] as ItemType[]).map(t => (
           <Tooltip key={t} label={TYPE_TOOLTIPS[t] ?? TYPE_LABELS[t] ?? t}>
             <button
               onClick={() => toggleType(t)}
+              aria-pressed={filters.types.includes(t)}
               className={`text-xs px-2 py-1 rounded-full border transition ${
                 filters.types.includes(t)
                   ? 'bg-primary text-primary-foreground border-primary'
@@ -187,11 +238,13 @@ export function BoardFilters({
 
       {/* Tags (multi) */}
       {tags.length > 0 && (
-        <div className="flex items-center gap-1 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="w-20 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Tags</span>
           {tags.map(tag => (
             <button
               key={tag.id}
               onClick={() => toggleTag(tag.id)}
+              aria-pressed={filters.tagIds.includes(tag.id)}
               className={`text-xs px-2 py-0.5 rounded-full border transition text-white ${
                 filters.tagIds.includes(tag.id) ? 'opacity-100 ring-2 ring-offset-1 ring-foreground/30' : 'opacity-60 hover:opacity-100'
               }`}
@@ -202,15 +255,6 @@ export function BoardFilters({
           ))}
         </div>
       )}
-
-      {separator}
-
-      {/* Zona 3 — Ações de conteúdo */}
-      <Tooltip label="Ocultar épicos vazios">
-        <button onClick={() => update({ hideEmptyEpics: !filters.hideEmptyEpics })} className={iconBtn(filters.hideEmptyEpics)}>
-          {filters.hideEmptyEpics ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-        </button>
-      </Tooltip>
 
       {/* Limpar */}
       {activeCount > 0 && (

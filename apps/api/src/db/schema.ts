@@ -27,6 +27,9 @@ export const users = sqliteTable('users', {
   name: text('name').notNull(),
   avatarUrl: text('avatar_url'),
   theme: text('theme', { enum: ['light', 'dark'] }).notNull().default('light'),
+  lightShellTheme: text('light_shell_theme', {
+    enum: ['petroleum', 'ocean', 'emerald', 'graphite', 'classic'],
+  }).notNull().default('petroleum'),
   language: text('language', { enum: ['pt-BR', 'en', 'es'] }).notNull().default('pt-BR'),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
 })

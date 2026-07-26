@@ -44,5 +44,21 @@
   "versionItems": "Items in this version",
   "noVersionItems": "No items linked to this version",
   "noModules": "No modules created",
-  "createModule": "Create module"
+  "createModule": "Create module",
+  "appearance": "Appearance",
+  "appearanceDescription": "Customize your workspace color mode and visual identity.",
+  "colorMode": "Color mode",
+  "lightShellTheme": "Light shell theme",
+  "lightThemeDarkHint": "Applied when you return to light mode",
+  "appearanceSaved": "Preference saved",
+  "appearanceSaveError": "Could not save to the server. Your local preference was kept.",
+  "accountPreferences": "Account preferences",
+  "accountPreferencesDescription": "Manage your identity, appearance, and integrations.",
+  "shellThemes": {
+    "petroleum": "Petroleum",
+    "ocean": "Ocean",
+    "emerald": "Emerald",
+    "graphite": "Graphite",
+    "classic": "Classic"
+  }
 }

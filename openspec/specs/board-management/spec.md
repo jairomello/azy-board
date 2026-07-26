@@ -1,41 +1,57 @@
-## MODIFIED Requirements
+## Purpose
 
-### Requirement: Swimlanes colapsáveis por EPIC no board
-O sistema SHALL exibir o board com uma raia (swimlane) por item com `type = EPIC`, lida da tabela `items` via `GET /projects/:id/items?type=EPIC`. Cards dentro da swimlane são items com `type IN (TASK, BUG)` e leaf rule aplicada.
+Definir a composição, o agrupamento hierárquico e as principais interações do Board Kanban.
+
+## Requirements
+
+### Requirement: Lanes colapsáveis de EPIC e STORY no board
+O sistema SHALL exibir uma lane principal por item com `type = EPIC`. Quando `storyDisplay = lanes`, cada item `STORY` SHALL formar uma lane horizontal aninhada no EPIC e conter os cards `TASK` e `BUG` pertencentes à sua ancestralidade, com a Leaf Rule e os filtros ativos aplicados.
 
 #### Scenario: Colapsar swimlane de épico
 - **WHEN** usuário clica no header da swimlane de um EPIC
-- **THEN** raia colapsa, exibindo apenas o título do épico, progresso geral e contagem de cards por coluna
+- **THEN** a lane colapsa, exibindo apenas o título do épico, progresso geral e contagem de histórias e cards
 
 #### Scenario: Expandir swimlane de épico
 - **WHEN** usuário clica no header colapsado do EPIC
-- **THEN** raia expande exibindo todos os cards de items TASK/BUG folha daquele EPIC nas colunas correspondentes
+- **THEN** a lane expande exibindo as lanes de histórias daquele EPIC
 
-#### Scenario: Estado de colapso persistido na sessão
-- **WHEN** usuário colapsa um EPIC e navega para outra página e retorna
-- **THEN** estado colapsado é mantido durante a mesma sessão do browser
+#### Scenario: Colapsar lane de história
+- **WHEN** usuário clica no header de uma STORY no modo `lanes`
+- **THEN** a lane da história colapsa independentemente do EPIC e mantém apenas título, contagem e progresso
+
+#### Scenario: Expandir lane de história
+- **WHEN** usuário clica no header colapsado de uma STORY
+- **THEN** a lane expande exibindo suas colunas e cards descendentes
+
+#### Scenario: Estado de colapso persistido por projeto
+- **WHEN** usuário colapsa um EPIC ou uma STORY e navega para outra página e retorna
+- **THEN** os estados colapsados são restaurados separadamente para o projeto
 
 #### Scenario: Progresso do EPIC no header da swimlane
 - **WHEN** swimlane de um EPIC é exibida
 - **THEN** header exibe o percentual de progresso calculado com base nos items TASK/BUG folha descendentes concluídos
 
+#### Scenario: Cards do épico sem história ancestral
+- **WHEN** um card possui EPIC ancestral, mas não possui STORY ancestral
+- **THEN** o card aparece no agrupamento `Sem história` dentro do EPIC
+
 ---
 
 ### Requirement: Raia de Items Órfãos
-O sistema SHALL exibir uma swimlane especial "Itens Órfãos" para items TASK/BUG folha que não possuem EPIC ancestral.
+O sistema SHALL exibir uma lane especial "Sem épico" para items TASK/BUG visíveis que não possuem EPIC ancestral.
 
 #### Scenario: Item TASK/BUG sem EPIC aparece em Itens Órfãos
 - **WHEN** item TASK ou BUG é criado sem `parentId` ou com pai que não tem ancestral EPIC
-- **THEN** item aparece na swimlane "Itens Órfãos" do board
+- **THEN** item aparece na lane "Sem épico" do board
 
 #### Scenario: Item vinculado a EPIC sai de Itens Órfãos
 - **WHEN** item órfão é editado e vinculado a uma STORY/EPIC
-- **THEN** item desaparece de "Itens Órfãos" e aparece na swimlane do EPIC em tempo real
+- **THEN** item desaparece de "Sem épico" e aparece na lane de STORY do EPIC em tempo real
 
 ---
 
 ### Requirement: Filtros combinados do board
-O sistema SHALL oferecer filtros independentes e combináveis para: Módulo, Sprint, Responsável, Tipo (TASK, BUG, STORY) e Tags. O filtro de Tipo passa a incluir STORY para o toggle "Mostrar histórias".
+O sistema SHALL oferecer filtros independentes e combináveis para: Módulo, Sprint, Responsável, Tipo (`TASK`, `BUG`) e Tags. A representação de `STORY` SHALL ser controlada separadamente por `storyDisplay`.
 
 #### Scenario: Filtro por módulo via EPIC
 - **WHEN** usuário seleciona um módulo no filtro
@@ -63,20 +79,30 @@ O sistema SHALL oferecer filtros independentes e combináveis para: Módulo, Spr
 
 ---
 
-### Requirement: Toggle "Mostrar histórias" no board
-O sistema SHALL exibir um toggle "Mostrar histórias" no toolbar. Quando ativado, items com `type = STORY` são exibidos como cards virtuais na primeira coluna, lidos de `GET /projects/:id/items?type=STORY`.
+### Requirement: Toggle de modo de histórias no board
+O sistema SHALL exibir um toggle que alterna `storyDisplay` entre `lanes` e `cards`. O valor padrão SHALL ser `lanes`.
 
-#### Scenario: Toggle desativado (padrão)
-- **WHEN** toggle "Mostrar histórias" está desativado
-- **THEN** apenas items com `type IN (TASK, BUG)` e leaf rule são exibidos no board
+#### Scenario: Histórias como lanes por padrão
+- **WHEN** o board é aberto sem preferência persistida
+- **THEN** cada STORY é exibida como lane aninhada no EPIC
+- **AND** suas colunas contêm os cards descendentes
 
-#### Scenario: Toggle ativado
-- **WHEN** toggle "Mostrar histórias" está ativado
-- **THEN** items com `type = STORY` são exibidos como cards na primeira coluna com badge `Story` e sem possibilidade de arrastar
+#### Scenario: Alternar para histórias como cards
+- **WHEN** usuário ativa o modo `cards`
+- **THEN** STORYs folha são exibidas como cards reais e móveis
+- **AND** STORYs com filhos são exibidas como referências virtuais não arrastáveis na primeira coluna
 
 #### Scenario: Clicar em card de história no board
-- **WHEN** toggle está ativado e usuário clica em card de `type = STORY`
+- **WHEN** o modo `cards` está ativo e usuário clica em card de `type = STORY`
 - **THEN** modal de edição de história é aberta em modo de edição com os campos ágeis e rich text
+
+#### Scenario: Editar história pela lane
+- **WHEN** o modo `lanes` está ativo e usuário aciona editar no header de uma STORY
+- **THEN** modal de edição de história é aberta em modo de edição
+
+#### Scenario: Criar card dentro da lane de história
+- **WHEN** usuário cria uma TASK ou BUG pela ação contextual de uma coluna da STORY
+- **THEN** o item é criado com `parentId` igual ao ID da STORY
 
 ---
 
@@ -125,15 +151,17 @@ O sistema SHALL permitir que administradores criem, renomeiem, reordenem e exclu
 ---
 
 ### Requirement: Toggle de visualização subtasks no board
-O sistema SHALL oferecer toggle no toolbar para alternar entre "mostrar apenas items TASK/BUG folha" (padrão — Leaf Rule) e "mostrar por nível".
+O sistema SHALL oferecer toggle para alternar entre o primeiro nível operacional abaixo de cada STORY e os items TASK/BUG folha descendentes.
 
-#### Scenario: Toggle desativado (padrão)
+#### Scenario: Toggle desativado mostra primeiro nível
 - **WHEN** toggle de subtasks está desativado
-- **THEN** apenas items TASK/BUG folha aparecem como cards no board
+- **THEN** o board exibe TASKs e BUGs cujo pai imediato é uma STORY, além dos itens sem pai
+- **AND** cards com filhos permanecem não arrastáveis
 
-#### Scenario: Toggle ativado (mostrar por nível)
+#### Scenario: Toggle ativado mostra folhas
 - **WHEN** usuário ativa o toggle de subtasks
-- **THEN** board exibe o primeiro nível de items TASK/BUG de cada STORY, independente de terem filhos
+- **THEN** o board exibe os items TASK/BUG folha descendentes
+- **AND** pais agregadores deixam de ser exibidos como cards
 
 ---
 
@@ -142,11 +170,11 @@ O sistema SHALL exibir no toolbar dois botões para controlar o estado de expans
 
 #### Scenario: Expandir tudo
 - **WHEN** usuário clica em "Expandir tudo"
-- **THEN** todas as swimlanes de EPICs e a swimlane de items órfãos são expandidas de uma só vez
+- **THEN** todas as lanes de EPICs, STORYs e a lane "Sem épico" são expandidas de uma só vez
 
 #### Scenario: Recolher tudo
 - **WHEN** usuário clica em "Recolher tudo"
-- **THEN** todas as swimlanes de EPICs e a swimlane de items órfãos são recolhidas, exibindo apenas os headers com título e contagem por coluna
+- **THEN** todas as lanes de EPICs, STORYs e a lane "Sem épico" são recolhidas, exibindo apenas seus headers
 
 #### Scenario: Controles ocultos na view Árvore
 - **WHEN** usuário está na view Árvore

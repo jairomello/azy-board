@@ -91,6 +91,11 @@ self-signup surface.
 cards. Parent items aggregate status and points from descendants. Cascade
 deletion removes all descendants, checklists, and attachments atomically.
 
+**Nested Board lanes**: the default Kanban layout renders
+`Epic → Story → Cards` with independently collapsible Epic and Story lanes.
+Users can switch Stories back to card mode, hide empty Story lanes, and create
+Tasks or Bugs directly inside a Story context.
+
 **Ancestry Path**: each item stores a denormalised `ancestryPath` JSON column
 — `[{ id, title, type }, …]` — enabling O(1) breadcrumb rendering without
 recursive joins.

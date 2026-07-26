@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Pencil, Trash2, Check, X, Eye, UserPlus, Users, Network } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import { VersionDetailModal } from '../components/VersionDetailModal'
+import { AppShell } from '../components/AppShell'
 import type { ColumnBaseStatus } from '@azy-board/types'
 
 interface Column { id: string; name: string; baseStatus: ColumnBaseStatus; position: number }
@@ -76,6 +77,7 @@ export default function SettingsPage() {
 
   // Gerente Geral
   const [manager, setManager] = useState<Manager | null>(null)
+  const [projectName, setProjectName] = useState('')
   const [managerUserId, setManagerUserId] = useState('')
   const [savingManager, setSavingManager] = useState(false)
 
@@ -115,8 +117,12 @@ export default function SettingsPage() {
     api.get<Module[]>(`/projects/${projectId}/modules`).then(setModules)
     api.get<ProjectVersion[]>(`/projects/${projectId}/versions`).then(setVersions)
     api.get<CostCenter[]>(`/projects/${projectId}/cost-centers`).then(setCostCenters)
-    api.get<{ manager?: Manager | null }>(`/projects/${projectId}`)
-      .then(p => { setManager(p.manager ?? null); setManagerUserId(p.manager?.id ?? '') })
+    api.get<{ name: string; manager?: Manager | null }>(`/projects/${projectId}`)
+      .then(p => {
+        setProjectName(p.name)
+        setManager(p.manager ?? null)
+        setManagerUserId(p.manager?.id ?? '')
+      })
       .catch(() => {})
   }, [projectId])
 
@@ -346,15 +352,20 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card px-6 py-4 flex items-center gap-4">
-        <Link to={`/projects/${projectId}/board`} className="text-muted-foreground hover:text-foreground text-sm transition">
-          ← Voltar ao board
-        </Link>
-        <h1 className="font-bold text-foreground text-lg">{t('settings:settings')}</h1>
-      </header>
-
-      <main className="max-w-3xl mx-auto px-6 py-10 space-y-10">
+    <AppShell
+      projectId={projectId}
+      projectName={projectName}
+      sectionLabel={t('settings:settings')}
+      contextLabel="Estrutura do projeto"
+      contentClassName="overflow-y-auto"
+    >
+      <div className="max-w-4xl mx-auto py-6 sm:py-8">
+        <div className="mb-7">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">{projectName}</p>
+          <h2 className="text-2xl font-bold text-foreground mt-1">{t('settings:settings')}</h2>
+          <p className="text-sm text-muted-foreground mt-1">Organize fluxo, pessoas e estrutura sem sair do workspace.</p>
+        </div>
+      <main className="space-y-5 [&>section]:bg-card [&>section]:border [&>section]:border-border [&>section]:rounded-xl [&>section]:p-5 [&>section]:shadow-sm">
 
         {/* Colunas */}
         <section>
@@ -821,6 +832,7 @@ export default function SettingsPage() {
           </div>
         </section>
       </main>
+      </div>
 
       {/* Dialog: Adicionar membro */}
       {addMemberDialog && (
@@ -1144,6 +1156,6 @@ export default function SettingsPage() {
           onSave={handleVersionSave}
         />
       )}
-    </div>
+    </AppShell>
   )
 }

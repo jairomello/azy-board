@@ -4,48 +4,123 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 214 24% 95%;
+    --foreground: 222 37% 15%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 37% 15%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
+    --popover-foreground: 222 37% 15%;
+    --primary: 244 100% 68%;
     --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --secondary: 216 28% 92%;
+    --secondary-foreground: 222 37% 15%;
+    --muted: 216 26% 93%;
+    --muted-foreground: 216 15% 43%;
+    --accent: 244 100% 96%;
+    --accent-foreground: 244 65% 48%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --border: 215 24% 86%;
+    --input: 215 24% 82%;
+    --ring: 244 100% 68%;
     --radius: 0.5rem;
+
+    --canvas: 214 24% 95%;
+    --surface: 0 0% 100%;
+    --surface-raised: 216 30% 97%;
+    --surface-floating: 0 0% 100%;
+    --shell-sidebar: #0b4651;
+    --shell-header: #0e4b56;
+    --shell-border: #1d6872;
+    --shell-foreground: #f7fffe;
+    --shell-muted: #b9d8d8;
+    --shell-active: #185a64;
+    --shell-accent: #50e3c2;
+    --shell-accent-foreground: #102d34;
+    --status-progress: #367bf5;
+    --status-review: #8b5cf6;
+    --status-done: #10b981;
+    --status-blocked: #f06464;
   }
 
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
+  :root[data-light-shell-theme="ocean"] {
+    --shell-sidebar: #123b67;
+    --shell-header: #164777;
+    --shell-border: #2d628f;
+    --shell-active: #1e5a8c;
+    --shell-accent: #67c7ff;
+    --shell-accent-foreground: #102d42;
+    --shell-muted: #c4d8ec;
+  }
+
+  :root[data-light-shell-theme="emerald"] {
+    --shell-sidebar: #125244;
+    --shell-header: #146052;
+    --shell-border: #2d7668;
+    --shell-active: #1e7061;
+    --shell-accent: #69e0b5;
+    --shell-accent-foreground: #10352d;
+    --shell-muted: #c5e4da;
+  }
+
+  :root[data-light-shell-theme="graphite"] {
+    --shell-sidebar: #272b31;
+    --shell-header: #30353c;
+    --shell-border: #484f59;
+    --shell-active: #414852;
+    --shell-accent: #a99fff;
+    --shell-accent-foreground: #171920;
+    --shell-muted: #c9cdd3;
+  }
+
+  :root[data-light-shell-theme="classic"] {
+    --shell-sidebar: #ffffff;
+    --shell-header: #ffffff;
+    --shell-border: #dce3ec;
+    --shell-foreground: #182134;
+    --shell-muted: #627087;
+    --shell-active: #efeeff;
+    --shell-accent: #635bff;
+    --shell-accent-foreground: #ffffff;
+  }
+
+  :root.dark {
+    --background: 220 15% 7%;
+    --foreground: 210 20% 96%;
+    --card: 218 14% 14%;
     --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
+    --popover: 218 14% 14%;
     --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
+    --primary: 248 100% 74%;
+    --primary-foreground: 220 16% 9%;
+    --secondary: 218 13% 19%;
     --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
+    --muted: 218 13% 19%;
+    --muted-foreground: 216 12% 68%;
+    --accent: 248 28% 24%;
     --accent-foreground: 210 40% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --border: 216 12% 24%;
+    --input: 216 12% 28%;
+    --ring: 248 100% 74%;
+
+    --canvas: 220 15% 7%;
+    --surface: 218 14% 14%;
+    --surface-raised: 218 13% 17%;
+    --surface-floating: 218 13% 12%;
+    --shell-sidebar: #171a1f;
+    --shell-header: #20242a;
+    --shell-border: #353a43;
+    --shell-foreground: #f2f4f7;
+    --shell-muted: #aeb5c0;
+    --shell-active: #30353d;
+    --shell-accent: #8b7cff;
+    --shell-accent-foreground: #15121f;
+    --status-progress: #64a0ff;
+    --status-review: #ae81ff;
+    --status-done: #35d49a;
+    --status-blocked: #ff7979;
   }
 }
 
@@ -56,10 +131,33 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    min-width: 320px;
+    text-rendering: optimizeLegibility;
+  }
+  button, a, input, select, textarea {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
   }
 }
 
-/* Scrollbar customizada para o tema escuro */
-.dark ::-webkit-scrollbar { width: 6px; height: 6px; }
-.dark ::-webkit-scrollbar-track { background: hsl(var(--background)); }
-.dark ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 3px; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(var(--muted-foreground) / 0.35); border-radius: 999px; }
+
+.shell-control {
+  --border: 0 0% 100% / 0.18;
+}
+
+.density-compact .kanban-card-content {
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+  gap: 0.35rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

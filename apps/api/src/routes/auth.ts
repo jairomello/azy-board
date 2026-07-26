@@ -5,6 +5,8 @@ import { eq, and } from 'drizzle-orm'
 import { db } from '../db/index'
 import { users } from '../db/schema'
 import { verifyPassword, signJwt } from '../services/auth'
+import { authMiddleware } from '../middleware/auth'
+import type { RequestContext } from '@azy-board/types'
 
 export const authRouter = new Hono<HonoEnv>()
 
@@ -54,9 +56,31 @@ authRouter.post('/login', async (c) => {
       name: user.name,
       avatarUrl: user.avatarUrl,
       theme: user.theme,
+      lightShellTheme: user.lightShellTheme,
       language: user.language,
     },
   })
+})
+
+// GET /auth/me — restaura a sessão e as preferências do usuário.
+authRouter.get('/me', authMiddleware, async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const user = await db.query.users.findFirst({
+    // [TENANT] A sessão nunca pode resolver um usuário fora do tenant do JWT.
+    where: (u) => and(eq(u.id, ctx.userId), eq(u.tenantId, ctx.tenantId)),
+    columns: {
+      id: true,
+      email: true,
+      name: true,
+      avatarUrl: true,
+      theme: true,
+      lightShellTheme: true,
+      language: true,
+    },
+  })
+
+  if (!user) return c.json({ error: 'Usuário não encontrado' }, 404)
+  return c.json({ user })
 })
 
 // POST /auth/logout

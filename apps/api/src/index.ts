@@ -11,6 +11,7 @@ import { checklistsRouter } from './routes/checklists'
 import { shadowMarkdownRouter } from './routes/shadowMarkdown'
 import { apiKeysRouter, userApiKeysRouter } from './routes/apiKeys'
 import { versionsRouter } from './routes/versions'
+import { usersRouter } from './routes/users'
 import { wsHandler } from './services/websocket'
 import { authMiddleware } from './middleware/auth'
 import type { WsClientData } from './services/websocket'
@@ -42,6 +43,7 @@ api.route('/projects/:projectId/board.md', shadowMarkdownRouter)
 api.route('/projects/:projectId/api-keys', apiKeysRouter)
 api.route('/api-keys', userApiKeysRouter)
 api.route('/projects/:projectId/versions', versionsRouter)
+api.route('/users', usersRouter)
 
 // [DB-SWAP] Para servir uploads em produção com S3, remover esta rota estática
 // e usar URLs pré-assinadas do S3 diretamente

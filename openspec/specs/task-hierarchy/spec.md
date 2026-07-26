@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Definir a hierarquia unificada de itens, a Leaf Rule, a agregação e os breadcrumbs usados pelo Board.
+
+## Requirements
 
 ### Requirement: Autorrelacionamento de items (subtasks e hierarquia completa)
 O sistema SHALL permitir que qualquer item tenha um `parent_id` apontando para outro item da tabela `items`, formando a hierarquia completa EPIC → STORY → TASK/BUG → subtask (TASK/BUG). A profundidade máxima recomendada é 5 níveis abaixo do STORY.
@@ -13,20 +17,28 @@ O sistema SHALL permitir que qualquer item tenha um `parent_id` apontando para o
 
 ---
 
-### Requirement: Leaf Rule — apenas items TASK/BUG folha são cards móveis no Kanban
-O sistema SHALL exibir no Kanban apenas items do tipo TASK ou BUG que não possuem filhos (items folha). Items do tipo EPIC e STORY nunca são cards móveis. Items TASK/BUG com filhos são agregadores e também não aparecem como cards.
+### Requirement: Leaf Rule — apenas items folha são móveis no Kanban
+O sistema SHALL permitir movimentação de items `TASK` e `BUG` folha. Items `EPIC` nunca são cards móveis. Items `STORY` são lanes no modo padrão e somente STORYs folha podem ser cards móveis quando `storyDisplay = cards`. Items TASK/BUG com filhos são agregadores e não podem ser movidos.
 
 #### Scenario: Item TASK folha aparece no Kanban
 - **WHEN** item com `type IN (TASK, BUG)` não possui itens filhos
 - **THEN** item aparece como card móvel nas colunas do Kanban
 
-#### Scenario: Item EPIC e STORY nunca são cards móveis
+#### Scenario: EPIC nunca é card móvel
 - **WHEN** board Kanban é exibido
-- **THEN** nenhum item com `type IN (EPIC, STORY)` aparece como card móvel, independente de ter filhos
+- **THEN** nenhum item com `type = EPIC` aparece como card móvel
+
+#### Scenario: STORY no modo de lanes não é card móvel
+- **WHEN** `storyDisplay = lanes`
+- **THEN** cada STORY é representada como lane horizontal, independentemente de possuir filhos
+
+#### Scenario: STORY folha no modo de cards é móvel
+- **WHEN** `storyDisplay = cards` e uma STORY não possui filhos
+- **THEN** a STORY aparece como card móvel conforme `leaf-story-kanban`
 
 #### Scenario: Item TASK/BUG pai não aparece no Kanban como card móvel
 - **WHEN** item TASK ou BUG possui ao menos um item filho
-- **THEN** item não aparece como card individual no Kanban; sua presença é representada pela swimlane do épico ancestral
+- **THEN** item não aparece como card móvel; sua presença é agregada na lane da história e do épico ancestrais
 
 #### Scenario: Drag-and-drop bloqueado em item TASK/BUG pai
 - **WHEN** usuário tenta arrastar card de item TASK/BUG pai no Kanban

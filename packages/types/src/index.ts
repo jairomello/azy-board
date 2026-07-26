@@ -12,6 +12,13 @@ export type SprintStatus = 'PLANNED' | 'ACTIVE' | 'DONE'
 export type NodeType = 'module' | 'EPIC' | 'STORY' | 'TASK' | 'BUG'
 export type Theme = 'light' | 'dark'
 export type Language = 'pt-BR' | 'en' | 'es'
+export type LightShellTheme = 'petroleum' | 'ocean' | 'emerald' | 'graphite' | 'classic'
+
+export interface UserPreferences {
+  theme: Theme
+  lightShellTheme: LightShellTheme
+  language: Language
+}
 
 export interface AncestorNode {
   id: string
