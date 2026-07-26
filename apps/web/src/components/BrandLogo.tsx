@@ -2,10 +2,15 @@ interface BrandMarkProps {
   className?: string
 }
 
+const basePath = (
+  (window as Window & { __BASE_PATH__?: string }).__BASE_PATH__ ?? ''
+).replace(/\/+$/, '')
+const brandMarkSrc = `${basePath}/brand/azyboard-logo.png`
+
 export function BrandMark({ className = '' }: BrandMarkProps) {
   return (
     <img
-      src="/brand/azyboard-logo.png"
+      src={brandMarkSrc}
       alt=""
       aria-hidden="true"
       draggable={false}
