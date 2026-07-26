@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS `checklists` (
   `position` integer NOT NULL DEFAULT 0,
   `created_at` text NOT NULL
 );
+--> statement-breakpoint
 
 CREATE TABLE IF NOT EXISTS `checklist_items` (
   `id` text PRIMARY KEY NOT NULL,
