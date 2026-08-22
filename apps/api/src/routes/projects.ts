@@ -14,6 +14,15 @@ projectsRouter.use('*', authMiddleware)
 projectsRouter.post('/', async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const body = await c.req.json<{ name: string; description?: string; managerUserId?: string }>()
+  const normalizedName = body.name.trim()
+  if (!normalizedName) return c.json({ error: 'O nome do projeto é obrigatório' }, 400)
+
+  // [TENANT] Impede nomes duplicados somente dentro do tenant autenticado.
+  const duplicate = await db.query.projects.findFirst({
+    where: (p) => and(eq(p.tenantId, ctx.tenantId), eq(p.name, normalizedName)),
+    columns: { id: true },
+  })
+  if (duplicate) return c.json({ error: 'Já existe um projeto com esse nome' }, 409)
 
   const projectId = generateId()
 
@@ -21,7 +30,7 @@ projectsRouter.post('/', async (c) => {
     id: projectId,
     // [TENANT] Projeto sempre vinculado ao tenant do criador
     tenantId: ctx.tenantId,
-    name: body.name,
+    name: normalizedName,
     description: body.description,
     // managerUserId: validação de membership não é possível antes de criar o projeto
     // o criador se torna ADMIN logo abaixo; se managerUserId == ctx.userId é válido
@@ -68,7 +77,7 @@ projectsRouter.post('/', async (c) => {
     }))
   )
 
-  return c.json({ id: projectId, name: body.name }, 201)
+  return c.json({ id: projectId, name: normalizedName, description: body.description ?? null, role: 'ADMIN' as const }, 201)
 })
 
 // GET /projects — listar projetos do usuário (apenas os que é membro)
@@ -77,7 +86,7 @@ projectsRouter.get('/', async (c) => {
 
   // [TENANT] Filtra por tenantId + userId — anti-IDOR: usuário só vê seus projetos
   const result = await db
-    .select({ project: projects })
+    .select({ project: projects, role: memberships.role })
     .from(projects)
     .innerJoin(
       memberships,
@@ -90,7 +99,7 @@ projectsRouter.get('/', async (c) => {
     // [TENANT] Filtro adicional no projeto para garantir isolamento
     .where(eq(projects.tenantId, ctx.tenantId))
 
-  return c.json(result.map(r => r.project))
+  return c.json(result.map(r => ({ ...r.project, role: r.role })))
 })
 
 // GET /projects/:id — detalhe do projeto com gerente
@@ -124,6 +133,21 @@ projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
   const id = c.req.param('id')!
   const body = await c.req.json<{ name?: string; description?: string; managerUserId?: string | null }>()
 
+  let normalizedName: string | undefined
+  if (body.name !== undefined) {
+    normalizedName = body.name.trim()
+    if (!normalizedName) return c.json({ error: 'O nome do projeto é obrigatório' }, 400)
+
+    // [TENANT] Verifica duplicidade somente entre projetos do tenant atual.
+    const duplicate = await db.query.projects.findFirst({
+      where: (p) => and(eq(p.tenantId, ctx.tenantId), eq(p.name, normalizedName!)),
+      columns: { id: true },
+    })
+    if (duplicate && duplicate.id !== id) {
+      return c.json({ error: 'Já existe um projeto com esse nome' }, 409)
+    }
+  }
+
   // Validar que o gerente indicado é membro do projeto
   if (body.managerUserId) {
     // [TENANT] Anti-IDOR: verificar membership do gerente no mesmo tenant
@@ -135,14 +159,20 @@ projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
   }
 
   const updates: Record<string, unknown> = {}
-  if (body.name) updates.name = body.name
+  if (normalizedName !== undefined) updates.name = normalizedName
   if (body.description !== undefined) updates.description = body.description
   if (body.managerUserId !== undefined) updates.managerUserId = body.managerUserId
 
   // [TENANT] Filtra por tenantId — previne edição de projetos de outros tenants
   await db.update(projects).set(updates).where(and(eq(projects.id, id), eq(projects.tenantId, ctx.tenantId)))
 
-  return c.json({ ok: true })
+  const updatedProject = await db.query.projects.findFirst({
+    // [TENANT] Retorna somente o projeto atualizado dentro do tenant autenticado.
+    where: (p) => and(eq(p.id, id), eq(p.tenantId, ctx.tenantId)),
+  })
+  if (!updatedProject) return c.json({ error: 'Projeto não encontrado' }, 404)
+
+  return c.json({ ...updatedProject, role: c.get('memberRole') })
 })
 
 // POST /projects/:id/modules
