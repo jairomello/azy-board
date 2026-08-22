@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
-### Requirement: Quatro botões de criação no toolbar do board
-O sistema SHALL exibir quatro botões de criação no toolbar do board, na seguinte ordem da esquerda para a direita: `+ Novo Épico`, `+ Nova História`, `+ Nova Task`, `+ Novo Bug`. Cada botão abre a modal correspondente ao tipo de item.
+### Requirement: Cinco botões de criação no toolbar do board
+O sistema SHALL exibir cinco botões de criação no toolbar do board, na seguinte ordem da esquerda para a direita: `+ Módulo`, `+ Novo Épico`, `+ Nova História`, `+ Nova Task`, `+ Novo Bug`. Cada botão abre a modal correspondente ao tipo de item. O botão "+ Módulo" abre uma modal de criação de módulo com campos Nome (obrigatório) e Descrição (opcional).
 
 #### Scenario: Botões exibidos no toolbar
 - **WHEN** usuário acessa o board de um projeto
@@ -26,6 +26,27 @@ O sistema SHALL exibir quatro botões de criação no toolbar do board, na segui
 - **WHEN** usuário clica em `+ Novo Bug`
 - **THEN** `ItemModal` abre em modo de criação com `type = BUG` pré-selecionado e os mesmos campos de TASK
 - **AND** ao confirmar, item é criado via `POST /projects/:id/items` com `type = BUG`
+
+---
+
+### Requirement: Renderização do board com nível de Módulo
+O sistema SHALL renderizar o board com a hierarquia visual Módulo >> Épico >> História >> Cards no modo `Hierarquia` e Módulo (aba ativa) >> Épico >> História >> Cards no modo `Abas`, mantendo a mesma estrutura interna de swimlanes. As swimlanes de Épico SHALL ser aninhadas dentro das ModuleSwimlanes correspondentes.
+
+#### Scenario: Board com múltiplos módulos
+- **WHEN** projeto possui 3 módulos com épicos
+- **THEN** board exibe 3 ModuleSwimlanes, cada uma contendo as swimlanes de Épico do respectivo módulo
+
+#### Scenario: Épico movido para outro módulo
+- **WHEN** épico tem seu `moduleId` alterado via EpicModal
+- **THEN** a swimlane do épico é movida para a ModuleSwimlane do novo módulo no board em tempo real
+
+#### Scenario: Renderização por aba
+- **WHEN** o modo selecionado é `Abas` e uma aba de módulo está ativa
+- **THEN** somente o grupo do módulo ativo é renderizado com seus épicos, histórias e colunas
+
+#### Scenario: Criação disponível nos modos
+- **WHEN** o usuário está em qualquer um dos modos de apresentação
+- **THEN** os controles de criação de módulo, épico, história, task e bug continuam disponíveis e funcionais
 
 ---
 

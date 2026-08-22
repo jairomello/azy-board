@@ -30,9 +30,17 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-canvas p-3 sm:p-5 flex">
-      <div className="w-full max-w-6xl mx-auto grid lg:grid-cols-[1.05fr_0.95fr] rounded-3xl overflow-hidden border border-border bg-card shadow-[0_28px_80px_rgba(20,35,50,0.16)]">
-        <section className="hidden lg:flex relative overflow-hidden bg-shell-sidebar text-shell-foreground p-12 flex-col">
+    <div
+      className="relative min-h-screen bg-canvas p-3 sm:p-5 flex items-center justify-center overflow-y-auto"
+    >
+      <div
+        className="absolute inset-0 bg-cover bg-center scale-110 blur-[18px] contrast-125 saturate-110"
+        style={{ backgroundImage: "url('/login-wallpaper.jpeg')" }}
+        aria-hidden="true"
+      />
+      <div className="absolute inset-0 bg-slate-950/45" aria-hidden="true" />
+      <div className="relative z-10 w-full max-w-6xl mx-auto grid lg:min-h-[700px] lg:grid-cols-[1.05fr_0.95fr] rounded-3xl overflow-hidden border border-border bg-card shadow-[0_36px_110px_rgba(5,15,25,0.42)]">
+        <section className="hidden lg:flex relative z-10 overflow-hidden bg-shell-sidebar text-shell-foreground p-12 flex-col">
           <div className="absolute -top-32 -right-24 w-80 h-80 rounded-full border-[60px] border-shell-accent/10" />
           <div className="absolute -bottom-40 -left-32 w-96 h-96 rounded-full bg-shell-active/70" />
           <BrandLogo
@@ -63,7 +71,7 @@ export default function LoginPage() {
           </div>
         </section>
 
-        <section className="flex items-center justify-center px-5 py-10 sm:p-12 lg:p-16">
+        <section className="relative z-10 flex items-center justify-center px-5 py-10 sm:px-12 sm:py-16 lg:px-12 lg:py-12">
           <div className="w-full max-w-md">
             <BrandLogo
               className="lg:hidden mb-10"

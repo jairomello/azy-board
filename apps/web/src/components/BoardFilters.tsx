@@ -2,6 +2,7 @@ import { Layers, LayoutList, Eye, EyeOff, ChevronsDown, ChevronsUp } from 'lucid
 import type { ItemType } from '@azy-board/types'
 import type { Tag } from './TagSelector'
 import { Tooltip } from './ui/Tooltip'
+import { useTranslation } from 'react-i18next'
 
 interface Module { id: string; name: string }
 interface Sprint { id: string; name: string; status: string }
@@ -19,6 +20,7 @@ export interface BoardFilterState {
   squadId: string
   showSubtasks: boolean
   storyDisplay: 'lanes' | 'cards'
+  moduleViewMode: 'hierarchy' | 'tabs'
 }
 
 interface Props {
@@ -36,6 +38,8 @@ interface Props {
   onExpandAll?: () => void
   onCollapseAll?: () => void
   showExpandCollapse?: boolean
+  showModuleViewMode?: boolean
+  section?: 'all' | 'filters' | 'options'
 }
 
 const TYPE_LABELS: Partial<Record<ItemType, string>> = {
@@ -60,8 +64,11 @@ export function BoardFilters({
   filters, onChange,
   showSubtasks, onToggleSubtasks,
   storiesAsCards, onToggleStoryDisplay,
-  onExpandAll, onCollapseAll, showExpandCollapse = false,
+  onExpandAll, onCollapseAll, showExpandCollapse = false, showModuleViewMode = true, section = 'all',
 }: Props) {
+  const { t } = useTranslation('board')
+  const showOptions = section !== 'filters'
+  const showDataFilters = section !== 'options'
   const activeCount = [
     filters.moduleId,
     filters.sprintId,
@@ -69,8 +76,6 @@ export function BoardFilters({
     filters.squadId,
     filters.types.length > 0,
     filters.tagIds.length > 0,
-    filters.hideEmptyEpics,
-    !storiesAsCards && filters.hideEmptyStories,
   ].filter(Boolean).length
 
   function update(partial: Partial<BoardFilterState>) {
@@ -89,6 +94,7 @@ export function BoardFilters({
       hideEmptyStories: false,
       showSubtasks: filters.showSubtasks,
       storyDisplay: filters.storyDisplay,
+      moduleViewMode: filters.moduleViewMode,
     })
   }
 
@@ -105,9 +111,26 @@ export function BoardFilters({
   return (
     <div className="space-y-4">
 
-      {/* Zona 1 — Visualização */}
-      <div className="flex items-center gap-1.5 flex-wrap">
+      {showOptions && <div className="flex items-center gap-1.5 flex-wrap">
         <span className="w-20 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Exibição</span>
+        {showModuleViewMode && <div className="flex items-center rounded-lg border border-border bg-background p-0.5" aria-label="Modo de módulos">
+          <button
+            type="button"
+            aria-pressed={filters.moduleViewMode === 'hierarchy'}
+            onClick={() => update({ moduleViewMode: 'hierarchy' })}
+            className={`px-2 py-1 rounded-md text-[11px] font-medium transition ${filters.moduleViewMode === 'hierarchy' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            {t('moduleViewHierarchy')}
+          </button>
+          <button
+            type="button"
+            aria-pressed={filters.moduleViewMode === 'tabs'}
+            onClick={() => update({ moduleViewMode: 'tabs' })}
+            className={`px-2 py-1 rounded-md text-[11px] font-medium transition ${filters.moduleViewMode === 'tabs' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            {t('moduleViewTabs')}
+          </button>
+        </div>}
         <Tooltip label={showSubtasks ? 'Ocultar subtasks' : 'Mostrar subtasks'}>
           <button aria-pressed={showSubtasks} aria-label="Mostrar subtasks" onClick={onToggleSubtasks} className={iconBtn(showSubtasks)}>
             <Layers className="w-3.5 h-3.5" />
@@ -163,10 +186,10 @@ export function BoardFilters({
             </button>
           </Tooltip>
         )}
-      </div>
+      </div>}
 
       {/* Zona 2 — Filtros */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      {showDataFilters && <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
       {squads.length > 0 && (
         <select
           aria-label="Squad"
@@ -214,10 +237,10 @@ export function BoardFilters({
           {members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
         </select>
       )}
-      </div>
+      </div>}
 
       {/* Tipo (multi) */}
-      <div className="flex items-center gap-1.5 flex-wrap">
+      {showDataFilters && <div className="flex items-center gap-1.5 flex-wrap">
         <span className="w-20 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Tipo</span>
         {(['TASK', 'BUG'] as ItemType[]).map(t => (
           <Tooltip key={t} label={TYPE_TOOLTIPS[t] ?? TYPE_LABELS[t] ?? t}>
@@ -234,10 +257,10 @@ export function BoardFilters({
             </button>
           </Tooltip>
         ))}
-      </div>
+      </div>}
 
       {/* Tags (multi) */}
-      {tags.length > 0 && (
+      {showDataFilters && tags.length > 0 && (
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="w-20 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Tags</span>
           {tags.map(tag => (
@@ -257,7 +280,7 @@ export function BoardFilters({
       )}
 
       {/* Limpar */}
-      {activeCount > 0 && (
+      {showDataFilters && activeCount > 0 && (
         <button
           onClick={clear}
           className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition ml-1"

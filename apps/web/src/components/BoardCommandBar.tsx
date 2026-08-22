@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Archive,
   BookOpen,
@@ -9,6 +10,8 @@ import {
   Gauge,
   Layers,
   Network,
+  Package,
+  SlidersHorizontal,
   Plus,
 } from 'lucide-react'
 import type { ItemType } from '@azy-board/types'
@@ -34,7 +37,7 @@ interface Props {
   onExpandAll: () => void
   onCollapseAll: () => void
   onOpenArchived: () => void
-  onCreate: (type: ItemType) => void
+  onCreate: (type: ItemType | 'MODULE') => void
 }
 
 export function BoardCommandBar({
@@ -54,9 +57,12 @@ export function BoardCommandBar({
   onOpenArchived,
   onCreate,
 }: Props) {
+  const { t } = useTranslation('board')
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [optionsOpen, setOptionsOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const filtersRef = useRef<HTMLDivElement>(null)
+  const optionsRef = useRef<HTMLDivElement>(null)
   const createRef = useRef<HTMLDivElement>(null)
 
   const activeCount = [
@@ -74,6 +80,7 @@ export function BoardCommandBar({
     function closeMenus(event: MouseEvent) {
       const target = event.target as Node
       if (filtersRef.current && !filtersRef.current.contains(target)) setFiltersOpen(false)
+      if (optionsRef.current && !optionsRef.current.contains(target)) setOptionsOpen(false)
       if (createRef.current && !createRef.current.contains(target)) setCreateOpen(false)
     }
     document.addEventListener('mousedown', closeMenus)
@@ -111,12 +118,12 @@ export function BoardCommandBar({
 
       <div ref={filtersRef} className="relative flex-shrink-0">
         <button
-          onClick={() => setFiltersOpen(open => !open)}
+           onClick={() => { setFiltersOpen(open => !open); setOptionsOpen(false) }}
           aria-expanded={filtersOpen}
           className={`${controlClass} flex items-center gap-2 ${activeCount ? 'border-primary/40 text-primary' : ''}`}
         >
           <Filter className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Filtros</span>
+             <span className="hidden sm:inline">{t('filtersMenu')}</span>
           {activeCount > 0 && (
             <span className="min-w-5 h-5 px-1 rounded-full bg-primary text-primary-foreground inline-flex items-center justify-center text-[10px]">
               {activeCount}
@@ -125,9 +132,9 @@ export function BoardCommandBar({
         </button>
         {filtersOpen && (
           <div className="absolute left-0 top-full mt-2 z-40 w-[min(720px,calc(100vw-2rem))] rounded-xl border border-border bg-popover shadow-2xl p-4">
-            <div className="flex items-center justify-between mb-3">
+             <div className="flex items-center justify-between mb-3">
               <div>
-                <p className="text-sm font-semibold text-foreground">Filtros e visualização</p>
+                <p className="text-sm font-semibold text-foreground">{t('filtersMenu')}</p>
                 <p className="text-xs text-muted-foreground">Refine os itens visíveis sem alterar o projeto.</p>
               </div>
               {activeCount > 0 && (
@@ -138,11 +145,9 @@ export function BoardCommandBar({
                     sprintId: '',
                     assigneeId: '',
                     squadId: '',
-                    types: [],
-                    tagIds: [],
-                    hideEmptyEpics: false,
-                    hideEmptyStories: false,
-                  })}
+                     types: [],
+                     tagIds: [],
+                   })}
                   className="text-xs font-medium text-primary hover:underline"
                 >
                   Limpar {activeCount}
@@ -164,12 +169,53 @@ export function BoardCommandBar({
                 storyDisplay: filters.storyDisplay === 'cards' ? 'lanes' : 'cards',
               })}
               showExpandCollapse={view === 'kanban'}
+              showModuleViewMode={view === 'kanban'}
               onExpandAll={onExpandAll}
-              onCollapseAll={onCollapseAll}
-            />
-          </div>
-        )}
-      </div>
+               onCollapseAll={onCollapseAll}
+               section="filters"
+             />
+           </div>
+         )}
+       </div>
+
+       {view === 'kanban' && (
+         <div ref={optionsRef} className="relative flex-shrink-0">
+           <button
+             onClick={() => { setOptionsOpen(open => !open); setFiltersOpen(false) }}
+             aria-expanded={optionsOpen}
+             className={`${controlClass} flex items-center gap-2 ${optionsOpen ? 'border-primary/40 text-primary' : ''}`}
+           >
+             <SlidersHorizontal className="w-3.5 h-3.5" />
+             <span className="hidden sm:inline">{t('optionsMenu')}</span>
+           </button>
+           {optionsOpen && (
+             <div className="absolute left-0 top-full mt-2 z-40 w-[min(720px,calc(100vw-2rem))] rounded-xl border border-border bg-popover shadow-2xl p-4">
+               <div className="mb-3">
+                 <p className="text-sm font-semibold text-foreground">{t('optionsMenu')}</p>
+                 <p className="text-xs text-muted-foreground">{t('optionsDescription')}</p>
+               </div>
+               <BoardFilters
+                 modules={modules}
+                 sprints={sprints}
+                 members={members}
+                 squads={squads}
+                 tags={tags}
+                 filters={filters}
+                 onChange={onFiltersChange}
+                 showSubtasks={filters.showSubtasks}
+                 onToggleSubtasks={() => quickUpdate({ showSubtasks: !filters.showSubtasks })}
+                 storiesAsCards={filters.storyDisplay === 'cards'}
+                 onToggleStoryDisplay={() => quickUpdate({ storyDisplay: filters.storyDisplay === 'cards' ? 'lanes' : 'cards' })}
+                 showExpandCollapse
+                 showModuleViewMode
+                 onExpandAll={onExpandAll}
+                 onCollapseAll={onCollapseAll}
+                 section="options"
+               />
+             </div>
+           )}
+         </div>
+       )}
 
       {squads.length > 0 && (
         <label className="hidden xl:flex items-center gap-1.5 flex-shrink-0">
@@ -184,18 +230,6 @@ export function BoardCommandBar({
             {squads.map(squad => <option key={squad.id} value={squad.id}>{squad.name}</option>)}
           </select>
         </label>
-      )}
-
-      {modules.length > 0 && (
-        <select
-          aria-label="Filtrar por módulo"
-          value={filters.moduleId}
-          onChange={event => quickUpdate({ moduleId: event.target.value })}
-          className={`${controlClass} hidden min-[1400px]:block max-w-40 flex-shrink-0`}
-        >
-          <option value="">Todos os módulos</option>
-          {modules.map(module => <option key={module.id} value={module.id}>{module.name}</option>)}
-        </select>
       )}
 
       <div className="ml-auto flex items-center gap-2 flex-shrink-0">
@@ -231,6 +265,7 @@ export function BoardCommandBar({
             {createOpen && (
               <div className="absolute right-0 top-full mt-2 z-40 w-52 rounded-xl border border-border bg-popover shadow-2xl p-1.5">
                 {([
+                  ['MODULE', 'Módulo', Package, 'text-slate-600 bg-slate-500/10'],
                   ['EPIC', 'Épico', Layers, 'text-amber-600 bg-amber-500/10'],
                   ['STORY', 'História', BookOpen, 'text-violet-600 bg-violet-500/10'],
                   ['TASK', 'Task', CheckSquare, 'text-blue-600 bg-blue-500/10'],

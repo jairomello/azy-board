@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   DndContext,
   DragOverlay,
@@ -36,6 +37,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { BookOpen, Plus, Pencil, Archive, X } from 'lucide-react'
 import { AppShell } from '../components/AppShell'
 import { BoardCommandBar } from '../components/BoardCommandBar'
+import { ModuleSwimlane } from '../components/ModuleSwimlane'
 import { BoardContextHeader, BoardStatusRail } from '../components/BoardContext'
 import type { WsEvent, ItemType, AncestorNode, TaskStatus } from '@azy-board/types'
 import type { Tag } from '../components/TagSelector'
@@ -60,7 +62,7 @@ interface ArchivedItem {
 }
 
 interface Column { id: string; name: string; baseStatus: string; position: number }
-interface Module { id: string; name: string }
+interface Module { id: string; name: string; position?: number }
 interface Sprint { id: string; name: string; status: string }
 
 // Tipo unificado: qualquer item retornado pela API
@@ -122,10 +124,12 @@ const DEFAULT_FILTERS: BoardFilterState = {
   hideEmptyStories: false,
   showSubtasks: false,
   storyDisplay: 'lanes',
+  moduleViewMode: 'hierarchy',
 }
 
 export default function BoardPage() {
   const { projectId } = useParams<{ projectId: string }>()
+  const { t: tBoard } = useTranslation('board')
   const { user } = useAuth()
   const { toast } = useToast()
 
@@ -148,6 +152,13 @@ export default function BoardPage() {
       return raw ? new Set(JSON.parse(raw) as string[]) : new Set()
     } catch { return new Set() }
   })
+  const [collapsedModules, setCollapsedModules] = useState<Set<string>>(() => {
+    if (!projectId) return new Set()
+    try {
+      const raw = localStorage.getItem(`board-collapsed-modules:${projectId}`)
+      return raw ? new Set(JSON.parse(raw) as string[]) : new Set()
+    } catch { return new Set() }
+  })
   const [collapsedStories, setCollapsedStories] = useState<Set<string>>(() => {
     if (!projectId) return new Set()
     try {
@@ -155,6 +166,7 @@ export default function BoardPage() {
       return raw ? new Set(JSON.parse(raw) as string[]) : new Set()
     } catch { return new Set() }
   })
+  const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
   const [view, setView] = useState<'kanban' | 'tree'>('kanban')
   const [density, setDensity] = useState<'comfortable' | 'compact'>(() =>
     localStorage.getItem('board-density') === 'compact' ? 'compact' : 'comfortable'
@@ -177,6 +189,9 @@ export default function BoardPage() {
     }
   })
   const [newItemCreation, setNewItemCreation] = useState<{ type: 'TASK' | 'BUG'; columnId?: string; title?: string } | null>(null)
+  const [moduleModalOpen, setModuleModalOpen] = useState(false)
+  const [newModuleName, setNewModuleName] = useState('')
+  const [newModuleDescription, setNewModuleDescription] = useState('')
   // Tarefa 10 — arquivamento
   const [archiveConfirm, setArchiveConfirm] = useState<{ itemId: string; childrenCount: number } | null>(null)
   const [archivedModal, setArchivedModal] = useState(false)
@@ -206,6 +221,13 @@ export default function BoardPage() {
       localStorage.setItem(`board-collapsed-epics:${projectId}`, JSON.stringify([...collapsedEpics]))
     } catch {}
   }, [collapsedEpics, projectId])
+
+  useEffect(() => {
+    if (!projectId) return
+    try {
+      localStorage.setItem(`board-collapsed-modules:${projectId}`, JSON.stringify([...collapsedModules]))
+    } catch {}
+  }, [collapsedModules, projectId])
 
   useEffect(() => {
     if (!projectId) return
@@ -478,14 +500,42 @@ export default function BoardPage() {
   ])
 
   const orphanCards = useMemo(() =>
-    allDisplayed.filter(i => !getEpicIdFromPath(i.ancestryPath) && !i.id.startsWith('story-virtual-')),
+    allDisplayed.filter(i => !getEpicIdFromPath(i.ancestryPath) && !i.moduleId && !i.id.startsWith('story-virtual-')),
     [allDisplayed]
   )
+
+  const moduleGroups = useMemo(() => {
+    const groups = new Map<string, { module: Module; epics: typeof epicGroups }>()
+    for (const group of epicGroups) {
+      const moduleId = group.epic.moduleId ?? '__no-module__'
+      const module = modules.find(item => item.id === moduleId) ?? { id: moduleId, name: tBoard('noModule'), position: Number.MAX_SAFE_INTEGER }
+      const existing = groups.get(moduleId)
+      if (existing) existing.epics.push(group)
+      else groups.set(moduleId, { module, epics: [group] })
+    }
+    return [...groups.values()].sort((a, b) => (a.module.position ?? Number.MAX_SAFE_INTEGER) - (b.module.position ?? Number.MAX_SAFE_INTEGER))
+  }, [epicGroups, modules, tBoard])
+
+  useEffect(() => {
+    if (moduleGroups.length === 0) {
+      setActiveModuleId(null)
+      return
+    }
+    setActiveModuleId(current => moduleGroups.some(group => group.module.id === current) ? current : moduleGroups[0]!.module.id)
+  }, [moduleGroups])
 
   function toggleEpic(epicId: string) {
     setCollapsedEpics(prev => {
       const next = new Set(prev)
       next.has(epicId) ? next.delete(epicId) : next.add(epicId)
+      return next
+    })
+  }
+
+  function toggleModule(moduleId: string) {
+    setCollapsedModules(prev => {
+      const next = new Set(prev)
+      next.has(moduleId) ? next.delete(moduleId) : next.add(moduleId)
       return next
     })
   }
@@ -828,6 +878,24 @@ export default function BoardPage() {
     }
   }, [projectId])
 
+  async function handleModuleCreate() {
+    if (!projectId || !newModuleName.trim()) return
+    try {
+      const created = await api.post<Module>(`/projects/${projectId}/modules`, {
+        name: newModuleName.trim(),
+        description: newModuleDescription.trim() || undefined,
+      })
+      const refreshed = await api.get<Module[]>(`/projects/${projectId}/modules`)
+      setModules(refreshed.length > 0 ? refreshed : [...modules, created])
+      setNewModuleName('')
+      setNewModuleDescription('')
+      setModuleModalOpen(false)
+      toast('Módulo criado', 'success')
+    } catch {
+      toast('Erro ao criar módulo', 'error')
+    }
+  }
+
   const isColumnDrag = activeId?.includes(':col:') ?? false
   const activeCard = !isColumnDrag ? allItems.find(i => i.id === activeId) : null
 
@@ -886,8 +954,10 @@ export default function BoardPage() {
     : allDisplayed
   const sprintCompleted = sprintItems.filter(item => item.status === 'DONE').length
 
-  function openCreation(type: ItemType) {
-    if (type === 'EPIC') {
+  function openCreation(type: ItemType | 'MODULE') {
+    if (type === 'MODULE') {
+      setModuleModalOpen(true)
+    } else if (type === 'EPIC') {
       setEpicModalData({})
     } else if (type === 'STORY') {
       setStoryModalData({})
@@ -898,6 +968,55 @@ export default function BoardPage() {
         title: type === 'TASK' ? 'Nova Task' : 'Novo Bug',
       })
     }
+  }
+
+  const visibleModuleGroups = filters.moduleViewMode === 'tabs'
+    ? moduleGroups.filter(group => group.module.id === activeModuleId)
+    : moduleGroups
+
+  function renderModuleGroup({ module, epics: groupedEpics }: typeof moduleGroups[number]) {
+    const moduleItems = allItems.filter(item => groupedEpics.some(group => getEpicIdFromPath(item.ancestryPath) === group.epic.id))
+    const moduleLeaves = moduleItems.filter(item => item.isLeaf && ['TASK', 'BUG'].includes(item.type))
+    const moduleDone = moduleLeaves.filter(item => item.status === 'DONE').length
+    const moduleProgress = moduleLeaves.length > 0 ? Math.round((moduleDone / moduleLeaves.length) * 100) : 0
+    const modulePoints = moduleLeaves.reduce((sum, item) => sum + (item.points ?? 0), 0)
+
+    return (
+      <ModuleSwimlane
+        key={module.id}
+        title={module.name}
+        epicCount={groupedEpics.length}
+        progress={moduleProgress}
+        points={modulePoints}
+        collapsed={collapsedModules.has(module.id)}
+        onToggle={() => toggleModule(module.id)}
+      >
+        {groupedEpics.map(({ epic, tasks: epicTasks, storyGroups }) => (
+          <Swimlane
+            key={epic.id}
+            swimlaneId={epic.id}
+            title={epic.title}
+            columns={columns}
+            tasks={epicTasks}
+            collapsed={collapsedEpics.has(epic.id)}
+            onToggle={() => toggleEpic(epic.id)}
+            columnAddForms={columnAddForms}
+            onShowAddForm={colId => setColumnAddForms(prev => ({ ...prev, [colId]: true }))}
+            onHideAddForm={colId => setColumnAddForms(prev => ({ ...prev, [colId]: false }))}
+            onCardCreate={handleCardCreate}
+            onOpenDetail={handleOpenDetail}
+            onTitleSave={handleTitleSave}
+            onDelete={handleDeleteItem}
+            onArchive={handleArchiveRequest}
+            storyGroups={filters.storyDisplay === 'lanes' ? storyGroups : undefined}
+            collapsedStories={collapsedStories}
+            onToggleStory={toggleStory}
+            onEditStory={story => openStoryModal(story)}
+            onEditEpic={() => setEpicModalData({ epic: { id: epic.id, title: epic.title, moduleId: epic.moduleId ?? '', description: epic.description } })}
+          />
+        ))}
+      </ModuleSwimlane>
+    )
   }
 
   return (
@@ -926,10 +1045,12 @@ export default function BoardPage() {
           filters={filters}
           onFiltersChange={setFilters}
           onExpandAll={() => {
+            setCollapsedModules(new Set())
             setCollapsedEpics(new Set())
             setCollapsedStories(new Set())
           }}
           onCollapseAll={() => {
+            setCollapsedModules(new Set(moduleGroups.map(group => group.module.id)))
             setCollapsedEpics(new Set([...epics.map(e => e.id), 'orphan']))
             setCollapsedStories(new Set(
               epicGroups.flatMap(group => group.storyGroups.map(storyGroup => storyGroup.id))
@@ -999,34 +1120,25 @@ export default function BoardPage() {
                 />
               )}
 
-              {/* Swimlanes por épico — exibe todos os épicos, inclusive os sem tasks
-                  Tarefa 11 — hideEmptyEpics filtra os sem cards em epicGroups (memo acima) */}
-              {epicGroups.map(({ epic, tasks: epicTasks, storyGroups }) => (
-                <Swimlane
-                  key={epic.id}
-                  swimlaneId={epic.id}
-                  title={epic.title}
-                  columns={columns}
-                  tasks={epicTasks}
-                  collapsed={collapsedEpics.has(epic.id)}
-                  onToggle={() => toggleEpic(epic.id)}
-                  columnAddForms={columnAddForms}
-                  onShowAddForm={colId => setColumnAddForms(prev => ({ ...prev, [colId]: true }))}
-                  onHideAddForm={colId => setColumnAddForms(prev => ({ ...prev, [colId]: false }))}
-                  onCardCreate={handleCardCreate}
-                  onOpenDetail={handleOpenDetail}
-                  onTitleSave={handleTitleSave}
-                  onDelete={handleDeleteItem}
-                  onArchive={handleArchiveRequest}
-                  storyGroups={filters.storyDisplay === 'lanes' ? storyGroups : undefined}
-                  collapsedStories={collapsedStories}
-                  onToggleStory={toggleStory}
-                  onEditStory={story => openStoryModal(story)}
-                  onEditEpic={() => setEpicModalData({
-                    epic: { id: epic.id, title: epic.title, moduleId: epic.moduleId ?? '', description: epic.description },
-                  })}
-                />
-              ))}
+              {filters.moduleViewMode === 'tabs' && moduleGroups.length > 0 && (
+                <div role="tablist" aria-label={tBoard('moduleViewTabs')} className="mb-3 flex gap-1.5 overflow-x-auto rounded-xl border border-border/80 bg-surface p-1">
+                  {moduleGroups.map(({ module }) => (
+                    <button
+                      key={module.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={module.id === activeModuleId}
+                      title={module.name}
+                      onClick={() => setActiveModuleId(module.id)}
+                      className={`flex-shrink-0 max-w-48 truncate rounded-lg px-3 py-2 text-xs font-semibold transition ${module.id === activeModuleId ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+                    >
+                      {module.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {visibleModuleGroups.map(renderModuleGroup)}
 
               <DragOverlay>
                 {activeCard && (
@@ -1047,6 +1159,27 @@ export default function BoardPage() {
         )}
         </div>
       </div>
+
+      {moduleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setModuleModalOpen(false)} />
+          <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-foreground">Novo módulo</h2>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block" htmlFor="module-name">Nome</label>
+              <input id="module-name" autoFocus value={newModuleName} onChange={event => setNewModuleName(event.target.value)} className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary" placeholder="Nome do módulo" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block" htmlFor="module-description">Descrição (opcional)</label>
+              <textarea id="module-description" value={newModuleDescription} onChange={event => setNewModuleDescription(event.target.value)} rows={3} className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary resize-none" placeholder="Descrição do módulo" />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button onClick={handleModuleCreate} disabled={!newModuleName.trim()} className="flex-1 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50">Criar</button>
+              <button onClick={() => setModuleModalOpen(false)} className="flex-1 py-2 text-sm border border-border rounded-lg hover:bg-muted text-muted-foreground">Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de item (TASK/BUG) */}
       {itemForModal && projectId && (

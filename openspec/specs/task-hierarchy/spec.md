@@ -5,7 +5,7 @@ Definir a hierarquia unificada de itens, a Leaf Rule, a agregação e os breadcr
 ## Requirements
 
 ### Requirement: Autorrelacionamento de items (subtasks e hierarquia completa)
-O sistema SHALL permitir que qualquer item tenha um `parent_id` apontando para outro item da tabela `items`, formando a hierarquia completa EPIC → STORY → TASK/BUG → subtask (TASK/BUG). A profundidade máxima recomendada é 5 níveis abaixo do STORY.
+O sistema SHALL permitir que qualquer item tenha um `parent_id` apontando para outro item da tabela `items`, formando a hierarquia completa Módulo → EPIC → STORY → TASK/BUG → subtask (TASK/BUG). O `ancestryPath` SHALL incluir o módulo no caminho hierárquico. A profundidade máxima recomendada é 5 níveis abaixo do STORY.
 
 #### Scenario: Criação de subtask de TASK
 - **WHEN** membro cria um item do tipo TASK informando `parentId` de outro TASK existente
@@ -18,11 +18,15 @@ O sistema SHALL permitir que qualquer item tenha um `parent_id` apontando para o
 ---
 
 ### Requirement: Leaf Rule — apenas items folha são móveis no Kanban
-O sistema SHALL permitir movimentação de items `TASK` e `BUG` folha. Items `EPIC` nunca são cards móveis. Items `STORY` são lanes no modo padrão e somente STORYs folha podem ser cards móveis quando `storyDisplay = cards`. Items TASK/BUG com filhos são agregadores e não podem ser movidos.
+O sistema SHALL permitir movimentação de items `TASK` e `BUG` folha. Items `EPIC` nunca são cards móveis. Items `STORY` são lanes no modo padrão e somente STORYs folha podem ser cards móveis quando `storyDisplay = cards`. Items TASK/BUG com filhos são agregadores e não podem ser movidos. A hierarquia visual é Módulo >> Épico >> História >> Cards.
+
+#### Scenario: Breadcrumb inclui módulo
+- **WHEN** card é exibido no Kanban
+- **THEN** breadcrumb aparece abaixo do título com o caminho completo: `Módulo > Épico > História > Task`
 
 #### Scenario: Item TASK folha aparece no Kanban
 - **WHEN** item com `type IN (TASK, BUG)` não possui itens filhos
-- **THEN** item aparece como card móvel nas colunas do Kanban
+- **THEN** item aparece como card móvel nas colunas do Kanban dentro da StorySwimlane, que está dentro da Swimlane de Épico, que está dentro da ModuleSwimlane
 
 #### Scenario: EPIC nunca é card móvel
 - **WHEN** board Kanban é exibido
@@ -47,7 +51,7 @@ O sistema SHALL permitir movimentação de items `TASK` e `BUG` folha. Items `EP
 ---
 
 ### Requirement: Progresso calculado em items pai
-O sistema SHALL calcular automaticamente o progresso de qualquer item pai com base no percentual de items folha TASK/BUG descendentes concluídos.
+O sistema SHALL calcular automaticamente o progresso de qualquer item pai com base no percentual de items folha TASK/BUG descendentes concluídos. O progresso SHALL ser exibido em todos os níveis: ModuleSwimlane, swimlane de Épico e StorySwimlane.
 
 #### Scenario: Cálculo de progresso ao concluir item folha
 - **WHEN** item folha TASK ou BUG descendente muda para status DONE
@@ -61,10 +65,22 @@ O sistema SHALL calcular automaticamente o progresso de qualquer item pai com ba
 - **WHEN** item folha TASK/BUG de múltiplos níveis é concluído
 - **THEN** progresso é recalculado em toda a cadeia de ancestrais (TASK pai → STORY → EPIC)
 
+#### Scenario: Progresso exibido na ModuleSwimlane
+- **WHEN** ModuleSwimlane é renderizada
+- **THEN** header exibe o progresso agregado de todos os épicos do módulo
+
+#### Scenario: Progresso exibido na swimlane do épico
+- **WHEN** swimlane de EPIC é exibida no board
+- **THEN** header da swimlane exibe o total de pontos do épico ao lado do progresso
+
+#### Scenario: Progresso em cascata até o Módulo
+- **WHEN** item folha TASK/BUG de múltiplos níveis é concluído
+- **THEN** progresso é recalculado em toda a cadeia de ancestrais (TASK pai → STORY → EPIC → Módulo)
+
 ---
 
 ### Requirement: Pontuação de items e agregação nos pais
-O sistema SHALL suportar um campo numérico `points` (inteiro, nullable) em cada item. Apenas items folha TASK/BUG recebem pontuação diretamente. Items pai SHALL exibir a soma dos pontos de todas as tasks folha descendentes.
+O sistema SHALL suportar um campo numérico `points` (inteiro, nullable) em cada item. Apenas items folha TASK/BUG recebem pontuação diretamente. Items pai SHALL exibir a soma dos pontos de todas as tasks folha descendentes. A pontuação SHALL ser agregada até o nível de Módulo.
 
 #### Scenario: Atribuição de pontos a item folha
 - **WHEN** membro edita o campo de pontos de um item folha TASK ou BUG
@@ -77,6 +93,10 @@ O sistema SHALL suportar um campo numérico `points` (inteiro, nullable) em cada
 #### Scenario: Pontos exibidos na swimlane do épico
 - **WHEN** swimlane de EPIC é exibida no board
 - **THEN** header da swimlane exibe o total de pontos do épico ao lado do progresso
+
+#### Scenario: Pontos exibidos na ModuleSwimlane
+- **WHEN** ModuleSwimlane é renderizada
+- **THEN** header exibe o total de pontos de todos os épicos do módulo
 
 ---
 
@@ -98,7 +118,7 @@ O sistema SHALL exibir no card de cada item folha o caminho hierárquico complet
 ---
 
 ### Requirement: Agente de IA cria items via API
-O sistema SHALL permitir que agentes de IA criem qualquer tipo de item via API, incluindo STORYs filhas de EPICs e TASKs filhas de STORYs.
+O sistema SHALL permitir que agentes de IA criem qualquer tipo de item via API, incluindo STORYs filhas de EPICs e TASKs filhas de STORYs. A hierarquia com Módulo é transparente para a API, e o `moduleId` é herdado do épico pai.
 
 #### Scenario: Agente cria subtask de um TASK via API
 - **WHEN** agente faz `POST /projects/{id}/items` com `parent_id` de um TASK existente e `type = TASK`

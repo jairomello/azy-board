@@ -1,4 +1,5 @@
 import { Cloud, CloudOff, LoaderCircle, Target } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 type SyncState = 'connecting' | 'synced' | 'offline'
 
@@ -9,6 +10,7 @@ interface BoardContextHeaderProps {
 }
 
 export function BoardContextHeader({ sprintName, completed, total }: BoardContextHeaderProps) {
+  const { t } = useTranslation('board')
   const percentage = total > 0 ? Math.round((completed / total) * 100) : 0
   return (
     <section className="rounded-xl border border-border bg-surface px-4 py-3 flex items-center gap-4">
@@ -16,7 +18,7 @@ export function BoardContextHeader({ sprintName, completed, total }: BoardContex
         <Target className="w-[18px] h-[18px]" />
       </div>
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-foreground truncate">{sprintName ?? 'Fluxo contínuo'}</p>
+        <p className="text-sm font-semibold text-foreground truncate">{sprintName ?? t('generalProgress')}</p>
         <p className="text-xs text-muted-foreground">
           {total > 0 ? `${completed} de ${total} itens concluídos` : 'Nenhum item no recorte atual'}
         </p>
