@@ -60,3 +60,6 @@ uploads/
 .mcp.*
 .codex
 .codex/
+
+# Homelab deployment notes (must stay local)
+DEPLOY_LABAPPS_LOCAL.md
