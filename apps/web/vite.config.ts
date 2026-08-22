@@ -9,9 +9,10 @@ import path from 'path'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', 'AZYBOARD_')
   const apiTarget = env.AZYBOARD_API_TARGET || 'http://localhost:3000'
+  const basePath = env.AZYBOARD_BASE_PATH || './'
 
   return {
-  base: './',
+  base: basePath,
   plugins: [react()],
   resolve: {
     alias: {

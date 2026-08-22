@@ -25,6 +25,11 @@ Em dev local, `window.__BASE_PATH__` não é definido, então o `if (BASE_PATH)`
 
 ## Como publicar em path-based
 
+O frontend não contém um prefixo de produção hardcoded. O build aceita a
+variável `AZYBOARD_BASE_PATH`; em desenvolvimento, quando ela não existe, o
+Vite usa paths relativos. Em uma publicação sob `/azyboard/`, o ambiente de
+build deve definir `AZYBOARD_BASE_PATH=/azyboard/`.
+
 O deploy usa 2 containers:
 
 - `azyboard-web` (nginx:alpine) servindo o build estático do Vite.
@@ -38,6 +43,9 @@ Configurar o proxy reverso com 2 Custom Locations:
    `^/azyboard/(.*)$ /$1 break` + sub_filter injetando
    `window.__BASE_PATH__="/azyboard/"`.
 
+3. `/azyboard/ws` → `azyboard-api:3000`, com rewrite para `/ws` e suporte a
+   upgrade WebSocket HTTP/1.1.
+
 ## Variáveis de ambiente (produção)
 
 - `NODE_ENV=production`.
@@ -48,3 +56,7 @@ Configurar o proxy reverso com 2 Custom Locations:
 - `FRONTEND_URL=https://example.com/azyboard/` (origem
   permitido pelo CORS).
 - `JWT_SECRET`: segredo para assinar o cookie de sessão.
+
+O valor de `AZYBOARD_BASE_PATH` é específico da infraestrutura e deve ser
+configurado no Dockerfile/CI do ambiente. O código da aplicação permanece
+portável entre raiz (`/`), subpaths e outros domínios.
