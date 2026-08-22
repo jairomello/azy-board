@@ -5,6 +5,11 @@ import { generateId } from '../utils/id'
 
 console.log('\n🌱 Azy Board — Seed\n')
 
+const seedPassword = process.env.SEED_ADMIN_PASSWORD
+if (!seedPassword) {
+  throw new Error('SEED_ADMIN_PASSWORD é obrigatório para executar o seed.')
+}
+
 function ancestry(...nodes: { id: string; title: string; type: string }[]) {
   return JSON.stringify(nodes)
 }
@@ -20,7 +25,7 @@ const userId = generateId()
 await db.insert(users).values({
   id: userId, tenantId,
   email: 'admin@example.com',
-  passwordHash: await hashPassword('change-me-admin-password'),
+  passwordHash: await hashPassword(seedPassword),
   name: 'Demo Admin',
   theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR',
   createdAt: new Date().toISOString(),
@@ -152,5 +157,6 @@ await db.insert(items).values([
 ])
 
 console.log('✅ Seed concluído!')
-console.log('   admin@example.com / change-me-admin-password')
+console.log('   Usuário: admin@example.com')
+console.log('   Senha: valor definido em SEED_ADMIN_PASSWORD')
 console.log('   2 EPICs · 2 STORYs · 4 TASKs · 2 BUGs\n')

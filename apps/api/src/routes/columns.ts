@@ -69,14 +69,22 @@ columnsRouter.patch('/reorder', requireRole('MEMBER'), async (c) => {
 // PATCH /projects/:projectId/columns/:colId
 columnsRouter.patch('/:colId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
+  const projectId = c.req.param('projectId')!
   const colId = c.req.param('colId')!
   const body = await c.req.json<{ name?: string; baseStatus?: ColumnBaseStatus }>()
 
+  const existing = await db.query.columns.findFirst({
+    where: (col) => and(eq(col.id, colId), eq(col.projectId, projectId), eq(col.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!existing) return c.json({ error: 'Coluna não encontrada' }, 404)
+
   await db.update(columns)
     .set({ ...(body.name && { name: body.name }), ...(body.baseStatus && { baseStatus: body.baseStatus }) })
-    .where(and(eq(columns.id, colId), eq(columns.tenantId, ctx.tenantId)))
+    .where(and(eq(columns.id, colId), eq(columns.projectId, projectId), eq(columns.tenantId, ctx.tenantId)))
 
-  return c.json({ ok: true })
+  const updated = await db.query.columns.findFirst({ where: (col) => and(eq(col.id, colId), eq(col.projectId, projectId), eq(col.tenantId, ctx.tenantId)) })
+  return c.json({ column: updated })
 })
 
 // DELETE /projects/:projectId/columns/:colId
@@ -86,15 +94,28 @@ columnsRouter.delete('/:colId', requireRole('ADMIN'), async (c) => {
   const projectId = c.req.param('projectId')!
   const body = await c.req.json<{ moveToColumnId: string | null }>()
 
+  const existing = await db.query.columns.findFirst({
+    where: (col) => and(eq(col.id, colId), eq(col.projectId, projectId), eq(col.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!existing) return c.json({ error: 'Coluna não encontrada' }, 404)
+  if (body.moveToColumnId) {
+    const target = await db.query.columns.findFirst({
+      where: (col) => and(eq(col.id, body.moveToColumnId!), eq(col.projectId, projectId), eq(col.tenantId, ctx.tenantId)),
+      columns: { id: true },
+    })
+    if (!target) return c.json({ error: 'Coluna destino não encontrada' }, 400)
+  }
+
   await db.transaction(async (tx) => {
     if (body.moveToColumnId) {
       await tx.update(items)
         .set({ columnId: body.moveToColumnId })
-        .where(and(eq(items.columnId, colId), eq(items.tenantId, ctx.tenantId)))
+        .where(and(eq(items.columnId, colId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
     }
 
     await tx.delete(columns)
-      .where(and(eq(columns.id, colId), eq(columns.tenantId, ctx.tenantId)))
+      .where(and(eq(columns.id, colId), eq(columns.projectId, projectId), eq(columns.tenantId, ctx.tenantId)))
   })
 
   return c.json({ ok: true })

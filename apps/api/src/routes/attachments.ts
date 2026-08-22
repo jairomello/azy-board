@@ -92,15 +92,22 @@ attachmentsRouter.get('/', requireRole('VIEWER'), async (c) => {
 // DELETE /projects/:projectId/items/:itemId/attachments/:attachmentId
 attachmentsRouter.delete('/:attachmentId', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const attachmentId = c.req.param('attachmentId')!
+  const { projectId, itemId, attachmentId } = c.req.param()
+
+  // [TENANT] O item ancora o anexo no projeto informado e impede deleção cross-project.
+  const item = await db.query.items.findFirst({
+    where: (candidate) => and(eq(candidate.id, itemId), eq(candidate.projectId, projectId), eq(candidate.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
   const attachment = await db.query.attachments.findFirst({
-    where: (a) => and(eq(a.id, attachmentId), eq(a.tenantId, ctx.tenantId)),
+    where: (a) => and(eq(a.id, attachmentId), eq(a.itemId, itemId), eq(a.tenantId, ctx.tenantId)),
   })
   if (!attachment) return c.json({ error: 'Anexo não encontrado' }, 404)
 
   await storage.delete(attachment.storagePath)
-  await db.delete(attachments).where(and(eq(attachments.id, attachmentId), eq(attachments.tenantId, ctx.tenantId)))
+  await db.delete(attachments).where(and(eq(attachments.id, attachmentId), eq(attachments.itemId, itemId), eq(attachments.tenantId, ctx.tenantId)))
 
   return c.json({ ok: true })
 })

@@ -41,6 +41,19 @@ export async function authMiddleware(c: Context<HonoEnv>, next: Next) {
         .then(r => r[0])
 
       if (keyRecord) {
+        const now = new Date().toISOString()
+        const expired = keyRecord.expiresAt != null && keyRecord.expiresAt <= now
+        const revoked = keyRecord.revokedAt != null
+        const projectScope = parseScope(keyRecord.projectScope)
+        const permissionScope = parseScope(keyRecord.permissionScope)
+        const requestedProjectId = c.req.param('projectId') ?? c.req.param('id')
+        // [TENANT] Escopo da chave só pode restringir projetos do próprio tenant.
+        if ((keyRecord.projectScope && !projectScope) || (keyRecord.permissionScope && !permissionScope)) {
+          return c.json({ error: 'Não autorizado' }, 401)
+        }
+        if (expired || revoked || (requestedProjectId && projectScope && !projectScope.includes(requestedProjectId))) {
+          return c.json({ error: 'Não autorizado' }, 401)
+        }
         const owner = await db.query.users.findFirst({
           where: (u) => and(eq(u.id, keyRecord.ownerId), eq(u.tenantId, keyRecord.tenantId)),
         })
@@ -49,6 +62,9 @@ export async function authMiddleware(c: Context<HonoEnv>, next: Next) {
           ctx = { userId: owner.id, tenantId: keyRecord.tenantId, email: owner.email }
           c.set('apiKeyId', keyRecord.id)
           c.set('aiModelName', keyRecord.aiModelName)
+          c.set('apiKeyProjectScope', projectScope)
+          c.set('apiKeyPermissionScope', permissionScope)
+          await db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, keyRecord.id))
         }
       }
     }
@@ -91,9 +107,26 @@ export function requireRole(minRole: MemberRole) {
     if (roleHierarchy[membership.role] < roleHierarchy[minRole]) {
       return c.json({ error: 'Permissão insuficiente' }, 403)
     }
+    const permissionScope = c.get('apiKeyPermissionScope')
+    if (permissionScope) {
+      const requiredPermission = minRole === 'VIEWER' ? 'read' : minRole === 'MEMBER' ? 'write' : 'admin'
+      if (!permissionScope.includes(requiredPermission) && !permissionScope.includes('admin')) {
+        return c.json({ error: 'Permissão insuficiente para esta API Key' }, 403)
+      }
+    }
 
     c.set('memberRole', membership.role)
     await next()
+  }
+}
+
+function parseScope(value: string | null): string[] | null {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) && parsed.every(item => typeof item === 'string') ? parsed : null
+  } catch {
+    return null
   }
 }
 

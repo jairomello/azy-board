@@ -39,7 +39,7 @@ import { AppShell } from '../components/AppShell'
 import { BoardCommandBar } from '../components/BoardCommandBar'
 import { ModuleSwimlane } from '../components/ModuleSwimlane'
 import { BoardContextHeader, BoardStatusRail } from '../components/BoardContext'
-import type { WsEvent, ItemType, AncestorNode, TaskStatus } from '@azy-board/types'
+import type { WsEvent, ItemType, AncestorNode, TaskStatus, BoardMode } from '@azy-board/types'
 import type { Tag } from '../components/TagSelector'
 
 // Mapa de status para nome legível (para a modal de itens arquivados)
@@ -64,6 +64,7 @@ interface ArchivedItem {
 interface Column { id: string; name: string; baseStatus: string; position: number }
 interface Module { id: string; name: string; position?: number }
 interface Sprint { id: string; name: string; status: string }
+interface ProjectContext { name: string; boardMode?: BoardMode; simpleStoryId?: string | null }
 
 // Tipo unificado: qualquer item retornado pela API
 interface ItemData extends CardData {
@@ -144,6 +145,8 @@ export default function BoardPage() {
   const [projectCostCenters, setProjectCostCenters] = useState<CostCenter[]>([])
   const [projectSquads, setProjectSquads] = useState<{ id: string; name: string }[]>([])
   const [projectName, setProjectName] = useState('')
+  const [boardMode, setBoardMode] = useState<BoardMode>('HIERARCHICAL')
+  const [simpleStoryId, setSimpleStoryId] = useState<string | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [collapsedEpics, setCollapsedEpics] = useState<Set<string>>(() => {
     if (!projectId) return new Set()
@@ -263,7 +266,7 @@ export default function BoardPage() {
       // Tarefa 9 — carregar centros de custo junto com os demais dados
       api.get<CostCenter[]>(`/projects/${projectId}/cost-centers`).catch(() => [] as CostCenter[]),
       api.get<{ id: string; name: string }[]>(`/projects/${projectId}/squads`).catch(() => []),
-      api.get<{ name: string }>(`/projects/${projectId}`).catch(() => ({ name: '' })),
+       api.get<ProjectContext>(`/projects/${projectId}`).catch(() => ({ name: '', boardMode: 'HIERARCHICAL' as const, simpleStoryId: null })),
     ]).then(([cols, its, mods, tags, sprs, mbrs, vers, ccs, sqs, proj]) => {
       setColumns(cols)
       setAllItems(computeIsLeaf(its))
@@ -273,8 +276,10 @@ export default function BoardPage() {
       setMembers(mbrs)
       setProjectVersions(vers)
       setProjectCostCenters(ccs)
-      setProjectSquads(sqs)
-      setProjectName(proj.name)
+       setProjectSquads(sqs)
+       setProjectName(proj.name)
+       setBoardMode(proj.boardMode ?? 'HIERARCHICAL')
+       setSimpleStoryId(proj.simpleStoryId ?? null)
     }).finally(() => setLoading(false))
   }, [projectId])
 
@@ -347,6 +352,16 @@ export default function BoardPage() {
   // Items derivados por tipo
   const epics = useMemo(() => allItems.filter(i => i.type === 'EPIC'), [allItems])
   const stories = useMemo(() => allItems.filter(i => i.type === 'STORY'), [allItems])
+  const simpleStory = useMemo(() => (
+    stories.find(story => story.id === simpleStoryId) ?? stories.find(story => !story.parentId)
+  ), [simpleStoryId, stories])
+  const isSimpleBoard = boardMode === 'SIMPLE'
+
+  useEffect(() => {
+    if (isSimpleBoard && filters.moduleId) {
+      setFilters(prev => ({ ...prev, moduleId: '' }))
+    }
+  }, [isSimpleBoard, filters.moduleId])
 
   // IDs das STORYs — usados para identificar TASK/BUG de primeiro nível
   const storyIdSet = useMemo(() => new Set(stories.map(s => s.id)), [stories])
@@ -400,7 +415,7 @@ export default function BoardPage() {
     }
 
     // Histórias folha (sem filhos) — aparecem como cards arrastáveis quando "Histórias no board" ativo
-    if (filters.storyDisplay === 'cards' && columns.length > 0) {
+    if (!isSimpleBoard && filters.storyDisplay === 'cards' && columns.length > 0) {
       const firstColId = columns[0]!.id
       let leafStories = stories
         .filter(s => s.isLeaf)
@@ -434,7 +449,7 @@ export default function BoardPage() {
     }
 
     return result
-  }, [allItems, filters, storyIdSet, epics, squadMembersMap, columns, stories])
+  }, [allItems, filters, storyIdSet, epics, squadMembersMap, columns, stories, isSimpleBoard])
 
   // Cards virtuais de histórias NÃO-folha quando toggle "Mostrar histórias" ativo
   // Histórias folha aparecem como cards reais em boardCards (arrastáveis)
@@ -505,6 +520,7 @@ export default function BoardPage() {
   )
 
   const moduleGroups = useMemo(() => {
+    if (isSimpleBoard) return []
     const groups = new Map<string, { module: Module; epics: typeof epicGroups }>()
     for (const group of epicGroups) {
       const moduleId = group.epic.moduleId ?? '__no-module__'
@@ -514,7 +530,7 @@ export default function BoardPage() {
       else groups.set(moduleId, { module, epics: [group] })
     }
     return [...groups.values()].sort((a, b) => (a.module.position ?? Number.MAX_SAFE_INTEGER) - (b.module.position ?? Number.MAX_SAFE_INTEGER))
-  }, [epicGroups, modules, tBoard])
+  }, [epicGroups, modules, tBoard, isSimpleBoard])
 
   useEffect(() => {
     if (moduleGroups.length === 0) {
@@ -1037,19 +1053,20 @@ export default function BoardPage() {
           onViewChange={setView}
           density={density}
           onDensityChange={setDensity}
-          modules={modules}
+           modules={modules}
+           boardMode={boardMode}
           sprints={sprints}
           members={members}
           squads={projectSquads}
           tags={projectTags}
           filters={filters}
           onFiltersChange={setFilters}
-          onExpandAll={() => {
+           onExpandAll={() => {
             setCollapsedModules(new Set())
             setCollapsedEpics(new Set())
             setCollapsedStories(new Set())
           }}
-          onCollapseAll={() => {
+           onCollapseAll={() => {
             setCollapsedModules(new Set(moduleGroups.map(group => group.module.id)))
             setCollapsedEpics(new Set([...epics.map(e => e.id), 'orphan']))
             setCollapsedStories(new Set(
@@ -1099,8 +1116,29 @@ export default function BoardPage() {
               }}
               onDragCancel={() => { lastOverRef.current = null; setActiveId(null) }}
             >
-              {/* Swimlane itens órfãos */}
-              {orphanCards.length > 0 && (
+               {/* Swimlane única do modo simples */}
+               {isSimpleBoard && simpleStory && (
+                 <Swimlane
+                   swimlaneId={simpleStory.id}
+                   title={simpleStory.title}
+                   columns={columns}
+                   tasks={boardCards}
+                   collapsed={false}
+                   onToggle={() => {}}
+                   columnAddForms={columnAddForms}
+                   onShowAddForm={colId => setColumnAddForms(prev => ({ ...prev, [colId]: true }))}
+                   onHideAddForm={colId => setColumnAddForms(prev => ({ ...prev, [colId]: false }))}
+                   onCardCreate={handleCardCreate}
+                   onOpenDetail={handleOpenDetail}
+                   onTitleSave={handleTitleSave}
+                   onDelete={handleDeleteItem}
+                   onArchive={handleArchiveRequest}
+                   onEditEpic={null}
+                 />
+               )}
+
+               {/* Swimlane itens órfãos */}
+               {!isSimpleBoard && orphanCards.length > 0 && (
                 <Swimlane
                   swimlaneId="orphan"
                   title="Sem épico"
@@ -1120,7 +1158,7 @@ export default function BoardPage() {
                 />
               )}
 
-              {filters.moduleViewMode === 'tabs' && moduleGroups.length > 0 && (
+               {!isSimpleBoard && filters.moduleViewMode === 'tabs' && moduleGroups.length > 0 && (
                 <div role="tablist" aria-label={tBoard('moduleViewTabs')} className="mb-3 flex gap-1.5 overflow-x-auto rounded-xl border border-border/80 bg-surface p-1">
                   {moduleGroups.map(({ module }) => (
                     <button
@@ -1138,7 +1176,7 @@ export default function BoardPage() {
                 </div>
               )}
 
-              {visibleModuleGroups.map(renderModuleGroup)}
+               {!isSimpleBoard && visibleModuleGroups.map(renderModuleGroup)}
 
               <DragOverlay>
                 {activeCard && (

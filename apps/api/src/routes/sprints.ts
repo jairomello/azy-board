@@ -55,6 +55,13 @@ sprintsRouter.patch('/:sprintId/activate', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, sprintId } = c.req.param()
 
+  // [TENANT] A sprint só pode ser ativada dentro do projeto da rota.
+  const requested = await db.query.sprints.findFirst({
+    where: (s) => and(eq(s.id, sprintId), eq(s.projectId, projectId), eq(s.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!requested) return c.json({ error: 'Sprint não encontrada' }, 404)
+
   await db.transaction(async (tx) => {
     // Desativar sprint ativa anterior do mesmo projeto
     await tx.update(sprints)
@@ -70,22 +77,30 @@ sprintsRouter.patch('/:sprintId/activate', requireRole('ADMIN'), async (c) => {
     // Ativar a sprint solicitada
     await tx.update(sprints)
       .set({ status: 'ACTIVE' })
-      .where(and(eq(sprints.id, sprintId), eq(sprints.tenantId, ctx.tenantId)))
+      .where(and(eq(sprints.id, sprintId), eq(sprints.projectId, projectId), eq(sprints.tenantId, ctx.tenantId)))
   })
 
-  return c.json({ ok: true })
+  const updated = await db.query.sprints.findFirst({ where: (s) => and(eq(s.id, sprintId), eq(s.projectId, projectId), eq(s.tenantId, ctx.tenantId)) })
+  return c.json({ sprint: updated })
 })
 
 // PATCH /projects/:projectId/sprints/:sprintId/close
 sprintsRouter.patch('/:sprintId/close', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const sprintId = c.req.param('sprintId')!
+  const { projectId, sprintId } = c.req.param()
+
+  const requested = await db.query.sprints.findFirst({
+    where: (s) => and(eq(s.id, sprintId), eq(s.projectId, projectId), eq(s.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!requested) return c.json({ error: 'Sprint não encontrada' }, 404)
 
   await db.update(sprints)
     .set({ status: 'DONE' })
-    .where(and(eq(sprints.id, sprintId), eq(sprints.tenantId, ctx.tenantId)))
+    .where(and(eq(sprints.id, sprintId), eq(sprints.projectId, projectId), eq(sprints.tenantId, ctx.tenantId)))
 
-  return c.json({ ok: true })
+  const updated = await db.query.sprints.findFirst({ where: (s) => and(eq(s.id, sprintId), eq(s.projectId, projectId), eq(s.tenantId, ctx.tenantId)) })
+  return c.json({ sprint: updated })
 })
 
 // GET /projects/:projectId/sprints

@@ -2,8 +2,13 @@ import bcrypt from 'bcryptjs'
 import { SignJWT, jwtVerify } from 'jose'
 import type { JwtPayload } from '@azy-board/types'
 
+const configuredSecret = process.env.JWT_SECRET
+if (!configuredSecret && process.env.NODE_ENV === 'production') {
+  throw new Error('JWT_SECRET é obrigatório em produção.')
+}
+
 const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET ?? 'azy-board-dev-secret-change-in-production'
+  configuredSecret ?? 'azy-board-dev-secret-change-in-production'
 )
 
 const JWT_TTL = '1h'

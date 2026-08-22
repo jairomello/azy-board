@@ -59,3 +59,19 @@ O backend SHALL expor os endpoints `GET /api-keys`, `POST /api-keys` e `DELETE /
 #### Scenario: Tentativa de revogar chave de outro usuário
 - **WHEN** uma requisição autenticada tenta deletar uma chave de outro usuário via `DELETE /api-keys/:id`
 - **THEN** o sistema retorna 404 sem revelar a existência da chave
+
+### Requirement: Ciclo de vida seguro de API Keys de agentes
+
+API Keys SHALL possuir estado de revogação, expiração opcional, escopo opcional por projeto/permissão e registro de último uso. O segredo bruto SHALL ser exibido somente uma vez na criação e nunca incluído em logs, respostas ou documentação.
+
+#### Scenario: Chave expirada ou revogada
+- **WHEN** agente envia API Key expirada ou revogada
+- **THEN** API retorna HTTP 401 e não executa nenhuma operação
+
+#### Scenario: Escopo limita projeto
+- **WHEN** agente usa chave com escopo restrito ao projeto A para acessar projeto B
+- **THEN** API rejeita a operação sem revelar nem modificar dados de B
+
+#### Scenario: Último uso atualizado
+- **WHEN** API Key válida autentica uma requisição
+- **THEN** sistema atualiza `last_used_at` sem expor o valor bruto da chave

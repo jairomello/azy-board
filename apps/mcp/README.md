@@ -1,6 +1,8 @@
 # Azy Board — Servidor MCP
 
-Servidor MCP (Model Context Protocol) para integração do Azy Board com agentes de IA como Claude Code.
+Servidor MCP (Model Context Protocol) para integração do Azy Board com agentes
+de IA como Claude Code, Codex e OpenCode. O objetivo é permitir que um code
+agent descubra, configure e execute um projeto sem operar a interface manualmente.
 
 ## Configuração no Claude Code
 
@@ -35,6 +37,32 @@ Adicione ao seu `.claude/settings.json`:
 | `create_checklist` | Cria um checklist nomeado em um card |
 | `add_checklist_item` | Adiciona um item a um checklist existente |
 | `check_item` | Marca item de checklist como concluído ou não |
+| `list_projects` / `get_project` | Descobre projetos e configurações |
+| `get_board` / `get_tree` | Consulta board estruturado e árvore |
+| `get_shadow_markdown` | Consulta o board em Markdown |
+| `create_project` / `update_project` | Cria e configura projeto |
+| `update_item` | Atualiza campos de item |
+| `release_task` | Libera atribuição de task |
+| `archive_item` / `unarchive_item` / `delete_item` | Gerencia ciclo de vida de item |
+| `create_module` | Cria módulo hierárquico |
+| `list_sprints` / `create_sprint` | Consulta e cria sprints |
+| `activate_sprint` / `close_sprint` | Controla ciclo de sprint |
+| `list_tags` / `create_tag` / `set_item_tags` | Gerencia tags e associações |
+| `list_versions` / `create_version` | Gerencia versões |
+| `list_members` / `list_squads` | Consulta equipe e squads |
+| `add_member` / `update_member` / `remove_member` | Administra membros e papéis |
+| `list_cost_centers` / `create_cost_center` | Administra centros de custo |
+| `reorder_items` | Persiste a ordem dos cards |
+| `list_attachments` | Consulta metadados de anexos |
+| `list_item_logs` / `create_item_log` | Consulta e registra atividade |
+| `list_modules` | Lista módulos do projeto |
+| `list_columns` / `create_column` / `reorder_columns` | Gerencia colunas do board |
+| `create_squad` | Cria squad no projeto |
+| `update_item_log` | Atualiza atividade manual |
+| `update_checklist` / `delete_checklist` | Gerencia checklists |
+| `update_checklist_item` / `delete_checklist_item` | Gerencia passos de checklist |
+| `batch` | Executa criações em lote com atomicidade opcional |
+| `delete_project` | Exclui projeto ou gera preview |
 
 ## Exemplo de fluxo de um agente
 
@@ -61,3 +89,22 @@ Adicione ao seu `.claude/settings.json`:
 |---|---|---|
 | `EASYBOARD_API_KEY` | API Key gerada no painel do Azy Board | obrigatório |
 | `EASYBOARD_URL` | URL base da API | `http://localhost:3000` |
+
+## Fluxo AI First
+
+Um agente pode seguir este fluxo sem usar a interface:
+
+```text
+list_projects → create_project → get_project/get_board
+→ create_module/create_task ou criação direta em projeto SIMPLE
+→ claim_task → update_item → move_task/complete_task
+→ create_checklist/add_checklist_item/check_item
+→ create_item_log → get_board ou get_shadow_markdown
+```
+
+Em projetos `SIMPLE`, o backend encaminha TASKs e BUGs para a STORY fixa. O
+agente não precisa criar módulo, EPIC ou parentId manualmente.
+
+As ferramentas retornam texto legível e conteúdo estruturado. Erros devem ser
+tratados como resultado operacional e não como sinal para repetir cegamente a
+operação, especialmente em conflitos de claim, conversões e exclusões.

@@ -45,8 +45,28 @@ export const apiKeys = sqliteTable('api_keys', {
   name: text('name').notNull(),
   keyHash: text('key_hash').notNull().unique(),
   aiModelName: text('ai_model_name'),
+  // [TENANT] Escopos opcionais limitam a chave a projetos do mesmo tenant.
+  projectScope: text('project_scope'),
+  permissionScope: text('permission_scope'),
+  expiresAt: text('expires_at'),
+  revokedAt: text('revoked_at'),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
   lastUsedAt: text('last_used_at'),
+})
+
+// IDEMPOTENCY — resultados de mutações repetíveis, retidos por 24 horas.
+// [TENANT] owner_id e tenant_id fazem parte do escopo; payload_hash evita replay com payload diferente.
+// [DB-SWAP] Em PostgreSQL, trocar o índice implícito por UNIQUE (tenant_id, owner_id, tool, idempotency_key).
+export const idempotencyRecords = sqliteTable('idempotency_records', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id),
+  ownerId: text('owner_id').notNull().references(() => users.id),
+  tool: text('tool').notNull(),
+  idempotencyKey: text('idempotency_key').notNull(),
+  payloadHash: text('payload_hash').notNull(),
+  responseJson: text('response_json').notNull(),
+  createdAt: text('created_at').notNull(),
+  expiresAt: text('expires_at').notNull(),
 })
 
 // ---------------------------------------------------------------------------
@@ -58,6 +78,10 @@ export const projects = sqliteTable('projects', {
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
   name: text('name').notNull(),
   description: text('description'),
+  // [TENANT] O modo pertence ao projeto e é compartilhado por todos os membros do tenant.
+  boardMode: text('board_mode', { enum: ['HIERARCHICAL', 'SIMPLE'] }).notNull().default('HIERARCHICAL'),
+  // [TENANT] A STORY fixa sempre pertence ao mesmo projeto/tenant; a validação ocorre no serviço de conversão.
+  simpleStoryId: text('simple_story_id'),
   // Gerente Geral do Projeto — campo informativo, sem RBAC adicional
   managerUserId: text('manager_user_id'),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),

@@ -6,7 +6,7 @@ import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import { VersionDetailModal } from '../components/VersionDetailModal'
 import { AppShell } from '../components/AppShell'
-import type { ColumnBaseStatus } from '@azy-board/types'
+import type { BoardMode, ColumnBaseStatus } from '@azy-board/types'
 
 interface Column { id: string; name: string; baseStatus: ColumnBaseStatus; position: number }
 interface Member { userId: string; name: string; email: string; role: string; squadId?: string | null; squadName?: string | null; avatarUrl?: string | null }
@@ -80,6 +80,10 @@ export default function SettingsPage() {
   const [projectName, setProjectName] = useState('')
   const [managerUserId, setManagerUserId] = useState('')
   const [savingManager, setSavingManager] = useState(false)
+  const [boardMode, setBoardMode] = useState<BoardMode>('HIERARCHICAL')
+  const [pendingBoardMode, setPendingBoardMode] = useState<BoardMode | null>(null)
+  const [savingBoardMode, setSavingBoardMode] = useState(false)
+  const [boardModeError, setBoardModeError] = useState('')
 
   // Centros de Custo
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
@@ -117,14 +121,30 @@ export default function SettingsPage() {
     api.get<Module[]>(`/projects/${projectId}/modules`).then(setModules)
     api.get<ProjectVersion[]>(`/projects/${projectId}/versions`).then(setVersions)
     api.get<CostCenter[]>(`/projects/${projectId}/cost-centers`).then(setCostCenters)
-    api.get<{ name: string; manager?: Manager | null }>(`/projects/${projectId}`)
+    api.get<{ name: string; manager?: Manager | null; boardMode?: BoardMode }>(`/projects/${projectId}`)
       .then(p => {
         setProjectName(p.name)
         setManager(p.manager ?? null)
         setManagerUserId(p.manager?.id ?? '')
+        setBoardMode(p.boardMode ?? 'HIERARCHICAL')
       })
       .catch(() => {})
   }, [projectId])
+
+  async function saveBoardMode(nextMode: BoardMode) {
+    if (!projectId || !isAdmin) return
+    setSavingBoardMode(true)
+    setBoardModeError('')
+    try {
+      await api.patch(`/projects/${projectId}`, { boardMode: nextMode })
+      setBoardMode(nextMode)
+      setPendingBoardMode(null)
+    } catch (error) {
+      setBoardModeError(error instanceof Error ? error.message : 'Não foi possível alterar o formato do board')
+    } finally {
+      setSavingBoardMode(false)
+    }
+  }
 
   // --- Colunas ---
   async function createColumn(e: React.FormEvent) {
@@ -363,9 +383,47 @@ export default function SettingsPage() {
         <div className="mb-7">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">{projectName}</p>
           <h2 className="text-2xl font-bold text-foreground mt-1">{t('settings:settings')}</h2>
-          <p className="text-sm text-muted-foreground mt-1">Organize fluxo, pessoas e estrutura sem sair do workspace.</p>
+         <p className="text-sm text-muted-foreground mt-1">Organize fluxo, pessoas e estrutura sem sair do workspace.</p>
         </div>
       <main className="space-y-5 [&>section]:bg-card [&>section]:border [&>section]:border-border [&>section]:rounded-xl [&>section]:p-5 [&>section]:shadow-sm">
+
+        {/* Formato do board */}
+        <section>
+          <h2 className="text-lg font-semibold text-foreground mb-2">Formato do board</h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Escolha entre um fluxo único para projetos simples ou a organização por módulos, épicos e histórias.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <label className={`flex-1 rounded-lg border p-3 cursor-pointer transition ${boardMode === 'SIMPLE' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+              <input
+                type="radio"
+                name="board-mode"
+                value="SIMPLE"
+                checked={boardMode === 'SIMPLE'}
+                disabled={!isAdmin || savingBoardMode}
+                onChange={() => setPendingBoardMode('SIMPLE')}
+                className="sr-only"
+              />
+              <span className="block text-sm font-semibold text-foreground">Simples</span>
+              <span className="block text-xs text-muted-foreground mt-1">Um Kanban único com uma história fixa.</span>
+            </label>
+            <label className={`flex-1 rounded-lg border p-3 cursor-pointer transition ${boardMode === 'HIERARCHICAL' ? 'border-primary bg-primary/5' : 'border-border'}`}>
+              <input
+                type="radio"
+                name="board-mode"
+                value="HIERARCHICAL"
+                checked={boardMode === 'HIERARCHICAL'}
+                disabled={!isAdmin || savingBoardMode}
+                onChange={() => saveBoardMode('HIERARCHICAL')}
+                className="sr-only"
+              />
+              <span className="block text-sm font-semibold text-foreground">Hierárquico</span>
+              <span className="block text-xs text-muted-foreground mt-1">Módulos, épicos, histórias e cards.</span>
+            </label>
+          </div>
+          {!isAdmin && <p className="text-xs text-muted-foreground mt-3">Somente administradores podem alterar o formato.</p>}
+          {boardModeError && <p className="text-sm text-destructive mt-3">{boardModeError}</p>}
+        </section>
 
         {/* Colunas */}
         <section>
@@ -677,7 +735,7 @@ export default function SettingsPage() {
         </section>
 
         {/* Módulos */}
-        <section>
+        {boardMode === 'HIERARCHICAL' && <section>
           <h2 className="text-lg font-semibold text-foreground mb-4">Módulos</h2>
           <div className="space-y-2">
             {modules.map(mod => (
@@ -733,7 +791,7 @@ export default function SettingsPage() {
               </button>
             </form>
           )}
-        </section>
+        </section>}
 
         {/* Versões */}
         <section>
@@ -1141,6 +1199,26 @@ export default function SettingsPage() {
               <button onClick={handleDeleteModuleConfirm}
                 className="px-4 py-1.5 text-sm bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition">
                 {deleteModuleTargetId ? 'Mover e excluir' : 'Excluir tudo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingBoardMode === 'SIMPLE' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setPendingBoardMode(null)} />
+          <div role="dialog" aria-modal="true" aria-labelledby="simple-mode-title" className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-md p-6">
+            <h3 id="simple-mode-title" className="font-semibold text-foreground mb-2">Usar board simples?</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Módulos e épicos serão removidos. Todos os cards de tarefas e bugs serão preservados e movidos para uma única história fixa.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setPendingBoardMode(null)} disabled={savingBoardMode} className="px-3 py-1.5 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition disabled:opacity-50">
+                Cancelar
+              </button>
+              <button onClick={() => saveBoardMode('SIMPLE')} disabled={savingBoardMode} className="px-4 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition disabled:opacity-50">
+                {savingBoardMode ? 'Convertendo...' : 'Confirmar conversão'}
               </button>
             </div>
           </div>

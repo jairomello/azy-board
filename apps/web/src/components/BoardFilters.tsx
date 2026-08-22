@@ -113,7 +113,7 @@ export function BoardFilters({
 
       {showOptions && <div className="flex items-center gap-1.5 flex-wrap">
         <span className="w-20 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Exibição</span>
-        {showModuleViewMode && <div className="flex items-center rounded-lg border border-border bg-background p-0.5" aria-label="Modo de módulos">
+         {showModuleViewMode && <div className="flex items-center rounded-lg border border-border bg-background p-0.5" aria-label="Modo de módulos">
           <button
             type="button"
             aria-pressed={filters.moduleViewMode === 'hierarchy'}
@@ -137,7 +137,7 @@ export function BoardFilters({
           </button>
         </Tooltip>
 
-        <Tooltip label={storiesAsCards ? 'Exibir histórias como lanes' : 'Exibir histórias como cards'}>
+        {showModuleViewMode && <Tooltip label={storiesAsCards ? 'Exibir histórias como lanes' : 'Exibir histórias como cards'}>
           <button
             aria-pressed={storiesAsCards}
             aria-label={storiesAsCards ? 'Exibir histórias como lanes' : 'Exibir histórias como cards'}
@@ -146,7 +146,7 @@ export function BoardFilters({
           >
             <LayoutList className="w-3.5 h-3.5" />
           </button>
-        </Tooltip>
+        </Tooltip>}
 
         {showExpandCollapse && (
           <>
@@ -162,7 +162,7 @@ export function BoardFilters({
             </Tooltip>
           </>
         )}
-        <Tooltip label="Ocultar épicos vazios">
+        {showModuleViewMode && <Tooltip label="Ocultar épicos vazios">
           <button
             aria-label="Ocultar épicos vazios"
             aria-pressed={filters.hideEmptyEpics}
@@ -172,8 +172,8 @@ export function BoardFilters({
             {filters.hideEmptyEpics ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
             <span className="text-[11px]">Épicos vazios</span>
           </button>
-        </Tooltip>
-        {!storiesAsCards && (
+        </Tooltip>}
+        {showModuleViewMode && !storiesAsCards && (
           <Tooltip label="Ocultar histórias vazias">
             <button
               aria-label="Ocultar histórias vazias"

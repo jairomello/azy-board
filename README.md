@@ -44,12 +44,20 @@ board state programmatically:
 
 | Tool | Description |
 |------|-------------|
-| `get_board` | Returns full board state as structured data |
-| `list_items` | Queries items by type, status, assignee, or sprint |
-| `create_item` | Creates a task, bug, story, or epic |
-| `update_item` | Patches fields on an existing item |
-| `move_card` | Moves a leaf card to a target column |
-| `get_shadow_markdown` | Returns the Shadow Markdown projection |
+| `list_projects` / `get_project` | Descobre projetos e suas configurações |
+| `get_board` / `get_tree` | Lê o board estruturado ou sua árvore |
+| `get_shadow_markdown` | Retorna a projeção Shadow Markdown |
+| `create_project` / `update_project` | Cria e configura projetos |
+| `create_task` / `update_item` | Cria e atualiza items e subtasks |
+| `claim_task` / `release_task` | Atribui ou libera trabalho |
+| `move_task` / `complete_task` | Move e conclui cards |
+| `archive_item` / `unarchive_item` / `delete_item` | Gerencia ciclo de vida de items |
+| `create_module`, sprints, tags e versões | Administra planejamento do projeto |
+| `list_members` / `list_squads` | Consulta colaboração e equipe |
+| `list_checklists`, logs e tags | Registra evidências de execução |
+
+As ferramentas legadas `list_tasks` e `list_modules` continuam disponíveis para
+compatibilidade com agentes já configurados.
 
 MCP tools are auditable, scoped to a tenant, and enforce the same RBAC rules
 as the REST API. Agents cannot escalate beyond the role granted to their API
@@ -127,7 +135,9 @@ bun run dev:mcp    # MCP stdio server for configured agent clients
 ```
 
 **Environment**: copy `apps/api/.env.example` to `apps/api/.env` and fill in
-the required values before running `setup`. For MCP usage, copy
+the required values before running `setup`. The setup requires an explicit
+administrator password through its fourth argument or `ADMIN_PASSWORD`.
+For MCP usage, copy
 `apps/mcp/.env.example` to `apps/mcp/.env` and set an API key generated in the
 web app. Never commit `.env` files.
 
@@ -138,6 +148,8 @@ web app. Never commit `.env` files.
 ```bash
 bun run typecheck   # tsc --noEmit across all workspaces
 bun test            # Bun test runner
+bun run test:integration  # API integration tests in an isolated SQLite database
+bun run test:smoke        # HTTP smoke test; use SMOKE_URL for a published app
 ```
 
 ---

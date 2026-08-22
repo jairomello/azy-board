@@ -36,45 +36,111 @@ import {
   toolCreateChecklist,
   toolAddChecklistItem,
   toolCheckItem,
+  toolListProjects,
+  toolGetProject,
+  toolGetBoard,
+  toolGetTree,
+  toolGetShadowMarkdown,
+  toolCreateProject,
+  toolUpdateProject,
+  toolUpdateItem,
+  toolReleaseTask,
+  toolDeleteItem,
+  toolDeleteProject,
+  toolArchiveItem,
+  toolUnarchiveItem,
+  toolCreateModule,
+  toolListColumns,
+  toolCreateColumn,
+  toolReorderColumns,
+  toolListSprints,
+  toolCreateSprint,
+  toolActivateSprint,
+  toolCloseSprint,
+  toolListTags,
+  toolCreateTag,
+  toolSetItemTags,
+  toolListVersions,
+  toolCreateVersion,
+  toolListMembers,
+  toolListSquads,
+  toolListItemLogs,
+  toolCreateItemLog,
+  toolListCostCenters,
+  toolCreateCostCenter,
+  toolAddMember,
+  toolUpdateMember,
+  toolRemoveMember,
+  toolCreateSquad,
+  toolReorderItems,
+  toolListAttachments,
+  toolUpdateChecklist,
+  toolDeleteChecklist,
+  toolUpdateChecklistItem,
+  toolDeleteChecklistItem,
+  toolUpdateItemLog,
+  toolBatch,
 } from './tools.js'
+import type { ApiCall } from './tools.js'
+import { assertEnum, assertIsoDate, assertNonEmptyString, assertNonNegativeNumber, assertStringArray } from './validation.js'
 
 // [TENANT] API Key autentica o agente como o Owner humano vinculado — resolvido pelo middleware da API
-const API_KEY = process.env.EASYBOARD_API_KEY
-const API_URL = process.env.EASYBOARD_URL ?? 'http://localhost:3000'
-
-if (!API_KEY) {
-  console.error('EASYBOARD_API_KEY não configurada')
-  process.exit(1)
-}
-
-export async function makeApiCall(apiUrl: string, apiKey: string) {
+export async function makeApiCall(apiUrl: string, apiKey: string, options: { timeoutMs?: number } = {}) {
   return async function apiCall(path: string, method = 'GET', body?: unknown) {
-    const res = await fetch(`${apiUrl}/api${path}`, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        // [TENANT] API Key identifica o agente e o tenant — resolvido pelo authMiddleware
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    })
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000)
+    let res: Response
+    try {
+      res = await fetch(`${apiUrl}/api${path}`, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/vnd.azyboard.agent+json',
+          // [TENANT] API Key identifica o agente e o tenant — resolvido pelo authMiddleware
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      })
+    } catch (error) {
+      throw new ApiError('NETWORK_ERROR', error instanceof DOMException && error.name === 'AbortError' ? 'Tempo limite excedido' : 'Falha de comunicação com a API', true)
+    } finally {
+      clearTimeout(timeout)
+    }
 
     if (!res.ok) {
-      const err = await res.text()
-      throw new Error(`API error ${res.status}: ${err}`)
+      const body = await res.json().catch(() => null) as { code?: string; error?: string | { message?: string }; retryable?: boolean } | null
+      const message = typeof body?.error === 'object' ? body.error.message : body?.error
+      throw new ApiError(body?.code ?? `HTTP_${res.status}`, message ?? `Erro HTTP ${res.status}`, body?.retryable ?? res.status >= 500)
     }
-    return res.json()
+    const contentType = res.headers.get('content-type') ?? ''
+    if (!contentType.includes('application/json')) return res.text()
+    try {
+      const payload = await res.json() as { data?: unknown; error?: { code?: string; message?: string; retryable?: boolean } }
+      if (payload.error) {
+        throw new ApiError(payload.error.code ?? `HTTP_${res.status}`, payload.error.message ?? `Erro HTTP ${res.status}`, payload.error.retryable === true)
+      }
+      return payload.data
+    } catch {
+      throw new ApiError('INVALID_API_RESPONSE', 'A API retornou JSON inválido', true)
+    }
   }
 }
 
-const apiCall = await makeApiCall(API_URL, API_KEY)
+export class ApiError extends Error {
+  constructor(readonly code: string, message: string, readonly retryable: boolean) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
 
-const server = new Server(
-  { name: 'azy-board', version: '1.0.0' },
-  { capabilities: { tools: {} } }
-)
+export function createMcpServer(apiCall: ApiCall) {
+  const server = new Server(
+    { name: 'azy-board', version: '1.0.0' },
+    { capabilities: { tools: {} } }
+  )
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: 'list_tasks',
@@ -99,6 +165,14 @@ Campos retornados: id, title, type, status, priority, parentId, moduleId, assign
             description: 'Filtrar por tipo: EPIC, STORY, TASK, BUG ou combinações separadas por vírgula (ex: TASK,BUG). Omitir retorna todos.',
           },
           sprintId: { type: 'string', description: 'Filtrar por sprint (opcional)' },
+          assigneeId: { type: 'string' },
+          status: { type: 'string', description: 'Status ou lista separada por vírgula' },
+          tagIds: { type: 'array', items: { type: 'string' } },
+          parentId: { type: 'string' },
+          columnId: { type: 'string' },
+          moduleId: { type: 'string' },
+          cursor: { type: 'string' },
+          limit: { type: 'number', maximum: 100 },
           onlyLeaves: {
             type: 'boolean',
             description: 'Apenas itens sem filhos (padrão: true). Passe false para ver todos os níveis.',
@@ -344,17 +418,241 @@ Use checked=true ao completar um passo, checked=false para reverter.`,
         required: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'],
       },
     },
+    {
+      name: 'list_projects',
+      description: 'Lista projetos acessíveis ao Owner da API Key, incluindo modo do board e papel efetivo.',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+    },
+    {
+      name: 'get_project',
+      description: 'Obtém configuração e contexto de um projeto autorizado.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'] },
+    },
+    {
+      name: 'get_board',
+      description: 'Obtém board estruturado com projeto, modo, colunas, módulos e itens.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'] },
+    },
+    {
+      name: 'get_tree',
+      description: 'Obtém a árvore de itens de um projeto, respeitando filtros opcionais.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, moduleId: { type: 'string' }, assigneeId: { type: 'string' }, sprintId: { type: 'string' } }, required: ['projectId'] },
+    },
+    {
+      name: 'get_shadow_markdown',
+      description: 'Lê o estado do board em Markdown para planejamento por LLM.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'] },
+    },
+    {
+      name: 'create_project',
+      description: 'Cria projeto com nome, descrição opcional e modo HIERARCHICAL ou SIMPLE.',
+      inputSchema: { type: 'object', properties: { name: { type: 'string' }, description: { type: 'string' }, boardMode: { type: 'string', enum: ['HIERARCHICAL', 'SIMPLE'] }, managerUserId: { type: 'string' } }, required: ['name'] },
+    },
+    {
+      name: 'update_project',
+      description: 'Atualiza configuração de projeto autorizado, incluindo nome, gerente e modo do board.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, name: { type: 'string' }, description: { type: 'string' }, boardMode: { type: 'string', enum: ['HIERARCHICAL', 'SIMPLE'] }, managerUserId: { type: 'string' }, dryRun: { type: 'boolean' } }, required: ['projectId'] },
+    },
+    {
+      name: 'update_item',
+      description: 'Atualiza campos de um item dentro do projeto autorizado.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, itemId: { type: 'string' }, changes: { type: 'object' } }, required: ['projectId', 'itemId', 'changes'] },
+    },
+    {
+      name: 'release_task',
+      description: 'Libera a atribuição de uma TASK ou BUG.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, taskId: { type: 'string' } }, required: ['projectId', 'taskId'] },
+    },
+    {
+      name: 'delete_item',
+      description: 'Exclui item e descendentes em cascata após autorização do projeto.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, itemId: { type: 'string' }, dryRun: { type: 'boolean' } }, required: ['projectId', 'itemId'] },
+    },
+    {
+      name: 'delete_project',
+      description: 'Exclui projeto em cascata; use dryRun para obter preview sem modificar dados.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, dryRun: { type: 'boolean' } }, required: ['projectId'] },
+    },
+    {
+      name: 'archive_item',
+      description: 'Arquiva item e descendentes em cascata.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, itemId: { type: 'string' }, confirm: { type: 'boolean' }, dryRun: { type: 'boolean' } }, required: ['projectId', 'itemId'] },
+    },
+    {
+      name: 'unarchive_item',
+      description: 'Restaura item arquivado e dependências.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, itemId: { type: 'string' } }, required: ['projectId', 'itemId'] },
+    },
+    {
+      name: 'create_module',
+      description: 'Cria módulo em projeto hierárquico.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, name: { type: 'string' }, description: { type: 'string' } }, required: ['projectId', 'name'] },
+    },
+    {
+      name: 'list_columns',
+      description: 'Lista colunas e status base do projeto.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'] },
+    },
+    {
+      name: 'create_column',
+      description: 'Cria uma coluna no board.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, name: { type: 'string' }, baseStatus: { type: 'string' } }, required: ['projectId', 'name', 'baseStatus'] },
+    },
+    {
+      name: 'reorder_columns',
+      description: 'Persiste a ordem das colunas do board.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, order: { type: 'array', items: { type: 'string' } } }, required: ['projectId', 'order'] },
+    },
+    {
+      name: 'list_sprints',
+      description: 'Lista sprints do projeto.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'] },
+    },
+    {
+      name: 'create_sprint',
+      description: 'Cria sprint planejada.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, name: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' } }, required: ['projectId', 'name'] },
+    },
+    {
+      name: 'activate_sprint',
+      description: 'Ativa sprint do projeto.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, sprintId: { type: 'string' } }, required: ['projectId', 'sprintId'] },
+    },
+    {
+      name: 'close_sprint',
+      description: 'Fecha sprint do projeto.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, sprintId: { type: 'string' } }, required: ['projectId', 'sprintId'] },
+    },
+    {
+      name: 'list_tags',
+      description: 'Lista tags do projeto.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'] },
+    },
+    {
+      name: 'create_tag',
+      description: 'Cria tag no projeto.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, name: { type: 'string' }, color: { type: 'string' } }, required: ['projectId', 'name'] },
+    },
+    {
+      name: 'set_item_tags',
+      description: 'Substitui as tags de um item.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, itemId: { type: 'string' }, tagIds: { type: 'array', items: { type: 'string' } } }, required: ['projectId', 'itemId', 'tagIds'] },
+    },
+    {
+      name: 'list_versions',
+      description: 'Lista versões do projeto.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'] },
+    },
+    {
+      name: 'create_version',
+      description: 'Cria versão do projeto.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, name: { type: 'string' }, releaseDate: { type: 'string' }, description: { type: 'string' }, status: { type: 'string' } }, required: ['projectId', 'name'] },
+    },
+    {
+      name: 'list_members',
+      description: 'Lista membros do projeto e seus papéis.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'] },
+    },
+    {
+      name: 'list_squads',
+      description: 'Lista squads do projeto.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'] },
+    },
+    {
+      name: 'list_item_logs',
+      description: 'Lista logs de atividade de um item.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, itemId: { type: 'string' } }, required: ['projectId', 'itemId'] },
+    },
+    {
+      name: 'create_item_log',
+      description: 'Registra atividade manual em um item.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, itemId: { type: 'string' }, activity: { type: 'string' }, durationMin: { type: 'number' } }, required: ['projectId', 'itemId', 'activity'] },
+    },
+    {
+      name: 'list_cost_centers',
+      description: 'Lista centros de custo do projeto.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' } }, required: ['projectId'] },
+    },
+    {
+      name: 'create_cost_center',
+      description: 'Cria centro de custo no projeto.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, code: { type: 'string' }, description: { type: 'string' } }, required: ['projectId', 'code'] },
+    },
+    {
+      name: 'add_member',
+      description: 'Adiciona membro ao projeto com papel e squad opcionais.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, email: { type: 'string' }, role: { type: 'string', enum: ['ADMIN', 'MEMBER', 'VIEWER'] }, squadId: { type: 'string' } }, required: ['projectId', 'email', 'role'] },
+    },
+    {
+      name: 'update_member',
+      description: 'Atualiza papel ou squad de um membro.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, userId: { type: 'string' }, role: { type: 'string', enum: ['ADMIN', 'MEMBER', 'VIEWER'] }, squadId: { type: 'string' } }, required: ['projectId', 'userId', 'role'] },
+    },
+    {
+      name: 'remove_member',
+      description: 'Remove membro do projeto.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, userId: { type: 'string' } }, required: ['projectId', 'userId'] },
+    },
+    {
+      name: 'create_squad',
+      description: 'Cria squad no projeto.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, name: { type: 'string' } }, required: ['projectId', 'name'] },
+    },
+    {
+      name: 'reorder_items',
+      description: 'Persiste a ordem dos cards em uma coluna.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, columnId: { type: 'string' }, order: { type: 'array', items: { type: 'string' } } }, required: ['projectId', 'columnId', 'order'] },
+    },
+    {
+      name: 'list_attachments',
+      description: 'Lista metadados de anexos de um item sem expor caminhos internos.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, itemId: { type: 'string' } }, required: ['projectId', 'itemId'] },
+    },
+    {
+      name: 'update_checklist',
+      description: 'Atualiza nome ou posição de checklist.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, itemId: { type: 'string' }, checklistId: { type: 'string' }, changes: { type: 'object' } }, required: ['projectId', 'itemId', 'checklistId', 'changes'] },
+    },
+    {
+      name: 'delete_checklist',
+      description: 'Remove checklist de um item.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, itemId: { type: 'string' }, checklistId: { type: 'string' } }, required: ['projectId', 'itemId', 'checklistId'] },
+    },
+    {
+      name: 'update_checklist_item',
+      description: 'Atualiza texto, status ou posição de item de checklist.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, itemId: { type: 'string' }, checklistId: { type: 'string' }, checklistItemId: { type: 'string' }, changes: { type: 'object' } }, required: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'changes'] },
+    },
+    {
+      name: 'delete_checklist_item',
+      description: 'Remove item de checklist.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, itemId: { type: 'string' }, checklistId: { type: 'string' }, checklistItemId: { type: 'string' } }, required: ['projectId', 'itemId', 'checklistId', 'checklistItemId'] },
+    },
+    {
+      name: 'update_item_log',
+      description: 'Atualiza atividade ou duração de um log manual.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, itemId: { type: 'string' }, logId: { type: 'string' }, changes: { type: 'object' } }, required: ['projectId', 'itemId', 'logId', 'changes'] },
+    },
+    {
+      name: 'batch',
+      description: 'Executa até 50 criações de itens; atomic=false retorna resultado por item e atomic=true desfaz tudo em caso de erro. Respeita tenant e RBAC da API Key.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, operations: { type: 'array', maxItems: 50, items: { type: 'object', properties: { tool: { type: 'string', enum: ['create_task', 'create_item'] }, args: { type: 'object' } }, required: ['tool', 'args'] } }, atomic: { type: 'boolean' }, idempotencyKey: { type: 'string', maxLength: 128 }, agentRunId: { type: 'string', maxLength: 128 } }, required: ['projectId', 'operations'] },
+    },
   ],
-}))
+  }))
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params
 
   function ok(data: unknown) {
-    return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] }
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
+      structuredContent: Array.isArray(data) ? { data } : (data && typeof data === 'object' ? data : { data }),
+    }
   }
 
   try {
+    validateToolArguments(name, args)
     switch (name) {
       case 'list_tasks':
         return ok(await toolListTasks(apiCall, args as Parameters<typeof toolListTasks>[1]))
@@ -403,16 +701,258 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return ok(await toolCheckItem(apiCall, projectId, itemId, checklistId, checklistItemId, checked))
       }
 
+      case 'list_projects':
+        return ok(await toolListProjects(apiCall))
+      case 'get_project':
+        return ok(await toolGetProject(apiCall, (args as { projectId: string }).projectId))
+      case 'get_board':
+        return ok(await toolGetBoard(apiCall, (args as { projectId: string }).projectId))
+      case 'get_tree': {
+        const input = args as { projectId: string; moduleId?: string; assigneeId?: string; sprintId?: string }
+        return ok(await toolGetTree(apiCall, input.projectId, input))
+      }
+      case 'get_shadow_markdown':
+        return ok(await toolGetShadowMarkdown(apiCall, (args as { projectId: string }).projectId))
+      case 'create_project':
+        return ok(await toolCreateProject(apiCall, args as Parameters<typeof toolCreateProject>[1]))
+      case 'update_project': {
+        const { projectId, ...changes } = args as { projectId: string; [key: string]: unknown }
+        return ok(await toolUpdateProject(apiCall, projectId, changes))
+      }
+      case 'update_item': {
+        const input = args as { projectId: string; itemId: string; changes: Record<string, unknown> }
+        return ok(await toolUpdateItem(apiCall, input.projectId, input.itemId, input.changes))
+      }
+      case 'release_task': {
+        const input = args as { projectId: string; taskId: string }
+        return ok(await toolReleaseTask(apiCall, input.projectId, input.taskId))
+      }
+      case 'delete_item': {
+        const input = args as { projectId: string; itemId: string; dryRun?: boolean }
+        return ok(await toolDeleteItem(apiCall, input.projectId, input.itemId, input.dryRun))
+      }
+      case 'delete_project': {
+        const input = args as { projectId: string; dryRun?: boolean }
+        return ok(await toolDeleteProject(apiCall, input.projectId, input.dryRun))
+      }
+      case 'archive_item': {
+        const input = args as { projectId: string; itemId: string; confirm?: boolean; dryRun?: boolean }
+        return ok(await toolArchiveItem(apiCall, input.projectId, input.itemId, input.confirm ?? true, input.dryRun ?? false))
+      }
+      case 'unarchive_item': {
+        const input = args as { projectId: string; itemId: string }
+        return ok(await toolUnarchiveItem(apiCall, input.projectId, input.itemId))
+      }
+      case 'create_module': {
+        const input = args as { projectId: string; name: string; description?: string }
+        return ok(await toolCreateModule(apiCall, input.projectId, input.name, input.description))
+      }
+      case 'list_columns':
+        return ok(await toolListColumns(apiCall, (args as { projectId: string }).projectId))
+      case 'create_column': {
+        const input = args as { projectId: string; name: string; baseStatus: string }
+        return ok(await toolCreateColumn(apiCall, input.projectId, input))
+      }
+      case 'reorder_columns': {
+        const input = args as { projectId: string; order: string[] }
+        return ok(await toolReorderColumns(apiCall, input.projectId, input.order))
+      }
+      case 'list_sprints':
+        return ok(await toolListSprints(apiCall, (args as { projectId: string }).projectId))
+      case 'create_sprint': {
+        const input = args as { projectId: string; name: string; startDate?: string; endDate?: string }
+        return ok(await toolCreateSprint(apiCall, input.projectId, input))
+      }
+      case 'activate_sprint': {
+        const input = args as { projectId: string; sprintId: string }
+        return ok(await toolActivateSprint(apiCall, input.projectId, input.sprintId))
+      }
+      case 'close_sprint': {
+        const input = args as { projectId: string; sprintId: string }
+        return ok(await toolCloseSprint(apiCall, input.projectId, input.sprintId))
+      }
+      case 'list_tags':
+        return ok(await toolListTags(apiCall, (args as { projectId: string }).projectId))
+      case 'create_tag': {
+        const input = args as { projectId: string; name: string; color?: string }
+        return ok(await toolCreateTag(apiCall, input.projectId, input.name, input.color))
+      }
+      case 'set_item_tags': {
+        const input = args as { projectId: string; itemId: string; tagIds: string[] }
+        return ok(await toolSetItemTags(apiCall, input.projectId, input.itemId, input.tagIds))
+      }
+      case 'list_versions':
+        return ok(await toolListVersions(apiCall, (args as { projectId: string }).projectId))
+      case 'create_version': {
+        const input = args as { projectId: string; [key: string]: unknown }
+        const { projectId, ...version } = input
+        return ok(await toolCreateVersion(apiCall, projectId, version))
+      }
+      case 'list_members':
+        return ok(await toolListMembers(apiCall, (args as { projectId: string }).projectId))
+      case 'list_squads':
+        return ok(await toolListSquads(apiCall, (args as { projectId: string }).projectId))
+      case 'list_item_logs': {
+        const input = args as { projectId: string; itemId: string }
+        return ok(await toolListItemLogs(apiCall, input.projectId, input.itemId))
+      }
+      case 'create_item_log': {
+        const input = args as { projectId: string; itemId: string; activity: string; durationMin?: number | null }
+        return ok(await toolCreateItemLog(apiCall, input.projectId, input.itemId, input.activity, input.durationMin))
+      }
+      case 'list_cost_centers':
+        return ok(await toolListCostCenters(apiCall, (args as { projectId: string }).projectId))
+      case 'create_cost_center': {
+        const input = args as { projectId: string; code: string; description?: string }
+        return ok(await toolCreateCostCenter(apiCall, input.projectId, input.code, input.description))
+      }
+      case 'add_member': {
+        const input = args as { projectId: string; email: string; role: string; squadId?: string }
+        return ok(await toolAddMember(apiCall, input.projectId, input.email, input.role, input.squadId))
+      }
+      case 'update_member': {
+        const input = args as { projectId: string; userId: string; role: string; squadId?: string }
+        return ok(await toolUpdateMember(apiCall, input.projectId, input.userId, input.role, input.squadId))
+      }
+      case 'remove_member': {
+        const input = args as { projectId: string; userId: string }
+        return ok(await toolRemoveMember(apiCall, input.projectId, input.userId))
+      }
+      case 'create_squad': {
+        const input = args as { projectId: string; name: string }
+        return ok(await toolCreateSquad(apiCall, input.projectId, input.name))
+      }
+      case 'reorder_items': {
+        const input = args as { projectId: string; columnId: string; order: string[] }
+        return ok(await toolReorderItems(apiCall, input.projectId, input.columnId, input.order))
+      }
+      case 'list_attachments': {
+        const input = args as { projectId: string; itemId: string }
+        return ok(await toolListAttachments(apiCall, input.projectId, input.itemId))
+      }
+      case 'update_checklist': {
+        const input = args as { projectId: string; itemId: string; checklistId: string; changes: Record<string, unknown> }
+        return ok(await toolUpdateChecklist(apiCall, input.projectId, input.itemId, input.checklistId, input.changes))
+      }
+      case 'delete_checklist': {
+        const input = args as { projectId: string; itemId: string; checklistId: string }
+        return ok(await toolDeleteChecklist(apiCall, input.projectId, input.itemId, input.checklistId))
+      }
+      case 'update_checklist_item': {
+        const input = args as { projectId: string; itemId: string; checklistId: string; checklistItemId: string; changes: Record<string, unknown> }
+        return ok(await toolUpdateChecklistItem(apiCall, input.projectId, input.itemId, input.checklistId, input.checklistItemId, input.changes))
+      }
+      case 'delete_checklist_item': {
+        const input = args as { projectId: string; itemId: string; checklistId: string; checklistItemId: string }
+        return ok(await toolDeleteChecklistItem(apiCall, input.projectId, input.itemId, input.checklistId, input.checklistItemId))
+      }
+      case 'update_item_log': {
+        const input = args as { projectId: string; itemId: string; logId: string; changes: Record<string, unknown> }
+        return ok(await toolUpdateItemLog(apiCall, input.projectId, input.itemId, input.logId, input.changes))
+      }
+      case 'batch':
+        return ok(await toolBatch(apiCall, args as Parameters<typeof toolBatch>[1]))
+
       default:
         throw new Error(`Ferramenta desconhecida: ${name}`)
     }
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Erro desconhecido'
+    const code = error instanceof ApiError ? error.code : 'MCP_TOOL_ERROR'
+    const retryable = error instanceof ApiError ? error.retryable : false
     return {
-      content: [{ type: 'text' as const, text: `Erro: ${error instanceof Error ? error.message : String(error)}` }],
+      content: [{ type: 'text' as const, text: JSON.stringify({ code, message, retryable }) }],
+      structuredContent: { code, message, retryable },
       isError: true,
     }
   }
-})
+  })
 
-const transport = new StdioServerTransport()
-await server.connect(transport)
+  return server
+}
+
+export function validateToolArguments(name: string, args: Record<string, unknown> | undefined) {
+  const requiredByTool: Record<string, string[]> = {
+    list_tasks: ['projectId'], list_modules: ['projectId'], get_current_sprint: ['projectId'],
+    claim_task: ['projectId', 'taskId'], move_task: ['projectId', 'taskId', 'columnName'],
+    complete_task: ['projectId', 'taskId'], create_task: ['projectId', 'title'],
+    list_checklists: ['projectId', 'itemId'], create_checklist: ['projectId', 'itemId', 'name'],
+    add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'],
+    check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'],
+    list_projects: [], get_project: ['projectId'], get_board: ['projectId'], get_tree: ['projectId'],
+    get_shadow_markdown: ['projectId'], create_project: ['name'], update_project: ['projectId'],
+    update_item: ['projectId', 'itemId', 'changes'], release_task: ['projectId', 'taskId'],
+    delete_item: ['projectId', 'itemId'], delete_project: ['projectId'], archive_item: ['projectId', 'itemId'],
+    unarchive_item: ['projectId', 'itemId'], create_module: ['projectId', 'name'],
+    list_columns: ['projectId'], create_column: ['projectId', 'name', 'baseStatus'], reorder_columns: ['projectId', 'order'],
+    list_sprints: ['projectId'], create_sprint: ['projectId', 'name'],
+    activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'],
+    list_tags: ['projectId'], create_tag: ['projectId', 'name'],
+    set_item_tags: ['projectId', 'itemId', 'tagIds'], list_versions: ['projectId'],
+    create_version: ['projectId', 'name'], list_members: ['projectId'], list_squads: ['projectId'],
+    list_item_logs: ['projectId', 'itemId'], create_item_log: ['projectId', 'itemId', 'activity'],
+    list_cost_centers: ['projectId'], create_cost_center: ['projectId', 'code'], add_member: ['projectId', 'email', 'role'],
+    update_member: ['projectId', 'userId', 'role'], remove_member: ['projectId', 'userId'],
+    create_squad: ['projectId', 'name'], reorder_items: ['projectId', 'columnId', 'order'], list_attachments: ['projectId', 'itemId'],
+    update_checklist: ['projectId', 'itemId', 'checklistId', 'changes'], delete_checklist: ['projectId', 'itemId', 'checklistId'],
+    update_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'changes'], delete_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId'],
+    update_item_log: ['projectId', 'itemId', 'logId', 'changes'],
+    batch: ['projectId', 'operations'],
+  }
+  const required = requiredByTool[name]
+  if (!required) throw new Error(`Ferramenta desconhecida: ${name}`)
+  for (const field of required) {
+    const value = args?.[field]
+    if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) {
+      throw new Error(`Campo obrigatório ausente: ${field}`)
+    }
+  }
+
+  const input = args ?? {}
+  for (const field of ['projectId', 'itemId', 'taskId', 'sprintId', 'tagId', 'versionId', 'userId', 'columnId', 'moduleId', 'checklistId', 'checklistItemId']) {
+    if (field in input && input[field] !== undefined) assertNonEmptyString(input[field], field, 128)
+  }
+  if ('idempotencyKey' in input && input.idempotencyKey !== undefined) assertNonEmptyString(input.idempotencyKey, 'idempotencyKey', 128)
+  if ('agentRunId' in input && input.agentRunId !== undefined) assertNonEmptyString(input.agentRunId, 'agentRunId', 128)
+  for (const field of ['name', 'title', 'description', 'activity', 'text']) {
+    if (field in input && input[field] !== undefined) assertNonEmptyString(input[field], field)
+  }
+  if ('boardMode' in input && input.boardMode !== undefined) assertEnum(input.boardMode, 'boardMode', ['HIERARCHICAL', 'SIMPLE'])
+  if ('role' in input && input.role !== undefined) assertEnum(input.role, 'role', ['ADMIN', 'MEMBER', 'VIEWER'])
+  if ('type' in input && input.type !== undefined) assertEnum(input.type, 'type', ['EPIC', 'STORY', 'TASK', 'BUG'])
+  if ('baseStatus' in input && input.baseStatus !== undefined) assertEnum(input.baseStatus, 'baseStatus', ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'])
+  if ('priority' in input && input.priority !== undefined) assertEnum(input.priority, 'priority', ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'])
+  if ('tagIds' in input) assertStringArray(input.tagIds, 'tagIds')
+  if ('order' in input) assertStringArray(input.order, 'order')
+  if ('durationMin' in input && input.durationMin !== undefined && input.durationMin !== null) assertNonNegativeNumber(input.durationMin, 'durationMin')
+  if ('limit' in input && input.limit !== undefined && (typeof input.limit !== 'number' || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)) {
+    throw new Error('limit deve ser um inteiro entre 1 e 100')
+  }
+  if ('releaseDate' in input && input.releaseDate !== undefined && input.releaseDate !== null) assertIsoDate(input.releaseDate, 'releaseDate')
+  if ('startDate' in input && input.startDate !== undefined && input.startDate !== null) assertIsoDate(input.startDate, 'startDate')
+  if ('endDate' in input && input.endDate !== undefined && input.endDate !== null) assertIsoDate(input.endDate, 'endDate')
+  if ('changes' in input && (typeof input.changes !== 'object' || input.changes === null || Array.isArray(input.changes))) {
+    throw new Error('changes deve ser um objeto')
+  }
+  if (name === 'batch' && (!Array.isArray(input.operations) || input.operations.length < 1 || input.operations.length > 50)) throw new Error('operations deve conter entre 1 e 50 entradas')
+  if (name === 'batch') {
+    for (const operation of input.operations as unknown[]) {
+      if (!operation || typeof operation !== 'object' || !['create_task', 'create_item'].includes((operation as { tool?: unknown }).tool as string) || !(operation as { args?: unknown }).args || typeof (operation as { args?: unknown }).args !== 'object') {
+        throw new Error('cada operation deve informar tool e args válidos')
+      }
+    }
+  }
+}
+
+if (import.meta.main) {
+  const apiKey = process.env.EASYBOARD_API_KEY
+  if (!apiKey) {
+    console.error('EASYBOARD_API_KEY não configurada')
+    process.exit(1)
+  }
+  const apiUrl = process.env.EASYBOARD_URL ?? 'http://localhost:3000'
+  const apiCall = await makeApiCall(apiUrl, apiKey)
+  const server = createMcpServer(apiCall)
+  const transport = new StdioServerTransport()
+  await server.connect(transport)
+}

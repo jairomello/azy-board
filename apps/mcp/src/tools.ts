@@ -5,25 +5,242 @@
 
 export type ApiCall = (path: string, method?: string, body?: unknown) => Promise<unknown>
 
+export type BatchOperation = { tool: 'create_task' | 'create_item'; args: Record<string, unknown> }
+
+export async function toolBatch(api: ApiCall, args: { projectId: string; operations: BatchOperation[]; atomic?: boolean; idempotencyKey?: string; agentRunId?: string }): Promise<unknown> {
+  if (!Array.isArray(args.operations) || args.operations.length < 1 || args.operations.length > 50) throw new Error('operations deve conter entre 1 e 50 entradas')
+  return api(`/projects/${args.projectId}/batch`, 'POST', args)
+}
+
 // ─── Shapes de resposta usadas internamente ────────────────────────────────
 
 interface Column   { id: string; name: string; baseStatus: string }
 interface Module   { id: string; name: string; position: number }
 interface Item     { id: string; type: string; title: string; isLeaf: boolean; parentId?: string | null; columnId?: string | null; status?: string }
+export interface Page<T> { data: T[]; page?: number; limit?: number; total?: number; hasMore?: boolean; nextCursor?: string | null }
 interface Checklist { id: string; name: string; position: number; items: ChecklistItem[] }
 interface ChecklistItem { id: string; text: string; checked: boolean; position: number }
+interface Resource { id: string; name: string; [key: string]: unknown }
+
+export interface ProjectSummary {
+  id: string
+  name: string
+  description?: string | null
+  boardMode?: 'HIERARCHICAL' | 'SIMPLE'
+  simpleStoryId?: string | null
+  role?: string
+}
+
+export async function toolListProjects(api: ApiCall): Promise<ProjectSummary[]> {
+  return api('/projects') as Promise<ProjectSummary[]>
+}
+
+export async function toolGetProject(api: ApiCall, projectId: string): Promise<ProjectSummary> {
+  return api(`/projects/${projectId}`) as Promise<ProjectSummary>
+}
+
+export async function toolGetBoard(api: ApiCall, projectId: string): Promise<unknown> {
+  return api(`/projects/${projectId}/board`)
+}
+
+export async function toolGetTree(api: ApiCall, projectId: string, filters?: { moduleId?: string; assigneeId?: string; sprintId?: string }): Promise<unknown> {
+  const params = new URLSearchParams()
+  if (filters?.moduleId) params.set('moduleId', filters.moduleId)
+  if (filters?.assigneeId) params.set('assigneeId', filters.assigneeId)
+  if (filters?.sprintId) params.set('sprintId', filters.sprintId)
+  const query = params.toString()
+  return api(`/projects/${projectId}/items/tree${query ? `?${query}` : ''}`)
+}
+
+export async function toolGetShadowMarkdown(api: ApiCall, projectId: string): Promise<unknown> {
+  return api(`/projects/${projectId}/board.md`)
+}
+
+export async function toolCreateProject(api: ApiCall, args: { name: string; description?: string; boardMode?: 'HIERARCHICAL' | 'SIMPLE'; managerUserId?: string }): Promise<ProjectSummary> {
+  if (!args.name?.trim()) throw new Error('name é obrigatório')
+  return api('/projects', 'POST', { ...args, name: args.name.trim() }) as Promise<ProjectSummary>
+}
+
+export async function toolUpdateProject(api: ApiCall, projectId: string, changes: Record<string, unknown>): Promise<ProjectSummary> {
+  return api(`/projects/${projectId}`, 'PATCH', changes) as Promise<ProjectSummary>
+}
+
+export async function toolUpdateItem(api: ApiCall, projectId: string, itemId: string, changes: Record<string, unknown>): Promise<unknown> {
+  return api(`/projects/${projectId}/items/${itemId}`, 'PATCH', changes)
+}
+
+export async function toolReleaseTask(api: ApiCall, projectId: string, taskId: string): Promise<unknown> {
+  return api(`/projects/${projectId}/items/${taskId}/release`, 'PATCH')
+}
+
+export async function toolDeleteItem(api: ApiCall, projectId: string, itemId: string, dryRun = false): Promise<unknown> {
+  return api(`/projects/${projectId}/items/${itemId}`, 'DELETE', dryRun ? { dryRun: true } : undefined)
+}
+
+export async function toolDeleteProject(api: ApiCall, projectId: string, dryRun = false): Promise<unknown> {
+  return api(`/projects/${projectId}`, 'DELETE', dryRun ? { dryRun: true } : undefined)
+}
+
+export async function toolArchiveItem(api: ApiCall, projectId: string, itemId: string, confirm = true, dryRun = false): Promise<unknown> {
+  return api(`/projects/${projectId}/items/${itemId}/archive`, 'POST', { confirm, dryRun })
+}
+
+export async function toolUnarchiveItem(api: ApiCall, projectId: string, itemId: string): Promise<unknown> {
+  return api(`/projects/${projectId}/items/${itemId}/unarchive`, 'POST')
+}
+
+export async function toolCreateModule(api: ApiCall, projectId: string, name: string, description?: string): Promise<Resource> {
+  if (!name?.trim()) throw new Error('name é obrigatório')
+  return api(`/projects/${projectId}/modules`, 'POST', { name: name.trim(), description }) as Promise<Resource>
+}
+
+export async function toolListColumns(api: ApiCall, projectId: string): Promise<Column[]> {
+  return api(`/projects/${projectId}/columns`) as Promise<Column[]>
+}
+
+export async function toolCreateColumn(api: ApiCall, projectId: string, args: { name: string; baseStatus: string }): Promise<Column> {
+  if (!args.name?.trim()) throw new Error('name é obrigatório')
+  return api(`/projects/${projectId}/columns`, 'POST', { ...args, name: args.name.trim() }) as Promise<Column>
+}
+
+export async function toolReorderColumns(api: ApiCall, projectId: string, order: string[]): Promise<unknown> {
+  if (order.length === 0) throw new Error('order não pode ser vazio')
+  return api(`/projects/${projectId}/columns/reorder`, 'PATCH', { order })
+}
+
+export async function toolListSprints(api: ApiCall, projectId: string): Promise<Resource[]> {
+  return api(`/projects/${projectId}/sprints`) as Promise<Resource[]>
+}
+
+export async function toolCreateSprint(api: ApiCall, projectId: string, args: { name: string; startDate?: string; endDate?: string }): Promise<Resource> {
+  if (!args.name?.trim()) throw new Error('name é obrigatório')
+  return api(`/projects/${projectId}/sprints`, 'POST', { ...args, name: args.name.trim() }) as Promise<Resource>
+}
+
+export async function toolActivateSprint(api: ApiCall, projectId: string, sprintId: string): Promise<unknown> {
+  return api(`/projects/${projectId}/sprints/${sprintId}/activate`, 'PATCH')
+}
+
+export async function toolCloseSprint(api: ApiCall, projectId: string, sprintId: string): Promise<unknown> {
+  return api(`/projects/${projectId}/sprints/${sprintId}/close`, 'PATCH')
+}
+
+export async function toolListTags(api: ApiCall, projectId: string): Promise<Resource[]> {
+  return api(`/projects/${projectId}/tags`) as Promise<Resource[]>
+}
+
+export async function toolCreateTag(api: ApiCall, projectId: string, name: string, color?: string): Promise<Resource> {
+  if (!name?.trim()) throw new Error('name é obrigatório')
+  return api(`/projects/${projectId}/tags`, 'POST', { name: name.trim(), color }) as Promise<Resource>
+}
+
+export async function toolSetItemTags(api: ApiCall, projectId: string, itemId: string, tagIds: string[]): Promise<unknown> {
+  return api(`/projects/${projectId}/items/${itemId}/tags`, 'POST', { tagIds })
+}
+
+export async function toolListVersions(api: ApiCall, projectId: string): Promise<Resource[]> {
+  return api(`/projects/${projectId}/versions`) as Promise<Resource[]>
+}
+
+export async function toolCreateVersion(api: ApiCall, projectId: string, args: Record<string, unknown>): Promise<Resource> {
+  if (typeof args.name !== 'string' || !args.name.trim()) throw new Error('name é obrigatório')
+  return api(`/projects/${projectId}/versions`, 'POST', { ...args, name: args.name.trim() }) as Promise<Resource>
+}
+
+export async function toolListMembers(api: ApiCall, projectId: string): Promise<Resource[]> {
+  return api(`/projects/${projectId}/members`) as Promise<Resource[]>
+}
+
+export async function toolListSquads(api: ApiCall, projectId: string): Promise<Resource[]> {
+  return api(`/projects/${projectId}/squads`) as Promise<Resource[]>
+}
+
+export async function toolListItemLogs(api: ApiCall, projectId: string, itemId: string): Promise<unknown> {
+  return api(`/projects/${projectId}/items/${itemId}/logs`)
+}
+
+export async function toolCreateItemLog(api: ApiCall, projectId: string, itemId: string, activity: string, durationMin?: number | null): Promise<unknown> {
+  if (!activity?.trim()) throw new Error('activity é obrigatório')
+  return api(`/projects/${projectId}/items/${itemId}/logs`, 'POST', { activity: activity.trim(), durationMin })
+}
+
+export async function toolListCostCenters(api: ApiCall, projectId: string): Promise<Resource[]> {
+  return api(`/projects/${projectId}/cost-centers`) as Promise<Resource[]>
+}
+
+export async function toolCreateCostCenter(api: ApiCall, projectId: string, code: string, description?: string): Promise<Resource> {
+  if (!code?.trim()) throw new Error('code é obrigatório')
+  return api(`/projects/${projectId}/cost-centers`, 'POST', { code: code.trim(), description }) as Promise<Resource>
+}
+
+export async function toolAddMember(api: ApiCall, projectId: string, email: string, role: string, squadId?: string | null): Promise<unknown> {
+  if (!email?.trim()) throw new Error('email é obrigatório')
+  if (!['ADMIN', 'MEMBER', 'VIEWER'].includes(role)) throw new Error('role inválido')
+  return api(`/projects/${projectId}/members`, 'POST', { email: email.trim(), role, squadId })
+}
+
+export async function toolUpdateMember(api: ApiCall, projectId: string, userId: string, role: string, squadId?: string | null): Promise<unknown> {
+  if (!userId?.trim() || !['ADMIN', 'MEMBER', 'VIEWER'].includes(role)) throw new Error('userId e role válidos são obrigatórios')
+  return api(`/projects/${projectId}/members/${userId}`, 'PATCH', { role, squadId })
+}
+
+export async function toolRemoveMember(api: ApiCall, projectId: string, userId: string): Promise<unknown> {
+  return api(`/projects/${projectId}/members/${userId}`, 'DELETE')
+}
+
+export async function toolCreateSquad(api: ApiCall, projectId: string, name: string): Promise<Resource> {
+  if (!name?.trim()) throw new Error('name é obrigatório')
+  return api(`/projects/${projectId}/squads`, 'POST', { name: name.trim() }) as Promise<Resource>
+}
+
+export async function toolReorderItems(api: ApiCall, projectId: string, columnId: string, order: string[]): Promise<unknown> {
+  if (!columnId || order.length === 0) throw new Error('columnId e order são obrigatórios')
+  return api(`/projects/${projectId}/items/reorder`, 'PATCH', { columnId, order })
+}
+
+export async function toolListAttachments(api: ApiCall, projectId: string, itemId: string): Promise<Resource[]> {
+  return api(`/projects/${projectId}/items/${itemId}/attachments`) as Promise<Resource[]>
+}
+
+export async function toolUpdateChecklist(api: ApiCall, projectId: string, itemId: string, checklistId: string, changes: Record<string, unknown>): Promise<unknown> {
+  return api(`/projects/${projectId}/items/${itemId}/checklists/${checklistId}`, 'PATCH', changes)
+}
+
+export async function toolDeleteChecklist(api: ApiCall, projectId: string, itemId: string, checklistId: string): Promise<unknown> {
+  return api(`/projects/${projectId}/items/${itemId}/checklists/${checklistId}`, 'DELETE')
+}
+
+export async function toolUpdateChecklistItem(api: ApiCall, projectId: string, itemId: string, checklistId: string, checklistItemId: string, changes: Record<string, unknown>): Promise<unknown> {
+  return api(`/projects/${projectId}/items/${itemId}/checklists/${checklistId}/items/${checklistItemId}`, 'PATCH', changes)
+}
+
+export async function toolDeleteChecklistItem(api: ApiCall, projectId: string, itemId: string, checklistId: string, checklistItemId: string): Promise<unknown> {
+  return api(`/projects/${projectId}/items/${itemId}/checklists/${checklistId}/items/${checklistItemId}`, 'DELETE')
+}
+
+export async function toolUpdateItemLog(api: ApiCall, projectId: string, itemId: string, logId: string, changes: Record<string, unknown>): Promise<unknown> {
+  return api(`/projects/${projectId}/items/${itemId}/logs/${logId}`, 'PATCH', changes)
+}
 
 // ─── Ferramentas ───────────────────────────────────────────────────────────
 
 export async function toolListTasks(
   api: ApiCall,
-  args: { projectId: string; type?: string; sprintId?: string; onlyLeaves?: boolean }
-): Promise<Item[]> {
-  const { projectId, sprintId, type, onlyLeaves = true } = args
+  args: { projectId: string; type?: string; sprintId?: string; assigneeId?: string; status?: string; tagIds?: string[]; parentId?: string; columnId?: string; moduleId?: string; onlyLeaves?: boolean; cursor?: string; limit?: number }
+): Promise<Item[] | Page<Item>> {
+  const { projectId, sprintId, type, assigneeId, status, tagIds, parentId, columnId, moduleId, cursor, limit, onlyLeaves = true } = args
   const params = new URLSearchParams({ leaf: String(onlyLeaves) })
   if (sprintId) params.set('sprintId', sprintId)
   if (type)     params.set('type', type)
-  return api(`/projects/${projectId}/items?${params}`) as Promise<Item[]>
+  if (assigneeId) params.set('assigneeId', assigneeId)
+  if (status) params.set('status', status)
+  if (tagIds?.length) params.set('tagIds', tagIds.join(','))
+  if (parentId) params.set('parentId', parentId)
+  if (columnId) params.set('columnId', columnId)
+  if (moduleId) params.set('moduleId', moduleId)
+  if (cursor) params.set('cursor', cursor)
+  if (limit) params.set('limit', String(limit))
+  return api(`/projects/${projectId}/items?${params}`) as Promise<Item[] | Page<Item>>
 }
 
 export async function toolListModules(api: ApiCall, projectId: string): Promise<Module[]> {
@@ -79,6 +296,20 @@ export async function toolCreateTask(
 ): Promise<Item> {
   const { projectId, ...taskData } = args
   const type = (taskData.type ?? 'TASK') as string
+
+  let project: { boardMode?: 'HIERARCHICAL' | 'SIMPLE' } = {}
+  try {
+    project = await api(`/projects/${projectId}`) as { boardMode?: 'HIERARCHICAL' | 'SIMPLE' }
+  } catch {
+    // Clientes MCP antigos podem não expor o detalhe do projeto; manter o fluxo hierárquico.
+  }
+  const isSimpleProject = project.boardMode === 'SIMPLE'
+
+  if (isSimpleProject && (type === 'TASK' || type === 'BUG')) {
+    // O backend aponta o card para a STORY fixa; não exigir parentId/moduleId no MCP.
+    const { parentId: _ignoredParentId, moduleId: _ignoredModuleId, ...simpleTaskData } = taskData
+    return api(`/projects/${projectId}/items`, 'POST', { type, ...simpleTaskData }) as Promise<Item>
+  }
 
   // Pré-validação de hierarquia — fornece erro acionável antes de bater na API
   if (taskData.parentId) {

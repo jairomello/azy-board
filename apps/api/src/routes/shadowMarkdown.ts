@@ -121,7 +121,7 @@ shadowMarkdownRouter.patch('/', requireRole('MEMBER'), async (c) => {
     const col = allColumns.find(c => c.id === move.columnId)!
     await db.update(items)
       .set({ columnId: move.columnId, status: col.baseStatus, updatedAt: new Date().toISOString() })
-      .where(and(eq(items.id, move.itemId), eq(items.tenantId, ctx.tenantId)))
+      .where(and(eq(items.id, move.itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
 
     broadcast(projectId, {
       type: 'CARD_MOVED',

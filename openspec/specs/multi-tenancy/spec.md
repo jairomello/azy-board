@@ -62,3 +62,23 @@ O sistema SHALL ser estruturado de forma que a migração para schema-per-tenant
 #### Scenario: Abstração da resolução de tenant
 - **WHEN** desenvolvedor precisa migrar para schema-per-tenant no PostgreSQL
 - **THEN** apenas o middleware de resolução de tenant e o helper de conexão precisam ser alterados; nenhum handler de rota ou serviço de negócio é afetado
+
+### Requirement: Isolamento entre projetos do mesmo tenant
+
+O sistema SHALL tratar `tenant_id` e `project_id` como escopos independentes em toda query de negócio. Conhecer um ID de entidade de outro projeto não SHALL permitir leitura ou modificação.
+
+#### Scenario: Operação com projeto incorreto
+- **WHEN** cliente autenticado chama uma rota com membership no projeto A e ID de entidade do projeto B
+- **THEN** sistema retorna HTTP 404 e não altera dados de A ou B
+
+#### Scenario: Associação de entidade externa
+- **WHEN** cliente tenta associar item do projeto A a recurso do projeto B
+- **THEN** sistema retorna erro de validação e mantém o estado original
+
+### Requirement: WebSocket exige membership
+
+O upgrade WebSocket SHALL validar JWT/API Key, tenant e membership no projeto solicitado antes de aceitar a conexão.
+
+#### Scenario: Usuário sem membership solicita conexão
+- **WHEN** usuário autenticado solicita WebSocket para projeto sem membership
+- **THEN** servidor rejeita o upgrade sem revelar o recurso

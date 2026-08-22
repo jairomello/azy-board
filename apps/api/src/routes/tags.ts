@@ -43,14 +43,21 @@ tagsRouter.get('/', requireRole('VIEWER'), async (c) => {
 // PATCH /projects/:projectId/tags/:tagId
 tagsRouter.patch('/:tagId', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const tagId = c.req.param('tagId')!
+  const { projectId, tagId } = c.req.param()
   const body = await c.req.json<{ name?: string; color?: string }>()
+
+  const existing = await db.query.tags.findFirst({
+    where: (tag) => and(eq(tag.id, tagId), eq(tag.projectId, projectId), eq(tag.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!existing) return c.json({ error: 'Tag não encontrada' }, 404)
 
   await db.update(tags)
     .set({ ...(body.name && { name: body.name }), ...(body.color && { color: body.color }) })
-    .where(and(eq(tags.id, tagId), eq(tags.tenantId, ctx.tenantId)))
+    .where(and(eq(tags.id, tagId), eq(tags.projectId, projectId), eq(tags.tenantId, ctx.tenantId)))
 
-  return c.json({ ok: true })
+  const updated = await db.query.tags.findFirst({ where: (tag) => and(eq(tag.id, tagId), eq(tag.projectId, projectId), eq(tag.tenantId, ctx.tenantId)) })
+  return c.json({ tag: updated })
 })
 
 // DELETE /projects/:projectId/tags/:tagId

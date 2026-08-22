@@ -65,7 +65,7 @@ versionsRouter.post('/', requireRole('ADMIN'), async (c) => {
 // PATCH /projects/:projectId/versions/:versionId
 versionsRouter.patch('/:versionId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const { versionId } = c.req.param()
+  const { projectId, versionId } = c.req.param()
   const body = await c.req.json<{
     name?: string
     releaseDate?: string | null
@@ -76,7 +76,7 @@ versionsRouter.patch('/:versionId', requireRole('ADMIN'), async (c) => {
 
   // [TENANT] Anti-IDOR
   const version = await db.query.projectVersions.findFirst({
-    where: (v) => and(eq(v.id, versionId), eq(v.tenantId, ctx.tenantId)),
+    where: (v) => and(eq(v.id, versionId), eq(v.projectId, projectId), eq(v.tenantId, ctx.tenantId)),
     columns: { id: true },
   })
   if (!version) return c.json({ error: 'Versão não encontrada' }, 404)
@@ -90,19 +90,20 @@ versionsRouter.patch('/:versionId', requireRole('ADMIN'), async (c) => {
 
   await db.update(projectVersions)
     .set(updates)
-    .where(and(eq(projectVersions.id, versionId), eq(projectVersions.tenantId, ctx.tenantId)))
+    .where(and(eq(projectVersions.id, versionId), eq(projectVersions.projectId, projectId), eq(projectVersions.tenantId, ctx.tenantId)))
 
-  return c.json({ ok: true })
+  const updated = await db.query.projectVersions.findFirst({ where: (version) => and(eq(version.id, versionId), eq(version.projectId, projectId), eq(version.tenantId, ctx.tenantId)) })
+  return c.json({ version: updated })
 })
 
 // DELETE /projects/:projectId/versions/:versionId
 versionsRouter.delete('/:versionId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const { versionId } = c.req.param()
+  const { projectId, versionId } = c.req.param()
 
   // [TENANT] Anti-IDOR
   const version = await db.query.projectVersions.findFirst({
-    where: (v) => and(eq(v.id, versionId), eq(v.tenantId, ctx.tenantId)),
+    where: (v) => and(eq(v.id, versionId), eq(v.projectId, projectId), eq(v.tenantId, ctx.tenantId)),
     columns: { id: true },
   })
   if (!version) return c.json({ error: 'Versão não encontrada' }, 404)
@@ -110,10 +111,10 @@ versionsRouter.delete('/:versionId', requireRole('ADMIN'), async (c) => {
   // Desassociar itens (ON DELETE SET NULL garante isso no DB, mas fazemos explicitamente)
   await db.update(items)
     .set({ versionId: null })
-    .where(and(eq(items.versionId, versionId), eq(items.tenantId, ctx.tenantId)))
+    .where(and(eq(items.versionId, versionId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
 
   await db.delete(projectVersions)
-    .where(and(eq(projectVersions.id, versionId), eq(projectVersions.tenantId, ctx.tenantId)))
+    .where(and(eq(projectVersions.id, versionId), eq(projectVersions.projectId, projectId), eq(projectVersions.tenantId, ctx.tenantId)))
 
   return c.json({ ok: true })
 })
@@ -121,21 +122,21 @@ versionsRouter.delete('/:versionId', requireRole('ADMIN'), async (c) => {
 // GET /projects/:projectId/versions/:versionId/items
 versionsRouter.get('/:versionId/items', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const { versionId } = c.req.param()
+  const { projectId, versionId } = c.req.param()
   const page = parseInt(c.req.query('page') ?? '1')
   const limit = parseInt(c.req.query('limit') ?? '20')
   const offset = (page - 1) * limit
 
   // [TENANT] Anti-IDOR na versão
   const version = await db.query.projectVersions.findFirst({
-    where: (v) => and(eq(v.id, versionId), eq(v.tenantId, ctx.tenantId)),
+    where: (v) => and(eq(v.id, versionId), eq(v.projectId, projectId), eq(v.tenantId, ctx.tenantId)),
     columns: { id: true },
   })
   if (!version) return c.json({ error: 'Versão não encontrada' }, 404)
 
   // [TENANT] itens da versão filtrados por tenant
   const result = await db.query.items.findMany({
-    where: (i) => and(eq(i.versionId, versionId), eq(i.tenantId, ctx.tenantId)),
+    where: (i) => and(eq(i.versionId, versionId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
     with: {
       assignee: { columns: { id: true, name: true, avatarUrl: true } },
     },
@@ -147,7 +148,7 @@ versionsRouter.get('/:versionId/items', requireRole('VIEWER'), async (c) => {
 
   const totalRow = await db.select({ count: sql<number>`COUNT(*)` })
     .from(items)
-    .where(and(eq(items.versionId, versionId), eq(items.tenantId, ctx.tenantId)))
+    .where(and(eq(items.versionId, versionId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
   const total = totalRow[0]?.count ?? 0
 
   return c.json({ data: result, total, page, limit })

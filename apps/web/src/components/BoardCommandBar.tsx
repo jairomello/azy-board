@@ -14,7 +14,7 @@ import {
   SlidersHorizontal,
   Plus,
 } from 'lucide-react'
-import type { ItemType } from '@azy-board/types'
+import type { BoardMode, ItemType } from '@azy-board/types'
 import type { Tag } from './TagSelector'
 import { BoardFilters, type BoardFilterState } from './BoardFilters'
 
@@ -28,6 +28,7 @@ interface Props {
   density: 'comfortable' | 'compact'
   onDensityChange: (density: 'comfortable' | 'compact') => void
   modules: Option[]
+  boardMode: BoardMode
   sprints: Sprint[]
   members: Member[]
   squads: Option[]
@@ -46,6 +47,7 @@ export function BoardCommandBar({
   density,
   onDensityChange,
   modules,
+  boardMode,
   sprints,
   members,
   squads,
@@ -168,8 +170,8 @@ export function BoardCommandBar({
               onToggleStoryDisplay={() => quickUpdate({
                 storyDisplay: filters.storyDisplay === 'cards' ? 'lanes' : 'cards',
               })}
-              showExpandCollapse={view === 'kanban'}
-              showModuleViewMode={view === 'kanban'}
+               showExpandCollapse={view === 'kanban' && boardMode === 'HIERARCHICAL'}
+               showModuleViewMode={view === 'kanban' && boardMode === 'HIERARCHICAL'}
               onExpandAll={onExpandAll}
                onCollapseAll={onCollapseAll}
                section="filters"
@@ -206,8 +208,8 @@ export function BoardCommandBar({
                  onToggleSubtasks={() => quickUpdate({ showSubtasks: !filters.showSubtasks })}
                  storiesAsCards={filters.storyDisplay === 'cards'}
                  onToggleStoryDisplay={() => quickUpdate({ storyDisplay: filters.storyDisplay === 'cards' ? 'lanes' : 'cards' })}
-                 showExpandCollapse
-                 showModuleViewMode
+                  showExpandCollapse={boardMode === 'HIERARCHICAL'}
+                  showModuleViewMode={boardMode === 'HIERARCHICAL'}
                  onExpandAll={onExpandAll}
                  onCollapseAll={onCollapseAll}
                  section="options"
@@ -270,7 +272,7 @@ export function BoardCommandBar({
                   ['STORY', 'História', BookOpen, 'text-violet-600 bg-violet-500/10'],
                   ['TASK', 'Task', CheckSquare, 'text-blue-600 bg-blue-500/10'],
                   ['BUG', 'Bug', Bug, 'text-red-600 bg-red-500/10'],
-                ] as const).map(([type, label, Icon, colors]) => (
+                ] as const).filter(([type]) => boardMode === 'HIERARCHICAL' || type === 'TASK' || type === 'BUG').map(([type, label, Icon, colors]) => (
                   <button
                     key={type}
                     onClick={() => {

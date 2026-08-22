@@ -5,7 +5,7 @@ import App from './App'
 import './i18n/index'
 import './styles/globals.css'
 
-// Suporte a deploy path-based (ex.: /azyboard/ no labapps).
+// Suporte a deploy path-based (ex.: /app/ atrás de um proxy reverso).
 // Quando publicado atrás de um proxy reverso que injeta window.__BASE_PATH__
 // no HTML, todas as chamadas a /api/ e a basename do React Router são
 // prefixadas com esse base path. Em dev local (sem __BASE_PATH__) o código

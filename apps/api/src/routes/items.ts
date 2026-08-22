@@ -2,12 +2,13 @@ import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { eq, and, inArray, asc, desc, sql } from 'drizzle-orm'
 import { db } from '../db/index'
-import { items, columns, itemTags, itemSprints, modules, checklists, checklistItems, attachments, itemLogs, projectVersions, projectCostCenters, tags, sprints } from '../db/schema'
+import { projects, items, columns, itemTags, itemSprints, modules, checklists, checklistItems, attachments, itemLogs, projectVersions, projectCostCenters, tags, sprints, memberships } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import { buildAncestryPath, calculateProgress, calculatePoints, updateDescendantAncestry } from '../services/ancestry'
 import { broadcast } from '../services/websocket'
 import type { RequestContext, Priority, ItemType } from '@azy-board/types'
+import { getIdempotent, saveIdempotent } from '../services/idempotency'
 
 export const itemsRouter = new Hono<HonoEnv>()
 itemsRouter.use('*', authMiddleware)
@@ -30,9 +31,9 @@ async function createAutoLog(itemId: string, tenantId: string, authorId: string,
 }
 
 // Verifica se item é folha (sem filhos) — Leaf Rule
-async function isLeaf(tenantId: string, itemId: string): Promise<boolean> {
+async function isLeaf(tenantId: string, projectId: string, itemId: string): Promise<boolean> {
   const children = await db.query.items.findMany({
-    where: (i) => and(eq(i.parentId, itemId), eq(i.tenantId, tenantId)),
+    where: (i) => and(eq(i.parentId, itemId), eq(i.projectId, projectId), eq(i.tenantId, tenantId)),
     columns: { id: true },
   })
   return children.length === 0
@@ -42,6 +43,7 @@ async function isLeaf(tenantId: string, itemId: string): Promise<boolean> {
 // EPIC → parentId null; STORY → pai é EPIC; TASK/BUG → pai é STORY, TASK ou BUG
 async function validateHierarchy(
   tenantId: string,
+  projectId: string,
   type: ItemType,
   parentId: string | null | undefined,
   moduleId: string | null | undefined
@@ -56,7 +58,7 @@ async function validateHierarchy(
   if (!parentId) return null  // TASK/BUG sem pai = item órfão — permitido
 
   const parent = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, parentId), eq(i.tenantId, tenantId)),
+    where: (i) => and(eq(i.id, parentId), eq(i.projectId, projectId), eq(i.tenantId, tenantId)),
     columns: { id: true, type: true, title: true },
   })
   if (!parent) return `parentId "${parentId}" não encontrado neste projeto`
@@ -74,23 +76,22 @@ async function validateHierarchy(
   return null
 }
 
-// Resolve o epicId ancestral de um item (para agrupar em swimlanes)
-async function resolveEpicAncestor(tenantId: string, itemId: string): Promise<string | null> {
-  const item = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, tenantId)),
-    columns: { id: true, type: true, parentId: true },
-  })
-  if (!item) return null
-  if (item.type === 'EPIC') return item.id
-  if (!item.parentId) return null
-  return resolveEpicAncestor(tenantId, item.parentId)
-}
-
 // PATCH /projects/:projectId/items/reorder — antes de /:itemId para não colidir
 itemsRouter.patch('/reorder', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
   const body = await c.req.json<{ columnId: string; order: string[] }>()
+
+  const targetColumn = await db.query.columns.findFirst({
+    where: (column) => and(eq(column.id, body.columnId), eq(column.projectId, projectId), eq(column.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!targetColumn) return c.json({ error: 'Coluna não encontrada neste projeto' }, 404)
+  const uniqueOrder = [...new Set(body.order)]
+  const orderedItems = uniqueOrder.length > 0
+    ? await db.select({ id: items.id }).from(items).where(and(inArray(items.id, uniqueOrder), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId), eq(items.columnId, body.columnId)))
+    : []
+  if (orderedItems.length !== uniqueOrder.length) return c.json({ error: 'A ordem contém cards que não pertencem à coluna' }, 400)
 
   // [DB-SWAP] usar transaction do PostgreSQL em produção
   await db.transaction(async (tx) => {
@@ -124,6 +125,12 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
       .where(and(eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId), sql`${items.status} != 'ARCHIVED'`))
       .orderBy(asc(items.position)),
   ])
+
+  // [TENANT] O modo e a STORY fixa são resolvidos dentro do projeto do tenant atual.
+  const project = await db.query.projects.findFirst({
+    where: (p) => and(eq(p.id, projectId), eq(p.tenantId, ctx.tenantId)),
+    columns: { boardMode: true, simpleStoryId: true },
+  })
 
   let sprintItemIds: Set<string> | null = null
   if (filterSprintId) {
@@ -159,6 +166,18 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
     }).filter(Boolean)
   }
 
+  if (project?.boardMode === 'SIMPLE') {
+    const fixedStory = allItems.find(item => item.id === project.simpleStoryId) ?? allItems.find(item => item.type === 'STORY' && !item.parentId)
+    if (!fixedStory) return c.json([])
+    return c.json([{
+      ...fixedStory,
+      type: 'STORY' as const,
+      ancestryPath: [],
+      isLeaf: false,
+      children: buildChildren(fixedStory.id, 0),
+    }])
+  }
+
   const tree = (filterModuleId ? allModules.filter(m => m.id === filterModuleId) : allModules)
     .map(mod => ({
       ...mod,
@@ -187,6 +206,23 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
   const moduleIdFilter = c.req.query('moduleId')
   const sprintIdFilter = c.req.query('sprintId')
   const assigneeIdFilter = c.req.query('assigneeId')
+  const statusFilter = c.req.query('status')
+  const tagIdsFilter = c.req.query('tagIds')?.split(',').filter(Boolean) ?? []
+  const requestedPage = c.req.query('page')
+  const requestedLimit = c.req.query('limit')
+  const cursor = c.req.query('cursor')
+  const page = Math.max(1, Number.parseInt(requestedPage ?? '1', 10) || 1)
+  const limit = Math.min(100, Math.max(1, Number.parseInt(requestedLimit ?? '50', 10) || 50))
+  let cursorOffset = 0
+  if (cursor) {
+    try {
+      const decoded = Buffer.from(cursor, 'base64url').toString()
+      if (!/^\d+$/.test(decoded)) throw new Error('invalid')
+      cursorOffset = Number.parseInt(decoded, 10)
+    } catch {
+      return c.json({ error: 'Cursor inválido', code: 'INVALID_CURSOR', retryable: false }, 400)
+    }
+  }
 
   // [TENANT] Filtra por tenantId + projectId
   let allItems = await db.query.items.findMany({
@@ -221,11 +257,21 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
   if (assigneeIdFilter) {
     allItems = allItems.filter(i => i.assigneeId === assigneeIdFilter)
   }
+  if (statusFilter) {
+    const statuses = statusFilter.split(',')
+    allItems = allItems.filter(i => statuses.includes(i.status))
+  }
+  if (tagIdsFilter.length > 0) {
+    allItems = allItems.filter(i => i.itemTags?.some(link => tagIdsFilter.includes(link.tag.id)))
+  }
   if (sprintIdFilter) {
-    const sprintItemIds = (await db.select({ itemId: itemSprints.itemId })
-      .from(itemSprints)
-      .where(eq(itemSprints.sprintId, sprintIdFilter)))
-      .map(r => r.itemId)
+    const sprint = await db.query.sprints.findFirst({
+      where: (s) => and(eq(s.id, sprintIdFilter), eq(s.projectId, projectId), eq(s.tenantId, ctx.tenantId)),
+      columns: { id: true },
+    })
+    const sprintItemIds = sprint
+      ? (await db.select({ itemId: itemSprints.itemId }).from(itemSprints).where(eq(itemSprints.sprintId, sprint.id))).map(r => r.itemId)
+      : []
     allItems = allItems.filter(i => sprintItemIds.includes(i.id))
   }
 
@@ -268,9 +314,20 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
   }))
 
   if (leafOnly) {
-    return c.json(withProgress.filter(i => i.isLeaf))
+    const leafItems = withProgress.filter(i => i.isLeaf)
+    if (requestedPage || requestedLimit || cursor) {
+      const offset = cursor ? cursorOffset : (page - 1) * limit
+      const end = offset + limit
+      return c.json({ data: leafItems.slice(offset, end), page, limit, total: leafItems.length, hasMore: end < leafItems.length, nextCursor: end < leafItems.length ? Buffer.from(String(end)).toString('base64url') : null })
+    }
+    return c.json(leafItems)
   }
 
+  if (requestedPage || requestedLimit || cursor) {
+    const offset = cursor ? cursorOffset : (page - 1) * limit
+    const end = offset + limit
+    return c.json({ data: withProgress.slice(offset, end), page, limit, total: withProgress.length, hasMore: end < withProgress.length, nextCursor: end < withProgress.length ? Buffer.from(String(end)).toString('base64url') : null })
+  }
   return c.json(withProgress)
 })
 
@@ -323,11 +380,11 @@ itemsRouter.get('/archived', requireRole('VIEWER'), async (c) => {
 // GET /projects/:projectId/items/:itemId
 itemsRouter.get('/:itemId', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const { itemId } = c.req.param()
+  const { projectId, itemId } = c.req.param()
 
   // [TENANT] Anti-IDOR: filtra por tenantId + itemId
   const item = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
     with: {
       itemTags: { with: { tag: true } },
       itemSprints: { with: { sprint: true } },
@@ -386,11 +443,57 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     versionId?: string | null
     costCenterId?: string | null
   }>()
+  const idempotencyKey = c.req.header('Idempotency-Key') ?? (body as { idempotencyKey?: string }).idempotencyKey
+  const idempotencyPayload = { projectId, body: { ...body, idempotencyKey: undefined } }
+  if (idempotencyKey) {
+    try {
+      const cached = await getIdempotent(ctx, 'create_item', idempotencyKey, idempotencyPayload)
+      if (cached) return c.json(cached)
+    } catch {
+      return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
+    }
+  }
 
   const type: ItemType = body.type ?? 'TASK'
+  // [TENANT] O projeto e a STORY fixa são buscados no tenant autenticado; o cliente não escolhe outro projeto.
+  const project = await db.query.projects.findFirst({
+    where: (p) => and(eq(p.id, projectId), eq(p.tenantId, ctx.tenantId)),
+    columns: { boardMode: true, simpleStoryId: true },
+  })
+  if (!project) return c.json({ error: 'Projeto não encontrado' }, 404)
 
-  const validationError = await validateHierarchy(ctx.tenantId, type, body.parentId, body.moduleId)
+  const effectiveParentId = project.boardMode === 'SIMPLE' && ['TASK', 'BUG'].includes(type)
+    ? project.simpleStoryId
+    : (body.parentId ?? null)
+  if (project.boardMode === 'SIMPLE' && ['TASK', 'BUG'].includes(type) && !effectiveParentId) {
+    return c.json({ error: 'Projeto simples não possui história fixa configurada' }, 409)
+  }
+
+  const validationError = await validateHierarchy(ctx.tenantId, projectId, type, effectiveParentId, project.boardMode === 'SIMPLE' ? null : body.moduleId)
   if (validationError) return c.json({ error: validationError }, 400)
+
+  const [module, column, version, costCenter, assignee] = await Promise.all([
+    body.moduleId
+      ? db.query.modules.findFirst({ where: (m) => and(eq(m.id, body.moduleId!), eq(m.projectId, projectId), eq(m.tenantId, ctx.tenantId)), columns: { id: true } })
+      : null,
+    body.columnId
+      ? db.query.columns.findFirst({ where: (col) => and(eq(col.id, body.columnId!), eq(col.projectId, projectId), eq(col.tenantId, ctx.tenantId)), columns: { id: true } })
+      : null,
+    body.versionId
+      ? db.query.projectVersions.findFirst({ where: (v) => and(eq(v.id, body.versionId!), eq(v.projectId, projectId), eq(v.tenantId, ctx.tenantId)), columns: { id: true } })
+      : null,
+    body.costCenterId
+      ? db.query.projectCostCenters.findFirst({ where: (cc) => and(eq(cc.id, body.costCenterId!), eq(cc.projectId, projectId), eq(cc.tenantId, ctx.tenantId)), columns: { id: true } })
+      : null,
+    body.assigneeId
+      ? db.query.memberships.findFirst({ where: (m) => and(eq(m.userId, body.assigneeId!), eq(m.projectId, projectId), eq(m.tenantId, ctx.tenantId)), columns: { userId: true } })
+      : null,
+  ])
+  if (body.moduleId && !module) return c.json({ error: 'Módulo não encontrado neste projeto' }, 400)
+  if (body.columnId && !column) return c.json({ error: 'Coluna não encontrada neste projeto' }, 400)
+  if (body.versionId && !version) return c.json({ error: 'Versão não encontrada neste projeto' }, 400)
+  if (body.costCenterId && !costCenter) return c.json({ error: 'Centro de custo não encontrado neste projeto' }, 400)
+  if (body.assigneeId && !assignee) return c.json({ error: 'Responsável não é membro deste projeto' }, 400)
 
   // Para TASK/BUG sem coluna: buscar primeira coluna do projeto
   let columnId = body.columnId ?? null
@@ -405,8 +508,8 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   const id = generateId()
   const now = new Date().toISOString()
 
-  const ancestryPath = body.parentId
-    ? await buildAncestryPath(ctx.tenantId, body.parentId)
+  const ancestryPath = effectiveParentId
+    ? await buildAncestryPath(ctx.tenantId, effectiveParentId)
     : []
 
   // Auto-preenchimento do centro de custo: se o body não informou, buscar o primeiro do projeto
@@ -428,8 +531,8 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     tenantId: ctx.tenantId,
     projectId,
     type,
-    parentId: body.parentId ?? null,
-    moduleId: body.moduleId ?? null,
+    parentId: effectiveParentId,
+    moduleId: project.boardMode === 'SIMPLE' ? null : (body.moduleId ?? null),
     columnId,
     title: body.title,
     description: body.description,
@@ -455,12 +558,13 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
 
   const payload = { id, title: body.title, type, projectId, columnId, status: 'NOT_STARTED' }
 
-  if (body.parentId) {
-    broadcast(projectId, { type: 'SUBTASK_CREATED', projectId, payload: { parentId: body.parentId, item: payload } })
+  if (effectiveParentId) {
+    broadcast(projectId, { type: 'SUBTASK_CREATED', projectId, payload: { parentId: effectiveParentId, item: payload } })
   } else {
     broadcast(projectId, { type: 'ITEM_CREATED', projectId, payload })
   }
 
+  if (idempotencyKey) await saveIdempotent(ctx, 'create_item', idempotencyKey, idempotencyPayload, payload)
   return c.json(payload, 201)
 })
 
@@ -471,7 +575,7 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
   const body = await c.req.json<{ columnId: string }>()
 
   const item = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
     columns: { id: true, type: true, columnId: true, status: true },
   })
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
@@ -486,12 +590,12 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
     return c.json({ error: `Items do tipo ${item.type} não são movíveis no Kanban` }, 422)
   }
 
-  if (!(await isLeaf(ctx.tenantId, itemId))) {
+  if (!(await isLeaf(ctx.tenantId, projectId, itemId))) {
     return c.json({ error: 'Este item possui tarefas filhas — mova as tarefas individualmente' }, 422)
   }
 
   const col = await db.query.columns.findFirst({
-    where: (col) => and(eq(col.id, body.columnId), eq(col.tenantId, ctx.tenantId)),
+    where: (col) => and(eq(col.id, body.columnId), eq(col.projectId, projectId), eq(col.tenantId, ctx.tenantId)),
   })
   if (!col) return c.json({ error: 'Coluna não encontrada' }, 404)
 
@@ -499,7 +603,7 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
   let fromColName = 'desconhecida'
   if (item.columnId) {
     const fromCol = await db.query.columns.findFirst({
-      where: (c) => and(eq(c.id, item.columnId!), eq(c.tenantId, ctx.tenantId)),
+      where: (c) => and(eq(c.id, item.columnId!), eq(c.projectId, projectId), eq(c.tenantId, ctx.tenantId)),
       columns: { name: true },
     })
     fromColName = fromCol?.name ?? fromColName
@@ -507,7 +611,7 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
 
   await db.update(items)
     .set({ columnId: body.columnId, status: col.baseStatus, updatedAt: new Date().toISOString() })
-    .where(and(eq(items.id, itemId), eq(items.tenantId, ctx.tenantId)))
+    .where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
 
   // Tarefa 5.2 — log automático de movimentação de coluna
   await createAutoLog(itemId, ctx.tenantId, ctx.userId, `Movido de '${fromColName}' para '${col.name}'`)
@@ -518,7 +622,8 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
     payload: { itemId, columnId: body.columnId, status: col.baseStatus },
   })
 
-  return c.json({ ok: true, status: col.baseStatus })
+  const updated = await db.query.items.findFirst({ where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)) })
+  return c.json({ item: updated, status: col.baseStatus })
 })
 
 // PATCH /projects/:projectId/items/:itemId/claim
@@ -527,7 +632,7 @@ itemsRouter.patch('/:itemId/claim', requireRole('MEMBER'), async (c) => {
   const { projectId, itemId } = c.req.param()
 
   const item = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
   })
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
   if (item.assigneeId) return c.json({ error: 'Item já está sendo trabalhado por outro usuário' }, 409)
@@ -536,10 +641,11 @@ itemsRouter.patch('/:itemId/claim', requireRole('MEMBER'), async (c) => {
 
   await db.update(items)
     .set({ assigneeId: ctx.userId, assigneeApiKeyId: apiKeyId ?? null, status: 'IN_PROGRESS', updatedAt: new Date().toISOString() })
-    .where(and(eq(items.id, itemId), eq(items.tenantId, ctx.tenantId)))
+    .where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
 
   broadcast(projectId, { type: 'TASK_CLAIMED', projectId, payload: { itemId, assigneeId: ctx.userId, apiKeyId } })
-  return c.json({ ok: true })
+  const updated = await db.query.items.findFirst({ where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)) })
+  return c.json({ item: updated })
 })
 
 // PATCH /projects/:projectId/items/:itemId/release
@@ -547,12 +653,19 @@ itemsRouter.patch('/:itemId/release', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId } = c.req.param()
 
+  const item = await db.query.items.findFirst({
+    where: (candidate) => and(eq(candidate.id, itemId), eq(candidate.projectId, projectId), eq(candidate.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
+
   await db.update(items)
     .set({ assigneeId: null, assigneeApiKeyId: null, status: 'NOT_STARTED', updatedAt: new Date().toISOString() })
-    .where(and(eq(items.id, itemId), eq(items.tenantId, ctx.tenantId)))
+    .where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
 
   broadcast(projectId, { type: 'CARD_UPDATED', projectId, payload: { itemId, assigneeId: null } })
-  return c.json({ ok: true })
+  const updated = await db.query.items.findFirst({ where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)) })
+  return c.json({ item: updated })
 })
 
 // PATCH /projects/:projectId/items/:itemId — editar campos
@@ -578,26 +691,76 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     benefit?: string | null
     acceptanceCriteria?: string | null
     notes?: string | null
-    authorId?: unknown
-    versionId?: string | null
-  }>()
+     authorId?: unknown
+     versionId?: string | null
+     costCenterId?: string | null
+   }>()
 
   // Tarefa 2.2 — authorId nunca é alterado via PATCH
   const { authorId: _ignoredAuthorId, ...safeBody } = body
   const updates: Record<string, unknown> = { ...safeBody, updatedAt: new Date().toISOString() }
 
+  // [TENANT] O modo do projeto e a STORY fixa são resolvidos no mesmo tenant do item.
+  const project = await db.query.projects.findFirst({
+    where: (p) => and(eq(p.id, projectId), eq(p.tenantId, ctx.tenantId)),
+    columns: { boardMode: true, simpleStoryId: true },
+  })
+  if (!project) return c.json({ error: 'Projeto não encontrado' }, 404)
+
   // Tarefa 5.1 — buscar estado anterior para gerar log automático
   const LOGGABLE_FIELDS = ['title', 'description', 'priority', 'assigneeId', 'points', 'startDate', 'dueDate', 'status'] as const
   type LoggableField = typeof LOGGABLE_FIELDS[number]
   const prevItem = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
-    columns: { title: true, description: true, priority: true, assigneeId: true, points: true, startDate: true, dueDate: true, status: true },
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
+    columns: { title: true, description: true, priority: true, assigneeId: true, points: true, startDate: true, dueDate: true, status: true, type: true },
   })
+  if (!prevItem) return c.json({ error: 'Item não encontrado' }, 404)
+
+  if (project.boardMode === 'SIMPLE' && prevItem && ['TASK', 'BUG'].includes(prevItem.type)) {
+    if (!project.simpleStoryId) return c.json({ error: 'Projeto simples não possui história fixa configurada' }, 409)
+    updates.parentId = project.simpleStoryId
+    updates.moduleId = null
+  }
+
+  if (safeBody.parentId !== undefined || safeBody.moduleId !== undefined || safeBody.columnId !== undefined || safeBody.versionId !== undefined || safeBody.costCenterId !== undefined || safeBody.assigneeId !== undefined) {
+    const nextType = (safeBody.type as ItemType | undefined) ?? prevItem?.type
+    if (nextType && safeBody.parentId !== undefined) {
+      const hierarchyError = await validateHierarchy(ctx.tenantId, projectId, nextType, updates.parentId as string | null | undefined, updates.moduleId as string | null | undefined)
+      if (hierarchyError) return c.json({ error: hierarchyError }, 400)
+    }
+    const [parent, module, column, version, costCenter, assignee] = await Promise.all([
+      updates.parentId
+        ? db.query.items.findFirst({ where: (item) => and(eq(item.id, updates.parentId as string), eq(item.projectId, projectId), eq(item.tenantId, ctx.tenantId)), columns: { id: true } })
+        : null,
+      updates.moduleId
+        ? db.query.modules.findFirst({ where: (module) => and(eq(module.id, updates.moduleId as string), eq(module.projectId, projectId), eq(module.tenantId, ctx.tenantId)), columns: { id: true } })
+        : null,
+      safeBody.columnId
+        ? db.query.columns.findFirst({ where: (column) => and(eq(column.id, safeBody.columnId as string), eq(column.projectId, projectId), eq(column.tenantId, ctx.tenantId)), columns: { id: true } })
+        : null,
+      safeBody.versionId
+        ? db.query.projectVersions.findFirst({ where: (version) => and(eq(version.id, safeBody.versionId as string), eq(version.projectId, projectId), eq(version.tenantId, ctx.tenantId)), columns: { id: true } })
+        : null,
+      safeBody.costCenterId
+        ? db.query.projectCostCenters.findFirst({ where: (cc) => and(eq(cc.id, safeBody.costCenterId as string), eq(cc.projectId, projectId), eq(cc.tenantId, ctx.tenantId)), columns: { id: true } })
+        : null,
+      safeBody.assigneeId
+        ? db.query.memberships.findFirst({ where: (membership) => and(eq(membership.userId, safeBody.assigneeId as string), eq(membership.projectId, projectId), eq(membership.tenantId, ctx.tenantId)), columns: { userId: true } })
+        : null,
+    ])
+    if (updates.parentId && !parent) return c.json({ error: 'Item pai não encontrado neste projeto' }, 400)
+    if (updates.moduleId && !module) return c.json({ error: 'Módulo não encontrado neste projeto' }, 400)
+    if (safeBody.columnId && !column) return c.json({ error: 'Coluna não encontrada neste projeto' }, 400)
+    if (safeBody.versionId && !version) return c.json({ error: 'Versão não encontrada neste projeto' }, 400)
+    if (safeBody.costCenterId && !costCenter) return c.json({ error: 'Centro de custo não encontrado neste projeto' }, 400)
+    if (safeBody.assigneeId && !assignee) return c.json({ error: 'Responsável não é membro deste projeto' }, 400)
+  }
 
   // Se parentId mudou, recalcular ancestryPath
-  if (safeBody.parentId !== undefined) {
-    const newPath = safeBody.parentId
-      ? await buildAncestryPath(ctx.tenantId, safeBody.parentId)
+  if (safeBody.parentId !== undefined || (project.boardMode === 'SIMPLE' && prevItem && ['TASK', 'BUG'].includes(prevItem.type))) {
+    const newParentId = (updates.parentId as string | null | undefined) ?? safeBody.parentId
+    const newPath = newParentId
+      ? await buildAncestryPath(ctx.tenantId, newParentId)
       : []
     updates.ancestryPath = JSON.stringify(newPath)
     // Atualizar descendentes em cascata
@@ -606,8 +769,8 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
 
   await db.update(items)
     .set(updates)
-    // [TENANT] Anti-IDOR: filtra por tenantId + itemId
-    .where(and(eq(items.id, itemId), eq(items.tenantId, ctx.tenantId)))
+    // [TENANT] Anti-IDOR: filtra por tenantId + projectId + itemId.
+    .where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
 
   // Se título mudou, atualizar ancestryPath dos filhos
   if (safeBody.title) {
@@ -632,7 +795,8 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
   }
 
   broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemId, ...safeBody } })
-  return c.json({ ok: true })
+  const updated = await db.query.items.findFirst({ where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)) })
+  return c.json({ item: updated })
 })
 
 // DELETE /projects/:projectId/items/:itemId — exclusão em cascata (filhos, checklists, tags)
@@ -642,10 +806,13 @@ itemsRouter.delete('/:itemId', requireRole('MEMBER'), async (c) => {
 
   // [TENANT] Anti-IDOR: verificar que o item pertence ao tenant antes de qualquer operação
   const item = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
     columns: { id: true },
   })
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
+
+  let requestBody: { dryRun?: boolean } = {}
+  try { requestBody = await c.req.json() } catch { /* corpo opcional */ }
 
   // Coletar IDs de todos os descendentes via BFS
   // [TENANT] filtragem por tenantId em cada nível garante isolamento cross-tenant
@@ -653,13 +820,17 @@ itemsRouter.delete('/:itemId', requireRole('MEMBER'), async (c) => {
   const queue = [itemId]
   while (queue.length > 0) {
     const parentId = queue.shift()!
-    const children = await db.select({ id: items.id })
-      .from(items)
-      .where(and(eq(items.parentId, parentId), eq(items.tenantId, ctx.tenantId)))
+      const children = await db.select({ id: items.id })
+        .from(items)
+        .where(and(eq(items.parentId, parentId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
     for (const child of children) {
       allIds.push(child.id)
       queue.push(child.id)
     }
+  }
+
+  if (requestBody.dryRun) {
+    return c.json({ dryRun: true, itemId, projectId, descendantCount: allIds.length - 1, totalCount: allIds.length })
   }
 
   // [DB-SWAP] no PostgreSQL, usar ON DELETE CASCADE no schema em vez de exclusão manual aqui
@@ -670,7 +841,7 @@ itemsRouter.delete('/:itemId', requireRole('MEMBER'), async (c) => {
     await tx.delete(attachments).where(inArray(attachments.itemId, allIds))
     // checklists e checklistItems têm onDelete:'cascade' — serão excluídos automaticamente com items
     // items.parentId não tem FK constraint no schema, então podemos excluir todos de uma vez
-    await tx.delete(items).where(and(inArray(items.id, allIds), eq(items.tenantId, ctx.tenantId)))
+    await tx.delete(items).where(and(inArray(items.id, allIds), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
   })
 
   broadcast(projectId, { type: 'ITEM_DELETED', projectId, payload: { itemId } })
@@ -749,18 +920,18 @@ itemsRouter.post('/:itemId/sprint', requireRole('MEMBER'), async (c) => {
 // GET /projects/:projectId/items/:itemId/children
 itemsRouter.get('/:itemId/children', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const { itemId } = c.req.param()
+  const { projectId, itemId } = c.req.param()
 
   // [TENANT] Anti-IDOR: verificar ownership do item pai
   const parent = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
     columns: { id: true },
   })
   if (!parent) return c.json({ error: 'Item não encontrado' }, 404)
 
   // [TENANT] filtra filhos diretos por tenantId + parentId
   const children = await db.query.items.findMany({
-    where: (i) => and(eq(i.parentId, itemId), eq(i.tenantId, ctx.tenantId)),
+    where: (i) => and(eq(i.parentId, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
     with: {
       assignee: { columns: { id: true, name: true, avatarUrl: true } },
       column: { columns: { id: true, name: true } },
@@ -782,14 +953,14 @@ itemsRouter.get('/:itemId/children', requireRole('VIEWER'), async (c) => {
 // GET /projects/:projectId/items/:itemId/logs
 itemsRouter.get('/:itemId/logs', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const { itemId } = c.req.param()
+  const { projectId, itemId } = c.req.param()
   const page = parseInt(c.req.query('page') ?? '1')
   const limit = parseInt(c.req.query('limit') ?? '20')
   const offset = (page - 1) * limit
 
   // [TENANT] Anti-IDOR
   const item = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
     columns: { id: true },
   })
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
@@ -814,14 +985,14 @@ itemsRouter.get('/:itemId/logs', requireRole('VIEWER'), async (c) => {
 // POST /projects/:projectId/items/:itemId/logs — criar log manual
 itemsRouter.post('/:itemId/logs', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const { itemId } = c.req.param()
+  const { projectId, itemId } = c.req.param()
   const body = await c.req.json<{ activity: string; durationMin?: number | null }>()
 
   if (!body.activity?.trim()) return c.json({ error: 'activity é obrigatório' }, 400)
 
   // [TENANT] Anti-IDOR
   const item = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId)),
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
     columns: { id: true },
   })
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
@@ -896,14 +1067,15 @@ itemsRouter.post('/:itemId/archive', requireRole('MEMBER'), async (c) => {
   const queue = [itemId]
   while (queue.length > 0) {
     const parentId = queue.shift()!
-    const children = await db.select({ id: items.id })
-      .from(items)
-      .where(and(eq(items.parentId, parentId), eq(items.tenantId, ctx.tenantId)))
+      const children = await db.select({ id: items.id })
+        .from(items)
+        .where(and(eq(items.parentId, parentId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
     for (const child of children) { allIds.push(child.id); queue.push(child.id) }
   }
 
   const descendantCount = allIds.length - 1
-  const { confirm } = await c.req.json<{ confirm?: boolean }>().catch(() => ({ confirm: false }))
+  const { confirm, dryRun } = await c.req.json<{ confirm?: boolean; dryRun?: boolean }>().catch(() => ({ confirm: false, dryRun: false }))
+  if (dryRun) return c.json({ dryRun: true, itemId, projectId, descendantCount, totalCount: allIds.length })
   if (descendantCount > 0 && !confirm) {
     return c.json({ warning: true, descendantCount, message: `${descendantCount} item(s) descendente(s) serão arquivados junto` }, 200)
   }
@@ -914,13 +1086,13 @@ itemsRouter.post('/:itemId/archive', requireRole('MEMBER'), async (c) => {
     // [DB-SWAP] no PostgreSQL usar UPDATE ... FROM ... RETURNING ou CTE para evitar N queries
     for (const id of allIds) {
       const current = await tx.query.items.findFirst({
-        where: (i) => and(eq(i.id, id), eq(i.tenantId, ctx.tenantId)),
+        where: (i) => and(eq(i.id, id), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
         columns: { status: true },
       })
       if (current && current.status !== 'ARCHIVED') {
         await tx.update(items)
           .set({ status: 'ARCHIVED', statusBeforeArchive: current.status, updatedAt: now })
-          .where(and(eq(items.id, id), eq(items.tenantId, ctx.tenantId)))
+          .where(and(eq(items.id, id), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
       }
     }
   })
@@ -947,9 +1119,9 @@ itemsRouter.post('/:itemId/unarchive', requireRole('MEMBER'), async (c) => {
   const queue = [itemId]
   while (queue.length > 0) {
     const parentId = queue.shift()!
-    const children = await db.select({ id: items.id })
-      .from(items)
-      .where(and(eq(items.parentId, parentId), eq(items.tenantId, ctx.tenantId), sql`${items.status} = 'ARCHIVED'`))
+      const children = await db.select({ id: items.id })
+        .from(items)
+        .where(and(eq(items.parentId, parentId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId), sql`${items.status} = 'ARCHIVED'`))
     for (const child of children) { allIds.push(child.id); queue.push(child.id) }
   }
 
@@ -965,26 +1137,26 @@ itemsRouter.post('/:itemId/unarchive', requireRole('MEMBER'), async (c) => {
     // [DB-SWAP] no PostgreSQL usar UPDATE ... WHERE id = ANY($1) para operação em bulk
     for (const id of allIds) {
       const current = await tx.query.items.findFirst({
-        where: (i) => and(eq(i.id, id), eq(i.tenantId, ctx.tenantId)),
+        where: (i) => and(eq(i.id, id), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
         columns: { statusBeforeArchive: true },
       })
       const restoreStatus = current?.statusBeforeArchive ?? 'NOT_STARTED'
       await tx.update(items)
         .set({ status: restoreStatus, statusBeforeArchive: null, updatedAt: now })
-        .where(and(eq(items.id, id), eq(items.tenantId, ctx.tenantId)))
+        .where(and(eq(items.id, id), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
     }
 
     // Restaurar ancestrais arquivados para que o item seja visível na hierarquia
     for (const ancestorId of ancestorIds) {
       const ancestor = await tx.query.items.findFirst({
-        where: (i) => and(eq(i.id, ancestorId), eq(i.tenantId, ctx.tenantId)),
+        where: (i) => and(eq(i.id, ancestorId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
         columns: { status: true, statusBeforeArchive: true },
       })
       if (ancestor?.status === 'ARCHIVED') {
         const restoreStatus = ancestor.statusBeforeArchive ?? 'NOT_STARTED'
         await tx.update(items)
           .set({ status: restoreStatus, statusBeforeArchive: null, updatedAt: now })
-          .where(and(eq(items.id, ancestorId), eq(items.tenantId, ctx.tenantId)))
+          .where(and(eq(items.id, ancestorId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
       }
     }
   })

@@ -3,23 +3,29 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
 import { api } from '../lib/api'
-import { ArrowUpRight, Edit3, FolderKanban, Plus } from 'lucide-react'
+import { ArrowUpRight, Edit3, FolderKanban, Plus, Trash2 } from 'lucide-react'
 import { AppShell } from '../components/AppShell'
+import { useToast } from '../components/Toast'
+import type { BoardMode } from '@azy-board/types'
 
 type ProjectRole = 'ADMIN' | 'MEMBER' | 'VIEWER'
-interface Project { id: string; name: string; description: string | null; role: ProjectRole }
+interface Project { id: string; name: string; description: string | null; role: ProjectRole; boardMode: BoardMode }
 
 export default function ProjectsPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const { toast } = useToast()
   const navigate = useNavigate()
   const [projects, setProjects] = useState<Project[]>([])
   const [showNew, setShowNew] = useState(false)
   const [newName, setNewName] = useState('')
+  const [newBoardMode, setNewBoardMode] = useState<BoardMode>('HIERARCHICAL')
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [editingName, setEditingName] = useState('')
   const [editError, setEditError] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
+  const [deletingProject, setDeletingProject] = useState<Project | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -30,9 +36,10 @@ export default function ProjectsPage() {
 
   async function createProject(e: React.FormEvent) {
     e.preventDefault()
-    const p = await api.post<Project>('/projects', { name: newName })
+    const p = await api.post<Project>('/projects', { name: newName, boardMode: newBoardMode })
     setProjects(prev => [...prev, p])
     setNewName('')
+    setNewBoardMode('HIERARCHICAL')
     setShowNew(false)
   }
 
@@ -68,6 +75,22 @@ export default function ProjectsPage() {
       setEditError(error instanceof Error ? error.message : 'Não foi possível atualizar o projeto')
     } finally {
       setSavingEdit(false)
+    }
+  }
+
+  async function deleteProject() {
+    if (!deletingProject) return
+
+    setDeleting(true)
+    try {
+      await api.delete(`/projects/${deletingProject.id}`)
+      setProjects(prev => prev.filter(project => project.id !== deletingProject.id))
+      setDeletingProject(null)
+      toast('Projeto excluído com sucesso')
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Não foi possível excluir o projeto', 'error')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -121,20 +144,34 @@ export default function ProjectsPage() {
                    <span className="text-primary font-bold text-lg">{p.name[0]?.toUpperCase()}</span>
                    </div>
                    <div className="flex items-center gap-2">
-                     {p.role === 'ADMIN' && (
-                       <button
-                         type="button"
-                         aria-label={`Editar projeto ${p.name}`}
-                         title="Editar projeto"
-                         onClick={e => {
-                           e.stopPropagation()
-                           openEdit(p)
-                         }}
-                         className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition"
-                       >
-                         <Edit3 className="w-4 h-4" />
-                       </button>
-                     )}
+                      {p.role === 'ADMIN' && (
+                        <>
+                          <button
+                            type="button"
+                            aria-label={`Editar projeto ${p.name}`}
+                            title="Editar projeto"
+                            onClick={e => {
+                              e.stopPropagation()
+                              openEdit(p)
+                            }}
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Excluir projeto ${p.name}`}
+                            title="Excluir projeto"
+                            onClick={e => {
+                              e.stopPropagation()
+                              setDeletingProject(p)
+                            }}
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
                      <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition" />
                    </div>
                  </div>
@@ -153,15 +190,30 @@ export default function ProjectsPage() {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <form onSubmit={createProject} className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-xl space-y-4">
               <h3 className="font-bold text-foreground text-lg">Novo projeto</h3>
-              <input
+               <input
                 autoFocus
                 type="text"
                 required
                 placeholder="Nome do projeto"
                 value={newName}
                 onChange={e => setNewName(e.target.value)}
-                className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition"
-              />
+                 className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition"
+               />
+               <div>
+                 <label htmlFor="new-project-board-mode" className="text-xs font-medium text-muted-foreground block mb-1.5">Formato do board</label>
+                 <select
+                   id="new-project-board-mode"
+                   value={newBoardMode}
+                   onChange={e => setNewBoardMode(e.target.value as BoardMode)}
+                   className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition"
+                 >
+                   <option value="HIERARCHICAL">Hierárquico: módulos, épicos e histórias</option>
+                   <option value="SIMPLE">Simples: um único Kanban</option>
+                 </select>
+                 <p className="text-xs text-muted-foreground mt-1.5">
+                   O modo simples usa uma história fixa e coloca todas as tarefas em um único fluxo.
+                 </p>
+               </div>
               <div className="flex gap-3 justify-end">
                 <button type="button" onClick={() => setShowNew(false)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition">{t('cancel')}</button>
                 <button type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition">{t('create')}</button>
@@ -200,6 +252,44 @@ export default function ProjectsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        )}
+
+        {/* Confirmação de exclusão permanente do projeto */}
+        {deletingProject && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="presentation">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="delete-project-title"
+              aria-describedby="delete-project-description"
+              className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-xl space-y-4"
+            >
+              <div>
+                <h3 id="delete-project-title" className="font-bold text-foreground text-lg">Excluir projeto?</h3>
+                <p id="delete-project-description" className="text-sm text-muted-foreground mt-2">
+                  O projeto <strong className="text-foreground">{deletingProject.name}</strong> e todos os seus registros filhos serão excluídos permanentemente. Essa ação não pode ser desfeita.
+                </p>
+              </div>
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setDeletingProject(null)}
+                  disabled={deleting}
+                  className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition disabled:opacity-50"
+                >
+                  {t('cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteProject}
+                  disabled={deleting}
+                  className="rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground hover:bg-destructive/90 transition disabled:opacity-50"
+                >
+                  {deleting ? 'Excluindo...' : 'Excluir permanentemente'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
