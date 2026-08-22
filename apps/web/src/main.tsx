@@ -10,7 +10,7 @@ import './styles/globals.css'
 // no HTML, todas as chamadas a /api/ e a basename do React Router são
 // prefixadas com esse base path. Em dev local (sem __BASE_PATH__) o código
 // roda normalmente como se estivesse em "/".
-const BASE_PATH = (window as any).__BASE_PATH__ || ''
+const BASE_PATH = ((window as any).__BASE_PATH__ || '').replace(/\/+$/, '')
 if (BASE_PATH) {
   const originalFetch = window.fetch
   // Object.assign preserva as propriedades estáticas de `fetch`
