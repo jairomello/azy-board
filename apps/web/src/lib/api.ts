@@ -15,9 +15,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const BASE_PATH = ((window as any).__BASE_PATH__ || '').replace(/\/+$/, '')
     let currentPath = window.location.pathname
     if (BASE_PATH && currentPath.startsWith(BASE_PATH)) {
-      currentPath = currentPath.slice(BASE_PATH.length - 1) // mantém "/" inicial
+      currentPath = currentPath.slice(BASE_PATH.length) || '/'
     }
-    window.location.href = `${BASE_PATH}login?redirect=${encodeURIComponent(currentPath)}`
+    window.location.href = `${BASE_PATH}/login?redirect=${encodeURIComponent(currentPath)}`
     throw new Error('Sessão expirada')
   }
 
