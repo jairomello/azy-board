@@ -5,6 +5,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { CheckCircle2, Sparkles } from 'lucide-react'
 import { BrandLogo, BrandMark } from '../components/BrandLogo'
 
+const BASE_PATH = (window as Window & { __BASE_PATH__?: string }).__BASE_PATH__ ?? ''
+
 export default function LoginPage() {
   const { t } = useTranslation('auth')
   const { login } = useAuth()
@@ -35,7 +37,7 @@ export default function LoginPage() {
     >
       <div
         className="absolute inset-0 bg-cover bg-center scale-110 blur-[18px] contrast-125 saturate-110"
-        style={{ backgroundImage: "url('/login-wallpaper.jpeg')" }}
+        style={{ backgroundImage: `url('${BASE_PATH || '/'}login-wallpaper.jpeg')` }}
         aria-hidden="true"
       />
       <div className="absolute inset-0 bg-slate-950/45" aria-hidden="true" />
