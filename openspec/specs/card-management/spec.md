@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade card management.
+
+## Requirements
 
 ### Requirement: CRUD completo de cards (tasks folha)
 O sistema SHALL permitir criar, visualizar, editar e excluir cards. Apenas tasks folha (sem filhos) são exibidas como cards móveis no Kanban. Campos: título, descrição (markdown), labels, prioridade (LOW | MEDIUM | HIGH | CRITICAL), responsável, story pai, tags, pontos (inteiro, opcional).

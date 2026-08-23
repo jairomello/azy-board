@@ -6,6 +6,7 @@ import { projects, memberships, modules, columns, squads, users, items, itemTags
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import type { RequestContext, BoardMode, AncestorNode } from '@azy-board/types'
+import { hasGlobalGroup } from '../services/auth'
 
 export const projectsRouter = new Hono<HonoEnv>()
 projectsRouter.use('*', authMiddleware)
@@ -126,6 +127,7 @@ async function convertToHierarchical(tx: ProjectTransaction, tenantId: string, p
 // POST /projects — criar projeto
 projectsRouter.post('/', async (c) => {
   const ctx = c.get('ctx') as RequestContext
+  if (!hasGlobalGroup(ctx.globalGroup, 'MANAGER')) return c.json({ error: 'Permissão insuficiente' }, 403)
   const body = await c.req.json<{ name: string; description?: string; managerUserId?: string; boardMode?: BoardMode }>()
   const normalizedName = body.name.trim()
   if (!normalizedName) return c.json({ error: 'O nome do projeto é obrigatório' }, 400)
@@ -201,26 +203,18 @@ projectsRouter.post('/', async (c) => {
 projectsRouter.get('/', async (c) => {
   const ctx = c.get('ctx') as RequestContext
 
-  // [TENANT] Filtra por tenantId + userId — anti-IDOR: usuário só vê seus projetos
-  const result = await db
-    .select({ project: projects, role: memberships.role })
-    .from(projects)
-    .innerJoin(
+  const result = hasGlobalGroup(ctx.globalGroup, 'ADMIN')
+    ? await db.select({ project: projects }).from(projects).where(eq(projects.tenantId, ctx.tenantId))
+    : await db.select({ project: projects, role: memberships.role }).from(projects).innerJoin(
       memberships,
-      and(
-        eq(memberships.projectId, projects.id),
-        eq(memberships.userId, ctx.userId),
-        eq(memberships.tenantId, ctx.tenantId)
-      )
-    )
-    // [TENANT] Filtro adicional no projeto para garantir isolamento
-    .where(eq(projects.tenantId, ctx.tenantId))
+      and(eq(memberships.projectId, projects.id), eq(memberships.userId, ctx.userId), eq(memberships.tenantId, ctx.tenantId))
+    ).where(and(eq(projects.tenantId, ctx.tenantId), eq(memberships.tenantId, ctx.tenantId)))
 
   const projectScope = c.get('apiKeyProjectScope')
   const scopedProjects = projectScope
     ? result.filter(r => projectScope.includes(r.project.id))
     : result
-  return c.json(scopedProjects.map(r => ({ ...r.project, role: r.role })))
+  return c.json(scopedProjects.map(r => ({ ...r.project, role: 'role' in r ? r.role : 'ADMIN' })))
 })
 
 // GET /projects/:id/board — contexto estruturado para agentes
@@ -341,7 +335,8 @@ projectsRouter.get('/:id', requireRole('VIEWER'), async (c) => {
   let manager = null
   if (project.managerUserId) {
     manager = await db.query.users.findFirst({
-      where: (u) => eq(u.id, project.managerUserId!),
+      // [TENANT] O gerente exibido deve pertencer ao tenant ativo.
+      where: (u) => and(eq(u.id, project.managerUserId!), eq(u.tenantId, ctx.tenantId)),
       columns: { id: true, name: true, email: true, avatarUrl: true },
     })
   }

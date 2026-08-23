@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import { api } from '../lib/api'
 import i18n from '../i18n'
-import type { Theme, Language, LightShellTheme } from '@azy-board/types'
+import type { GlobalGroup, Theme, Language, LightShellTheme } from '@azy-board/types'
 
 export interface User {
   id: string
@@ -11,6 +11,7 @@ export interface User {
   theme: Theme
   lightShellTheme: LightShellTheme
   language: Language
+  globalGroup: GlobalGroup
 }
 
 type PreferenceUpdate = Partial<Pick<User, 'theme' | 'lightShellTheme' | 'language'>>

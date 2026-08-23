@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade button visual redesign.
+
+## Requirements
 
 ### Requirement: Botões de ação com fundo preenchido
 

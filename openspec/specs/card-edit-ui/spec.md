@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade card edit ui.
+
+## Requirements
 
 ### Requirement: Edição inline do título do card por duplo clique
 O sistema SHALL permitir editar o título do card diretamente no board ao dar duplo clique sobre o texto do título.

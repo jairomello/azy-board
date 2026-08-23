@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade card children section.
+
+## Requirements
 
 ### Requirement: Seção de filhos diretos na modal do card
 O sistema SHALL exibir, no final da `CardModal`, uma seção "Subtasks" listando apenas os filhos diretos (nível imediatamente abaixo) da task aberta. Netos e demais descendentes NÃO são exibidos aqui — apenas no ícone de contador de filhos no card do Kanban.

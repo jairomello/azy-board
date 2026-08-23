@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Definir os requisitos da capacidade epic story ui.
+
+## Requirements
 
 ### Requirement: Cinco botões de criação no toolbar do board
 O sistema SHALL exibir cinco botões de criação no toolbar do board, na seguinte ordem da esquerda para a direita: `+ Módulo`, `+ Novo Épico`, `+ Nova História`, `+ Nova Task`, `+ Novo Bug`. Cada botão abre a modal correspondente ao tipo de item. O botão "+ Módulo" abre uma modal de criação de módulo com campos Nome (obrigatório) e Descrição (opcional).

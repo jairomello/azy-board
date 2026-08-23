@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade story rich editor.
+
+## Requirements
 
 ### Requirement: Modal de cadastro e edição de história com campos ágeis
 O sistema SHALL exibir uma modal (`StoryModal`) para criar e editar histórias, acessível pelo botão "+ Nova história" no toolbar do board e ao clicar em um card do tipo Story.

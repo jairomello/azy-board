@@ -7,6 +7,7 @@ import { ArrowUpRight, Edit3, FolderKanban, Plus, Trash2 } from 'lucide-react'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
 import type { BoardMode } from '@azy-board/types'
+import { canCreateProject } from '../permissions'
 
 type ProjectRole = 'ADMIN' | 'MEMBER' | 'VIEWER'
 interface Project { id: string; name: string; description: string | null; role: ProjectRole; boardMode: BoardMode }
@@ -104,7 +105,8 @@ export default function ProjectsPage() {
             <p className="text-muted-foreground text-sm mt-1">Escolha onde você quer continuar trabalhando.</p>
           </div>
           <button
-            onClick={() => setShowNew(true)}
+             onClick={() => setShowNew(true)}
+             disabled={!canCreateProject(user?.globalGroup)}
             className="h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition flex items-center gap-2 shadow-sm"
           >
             <Plus className="w-4 h-4" />
@@ -118,7 +120,7 @@ export default function ProjectsPage() {
           <div className="text-center py-16 border-2 border-dashed border-border rounded-xl bg-card/50">
             <FolderKanban className="w-10 h-10 mx-auto mb-3 text-muted-foreground/50" />
             <p className="text-muted-foreground">Nenhum projeto ainda.</p>
-            <button onClick={() => setShowNew(true)} className="mt-4 text-primary text-sm font-medium hover:underline">
+             <button onClick={() => setShowNew(true)} disabled={!canCreateProject(user?.globalGroup)} className="mt-4 text-primary text-sm font-medium hover:underline disabled:opacity-50">
               Criar primeiro projeto
             </button>
           </div>

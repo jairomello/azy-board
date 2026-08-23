@@ -24,9 +24,10 @@ await db.insert(tenants).values({
 const userId = generateId()
 await db.insert(users).values({
   id: userId, tenantId,
-  email: 'admin@example.com',
+  email: 'jairo.silva@ntconsult.com.br',
   passwordHash: await hashPassword(seedPassword),
   name: 'Demo Admin',
+  globalGroup: 'ROOT',
   theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR',
   createdAt: new Date().toISOString(),
 })
@@ -157,6 +158,6 @@ await db.insert(items).values([
 ])
 
 console.log('✅ Seed concluído!')
-console.log('   Usuário: admin@example.com')
+console.log('   Usuário: jairo.silva@ntconsult.com.br')
 console.log('   Senha: valor definido em SEED_ADMIN_PASSWORD')
 console.log('   2 EPICs · 2 STORYs · 4 TASKs · 2 BUGs\n')

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade tag ui.
+
+## Requirements
 
 ### Requirement: Criação de tags do projeto pela UI
 O sistema SHALL permitir criar tags diretamente do board ou das configurações do projeto, sem precisar de acesso à API.

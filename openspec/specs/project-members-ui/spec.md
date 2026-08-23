@@ -1,43 +1,63 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade project members ui.
+
+## Requirements
 
 ### Requirement: Seção de Membros & Squads nas Settings
-O sistema SHALL exibir a seção "Membros & Squads" na página de configurações do projeto (`SettingsPage`) dividida em duas subseções distintas: "Squads" e "Membros do Projeto", com gerenciamento independente de cada uma.
+O sistema SHALL exibir a seção "Membros & Squads" na página de configurações do projeto somente para usuários cujo grupo global e perfil local permitam configurar o projeto. Membros de Equipe SHALL não visualizar a rota nem os controles de configuração; Gerentes, Admins e Root SHALL poder acessar conforme o escopo de projeto.
+
+#### Scenario: Membro não vê configurações
+- **WHEN** Membro de Equipe acessa um projeto
+- **THEN** a navegação não exibe Configurações e o acesso direto retorna 403
+
+#### Scenario: Gerente configura projeto associado
+- **WHEN** Gerente membro do projeto acessa "Membros & Squads"
+- **THEN** sistema exibe a seção e permite as operações de configuração autorizadas
+
+#### Scenario: Admin configura projeto sem membership
+- **WHEN** Admin acessa "Membros & Squads" de projeto do tenant
+- **THEN** sistema exibe a seção e permite seu gerenciamento
 
 #### Scenario: Listar membros do projeto com squad e papel
-- **WHEN** o usuário acessa a seção "Membros & Squads"
+- **WHEN** usuário autorizado acessa a seção "Membros & Squads"
 - **THEN** sistema exibe a lista de membros com nome, e-mail, papel (ADMIN/MEMBER/VIEWER badge) e squad associado (ou "— Sem squad —" se não houver)
 
 #### Scenario: Botão "+ Adicionar membro" abre dialog de convite
-- **WHEN** administrador clica em "+ Adicionar membro"
-- **THEN** sistema abre um dialog com campo de busca por e-mail, select de papel (ADMIN/MEMBER/VIEWER) e select opcional de squad; ao confirmar, sistema adiciona o usuário ao projeto com os dados informados
+- **WHEN** administrador do projeto clica em "+ Adicionar membro"
+- **THEN** sistema abre um dialog com busca por e-mail, select de papel e squad opcional; ao confirmar, adiciona o usuário com os dados informados
 
 #### Scenario: Editar membro — alterar squad e papel
-- **WHEN** administrador clica no ícone de edição ao lado de um membro existente
-- **THEN** sistema abre dialog de edição pré-preenchido com papel e squad atual; ao salvar, sistema atualiza os dados do membro
+- **WHEN** administrador do projeto edita um membro existente
+- **THEN** sistema abre dialog pré-preenchido e atualiza papel e squad ao salvar
 
 #### Scenario: Remover membro do projeto
-- **WHEN** administrador clica em "Remover" no item de um membro
-- **THEN** sistema exibe confirmação e, após confirmação, remove o membro do projeto e de qualquer squad associado
+- **WHEN** administrador do projeto confirma a remoção de um membro
+- **THEN** sistema remove o membro do projeto e de qualquer squad associado
 
 #### Scenario: Criar squad na subseção "Squads"
-- **WHEN** administrador digita nome do squad e clica em "+ Criar squad"
-- **THEN** sistema chama `POST /projects/:id/squads` com o nome e o novo squad aparece na lista de squads
+- **WHEN** administrador do projeto digita nome do squad e clica em "+ Criar squad"
+- **THEN** sistema chama `POST /projects/:id/squads` e exibe o novo squad
 
 #### Scenario: Renomear squad existente
-- **WHEN** administrador clica no ícone de edição de um squad e altera o nome
-- **THEN** sistema chama `PATCH /projects/:id/squads/:squadId` com o novo nome e a lista é atualizada
+- **WHEN** administrador do projeto altera o nome de um squad
+- **THEN** sistema chama `PATCH /projects/:id/squads/:squadId` e atualiza a lista
 
 #### Scenario: Excluir squad sem membros
-- **WHEN** administrador clica em "Excluir" em squad que não possui membros associados
+- **WHEN** administrador do projeto exclui squad sem membros
 - **THEN** sistema remove o squad e retorna 204
 
 #### Scenario: Excluir squad com membros — desassociação automática
-- **WHEN** administrador exclui squad que possui membros
-- **THEN** sistema exibe aviso informando a quantidade de membros que terão squad removido; ao confirmar, sistema remove o squad e limpa o `squad_id` dos membros associados
+- **WHEN** administrador do projeto confirma a exclusão de squad com membros
+- **THEN** sistema remove o squad e limpa o `squad_id` dos membros associados após exibir o aviso
 
 #### Scenario: Membros disponíveis como responsável nos cards
-- **WHEN** a `CardModal` é aberta e o campo "Responsável" é clicado
-- **THEN** um select exibe os membros do projeto (carregados via `GET /projects/:id/members`) como opções
+- **WHEN** usuário autorizado abre a `CardModal` e seleciona o campo "Responsável"
+- **THEN** um select exibe os membros do projeto carregados via `GET /projects/:id/members`
 
 ### Requirement: Endpoints de listagem de membros e squads
 O sistema SHALL expor `GET /projects/:id/members` retornando usuários com role e squad atual (id e nome do squad), e `GET /projects/:id/squads` retornando squads com contagem de membros.
+
+#### Scenario: Consultar membros e squads
+- **WHEN** usuário autorizado solicita os endpoints de membros e squads de um projeto
+- **THEN** o sistema retorna os membros com papel e squad atual e os squads com suas respectivas contagens de membros

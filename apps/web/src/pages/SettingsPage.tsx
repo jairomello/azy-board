@@ -111,7 +111,7 @@ export default function SettingsPage() {
   const [newVersion, setNewVersion] = useState({ name: '', releaseDate: '', description: '', status: 'PLANNED' as ProjectVersion['status'] })
 
   const currentMember = members.find(m => m.userId === user?.id)
-  const isAdmin = currentMember?.role === 'ADMIN'
+  const isAdmin = currentMember?.role === 'ADMIN' || ['MANAGER', 'ADMIN', 'ROOT'].includes(user?.globalGroup ?? '')
 
   useEffect(() => {
     if (!projectId) return
@@ -130,6 +130,10 @@ export default function SettingsPage() {
       })
       .catch(() => {})
   }, [projectId])
+
+  if (user?.globalGroup === 'TEAM_MEMBER') {
+    return <AppShell projectId={projectId} sectionLabel="Configurações" contextLabel="Acesso negado"><div className="max-w-xl mx-auto py-12"><div role="alert" className="rounded-xl border border-border bg-card p-6 text-center"><h2 className="text-lg font-semibold text-foreground">Acesso negado</h2><p className="text-sm text-muted-foreground mt-2">Membros de Equipe não podem acessar as configurações do projeto.</p></div></div></AppShell>
+  }
 
   async function saveBoardMode(nextMode: BoardMode) {
     if (!projectId || !isAdmin) return

@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Definir os requisitos da capacidade card creation ui.
+
+## Requirements
 
 ### Requirement: Botão de criação de card por coluna envia para `/items`
 O sistema SHALL exibir um botão "+" no rodapé de cada coluna do board para adicionar novo card. O formulário rápido envia para `POST /projects/:id/items` com o `type` selecionado.

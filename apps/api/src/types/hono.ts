@@ -1,7 +1,9 @@
 // Tipos locais (espelho do @azy-board/types para evitar problema de rootDir no TypeScript)
 
 
-interface RequestContext { userId: string; tenantId: string; email: string }
+import type { GlobalGroup } from '@azy-board/types'
+
+interface RequestContext { userId: string; tenantId: string; email: string; globalGroup: GlobalGroup }
 type MemberRole = 'ADMIN' | 'MEMBER' | 'VIEWER'
 
 // Tipagem das variáveis de contexto do Hono

@@ -25,6 +25,8 @@ export const users = sqliteTable('users', {
   email: text('email').notNull(),
   passwordHash: text('password_hash').notNull(),
   name: text('name').notNull(),
+  // [TENANT] Grupo global é interpretado dentro do tenant da sessão.
+  globalGroup: text('global_group', { enum: ['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT'] }).notNull().default('TEAM_MEMBER'),
   avatarUrl: text('avatar_url'),
   theme: text('theme', { enum: ['light', 'dark'] }).notNull().default('light'),
   lightShellTheme: text('light_shell_theme', {

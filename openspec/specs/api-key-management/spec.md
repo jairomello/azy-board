@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade api key management.
+
+## Requirements
 
 ### Requirement: Listar API Keys do usuário
 O sistema SHALL exibir na página de conta todas as API Keys pertencentes ao usuário autenticado. Cada item SHALL mostrar nome da chave, nome do modelo de IA vinculado (se houver), data de criação e data do último uso. O valor completo da chave NUNCA SHALL ser exibido na listagem.

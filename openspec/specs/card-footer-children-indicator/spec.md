@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade card footer children indicator.
+
+## Requirements
 
 ### Requirement: Campo `childrenCount` retornado pela API
 

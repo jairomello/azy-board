@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade file attachments.
+
+## Requirements
 
 ### Requirement: Upload de anexos em qualquer card
 O sistema SHALL permitir anexar arquivos a qualquer task (card). Não há restrição de tipo de arquivo. O tamanho máximo por arquivo SHALL ser configurável (padrão: 10 MB).

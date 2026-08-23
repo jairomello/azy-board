@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade i18n.
+
+## Requirements
 
 ### Requirement: Suporte a múltiplos idiomas (PT-BR, EN, ES)
 O sistema SHALL suportar os idiomas Português do Brasil (PT-BR), Inglês (EN) e Espanhol (ES). PT-BR SHALL ser o idioma padrão. Toda string visível na UI SHALL ser internacionalizada — nenhum texto fixo em código.

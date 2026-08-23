@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade board squad filter.
+
+## Requirements
 
 ### Requirement: Filtro por squad no board
 O sistema SHALL exibir um select de squad na barra de filtros do board, listando todas as squads do projeto. Quando uma squad está selecionada, apenas cards cujo responsável (`assignedTo`) é membro dessa squad SHALL ser exibidos.

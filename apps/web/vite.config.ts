@@ -8,7 +8,7 @@ import path from 'path'
 // em /, entao nao quebra o uso local.
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', 'AZYBOARD_')
-  const apiTarget = env.AZYBOARD_API_TARGET || 'http://localhost:3000'
+   const apiTarget = env.AZYBOARD_API_TARGET || 'http://localhost:3001'
   const basePath = env.AZYBOARD_BASE_PATH || './'
 
   return {

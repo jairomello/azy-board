@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade card activity log.
+
+## Requirements
 
 ### Requirement: Registro automático de logs para ações no card
 O sistema SHALL gerar automaticamente um log de atividade toda vez que uma alteração relevante ocorrer em uma task, sem intervenção do usuário.

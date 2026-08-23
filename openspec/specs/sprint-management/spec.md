@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade sprint management.
+
+## Requirements
 
 ### Requirement: CRUD de sprints
 O sistema SHALL permitir criar, editar e encerrar sprints vinculadas a um projeto, com nome, data de início e data de fim.

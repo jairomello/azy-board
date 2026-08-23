@@ -40,7 +40,7 @@ async function mcpApiCall(apiKey: string, path: string, method = 'GET', body?: u
   return response.headers.get('content-type')?.includes('application/json') ? response.json() : response.text()
 }
 
-async function createUser(tenantId: string, email: string, name: string) {
+async function createUser(tenantId: string, email: string, name: string, globalGroup: 'TEAM_MEMBER' | 'MANAGER' | 'ADMIN' | 'ROOT' = 'ADMIN') {
   const id = generateId()
   await db.insert(users).values({
     id,
@@ -51,6 +51,7 @@ async function createUser(tenantId: string, email: string, name: string) {
     theme: 'light',
     lightShellTheme: 'petroleum',
     language: 'pt-BR',
+    globalGroup,
     createdAt: new Date().toISOString(),
   })
   return { id, email }
@@ -176,7 +177,7 @@ describe('modos de board de projetos', () => {
       body: JSON.stringify({ name: 'Projeto protegido' }),
     })
     const project = await response.json() as { id: string }
-    const member = await createUser(tenantId, 'member@test.local', 'Membro Teste')
+    const member = await createUser(tenantId, 'member@test.local', 'Membro Teste', 'TEAM_MEMBER')
     await db.insert(memberships).values({ id: generateId(), tenantId, userId: member.id, projectId: project.id, role: 'MEMBER', createdAt: new Date().toISOString() })
     const memberResponse = await request(`/projects/${project.id}`, await token(member.id, tenantId, member.email), {
       method: 'PATCH',
@@ -320,5 +321,25 @@ describe('batch e idempotencia', () => {
     const response = await request(`/projects/${projectId}/batch`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ atomic: true, operations: [{ tool: 'create_task', args: { title: 'Rollback' } }, { tool: 'create_task', args: { title: '' } }] }) })
     expect(response.status).toBe(422)
     expect((await db.select().from(items)).filter(item => item.projectId === projectId)).toHaveLength(before)
+  })
+})
+
+describe('permissoes globais e administracao', () => {
+  test('isola escopo e impede elevação pelo próprio usuário', async () => {
+    const tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'RBAC', slug: `rbac-${tenantId}`, createdAt: new Date().toISOString() })
+    const admin = await createUser(tenantId, 'rbac-admin@test.local', 'Admin', 'ADMIN')
+    const member = await createUser(tenantId, 'rbac-member@test.local', 'Member', 'TEAM_MEMBER')
+    const adminToken = await token(admin.id, tenantId, admin.email)
+    const memberToken = await token(member.id, tenantId, member.email)
+    expect((await request('/users', memberToken)).status).toBe(403)
+    expect((await request('/projects', memberToken, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'blocked' }) })).status).toBe(403)
+    const usersResponse = await request('/users', adminToken)
+    expect(usersResponse.status).toBe(200)
+    expect((await usersResponse.json()).some((u: { email: string }) => u.email === member.email)).toBe(true)
+    const elevate = await request(`/users/${member.id}/group`, adminToken, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ globalGroup: 'ROOT' }) })
+    expect(elevate.status).toBe(403)
+    const selfElevate = await request(`/users/${admin.id}/group`, adminToken, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ globalGroup: 'ROOT' }) })
+    expect(selfElevate.status).toBe(403)
   })
 })

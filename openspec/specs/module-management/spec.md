@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade module management.
+
+## Requirements
 
 ### Requirement: Criar e gerenciar módulos dentro de um projeto
 O sistema SHALL permitir que administradores criem, renomeiem, reordenem e excluam módulos dentro de um projeto. O módulo é o segundo nível da hierarquia (`Project → Module`) e serve como agrupador lógico e funcional.

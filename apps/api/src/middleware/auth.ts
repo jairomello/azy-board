@@ -2,10 +2,10 @@ import type { Context, Next } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { getCookie } from 'hono/cookie'
 import { eq, and } from 'drizzle-orm'
-import { verifyJwt } from '../services/auth'
+import { hasGlobalGroup, isGlobalGroup, verifyJwt } from '../services/auth'
 import { db } from '../db/index'
 import { apiKeys, memberships } from '../db/schema'
-import type { RequestContext, MemberRole } from '@azy-board/types'
+import type { GlobalGroup, RequestContext, MemberRole } from '@azy-board/types'
 
 // [TENANT] Middleware principal: resolve tenant_id e userId de toda requisição autenticada.
 // Aceita JWT (usuários humanos) ou API Key (agentes de IA).
@@ -18,8 +18,14 @@ export async function authMiddleware(c: Context<HonoEnv>, next: Next) {
   if (token) {
     try {
       const payload = await verifyJwt(token)
-      // [TENANT] tenant_id vem do JWT — cliente não pode falsificar
-      ctx = { userId: payload.sub, tenantId: payload.tenantId, email: payload.email }
+      const persisted = await db.query.users.findFirst({
+        // [TENANT] Grupo e identidade vêm do banco, não de valores enviados pelo cliente.
+        where: (u) => and(eq(u.id, payload.sub), eq(u.tenantId, payload.tenantId)),
+        columns: { id: true, tenantId: true, email: true, globalGroup: true },
+      })
+      if (persisted && isGlobalGroup(persisted.globalGroup)) {
+        ctx = { userId: persisted.id, tenantId: persisted.tenantId, email: persisted.email, globalGroup: persisted.globalGroup }
+      }
     } catch {
       // Token inválido ou expirado
     }
@@ -59,7 +65,7 @@ export async function authMiddleware(c: Context<HonoEnv>, next: Next) {
         })
         if (owner) {
           // [TENANT] tenant_id da API Key garante que agente opera no tenant correto
-          ctx = { userId: owner.id, tenantId: keyRecord.tenantId, email: owner.email }
+          ctx = { userId: owner.id, tenantId: keyRecord.tenantId, email: owner.email, globalGroup: owner.globalGroup }
           c.set('apiKeyId', keyRecord.id)
           c.set('aiModelName', keyRecord.aiModelName)
           c.set('apiKeyProjectScope', projectScope)
@@ -98,13 +104,17 @@ export function requireRole(minRole: MemberRole) {
         ),
     })
 
-    if (!membership) {
+    const globalAdmin = hasGlobalGroup(ctx.globalGroup, 'ADMIN')
+    if (!membership && !globalAdmin) {
       // Retorna 404 para não revelar se o projeto existe para outro tenant
       return c.json({ error: 'Projeto não encontrado' }, 404)
     }
 
     const roleHierarchy: Record<MemberRole, number> = { ADMIN: 3, MEMBER: 2, VIEWER: 1 }
-    if (roleHierarchy[membership.role] < roleHierarchy[minRole]) {
+    if (!globalAdmin && minRole === 'ADMIN' && !hasGlobalGroup(ctx.globalGroup, 'MANAGER')) {
+      return c.json({ error: 'Permissão insuficiente' }, 403)
+    }
+    if (!globalAdmin && membership && roleHierarchy[membership.role] < roleHierarchy[minRole] && !(hasGlobalGroup(ctx.globalGroup, 'MANAGER') && minRole === 'ADMIN')) {
       return c.json({ error: 'Permissão insuficiente' }, 403)
     }
     const permissionScope = c.get('apiKeyPermissionScope')
@@ -115,7 +125,15 @@ export function requireRole(minRole: MemberRole) {
       }
     }
 
-    c.set('memberRole', membership.role)
+    c.set('memberRole', globalAdmin ? 'ADMIN' : membership?.role ?? 'MEMBER')
+    await next()
+  }
+}
+
+export function requireGlobalGroup(minimum: GlobalGroup) {
+  return async (c: Context<HonoEnv>, next: Next) => {
+    const ctx = c.get('ctx') as RequestContext
+    if (!hasGlobalGroup(ctx.globalGroup, minimum)) return c.json({ error: 'Permissão insuficiente' }, 403)
     await next()
   }
 }

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade card author.
+
+## Requirements
 
 ### Requirement: Campo autor persistido na criação do card
 O sistema SHALL registrar automaticamente o `author_id` (usuário que criou a task) no momento da criação, distinto do campo `assignee_id` (responsável atual). O campo é somente leitura após a criação.

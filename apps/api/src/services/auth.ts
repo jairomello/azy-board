@@ -1,6 +1,22 @@
 import bcrypt from 'bcryptjs'
 import { SignJWT, jwtVerify } from 'jose'
-import type { JwtPayload } from '@azy-board/types'
+import type { GlobalGroup, JwtPayload } from '@azy-board/types'
+
+export const GLOBAL_GROUPS = ['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT'] as const
+export const GLOBAL_GROUP_LEVEL: Record<GlobalGroup, number> = {
+  TEAM_MEMBER: 1,
+  MANAGER: 2,
+  ADMIN: 3,
+  ROOT: 4,
+}
+
+export function isGlobalGroup(value: unknown): value is GlobalGroup {
+  return typeof value === 'string' && (GLOBAL_GROUPS as readonly string[]).includes(value)
+}
+
+export function hasGlobalGroup(group: GlobalGroup, minimum: GlobalGroup): boolean {
+  return GLOBAL_GROUP_LEVEL[group] >= GLOBAL_GROUP_LEVEL[minimum]
+}
 
 const configuredSecret = process.env.JWT_SECRET
 if (!configuredSecret && process.env.NODE_ENV === 'production') {

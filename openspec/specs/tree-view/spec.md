@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Definir os requisitos da capacidade tree view.
+
+## Requirements
 
 ### Requirement: Tree View lê recursivamente da tabela `items`
 O sistema SHALL renderizar a Tree View como tabela hierárquica expansível lendo todos os itens de `GET /projects/:id/items/tree`, que retorna a árvore completa EPIC → STORY → TASK/BUG → subtask. A rota `/projects/:id/tree` é substituída por `/projects/:id/items/tree`.

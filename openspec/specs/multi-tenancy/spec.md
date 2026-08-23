@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade multi tenancy.
+
+## Requirements
 
 ### Requirement: Isolamento de dados por tenant
 O sistema SHALL isolar completamente os dados de cada tenant (cliente). Nenhuma query SHALL retornar dados de um tenant diferente do tenant autenticado, independente dos IDs fornecidos.

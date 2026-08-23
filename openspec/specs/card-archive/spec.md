@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade card archive.
+
+## Requirements
 
 ### Requirement: Status ARCHIVED em unified_items
 O sistema SHALL suportar o status `ARCHIVED` em qualquer item (EPIC, STORY, TASK, BUG). Items arquivados são invisíveis no board Kanban e na tree view hierárquica por padrão. O status anterior ao arquivamento SHALL ser preservado em `status_before_archive` para permitir restauração fiel.

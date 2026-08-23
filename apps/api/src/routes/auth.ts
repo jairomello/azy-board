@@ -20,6 +20,7 @@ authRouter.post('/login', async (c) => {
   }
 
   const user = await db.query.users.findFirst({
+    // [TENANT] A identidade persistida, incluindo o grupo, é a autoridade server-side.
     where: (u) => eq(u.email, body.email),
   })
 
@@ -39,6 +40,7 @@ authRouter.post('/login', async (c) => {
     tenantId: user.tenantId,
     email: user.email,
     role: 'user',
+    globalGroup: user.globalGroup,
   })
 
   setCookie(c, 'session', token, {
@@ -58,6 +60,7 @@ authRouter.post('/login', async (c) => {
       theme: user.theme,
       lightShellTheme: user.lightShellTheme,
       language: user.language,
+      globalGroup: user.globalGroup,
     },
   })
 })
@@ -76,6 +79,7 @@ authRouter.get('/me', authMiddleware, async (c) => {
       theme: true,
       lightShellTheme: true,
       language: true,
+      globalGroup: true,
     },
   })
 

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade project cost centers.
+
+## Requirements
 
 ### Requirement: CRUD de centros de custo por projeto
 O sistema SHALL permitir que administradores do projeto cadastrem, editem e excluam centros de custo. Cada centro de custo possui código (VARCHAR(20), único por projeto) e descrição (VARCHAR(200)).

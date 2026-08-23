@@ -49,6 +49,7 @@ id_ed25519*
 uploads/
 
 # Local AI/tooling state
+.opencode/
 .claude/
 .cursor/
 .continue/

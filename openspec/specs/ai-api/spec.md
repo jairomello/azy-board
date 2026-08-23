@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade ai api.
+
+## Requirements
 
 ### Requirement: Endpoints REST minimalistas para agentes de IA
 O sistema SHALL expor endpoints REST com respostas JSON enxutas, sem campos desnecessários, otimizados para consumo por LLMs.

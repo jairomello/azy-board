@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade blocked card info box.
+
+## Requirements
 
 ### Requirement: Box informativa sobre bloqueio na modal de item pai
 

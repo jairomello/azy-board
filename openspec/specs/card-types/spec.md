@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Definir os requisitos da capacidade card types.
+
+## Requirements
 
 ### Requirement: Quatro tipos de item: EPIC, STORY, TASK, BUG
 O sistema SHALL suportar quatro tipos de item discriminados pelo campo `type` na tabela `items`: `EPIC`, `STORY`, `TASK`, `BUG`. O tipo `STORY` deixa de existir como tipo de card de task avulso — todos os items são da tabela `items`.

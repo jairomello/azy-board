@@ -49,6 +49,7 @@ await db.insert(users).values({
   theme: 'light',
   lightShellTheme: 'petroleum',
   language: 'pt-BR',
+  globalGroup: adminEmail === 'jairo.silva@ntconsult.com.br' ? 'ROOT' : 'ADMIN',
   createdAt: new Date().toISOString(),
 })
 

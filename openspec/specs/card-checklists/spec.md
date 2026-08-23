@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade card checklists.
+
+## Requirements
 
 ### Requirement: Múltiplos checklists nomeados por card
 O sistema SHALL permitir que qualquer card (independente do `type`) tenha zero ou mais checklists. Cada checklist SHALL ter um nome obrigatório e uma posição para ordenação. Os checklists de um card SHALL ser retornados em ordem de `position` pelo endpoint de detalhe do card.

@@ -1,3 +1,7 @@
+## Purpose
+
+Definir os requisitos da capacidade mcp ai first workflow.
+
 ## Requirements
 
 ### Requirement: Fluxo completo de gerenciamento por MCP

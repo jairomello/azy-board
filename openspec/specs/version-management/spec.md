@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade version management.
+
+## Requirements
 
 ### Requirement: CRUD de versões de projeto em Settings
 O sistema SHALL permitir que administradores criem, editem, visualizem e excluam versões de um projeto na seção "Versões" da tela de configurações. Campos de uma versão: nome (obrigatório), data de lançamento (opcional), descrição (opcional), situação (`PLANNED` | `IN_DEV` | `RELEASED` | `CANCELLED`).

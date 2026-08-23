@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade realtime sync.
+
+## Requirements
 
 ### Requirement: Sincronização em tempo real via WebSocket
 O sistema SHALL manter conexões WebSocket por projeto e transmitir eventos de mudança para todos os participantes conectados (humanos e agentes de IA).

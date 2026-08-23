@@ -8,6 +8,7 @@ export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 export type TaskType = 'TASK' | 'BUG' | 'STORY'
 export type ItemType = 'EPIC' | 'STORY' | 'TASK' | 'BUG'
 export type MemberRole = 'ADMIN' | 'MEMBER' | 'VIEWER'
+export type GlobalGroup = 'TEAM_MEMBER' | 'MANAGER' | 'ADMIN' | 'ROOT'
 export type BoardMode = 'HIERARCHICAL' | 'SIMPLE'
 export type SprintStatus = 'PLANNED' | 'ACTIVE' | 'DONE'
 export type NodeType = 'module' | 'EPIC' | 'STORY' | 'TASK' | 'BUG'
@@ -123,6 +124,7 @@ export interface JwtPayload {
   tenantId: string  // [TENANT] sempre presente no token
   email: string
   role: 'user'
+  globalGroup?: GlobalGroup
   iat: number
   exp: number
 }
@@ -132,6 +134,7 @@ export interface RequestContext {
   userId: string
   tenantId: string  // [TENANT] resolvido do JWT ou API Key
   email: string
+  globalGroup: GlobalGroup
 }
 
 // Evento WebSocket tipado

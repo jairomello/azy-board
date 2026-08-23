@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade tag management.
+
+## Requirements
 
 ### Requirement: Criar e gerenciar tags no nível do projeto
 O sistema SHALL permitir criar, renomear, mudar a cor e excluir tags vinculadas a um projeto. As tags são compartilhadas por todos os membros do projeto.

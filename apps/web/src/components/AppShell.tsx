@@ -13,6 +13,8 @@ import { ProfileDropdown } from './ProfileDropdown'
 import { ThemeToggle } from './ThemeToggle'
 import { Tooltip } from './ui/Tooltip'
 import { BrandLogo } from './BrandLogo'
+import { useAuth } from '../contexts/AuthContext'
+import { canAccessAdmin, canAccessProjectSettings } from '../permissions'
 
 interface AppShellProps {
   children: ReactNode
@@ -45,6 +47,7 @@ export function AppShell({
   contentClassName = '',
 }: AppShellProps) {
   const location = useLocation()
+  const { user } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
 
   useEffect(() => {
@@ -68,12 +71,17 @@ export function AppShell({
         icon: LayoutDashboard,
         active: location.pathname.includes(`/projects/${effectiveProjectId}/board`),
       })
-      items.push({
-        label: 'Configurações',
-        href: `/projects/${effectiveProjectId}/settings`,
-        icon: Settings,
-        active: location.pathname.includes(`/projects/${effectiveProjectId}/settings`),
-      })
+      if (canAccessProjectSettings(user?.globalGroup)) {
+        items.push({
+          label: 'Configurações',
+          href: `/projects/${effectiveProjectId}/settings`,
+          icon: Settings,
+          active: location.pathname.includes(`/projects/${effectiveProjectId}/settings`),
+        })
+      }
+    }
+    if (user && canAccessAdmin(user.globalGroup)) {
+      items.push({ label: 'Admin', href: '/admin/users', icon: UserRound, active: location.pathname.startsWith('/admin') })
     }
     items.push({
       label: 'Conta',
@@ -82,7 +90,7 @@ export function AppShell({
       active: location.pathname === '/account',
     })
     return items
-  }, [effectiveProjectId, location.pathname])
+  }, [effectiveProjectId, location.pathname, user])
 
   const sidebar = (
     <div className="h-full flex flex-col px-3 py-4">

@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade card delete action.
+
+## Requirements
 
 ### Requirement: Botão excluir no card
 

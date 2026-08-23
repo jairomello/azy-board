@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade unified item model.
+
+## Requirements
 
 ### Requirement: Tabela `items` como entidade unificada
 O sistema SHALL manter todos os itens de trabalho (Épicos, Histórias, Tasks e Bugs) em uma única tabela `items` com `type` discriminante e `parentId` auto-referenciado. As tabelas `epics` e `stories` SHALL ser removidas.

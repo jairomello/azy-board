@@ -1,4 +1,8 @@
-## MODIFIED Requirements
+## Purpose
+
+Definir os requisitos da capacidade epic tracking.
+
+## Requirements
 
 ### Requirement: Épicos são items com `type = EPIC` na tabela `items`
 O sistema SHALL tratar épicos como items regulares com `type = EPIC`, `moduleId` obrigatório e `parentId = null`. A tabela `epics` é removida. Todos os endpoints e queries que liam de `epics` passam a ler de `items?type=EPIC`.

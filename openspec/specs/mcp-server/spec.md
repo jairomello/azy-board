@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os requisitos da capacidade mcp server.
+
+## Requirements
 
 ### Requirement: Servidor MCP nativo com ferramentas de board
 O sistema SHALL disponibilizar um servidor MCP (Model Context Protocol) expondo ferramentas para que agentes de IA interajam com o board sem necessidade de código adicional.
