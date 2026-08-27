@@ -55,6 +55,29 @@ O estado de outros ramos permanece inalterado.
 - **Expandir tudo** apresenta todos os níveis simultaneamente.
 - **Recolher tudo** mantém apenas os módulos visíveis.
 
+## Criar itens pela árvore
+
+Na barra superior da árvore, usuários com permissão de escrita encontram ações
+para criar **Módulo**, **Épico**, **História**, **Task** e **Bug** sem voltar ao
+Kanban.
+
+As linhas também oferecem ações contextuais de inclusão:
+
+- Módulo: adiciona um épico vinculado ao módulo.
+- Épico: adiciona uma história vinculada ao épico.
+- História: adiciona uma task ou um bug vinculado à história.
+- Task ou Bug: adiciona uma task ou um bug como filho.
+
+O modal aberto recebe automaticamente o pai e o módulo compatíveis. A API
+continua validando a hierarquia antes de persistir a criação.
+
+## Editar pela árvore
+
+Selecione o botão **Editar** na linha do épico, história, task ou bug para abrir
+a modal completa do item. O botão não expande nem recolhe o nó. Ao salvar, a
+linha e os valores consolidados dos ancestrais são atualizados; ao cancelar,
+nenhuma alteração é persistida.
+
 ## Editar o título inline
 
 1. Selecione o título de um item editável.
@@ -100,7 +123,9 @@ Quando não existem itens ou nenhum resultado atende aos filtros, a tabela apres
 | Ação | Admin | Membro | Visualizador |
 |---|---:|---:|---:|
 | Consultar e expandir | Sim | Sim | Sim |
-| Editar título e responsável | Sim | Sim | Não |
+| Criar itens | Sim | Sim | Não |
+| Editar itens | Sim | Sim | Não |
+| Editar título e responsável inline | Sim | Sim | Não |
 | Arquivar | Sim | Sim | Não |
 
 ## Exemplo prático
@@ -127,6 +152,11 @@ O serviço filtra folhas que não atendem aos critérios e reconstrói os ancest
 
 ### Edição
 
-Edições inline utilizam a mesma atualização de item da modal completa. Mudanças relevantes geram eventos para manter outras sessões sincronizadas.
+Edições inline e a modal completa utilizam a mesma atualização de item. As
+ações de criação contextual também reutilizam os modais existentes, enviando
+`parentId` e `moduleId` quando aplicável. Após uma mutação bem-sucedida, a
+árvore refaz a consulta, preservando filtros e nós expandidos que ainda
+existirem. Mudanças relevantes geram eventos para manter outras sessões
+sincronizadas.
 
 </details>

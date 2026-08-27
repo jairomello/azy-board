@@ -32,7 +32,7 @@ import { EpicModal, type EpicData } from '../components/EpicModal'
 import { StoryModal, type StoryData } from '../components/StoryModal'
 import type { BoardFilterState } from '../components/BoardFilters'
 import { useToast } from '../components/Toast'
-import { TreeViewPage } from './TreeViewPage'
+import { TreeViewPage, type TreeActionContext, type TreeCreationType } from './TreeViewPage'
 import { useAuth } from '../contexts/AuthContext'
 import { BookOpen, Plus, Pencil, Archive, X } from 'lucide-react'
 import { AppShell } from '../components/AppShell'
@@ -205,7 +205,8 @@ export default function BoardPage() {
       return DEFAULT_FILTERS
     }
   })
-  const [newItemCreation, setNewItemCreation] = useState<{ type: 'TASK' | 'BUG'; columnId?: string; title?: string } | null>(null)
+  const [newItemCreation, setNewItemCreation] = useState<{ type: 'TASK' | 'BUG'; columnId?: string; title?: string; parentId?: string } | null>(null)
+  const [treeRefreshToken, setTreeRefreshToken] = useState(0)
   const [moduleModalOpen, setModuleModalOpen] = useState(false)
   const [newModuleName, setNewModuleName] = useState('')
   const [newModuleDescription, setNewModuleDescription] = useState('')
@@ -718,6 +719,7 @@ export default function BoardPage() {
       columnId: newItemCreation.columnId ?? columns[0]?.id,
     })
     setAllItems(prev => computeIsLeaf([...prev, created]))
+    setTreeRefreshToken(value => value + 1)
     if (tagIds.length > 0) {
       await api.post(`/projects/${projectId}/items/${created.id}/tags`, { tagIds })
     }
@@ -743,6 +745,7 @@ export default function BoardPage() {
         ...(sprintId ? { sprintId } : {}),
         ...(parentId ? { parentId } : {}),
       })
+      setTreeRefreshToken(value => value + 1)
       setColumnAddForms(prev => ({ ...prev, [formKey ?? columnId]: false }))
     } catch {
       toast('Erro ao criar card', 'error')
@@ -769,6 +772,7 @@ export default function BoardPage() {
       // ou sempre para garantir consistência após salvar pela modal
       const its = await api.get<ItemData[]>(`/projects/${projectId}/items`)
       setAllItems(computeIsLeaf(its))
+      setTreeRefreshToken(value => value + 1)
     } catch {
       toast('Erro ao salvar item', 'error')
       throw new Error('failed')
@@ -779,6 +783,7 @@ export default function BoardPage() {
     if (!projectId) return
     try {
       await api.post(`/projects/${projectId}/items`, { title, parentId, type })
+      setTreeRefreshToken(value => value + 1)
       toast('Subtask criada', 'success')
     } catch {
       toast('Erro ao criar subtask', 'error')
@@ -894,7 +899,8 @@ export default function BoardPage() {
         notes: data.notes,
         description: data.description,
       })
-      setAllItems(prev => prev.map(i => i.id === data.id ? { ...i, title: data.title } : i))
+       setAllItems(prev => prev.map(i => i.id === data.id ? { ...i, title: data.title } : i))
+       setTreeRefreshToken(value => value + 1)
     } else {
       const item = await api.post<ItemData>(`/projects/${projectId}/items`, {
         type: 'STORY',
@@ -907,7 +913,8 @@ export default function BoardPage() {
         notes: data.notes,
         description: data.description,
       })
-      setAllItems(prev => computeIsLeaf([...prev, item]))
+       setAllItems(prev => computeIsLeaf([...prev, item]))
+       setTreeRefreshToken(value => value + 1)
     }
   }, [projectId])
 
@@ -952,7 +959,8 @@ export default function BoardPage() {
         description: newModuleDescription.trim() || undefined,
       })
       const refreshed = await api.get<Module[]>(`/projects/${projectId}/modules`)
-      setModules(refreshed.length > 0 ? refreshed : [...modules, created])
+       setModules(refreshed.length > 0 ? refreshed : [...modules, created])
+       setTreeRefreshToken(value => value + 1)
       setNewModuleName('')
       setNewModuleDescription('')
       setModuleModalOpen(false)
@@ -1020,17 +1028,18 @@ export default function BoardPage() {
     : allDisplayed
   const sprintCompleted = sprintItems.filter(item => item.status === 'DONE').length
 
-  function openCreation(type: ItemType | 'MODULE') {
+  function openCreation(type: ItemType | 'MODULE', context: TreeActionContext = {}) {
     if (type === 'MODULE') {
       setModuleModalOpen(true)
     } else if (type === 'EPIC') {
-      setEpicModalData({})
+      setEpicModalData({ epic: context.moduleId ? { title: '', moduleId: context.moduleId } : undefined })
     } else if (type === 'STORY') {
-      setStoryModalData({})
+      setStoryModalData({ story: context.parentId ? { title: '', epicId: context.parentId } : undefined })
     } else {
       setNewItemCreation({
         type,
         columnId: columns[0]?.id,
+        parentId: context.parentId,
         title: type === 'TASK' ? 'Nova Task' : 'Novo Bug',
       })
     }
@@ -1142,9 +1151,14 @@ export default function BoardPage() {
         />
         <div className={`min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-border/80 bg-canvas ${density === 'compact' ? 'density-compact' : ''}`}>
         {view === 'tree' && projectId && (
-          <TreeViewPage
-            projectId={projectId}
-            filters={filters}
+           <TreeViewPage
+             projectId={projectId}
+             filters={filters}
+             canCreate={members.find(member => member.userId === user?.id)?.role !== 'VIEWER'}
+             canEdit={members.find(member => member.userId === user?.id)?.role !== 'VIEWER'}
+             refreshToken={treeRefreshToken}
+             onCreate={openCreation}
+             onEdit={handleOpenDetail}
             // Tarefa 10.2 — passa o handler de arquivamento para a tree view
             onArchive={(itemId, childrenCount) => {
               if (childrenCount > 0) {
@@ -1450,7 +1464,7 @@ export default function BoardPage() {
             description: null,
             startDate: null,
             dueDate: null,
-            parentId: null,
+             parentId: newItemCreation.parentId ?? null,
             assigneeId: null,
             assignee: null,
             itemTags: [],

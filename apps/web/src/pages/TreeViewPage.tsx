@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, Fragment } from 'react'
-import { Archive } from 'lucide-react'
+import { Archive, Bug as BugIcon, Pencil, Plus } from 'lucide-react'
 import { api } from '../lib/api'
 import type { BoardFilterState } from '../components/BoardFilters'
 
@@ -17,6 +17,8 @@ export interface TreeNode {
   dueDate?: string | null
   assignee?: { name: string; avatarUrl: string | null } | null
   assigneeId?: string | null
+  moduleId?: string | null
+  parentId?: string | null
   isLeaf?: boolean
   children: TreeNode[]
 }
@@ -99,9 +101,18 @@ interface RowProps {
   onToggle: () => void
   // Tarefa 10.2 — callback de arquivamento na tree view (não disponível para módulos)
   onArchive?: () => void
+  onEdit?: () => void
+  onCreate?: (type: TreeCreationType, context: TreeActionContext) => void
 }
 
-function Row({ depth, label, type, status, points, progress, startDate, dueDate, assigneeName, expanded, hasChildren, onToggle, onArchive }: RowProps) {
+export type TreeCreationType = 'MODULE' | 'EPIC' | 'STORY' | 'TASK' | 'BUG'
+
+export interface TreeActionContext {
+  parentId?: string
+  moduleId?: string
+}
+
+function Row({ depth, label, type, status, points, progress, startDate, dueDate, assigneeName, expanded, hasChildren, onToggle, onArchive, onEdit, onCreate }: RowProps) {
   const indentPx = depth * 20
   const typeInfo = TYPE_ICON[type.toUpperCase()]
 
@@ -174,27 +185,67 @@ function Row({ depth, label, type, status, points, progress, startDate, dueDate,
       <td className="py-2 px-2 text-xs text-muted-foreground pr-4">
         <div className="flex items-center justify-between gap-2">
           <span>{dueDate ?? '—'}</span>
-          {onArchive && (
-            <button
-              onClick={onArchive}
-              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-muted-foreground hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50"
-              title="Arquivar este item"
-            >
-              <Archive className="w-3.5 h-3.5" />
-            </button>
-          )}
+          <div className="flex items-center gap-1">
+            {onCreate && (
+              <div className="flex items-center gap-0.5">
+                {(['EPIC', 'STORY', 'TASK', 'BUG'] as TreeCreationType[])
+                  .filter(childType => (
+                    type === 'module' ? childType === 'EPIC' :
+                    type === 'EPIC' ? childType === 'STORY' :
+                    ['STORY', 'TASK', 'BUG'].includes(type) ? ['TASK', 'BUG'].includes(childType) : false
+                  ))
+                  .map(childType => (
+                    <button
+                      key={childType}
+                      type="button"
+                      onClick={event => { event.stopPropagation(); onCreate(childType, {}) }}
+                      aria-label={`Adicionar ${childType} em ${label}`}
+                      title={`Adicionar ${childType}`}
+                      className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-primary/10"
+                    >
+                      {childType === 'BUG' ? <BugIcon className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                    </button>
+                  ))}
+              </div>
+            )}
+            {onEdit && (
+              <button
+                type="button"
+                onClick={event => { event.stopPropagation(); onEdit() }}
+                aria-label={`Editar ${label}`}
+                title="Editar item"
+                className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-primary/10"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {onArchive && (
+              <button
+                type="button"
+                onClick={event => { event.stopPropagation(); onArchive() }}
+                aria-label={`Arquivar ${label}`}
+                title="Arquivar este item"
+                className="p-1 rounded text-muted-foreground hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50"
+              >
+                <Archive className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </td>
     </tr>
   )
 }
 
-function NodeRows({ nodes, depth, expanded, onToggle, onArchive }: {
+function NodeRows({ nodes, depth, expanded, onToggle, onArchive, onEdit, onCreate, moduleId }: {
   nodes: TreeNode[]
   depth: number
   expanded: Set<string>
   onToggle: (id: string) => void
   onArchive: (id: string, childrenCount: number) => void
+  onEdit?: (id: string) => void
+  onCreate?: (type: TreeCreationType, context: TreeActionContext) => void
+  moduleId?: string
 }) {
   return (
     <>
@@ -215,6 +266,12 @@ function NodeRows({ nodes, depth, expanded, onToggle, onArchive }: {
             onToggle={() => onToggle(node.id)}
             // Módulos não são arquiváveis — só EPICs, STORYs, TASKs e BUGs
             onArchive={node.type !== 'module' ? () => onArchive(node.id, node.children.length) : undefined}
+            onEdit={node.type !== 'module' ? () => onEdit?.(node.id) : undefined}
+            onCreate={onCreate ? (type, context) => onCreate(type, {
+              ...context,
+              parentId: node.id,
+              moduleId: node.type === 'module' ? node.id : (node.moduleId ?? moduleId),
+            }) : undefined}
           />
           {expanded.has(node.id) && (node.children ?? []).length > 0 && (
             <NodeRows
@@ -223,6 +280,9 @@ function NodeRows({ nodes, depth, expanded, onToggle, onArchive }: {
               expanded={expanded}
               onToggle={onToggle}
               onArchive={onArchive}
+              onEdit={onEdit}
+              onCreate={onCreate}
+              moduleId={node.type === 'module' ? node.id : (node.moduleId ?? moduleId)}
             />
           )}
         </Fragment>
@@ -236,9 +296,14 @@ interface Props {
   filters?: BoardFilterState
   // Tarefa 10.2 — callback para arquivamento a partir da tree view (opcional, gerenciado no BoardPage)
   onArchive?: (itemId: string, childrenCount: number) => void
+  canCreate?: boolean
+  canEdit?: boolean
+  refreshToken?: number
+  onCreate?: (type: TreeCreationType, context: TreeActionContext) => void
+  onEdit?: (itemId: string) => void
 }
 
-export function TreeViewPage({ projectId, filters, onArchive }: Props) {
+export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, canEdit = true, refreshToken = 0, onCreate, onEdit }: Props) {
   const [tree, setTree] = useState<TreeNode[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -265,7 +330,7 @@ export function TreeViewPage({ projectId, filters, onArchive }: Props) {
         })
       })
       .finally(() => setLoading(false))
-  }, [projectId, filters?.moduleId, filters?.assigneeId, filters?.sprintId, filters?.tagIds.join(',')])
+  }, [projectId, refreshToken, filters?.moduleId, filters?.assigneeId, filters?.sprintId, filters?.tagIds.join(',')])
 
   // Tarefa 11.5 — aplicar filtro hideEmptyEpics na árvore
   const displayTree = filters?.hideEmptyEpics
@@ -322,6 +387,16 @@ export function TreeViewPage({ projectId, filters, onArchive }: Props) {
   return (
     <div className="p-6">
       <div className="flex items-center gap-3 mb-4">
+        {canCreate && onCreate && (['MODULE', 'EPIC', 'STORY', 'TASK', 'BUG'] as TreeCreationType[]).map(type => (
+          <button
+            key={type}
+            type="button"
+            onClick={() => onCreate(type, {})}
+            className="text-xs text-muted-foreground hover:text-foreground border border-border px-3 py-1.5 rounded-lg transition hover:bg-muted"
+          >
+            + {type === 'MODULE' ? 'Módulo' : type === 'EPIC' ? 'Épico' : type === 'STORY' ? 'História' : type === 'TASK' ? 'Task' : 'Bug'}
+          </button>
+        ))}
         <button
           onClick={() => setExpanded(collectAllIds(tree))}
           className="text-xs text-muted-foreground hover:text-foreground border border-border px-3 py-1.5 rounded-lg transition hover:bg-muted"
@@ -346,7 +421,7 @@ export function TreeViewPage({ projectId, filters, onArchive }: Props) {
               <th className="text-right py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pontos</th>
               <th className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide w-24">Progresso</th>
               <th className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Início</th>
-              <th className="text-left py-2.5 px-2 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Fim</th>
+              <th className="text-left py-2.5 px-2 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Fim / Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -355,8 +430,10 @@ export function TreeViewPage({ projectId, filters, onArchive }: Props) {
               depth={0}
               expanded={expanded}
               onToggle={toggleNode}
-              onArchive={handleArchiveRequest}
-            />
+               onArchive={handleArchiveRequest}
+               onEdit={canEdit ? onEdit : undefined}
+               onCreate={canCreate ? onCreate : undefined}
+             />
           </tbody>
         </table>
 

@@ -102,4 +102,17 @@ describe('contratos de UI dos modos de board', () => {
     contains(tree, "params.set('tagIds'")
     contains(tree, 'setExpanded(previous =>')
   })
+
+  test('Tree View oferece criação contextual e edição por linha', async () => {
+    const tree = await source('./pages/TreeViewPage.tsx')
+    const board = await source('./pages/BoardPage.tsx')
+    contains(tree, "['MODULE', 'EPIC', 'STORY', 'TASK', 'BUG']")
+    contains(tree, 'aria-label={`Editar ${label}`}')
+    contains(tree, 'stopPropagation()')
+    contains(tree, 'refreshToken')
+    contains(board, 'onCreate={openCreation}')
+    contains(board, 'onEdit={handleOpenDetail}')
+    contains(board, 'parentId: newItemCreation.parentId ?? null')
+    contains(board, 'refreshToken={treeRefreshToken}')
+  })
 })

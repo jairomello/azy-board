@@ -17,6 +17,8 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
   tenant/projeto, políticas por ferramenta e proteção contra escalada.
 - Barras de progresso e percentuais na Tree View para items folha e agrupadores,
   com agregação bottom-up e exclusão de itens arquivados.
+- Ações de criação contextual para módulos, épicos, histórias, tasks e bugs na
+  Tree View, além de edição completa dos itens diretamente por linha.
 
 ### Changed
 

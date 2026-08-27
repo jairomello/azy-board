@@ -66,7 +66,9 @@ A toolbar é organizada em zonas.
 - Criar task.
 - Criar bug.
 
-Os botões de criação aparecem na visualização Kanban. A Tree View concentra-se em consulta hierárquica.
+Os botões de criação aparecem na visualização Kanban e também na Tree View.
+Na árvore, ações adicionais por linha permitem criar filhos no contexto do
+módulo, épico, história, task ou bug selecionado.
 
 ## Lanes de épico e história
 
