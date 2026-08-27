@@ -78,7 +78,7 @@ class InMemoryMcpApi {
       ],
       items: [],
       checklists: new Map(),
-      sprint: { id: this.nextId('sprint'), name: 'Sprint atual', status: 'ACTIVE' },
+      sprint: { id: this.nextId('sprint'), name: 'Sprint atual', status: 'OPEN' },
     }
     this.projects.set(id, project)
     return project
@@ -250,7 +250,7 @@ describe('MCP tools regression suite', () => {
     expect(modules).toHaveLength(1)
 
     const sprint = await toolGetCurrentSprint(fake.api, project.id)
-    expect(sprint).toMatchObject({ status: 'ACTIVE' })
+    expect(sprint).toMatchObject({ status: 'OPEN' })
 
     const epic = await toolCreateTask(fake.api, {
       projectId: project.id,
@@ -328,6 +328,22 @@ describe('MCP tools regression suite', () => {
     await expect(toolListTasks(fake.api, { projectId: project.id, type: 'EPIC', onlyLeaves: false })).resolves.toEqual([
       expect.objectContaining({ id: epic.id, type: 'EPIC', isLeaf: false }),
     ])
+  })
+
+  test('passes the optional versionId through create_task', async () => {
+    const fake = new InMemoryMcpApi()
+    const project = fake.createProject('project-version')
+
+    await toolCreateTask(fake.api, {
+      projectId: project.id,
+      title: 'Versioned task',
+      versionId: 'release-1',
+    })
+
+    expect(fake.calls.at(-1)).toMatchObject({
+      method: 'POST',
+      body: expect.objectContaining({ versionId: 'release-1' }),
+    })
   })
 
   test('rejects invalid hierarchy before creating an item in the API', async () => {

@@ -5,7 +5,7 @@ Definir a composição, o agrupamento hierárquico e as principais interações 
 ## Requirements
 
 ### Requirement: Lanes colapsáveis de EPIC e STORY no board
-O sistema SHALL exibir uma lane principal por item com `type = EPIC`. Quando `storyDisplay = lanes`, cada item `STORY` SHALL formar uma lane horizontal aninhada no EPIC e conter os cards `TASK` e `BUG` pertencentes à sua ancestralidade, com a Leaf Rule e os filtros ativos aplicados.
+O sistema SHALL exibir uma lane principal por item com `type = EPIC` somente em projetos `HIERARCHICAL`. Quando `storyDisplay = lanes`, cada item `STORY` SHALL formar uma lane horizontal aninhada no EPIC e conter os cards `TASK` e `BUG` pertencentes à sua ancestralidade. Em projetos `SIMPLE`, SHALL exibir somente a STORY fixa, suas colunas e cards TASK/BUG, sem lanes de módulo ou EPIC.
 
 #### Scenario: Colapsar swimlane de épico
 - **WHEN** usuário clica no header da swimlane de um EPIC
@@ -26,6 +26,10 @@ O sistema SHALL exibir uma lane principal por item com `type = EPIC`. Quando `st
 #### Scenario: Estado de colapso persistido por projeto
 - **WHEN** usuário colapsa um EPIC ou uma STORY e navega para outra página e retorna
 - **THEN** os estados colapsados são restaurados separadamente para o projeto
+
+#### Scenario: Board simples oculta swimlanes hierárquicas
+- **WHEN** usuário abre um projeto `SIMPLE`
+- **THEN** sistema mostra a STORY fixa com colunas e cards TASK/BUG, sem swimlanes de módulo ou EPIC
 
 #### Scenario: Progresso do EPIC no header da swimlane
 - **WHEN** swimlane de um EPIC é exibida
@@ -166,7 +170,7 @@ O sistema SHALL oferecer toggle para alternar entre o primeiro nível operaciona
 ---
 
 ### Requirement: Controles globais de expansão de swimlanes
-O sistema SHALL exibir no toolbar dois botões para controlar o estado de expansão de todas as swimlanes simultaneamente: "Expandir tudo" e "Recolher tudo". Esses controles são visíveis apenas na view Kanban.
+O sistema SHALL exibir no toolbar dois botões para controlar o estado de expansão de todas as swimlanes simultaneamente: "Expandir tudo" e "Recolher tudo". Esses controles são visíveis apenas na view Kanban de projetos `HIERARCHICAL`.
 
 #### Scenario: Expandir tudo
 - **WHEN** usuário clica em "Expandir tudo"
@@ -179,3 +183,7 @@ O sistema SHALL exibir no toolbar dois botões para controlar o estado de expans
 #### Scenario: Controles ocultos na view Árvore
 - **WHEN** usuário está na view Árvore
 - **THEN** botões "Expandir tudo" e "Recolher tudo" não são exibidos na toolbar
+
+#### Scenario: Controles ocultos no modo simples
+- **WHEN** usuário está na view Kanban de projeto `SIMPLE`
+- **THEN** sistema não exibe os controles globais de expansão

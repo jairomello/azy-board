@@ -114,6 +114,8 @@ export async function toolListSprints(api: ApiCall, projectId: string): Promise<
 
 export async function toolCreateSprint(api: ApiCall, projectId: string, args: { name: string; startDate?: string; endDate?: string }): Promise<Resource> {
   if (!args.name?.trim()) throw new Error('name é obrigatório')
+  if (!args.startDate || !args.endDate) throw new Error('startDate e endDate são obrigatórios')
+  if (args.startDate > args.endDate) throw new Error('startDate não pode ser posterior a endDate')
   return api(`/projects/${projectId}/sprints`, 'POST', { ...args, name: args.name.trim() }) as Promise<Resource>
 }
 
@@ -292,6 +294,7 @@ export async function toolCreateTask(
     priority?:   string
     points?:     number
     description?: string
+    versionId?: string
   }
 ): Promise<Item> {
   const { projectId, ...taskData } = args

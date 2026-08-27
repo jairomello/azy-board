@@ -39,6 +39,11 @@ export interface CardData {
   points?: number | null
   ancestryPath: string // JSON
   assignee?: { id: string; name: string; avatarUrl: string | null } | null
+  authorId?: string | null
+  author?: { id: string; name: string; avatarUrl: string | null } | null
+  versionId?: string | null
+  costCenterId?: string | null
+  version?: { id: string; name: string; status?: string } | null
   assigneeApiKey?: { aiModelName: string | null } | null
   taskTags?: Array<{ tag: { id: string; name: string; color: string } }>
   itemTags?: Array<{ tag: { id: string; name: string; color: string } }>

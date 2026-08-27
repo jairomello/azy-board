@@ -10,7 +10,14 @@ export type ItemType = 'EPIC' | 'STORY' | 'TASK' | 'BUG'
 export type MemberRole = 'ADMIN' | 'MEMBER' | 'VIEWER'
 export type GlobalGroup = 'TEAM_MEMBER' | 'MANAGER' | 'ADMIN' | 'ROOT'
 export type BoardMode = 'HIERARCHICAL' | 'SIMPLE'
-export type SprintStatus = 'PLANNED' | 'ACTIVE' | 'DONE'
+export type SprintStatus = 'PROPOSED' | 'OPEN' | 'CLOSED'
+export interface Sprint {
+  id: string
+  name: string
+  status: SprintStatus
+  startDate: string
+  endDate: string
+}
 export type NodeType = 'module' | 'EPIC' | 'STORY' | 'TASK' | 'BUG'
 export type Theme = 'light' | 'dark'
 export type Language = 'pt-BR' | 'en' | 'es'

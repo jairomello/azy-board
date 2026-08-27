@@ -333,6 +333,7 @@ Antes de criar subtarefas ou checklists, avalie qual faz mais sentido:
             description: 'ID do módulo — obrigatório para EPIC. Se omitido em EPIC, o primeiro módulo do projeto é usado automaticamente.',
           },
           points: { type: 'number', description: 'Story points (estimativa)' },
+          versionId: { type: 'string', description: 'ID da versão opcional do projeto para TASK/BUG' },
         },
         required: ['projectId', 'title'],
       },
@@ -512,8 +513,8 @@ Use checked=true ao completar um passo, checked=false para reverter.`,
     },
     {
       name: 'create_sprint',
-      description: 'Cria sprint planejada.',
-      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, name: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' } }, required: ['projectId', 'name'] },
+      description: 'Cria sprint proposta com datas obrigatórias.',
+      inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, name: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' } }, required: ['projectId', 'name', 'startDate', 'endDate'] },
     },
     {
       name: 'activate_sprint',

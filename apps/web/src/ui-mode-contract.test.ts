@@ -33,6 +33,7 @@ describe('contratos de UI dos modos de board', () => {
     const board = await source('./pages/BoardPage.tsx')
     const commandBar = await source('./components/BoardCommandBar.tsx')
     const filters = await source('./components/BoardFilters.tsx')
+    const itemModal = await source('./components/ItemModal.tsx')
     contains(board, '{isSimpleBoard && simpleStory && (')
     contains(board, 'swimlaneId={simpleStory.id}')
     contains(board, '{!isSimpleBoard && visibleModuleGroups.map(renderModuleGroup)}')
@@ -42,6 +43,45 @@ describe('contratos de UI dos modos de board', () => {
     contains(filters, 'aria-label="Responsável"')
     contains(filters, '>Tipo</span>')
     contains(filters, '>Tags</span>')
+    contains(filters, 'aria-label="Versão"')
+    contains(filters, 'Nenhuma versão cadastrada')
+    contains(filters, 'aria-label="Prioridade"')
+    contains(filters, 'aria-label="Status"')
+    contains(filters, 'aria-label="Autor"')
+    contains(itemModal, 'aria-label="Sprint"')
+    contains(itemModal, "projectSprints.filter(sprint => sprint.status !== 'CLOSED')")
+  })
+
+  test('board persiste filtros novos e invalida versão removida', async () => {
+    const board = await source('./pages/BoardPage.tsx')
+    contains(board, 'filters.versionId')
+    contains(board, 'projectVersions.some(version => version.id === filters.versionId)')
+    contains(board, 'localStorage.setItem(`board-filters:${projectId}`')
+  })
+
+  test('board oferece filtro de centro de custo e invalida seleções removidas', async () => {
+    const board = await source('./pages/BoardPage.tsx')
+    const commandBar = await source('./components/BoardCommandBar.tsx')
+    const filters = await source('./components/BoardFilters.tsx')
+    contains(filters, 'costCenterId: string')
+    contains(filters, 'aria-label="Centro de Custo"')
+    contains(filters, 'Todos os centros')
+    contains(filters, 'Nenhum centro de custo cadastrado')
+    contains(commandBar, 'costCenters={costCenters}')
+    contains(board, 'i.costCenterId === filters.costCenterId')
+    contains(board, 'center.id === filters.costCenterId')
+    contains(board, 'costCenterId: \'\'')
+    contains(board, 'localStorage.setItem(`board-filters:${projectId}`')
+  })
+
+  test('filtro de centro combina com outros filtros nos dois modos do board', async () => {
+    const board = await source('./pages/BoardPage.tsx')
+    contains(board, 'if (filters.costCenterId) result = result.filter')
+    contains(board, 'if (filters.costCenterId) leafStories = leafStories.filter')
+    contains(board, 'filters.sprintId')
+    contains(board, 'filters.tagIds')
+    contains(board, 'isSimpleBoard && simpleStory')
+    contains(board, "const isSimpleBoard = boardMode === 'SIMPLE'")
   })
 
   test('regressão hierárquica conserva árvore, breadcrumbs e drag-and-drop', async () => {

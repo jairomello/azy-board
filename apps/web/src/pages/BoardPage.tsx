@@ -63,7 +63,7 @@ interface ArchivedItem {
 
 interface Column { id: string; name: string; baseStatus: string; position: number }
 interface Module { id: string; name: string; position?: number }
-interface Sprint { id: string; name: string; status: string }
+interface Sprint { id: string; name: string; status: 'PROPOSED' | 'OPEN' | 'CLOSED' }
 interface ProjectContext { name: string; boardMode?: BoardMode; simpleStoryId?: string | null }
 
 // Tipo unificado: qualquer item retornado pela API
@@ -77,6 +77,8 @@ interface ItemData extends CardData {
   dueDate?: string | null
   assigneeId?: string | null
   position?: number
+  authorId?: string | null
+  versionId?: string | null
   itemSprints?: Array<{ sprintId: string }>
   // Campos de STORY
   persona?: string | null
@@ -121,6 +123,11 @@ const DEFAULT_FILTERS: BoardFilterState = {
   squadId: '',
   types: [],
   tagIds: [],
+  versionId: '',
+  priority: '',
+  status: '',
+  authorId: '',
+  costCenterId: '',
   hideEmptyEpics: false,
   hideEmptyStories: false,
   showSubtasks: false,
@@ -141,6 +148,8 @@ export default function BoardPage() {
   const [members, setMembers] = useState<ProjectMember[]>([])
   const [projectTags, setProjectTags] = useState<Tag[]>([])
   const [projectVersions, setProjectVersions] = useState<ProjectVersion[]>([])
+  const [versionsLoaded, setVersionsLoaded] = useState(false)
+  const [costCentersLoaded, setCostCentersLoaded] = useState(false)
   // Tarefa 9 — centros de custo do projeto
   const [projectCostCenters, setProjectCostCenters] = useState<CostCenter[]>([])
   const [projectSquads, setProjectSquads] = useState<{ id: string; name: string }[]>([])
@@ -186,7 +195,12 @@ export default function BoardPage() {
       if (!raw) return DEFAULT_FILTERS
       const parsed = JSON.parse(raw) as Partial<BoardFilterState> & { showStories?: boolean }
       const { showStories: _legacyShowStories, ...currentFilters } = parsed
-      return { ...DEFAULT_FILTERS, ...currentFilters }
+      return {
+        ...DEFAULT_FILTERS,
+        ...currentFilters,
+        types: Array.isArray(currentFilters.types) ? currentFilters.types : [],
+        tagIds: Array.isArray(currentFilters.tagIds) ? currentFilters.tagIds : [],
+      }
     } catch {
       return DEFAULT_FILTERS
     }
@@ -212,6 +226,24 @@ export default function BoardPage() {
       // localStorage indisponível (ex.: SecurityError em modo privativo restrito)
     }
   }, [filters, projectId])
+
+  useEffect(() => {
+    if (versionsLoaded && filters.versionId && !projectVersions.some(version => version.id === filters.versionId)) {
+      setFilters(previous => ({ ...previous, versionId: '' }))
+    }
+  }, [filters.versionId, projectVersions, versionsLoaded])
+
+  useEffect(() => {
+    if (filters.sprintId && sprints.length > 0 && !sprints.some(sprint => sprint.id === filters.sprintId)) {
+      setFilters(previous => ({ ...previous, sprintId: '' }))
+    }
+  }, [filters.sprintId, sprints])
+
+  useEffect(() => {
+    if (costCentersLoaded && filters.costCenterId && !projectCostCenters.some(center => center.id === filters.costCenterId)) {
+      setFilters(previous => ({ ...previous, costCenterId: '' }))
+    }
+  }, [filters.costCenterId, projectCostCenters, costCentersLoaded])
 
   useEffect(() => {
     document.title = projectName ? `${projectName} · Board` : 'Board'
@@ -255,6 +287,8 @@ export default function BoardPage() {
   useEffect(() => {
     if (!projectId) return
     setLoading(true)
+    setVersionsLoaded(false)
+    setCostCentersLoaded(false)
     Promise.all([
       api.get<Column[]>(`/projects/${projectId}/columns`),
       api.get<ItemData[]>(`/projects/${projectId}/items`),
@@ -275,7 +309,9 @@ export default function BoardPage() {
       setSprints(sprs)
       setMembers(mbrs)
       setProjectVersions(vers)
+      setVersionsLoaded(true)
       setProjectCostCenters(ccs)
+      setCostCentersLoaded(true)
        setProjectSquads(sqs)
        setProjectName(proj.name)
        setBoardMode(proj.boardMode ?? 'HIERARCHICAL')
@@ -413,6 +449,11 @@ export default function BoardPage() {
     if (filters.sprintId) {
       result = result.filter(i => i.itemSprints?.some(sprint => sprint.sprintId === filters.sprintId))
     }
+    if (filters.versionId) result = result.filter(i => i.versionId === filters.versionId)
+    if (filters.priority) result = result.filter(i => i.priority === filters.priority)
+    if (filters.status) result = result.filter(i => i.status === filters.status)
+    if (filters.authorId) result = result.filter(i => i.authorId === filters.authorId || i.author?.id === filters.authorId)
+    if (filters.costCenterId) result = result.filter(i => i.costCenterId === filters.costCenterId)
 
     // Histórias folha (sem filhos) — aparecem como cards arrastáveis quando "Histórias no board" ativo
     if (!isSimpleBoard && filters.storyDisplay === 'cards' && columns.length > 0) {
@@ -445,6 +486,11 @@ export default function BoardPage() {
       if (filters.sprintId) {
         leafStories = leafStories.filter(i => i.itemSprints?.some(sprint => sprint.sprintId === filters.sprintId))
       }
+      if (filters.versionId) leafStories = leafStories.filter(i => i.versionId === filters.versionId)
+      if (filters.priority) leafStories = leafStories.filter(i => i.priority === filters.priority)
+      if (filters.status) leafStories = leafStories.filter(i => i.status === filters.status)
+      if (filters.authorId) leafStories = leafStories.filter(i => i.authorId === filters.authorId || i.author?.id === filters.authorId)
+      if (filters.costCenterId) leafStories = leafStories.filter(i => i.costCenterId === filters.costCenterId)
       result = [...result, ...leafStories]
     }
 
@@ -683,6 +729,8 @@ export default function BoardPage() {
     type: ItemType,
     parentId?: string,
     formKey?: string,
+    versionId?: string,
+    sprintId?: string,
   ) => {
     if (!projectId) return
     try {
@@ -691,6 +739,8 @@ export default function BoardPage() {
         columnId,
         priority: 'MEDIUM',
         type,
+        ...(versionId ? { versionId } : {}),
+        ...(sprintId ? { sprintId } : {}),
         ...(parentId ? { parentId } : {}),
       })
       setColumnAddForms(prev => ({ ...prev, [formKey ?? columnId]: false }))
@@ -964,7 +1014,7 @@ export default function BoardPage() {
   // Epics para StorySelector/StoryModal
   const epicsForModal = epics.map(e => ({ id: e.id, title: e.title }))
 
-  const activeSprint = sprints.find(sprint => sprint.status === 'ACTIVE')
+  const activeSprint = sprints.find(sprint => sprint.status === 'OPEN')
   const sprintItems = activeSprint
     ? allItems.filter(item => item.itemSprints?.some(link => link.sprintId === activeSprint.id))
     : allDisplayed
@@ -1013,6 +1063,8 @@ export default function BoardPage() {
             swimlaneId={epic.id}
             title={epic.title}
             columns={columns}
+            versions={projectVersions}
+            sprints={sprints}
             tasks={epicTasks}
             collapsed={collapsedEpics.has(epic.id)}
             onToggle={() => toggleEpic(epic.id)}
@@ -1059,7 +1111,9 @@ export default function BoardPage() {
           members={members}
           squads={projectSquads}
           tags={projectTags}
-          filters={filters}
+           versions={projectVersions}
+           costCenters={projectCostCenters}
+           filters={filters}
           onFiltersChange={setFilters}
            onExpandAll={() => {
             setCollapsedModules(new Set())
@@ -1121,8 +1175,10 @@ export default function BoardPage() {
                  <Swimlane
                    swimlaneId={simpleStory.id}
                    title={simpleStory.title}
-                   columns={columns}
-                   tasks={boardCards}
+                    columns={columns}
+                    versions={projectVersions}
+                    sprints={sprints}
+                    tasks={boardCards}
                    collapsed={false}
                    onToggle={() => {}}
                    columnAddForms={columnAddForms}
@@ -1142,8 +1198,10 @@ export default function BoardPage() {
                 <Swimlane
                   swimlaneId="orphan"
                   title="Sem épico"
-                  columns={columns}
-                  tasks={orphanCards}
+                   columns={columns}
+                   versions={projectVersions}
+                   sprints={sprints}
+                   tasks={orphanCards}
                   collapsed={collapsedEpics.has('orphan')}
                   onToggle={() => toggleEpic('orphan')}
                   columnAddForms={columnAddForms}
@@ -1230,6 +1288,7 @@ export default function BoardPage() {
           members={members}
           currentUserId={user?.id}
           projectVersions={projectVersions}
+          projectSprints={sprints}
           projectCostCenters={projectCostCenters}
           onClose={() => setItemModalId(null)}
           onSave={handleModalSave}
@@ -1400,6 +1459,7 @@ export default function BoardPage() {
             ancestryPath: '[]',
             // Tarefa 9.2 — pré-seleciona o primeiro centro de custo (igual ao que o backend atribui)
             costCenterId: projectCostCenters[0]?.id ?? null,
+            itemSprints: [],
           }}
           projectId={projectId}
           epics={epicsForModal}
@@ -1408,6 +1468,7 @@ export default function BoardPage() {
           members={members}
           currentUserId={user?.id}
           projectVersions={projectVersions}
+          projectSprints={sprints}
           projectCostCenters={projectCostCenters}
           onClose={() => setNewItemCreation(null)}
           onSave={handleModalCreate}
@@ -1427,6 +1488,8 @@ interface SwimlaneProps {
   swimlaneId: string
   title: string
   columns: Column[]
+  versions: ProjectVersion[]
+  sprints: Sprint[]
   tasks: ItemData[]
   collapsed: boolean
   onToggle: () => void
@@ -1439,6 +1502,8 @@ interface SwimlaneProps {
     type: ItemType,
     parentId?: string,
     formKey?: string,
+    versionId?: string,
+    sprintId?: string,
   ) => Promise<void>
   onOpenDetail: (id: string) => void
   onTitleSave: (id: string, title: string) => void
@@ -1456,6 +1521,8 @@ function Swimlane({
   swimlaneId,
   title,
   columns,
+  versions,
+  sprints,
   tasks,
   collapsed,
   onToggle,
@@ -1528,6 +1595,8 @@ function Swimlane({
               key={group.id}
               group={group}
               columns={columns}
+              versions={versions}
+              sprints={sprints}
               collapsed={collapsedStories?.has(group.id) ?? false}
               onToggle={() => onToggleStory?.(group.id)}
               columnAddForms={columnAddForms}
@@ -1547,8 +1616,10 @@ function Swimlane({
       {!collapsed && !storyGroups && (
         <BoardColumns
           laneId={swimlaneId}
-          columns={columns}
-          tasks={tasks}
+              columns={columns}
+              versions={versions}
+              sprints={sprints}
+              tasks={tasks}
           columnAddForms={columnAddForms}
           onShowAddForm={onShowAddForm}
           onHideAddForm={onHideAddForm}
@@ -1566,6 +1637,8 @@ function Swimlane({
 interface StorySwimlaneProps {
   group: StoryLaneGroup
   columns: Column[]
+  versions: ProjectVersion[]
+  sprints: Sprint[]
   collapsed: boolean
   onToggle: () => void
   columnAddForms: Record<string, boolean>
@@ -1582,6 +1655,8 @@ interface StorySwimlaneProps {
 function StorySwimlane({
   group,
   columns,
+  versions,
+  sprints,
   collapsed,
   onToggle,
   columnAddForms,
@@ -1648,6 +1723,8 @@ function StorySwimlane({
           <BoardColumns
             laneId={`story-${group.id}`}
             columns={columns}
+            versions={versions}
+            sprints={sprints}
             tasks={group.tasks}
             parentId={group.story?.id}
             columnAddForms={columnAddForms}
@@ -1668,6 +1745,8 @@ function StorySwimlane({
 interface BoardColumnsProps {
   laneId: string
   columns: Column[]
+  versions: ProjectVersion[]
+  sprints: Sprint[]
   tasks: ItemData[]
   parentId?: string
   columnAddForms: Record<string, boolean>
@@ -1683,6 +1762,8 @@ interface BoardColumnsProps {
 function BoardColumns({
   laneId,
   columns,
+  versions,
+  sprints,
   tasks,
   parentId,
   columnAddForms,
@@ -1733,7 +1814,9 @@ function BoardColumns({
                 <div className="p-2 mt-1">
                   {columnAddForms[formKey] ? (
                     <AddCardForm
-                      onAdd={(title, type) => onCardCreate(column.id, title, type, parentId, formKey)}
+                        versions={versions}
+                        sprints={sprints}
+                        onAdd={(title, type, versionId, sprintId) => onCardCreate(column.id, title, type, parentId, formKey, versionId, sprintId)}
                       onCancel={() => onHideAddForm(formKey)}
                     />
                   ) : (

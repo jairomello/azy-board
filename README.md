@@ -10,6 +10,14 @@ teams. It treats AI agents as first-class collaborators — not integrations bol
 on top of a human-centric tool — and provides dedicated protocols for both
 reading and mutating board state.
 
+### Sprint lifecycle
+
+Sprints use the lifecycle `PROPOSED -> OPEN -> CLOSED`. Name, start date and end
+date are required; only one sprint per project can be open at a time. Cards
+already linked to a closed sprint remain available for historical filtering, but
+new links are rejected by the API. The Board filter lists all sprint statuses,
+while card creation lists only proposed and open sprints.
+
 ---
 
 ## Agent-Native Model
@@ -49,6 +57,11 @@ board state programmatically:
 | `get_shadow_markdown` | Retorna a projeção Shadow Markdown |
 | `create_project` / `update_project` | Cria e configura projetos |
 | `create_task` / `update_item` | Cria e atualiza items e subtasks |
+
+O Board permite filtrar em memória por tag (tags selecionadas usam OR), versão,
+prioridade, status e autor. Dimensões diferentes são combinadas com AND. O
+vínculo de versão é opcional e fica em `items.version_id`; pode ser informado
+na criação rápida de TASK/BUG ou no `create_task` do MCP.
 | `claim_task` / `release_task` | Atribui ou libera trabalho |
 | `move_task` / `complete_task` | Move e conclui cards |
 | `archive_item` / `unarchive_item` / `delete_item` | Gerencia ciclo de vida de items |

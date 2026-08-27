@@ -6,21 +6,21 @@ order: 8
 
 # Gerenciar Sprints
 
-Sprints representam ciclos de execução com início e fim definidos. Elas agrupam cards selecionados para um período e permitem destacar o trabalho da sprint ativa no Board.
+Sprints representam ciclos de execução com início e fim definidos. Elas agrupam cards selecionados para um período e permitem destacar o trabalho da sprint aberta no Board.
 
 ## Onde encontrar
 
-As sprints são administradas nas **Configurações do Projeto** e aparecem como opção no filtro de sprint do Board. A sprint ativa também pode ser consultada por integrações e agentes de IA.
+As sprints são administradas nas **Configurações do Projeto** e aparecem como opção no filtro de sprint do Board. A sprint aberta também pode ser consultada por integrações e agentes de IA.
 
 ## Ciclo de vida
 
 | Situação | Significado |
 |---|---|
-| `PLANNED` | Sprint planejada, ainda não ativa. |
-| `ACTIVE` | Ciclo atualmente em execução. |
-| `DONE` | Sprint encerrada. |
+| `PROPOSED` | Sprint proposta, ainda não aberta. |
+| `OPEN` | Ciclo atualmente em execução. |
+| `CLOSED` | Sprint encerrada; vínculos existentes permanecem históricos. |
 
-Somente uma sprint pode ficar ativa por projeto.
+Somente uma sprint pode ficar aberta por projeto.
 
 ## Criar uma sprint
 
@@ -29,21 +29,21 @@ Somente uma sprint pode ficar ativa por projeto.
 3. Defina as datas de início e fim.
 4. Confirme.
 
-A sprint é criada como **Planejada**. Membros podem preparar ciclos futuros; a ativação e o encerramento são controlados por administradores.
+A sprint é criada como **Proposta**. Administradores controlam a abertura e o encerramento.
 
 ## Editar o planejamento
 
-Enquanto a sprint não estiver encerrada, ajuste nome e datas para refletir o período acordado. A edição não altera automaticamente os itens vinculados.
+Enquanto a sprint não estiver encerrada, ajuste nome e datas para refletir o período acordado. A edição não altera automaticamente os itens vinculados. Nome, início e fim são obrigatórios, e o início não pode ser posterior ao fim.
 
 ## Adicionar ou remover cards
 
 Abra um item e use o campo **Sprint** para incluí-lo em um ciclo. Remova a seleção quando o card não fizer mais parte daquele planejamento.
 
-Um card sem sprint continua no projeto e aparece na visão **Todos**, mas não no filtro de uma sprint específica.
+Um card sem sprint continua no projeto e aparece na visão **Todos**, mas não no filtro de uma sprint específica. Sprints `CLOSED` não aparecem no formulário de criação e rejeitam novas associações na API.
 
 ## Ativar uma sprint
 
-1. Abra a sprint planejada.
+1. Abra a sprint proposta.
 2. Selecione **Ativar**.
 3. Confirme.
 
@@ -55,18 +55,18 @@ Selecione a sprint na toolbar de filtros. O Board mantém somente os cards vincu
 
 ## Encerrar uma sprint
 
-1. Abra a sprint ativa.
+1. Abra a sprint aberta.
 2. Selecione **Encerrar**.
 3. Confirme.
 
-A sprint passa para **Concluída**. Cards não concluídos permanecem no projeto e podem ser incluídos na próxima sprint; o encerramento não os exclui e não muda seu status automaticamente.
+A sprint passa para **Fechada**. Cards já associados permanecem no histórico; o encerramento não os exclui e não muda seu status automaticamente.
 
 ## Permissões
 
 | Ação | Admin | Membro | Visualizador |
 |---|---:|---:|---:|
 | Consultar e filtrar por sprint | Sim | Sim | Sim |
-| Criar sprint planejada | Sim | Sim | Não |
+| Criar sprint proposta | Sim | Não | Não |
 | Associar cards | Sim | Sim | Não |
 | Editar, ativar ou encerrar | Sim | Não | Não |
 
@@ -82,7 +82,6 @@ A sprint passa para **Concluída**. Cards não concluídos permanecem no projeto
 
 Sprints pertencem ao projeto e ao tenant e armazenam nome, datas e situação. A associação entre itens e sprints é muitos para muitos, o que preserva o histórico de participação em ciclos.
 
-A ativação é transacional: a sprint ativa anterior volta ao estado planejado e a selecionada passa a `ACTIVE`. O encerramento define `DONE`. A consulta da sprint corrente retorna seus dados ou `status: NONE`, formato usado também por agentes de IA.
+A abertura é transacional: a sprint aberta anterior volta ao estado proposto e a selecionada passa a `OPEN`. O encerramento define `CLOSED`. A consulta da sprint corrente retorna seus dados ou `status: NONE`, formato usado também por agentes de IA.
 
 </details>
-

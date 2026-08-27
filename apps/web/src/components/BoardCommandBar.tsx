@@ -20,7 +20,8 @@ import { BoardFilters, type BoardFilterState } from './BoardFilters'
 
 interface Option { id: string; name: string }
 interface Member { userId: string; name: string }
-interface Sprint extends Option { status: string }
+interface Sprint extends Option { status: 'PROPOSED' | 'OPEN' | 'CLOSED' }
+interface CostCenter { id: string; code: string; description?: string | null; sortOrder: number }
 
 interface Props {
   view: 'kanban' | 'tree'
@@ -33,6 +34,8 @@ interface Props {
   members: Member[]
   squads: Option[]
   tags: Tag[]
+  versions: Option[]
+  costCenters: CostCenter[]
   filters: BoardFilterState
   onFiltersChange: (filters: BoardFilterState) => void
   onExpandAll: () => void
@@ -52,6 +55,8 @@ export function BoardCommandBar({
   members,
   squads,
   tags,
+  versions,
+  costCenters,
   filters,
   onFiltersChange,
   onExpandAll,
@@ -74,6 +79,11 @@ export function BoardCommandBar({
     filters.squadId,
     filters.types.length > 0,
     filters.tagIds.length > 0,
+    filters.versionId,
+    filters.priority,
+    filters.status,
+    filters.authorId,
+    filters.costCenterId,
     filters.hideEmptyEpics,
     filters.storyDisplay === 'lanes' && filters.hideEmptyStories,
   ].filter(Boolean).length
@@ -149,6 +159,9 @@ export function BoardCommandBar({
                     squadId: '',
                      types: [],
                      tagIds: [],
+                     versionId: '', priority: '', status: '', authorId: '',
+                     costCenterId: '',
+                     hideEmptyEpics: false, hideEmptyStories: false,
                    })}
                   className="text-xs font-medium text-primary hover:underline"
                 >
@@ -161,7 +174,9 @@ export function BoardCommandBar({
               sprints={sprints}
               members={members}
               squads={squads}
-              tags={tags}
+               tags={tags}
+               versions={versions}
+               costCenters={costCenters}
               filters={filters}
               onChange={onFiltersChange}
               showSubtasks={filters.showSubtasks}
@@ -201,7 +216,9 @@ export function BoardCommandBar({
                  sprints={sprints}
                  members={members}
                  squads={squads}
-                 tags={tags}
+                  tags={tags}
+                   versions={versions}
+                   costCenters={costCenters}
                  filters={filters}
                  onChange={onFiltersChange}
                  showSubtasks={filters.showSubtasks}

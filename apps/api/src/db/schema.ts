@@ -171,9 +171,9 @@ export const sprints = sqliteTable('sprints', {
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
   projectId: text('project_id').notNull().references(() => projects.id),
   name: text('name').notNull(),
-  status: text('status', { enum: ['PLANNED', 'ACTIVE', 'DONE'] }).notNull().default('PLANNED'),
-  startDate: text('start_date'),
-  endDate: text('end_date'),
+  status: text('status', { enum: ['PROPOSED', 'OPEN', 'CLOSED'] }).notNull().default('PROPOSED'),
+  startDate: text('start_date').notNull(),
+  endDate: text('end_date').notNull(),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
 })
 

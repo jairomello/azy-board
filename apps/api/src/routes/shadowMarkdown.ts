@@ -22,7 +22,7 @@ shadowMarkdownRouter.get('/', requireRole('VIEWER'), async (c) => {
       orderBy: (col, { asc }) => [asc(col.position)],
     }),
     db.query.sprints.findFirst({
-      where: (s) => and(eq(s.projectId, projectId), eq(s.tenantId, ctx.tenantId), eq(s.status, 'ACTIVE')),
+      where: (s) => and(eq(s.projectId, projectId), eq(s.tenantId, ctx.tenantId), eq(s.status, 'OPEN')),
     }),
     db.query.items.findMany({
       where: (i) => and(eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),

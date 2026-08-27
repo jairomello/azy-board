@@ -6,7 +6,7 @@ Definir os requisitos da capacidade mcp ai first workflow.
 
 ### Requirement: Fluxo completo de gerenciamento por MCP
 
-O servidor MCP SHALL permitir que um code agent descubra e opere projetos, configurações, estrutura, equipe, planejamento e execução sem precisar montar chamadas REST manualmente. As ferramentas SHALL funcionar em projetos `SIMPLE` e `HIERARCHICAL` respeitando o modo retornado pelo projeto e SHALL aplicar em cada operação as permissões efetivas do Owner da API Key, seu tenant, membership e escopos restritivos.
+O servidor MCP SHALL permitir que um code agent descubra e opere projetos, configurações, estrutura, equipe, planejamento e execução sem precisar montar chamadas REST manualmente. As ferramentas SHALL funcionar em projetos `SIMPLE` e `HIERARCHICAL` respeitando o modo retornado pelo projeto, aplicar permissões efetivas do Owner da API Key e `create_task` SHALL aceitar `versionId` opcional preservando o vínculo informado.
 
 #### Scenario: Agente descobre projetos disponíveis
 - **WHEN** agente invoca `list_projects`
@@ -15,6 +15,18 @@ O servidor MCP SHALL permitir que um code agent descubra e opere projetos, confi
 #### Scenario: Agente consulta o estado do projeto
 - **WHEN** agente invoca `get_project` ou `get_board` com `projectId`
 - **THEN** servidor retorna configuração, colunas, modo, STORY fixa quando aplicável e itens permitidos pelo Owner
+
+#### Scenario: Agente cria item versionado
+- **WHEN** agente invoca `create_task` com `versionId` pertencente ao projeto
+- **THEN** servidor cria TASK/BUG com o vínculo de versão e retorna o item atualizado
+
+#### Scenario: Agente cria item sem versão
+- **WHEN** agente invoca `create_task` sem `versionId`
+- **THEN** servidor cria o item normalmente sem vínculo de versão
+
+#### Scenario: Versão inválida na criação
+- **WHEN** agente invoca `create_task` com `versionId` de outro projeto ou tenant
+- **THEN** servidor rejeita a chamada antes de criar o item
 
 #### Scenario: Agente configura projeto completo
 - **WHEN** agente invoca ferramentas de projeto, módulos, colunas, sprints, tags, versões, membros, squads ou centros de custo

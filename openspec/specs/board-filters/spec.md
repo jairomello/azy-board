@@ -5,7 +5,7 @@ Definir os filtros, controles de visualização e regras de ocultação aplicado
 ## Requirements
 
 ### Requirement: Filtros e opções no toolbar do board
-O sistema SHALL exibir filtros de conteúdo em um painel acionado pelo botão `Filtros` da command bar. O painel SHALL conter Squad, Módulo, Sprint, Responsável, tipos e tags. Os controles de visualização, incluindo Mostrar subtasks, alternância de histórias entre lanes e cards, Hierarquia/Abas, Expandir tudo, Recolher tudo e ocultação de lanes vazias, SHALL estar no painel separado acionado pelo botão `Opções`. O estado SHALL ser persistido no `localStorage` e o modo de módulos SHALL ser persistido por projeto e restaurado nas visitas subsequentes ao board.
+O sistema SHALL exibir filtros de conteúdo em um painel acionado pelo botão `Filtros` da command bar. O painel SHALL conter Squad, Módulo, Sprint, Responsável, Autor, Centro de Custo, Versão, Prioridade, Status, tipos e tags. Centro de Custo e Versão SHALL permanecer visíveis sem opções, exibindo respectivamente `Todos os centros`/`Nenhum centro de custo cadastrado` e `Sem versão`/`Nenhuma versão cadastrada`; Sprint SHALL permanecer visível sem opções, exibindo `Sem sprint`/`Nenhuma sprint cadastrada`, e listar `PROPOSED`, `OPEN` e `CLOSED` quando houver sprints. Os controles de visualização SHALL estar no painel separado `Opções`.
 
 #### Scenario: Filtro por módulo
 - **WHEN** o usuário seleciona um módulo no painel Filtros
@@ -19,6 +19,22 @@ O sistema SHALL exibir filtros de conteúdo em um painel acionado pelo botão `F
 - **WHEN** o usuário seleciona um responsável no painel Filtros
 - **THEN** apenas cards atribuídos ao responsável selecionado são exibidos
 
+#### Scenario: Filtro por autor
+- **WHEN** o usuário seleciona um autor no painel Filtros
+- **THEN** apenas cards cujo `authorId` corresponde ao autor selecionado são exibidos
+
+#### Scenario: Filtro por Centro de Custo
+- **WHEN** o usuário seleciona um Centro de Custo no painel Filtros
+- **THEN** apenas itens cujo `costCenterId` corresponde ao Centro selecionado são exibidos
+
+#### Scenario: Filtro por versão
+- **WHEN** o usuário seleciona uma versão no painel Filtros
+- **THEN** apenas itens cujo `versionId` corresponde à versão selecionada são exibidos
+
+#### Scenario: Filtro por prioridade ou status
+- **WHEN** o usuário seleciona uma prioridade ou status no painel Filtros
+- **THEN** apenas cards com o valor selecionado são exibidos
+
 #### Scenario: Filtro por tipo de card
 - **WHEN** o usuário seleciona um ou mais tipos (`TASK`, `BUG`) no painel Filtros
 - **THEN** apenas cards dos tipos selecionados são exibidos
@@ -27,9 +43,25 @@ O sistema SHALL exibir filtros de conteúdo em um painel acionado pelo botão `F
 - **WHEN** o usuário seleciona uma ou mais tags no painel Filtros
 - **THEN** apenas cards que possuem pelo menos uma das tags selecionadas são exibidos
 
+#### Scenario: Filtros sem cadastro
+- **WHEN** o usuário abre o painel em projeto sem Centros de Custo, versões ou sprints
+- **THEN** os controles permanecem visíveis com seus estados vazios e indicação não selecionável correspondente
+
+#### Scenario: Filtro de sprint fechada para consulta histórica
+- **WHEN** o usuário seleciona uma sprint `CLOSED`
+- **THEN** o Board exibe os cards historicamente associados sem permitir novas associações
+
 #### Scenario: Múltiplos filtros ativos
 - **WHEN** mais de um filtro está ativo simultaneamente
-- **THEN** os filtros são combinados com AND — apenas cards que satisfazem todos os filtros são exibidos
+- **THEN** os filtros são combinados com AND entre dimensões e OR entre tags selecionadas da mesma dimensão
+
+#### Scenario: Item sem vínculo correspondente
+- **WHEN** um filtro de Centro de Custo, versão, autor ou tag está ativo e um item não possui esse vínculo
+- **THEN** o item não é exibido
+
+#### Scenario: Filtros no modo simples
+- **WHEN** o usuário aplica filtros em projeto `SIMPLE`
+- **THEN** os filtros compatíveis continuam filtrando os cards do fluxo único sem exigir módulo ou épico
 
 #### Scenario: Limpar filtros
 - **WHEN** o usuário clica em "Limpar filtros" no painel Filtros
@@ -46,7 +78,7 @@ O sistema SHALL exibir filtros de conteúdo em um painel acionado pelo botão `F
 - **THEN** o Board preserva os filtros aplicados e restaura o modo selecionado ao recarregar o projeto
 
 ### Requirement: Filtros aplicados client-side
-Os filtros SHALL ser aplicados sobre a lista de tasks em memória (`displayedTasks`), sem re-fetch da API ao mudar filtros.
+Os filtros SHALL ser aplicados sobre a lista de tasks em memória (`displayedTasks`), sem re-fetch da API ao mudar filtros, usando os atributos já carregados ou derivados do projeto.
 
 #### Scenario: Alterar filtro sem recarregar itens
 - **WHEN** o usuário altera qualquer filtro do Board

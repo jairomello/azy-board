@@ -5,9 +5,11 @@ import { Tooltip } from './ui/Tooltip'
 import { useTranslation } from 'react-i18next'
 
 interface Module { id: string; name: string }
-interface Sprint { id: string; name: string; status: string }
+interface Sprint { id: string; name: string; status: 'PROPOSED' | 'OPEN' | 'CLOSED' }
 interface Member { userId: string; name: string }
 interface Squad { id: string; name: string }
+interface Version { id: string; name: string }
+interface CostCenter { id: string; code: string; description?: string | null; sortOrder: number }
 
 export interface BoardFilterState {
   moduleId: string
@@ -15,6 +17,11 @@ export interface BoardFilterState {
   assigneeId: string
   types: ItemType[]
   tagIds: string[]
+  versionId: string
+  priority: string
+  status: string
+  authorId: string
+  costCenterId: string
   hideEmptyEpics: boolean
   hideEmptyStories: boolean
   squadId: string
@@ -28,6 +35,8 @@ interface Props {
   sprints: Sprint[]
   members: Member[]
   tags: Tag[]
+  versions?: Version[]
+  costCenters?: CostCenter[]
   squads?: Squad[]
   filters: BoardFilterState
   onChange: (filters: BoardFilterState) => void
@@ -60,7 +69,7 @@ const iconBtn = (active: boolean) =>
   }`
 
 export function BoardFilters({
-  modules, sprints, members, tags, squads = [],
+  modules, sprints, members, tags, versions = [], costCenters = [], squads = [],
   filters, onChange,
   showSubtasks, onToggleSubtasks,
   storiesAsCards, onToggleStoryDisplay,
@@ -76,6 +85,11 @@ export function BoardFilters({
     filters.squadId,
     filters.types.length > 0,
     filters.tagIds.length > 0,
+    filters.versionId,
+    filters.priority,
+    filters.status,
+    filters.authorId,
+    filters.costCenterId,
   ].filter(Boolean).length
 
   function update(partial: Partial<BoardFilterState>) {
@@ -90,6 +104,11 @@ export function BoardFilters({
       squadId: '',
       types: [],
       tagIds: [],
+      versionId: '',
+      priority: '',
+      status: '',
+      authorId: '',
+      costCenterId: '',
       hideEmptyEpics: false,
       hideEmptyStories: false,
       showSubtasks: filters.showSubtasks,
@@ -214,17 +233,18 @@ export function BoardFilters({
         </select>
       )}
 
-      {sprints.length > 0 && (
+      {(
         <select
           aria-label="Sprint"
           value={filters.sprintId}
           onChange={e => update({ sprintId: e.target.value })}
           className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground"
         >
-          <option value="">Sprint</option>
+           <option value="">Sem sprint</option>
+           {sprints.length === 0 && <option disabled>Nenhuma sprint cadastrada</option>}
           {sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-      )}
+       )}
 
       {members.length > 0 && (
         <select
@@ -237,6 +257,27 @@ export function BoardFilters({
           {members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
         </select>
       )}
+      <select aria-label="Versão" value={filters.versionId} onChange={e => update({ versionId: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
+        <option value="">Versão</option>
+        {versions.length === 0 && <option disabled>Nenhuma versão cadastrada</option>}
+        {versions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+      </select>
+      <select aria-label="Prioridade" value={filters.priority} onChange={e => update({ priority: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
+        <option value="">Prioridade</option><option value="LOW">Baixa</option><option value="MEDIUM">Média</option><option value="HIGH">Alta</option><option value="CRITICAL">Crítica</option>
+      </select>
+      <select aria-label="Status" value={filters.status} onChange={e => update({ status: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
+        <option value="">Status</option><option value="NOT_STARTED">Não iniciada</option><option value="IN_PROGRESS">Em andamento</option><option value="BLOCKED">Bloqueada</option><option value="DONE">Concluída</option><option value="CANCELLED">Cancelada</option>
+      </select>
+      {members.length > 0 && <select aria-label="Autor" value={filters.authorId} onChange={e => update({ authorId: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
+        <option value="">Autor</option>{members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
+      </select>}
+      <select aria-label="Centro de Custo" value={filters.costCenterId} onChange={e => update({ costCenterId: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
+        <option value="">Todos os centros</option>
+        {costCenters.length === 0 && <option disabled>Nenhum centro de custo cadastrado</option>}
+        {costCenters.map(center => (
+          <option key={center.id} value={center.id}>{center.code}{center.description ? ` - ${center.description}` : ''}</option>
+        ))}
+      </select>
       </div>}
 
       {/* Tipo (multi) */}

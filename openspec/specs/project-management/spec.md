@@ -5,11 +5,19 @@ Definir os requisitos da capacidade project management.
 ## Requirements
 
 ### Requirement: Criar projeto
-O sistema SHALL permitir que um usuário autenticado crie um novo projeto informando nome e descrição opcional.
+O sistema SHALL permitir que um usuário autenticado crie um novo projeto informando nome, descrição opcional e modo de board opcional (`HIERARCHICAL` ou `SIMPLE`). Quando não informado, SHALL usar `HIERARCHICAL`.
 
 #### Scenario: Criação bem-sucedida com colunas padrão
 - **WHEN** usuário envia nome do projeto
 - **THEN** sistema cria o projeto, associa o criador como administrador, cria o módulo padrão "Geral" e provisiona automaticamente 6 colunas em ordem de fluxo: Backlog (NOT_STARTED), A Fazer (NOT_STARTED), Fazendo (IN_PROGRESS), A Testar (IN_PROGRESS), Testando (IN_PROGRESS), Concluídas (DONE)
+
+#### Scenario: Criação de projeto simples
+- **WHEN** usuário envia nome do projeto com `boardMode = SIMPLE`
+- **THEN** sistema cria o projeto com uma STORY fixa, sem criar módulo ou EPIC para a apresentação do board, associa o criador como administrador e provisiona as 6 colunas padrão
+
+#### Scenario: Board simples pronto para uso imediato
+- **WHEN** usuário acessa um projeto simples recém-criado
+- **THEN** a STORY fixa e as 6 colunas padrão estão presentes e o board aceita criação e movimentação de TASKs/BUGs
 
 #### Scenario: Board pronto para uso imediato
 - **WHEN** usuário acessa o board de um projeto recém-criado

@@ -20,11 +20,25 @@ Apresenta cards cujo épico pertence ao módulo selecionado. Itens sem épico n�
 
 ## Filtro por sprint
 
-Apresenta itens associados à sprint selecionada. O nome de cada sprint disponível aparece no seletor.
+Apresenta itens associados à sprint selecionada. O seletor permanece visível mesmo sem sprints e lista `PROPOSED`, `OPEN` e `CLOSED`, permitindo consultar o histórico de ciclos fechados.
 
 ## Filtro por responsável
 
 Apresenta somente itens atribuídos à pessoa selecionada. A atribuição pode ser humana ou realizada por meio das integrações do projeto.
+
+## Filtros por autor, versão, prioridade e status
+
+Autor identifica quem criou o item. Versão usa o vínculo opcional `items.version_id` e lista apenas versões do projeto atual. Prioridade oferece Baixa, Média, Alta e Crítica; status oferece Não iniciada, Em andamento, Bloqueada, Concluída e Cancelada.
+
+O controle **Versão** permanece visível mesmo quando o projeto ainda não possui versões. Nesse caso, ele fica em **Sem versão** e informa **Nenhuma versão cadastrada**; as versões podem ser criadas em **Configurações do projeto > Versões**.
+
+Esses filtros continuam disponíveis no modo `SIMPLE`. Itens sem autor ou versão não correspondem quando o critério respectivo está ativo.
+
+## Filtro por centro de custo
+
+O seletor **Centro de Custo** lista os centros cadastrados no projeto atual, exibindo código e descrição. **Todos os centros** deixa o filtro vazio e inclui também itens sem centro de custo. Quando não houver centros cadastrados, o controle continua visível e informa **Nenhum centro de custo cadastrado**.
+
+Ao selecionar um centro, somente itens cujo `costCenterId` corresponde ao centro são exibidos. A seleção é aplicada em memória, combina-se com os demais filtros por AND e funciona nos modos `SIMPLE` e `HIERARCHICAL`. A preferência é persistida separadamente por projeto; se o centro for removido, a seleção é limpa sem alterar os demais filtros.
 
 ## Filtro por tipo
 
@@ -76,7 +90,7 @@ Quando existe ao menos um filtro, a toolbar apresenta a ação **Limpar** acompa
 2. Confira a quantidade de filtros ativos.
 3. Selecione a ação.
 
-São removidos squad, módulo, sprint, responsável, tipos, tags e as ocultações de épicos e histórias vazias. O modo de histórias e o controle de subtasks são preservados.
+São removidos squad, módulo, sprint, responsável, autor, centro de custo, versão, prioridade, status, tipos, tags e as ocultações de épicos e histórias vazias. O modo de histórias e o controle de subtasks são preservados.
 
 ## Persistência por projeto
 
@@ -95,6 +109,7 @@ Módulo, sprint, responsável e ocultação de épicos vazios também influencia
 - Categorias diferentes usam uma combinação restritiva.
 - Tags selecionadas usam correspondência por pelo menos uma tag.
 - O estado é independente por projeto.
+- Centro de custo vazio significa todos os centros, inclusive itens sem associação.
 - Ocultar histórias vazias só participa da contagem no modo de lanes.
 - Limpar filtros não redefine o modo de histórias nem o controle de subtasks.
 
@@ -113,7 +128,7 @@ Filtros são controles locais de consulta e estão disponíveis para `Admin`, `M
 
 ### Aplicação dos filtros
 
-O frontend combina os critérios sobre os itens carregados e deriva a lista exibida. Filtros que dependem de relações específicas, como sprint, podem ser resolvidos pelo contrato de consulta correspondente.
+O frontend combina os critérios sobre os itens carregados e deriva a lista exibida, sem nova consulta ao alterar controles. Dimensões diferentes usam AND; tags selecionadas usam OR.
 
 ### Squad e módulo
 

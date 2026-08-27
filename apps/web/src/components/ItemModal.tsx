@@ -31,6 +31,12 @@ export interface ProjectVersion {
   status: 'PLANNED' | 'IN_DEV' | 'RELEASED' | 'CANCELLED'
 }
 
+export interface ProjectSprint {
+  id: string
+  name: string
+  status: 'PROPOSED' | 'OPEN' | 'CLOSED'
+}
+
 export interface CostCenter {
   id: string
   code: string
@@ -53,6 +59,8 @@ export interface FullItemData {
   assignee?: { id: string; name: string; avatarUrl: string | null } | null
   author?: { id: string; name: string; avatarUrl: string | null } | null
   versionId?: string | null
+  itemSprints?: Array<{ sprintId: string }>
+  sprintId?: string | null
   costCenterId?: string | null
   itemTags?: Array<{ tag: Tag }>
   taskTags?: Array<{ tag: Tag }>
@@ -103,6 +111,7 @@ interface Props {
   members: ProjectMember[]
   currentUserId?: string
   projectVersions?: ProjectVersion[]
+  projectSprints?: ProjectSprint[]
   projectCostCenters?: CostCenter[]
   onClose: () => void
   onSave: (itemId: string, changes: Partial<FullItemData>, tagIds: string[]) => Promise<void>
@@ -125,6 +134,7 @@ export function ItemModal({
   members,
   currentUserId,
   projectVersions = [],
+  projectSprints = [],
   projectCostCenters = [],
   onClose,
   onSave,
@@ -146,6 +156,7 @@ export function ItemModal({
     (item.itemTags ?? item.taskTags ?? []).map(it => it.tag)
   )
   const [versionId, setVersionId] = useState<string>(item.versionId ?? '')
+  const [sprintId, setSprintId] = useState<string>(item.itemSprints?.[0]?.sprintId ?? '')
   const [costCenterId, setCostCenterId] = useState<string>(item.costCenterId ?? '')
   const [points, setPoints] = useState(item.points?.toString() ?? '')
   const [startDate, setStartDate] = useState(item.startDate ?? '')
@@ -212,6 +223,7 @@ export function ItemModal({
     setParentId(item.parentId ?? null)
     setSelectedTags((item.itemTags ?? item.taskTags ?? []).map(it => it.tag))
     setVersionId(item.versionId ?? '')
+    setSprintId(item.itemSprints?.[0]?.sprintId ?? '')
     setCostCenterId(item.costCenterId ?? '')
     setPoints(item.points?.toString() ?? '')
     setStartDate(item.startDate ?? '')
@@ -275,6 +287,7 @@ export function ItemModal({
         assigneeId: assigneeId || null,
         points: points ? parseInt(points) : null,
         versionId: versionId || null,
+        sprintId: sprintId || null,
         costCenterId: costCenterId || null,
         startDate: startDate || null,
         dueDate: dueDate || null,
@@ -367,17 +380,26 @@ export function ItemModal({
                   {members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
                 </select>
               </div>
-              {/* Campo Versão — exibido apenas quando há versões no projeto */}
-              {projectVersions.length > 0 && (
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Versão</label>
-                  <select value={versionId} onChange={e => setVersionId(e.target.value)}
-                    className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                    <option value="">Sem versão</option>
-                    {projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                  </select>
-                </div>
-              )}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Sprint</label>
+                <select aria-label="Sprint" value={sprintId} onChange={e => setSprintId(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
+                  <option value="">Sem sprint</option>
+                  {projectSprints.length === 0 && <option disabled>Nenhuma sprint cadastrada</option>}
+                  {projectSprints.filter(sprint => sprint.status !== 'CLOSED').map(sprint => (
+                    <option key={sprint.id} value={sprint.id}>{sprint.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Versão</label>
+                <select value={versionId} onChange={e => setVersionId(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
+                  <option value="">Sem versão</option>
+                  {projectVersions.length === 0 && <option disabled>Nenhuma versão cadastrada</option>}
+                  {projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </div>
               {/* Campo Centro de Custo — exibido apenas quando o projeto possui centros cadastrados */}
               {projectCostCenters.length > 0 && (
                 <div>
@@ -572,6 +594,7 @@ export function ItemModal({
               members={members}
               currentUserId={currentUserId}
               projectVersions={projectVersions}
+              projectSprints={projectSprints}
               onClose={() => setChildStack(prev => prev.slice(0, idx))}
               onSave={onSave}
               onAddSubtask={onAddSubtask}

@@ -18,7 +18,7 @@ O sistema SHALL permitir que qualquer item tenha um `parent_id` apontando para o
 ---
 
 ### Requirement: Leaf Rule — apenas items folha são móveis no Kanban
-O sistema SHALL permitir movimentação de items `TASK` e `BUG` folha. Items `EPIC` nunca são cards móveis. Items `STORY` são lanes no modo padrão e somente STORYs folha podem ser cards móveis quando `storyDisplay = cards`. Items TASK/BUG com filhos são agregadores e não podem ser movidos. A hierarquia visual é Módulo >> Épico >> História >> Cards.
+O sistema SHALL permitir movimentação de items `TASK` e `BUG`. Em projetos `HIERARCHICAL`, EPICs nunca são cards móveis, STORYs são lanes no modo padrão e somente STORYs folha podem ser cards móveis quando `storyDisplay = cards`; TASK/BUG com filhos são agregadores e não podem ser movidos. Em projetos `SIMPLE`, a STORY fixa não é card móvel e todos os TASKs/BUGs vinculados a ela aparecem no fluxo único.
 
 #### Scenario: Breadcrumb inclui módulo
 - **WHEN** card é exibido no Kanban
@@ -47,6 +47,14 @@ O sistema SHALL permitir movimentação de items `TASK` e `BUG` folha. Items `EP
 #### Scenario: Drag-and-drop bloqueado em item TASK/BUG pai
 - **WHEN** usuário tenta arrastar card de item TASK/BUG pai no Kanban
 - **THEN** sistema exibe tooltip explicativo e não permite o drag
+
+#### Scenario: Item TASK/BUG aparece no board simples
+- **WHEN** item TASK ou BUG pertence a projeto `SIMPLE` e está vinculado à STORY fixa
+- **THEN** item aparece como card móvel em uma coluna do Kanban único
+
+#### Scenario: Breadcrumb simples não inventa hierarquia
+- **WHEN** card é exibido em projeto `SIMPLE`
+- **THEN** breadcrumb não exibe módulo ou EPIC inexistente e identifica no máximo a STORY fixa e o item atual
 
 ---
 
@@ -101,7 +109,7 @@ O sistema SHALL suportar um campo numérico `points` (inteiro, nullable) em cada
 ---
 
 ### Requirement: Breadcrumb dinâmico nos cards
-O sistema SHALL exibir no card de cada item folha o caminho hierárquico completo: `Projeto > Módulo > Épico > História > Task Pai > ... > Item Atual`. O `ancestryPath` armazena `[{ id, title, type }]` de cada ancestral.
+O sistema SHALL exibir o caminho hierárquico completo em cards de projetos `HIERARCHICAL`: `Projeto > Módulo > Épico > História > Task Pai > ... > Item Atual`. Em projetos `SIMPLE`, SHALL exibir breadcrumb reduzido usando a STORY fixa quando aplicável. O `ancestryPath` armazena `[{ id, title, type }]` de cada ancestral.
 
 #### Scenario: Breadcrumb truncado no card
 - **WHEN** card é exibido no Kanban

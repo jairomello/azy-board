@@ -48,7 +48,7 @@ Use `get_current_sprint` para obter nome, datas, situação e identificador do c
 
 ## Criar itens
 
-`create_task` exige `projectId` e `title`. Também aceita descrição, tipo, prioridade, pai, módulo e pontos.
+`create_task` exige `projectId` e `title`. Também aceita descrição, tipo, prioridade, pai, módulo, pontos e `versionId` opcional. A versão precisa pertencer ao mesmo projeto e tenant; sem `versionId`, o item é criado sem versão.
 
 Respeite a hierarquia:
 

@@ -124,7 +124,7 @@ describe('modos de board de projetos', () => {
     const sprintId = generateId()
     const checklistId = generateId()
     await db.insert(tags).values({ id: tagId, tenantId, projectId, name: 'Importante', color: '#000000' })
-    await db.insert(sprints).values({ id: sprintId, tenantId, projectId, name: 'Sprint 1', status: 'PLANNED', startDate: null, endDate: null, createdAt: now })
+    await db.insert(sprints).values({ id: sprintId, tenantId, projectId, name: 'Sprint 1', status: 'PROPOSED', startDate: '2026-01-01', endDate: '2026-01-14', createdAt: now })
     await db.insert(itemTags).values([{ itemId: taskId, tagId }, { itemId: bugId, tagId }])
     await db.insert(itemSprints).values([{ itemId: taskId, sprintId }, { itemId: bugId, sprintId }])
     await db.insert(attachments).values({ id: generateId(), tenantId, itemId: taskId, filename: 'card.txt', originalName: 'card.txt', mimeType: 'text/plain', size: 4, storagePath: `${tenantId}/${taskId}/card.txt`, createdAt: now })

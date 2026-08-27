@@ -6,7 +6,7 @@ import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import { VersionDetailModal } from '../components/VersionDetailModal'
 import { AppShell } from '../components/AppShell'
-import type { BoardMode, ColumnBaseStatus } from '@azy-board/types'
+import type { BoardMode, ColumnBaseStatus, SprintStatus } from '@azy-board/types'
 
 interface Column { id: string; name: string; baseStatus: ColumnBaseStatus; position: number }
 interface Member { userId: string; name: string; email: string; role: string; squadId?: string | null; squadName?: string | null; avatarUrl?: string | null }
@@ -14,6 +14,7 @@ interface Squad { id: string; name: string; memberCount: number }
 interface Module { id: string; name: string; position: number }
 interface CostCenter { id: string; code: string; description?: string | null; sortOrder: number }
 interface Manager { id: string; name: string; email: string; avatarUrl?: string | null }
+interface Sprint { id: string; name: string; status: SprintStatus; startDate: string; endDate: string }
 
 export interface ProjectVersion {
   id: string
@@ -109,6 +110,11 @@ export default function SettingsPage() {
   const [showVersionForm, setShowVersionForm] = useState(false)
   const [versionModal, setVersionModal] = useState<{ version: ProjectVersion; mode: 'view' | 'edit' } | null>(null)
   const [newVersion, setNewVersion] = useState({ name: '', releaseDate: '', description: '', status: 'PLANNED' as ProjectVersion['status'] })
+  const [sprints, setSprints] = useState<Sprint[]>([])
+  const [sprintForm, setSprintForm] = useState({ name: '', startDate: '', endDate: '' })
+  const [editingSprintId, setEditingSprintId] = useState<string | null>(null)
+  const [sprintError, setSprintError] = useState('')
+  const [savingSprint, setSavingSprint] = useState(false)
 
   const currentMember = members.find(m => m.userId === user?.id)
   const isAdmin = currentMember?.role === 'ADMIN' || ['MANAGER', 'ADMIN', 'ROOT'].includes(user?.globalGroup ?? '')
@@ -121,6 +127,7 @@ export default function SettingsPage() {
     api.get<Module[]>(`/projects/${projectId}/modules`).then(setModules)
     api.get<ProjectVersion[]>(`/projects/${projectId}/versions`).then(setVersions)
     api.get<CostCenter[]>(`/projects/${projectId}/cost-centers`).then(setCostCenters)
+    api.get<Sprint[]>(`/projects/${projectId}/sprints`).then(setSprints).catch(() => {})
     api.get<{ name: string; manager?: Manager | null; boardMode?: BoardMode }>(`/projects/${projectId}`)
       .then(p => {
         setProjectName(p.name)
@@ -366,6 +373,34 @@ export default function SettingsPage() {
     if (!confirm('Excluir versão? Itens vinculados terão a versão removida.')) return
     await api.delete(`/projects/${projectId}/versions/${versionId}`)
     setVersions(prev => prev.filter(v => v.id !== versionId))
+  }
+
+  async function saveSprint(e: React.FormEvent) {
+    e.preventDefault()
+    if (!projectId) return
+    setSprintError('')
+    setSavingSprint(true)
+    try {
+      if (editingSprintId) {
+        const updated = await api.patch<Sprint>(`/projects/${projectId}/sprints/${editingSprintId}`, sprintForm)
+        setSprints(prev => prev.map(sprint => sprint.id === editingSprintId ? { ...sprint, ...updated } : sprint))
+      } else {
+        const created = await api.post<Sprint>(`/projects/${projectId}/sprints`, sprintForm)
+        setSprints(prev => [...prev, created])
+      }
+      setSprintForm({ name: '', startDate: '', endDate: '' })
+      setEditingSprintId(null)
+    } catch (error) {
+      setSprintError(error instanceof Error ? error.message : 'Não foi possível salvar a sprint')
+    } finally { setSavingSprint(false) }
+  }
+
+  async function transitionSprint(sprint: Sprint, action: 'open' | 'close') {
+    if (!projectId || !confirm(`${action === 'open' ? 'Abrir' : 'Fechar'} a sprint "${sprint.name}"?`)) return
+    try {
+      const updated = await api.patch<{ sprint: Sprint }>(`/projects/${projectId}/sprints/${sprint.id}/${action}`, {})
+      setSprints(prev => prev.map(item => item.id === sprint.id ? updated.sprint : action === 'open' && item.status === 'OPEN' ? { ...item, status: 'PROPOSED' } : item))
+    } catch (error) { setSprintError(error instanceof Error ? error.message : 'Transição inválida') }
   }
 
   async function handleVersionSave(data: Partial<ProjectVersion>) {
@@ -797,7 +832,26 @@ export default function SettingsPage() {
           )}
         </section>}
 
-        {/* Versões */}
+         {/* Sprints */}
+         <section>
+           <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-semibold text-foreground">Sprints</h2></div>
+           {sprintError && <p role="alert" className="text-sm text-destructive mb-3">{sprintError}</p>}
+           <div className="space-y-2 mb-4">
+             {sprints.map(sprint => <div key={sprint.id} className="flex flex-wrap items-center justify-between gap-2 border border-border rounded-lg px-4 py-3">
+               <div><span className="font-medium text-sm text-foreground">{sprint.name}</span><span className="ml-2 text-xs text-muted-foreground">{sprint.startDate} a {sprint.endDate}</span><span className="ml-2 text-xs rounded-full bg-muted px-2 py-1">{sprint.status}</span></div>
+               {isAdmin && <div className="flex gap-2"><button className="text-xs text-primary" onClick={() => { setEditingSprintId(sprint.id); setSprintForm({ name: sprint.name, startDate: sprint.startDate, endDate: sprint.endDate }) }}>Editar</button>{sprint.status === 'PROPOSED' && <button className="text-xs text-primary" onClick={() => transitionSprint(sprint, 'open')}>Abrir</button>}{sprint.status === 'OPEN' && <button className="text-xs text-destructive" onClick={() => transitionSprint(sprint, 'close')}>Fechar</button>}</div>}
+             </div>)}
+             {sprints.length === 0 && <p className="text-sm text-muted-foreground italic">Nenhuma sprint cadastrada.</p>}
+           </div>
+           {isAdmin && <form onSubmit={saveSprint} className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+             <input required aria-label="Nome da sprint" placeholder="Nome da sprint" value={sprintForm.name} onChange={e => setSprintForm(p => ({ ...p, name: e.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+             <input required aria-label="Data de início" type="date" value={sprintForm.startDate} onChange={e => setSprintForm(p => ({ ...p, startDate: e.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+             <input required aria-label="Data de fim" type="date" value={sprintForm.endDate} onChange={e => setSprintForm(p => ({ ...p, endDate: e.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+             <button disabled={savingSprint} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">{editingSprintId ? 'Salvar sprint' : 'Criar sprint'}</button>
+           </form>}
+         </section>
+
+         {/* Versões */}
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-foreground">Versões</h2>

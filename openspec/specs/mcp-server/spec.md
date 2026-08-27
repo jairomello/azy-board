@@ -66,7 +66,7 @@ O sistema SHALL expor ferramenta `complete_task` que marca uma task como DONE e 
 ---
 
 ### Requirement: Ferramenta create_task no MCP
-O sistema SHALL expor ferramenta `create_task` para criação de items respeitando a hierarquia obrigatória EPIC → STORY → TASK/BUG.
+O sistema SHALL expor ferramenta `create_task` para criação de items respeitando a hierarquia EPIC → STORY → TASK/BUG, funcionando também em projetos `SIMPLE`. Para TASK e BUG, SHALL aceitar `versionId` opcional e validar que a versão pertence ao projeto e tenant atuais.
 
 #### Scenario: Criação de TASK órfã
 - **WHEN** agente invoca `create_task` com `{ projectId, title }` sem `parentId`
@@ -79,6 +79,18 @@ O sistema SHALL expor ferramenta `create_task` para criação de items respeitan
 #### Scenario: Resolução automática de moduleId para EPIC
 - **WHEN** agente cria EPIC sem informar `moduleId`
 - **THEN** servidor busca automaticamente o primeiro módulo do projeto e o atribui ao EPIC
+
+#### Scenario: Criação de TASK com versão
+- **WHEN** agente invoca `create_task` com `type=TASK` ou `type=BUG` e `versionId` de uma versão do projeto
+- **THEN** sistema cria o item com `version_id` persistido e retorna a versão associada
+
+#### Scenario: Criação sem versão
+- **WHEN** agente invoca `create_task` sem `versionId`
+- **THEN** sistema cria o item normalmente com `version_id = null`
+
+#### Scenario: Versão fora do projeto
+- **WHEN** agente invoca `create_task` com `versionId` pertencente a outro projeto ou tenant
+- **THEN** API rejeita a criação sem persistir o item nem revelar dados da versão
 
 #### Scenario: Violação de hierarquia — TASK filho de EPIC
 - **WHEN** agente invoca `create_task` com `type=TASK` e `parentId` apontando para item do tipo EPIC

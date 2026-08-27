@@ -24,6 +24,7 @@ Esse comando executa `apps/api/src/integration.test.ts` e cobre:
 - criação de projetos simples e hierárquicos;
 - criação automática da STORY fixa e associação de TASK;
 - conversão simples para hierárquico e hierárquico para simples;
+- ciclo de sprints `PROPOSED`, `OPEN` e `CLOSED`, incluindo datas obrigatórias e bloqueio de novas associações em sprints fechadas;
 - preservação de cards, tags, sprints, anexos, checklists e logs;
 - bloqueio de MEMBER e isolamento entre tenants.
 

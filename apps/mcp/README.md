@@ -32,7 +32,7 @@ Adicione ao seu `.claude/settings.json`:
 | `claim_task` | Reivindica uma task para o agente |
 | `move_task` | Move card para outra coluna pelo nome |
 | `complete_task` | Marca task como concluída |
-| `create_task` | Cria nova task (pode criar subtasks via `parentId`) |
+| `create_task` | Cria nova task (pode criar subtasks via `parentId` e versão opcional via `versionId`) |
 | `list_checklists` | Lista checklists de um card com itens e progresso |
 | `create_checklist` | Cria um checklist nomeado em um card |
 | `add_checklist_item` | Adiciona um item a um checklist existente |
@@ -76,7 +76,7 @@ Adicione ao seu `.claude/settings.json`:
 3. claim_task({ projectId: "xxx", taskId: "abc" })
    → Task atribuída ao agente; aparece no board com badge de IA
 
-4. create_task({ projectId: "xxx", title: "Criar índices", parentId: "abc", points: 3 })
+4. create_task({ projectId: "xxx", title: "Criar índices", parentId: "abc", points: 3, versionId: "release-1" })
    → Subtask criada; task pai sai do Kanban (Leaf Rule)
 
 5. complete_task({ projectId: "xxx", taskId: "abc-sub" })

@@ -5,11 +5,15 @@ Definir os requisitos da capacidade card creation ui.
 ## Requirements
 
 ### Requirement: Botão de criação de card por coluna envia para `/items`
-O sistema SHALL exibir um botão "+" no rodapé de cada coluna do board para adicionar novo card. O formulário rápido envia para `POST /projects/:id/items` com o `type` selecionado.
+O sistema SHALL exibir um botão "+" no rodapé de cada coluna do board para adicionar novo card. O formulário rápido SHALL conter título, tipo (`TASK`/`BUG`), sprint opcional e versão opcional, enviando os dados para `POST /projects/:id/items`. Sprint SHALL listar somente `PROPOSED` ou `OPEN`.
 
 #### Scenario: Abrir formulário rápido de criação
 - **WHEN** usuário clica no botão "+" de uma coluna
-- **THEN** formulário compacto é exibido inline na coluna com campo de título, seletor de tipo (Task / Bug) e botões "Adicionar" e "Cancelar"
+- **THEN** formulário compacto é exibido inline na coluna com título, tipo, sprint opcional, versão opcional e ações Adicionar/Cancelar
+
+#### Scenario: Formulário sem sprints cadastradas
+- **WHEN** usuário abre o formulário em projeto sem sprints
+- **THEN** campo Sprint permanece visível com `Sem sprint` e `Nenhuma sprint cadastrada`
 
 #### Scenario: Criar card TASK pelo formulário rápido
 - **WHEN** usuário digita o título, mantém tipo `Task` e pressiona Enter ou clica em "Adicionar"
@@ -18,6 +22,14 @@ O sistema SHALL exibir um botão "+" no rodapé de cada coluna do board para adi
 #### Scenario: Criar card BUG pelo formulário rápido
 - **WHEN** usuário digita o título, seleciona tipo `Bug` e confirma
 - **THEN** sistema cria o item via `POST /projects/:id/items` com `type = BUG` na coluna correspondente
+
+#### Scenario: Associar sprint ou versão na criação rápida
+- **WHEN** usuário seleciona sprint elegível e/ou versão do projeto e confirma
+- **THEN** sistema cria o item preservando os vínculos selecionados; sem seleção, os vínculos ficam nulos
+
+#### Scenario: Sprint fechada durante a criação
+- **WHEN** uma sprint é fechada antes da confirmação
+- **THEN** API rejeita a criação ou associação e não persiste vínculo inválido
 
 #### Scenario: Cancelar criação
 - **WHEN** usuário pressiona Escape ou clica em "Cancelar"

@@ -442,6 +442,7 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     dueDate?: string | null
     versionId?: string | null
     costCenterId?: string | null
+    sprintId?: string | null
   }>()
   const idempotencyKey = c.req.header('Idempotency-Key') ?? (body as { idempotencyKey?: string }).idempotencyKey
   const idempotencyPayload = { projectId, body: { ...body, idempotencyKey: undefined } }
@@ -495,6 +496,12 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   if (body.costCenterId && !costCenter) return c.json({ error: 'Centro de custo não encontrado neste projeto' }, 400)
   if (body.assigneeId && !assignee) return c.json({ error: 'Responsável não é membro deste projeto' }, 400)
 
+  const sprint = body.sprintId
+    ? await db.query.sprints.findFirst({ where: (s) => and(eq(s.id, body.sprintId!), eq(s.projectId, projectId), eq(s.tenantId, ctx.tenantId)) })
+    : null
+  if (body.sprintId && !sprint) return c.json({ error: 'Sprint não encontrada neste projeto' }, 400)
+  if (sprint?.status === 'CLOSED') return c.json({ error: 'Não é possível associar itens a uma sprint fechada' }, 409)
+
   // Para TASK/BUG sem coluna: buscar primeira coluna do projeto
   let columnId = body.columnId ?? null
   if (!columnId && ['TASK', 'BUG'].includes(type)) {
@@ -526,7 +533,14 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
 
   // [TENANT] tenantId vem do JWT — nunca do body
   // authorId capturado do contexto de autenticação (humano ou agente de IA)
-  await db.insert(items).values({
+  try {
+    await db.transaction(async (tx) => {
+      if (body.sprintId) {
+        const currentSprint = await tx.query.sprints.findFirst({ where: (s) => and(eq(s.id, body.sprintId!), eq(s.projectId, projectId), eq(s.tenantId, ctx.tenantId)) })
+        if (!currentSprint) throw new Error('Sprint não encontrada neste projeto')
+        if (currentSprint.status === 'CLOSED') throw new Error('Não é possível associar itens a uma sprint fechada')
+      }
+      await tx.insert(items).values({
     id,
     tenantId: ctx.tenantId,
     projectId,
@@ -554,9 +568,15 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     position: 0,
     createdAt: now,
     updatedAt: now,
-  })
+      })
+      if (body.sprintId) await tx.insert(itemSprints).values({ itemId: id, sprintId: body.sprintId })
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('sprint')) return c.json({ error: error.message }, 409)
+    throw error
+  }
 
-  const payload = { id, title: body.title, type, projectId, columnId, status: 'NOT_STARTED' }
+  const payload = { id, title: body.title, type, projectId, columnId, status: 'NOT_STARTED', versionId: body.versionId ?? null, sprintId: body.sprintId ?? null }
 
   if (effectiveParentId) {
     broadcast(projectId, { type: 'SUBTASK_CREATED', projectId, payload: { parentId: effectiveParentId, item: payload } })
@@ -693,7 +713,8 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     notes?: string | null
      authorId?: unknown
      versionId?: string | null
-     costCenterId?: string | null
+    costCenterId?: string | null
+    sprintId?: string | null
    }>()
 
   // Identidade, tenant e relações de autorização são sempre derivados do
@@ -701,7 +722,7 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
   const writableFields = new Set([
     'title', 'description', 'priority', 'type', 'status', 'points', 'assigneeId',
     'columnId', 'parentId', 'moduleId', 'startDate', 'dueDate', 'blockedReason',
-    'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'versionId', 'costCenterId',
+    'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'versionId', 'costCenterId', 'sprintId',
   ])
   const safeBody = Object.fromEntries(Object.entries(body).filter(([field]) => writableFields.has(field))) as Omit<typeof body, 'authorId'>
   const updates: Record<string, unknown> = { ...safeBody, updatedAt: new Date().toISOString() }
@@ -762,6 +783,14 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     if (safeBody.assigneeId && !assignee) return c.json({ error: 'Responsável não é membro deste projeto' }, 400)
   }
 
+  if (safeBody.sprintId !== undefined) {
+    const sprint = safeBody.sprintId
+      ? await db.query.sprints.findFirst({ where: (s) => and(eq(s.id, safeBody.sprintId as string), eq(s.projectId, projectId), eq(s.tenantId, ctx.tenantId)) })
+      : null
+    if (safeBody.sprintId && !sprint) return c.json({ error: 'Sprint não encontrada neste projeto' }, 400)
+    if (sprint?.status === 'CLOSED') return c.json({ error: 'Não é possível associar itens a uma sprint fechada' }, 409)
+  }
+
   // Se parentId mudou, recalcular ancestryPath
   if (safeBody.parentId !== undefined || (project.boardMode === 'SIMPLE' && prevItem && ['TASK', 'BUG'].includes(prevItem.type))) {
     const newParentId = (updates.parentId as string | null | undefined) ?? safeBody.parentId
@@ -777,6 +806,13 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     .set(updates)
     // [TENANT] Anti-IDOR: filtra por tenantId + projectId + itemId.
     .where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+
+  if (safeBody.sprintId !== undefined) {
+    await db.transaction(async (tx) => {
+      await tx.delete(itemSprints).where(eq(itemSprints.itemId, itemId))
+      if (safeBody.sprintId) await tx.insert(itemSprints).values({ itemId, sprintId: safeBody.sprintId as string })
+    })
+  }
 
   // Se título mudou, atualizar ancestryPath dos filhos
   if (safeBody.title) {
@@ -908,9 +944,10 @@ itemsRouter.post('/:itemId/sprint', requireRole('MEMBER'), async (c) => {
 
   const sprint = await db.query.sprints.findFirst({
     where: (s) => and(eq(s.id, body.sprintId), eq(s.projectId, projectId), eq(s.tenantId, ctx.tenantId)),
-    columns: { id: true },
+    columns: { id: true, status: true },
   })
   if (!sprint) return c.json({ error: 'Sprint não encontrada neste projeto' }, 400)
+  if (sprint.status === 'CLOSED') return c.json({ error: 'Não é possível associar itens a uma sprint fechada' }, 409)
 
   await db.insert(itemSprints)
     .values({ itemId, sprintId: body.sprintId })

@@ -3,13 +3,17 @@ import { Plus, X } from 'lucide-react'
 import type { ItemType } from '@azy-board/types'
 
 interface Props {
-  onAdd: (title: string, type: ItemType) => Promise<void>
+  versions?: Array<{ id: string; name: string }>
+  sprints?: Array<{ id: string; name: string; status: 'PROPOSED' | 'OPEN' | 'CLOSED' }>
+  onAdd: (title: string, type: ItemType, versionId?: string, sprintId?: string) => Promise<void>
   onCancel: () => void
 }
 
-export function AddCardForm({ onAdd, onCancel }: Props) {
+export function AddCardForm({ versions = [], sprints = [], onAdd, onCancel }: Props) {
   const [title, setTitle] = useState('')
   const [type, setType] = useState<ItemType>('TASK')
+  const [versionId, setVersionId] = useState('')
+  const [sprintId, setSprintId] = useState('')
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -20,7 +24,7 @@ export function AddCardForm({ onAdd, onCancel }: Props) {
     if (!trimmed || loading) return
     setLoading(true)
     try {
-      await onAdd(trimmed, type)
+      await onAdd(trimmed, type, versionId || undefined, sprintId || undefined)
     } finally {
       setLoading(false)
     }
@@ -46,6 +50,16 @@ export function AddCardForm({ onAdd, onCancel }: Props) {
       >
         <option value="TASK">Tarefa</option>
         <option value="BUG">Bug</option>
+      </select>
+      <select aria-label="Sprint" value={sprintId} onChange={e => setSprintId(e.target.value)} className="w-full px-2 py-1 text-xs bg-background border border-border rounded-lg outline-none focus:border-primary">
+        <option value="">Sem sprint</option>
+        {sprints.length === 0 && <option disabled>Nenhuma sprint cadastrada</option>}
+        {sprints.filter(sprint => sprint.status !== 'CLOSED').map(sprint => <option key={sprint.id} value={sprint.id}>{sprint.name}</option>)}
+      </select>
+      <select aria-label="Versão" value={versionId} onChange={e => setVersionId(e.target.value)} className="w-full px-2 py-1 text-xs bg-background border border-border rounded-lg outline-none focus:border-primary">
+        <option value="">Sem versão</option>
+        {versions.length === 0 && <option disabled>Nenhuma versão cadastrada</option>}
+        {versions.map(version => <option key={version.id} value={version.id}>{version.name}</option>)}
       </select>
       <div className="flex gap-2">
         <button
