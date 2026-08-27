@@ -92,4 +92,14 @@ describe('contratos de UI dos modos de board', () => {
     contains(board, 'getEpicIdFromPath')
     contains(board, 'getStoryIdFromPath')
   })
+
+  test('Tree View renderiza progresso limitado e acessível', async () => {
+    const tree = await source('./pages/TreeViewPage.tsx')
+    contains(tree, 'role="progressbar"')
+    contains(tree, 'aria-valuemin={0}')
+    contains(tree, 'aria-valuemax={100}')
+    contains(tree, 'Math.max(0, Math.min(100')
+    contains(tree, "params.set('tagIds'")
+    contains(tree, 'setExpanded(previous =>')
+  })
 })

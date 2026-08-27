@@ -131,6 +131,10 @@ never grant privileges beyond the Owner.
 — `[{ id, title, type }, …]` — enabling O(1) breadcrumb rendering without
 recursive joins.
 
+**Tree View progress**: the hierarchical view displays progress bars for leaf
+TASK/BUG items and accumulated progress for Stories, Epics and other grouping
+nodes, using only non-archived descendants in the visible filtered result.
+
 ---
 
 ## Quick Start

@@ -2,9 +2,10 @@
 
 ## Visão Geral
 
-O projeto usa dois níveis de verificação:
+O projeto usa vários níveis de verificação:
 
 - Testes de integração Bun para o backend, com banco SQLite em memória.
+- Testes unitários e de contrato para regras de domínio, UI e integrações MCP.
 - Smoke test HTTP para validar uma aplicação local ou publicada.
 
 Os testes não usam o banco persistente, não criam arquivos de upload e não

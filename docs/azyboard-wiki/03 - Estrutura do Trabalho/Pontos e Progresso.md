@@ -69,6 +69,8 @@ A árvore possui colunas próprias para:
 
 Essa é a visualização mais adequada para comparar níveis diferentes da hierarquia.
 
+Na Tree View, o cálculo usa somente as folhas presentes no resultado autorizado e filtrado. Itens arquivados não participam, e filtros de módulo, sprint, responsável ou tags podem alterar a média exibida. Uma folha `TASK` ou `BUG` concluída (`DONE`) vale 100%; demais status valem 0%. Agrupadores sem folhas permanecem em 0%.
+
 ## Como atualizar a estimativa
 
 1. Abra uma task ou bug folha.
@@ -120,4 +122,3 @@ Alterações de status, pontos ou hierarquia invalidam os valores agregados dos 
 O cálculo usa o status de domínio `DONE` como condição de conclusão. A movimentação para uma coluna com status base concluído produz o mesmo efeito.
 
 </details>
-

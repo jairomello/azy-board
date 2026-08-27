@@ -38,7 +38,7 @@ Cada tipo de item possui um indicador próprio para facilitar a leitura.
 | Status | Estado atual do item. |
 | Responsável | Pessoa ou agente atribuído. |
 | Pontos | Estimativa da folha ou soma do item pai. |
-| Progresso | Percentual e barra dos itens agregadores. |
+| Progresso | Percentual e barra dos itens folha e agregadores. |
 | Início | Data planejada de início. |
 | Fim | Data planejada de conclusão. |
 
@@ -83,6 +83,8 @@ A árvore respeita os filtros do Board, especialmente:
 
 Os ancestrais necessários continuam visíveis para que um resultado nunca apareça sem contexto.
 
+O progresso é recalculado sobre o resultado filtrado. Somente folhas `TASK` e `BUG` não arquivadas participam: uma folha com status **DONE** vale 100% e qualquer outro status vale 0%. Épicos, histórias, tasks e bugs com filhos exibem a média das folhas descendentes; agrupadores sem folhas exibem 0%. O mesmo comportamento vale para a STORY fixa de projetos no modo **SIMPLE**.
+
 ## Arquivar pela árvore
 
 A ação de arquivamento aparece na linha do item. Módulos não podem ser arquivados, mas épicos, histórias, tasks e bugs podem.
@@ -121,11 +123,10 @@ A Tree View consome uma representação hierárquica que começa nos módulos e 
 
 ### Preservação do contexto
 
-O serviço filtra folhas que não atendem aos critérios e reconstrói os ancestrais necessários. A ocultação de épicos vazios é aplicada depois da formação da árvore visível.
+O serviço filtra folhas que não atendem aos critérios e reconstrói os ancestrais necessários. A ocultação de épicos vazios é aplicada depois da formação da árvore visível. O payload já inclui o progresso calculado bottom-up, limitado ao intervalo de 0% a 100%.
 
 ### Edição
 
 Edições inline utilizam a mesma atualização de item da modal completa. Mudanças relevantes geram eventos para manter outras sessões sincronizadas.
 
 </details>
-

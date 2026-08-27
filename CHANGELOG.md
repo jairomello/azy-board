@@ -15,6 +15,8 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
   transacional, história fixa no modo simples e preservação dos cards.
 - Autorização MCP herdada do Owner da API Key, com grupos globais, escopo por
   tenant/projeto, políticas por ferramenta e proteção contra escalada.
+- Barras de progresso e percentuais na Tree View para items folha e agrupadores,
+  com agregação bottom-up e exclusão de itens arquivados.
 
 ### Changed
 

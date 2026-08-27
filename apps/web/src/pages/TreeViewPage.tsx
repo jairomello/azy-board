@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { Archive } from 'lucide-react'
 import { api } from '../lib/api'
 import type { BoardFilterState } from '../components/BoardFilters'
 
 // Nó genérico da árvore retornado por /items/tree
-interface TreeNode {
+export interface TreeNode {
   id: string
   title?: string
   name?: string       // módulos usam `name`
@@ -16,6 +16,7 @@ interface TreeNode {
   startDate?: string | null
   dueDate?: string | null
   assignee?: { name: string; avatarUrl: string | null } | null
+  assigneeId?: string | null
   isLeaf?: boolean
   children: TreeNode[]
 }
@@ -79,6 +80,10 @@ function filterHideEmptyEpics(node: TreeNode): TreeNode | null {
   return { ...node, children: filteredChildren }
 }
 
+function clampProgress(progress: number): number {
+  return Math.max(0, Math.min(100, Math.round(progress)))
+}
+
 interface RowProps {
   depth: number
   label: string
@@ -105,7 +110,13 @@ function Row({ depth, label, type, status, points, progress, startDate, dueDate,
       <td className="py-2 pr-2 text-sm" style={{ paddingLeft: `${16 + indentPx}px` }}>
         <div className="flex items-center gap-2">
           {hasChildren ? (
-            <button onClick={onToggle} className="text-muted-foreground hover:text-foreground transition flex-shrink-0">
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-label={`${expanded ? 'Recolher' : 'Expandir'} ${label}`}
+              aria-expanded={expanded}
+              className="text-muted-foreground hover:text-foreground transition flex-shrink-0"
+            >
               <svg className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
@@ -143,11 +154,18 @@ function Row({ depth, label, type, status, points, progress, startDate, dueDate,
       </td>
       <td className="py-2 px-2 text-sm w-24">
         {progress != null ? (
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5" aria-label={`Progresso: ${clampProgress(progress)}%`}>
             <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-              <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${progress}%` }} />
+              <div
+                className="h-full bg-primary rounded-full transition-all"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={clampProgress(progress)}
+                style={{ width: `${clampProgress(progress)}%` }}
+              />
             </div>
-            <span className="text-xs text-muted-foreground flex-shrink-0">{Math.round(progress)}%</span>
+            <span className="text-xs text-muted-foreground flex-shrink-0">{clampProgress(progress)}%</span>
           </div>
         ) : '—'}
       </td>
@@ -181,9 +199,8 @@ function NodeRows({ nodes, depth, expanded, onToggle, onArchive }: {
   return (
     <>
       {nodes.map(node => (
-        <>
+        <Fragment key={node.id}>
           <Row
-            key={node.id}
             depth={depth}
             label={node.title ?? node.name ?? ''}
             type={node.type}
@@ -208,7 +225,7 @@ function NodeRows({ nodes, depth, expanded, onToggle, onArchive }: {
               onArchive={onArchive}
             />
           )}
-        </>
+        </Fragment>
       ))}
     </>
   )
@@ -233,6 +250,7 @@ export function TreeViewPage({ projectId, filters, onArchive }: Props) {
     if (filters?.moduleId)   params.set('moduleId', filters.moduleId)
     if (filters?.assigneeId) params.set('assigneeId', filters.assigneeId)
     if (filters?.sprintId)   params.set('sprintId', filters.sprintId)
+    if (filters?.tagIds.length) params.set('tagIds', filters.tagIds.join(','))
     const qs = params.toString()
     const url = `/projects/${projectId}/items/tree${qs ? `?${qs}` : ''}`
 
@@ -240,10 +258,14 @@ export function TreeViewPage({ projectId, filters, onArchive }: Props) {
     api.get<TreeNode[]>(url)
       .then(data => {
         setTree(data)
-        setExpanded(new Set(data.map(m => m.id)))
+        setExpanded(previous => {
+          const ids = collectAllIds(data)
+          const retained = new Set([...previous].filter(id => ids.has(id)))
+          return previous.size === 0 ? new Set(data.map(m => m.id)) : retained
+        })
       })
       .finally(() => setLoading(false))
-  }, [projectId, filters?.moduleId, filters?.assigneeId, filters?.sprintId])
+  }, [projectId, filters?.moduleId, filters?.assigneeId, filters?.sprintId, filters?.tagIds.join(',')])
 
   // Tarefa 11.5 — aplicar filtro hideEmptyEpics na árvore
   const displayTree = filters?.hideEmptyEpics

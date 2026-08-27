@@ -97,6 +97,61 @@ describe('modos de board de projetos', () => {
     expect((await db.select().from(items)).find(item => item.id === createdItem.id)?.parentId).toBe(created.simpleStoryId)
   })
 
+  test('retorna progresso bottom-up, exclui arquivados e recalcula filtros e SIMPLE', async () => {
+    const projectResponse = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Tree progress' }),
+    })
+    const project = await projectResponse.json() as { id: string }
+    const module = (await db.select().from(modules)).find(item => item.projectId === project.id)!
+    const now = new Date().toISOString()
+    const epicId = generateId()
+    const storyId = generateId()
+    const doneId = generateId()
+    const openId = generateId()
+    const archivedId = generateId()
+    await db.insert(items).values([
+      { id: epicId, tenantId, projectId: project.id, type: 'EPIC', parentId: null, moduleId: module.id, title: 'EPIC progress', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now },
+      { id: storyId, tenantId, projectId: project.id, type: 'STORY', parentId: epicId, moduleId: null, title: 'STORY progress', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now },
+      { id: doneId, tenantId, projectId: project.id, type: 'TASK', parentId: storyId, moduleId: null, title: 'Done', ancestryPath: '[]', status: 'DONE', priority: 'MEDIUM', points: 5, assigneeId: adminId, position: 0, createdAt: now, updatedAt: now },
+      { id: openId, tenantId, projectId: project.id, type: 'BUG', parentId: storyId, moduleId: null, title: 'Open', ancestryPath: '[]', status: 'IN_PROGRESS', priority: 'MEDIUM', position: 1, createdAt: now, updatedAt: now },
+      { id: archivedId, tenantId, projectId: project.id, type: 'TASK', parentId: storyId, moduleId: null, title: 'Archived done', ancestryPath: '[]', status: 'ARCHIVED', priority: 'MEDIUM', position: 2, createdAt: now, updatedAt: now },
+    ])
+    const tag = generateId()
+    await db.insert(tags).values({ id: tag, tenantId, projectId: project.id, name: 'Only done', color: '#000000' })
+    await db.insert(itemTags).values({ itemId: doneId, tagId: tag })
+
+    const response = await request(`/projects/${project.id}/items/tree`, adminToken)
+    expect(response.status).toBe(200)
+     type TreeResult = { id: string; progress: number; points?: number; assignee?: { name: string }; children: TreeResult[] }
+     const tree = await response.json() as TreeResult[]
+    const returnedModule = tree[0]!
+    const returnedEpic = returnedModule.children.find(item => item.id === epicId)!
+    const returnedStory = returnedEpic.children.find(item => item.id === storyId)!
+    expect(returnedModule.progress).toBe(50)
+    expect(returnedEpic.progress).toBe(50)
+     expect(returnedStory.progress).toBe(50)
+     expect(returnedStory.points).toBe(5)
+     expect(returnedStory.children.find(item => item.id === doneId)?.assignee?.name).toBe('Admin Teste')
+    expect(returnedStory.children.find(item => item.id === doneId)?.progress).toBe(100)
+    expect(returnedStory.children.find(item => item.id === openId)?.progress).toBe(0)
+    expect(returnedStory.children.some(item => item.id === archivedId)).toBe(false)
+
+    const filtered = await request(`/projects/${project.id}/items/tree?tagIds=${tag}`, adminToken)
+    const filteredTree = await filtered.json() as typeof tree
+    const filteredEpic = filteredTree[0]?.children.find(item => item.id === epicId)
+    expect(filteredTree[0]?.progress).toBe(100)
+    expect(filteredEpic?.progress).toBe(100)
+    expect(filteredEpic?.children.find(item => item.id === storyId)?.progress).toBe(100)
+
+    const simpleResponse = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Simple progress', boardMode: 'SIMPLE' }),
+    })
+    const simple = await simpleResponse.json() as { id: string; simpleStoryId: string }
+    await db.insert(items).values({ id: generateId(), tenantId, projectId: simple.id, type: 'TASK', parentId: simple.simpleStoryId, moduleId: null, title: 'Simple done', ancestryPath: '[]', status: 'DONE', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now })
+    const simpleTree = await (await request(`/projects/${simple.id}/items/tree`, adminToken)).json() as Array<{ type: string; progress: number }>
+    expect(simpleTree[0]).toMatchObject({ type: 'STORY', progress: 100 })
+  })
+
   test('converte projeto hierárquico preservando cards e achatando a estrutura', async () => {
     const response = await request('/projects', adminToken, {
       method: 'POST',

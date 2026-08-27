@@ -2,11 +2,12 @@ import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { eq, and, inArray, asc, desc, sql } from 'drizzle-orm'
 import { db } from '../db/index'
-import { projects, items, columns, itemTags, itemSprints, modules, checklists, checklistItems, attachments, itemLogs, projectVersions, projectCostCenters, tags, sprints, memberships } from '../db/schema'
+import { projects, items, columns, itemTags, itemSprints, modules, checklists, checklistItems, attachments, itemLogs, projectVersions, projectCostCenters, tags, sprints, memberships, users } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import { buildAncestryPath, calculateProgress, calculatePoints, updateDescendantAncestry } from '../services/ancestry'
 import { broadcast } from '../services/websocket'
+import { addTreeProgress, type TreeProgressNode } from '../services/treeProgress'
 import type { RequestContext, Priority, ItemType } from '@azy-board/types'
 import { getIdempotent, saveIdempotent } from '../services/idempotency'
 
@@ -115,6 +116,7 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
   const filterModuleId = c.req.query('moduleId')
   const filterAssigneeId = c.req.query('assigneeId')
   const filterSprintId = c.req.query('sprintId')
+  const filterTagIds = c.req.query('tagIds')?.split(',').filter(Boolean) ?? []
 
   // [TENANT] Filtra por tenantId + projectId; exclui itens arquivados por padrão
   const [allModules, allItems] = await Promise.all([
@@ -125,6 +127,19 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
       .where(and(eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId), sql`${items.status} != 'ARCHIVED'`))
       .orderBy(asc(items.position)),
   ])
+
+  const assigneeIds = [...new Set(allItems.map(item => item.assigneeId).filter((id): id is string => id !== null))]
+  const assignees = assigneeIds.length > 0
+    ? await db.select({ id: users.id, name: users.name, avatarUrl: users.avatarUrl })
+      .from(users)
+      // [TENANT] Responsáveis são resolvidos somente dentro do tenant atual.
+      .where(and(inArray(users.id, assigneeIds), eq(users.tenantId, ctx.tenantId)))
+    : []
+  const assigneeMap = new Map(assignees.map(assignee => [assignee.id, assignee]))
+  const treeItems = allItems.map(item => ({
+    ...item,
+    assignee: item.assigneeId ? assigneeMap.get(item.assigneeId) ?? null : null,
+  }))
 
   // [TENANT] O modo e a STORY fixa são resolvidos dentro do projeto do tenant atual.
   const project = await db.query.projects.findFirst({
@@ -140,42 +155,52 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
     sprintItemIds = new Set(rows.map(r => r.itemId))
   }
 
-  const epics = allItems.filter(i =>
+  let tagItemIds: Set<string> | null = null
+  if (filterTagIds.length > 0) {
+    const rows = await db.select({ itemId: itemTags.itemId })
+      .from(itemTags)
+      .where(inArray(itemTags.tagId, filterTagIds))
+    tagItemIds = new Set(rows.map(r => r.itemId))
+  }
+
+  const epics = treeItems.filter(i =>
     i.type === 'EPIC' &&
     (!filterModuleId || i.moduleId === filterModuleId)
   )
 
-  function buildChildren(parentId: string, depth: number): unknown[] {
-    const children = allItems
+  function buildChildren(parentId: string, depth: number): TreeProgressNode[] {
+    const children = treeItems
       .filter(i => i.parentId === parentId)
       .sort((a, b) => a.position - b.position)
 
     return children.map(child => {
       const nested = buildChildren(child.id, depth + 1)
-      const leafItems = nested.length === 0 && ['TASK', 'BUG'].includes(child.type)
+      const hasChildren = treeItems.some(item => item.parentId === child.id)
+      const leafItems = !hasChildren && ['TASK', 'BUG'].includes(child.type)
 
       if (filterAssigneeId && leafItems && child.assigneeId !== filterAssigneeId) return null
       if (sprintItemIds && leafItems && !sprintItemIds.has(child.id)) return null
+      if (tagItemIds && leafItems && !tagItemIds.has(child.id)) return null
 
       return {
         ...child,
         ancestryPath: (() => { try { return JSON.parse(child.ancestryPath) } catch { return [] } })(),
-        isLeaf: nested.length === 0,
-        children: nested.filter(Boolean),
+        isLeaf: !hasChildren,
+        children: nested.filter(child => child !== null),
       }
-    }).filter(Boolean)
+    }).filter(child => child !== null) as TreeProgressNode[]
   }
 
   if (project?.boardMode === 'SIMPLE') {
-    const fixedStory = allItems.find(item => item.id === project.simpleStoryId) ?? allItems.find(item => item.type === 'STORY' && !item.parentId)
+    const fixedStory = treeItems.find(item => item.id === project.simpleStoryId) ?? treeItems.find(item => item.type === 'STORY' && !item.parentId)
     if (!fixedStory) return c.json([])
-    return c.json([{
+    return c.json(addTreeProgress([{
       ...fixedStory,
       type: 'STORY' as const,
       ancestryPath: [],
       isLeaf: false,
       children: buildChildren(fixedStory.id, 0),
-    }])
+    }]))
   }
 
   const tree = (filterModuleId ? allModules.filter(m => m.id === filterModuleId) : allModules)
@@ -192,7 +217,7 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
         })),
     }))
 
-  return c.json(tree)
+  return c.json(addTreeProgress(tree))
 })
 
 // GET /projects/:projectId/items
