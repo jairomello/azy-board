@@ -83,6 +83,7 @@ import {
 } from './tools.js'
 import type { ApiCall } from './tools.js'
 import { assertEnum, assertIsoDate, assertNonEmptyString, assertNonNegativeNumber, assertStringArray } from './validation.js'
+import { hasMcpPolicy } from './policies.js'
 
 // [TENANT] API Key autentica o agente como o Owner humano vinculado — resolvido pelo middleware da API
 export async function makeApiCall(apiUrl: string, apiKey: string, options: { timeoutMs?: number } = {}) {
@@ -121,7 +122,8 @@ export async function makeApiCall(apiUrl: string, apiKey: string, options: { tim
         throw new ApiError(payload.error.code ?? `HTTP_${res.status}`, payload.error.message ?? `Erro HTTP ${res.status}`, payload.error.retryable === true)
       }
       return payload.data
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiError) throw error
       throw new ApiError('INVALID_API_RESPONSE', 'A API retornou JSON inválido', true)
     }
   }
@@ -652,6 +654,7 @@ Use checked=true ao completar um passo, checked=false para reverter.`,
   }
 
   try {
+    if (!hasMcpPolicy(name)) throw new ApiError('MCP_POLICY_REQUIRED', 'Ferramenta não autorizada', false)
     validateToolArguments(name, args)
     switch (name) {
       case 'list_tasks':

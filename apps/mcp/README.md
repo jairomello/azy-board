@@ -90,6 +90,19 @@ Adicione ao seu `.claude/settings.json`:
 | `EASYBOARD_API_KEY` | API Key gerada no painel do Azy Board | obrigatório |
 | `EASYBOARD_URL` | URL base da API | `http://localhost:3000` |
 
+## Autorização
+
+A chave autentica o agente como seu Owner humano. O servidor resolve, em cada
+chamada, o tenant, grupo global (`TEAM_MEMBER`, `MANAGER`, `ADMIN` ou `ROOT`),
+membership/papel local e estado da chave. O payload nunca pode alterar esses
+valores. `projectScope` e `permissionScope` são restrições adicionais, nunca
+privilégios novos; chave expirada, revogada, inválida ou fora do escopo é
+rejeitada sem revelar o recurso.
+
+Leituras exigem papel local `VIEWER`, conteúdo exige `MEMBER`, configuração do
+projeto exige `ADMIN`, e `create_project` exige grupo global `MANAGER`. O módulo
+Administração REST continua reservado a `ADMIN`/`ROOT`. Não há upload via IA.
+
 ## Fluxo AI First
 
 Um agente pode seguir este fluxo sem usar a interface:

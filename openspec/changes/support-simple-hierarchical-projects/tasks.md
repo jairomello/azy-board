@@ -41,7 +41,7 @@
 
 - [x] 6.1 Testar migração de schema e default hierárquico para projetos existentes.
 - [x] 6.2 Testar criação simples, criação hierárquica e retorno de modo nos endpoints.
-- [ ] 6.3 Testar conversão nos dois sentidos com TASKs, subtasks, BUGs, tags, sprints, anexos, checklists, logs e colunas, confirmando preservação e rollback.
+- [x] 6.3 Testar conversão nos dois sentidos com TASKs, subtasks, BUGs, tags, sprints, anexos, checklists, logs e colunas, confirmando preservação e rollback.
 - [x] 6.4 Testar autorização ADMIN, bloqueio de MEMBER/VIEWER e isolamento cross-tenant.
-- [ ] 6.5 Testar interface: seletor, confirmação, cancelamento, board único, filtros, árvore, breadcrumbs, drag-and-drop e regressão hierárquica.
-- [ ] 6.6 Executar typecheck, lint, testes e build de todos os apps, corrigindo regressões.
+- [x] 6.5 Testar interface: seletor, confirmação, cancelamento, board único, filtros, árvore, breadcrumbs, drag-and-drop e regressão hierárquica.
+- [x] 6.6 Executar typecheck, lint, testes e build de todos os apps, corrigindo regressões.

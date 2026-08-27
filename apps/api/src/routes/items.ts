@@ -696,8 +696,14 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
      costCenterId?: string | null
    }>()
 
-  // Tarefa 2.2 — authorId nunca é alterado via PATCH
-  const { authorId: _ignoredAuthorId, ...safeBody } = body
+  // Identidade, tenant e relações de autorização são sempre derivados do
+  // contexto/rota; nunca aceitamos esses campos do agente.
+  const writableFields = new Set([
+    'title', 'description', 'priority', 'type', 'status', 'points', 'assigneeId',
+    'columnId', 'parentId', 'moduleId', 'startDate', 'dueDate', 'blockedReason',
+    'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'versionId', 'costCenterId',
+  ])
+  const safeBody = Object.fromEntries(Object.entries(body).filter(([field]) => writableFields.has(field))) as Omit<typeof body, 'authorId'>
   const updates: Record<string, unknown> = { ...safeBody, updatedAt: new Date().toISOString() }
 
   // [TENANT] O modo do projeto e a STORY fixa são resolvidos no mesmo tenant do item.

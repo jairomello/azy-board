@@ -19,6 +19,7 @@ flowchart TD
     Board --> Item[Detalhes dos itens]
     Projetos --> Conta[Conta]
     Conta --> Keys[API Keys]
+    Projetos --> Admin[Administração]
 ```
 
 ## Cabeçalho da lista de projetos
@@ -42,6 +43,7 @@ Ao abrir um projeto, o cabeçalho passa a apresentar o contexto do trabalho atua
 - Seletor de idioma.
 - Controle de tema.
 - Acesso às configurações do projeto.
+- Acesso ao menu **Admin**, quando a conta é Admin ou Root.
 - Menu do perfil.
 
 O nome do projeto no breadcrumb ajuda a diferenciar o contexto quando a pessoa participa de vários projetos.
@@ -60,7 +62,7 @@ Os filtros compatíveis são preservados durante a troca. Controles específicos
 2. A aplicação abre as configurações do projeto atual.
 3. Use **Voltar ao board** para retornar.
 
-As seções e ações administrativas dependem do papel da pessoa no projeto.
+As seções e ações dependem do grupo global e do papel local da pessoa. Membros de Equipe não veem Configurações; Gerentes podem configurar projetos associados, mas não veem Administração. Admins e Root veem Administração, e Admins visualizam todos os projetos do tenant.
 
 ## Usar o menu do perfil
 
@@ -100,11 +102,11 @@ Fechar uma modal retorna ao contexto anterior. Em itens com filhos, a navegaçã
 
 | Área | Admin | Membro | Visualizador |
 |---|---:|---:|---:|
-| Lista de projetos | Sim | Sim | Sim |
+| Lista de projetos | Todos do tenant | Associados | Associados |
 | Board e árvore | Sim | Sim | Sim |
 | Conta e preferências | Sim | Sim | Sim |
-| Configurações do projeto | Sim | Consulta | Consulta |
-| Ações administrativas | Sim | Não | Não |
+| Configurações do projeto | Sim | Não | Conforme papel local |
+| Administração de usuários | Sim | Não | Não |
 
 ## Exemplo prático
 
@@ -122,7 +124,7 @@ Uma pessoa abre o projeto **Portal do Cliente**, alterna para a árvore para con
 
 ### Rotas
 
-A interface utiliza rotas para login, projetos, Board, configurações de projeto e conta. As rotas funcionais são carregadas sob demanda para reduzir o conteúdo inicial necessário.
+A interface utiliza rotas para login, projetos, Board, configurações de projeto, Administração e conta. As rotas funcionais são carregadas sob demanda para reduzir o conteúdo inicial necessário.
 
 ### Proteção
 
@@ -133,4 +135,3 @@ Um componente de proteção aguarda a resolução da sessão antes de renderizar
 O identificador do projeto faz parte da rota. Alternâncias locais, modais, filtros e swimlanes são controlados pela página do Board, sem criar rotas adicionais para cada estado visual.
 
 </details>
-

@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
+import { eq } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
 import { toolCreateTask, toolListTasks } from '../../mcp/src/tools'
 
@@ -109,23 +110,30 @@ describe('modos de board de projetos', () => {
     const epicId = generateId()
     const storyId = generateId()
     const taskId = generateId()
+    const bugId = generateId()
+    const subtaskId = generateId()
     const now = new Date().toISOString()
     await db.insert(items).values([
       { id: epicId, tenantId, projectId, type: 'EPIC', parentId: null, moduleId: projectModule.id, title: 'Épico', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now },
       { id: storyId, tenantId, projectId, type: 'STORY', parentId: epicId, moduleId: null, title: 'História', ancestryPath: JSON.stringify([{ id: epicId, title: 'Épico', type: 'EPIC' }]), status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now },
-      { id: taskId, tenantId, projectId, type: 'TASK', parentId: storyId, moduleId: null, columnId: column.id, title: 'Card preservado', ancestryPath: JSON.stringify([{ id: epicId, title: 'Épico', type: 'EPIC' }, { id: storyId, title: 'História', type: 'STORY' }]), status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now },
+      { id: taskId, tenantId, projectId, type: 'TASK', parentId: storyId, moduleId: null, columnId: column.id, title: 'Card preservado', description: 'Conteúdo da tarefa', points: 5, ancestryPath: JSON.stringify([{ id: epicId, title: 'Épico', type: 'EPIC' }, { id: storyId, title: 'História', type: 'STORY' }]), status: 'NOT_STARTED', priority: 'HIGH', position: 0, createdAt: now, updatedAt: now },
+      { id: bugId, tenantId, projectId, type: 'BUG', parentId: storyId, moduleId: null, columnId: column.id, title: 'Bug preservado', description: 'Reprodução do bug', points: 2, ancestryPath: JSON.stringify([{ id: epicId, title: 'Épico', type: 'EPIC' }, { id: storyId, title: 'História', type: 'STORY' }]), status: 'IN_PROGRESS', priority: 'CRITICAL', position: 1, createdAt: now, updatedAt: now },
+      { id: subtaskId, tenantId, projectId, type: 'TASK', parentId: taskId, moduleId: null, columnId: column.id, title: 'Subtask preservada', description: 'Detalhe da tarefa', points: 1, ancestryPath: JSON.stringify([{ id: epicId, title: 'Épico', type: 'EPIC' }, { id: storyId, title: 'História', type: 'STORY' }, { id: taskId, title: 'Card preservado', type: 'TASK' }]), status: 'DONE', priority: 'LOW', position: 0, createdAt: now, updatedAt: now },
     ])
     const tagId = generateId()
     const sprintId = generateId()
     const checklistId = generateId()
     await db.insert(tags).values({ id: tagId, tenantId, projectId, name: 'Importante', color: '#000000' })
     await db.insert(sprints).values({ id: sprintId, tenantId, projectId, name: 'Sprint 1', status: 'PLANNED', startDate: null, endDate: null, createdAt: now })
-    await db.insert(itemTags).values({ itemId: taskId, tagId })
-    await db.insert(itemSprints).values({ itemId: taskId, sprintId })
+    await db.insert(itemTags).values([{ itemId: taskId, tagId }, { itemId: bugId, tagId }])
+    await db.insert(itemSprints).values([{ itemId: taskId, sprintId }, { itemId: bugId, sprintId }])
     await db.insert(attachments).values({ id: generateId(), tenantId, itemId: taskId, filename: 'card.txt', originalName: 'card.txt', mimeType: 'text/plain', size: 4, storagePath: `${tenantId}/${taskId}/card.txt`, createdAt: now })
     await db.insert(checklists).values({ id: checklistId, tenantId, itemId: taskId, name: 'Checklist', position: 0, createdAt: now })
     await db.insert(checklistItems).values({ id: generateId(), tenantId, checklistId, text: 'Validar', checked: false, position: 0 })
     await db.insert(itemLogs).values({ id: generateId(), tenantId, itemId: taskId, authorId: adminId, type: 'manual', activity: 'Criado no teste', durationMin: null, createdAt: now, updatedAt: now })
+
+    const originalColumns = (await db.select().from(columns)).filter(item => item.projectId === projectId)
+    const originalCards = (await db.select().from(items)).filter(item => [taskId, bugId, subtaskId].includes(item.id))
 
     const convert = await request(`/projects/${projectId}`, adminToken, {
       method: 'PATCH',
@@ -136,8 +144,13 @@ describe('modos de board de projetos', () => {
     const updated = await convert.json() as { boardMode: string; simpleStoryId: string }
     expect(updated.boardMode).toBe('SIMPLE')
 
-    const remainingTask = (await db.select().from(items)).find(item => item.id === taskId)!
-    expect(remainingTask.parentId).toBe(updated.simpleStoryId)
+    const remainingCards = (await db.select().from(items)).filter(item => [taskId, bugId, subtaskId].includes(item.id))
+    expect(remainingCards).toHaveLength(3)
+    expect(remainingCards.map(item => item.id).sort()).toEqual(originalCards.map(item => item.id).sort())
+    expect(remainingCards.find(item => item.id === taskId)).toMatchObject({ parentId: updated.simpleStoryId, title: 'Card preservado', description: 'Conteúdo da tarefa', points: 5, priority: 'HIGH' })
+    expect(remainingCards.find(item => item.id === bugId)).toMatchObject({ parentId: updated.simpleStoryId, title: 'Bug preservado', status: 'IN_PROGRESS', priority: 'CRITICAL' })
+    expect(remainingCards.find(item => item.id === subtaskId)).toMatchObject({ parentId: updated.simpleStoryId, title: 'Subtask preservada', status: 'DONE' })
+    expect(remainingCards.every(item => item.ancestryPath === JSON.stringify([{ id: updated.simpleStoryId, title: 'Fluxo contínuo', type: 'STORY' }]))).toBe(true)
     expect((await db.select().from(items)).filter(item => item.projectId === projectId && (item.type === 'EPIC' || item.type === 'STORY'))).toHaveLength(1)
     expect((await db.select().from(modules)).filter(module => module.projectId === projectId)).toHaveLength(0)
     expect((await db.select().from(itemTags)).filter(link => link.itemId === taskId)).toHaveLength(1)
@@ -146,6 +159,54 @@ describe('modos de board de projetos', () => {
     expect((await db.select().from(checklists)).filter(list => list.itemId === taskId)).toHaveLength(1)
     expect((await db.select().from(checklistItems)).filter(item => item.checklistId === checklistId)).toHaveLength(1)
     expect((await db.select().from(itemLogs)).filter(log => log.itemId === taskId)).toHaveLength(1)
+    expect((await db.select().from(columns)).filter(item => item.projectId === projectId)).toEqual(originalColumns)
+
+    const reverse = await request(`/projects/${projectId}`, adminToken, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ boardMode: 'HIERARCHICAL' }),
+    })
+    expect(reverse.status).toBe(200)
+    const hierarchical = await reverse.json() as { boardMode: string; simpleStoryId: string }
+    expect(hierarchical.boardMode).toBe('HIERARCHICAL')
+    const reversedCards = (await db.select().from(items)).filter(item => [taskId, bugId, subtaskId].includes(item.id))
+    const epic = (await db.select().from(items)).find(item => item.type === 'EPIC' && item.projectId === projectId)!
+    expect(reversedCards.find(item => item.id === taskId)).toMatchObject({ parentId: updated.simpleStoryId, title: 'Card preservado', description: 'Conteúdo da tarefa', points: 5 })
+    expect(reversedCards.find(item => item.id === bugId)).toMatchObject({ parentId: updated.simpleStoryId, title: 'Bug preservado' })
+    expect(reversedCards.find(item => item.id === subtaskId)).toMatchObject({ parentId: updated.simpleStoryId, title: 'Subtask preservada' })
+    expect(reversedCards.every(item => item.ancestryPath.includes(epic.id))).toBe(true)
+    expect((await db.select().from(itemTags)).filter(link => [taskId, bugId].includes(link.itemId))).toHaveLength(2)
+    expect((await db.select().from(itemSprints)).filter(link => [taskId, bugId].includes(link.itemId))).toHaveLength(2)
+    expect((await db.select().from(columns)).filter(item => item.projectId === projectId)).toEqual(originalColumns)
+  })
+
+  test('faz rollback quando a conversão não consegue remover uma referência', async () => {
+    const first = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto com falha de conversão' }),
+    })
+    const project = await first.json() as { id: string }
+    const projectModule = (await db.select().from(modules)).find(module => module.projectId === project.id)!
+    const other = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto referência externa' }),
+    })
+    const otherProject = await other.json() as { id: string }
+    const now = new Date().toISOString()
+    await db.insert(items).values({ id: generateId(), tenantId, projectId: otherProject.id, type: 'EPIC', parentId: null, moduleId: projectModule.id, title: 'Referência inválida para conversão', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now })
+
+    const convert = await request(`/projects/${project.id}`, adminToken, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ boardMode: 'SIMPLE' }),
+    })
+    expect(convert.status).toBe(500)
+    const unchanged = (await db.select().from(projects)).find(item => item.id === project.id)!
+    expect(unchanged.boardMode).toBe('HIERARCHICAL')
+    expect(unchanged.simpleStoryId).toBeNull()
+    expect((await db.select().from(modules)).filter(item => item.projectId === project.id)).toHaveLength(1)
   })
 
   test('converte projeto simples de volta sem duplicar a história fixa', async () => {
@@ -270,6 +331,35 @@ describe('modos de board de projetos', () => {
     expect(revokeResponse.status).toBe(204)
     const revokedResponse = await apiKeyRequest(`/projects/${project.id}/board`, key.key)
     expect(revokedResponse.status).toBe(401)
+  })
+
+  test('revalida a alteração do grupo durante uma sessão MCP', async () => {
+    const projectResponse = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto grupo mutável' }),
+    })
+    const project = await projectResponse.json() as { id: string }
+    const keyResponse = await request('/api-keys', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Sessão revalidada', projectScope: [project.id], permissionScope: ['admin'] }),
+    })
+    const key = await keyResponse.json() as { key: string }
+    const before = await apiKeyRequest(`/projects/${project.id}`, key.key)
+    expect(before.status).toBe(200)
+
+    await db.update(users).set({ globalGroup: 'TEAM_MEMBER' }).where(eq(users.id, adminId))
+    try {
+      const after = await apiKeyRequest(`/projects/${project.id}`, key.key, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: 'não deve alterar' }),
+      })
+      expect(after.status).toBe(403)
+    } finally {
+      await db.update(users).set({ globalGroup: 'ADMIN' }).where(eq(users.id, adminId))
+    }
   })
 
   test('rejeita cursor inválido e mantém isolamento do sprint', async () => {

@@ -6,7 +6,7 @@ order: 1
 
 # Conhecer o Board
 
-O Board é o ambiente operacional principal do projeto. Ele combina o fluxo Kanban com a hierarquia **Épico → História → Cards**, permitindo acompanhar o contexto funcional e a etapa de cada item executável.
+O Board é o ambiente operacional principal do projeto. Ele pode combinar o fluxo Kanban com a hierarquia **Épico → História → Cards** ou apresentar um fluxo simples com uma história fixa e cards de trabalho.
 
 ## Onde encontrar
 
@@ -22,7 +22,7 @@ O Board é dividido em quatro áreas:
 
 1. Cabeçalho global.
 2. Toolbar de visualização, filtros e ações.
-3. Lanes de épico e, no modo padrão, lanes de história aninhadas.
+3. Lanes de épico e história no modo **Hierárquico**, ou uma lane única no modo **Simples**.
 4. Colunas e cards dentro do agrupamento ativo.
 
 ## Cabeçalho
@@ -84,6 +84,10 @@ Cards com épico, mas sem história ancestral, são reunidos em **Sem história*
 
 O controle de histórias pode trocar essa representação pelo modo de cards. Nesse modo, histórias folha voltam a participar das colunas como cards móveis e histórias agregadoras aparecem como referências não arrastáveis, preservando o comportamento anterior.
 
+## Fluxo simples
+
+No modo **Simples**, o Board exibe uma única história fixa e as colunas do projeto. Módulos, épicos e os controles de expandir/recolher swimlanes não aparecem. TASKs e BUGs vinculados à história fixa são exibidos diretamente no fluxo único; filtros de sprint, responsável, tipo e tags continuam disponíveis.
+
 ## Colunas
 
 As colunas representam etapas do fluxo. A mesma ordem é repetida em todas as lanes para permitir a comparação entre épicos e histórias.
@@ -125,6 +129,10 @@ Uma lane de épico pode continuar visível mesmo vazia. Isso ajuda a identificar
 ### História sem cards
 
 No modo de lanes, uma história vazia continua visível e oferece as colunas para criação contextual. O filtro **Ocultar histórias vazias** pode removê-la temporariamente.
+
+### Projeto simples sem itens
+
+As colunas e a história fixa permanecem disponíveis para a criação dos primeiros cards.
 
 ### Projeto sem itens
 

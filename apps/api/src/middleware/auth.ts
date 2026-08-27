@@ -2,7 +2,8 @@ import type { Context, Next } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { getCookie } from 'hono/cookie'
 import { eq, and } from 'drizzle-orm'
-import { hasGlobalGroup, isGlobalGroup, verifyJwt } from '../services/auth'
+import { isGlobalGroup, verifyJwt } from '../services/auth'
+import { hasGlobalGroup, hasMemberRole, hasKeyPermission, isValidApiKeyPermissionScope, parseApiKeyScope } from '../services/authorization'
 import { db } from '../db/index'
 import { apiKeys, memberships } from '../db/schema'
 import type { GlobalGroup, RequestContext, MemberRole } from '@azy-board/types'
@@ -50,20 +51,20 @@ export async function authMiddleware(c: Context<HonoEnv>, next: Next) {
         const now = new Date().toISOString()
         const expired = keyRecord.expiresAt != null && keyRecord.expiresAt <= now
         const revoked = keyRecord.revokedAt != null
-        const projectScope = parseScope(keyRecord.projectScope)
-        const permissionScope = parseScope(keyRecord.permissionScope)
+        const projectScope = parseApiKeyScope(keyRecord.projectScope)
+        const permissionScope = parseApiKeyScope(keyRecord.permissionScope)
         const requestedProjectId = c.req.param('projectId') ?? c.req.param('id')
         // [TENANT] Escopo da chave só pode restringir projetos do próprio tenant.
-        if ((keyRecord.projectScope && !projectScope) || (keyRecord.permissionScope && !permissionScope)) {
-          return c.json({ error: 'Não autorizado' }, 401)
+        if ((keyRecord.projectScope && !projectScope) || (keyRecord.permissionScope && !permissionScope) || !isValidApiKeyPermissionScope(permissionScope)) {
+          return c.json({ error: 'Não autorizado', code: 'UNAUTHORIZED', retryable: false }, 401)
         }
         if (expired || revoked || (requestedProjectId && projectScope && !projectScope.includes(requestedProjectId))) {
-          return c.json({ error: 'Não autorizado' }, 401)
+          return c.json({ error: 'Não autorizado', code: 'UNAUTHORIZED', retryable: false }, 401)
         }
         const owner = await db.query.users.findFirst({
           where: (u) => and(eq(u.id, keyRecord.ownerId), eq(u.tenantId, keyRecord.tenantId)),
         })
-        if (owner) {
+        if (owner && owner.tenantId === keyRecord.tenantId && isGlobalGroup(owner.globalGroup)) {
           // [TENANT] tenant_id da API Key garante que agente opera no tenant correto
           ctx = { userId: owner.id, tenantId: keyRecord.tenantId, email: owner.email, globalGroup: owner.globalGroup }
           c.set('apiKeyId', keyRecord.id)
@@ -77,7 +78,7 @@ export async function authMiddleware(c: Context<HonoEnv>, next: Next) {
   }
 
   if (!ctx) {
-    return c.json({ error: 'Não autorizado' }, 401)
+    return c.json({ error: 'Não autorizado', code: 'UNAUTHORIZED', retryable: false }, 401)
   }
 
   // Injeta contexto na requisição para uso nos handlers
@@ -92,7 +93,7 @@ export function requireRole(minRole: MemberRole) {
     const ctx = c.get('ctx') as RequestContext
     const projectId = c.req.param('projectId') ?? c.req.param('id')
 
-    if (!projectId) return c.json({ error: 'Projeto não especificado' }, 400)
+    if (!projectId) return c.json({ error: 'Projeto não especificado', code: 'INVALID_REQUEST', retryable: false }, 400)
 
     const membership = await db.query.memberships.findFirst({
       where: (m) =>
@@ -105,23 +106,28 @@ export function requireRole(minRole: MemberRole) {
     })
 
     const globalAdmin = hasGlobalGroup(ctx.globalGroup, 'ADMIN')
+    if (minRole === 'ADMIN' && !hasGlobalGroup(ctx.globalGroup, 'MANAGER')) {
+      return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
+    }
     if (!membership && !globalAdmin) {
       // Retorna 404 para não revelar se o projeto existe para outro tenant
-      return c.json({ error: 'Projeto não encontrado' }, 404)
+      return c.json({ error: 'Projeto não encontrado', code: 'RESOURCE_NOT_FOUND', retryable: false }, 404)
     }
 
-    const roleHierarchy: Record<MemberRole, number> = { ADMIN: 3, MEMBER: 2, VIEWER: 1 }
-    if (!globalAdmin && minRole === 'ADMIN' && !hasGlobalGroup(ctx.globalGroup, 'MANAGER')) {
-      return c.json({ error: 'Permissão insuficiente' }, 403)
+    if (!globalAdmin && !hasGlobalGroup(ctx.globalGroup, 'MANAGER') && !hasMemberRole(membership?.role, minRole)) {
+      return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
     }
-    if (!globalAdmin && membership && roleHierarchy[membership.role] < roleHierarchy[minRole] && !(hasGlobalGroup(ctx.globalGroup, 'MANAGER') && minRole === 'ADMIN')) {
-      return c.json({ error: 'Permissão insuficiente' }, 403)
+    if (!globalAdmin && hasGlobalGroup(ctx.globalGroup, 'MANAGER') && minRole === 'ADMIN' && !membership) {
+      return c.json({ error: 'Projeto não encontrado', code: 'RESOURCE_NOT_FOUND', retryable: false }, 404)
+    }
+    if (!globalAdmin && membership && !hasMemberRole(membership.role, minRole) && !(hasGlobalGroup(ctx.globalGroup, 'MANAGER') && minRole === 'ADMIN')) {
+      return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
     }
     const permissionScope = c.get('apiKeyPermissionScope')
     if (permissionScope) {
       const requiredPermission = minRole === 'VIEWER' ? 'read' : minRole === 'MEMBER' ? 'write' : 'admin'
-      if (!permissionScope.includes(requiredPermission) && !permissionScope.includes('admin')) {
-        return c.json({ error: 'Permissão insuficiente para esta API Key' }, 403)
+      if (!hasKeyPermission(permissionScope, minRole)) {
+        return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
       }
     }
 
@@ -133,18 +139,8 @@ export function requireRole(minRole: MemberRole) {
 export function requireGlobalGroup(minimum: GlobalGroup) {
   return async (c: Context<HonoEnv>, next: Next) => {
     const ctx = c.get('ctx') as RequestContext
-    if (!hasGlobalGroup(ctx.globalGroup, minimum)) return c.json({ error: 'Permissão insuficiente' }, 403)
+    if (!hasGlobalGroup(ctx.globalGroup, minimum)) return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
     await next()
-  }
-}
-
-function parseScope(value: string | null): string[] | null {
-  if (!value) return null
-  try {
-    const parsed = JSON.parse(value)
-    return Array.isArray(parsed) && parsed.every(item => typeof item === 'string') ? parsed : null
-  } catch {
-    return null
   }
 }
 

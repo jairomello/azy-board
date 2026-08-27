@@ -57,7 +57,7 @@ Depois da criação, o novo projeto passa a fazer parte da lista e pode ser aber
 
 ## Visibilidade dos projetos
 
-A lista não funciona como um catálogo público. Cada pessoa visualiza somente projetos nos quais possui uma associação.
+A lista não funciona como um catálogo público. Membros de Equipe e Gerentes visualizam somente projetos nos quais possuem uma associação. Admins e Root visualizam todos os projetos do tenant ativo.
 
 O papel pode variar entre projetos. Uma pessoa pode ser `Admin` em um projeto, `Membro` em outro e `Visualizador` em um terceiro.
 
@@ -72,13 +72,13 @@ O papel pode variar entre projetos. Uma pessoa pode ser `Admin` em um projeto, `
 
 ## Permissões
 
-Todos os usuários autenticados podem consultar os projetos aos quais estão associados.
+O escopo depende do grupo global da conta.
 
 | Ação | Condição |
 |---|---|
-| Ver projeto na lista | Possuir associação ao projeto. |
-| Abrir projeto | Possuir ao menos papel de `Visualizador`. |
-| Criar projeto | Estar autenticado na organização. |
+| Ver projeto na lista | Possuir associação, ou ser Admin/Root no tenant ativo. |
+| Abrir projeto | Possuir escopo global e, para Membro/Gerente, associação ao projeto. |
+| Criar projeto | Ser Gerente, Admin ou Root. |
 
 ## Exemplo prático
 
@@ -95,7 +95,7 @@ Uma pessoa participa de **Aplicativo Mobile**, **Portal do Cliente** e **Platafo
 
 ### Consulta
 
-O frontend solicita a coleção de projetos da conta autenticada. A API cruza projetos e memberships e aplica o tenant antes de devolver os dados.
+O frontend solicita a coleção de projetos da conta autenticada. A API aplica o grupo global: cruza projetos e memberships para Membros/Gerentes, ou lista o tenant para Admins/Root.
 
 ### Isolamento
 
@@ -106,4 +106,3 @@ O filtro combina o identificador do usuário, o tenant e a associação ao proje
 O identificador selecionado é incorporado à rota do Board. A página usa esse identificador para carregar, em paralelo, os recursos relacionados ao projeto.
 
 </details>
-

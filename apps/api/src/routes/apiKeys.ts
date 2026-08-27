@@ -2,16 +2,16 @@ import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { eq, and, inArray } from 'drizzle-orm'
 import { db } from '../db/index'
-import { apiKeys, memberships } from '../db/schema'
+import { apiKeys, projects } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateApiKey } from '../services/auth'
 import { generateId } from '../utils/id'
 import type { RequestContext } from '@azy-board/types'
+import { API_KEY_PERMISSIONS } from '../services/authorization'
 
 export const apiKeysRouter = new Hono<HonoEnv>()
 apiKeysRouter.use('*', authMiddleware)
 
-const API_KEY_PERMISSIONS = ['read', 'write', 'admin', 'delete'] as const
 
 // POST /projects/:projectId/api-keys — gerar nova API Key (rota legada, mantida por compatibilidade)
 apiKeysRouter.post('/', requireRole('MEMBER'), async (c) => {
@@ -90,7 +90,7 @@ userApiKeysRouter.post('/', async (c) => {
   const body = await c.req.json<{ name: string; aiModelName?: string; projectScope?: string[]; permissionScope?: string[]; expiresAt?: string | null }>()
 
   if (!body.name?.trim()) return c.json({ error: 'Nome obrigatório' }, 400)
-  if (body.permissionScope && body.permissionScope.some(scope => !API_KEY_PERMISSIONS.includes(scope as typeof API_KEY_PERMISSIONS[number]))) {
+  if (body.permissionScope && (!Array.isArray(body.permissionScope) || body.permissionScope.some(scope => !API_KEY_PERMISSIONS.includes(scope as typeof API_KEY_PERMISSIONS[number])))) {
     return c.json({ error: 'Escopo de permissão inválido' }, 400)
   }
 
@@ -100,17 +100,11 @@ userApiKeysRouter.post('/', async (c) => {
 
   const projectScope = body.projectScope ? [...new Set(body.projectScope)] : []
   if (projectScope.length > 0) {
-    // [TENANT] Uma chave só pode ser limitada a projetos nos quais o Owner é membro.
-    const membershipsInScope = await db.select({ projectId: memberships.projectId })
-      .from(memberships)
-      .where(and(
-        eq(memberships.tenantId, ctx.tenantId),
-        eq(memberships.userId, ctx.userId),
-        inArray(memberships.projectId, projectScope),
-      ))
-    if (membershipsInScope.length !== projectScope.length) {
-      return c.json({ error: 'Escopo contém projeto sem membership do Owner' }, 400)
-    }
+    // O escopo é validado contra projetos do tenant; a autorização final
+    // continua sendo a interseção com grupo/membership em cada chamada.
+    const scopedProjects = await db.select({ id: projects.id }).from(projects)
+      .where(and(eq(projects.tenantId, ctx.tenantId), inArray(projects.id, projectScope)))
+    if (scopedProjects.length !== projectScope.length) return c.json({ error: 'Escopo contém projeto inválido' }, 400)
   }
 
   await db.insert(apiKeys).values({

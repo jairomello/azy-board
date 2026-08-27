@@ -21,6 +21,7 @@ A janela contém:
 
 - Título **Novo projeto**.
 - Campo obrigatório **Nome do projeto**.
+- Seletor do modo: **Hierárquico** ou **Simples**. O modo hierárquico é o padrão.
 - Ação **Cancelar**.
 - Ação **Criar**.
 
@@ -31,10 +32,11 @@ O nome deve permitir que os participantes reconheçam a iniciativa na lista e no
 1. Abra a página **Projetos**.
 2. Selecione **Criar projeto**.
 3. Informe o nome.
-4. Selecione **Criar**.
-5. Aguarde o fechamento da janela.
-6. Localize o novo projeto na lista.
-7. Selecione-o para abrir o Board.
+4. Escolha o modo do Board, se necessário.
+5. Selecione **Criar**.
+6. Aguarde o fechamento da janela.
+7. Localize o novo projeto na lista.
+8. Selecione-o para abrir o Board.
 
 ## Cancelar a criação
 
@@ -46,7 +48,8 @@ A aplicação:
 
 - Cria o projeto dentro da organização da conta.
 - Torna o criador `Admin` do projeto.
-- Cria o módulo **Geral**.
+- No modo **Hierárquico**, cria o módulo **Geral**.
+- No modo **Simples**, cria uma história fixa e não exibe módulos ou épicos no Board.
 - Cria as colunas iniciais do Board.
 - Disponibiliza o projeto na lista do criador.
 
@@ -57,13 +60,13 @@ Membros, squads, gerente, versões, sprints, centros de custo e novos módulos p
 - O nome é obrigatório.
 - O projeto pertence ao tenant da conta criadora.
 - O criador recebe permissão administrativa.
-- A estrutura inicial é criada automaticamente.
+- A estrutura inicial é criada automaticamente conforme o modo escolhido.
 - Criar um projeto não adiciona outros participantes.
 - O novo projeto começa sem itens de trabalho.
 
 ## Permissões
 
-Qualquer conta autenticada autorizada a utilizar a organização pode criar um projeto. Essa pessoa se torna a primeira administradora do projeto.
+Gerentes, Admins e Root podem criar projetos. Membros de Equipe não podem criar projetos. Quem cria o projeto se torna a primeira administradora dele.
 
 ## Boas práticas para nomes
 
@@ -74,7 +77,7 @@ Qualquer conta autenticada autorizada a utilizar a organização pode criar um p
 
 ## Exemplo prático
 
-Para organizar uma nova frente de atendimento, uma pessoa cria o projeto **Central de Atendimento**. Depois, abre o Board, mantém o módulo **Geral** para demandas compartilhadas e cria módulos específicos nas configurações.
+Para organizar uma nova frente de atendimento, uma pessoa pode criar o projeto **Central de Atendimento** no modo **Simples** para trabalhar em um único fluxo. Para uma iniciativa com estrutura por áreas, pode escolher o modo **Hierárquico**, manter o módulo **Geral** e criar módulos específicos nas configurações.
 
 ## Funcionalidades relacionadas
 
@@ -87,7 +90,7 @@ Para organizar uma nova frente de atendimento, uma pessoa cria o projeto **Centr
 
 ### Criação
 
-O frontend envia o nome ao serviço de projetos. A API usa o tenant resolvido pela sessão e gera o identificador do novo projeto.
+O frontend envia o nome e o modo ao serviço de projetos. A API usa o tenant e o grupo global resolvidos pela sessão, valida a permissão de criação e gera o identificador do novo projeto.
 
 ### Administração inicial
 
@@ -98,4 +101,3 @@ Uma membership é criada para relacionar o usuário ao projeto com papel `ADMIN`
 Na mesma operação funcional, o backend prepara o módulo inicial e as colunas com posição e status base. Dessa forma, o projeto já pode abrir um Board válido sem configuração prévia.
 
 </details>
-

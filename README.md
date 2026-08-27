@@ -104,6 +104,16 @@ deletion removes all descendants, checklists, and attachments atomically.
 Users can switch Stories back to card mode, hide empty Story lanes, and create
 Tasks or Bugs directly inside a Story context.
 
+**Board modes**: each project can use `HIERARCHICAL` (the default), with module,
+Epic and Story lanes, or `SIMPLE`, with one fixed Story and a single Kanban flow.
+Admins can convert projects between modes; conversion preserves cards and their
+related data, while converting to simple removes the module/Epic structure.
+
+**Permissions**: users have one global group, ordered as `TEAM_MEMBER`,
+`MANAGER`, `ADMIN` and `ROOT`. MCP agents inherit the Owner's group, tenant,
+project membership and local role. API Key scopes can only restrict access and
+never grant privileges beyond the Owner.
+
 **Ancestry Path**: each item stores a denormalised `ancestryPath` JSON column
 — `[{ id, title, type }, …]` — enabling O(1) breadcrumb rendering without
 recursive joins.
@@ -149,6 +159,8 @@ web app. Never commit `.env` files.
 bun run typecheck   # tsc --noEmit across all workspaces
 bun test            # Bun test runner
 bun run test:integration  # API integration tests in an isolated SQLite database
+bun run test:mcp          # MCP tools without external services or credentials
+bun run test:mcp-catalog  # MCP catalog and authorization policies
 bun run test:smoke        # HTTP smoke test; use SMOKE_URL for a published app
 ```
 

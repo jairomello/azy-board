@@ -112,7 +112,13 @@ Crie checklist para fases verificáveis da mesma unidade de trabalho. Crie subta
 
 ## Permissões
 
-As ferramentas usam as permissões do proprietário da chave. Consultas exigem acesso ao projeto; mutações exigem papel compatível. Uma API Key não eleva um `VIEWER` a `MEMBER` ou `ADMIN`.
+As ferramentas herdam o grupo global, tenant, membership e papel local do
+proprietário da chave. Membros de Equipe e Gerentes só acessam projetos dos
+quais participam; Admins e Root podem operar projetos do tenant conforme suas
+permissões. Consultas exigem acesso ao projeto e mutações exigem papel
+compatível. `projectScope` e `permissionScope` apenas restringem o acesso; uma
+API Key nunca eleva o proprietário nem pode transformar um `VIEWER` em
+`MEMBER` ou `ADMIN`.
 
 ## Funcionalidades relacionadas
 
@@ -125,7 +131,10 @@ As ferramentas usam as permissões do proprietário da chave. Consultas exigem a
 <details>
 <summary><strong>Como funciona tecnicamente</strong></summary>
 
-As ferramentas são adaptadores sobre endpoints REST. O servidor resolve nomes de coluna, pré-valida relações de pai, encontra o módulo padrão e escolhe a estratégia de conclusão antes de chamar a API.
+As ferramentas são adaptadores sobre endpoints REST. A API revalida o Owner,
+grupo, tenant, estado da chave e autorização do recurso em cada chamada. O
+servidor resolve nomes de coluna, pré-valida relações de pai, encontra o módulo
+padrão e escolhe a estratégia de conclusão antes de chamar a API.
 
 O contrato MCP declara schemas JSON para cada entrada. A suíte `bun run test:mcp` exercita o fluxo completo contra uma API em memória, incluindo hierarquia, claim, movimentação, conclusão e checklists.
 

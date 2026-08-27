@@ -1,0 +1,55 @@
+import { describe, expect, test } from 'bun:test'
+
+// O workspace não possui DOM, jsdom ou React Testing Library. Estes testes de
+// contrato exercitam a presença dos caminhos de UI no código compilável sem
+// adicionar uma infraestrutura de browser fora do escopo da mudança.
+async function source(path: string) {
+  return fetch(new URL(path, import.meta.url)).then(response => response.text())
+}
+
+function contains(text: string, expected: string) {
+  expect(text.includes(expected)).toBe(true)
+}
+
+describe('contratos de UI dos modos de board', () => {
+  test('seletor de criação oferece os dois modos e mantém hierárquico como padrão', async () => {
+    const text = await source('./pages/ProjectsPage.tsx')
+    contains(text, "useState<BoardMode>('HIERARCHICAL')")
+    contains(text, 'id="new-project-board-mode"')
+    contains(text, 'value="HIERARCHICAL"')
+    contains(text, 'value="SIMPLE"')
+  })
+
+  test('configurações confirmam ou cancelam a conversão antes do PATCH', async () => {
+    const text = await source('./pages/SettingsPage.tsx')
+    contains(text, 'pendingBoardMode === \'SIMPLE\'')
+    contains(text, 'Módulos e épicos serão removidos')
+    contains(text, 'Todos os cards de tarefas e bugs serão preservados')
+    contains(text, 'onClick={() => setPendingBoardMode(null)}')
+    contains(text, "onClick={() => saveBoardMode('SIMPLE')}")
+  })
+
+  test('board simples usa uma lane única, mantém filtros úteis e remove controles hierárquicos', async () => {
+    const board = await source('./pages/BoardPage.tsx')
+    const commandBar = await source('./components/BoardCommandBar.tsx')
+    const filters = await source('./components/BoardFilters.tsx')
+    contains(board, '{isSimpleBoard && simpleStory && (')
+    contains(board, 'swimlaneId={simpleStory.id}')
+    contains(board, '{!isSimpleBoard && visibleModuleGroups.map(renderModuleGroup)}')
+    contains(commandBar, 'showExpandCollapse={view === \'kanban\' && boardMode === \'HIERARCHICAL\'}')
+    contains(commandBar, 'showModuleViewMode={view === \'kanban\' && boardMode === \'HIERARCHICAL\'}')
+    contains(filters, 'aria-label="Sprint"')
+    contains(filters, 'aria-label="Responsável"')
+    contains(filters, '>Tipo</span>')
+    contains(filters, '>Tags</span>')
+  })
+
+  test('regressão hierárquica conserva árvore, breadcrumbs e drag-and-drop', async () => {
+    const board = await source('./pages/BoardPage.tsx')
+    contains(board, '<TreeViewPage')
+    contains(board, '<DndContext')
+    contains(board, 'handleDragEnd(e, effectiveOver)')
+    contains(board, 'getEpicIdFromPath')
+    contains(board, 'getStoryIdFromPath')
+  })
+})

@@ -7,6 +7,7 @@ import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import type { RequestContext, BoardMode, AncestorNode } from '@azy-board/types'
 import { hasGlobalGroup } from '../services/auth'
+import { hasKeyPermission } from '../services/authorization'
 
 export const projectsRouter = new Hono<HonoEnv>()
 projectsRouter.use('*', authMiddleware)
@@ -128,6 +129,7 @@ async function convertToHierarchical(tx: ProjectTransaction, tenantId: string, p
 projectsRouter.post('/', async (c) => {
   const ctx = c.get('ctx') as RequestContext
   if (!hasGlobalGroup(ctx.globalGroup, 'MANAGER')) return c.json({ error: 'Permissão insuficiente' }, 403)
+  if (!hasKeyPermission(c.get('apiKeyPermissionScope'), 'MEMBER')) return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
   const body = await c.req.json<{ name: string; description?: string; managerUserId?: string; boardMode?: BoardMode }>()
   const normalizedName = body.name.trim()
   if (!normalizedName) return c.json({ error: 'O nome do projeto é obrigatório' }, 400)
@@ -202,6 +204,7 @@ projectsRouter.post('/', async (c) => {
 // GET /projects — listar projetos do usuário (apenas os que é membro)
 projectsRouter.get('/', async (c) => {
   const ctx = c.get('ctx') as RequestContext
+  if (!hasKeyPermission(c.get('apiKeyPermissionScope'), 'VIEWER')) return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
 
   const result = hasGlobalGroup(ctx.globalGroup, 'ADMIN')
     ? await db.select({ project: projects }).from(projects).where(eq(projects.tenantId, ctx.tenantId))

@@ -9,6 +9,18 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ## [Unreleased]
 
+### Added
+
+- Suporte a projetos nos modos `HIERARCHICAL` e `SIMPLE`, incluindo conversão
+  transacional, história fixa no modo simples e preservação dos cards.
+- Autorização MCP herdada do Owner da API Key, com grupos globais, escopo por
+  tenant/projeto, políticas por ferramenta e proteção contra escalada.
+
+### Changed
+
+- Documentação de permissões, modos de Board, testes e configuração MCP
+  atualizada para refletir o comportamento atual.
+
 ---
 
 ## [0.5.0] - 2026-04-27 — Card Actions & Visual Redesign

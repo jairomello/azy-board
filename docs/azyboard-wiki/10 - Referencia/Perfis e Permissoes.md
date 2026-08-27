@@ -6,7 +6,26 @@ order: 1
 
 # Perfis e Permissões
 
-O acesso a um projeto é controlado pela associação da pessoa ao projeto e pelo papel atribuído a ela.
+O acesso combina o grupo global da conta, a associação ao projeto e o papel local atribuído à pessoa. O grupo global define o escopo e as áreas disponíveis; o papel local define as operações dentro de um projeto acessível.
+
+## Grupos globais
+
+Os grupos são cumulativos, do menor para o maior privilégio:
+
+| Grupo | Escopo e capacidades principais |
+|---|---|
+| `TEAM_MEMBER` — Membro de Equipe | Vê somente projetos dos quais participa e opera o conteúdo. Não acessa Administração nem Configurações do projeto. |
+| `MANAGER` — Gerente | Vê projetos dos quais participa, pode criar projetos e configurar seus projetos. Não acessa Administração. |
+| `ADMIN` — Admin | Vê todos os projetos do tenant, pode operar qualquer projeto e administra usuários. Não pode atribuir `ROOT`. |
+| `ROOT` — Root | Nível máximo reservado para funções futuras de plataforma; nesta versão opera projetos como Admin. |
+
+Um usuário não pode elevar o próprio grupo. Admin pode atribuir somente `TEAM_MEMBER`, `MANAGER` ou `ADMIN`; a atribuição de `ROOT` é reservada ao Root.
+
+O menu **Admin** aparece somente para Admin e Root. As regras são aplicadas no servidor; esconder um item de menu não substitui a autorização da API.
+
+## Papéis dentro do projeto
+
+Os papéis abaixo continuam existindo como uma segunda camada para membros do projeto.
 
 ## Admin
 
@@ -58,14 +77,13 @@ O `Visualizador` consulta o projeto sem alterar seu conteúdo. Pode:
 | Gerenciar versões | Sim | Não | Não |
 
 > [!info] API Keys
-> Um agente autenticado por API Key atua dentro do tenant do proprietário e não recebe privilégios superiores aos permitidos no projeto.
+> Um agente autenticado por API Key herda o grupo global, tenant, membership e papel local do proprietário. O escopo da chave pode restringir o acesso, mas nunca pode ampliá-lo.
 
 <details>
 <summary><strong>Como funciona tecnicamente</strong></summary>
 
-As requisições autenticadas resolvem o usuário e o tenant. Para rotas de projeto, a aplicação consulta a associação entre usuário e projeto e compara o papel mínimo exigido pela operação. A ordem de privilégios é `VIEWER < MEMBER < ADMIN`.
+As requisições autenticadas resolvem o usuário e o tenant. Para rotas de projeto, a aplicação primeiro aplica o grupo global e depois consulta a associação entre usuário e projeto para comparar o papel mínimo exigido pela operação. A ordem de privilégios local é `VIEWER < MEMBER < ADMIN`; a ordem global é `TEAM_MEMBER < MANAGER < ADMIN < ROOT`.
 
 Quando não existe associação válida, o projeto não é revelado ao solicitante. Esse comportamento também reduz o risco de acesso indevido por identificadores de outros projetos ou tenants.
 
 </details>
-

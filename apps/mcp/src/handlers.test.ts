@@ -52,4 +52,16 @@ describe('MCP protocol handlers', () => {
     expect(result.isError ?? false).toBe(false)
     expect(result.structuredContent).toEqual({ data: [] })
   })
+
+  test('recusa ferramenta sem política sem chamar a API', async () => {
+    let calls = 0
+    const server = createMcpServer(async () => { calls++; return [] })
+    const client = new Client({ name: 'test-client', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
+    const result = await client.callTool({ name: 'tool_without_policy', arguments: {} })
+    expect(result.isError).toBe(true)
+    expect(result.structuredContent).toMatchObject({ code: 'MCP_POLICY_REQUIRED', retryable: false })
+    expect(calls).toBe(0)
+  })
 })

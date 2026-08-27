@@ -27,6 +27,18 @@ Esse comando executa `apps/api/src/integration.test.ts` e cobre:
 - preservação de cards, tags, sprints, anexos, checklists e logs;
 - bloqueio de MEMBER e isolamento entre tenants.
 
+Os contratos do servidor MCP podem ser verificados sem servidor externo:
+
+```bash
+bun run test:mcp
+bun run test:mcp-catalog
+```
+
+Esses comandos cobrem o catálogo de ferramentas, validação de argumentos,
+fluxos de board, idempotência, erros estruturados e a obrigatoriedade de
+política de autorização por ferramenta. As API Keys usadas nos testes são
+simuladas e não são credenciais reais.
+
 Para a validação completa do monorepo:
 
 ```bash
