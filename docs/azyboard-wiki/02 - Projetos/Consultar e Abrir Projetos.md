@@ -57,7 +57,9 @@ Depois da criação, o novo projeto passa a fazer parte da lista e pode ser aber
 
 ## Visibilidade dos projetos
 
-A lista não funciona como um catálogo público. Membros de Equipe e Gerentes visualizam somente projetos nos quais possuem uma associação. Admins e Root visualizam todos os projetos do tenant ativo.
+A lista não funciona como um catálogo público. Membros de Equipe e Gerentes visualizam somente projetos nos quais possuem uma associação. Admins e Root visualizam os projetos do tenant ativo, **com uma exceção**: não veem projetos marcados como **Restrito** dos quais não participam.
+
+Além disso, projetos marcados como **Oculto** não aparecem na lista, a menos que a preferência **Mostrar projetos ocultos** esteja ligada. Veja [[02 - Projetos/Visibilidade de um Projeto|Visibilidade de um projeto]].
 
 O papel pode variar entre projetos. Uma pessoa pode ser `Admin` em um projeto, `Membro` em outro e `Visualizador` em um terceiro.
 
@@ -76,7 +78,7 @@ O escopo depende do grupo global da conta.
 
 | Ação | Condição |
 |---|---|
-| Ver projeto na lista | Possuir associação, ou ser Admin/Root no tenant ativo. |
+| Ver projeto na lista | Possuir associação, ou ser Admin/Root no tenant ativo e o projeto não ser Restrito sem vínculo. |
 | Abrir projeto | Possuir escopo global e, para Membro/Gerente, associação ao projeto. |
 | Criar projeto | Ser Gerente, Admin ou Root. |
 
@@ -88,6 +90,7 @@ Uma pessoa participa de **Aplicativo Mobile**, **Portal do Cliente** e **Platafo
 
 - [[02 - Projetos/Criar um Projeto|Criar um projeto]]
 - [[02 - Projetos/Estrutura Inicial de um Projeto|Estrutura inicial de um projeto]]
+- [[02 - Projetos/Visibilidade de um Projeto|Visibilidade de um projeto]]
 - [[04 - Board e Visualizacoes/Board e Visualizacoes|Board e Visualizações]]
 
 <details>
@@ -95,7 +98,7 @@ Uma pessoa participa de **Aplicativo Mobile**, **Portal do Cliente** e **Platafo
 
 ### Consulta
 
-O frontend solicita a coleção de projetos da conta autenticada. A API aplica o grupo global: cruza projetos e memberships para Membros/Gerentes, ou lista o tenant para Admins/Root.
+O frontend solicita a coleção de projetos da conta autenticada. A API cruza projetos e memberships para obter a associação e o papel, aplica o escopo por grupo global e filtra projetos restritos sem vínculo e projetos ocultos — estes últimos liberados somente com `includeHidden=true`.
 
 ### Isolamento
 

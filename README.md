@@ -76,6 +76,46 @@ MCP tools are auditable, scoped to a tenant, and enforce the same RBAC rules
 as the REST API. Agents cannot escalate beyond the role granted to their API
 key.
 
+### Official Agent Skill
+
+The official, client-agnostic agent skill is maintained in
+[`skills/azyboard/`](skills/azyboard/). Load `SKILL.md` into Claude Code,
+OpenCode, Codex or another compatible client to receive the Azy Board MCP
+playbooks and semantic slash commands. Client-specific installation guidance
+is available in [`skills/azyboard/commands/README.md`](skills/azyboard/commands/README.md).
+
+Validate the catalog, references and commands locally with:
+
+```bash
+bun run test:agent-skill
+```
+
+### Azy Agent (chat humano)
+
+O Azy Agent fica desligado por padrão. Um usuário `ROOT` deve configurar, no
+tenant, um modelo OpenAI e uma API key válida no painel de administração, testar
+a conexão e ativar o toggle. A chave fica somente no backend, cifrada, e nunca
+é enviada ao browser, ao chat ou aos logs. O modelo recomendado para começar é
+`gpt-5.6-luna`. O Azy Agent suporta somente API keys oficiais para chamadas à
+API de modelos. Login ChatGPT, Codex access tokens e outros tokens de produto não
+fazem parte do contrato de credenciais do assistente.
+
+Limites iniciais econômicos: 10 mensagens por minuto por usuário, 1 run ativa
+por usuário, 3 por tenant, 50 KB por mensagem/payload, 4 passos, 8 tool calls,
+45 segundos e orçamento diário de 100.000 micros por usuário (1.000.000 por
+tenant). O Root pode acompanhar consumo, runs ativas e ajustar esses parâmetros
+na seção de governança do tenant, sempre dentro de faixas de segurança. Runs
+interrompidas por limite ficam registradas com código operacional; mutações exigem
+prévia e aprovação humana. Cards, texto colado e CSV são dados não confiáveis e
+não podem substituir as regras do sistema.
+
+O chat oferece o histórico do usuário, perguntas de esclarecimento, aprovação,
+cancelamento, importação CSV com prévia e stream SSE reconectável. Comandos
+semânticos equivalentes à skill: `/azyboard-status`, `/azyboard-plan`,
+`/azyboard-start`, `/azyboard-update`, `/azyboard-complete` e
+`/azyboard-review`. Consulte a [página do Azy Agent na wiki](docs/azyboard-wiki/09%20-%20Agentes%20e%20Integracoes/Azy%20Agent%20humano.md)
+e `docs/AI_AGENT_DATA_POLICY.md` antes de habilitar o recurso.
+
 ---
 
 ## Tech Stack
@@ -178,6 +218,7 @@ bun test            # Bun test runner
 bun run test:integration  # API integration tests in an isolated SQLite database
 bun run test:mcp          # MCP tools without external services or credentials
 bun run test:mcp-catalog  # MCP catalog and authorization policies
+bun run test:agent-skill   # skill, commands and references
 bun run test:smoke        # HTTP smoke test; use SMOKE_URL for a published app
 ```
 

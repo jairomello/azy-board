@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import { api } from '../lib/api'
 import i18n from '../i18n'
+import { gravarMostrarProjetosOcultos, lerMostrarProjetosOcultos } from '../lib/sessionPreferences'
 import type { GlobalGroup, Theme, Language, LightShellTheme } from '@azy-board/types'
 
 export interface User {
@@ -30,6 +31,8 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   updatePreferences: (preferences: PreferenceUpdate) => Promise<void>
+  showHiddenProjects: boolean
+  setShowHiddenProjects: (valor: boolean) => void
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -37,6 +40,18 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showHiddenProjects, setShowHiddenProjectsState] = useState(lerMostrarProjetosOcultos)
+
+  // A preferência vale só para a sessão: o sessionStorage é zerado a cada login e logout.
+  function setShowHiddenProjects(valor: boolean) {
+    gravarMostrarProjetosOcultos(valor)
+    setShowHiddenProjectsState(valor)
+  }
+
+  function resetarProjetosOcultos() {
+    gravarMostrarProjetosOcultos(false)
+    setShowHiddenProjectsState(false)
+  }
 
   function applyPreferences(preferences: PreferenceUpdate) {
     if (preferences.theme) {
@@ -68,12 +83,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function login(email: string, password: string) {
     const data = await api.post<{ user: User }>('/auth/login', { email, password })
     const normalized = normalizeUser(data.user)
+    // Todo login começa sem mostrar projetos ocultos.
+    resetarProjetosOcultos()
     setUser(normalized)
     applyPreferences(normalized)
   }
 
   async function logout() {
     await api.post('/auth/logout', {})
+    resetarProjetosOcultos()
     setUser(null)
   }
 
@@ -89,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, updatePreferences }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, updatePreferences, showHiddenProjects, setShowHiddenProjects }}>
       {children}
     </AuthContext.Provider>
   )

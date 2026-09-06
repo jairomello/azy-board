@@ -1,8 +1,9 @@
 import { useTranslation } from 'react-i18next'
-import { Check, Palette, User } from 'lucide-react'
+import { Check, Palette, User, EyeOff } from 'lucide-react'
 import type { LightShellTheme, Theme } from '@azy-board/types'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiKeysSection } from '../components/ApiKeysSection'
+import { ShowHiddenProjectsSwitch } from '../components/ShowHiddenProjectsSwitch'
 import { useToast } from '../components/Toast'
 import { AppShell } from '../components/AppShell'
 
@@ -141,6 +142,20 @@ export default function AccountPage() {
               })}
             </div>
           </div>
+        </section>
+
+        <section className="bg-card border border-border rounded-xl px-5 py-5 mb-5 shadow-sm">
+          <div className="flex items-start gap-3 mb-3">
+            <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+              <EyeOff className="w-[18px] h-[18px]" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground">{t('projectVisibility')}</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">{t('projectVisibilityDescription')}</p>
+            </div>
+          </div>
+          <ShowHiddenProjectsSwitch />
+          <p className="text-xs text-muted-foreground mt-2">{t('showHiddenProjectsHint')}</p>
         </section>
 
         {/* Seção de API Keys */}

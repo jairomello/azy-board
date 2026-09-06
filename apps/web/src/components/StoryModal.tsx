@@ -1,6 +1,10 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { RichTextEditor } from './RichTextEditor'
 import type { ProjectVersion } from './ItemModal'
+import { AccordionSection } from './AccordionSection'
+import { AccordionToolbar } from './AccordionToolbar'
+import { NeutralSummary } from './AccordionSummary'
 
 interface Epic { id: string; title: string }
 
@@ -26,6 +30,7 @@ interface Props {
 }
 
 export function StoryModal({ epics, story, projectVersions = [], onSave, onClose }: Props) {
+  const { t } = useTranslation()
   const [title, setTitle] = useState(story?.title ?? '')
   const [epicId, setEpicId] = useState(story?.epicId ?? epics[0]?.id ?? '')
   const [versionId, setVersionId] = useState(story?.versionId ?? '')
@@ -36,6 +41,13 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
   const [notes, setNotes] = useState(story?.notes ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const sectionIds = ['story-fields', 'story-narrative', 'story-criteria', 'story-notes']
+  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['story-fields']))
+  const toggleSection = (id: string) => setOpenSections(previous => {
+    const next = new Set(previous)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
 
   async function handleSave() {
     if (!title.trim() || !epicId) return
@@ -77,8 +89,10 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
           </button>
         </div>
 
-        <div className="p-6 space-y-5">
+        <div className="p-6 space-y-4">
+          <AccordionToolbar sectionIds={sectionIds} openIds={openSections} onChange={setOpenSections} />
           {/* Título e Épico */}
+          <AccordionSection id="story-fields" title={t('accordion.storyFields')} summary={<NeutralSummary />} isOpen={openSections.has('story-fields')} onToggle={toggleSection}>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Título da história *</label>
@@ -113,8 +127,10 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
               </select>
             </div>
           )}
+          </AccordionSection>
 
           {/* Campos ágeis padrão */}
+          <AccordionSection id="story-narrative" title={t('accordion.narrative')} summary={persona || goal || benefit ? t('accordion.contentPresent') : <NeutralSummary />} isOpen={openSections.has('story-narrative')} onToggle={toggleSection}>
           <div className="bg-muted/20 border border-border rounded-lg p-4 space-y-3">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Narrativa ágil</p>
             <div>
@@ -145,28 +161,35 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
               />
             </div>
           </div>
+          </AccordionSection>
 
           {/* Critérios de Aceitação */}
+          <AccordionSection id="story-criteria" title={t('accordion.acceptanceCriteria')} summary={acceptanceCriteria ? t('accordion.contentPresent') : <NeutralSummary />} isOpen={openSections.has('story-criteria')} onToggle={toggleSection}>
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Critérios de aceitação</label>
             <RichTextEditor
               content={acceptanceCriteria}
-              onChange={setAcceptanceCriteria}
-              placeholder="Liste os critérios que definem quando esta história está concluída..."
+               onChange={setAcceptanceCriteria}
+               placeholder={t('richText.acceptancePlaceholder')}
+               fieldLabel={t('richText.acceptanceField')}
               minHeight="100px"
             />
           </div>
+          </AccordionSection>
 
           {/* Notas */}
+          <AccordionSection id="story-notes" title={t('accordion.notes')} summary={notes ? t('accordion.contentPresent') : <NeutralSummary />} isOpen={openSections.has('story-notes')} onToggle={toggleSection}>
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Notas</label>
             <RichTextEditor
               content={notes}
-              onChange={setNotes}
-              placeholder="Observações, contexto adicional, referências..."
+               onChange={setNotes}
+               placeholder={t('richText.notesPlaceholder')}
+               fieldLabel={t('richText.notesField')}
               minHeight="80px"
             />
           </div>
+          </AccordionSection>
 
           {error && <p className="text-sm text-red-500">{error}</p>}
         </div>

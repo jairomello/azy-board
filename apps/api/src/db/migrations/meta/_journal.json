@@ -78,6 +78,62 @@
       "when": 1787415481266,
       "tag": "0010_sprint-lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1787415481267,
+      "tag": "0011_project-analytics",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787415481268,
+      "tag": "0012_activity-worklog-separation",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787415481269,
+      "tag": "0013_azy-agent-assistant",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787415481270,
+      "tag": "0014_azy-agent-governance",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1787415481271,
+      "tag": "0015_azy-agent-economic-defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788461600000,
+      "tag": "0016_azy-agent-approval-reliability",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788462700000,
+      "tag": "0017_azy-agent-bulk-operation-limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1788529773477,
+      "tag": "0018_project-visibility",
+      "breakpoints": true
     }
   ]
 }

@@ -32,7 +32,7 @@ Adicione ao seu `.claude/settings.json`:
 | `claim_task` | Reivindica uma task para o agente |
 | `move_task` | Move card para outra coluna pelo nome |
 | `complete_task` | Marca task como concluída |
-| `create_task` | Cria nova task (pode criar subtasks via `parentId` e versão opcional via `versionId`) |
+| `create_task` | Cria nova task (pode criar subtasks via `parentId` e versão opcional via `versionId`); em projetos hierárquicos TASK/BUG exigem `parentId` válido — não há cards órfãos |
 | `list_checklists` | Lista checklists de um card com itens e progresso |
 | `create_checklist` | Cria um checklist nomeado em um card |
 | `add_checklist_item` | Adiciona um item a um checklist existente |
@@ -42,6 +42,7 @@ Adicione ao seu `.claude/settings.json`:
 | `get_shadow_markdown` | Consulta o board em Markdown |
 | `create_project` / `update_project` | Cria e configura projeto |
 | `update_item` | Atualiza campos de item |
+| `update_items` | Atualiza atomicamente itens selecionados por tipo, status, sprint, versão, módulo, responsável, pai, coluna, tag, título ou IDs |
 | `release_task` | Libera atribuição de task |
 | `archive_item` / `unarchive_item` / `delete_item` | Gerencia ciclo de vida de item |
 | `create_module` | Cria módulo hierárquico |
@@ -63,6 +64,8 @@ Adicione ao seu `.claude/settings.json`:
 | `update_checklist_item` / `delete_checklist_item` | Gerencia passos de checklist |
 | `batch` | Executa criações em lote com atomicidade opcional |
 | `delete_project` | Exclui projeto ou gera preview |
+
+`update_item` e `update_items` recebem alterações no formato `{ field, operation, value }`. As operações são `SET`, `CLEAR`, `TODAY`, `OFFSET_DAYS` e `COPY_CREATED_DATE`; filtros aceitam IDs ou nomes exatos, e `sprint: "CURRENT"` seleciona a sprint ativa.
 
 ## Exemplo de fluxo de um agente
 

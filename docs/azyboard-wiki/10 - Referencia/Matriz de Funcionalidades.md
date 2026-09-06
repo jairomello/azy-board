@@ -14,6 +14,8 @@ Esta matriz oferece uma visão rápida das capacidades do Azy Board e indica ond
 | Projetos | Listagem, seleção, criação e estrutura inicial | [[02 - Projetos/Projetos|Projetos]] |
 | Hierarquia | Módulos, épicos, histórias, tasks, bugs e subtasks | [[03 - Estrutura do Trabalho/Hierarquia dos Itens|Hierarquia dos itens]] |
 | Board | Lanes aninhadas de épicos e histórias, colunas, cards, criação e movimentação | [[04 - Board e Visualizacoes/Conhecer o Board|Conhecer o Board]] |
+| Dashboard | Dez blocos gerenciais com gráficos, legendas, estados, filtros, cobertura histórica e horas registradas | [[04 - Board e Visualizacoes/Consultar o Dashboard do Projeto|Consultar o Dashboard do Projeto]] |
+| Leitura do Dashboard | Objetivo, interpretação, cores e limites de cada quadro | [[04 - Board e Visualizacoes/Objetivos dos Quadros do Dashboard|Objetivos dos Quadros do Dashboard]] |
 | Filtros | Squad, módulo, sprint, responsável, tipo, tags e ocultação de lanes vazias | [[04 - Board e Visualizacoes/Filtros do Board|Filtros do Board]] |
 | Tree View | Hierarquia expandível, progresso, datas e arquivamento | [[04 - Board e Visualizacoes/Visualizacao em Arvore|Visualização em árvore]] |
 | Épicos | Módulo, descrição, versão e lane principal | [[05 - Epicos e Historias/Criar e Gerenciar Epicos|Criar e gerenciar épicos]] |

@@ -82,6 +82,32 @@ Items marked ★ are critical — a failed check must block the push.
       attacker-controlled content that could redirect agent behaviour (e.g.,
       malicious card titles containing instruction-like text).
 
+### 4.1 Azy Agent threat model ★
+
+- [ ] **Prompt injection**: tratar cards, descrições, CSV, anexos e retrieval
+      como dados não confiáveis; nunca permitir que peçam override do prompt,
+      disclosure de segredo ou tool fora do registry.
+- [ ] **Confused deputy**: cada tool interna revalida usuário, tenant,
+      membership, projeto, grupo e toggle no momento da execução; provider Root
+      nunca vira identidade do usuário.
+- [ ] **Aprovação e replay**: mutações têm preview, diff, hash, expiração,
+      idempotency key e confirmação explícita para exclusões/cascatas. Rejeitar
+      hash ou contexto alterado.
+- [ ] **Loop e custo**: aplicar 8 passos, 20 tool calls, 100 KB, 60 segundos,
+      quotas, concorrência e orçamento antes de cada continuação; interromper
+      sem novas tools ao atingir limite.
+- [ ] **SSE e ownership**: `runId`, cursor, perguntas, aprovações e eventos
+      devem ser filtrados por tenant e usuário; reconexão não duplica eventos.
+- [x] **OAuth fora do escopo**: não implementar nem aceitar OAuth/token plan,
+      token de sessão ou login do produto como API key. O Azy Agent usa somente
+      API keys oficiais da API de modelos.
+- [ ] **Credential isolation**: API keys/access/refresh tokens ficam cifrados no
+      backend, sem browser, logs, prompts, respostas ou auditoria; rotação deve
+      testar a nova credencial antes da revogação.
+- [ ] **Retention and privacy**: aplicar a política de 90 dias para conversas,
+      30 dias para runs/eventos e 180 dias para auditoria redigida; não guardar
+      chain-of-thought, prompt completo, CSV bruto ou PII desnecessária.
+
 ---
 
 ## 5. Multi-Tenancy Isolation ★
@@ -108,6 +134,13 @@ Items marked ★ are critical — a failed check must block the push.
 - [ ] **No privilege escalation path**: `VIEWER`-role requests cannot trigger
       writes, deletes, or agent-claim operations through any code path
       including indirect calls from MCP tools.
+- [ ] **Listing scope is enforceable server-side**: project listings apply the
+      visibility rules (`restricted`, `hidden`) in the query itself, never only
+      in the client. Hiding a resource must never be the only control protecting
+      it, and administrators are not exempt from the `restricted` filter.
+- [ ] **Session-only preferences stay session-only**: preferences that must
+      reset on login are kept in `sessionStorage`/memory and are never written to
+      `localStorage`, the `users` table, or any persisted user preference.
 
 ---
 

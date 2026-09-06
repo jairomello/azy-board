@@ -84,6 +84,7 @@ import {
 import type { ApiCall } from './tools.js'
 import { assertEnum, assertIsoDate, assertNonEmptyString, assertNonNegativeNumber, assertStringArray } from './validation.js'
 import { hasMcpPolicy } from './policies.js'
+import { executeSharedTool, getSharedToolDefinitions, sanitizeToolOutput } from './registry.js'
 
 // [TENANT] API Key autentica o agente como o Owner humano vinculado — resolvido pelo middleware da API
 export async function makeApiCall(apiUrl: string, apiKey: string, options: { timeoutMs?: number } = {}) {
@@ -143,7 +144,7 @@ export function createMcpServer(apiCall: ApiCall) {
   )
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: [
+  tools: false ? [
     {
       name: 'list_tasks',
       description: `Lista itens de um projeto com filtros opcionais.
@@ -641,7 +642,7 @@ Use checked=true ao completar um passo, checked=false para reverter.`,
       description: 'Executa até 50 criações de itens; atomic=false retorna resultado por item e atomic=true desfaz tudo em caso de erro. Respeita tenant e RBAC da API Key.',
       inputSchema: { type: 'object', properties: { projectId: { type: 'string' }, operations: { type: 'array', maxItems: 50, items: { type: 'object', properties: { tool: { type: 'string', enum: ['create_task', 'create_item'] }, args: { type: 'object' } }, required: ['tool', 'args'] } }, atomic: { type: 'boolean' }, idempotencyKey: { type: 'string', maxLength: 128 }, agentRunId: { type: 'string', maxLength: 128 } }, required: ['projectId', 'operations'] },
     },
-  ],
+  ] : getSharedToolDefinitions().map(({ policy: _policy, namespace: _namespace, ...tool }) => tool),
   }))
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -655,9 +656,15 @@ Use checked=true ao completar um passo, checked=false para reverter.`,
   }
 
   try {
-    if (!hasMcpPolicy(name)) throw new ApiError('MCP_POLICY_REQUIRED', 'Ferramenta não autorizada', false)
-    validateToolArguments(name, args)
-    switch (name) {
+     if (!hasMcpPolicy(name)) throw new ApiError('MCP_POLICY_REQUIRED', 'Ferramenta não autorizada', false)
+     validateToolArguments(name, args)
+     // Both transports use the same executor. The API resolves this MCP owner
+     // from the key; the internal adapter supplies the authenticated human.
+     return ok(sanitizeToolOutput(await executeSharedTool(name, args ?? {}, {
+       api: apiCall,
+       context: { source: 'mcp', userId: 'api-key-owner', tenantId: 'api-key-tenant', globalGroup: 'TEAM_MEMBER' },
+     })))
+     switch (name) {
       case 'list_tasks':
         return ok(await toolListTasks(apiCall, args as Parameters<typeof toolListTasks>[1]))
 

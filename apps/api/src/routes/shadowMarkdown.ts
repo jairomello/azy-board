@@ -6,6 +6,7 @@ import { items, columns } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { broadcast } from '../services/websocket'
 import type { RequestContext } from '@azy-board/types'
+import { appendAnalyticsEvent, snapshotItem } from '../services/analytics'
 
 export const shadowMarkdownRouter = new Hono<HonoEnv>()
 shadowMarkdownRouter.use('*', authMiddleware)
@@ -119,9 +120,11 @@ shadowMarkdownRouter.patch('/', requireRole('MEMBER'), async (c) => {
 
   for (const move of moves) {
     const col = allColumns.find(c => c.id === move.columnId)!
-    await db.update(items)
-      .set({ columnId: move.columnId, status: col.baseStatus, updatedAt: new Date().toISOString() })
-      .where(and(eq(items.id, move.itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+    await db.transaction(async (tx) => {
+      const before = await snapshotItem(tx, ctx.tenantId, projectId, move.itemId)
+      await tx.update(items).set({ columnId: move.columnId, status: col.baseStatus, updatedAt: new Date().toISOString() }).where(and(eq(items.id, move.itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+      await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: move.itemId, eventType: 'STATUS_CHANGED', actorId: ctx.userId, origin: 'SHADOW_MARKDOWN', before, after: await snapshotItem(tx, ctx.tenantId, projectId, move.itemId) })
+    })
 
     broadcast(projectId, {
       type: 'CARD_MOVED',

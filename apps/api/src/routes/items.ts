@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { eq, and, inArray, asc, desc, sql } from 'drizzle-orm'
 import { db } from '../db/index'
@@ -8,15 +8,17 @@ import { generateId } from '../utils/id'
 import { buildAncestryPath, calculateProgress, calculatePoints, updateDescendantAncestry } from '../services/ancestry'
 import { broadcast } from '../services/websocket'
 import { addTreeProgress, type TreeProgressNode } from '../services/treeProgress'
-import type { RequestContext, Priority, ItemType } from '@azy-board/types'
+import type { RequestContext, Priority, ItemType, ActivityActorType, ActivitySource } from '@azy-board/types'
+import { parseWorkDuration } from '@azy-board/types'
 import { getIdempotent, saveIdempotent } from '../services/idempotency'
+import { appendAnalyticsEvent, snapshotItem } from '../services/analytics'
 
 export const itemsRouter = new Hono<HonoEnv>()
 itemsRouter.use('*', authMiddleware)
 
 // Tarefa 4.4 — cria log automático de atividade em operações do sistema
 // [TENANT] tenantId obrigatório para isolamento cross-tenant
-async function createAutoLog(itemId: string, tenantId: string, authorId: string, activity: string) {
+async function createAutoLog(itemId: string, tenantId: string, authorId: string, activity: string, actorType: ActivityActorType, source: ActivitySource, actorLabel: string | null) {
   const now = new Date().toISOString()
   await db.insert(itemLogs).values({
     id: generateId(),
@@ -24,11 +26,36 @@ async function createAutoLog(itemId: string, tenantId: string, authorId: string,
     itemId,
     authorId,
     type: 'auto',
+    actorType,
+    actorLabel,
+    source,
     activity,
     durationMin: null,
     createdAt: now,
     updatedAt: now,
   })
+}
+
+function auditContext(c: Context<HonoEnv>): { actorType: ActivityActorType; source: ActivitySource; actorLabel: string | null } {
+  const apiKeyId = c.get('apiKeyId')
+  return {
+    actorType: apiKeyId ? 'AGENT' : 'HUMAN',
+    source: apiKeyId ? 'MCP' : 'REST',
+    actorLabel: apiKeyId ? c.get('apiKeyName') : null,
+  }
+}
+
+function normalizeAuditText(value: unknown): string {
+  return String(value ?? '')
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 // Verifica se item é folha (sem filhos) — Leaf Rule
@@ -54,9 +81,10 @@ async function validateHierarchy(
     if (!moduleId) return 'EPIC requer moduleId — use GET /projects/:id/modules para listar os módulos disponíveis'
     return null
   }
-  // STORY exige pai EPIC; TASK/BUG podem ser órfãos (sem parentId = card direto no projeto)
+  // STORY exige pai EPIC. TASK/BUG sem pai são rejeitadas nas rotas de projeto hierárquico
+  // (POST/PATCH têm guards HIERARCHY_REQUIRED próprios); aqui só validamos pais informados.
   if (type === 'STORY' && !parentId) return 'STORY requer parentId apontando para um EPIC — use GET /projects/:id/items?type=EPIC para listar os EPICs'
-  if (!parentId) return null  // TASK/BUG sem pai = item órfão — permitido
+  if (!parentId) return null
 
   const parent = await db.query.items.findFirst({
     where: (i) => and(eq(i.id, parentId), eq(i.projectId, projectId), eq(i.tenantId, tenantId)),
@@ -494,6 +522,10 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   if (project.boardMode === 'SIMPLE' && ['TASK', 'BUG'].includes(type) && !effectiveParentId) {
     return c.json({ error: 'Projeto simples não possui história fixa configurada' }, 409)
   }
+  // [HIERARQUIA] Em projetos hierárquicos TASK/BUG sem pai ficam invisíveis no board — proibido.
+  if (project.boardMode !== 'SIMPLE' && ['TASK', 'BUG'].includes(type) && !effectiveParentId) {
+    return c.json({ error: 'TASK/BUG requerem parentId apontando para uma STORY, TASK ou BUG neste projeto. Use GET /projects/:id/items?type=STORY para listar as histórias disponíveis.', code: 'HIERARCHY_REQUIRED', retryable: false }, 400)
+  }
 
   const validationError = await validateHierarchy(ctx.tenantId, projectId, type, effectiveParentId, project.boardMode === 'SIMPLE' ? null : body.moduleId)
   if (validationError) return c.json({ error: validationError }, 400)
@@ -539,6 +571,8 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
 
   const id = generateId()
   const now = new Date().toISOString()
+  const audit = auditContext(c)
+  const parentBefore = effectiveParentId ? await snapshotItem(db, ctx.tenantId, projectId, effectiveParentId) : null
 
   const ancestryPath = effectiveParentId
     ? await buildAncestryPath(ctx.tenantId, effectiveParentId)
@@ -592,9 +626,13 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     dueDate: body.dueDate ?? null,
     position: 0,
     createdAt: now,
-    updatedAt: now,
+        updatedAt: now,
       })
-      if (body.sprintId) await tx.insert(itemSprints).values({ itemId: id, sprintId: body.sprintId })
+      await tx.insert(itemLogs).values({ id: generateId(), tenantId: ctx.tenantId, itemId: id, authorId: ctx.userId, type: 'auto', actorType: audit.actorType, actorLabel: audit.actorLabel, source: audit.source, activity: `Card criado: ${normalizeAuditText(body.title)}`, durationMin: null, createdAt: now, updatedAt: now })
+      if (body.sprintId) await tx.insert(itemSprints).values({ itemId: id, sprintId: body.sprintId }).onConflictDoNothing()
+      const after = await snapshotItem(tx, ctx.tenantId, projectId, id)
+      await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: id, eventType: 'ITEM_CREATED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', correlationId: idempotencyKey ?? id, after })
+      if (effectiveParentId && parentBefore) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: effectiveParentId, eventType: 'LEAF_CHANGED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before: parentBefore, after: await snapshotItem(tx, ctx.tenantId, projectId, effectiveParentId) })
     })
   } catch (error) {
     if (error instanceof Error && error.message.includes('sprint')) return c.json({ error: error.message }, 409)
@@ -654,12 +692,13 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
     fromColName = fromCol?.name ?? fromColName
   }
 
-  await db.update(items)
-    .set({ columnId: body.columnId, status: col.baseStatus, updatedAt: new Date().toISOString() })
-    .where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
-
-  // Tarefa 5.2 — log automático de movimentação de coluna
-  await createAutoLog(itemId, ctx.tenantId, ctx.userId, `Movido de '${fromColName}' para '${col.name}'`)
+  const before = await snapshotItem(db, ctx.tenantId, projectId, itemId)
+  const audit = auditContext(c)
+  await db.transaction(async (tx) => {
+    await tx.update(items).set({ columnId: body.columnId, status: col.baseStatus, updatedAt: new Date().toISOString() }).where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+    await tx.insert(itemLogs).values({ id: generateId(), tenantId: ctx.tenantId, itemId, authorId: ctx.userId, type: 'auto', actorType: audit.actorType, actorLabel: audit.actorLabel, source: audit.source, activity: `Movido de '${fromColName}' para '${col.name}'`, durationMin: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
+    await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId, eventType: 'STATUS_CHANGED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before, after: await snapshotItem(tx, ctx.tenantId, projectId, itemId) })
+  })
 
   broadcast(projectId, {
     type: 'CARD_MOVED',
@@ -684,9 +723,13 @@ itemsRouter.patch('/:itemId/claim', requireRole('MEMBER'), async (c) => {
 
   const apiKeyId = c.get('apiKeyId') as string | undefined
 
-  await db.update(items)
-    .set({ assigneeId: ctx.userId, assigneeApiKeyId: apiKeyId ?? null, status: 'IN_PROGRESS', updatedAt: new Date().toISOString() })
-    .where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+  const before = await snapshotItem(db, ctx.tenantId, projectId, itemId)
+  const audit = auditContext(c)
+  await db.transaction(async (tx) => {
+    await tx.update(items).set({ assigneeId: ctx.userId, assigneeApiKeyId: apiKeyId ?? null, status: 'IN_PROGRESS', updatedAt: new Date().toISOString() }).where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+    await tx.insert(itemLogs).values({ id: generateId(), tenantId: ctx.tenantId, itemId, authorId: ctx.userId, type: 'auto', actorType: audit.actorType, actorLabel: audit.actorLabel, source: audit.source, activity: 'Card assumido para trabalho', durationMin: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
+    await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId, eventType: 'STATUS_CHANGED', actorId: ctx.userId, origin: apiKeyId ? 'MCP' : 'REST', before, after: await snapshotItem(tx, ctx.tenantId, projectId, itemId) })
+  })
 
   broadcast(projectId, { type: 'TASK_CLAIMED', projectId, payload: { itemId, assigneeId: ctx.userId, apiKeyId } })
   const updated = await db.query.items.findFirst({ where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)) })
@@ -704,9 +747,13 @@ itemsRouter.patch('/:itemId/release', requireRole('MEMBER'), async (c) => {
   })
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
-  await db.update(items)
-    .set({ assigneeId: null, assigneeApiKeyId: null, status: 'NOT_STARTED', updatedAt: new Date().toISOString() })
-    .where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+  const before = await snapshotItem(db, ctx.tenantId, projectId, itemId)
+  const audit = auditContext(c)
+  await db.transaction(async (tx) => {
+    await tx.update(items).set({ assigneeId: null, assigneeApiKeyId: null, status: 'NOT_STARTED', updatedAt: new Date().toISOString() }).where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+    await tx.insert(itemLogs).values({ id: generateId(), tenantId: ctx.tenantId, itemId, authorId: ctx.userId, type: 'auto', actorType: audit.actorType, actorLabel: audit.actorLabel, source: audit.source, activity: 'Trabalho liberado', durationMin: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
+    await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId, eventType: 'STATUS_CHANGED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before, after: await snapshotItem(tx, ctx.tenantId, projectId, itemId) })
+  })
 
   broadcast(projectId, { type: 'CARD_UPDATED', projectId, payload: { itemId, assigneeId: null } })
   const updated = await db.query.items.findFirst({ where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)) })
@@ -764,9 +811,11 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
   type LoggableField = typeof LOGGABLE_FIELDS[number]
   const prevItem = await db.query.items.findFirst({
     where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
-    columns: { title: true, description: true, priority: true, assigneeId: true, points: true, startDate: true, dueDate: true, status: true, type: true },
+    columns: { title: true, description: true, priority: true, assigneeId: true, points: true, startDate: true, dueDate: true, status: true, type: true, parentId: true, moduleId: true },
   })
   if (!prevItem) return c.json({ error: 'Item não encontrado' }, 404)
+  const analyticsBefore = await snapshotItem(db, ctx.tenantId, projectId, itemId)
+  const oldParentBefore = analyticsBefore?.parentId ? await snapshotItem(db, ctx.tenantId, projectId, analyticsBefore.parentId) : null
 
   if (project.boardMode === 'SIMPLE' && prevItem && ['TASK', 'BUG'].includes(prevItem.type)) {
     if (!project.simpleStoryId) return c.json({ error: 'Projeto simples não possui história fixa configurada' }, 409)
@@ -774,10 +823,12 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     updates.moduleId = null
   }
 
-  if (safeBody.parentId !== undefined || safeBody.moduleId !== undefined || safeBody.columnId !== undefined || safeBody.versionId !== undefined || safeBody.costCenterId !== undefined || safeBody.assigneeId !== undefined) {
+  if (safeBody.parentId !== undefined || safeBody.moduleId !== undefined || safeBody.columnId !== undefined || safeBody.versionId !== undefined || safeBody.costCenterId !== undefined || safeBody.assigneeId !== undefined || safeBody.type !== undefined) {
     const nextType = (safeBody.type as ItemType | undefined) ?? prevItem?.type
-    if (nextType && safeBody.parentId !== undefined) {
-      const hierarchyError = await validateHierarchy(ctx.tenantId, projectId, nextType, updates.parentId as string | null | undefined, updates.moduleId as string | null | undefined)
+    if (nextType && (safeBody.parentId !== undefined || safeBody.type !== undefined)) {
+      const effectiveParentId = updates.parentId !== undefined ? updates.parentId as string | null : prevItem?.parentId ?? null
+      const effectiveModuleId = updates.moduleId !== undefined ? updates.moduleId as string | null : prevItem?.moduleId ?? null
+      const hierarchyError = await validateHierarchy(ctx.tenantId, projectId, nextType, effectiveParentId, project.boardMode === 'SIMPLE' ? null : effectiveModuleId)
       if (hierarchyError) return c.json({ error: hierarchyError }, 400)
     }
     const [parent, module, column, version, costCenter, assignee] = await Promise.all([
@@ -808,6 +859,18 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     if (safeBody.assigneeId && !assignee) return c.json({ error: 'Responsável não é membro deste projeto' }, 400)
   }
 
+  // [HIERARQUIA] Bloqueia requisições que deixariam TASK/BUG órfã em projeto hierárquico
+  // (desvincular pai ou mudar tipo para TASK/BUG sem pai). Edições em itens legacy já órfãos continuam permitidas.
+  {
+    const finalType = (safeBody.type as ItemType | undefined) ?? prevItem.type
+    const finalParentId = safeBody.parentId !== undefined ? (updates.parentId as string | null | undefined) : prevItem.parentId
+    const introducesOrphan = ['TASK', 'BUG'].includes(finalType) && !finalParentId &&
+      (safeBody.parentId !== undefined || (safeBody.type !== undefined && safeBody.type !== prevItem.type))
+    if (project.boardMode !== 'SIMPLE' && introducesOrphan) {
+      return c.json({ error: 'TASK/BUG não podem ficar sem pai em projeto hierárquico — vincule a uma STORY, TASK ou BUG.', code: 'HIERARCHY_REQUIRED', retryable: false }, 400)
+    }
+  }
+
   if (safeBody.sprintId !== undefined) {
     const sprint = safeBody.sprintId
       ? await db.query.sprints.findFirst({ where: (s) => and(eq(s.id, safeBody.sprintId as string), eq(s.projectId, projectId), eq(s.tenantId, ctx.tenantId)) })
@@ -826,18 +889,27 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     // Atualizar descendentes em cascata
     await updateDescendantAncestry(ctx.tenantId, itemId)
   }
+  const requestedParent = updates.parentId as string | null | undefined
+  const newParentBefore = requestedParent && requestedParent !== analyticsBefore?.parentId ? await snapshotItem(db, ctx.tenantId, projectId, requestedParent) : null
 
-  await db.update(items)
-    .set(updates)
-    // [TENANT] Anti-IDOR: filtra por tenantId + projectId + itemId.
-    .where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
-
-  if (safeBody.sprintId !== undefined) {
-    await db.transaction(async (tx) => {
+  await db.transaction(async (tx) => {
+    await tx.update(items).set(updates)
+      // [TENANT] Anti-IDOR: filtra por tenantId + projectId + itemId.
+      .where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+    if (safeBody.sprintId !== undefined) {
       await tx.delete(itemSprints).where(eq(itemSprints.itemId, itemId))
-      if (safeBody.sprintId) await tx.insert(itemSprints).values({ itemId, sprintId: safeBody.sprintId as string })
-    })
-  }
+      if (safeBody.sprintId) await tx.insert(itemSprints).values({ itemId, sprintId: safeBody.sprintId as string }).onConflictDoNothing()
+    }
+    const after = await snapshotItem(tx, ctx.tenantId, projectId, itemId)
+    const eventTypes: Array<['status' | 'points' | 'type' | 'sprint' | 'version' | 'parent' | 'module', 'STATUS_CHANGED' | 'POINTS_CHANGED' | 'TYPE_CHANGED' | 'SPRINT_CHANGED' | 'VERSION_CHANGED' | 'ITEM_REPARENTED' | 'MODULE_CHANGED']> = [
+      ['status', 'STATUS_CHANGED'], ['points', 'POINTS_CHANGED'], ['type', 'TYPE_CHANGED'], ['sprint', 'SPRINT_CHANGED'], ['version', 'VERSION_CHANGED'], ['parent', 'ITEM_REPARENTED'], ['module', 'MODULE_CHANGED'],
+    ]
+    for (const [field, eventType] of eventTypes) if (field in safeBody) {
+      await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId, eventType, actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before: analyticsBefore, after })
+    }
+    if (oldParentBefore && analyticsBefore?.parentId !== (after?.parentId ?? null)) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: analyticsBefore!.parentId!, eventType: 'LEAF_CHANGED', actorId: ctx.userId, origin: 'REST', before: oldParentBefore, after: await snapshotItem(tx, ctx.tenantId, projectId, analyticsBefore!.parentId!) })
+    if (newParentBefore && requestedParent) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: requestedParent, eventType: 'LEAF_CHANGED', actorId: ctx.userId, origin: 'REST', before: newParentBefore, after: await snapshotItem(tx, ctx.tenantId, projectId, requestedParent) })
+  })
 
   // Se título mudou, atualizar ancestryPath dos filhos
   if (safeBody.title) {
@@ -857,7 +929,8 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
       }
     }
     if (changes.length > 0) {
-      await createAutoLog(itemId, ctx.tenantId, ctx.userId, `Campos alterados: ${changes.join('; ')}`)
+      const audit = auditContext(c)
+      await createAutoLog(itemId, ctx.tenantId, ctx.userId, `Campos alterados: ${changes.map(change => normalizeAuditText(change)).join('; ')}`, audit.actorType, audit.source, audit.actorLabel)
     }
   }
 
@@ -902,6 +975,10 @@ itemsRouter.delete('/:itemId', requireRole('MEMBER'), async (c) => {
 
   // [DB-SWAP] no PostgreSQL, usar ON DELETE CASCADE no schema em vez de exclusão manual aqui
   await db.transaction(async (tx) => {
+    const snapshots = new Map<string, Awaited<ReturnType<typeof snapshotItem>>>()
+    for (const id of allIds) snapshots.set(id, await snapshotItem(tx, ctx.tenantId, projectId, id))
+    const parentSnapshots = new Map<string, Awaited<ReturnType<typeof snapshotItem>>>()
+    for (const snapshot of snapshots.values()) if (snapshot?.parentId && !parentSnapshots.has(snapshot.parentId)) parentSnapshots.set(snapshot.parentId, await snapshotItem(tx, ctx.tenantId, projectId, snapshot.parentId))
     // itemTags e itemSprints têm FK para items.id sem cascade — excluir antes
     await tx.delete(itemTags).where(inArray(itemTags.itemId, allIds))
     await tx.delete(itemSprints).where(inArray(itemSprints.itemId, allIds))
@@ -909,6 +986,8 @@ itemsRouter.delete('/:itemId', requireRole('MEMBER'), async (c) => {
     // checklists e checklistItems têm onDelete:'cascade' — serão excluídos automaticamente com items
     // items.parentId não tem FK constraint no schema, então podemos excluir todos de uma vez
     await tx.delete(items).where(and(inArray(items.id, allIds), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+    for (const id of allIds) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: id, eventType: 'ITEM_DELETED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before: snapshots.get(id), after: null })
+    for (const [parentId, before] of parentSnapshots) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: parentId, eventType: 'LEAF_CHANGED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before, after: { ...(before!), isLeaf: true } })
   })
 
   broadcast(projectId, { type: 'ITEM_DELETED', projectId, payload: { itemId } })
@@ -1018,7 +1097,128 @@ itemsRouter.get('/:itemId/children', requireRole('VIEWER'), async (c) => {
 // Tarefas 4.1, 4.2, 4.3 — Endpoints de logs de atividade
 // ---------------------------------------------------------------------------
 
-// GET /projects/:projectId/items/:itemId/logs
+async function listItemLogs(c: Context<HonoEnv>, type: 'auto' | 'manual') {
+  const ctx = c.get('ctx') as RequestContext
+  const { projectId, itemId } = c.req.param()
+  const page = parseInt(c.req.query('page') ?? '1')
+  const limit = parseInt(c.req.query('limit') ?? '20')
+  const offset = (page - 1) * limit
+
+  // [TENANT] Anti-IDOR: item e logs são sempre consultados no tenant e projeto atuais.
+  const item = await db.query.items.findFirst({
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
+
+  const logs = await db.query.itemLogs.findMany({
+    where: (l) => and(eq(l.itemId, itemId), eq(l.tenantId, ctx.tenantId), eq(l.type, type)),
+    with: { author: { columns: { id: true, name: true, avatarUrl: true } } },
+    orderBy: (l) => [desc(l.createdAt)],
+    limit,
+    offset,
+  })
+  const totalRow = await db.select({ count: sql<number>`COUNT(*)` })
+    .from(itemLogs)
+    .where(and(eq(itemLogs.itemId, itemId), eq(itemLogs.tenantId, ctx.tenantId), eq(itemLogs.type, type)))
+  const total = totalRow[0]?.count ?? 0
+  const durationRow = type === 'manual'
+    ? await db.select({ total: sql<number>`COALESCE(SUM(${itemLogs.durationMin}), 0)` })
+      .from(itemLogs)
+      .where(and(eq(itemLogs.itemId, itemId), eq(itemLogs.tenantId, ctx.tenantId), eq(itemLogs.type, 'manual')))
+    : [{ total: 0 }]
+  return c.json({ data: logs, total, totalDurationMin: durationRow[0]?.total ?? 0, page, limit })
+}
+
+// GET /projects/:projectId/items/:itemId/audit — somente auditoria automática
+itemsRouter.get('/:itemId/audit', requireRole('VIEWER'), async (c) => listItemLogs(c, 'auto'))
+
+// GET /projects/:projectId/items/:itemId/work-log — somente diário manual
+itemsRouter.get('/:itemId/work-log', requireRole('VIEWER'), async (c) => listItemLogs(c, 'manual'))
+
+// POST /projects/:projectId/items/:itemId/work-log — registrar trabalho manual
+itemsRouter.post('/:itemId/work-log', requireRole('MEMBER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const { projectId, itemId } = c.req.param()
+  const body = await c.req.json<{ activity: string; duration?: string | null }>()
+  if (!body.activity?.trim()) return c.json({ error: 'Descrição do trabalho é obrigatória' }, 400)
+
+  const durationMin = body.duration == null || body.duration === '' ? null : parseWorkDuration(body.duration)
+  if (body.duration != null && body.duration !== '' && durationMin == null) {
+    return c.json({ error: 'Duração inválida. Use o formato H:MM, por exemplo 2:00 ou 0:50' }, 400)
+  }
+
+  // [TENANT] O card é validado no tenant e projeto do contexto autenticado.
+  const item = await db.query.items.findFirst({
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
+
+  const now = new Date().toISOString()
+  const id = generateId()
+  const audit = auditContext(c)
+  await db.insert(itemLogs).values({
+    id, tenantId: ctx.tenantId, itemId, authorId: ctx.userId, type: 'manual',
+    actorType: audit.actorType, actorLabel: audit.actorLabel, source: audit.source,
+    activity: body.activity.trim(), durationMin, createdAt: now, updatedAt: now,
+  })
+  return c.json({ id, durationMin }, 201)
+})
+
+// PATCH /projects/:projectId/items/:itemId/work-log/:logId — corrigir trabalho manual
+itemsRouter.patch('/:itemId/work-log/:logId', requireRole('MEMBER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const { projectId, itemId, logId } = c.req.param()
+  const memberRole = c.get('memberRole') as string
+  const body = await c.req.json<{ activity?: string; duration?: string | null }>()
+  const log = await db.query.itemLogs.findFirst({
+    where: (l) => and(eq(l.id, logId), eq(l.itemId, itemId), eq(l.tenantId, ctx.tenantId), eq(l.type, 'manual')),
+  })
+  if (!log) return c.json({ error: 'Registro de trabalho não encontrado' }, 404)
+  const item = await db.query.items.findFirst({
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
+  if (log.authorId !== ctx.userId && memberRole !== 'ADMIN') return c.json({ error: 'Sem permissão para editar este registro' }, 403)
+
+  const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() }
+  if (body.activity !== undefined) {
+    if (!body.activity.trim()) return c.json({ error: 'Descrição do trabalho é obrigatória' }, 400)
+    updates.activity = body.activity.trim()
+  }
+  if (body.duration !== undefined) {
+    const durationMin = body.duration == null || body.duration === '' ? null : parseWorkDuration(body.duration)
+    if (body.duration != null && body.duration !== '' && durationMin == null) return c.json({ error: 'Duração inválida. Use o formato H:MM' }, 400)
+    updates.durationMin = durationMin
+  }
+  await db.update(itemLogs).set(updates).where(and(eq(itemLogs.id, logId), eq(itemLogs.itemId, itemId), eq(itemLogs.tenantId, ctx.tenantId)))
+  return c.json({ ok: true })
+})
+
+// DELETE /projects/:projectId/items/:itemId/work-log/:logId — excluir trabalho manual
+itemsRouter.delete('/:itemId/work-log/:logId', requireRole('MEMBER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const { projectId, itemId, logId } = c.req.param()
+  const memberRole = c.get('memberRole') as string
+  const log = await db.query.itemLogs.findFirst({
+    where: (l) => and(eq(l.id, logId), eq(l.itemId, itemId), eq(l.tenantId, ctx.tenantId), eq(l.type, 'manual')),
+    columns: { authorId: true },
+  })
+  if (!log) return c.json({ error: 'Registro de trabalho não encontrado' }, 404)
+  // [TENANT] O item é validado para impedir exclusão usando somente IDs de outro projeto.
+  const item = await db.query.items.findFirst({
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
+  if (log.authorId !== ctx.userId && memberRole !== 'ADMIN') return c.json({ error: 'Sem permissão para excluir este registro' }, 403)
+  await db.delete(itemLogs).where(and(eq(itemLogs.id, logId), eq(itemLogs.itemId, itemId), eq(itemLogs.tenantId, ctx.tenantId)))
+  return c.json({ ok: true })
+})
+
+// GET legado: mantém leitura compatível, mas exige o filtro explícito para novos usos.
 itemsRouter.get('/:itemId/logs', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId } = c.req.param()
@@ -1034,8 +1234,10 @@ itemsRouter.get('/:itemId/logs', requireRole('VIEWER'), async (c) => {
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
   // [TENANT] filtra logs por tenantId + itemId
+  const requestedType = c.req.query('type')
+  const type = requestedType === 'auto' || requestedType === 'manual' ? requestedType : undefined
   const logs = await db.query.itemLogs.findMany({
-    where: (l) => and(eq(l.itemId, itemId), eq(l.tenantId, ctx.tenantId)),
+    where: (l) => and(eq(l.itemId, itemId), eq(l.tenantId, ctx.tenantId), ...(type ? [eq(l.type, type)] : [])),
     with: { author: { columns: { id: true, name: true, avatarUrl: true } } },
     orderBy: (l) => [desc(l.createdAt)],
     limit,
@@ -1044,7 +1246,7 @@ itemsRouter.get('/:itemId/logs', requireRole('VIEWER'), async (c) => {
 
   const totalRow = await db.select({ count: sql<number>`COUNT(*)` })
     .from(itemLogs)
-    .where(and(eq(itemLogs.itemId, itemId), eq(itemLogs.tenantId, ctx.tenantId)))
+    .where(and(eq(itemLogs.itemId, itemId), eq(itemLogs.tenantId, ctx.tenantId), ...(type ? [eq(itemLogs.type, type)] : [])))
   const total = totalRow[0]?.count ?? 0
 
   return c.json({ data: logs, total, page, limit })
@@ -1149,6 +1351,7 @@ itemsRouter.post('/:itemId/archive', requireRole('MEMBER'), async (c) => {
   }
 
   const now = new Date().toISOString()
+  const audit = auditContext(c)
   await db.transaction(async (tx) => {
     // Buscar status atual de cada item antes de arquivar — preservar em status_before_archive
     // [DB-SWAP] no PostgreSQL usar UPDATE ... FROM ... RETURNING ou CTE para evitar N queries
@@ -1158,9 +1361,13 @@ itemsRouter.post('/:itemId/archive', requireRole('MEMBER'), async (c) => {
         columns: { status: true },
       })
       if (current && current.status !== 'ARCHIVED') {
+        const before = await snapshotItem(tx, ctx.tenantId, projectId, id)
         await tx.update(items)
           .set({ status: 'ARCHIVED', statusBeforeArchive: current.status, updatedAt: now })
           .where(and(eq(items.id, id), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+        const audit = auditContext(c)
+        await tx.insert(itemLogs).values({ id: generateId(), tenantId: ctx.tenantId, itemId: id, authorId: ctx.userId, type: 'auto', actorType: audit.actorType, actorLabel: audit.actorLabel, source: audit.source, activity: 'Card arquivado', durationMin: null, createdAt: now, updatedAt: now })
+        await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: id, eventType: 'ITEM_ARCHIVED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before, after: { ...(before!), status: 'ARCHIVED' } })
       }
     }
   })
@@ -1200,6 +1407,7 @@ itemsRouter.post('/:itemId/unarchive', requireRole('MEMBER'), async (c) => {
   const ancestorIds = ancestorPath.map(a => a.id)
 
   const now = new Date().toISOString()
+  const audit = auditContext(c)
   await db.transaction(async (tx) => {
     // Restaurar item raiz + descendentes arquivados
     // [DB-SWAP] no PostgreSQL usar UPDATE ... WHERE id = ANY($1) para operação em bulk
@@ -1209,9 +1417,12 @@ itemsRouter.post('/:itemId/unarchive', requireRole('MEMBER'), async (c) => {
         columns: { statusBeforeArchive: true },
       })
       const restoreStatus = current?.statusBeforeArchive ?? 'NOT_STARTED'
+      const before = await snapshotItem(tx, ctx.tenantId, projectId, id)
       await tx.update(items)
         .set({ status: restoreStatus, statusBeforeArchive: null, updatedAt: now })
         .where(and(eq(items.id, id), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+      await tx.insert(itemLogs).values({ id: generateId(), tenantId: ctx.tenantId, itemId: id, authorId: ctx.userId, type: 'auto', actorType: audit.actorType, actorLabel: audit.actorLabel, source: audit.source, activity: 'Card restaurado', durationMin: null, createdAt: now, updatedAt: now })
+      await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: id, eventType: 'ITEM_UNARCHIVED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before, after: await snapshotItem(tx, ctx.tenantId, projectId, id) })
     }
 
     // Restaurar ancestrais arquivados para que o item seja visível na hierarquia

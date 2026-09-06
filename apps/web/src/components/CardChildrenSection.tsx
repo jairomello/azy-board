@@ -19,6 +19,8 @@ interface Props {
   itemId: string
   projectId: string
   onOpenChild: (childId: string) => void
+  onCountChange?: (count: number) => void
+  refreshKey?: number
 }
 
 const PRIORITY_COLORS: Record<Priority, string> = {
@@ -32,6 +34,14 @@ const PRIORITY_LABELS: Record<Priority, string> = {
   LOW: 'Baixa', MEDIUM: 'Média', HIGH: 'Alta', CRITICAL: 'Crítica',
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  NOT_STARTED: 'Não iniciada',
+  IN_PROGRESS: 'Em andamento',
+  BLOCKED: 'Bloqueada',
+  DONE: 'Concluída',
+  CANCELLED: 'Cancelada',
+}
+
 function TypeIcon({ type }: { type: ItemType }) {
   if (type === 'BUG') return <Bug className="w-3.5 h-3.5 text-red-500" />
   return <CheckSquare className="w-3.5 h-3.5 text-blue-500" />
@@ -43,20 +53,28 @@ function PriorityIcon({ priority }: { priority: Priority }) {
   return null
 }
 
-export function CardChildrenSection({ itemId, projectId, onOpenChild }: Props) {
+export function CardChildrenSection({ itemId, projectId, onOpenChild, onCountChange, refreshKey = 0 }: Props) {
   const [children, setChildren] = useState<ChildItem[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!itemId || itemId === '__new__') { setLoading(false); return }
+    if (!itemId || itemId === '__new__') { setChildren([]); onCountChange?.(0); setLoading(false); return }
     let cancelled = false
     setLoading(true)
     api.get<{ data: ChildItem[]; total: number }>(`/projects/${projectId}/items/${itemId}/children`)
-      .then(res => { if (!cancelled) setChildren(res.data) })
-      .catch(() => { if (!cancelled) setChildren([]) })
+      .then(res => {
+        if (cancelled) return
+        setChildren(res.data)
+        onCountChange?.(res.data.length)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setChildren([])
+        onCountChange?.(0)
+      })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [itemId, projectId])
+  }, [itemId, projectId, refreshKey, onCountChange])
 
   if (loading) {
     return (
@@ -81,33 +99,46 @@ export function CardChildrenSection({ itemId, projectId, onOpenChild }: Props) {
             <button
               key={child.id}
               onClick={() => onOpenChild(child.id)}
-              className="flex items-start gap-2 p-2.5 rounded-lg border border-border bg-background hover:bg-muted/50 text-left transition-colors group"
+              type="button"
+              className="group relative flex min-h-[92px] items-start gap-3 overflow-hidden rounded-lg border border-border bg-muted/20 p-3 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:bg-background hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             >
-              <TypeIcon type={child.type} />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-foreground truncate leading-tight">{child.title}</p>
-                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[child.priority]}`}>
+              <span className={`mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md ${child.type === 'BUG' ? 'bg-red-100 dark:bg-red-950/40' : 'bg-blue-100 dark:bg-blue-950/40'}`}>
+                <TypeIcon type={child.type} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-center gap-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {child.type === 'BUG' ? 'Bug' : 'Task'}
+                  </span>
+                  <span className="truncate text-[10px] text-muted-foreground/70">#{child.id.slice(0, 8)}</span>
+                </div>
+                <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground">{child.title}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${PRIORITY_COLORS[child.priority]}`}>
                     {PRIORITY_LABELS[child.priority]}
                   </span>
-                  {child.column && (
-                    <span className="text-[10px] text-muted-foreground">{child.column.name}</span>
-                  )}
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {STATUS_LABELS[child.status] ?? child.status}
+                  </span>
+                  {child.points != null && <span className="text-[10px] font-medium text-muted-foreground">{child.points} pt</span>}
+                  {child.column && <span className="truncate text-[10px] text-muted-foreground">{child.column.name}</span>}
                 </div>
               </div>
-              <div className="flex items-center gap-1 flex-shrink-0">
+              <div className="flex flex-shrink-0 flex-col items-end justify-between self-stretch gap-2">
                 {child.assignee?.avatarUrl ? (
                   <img src={child.assignee.avatarUrl} alt={child.assignee.name}
-                    className="w-5 h-5 rounded-full object-cover" />
+                    className="h-6 w-6 rounded-full object-cover ring-2 ring-background" />
                 ) : child.assignee ? (
-                  <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center">
-                    <span className="text-[9px] font-bold text-primary">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 ring-2 ring-background">
+                    <span className="text-[10px] font-bold text-primary">
                       {child.assignee.name.charAt(0).toUpperCase()}
                     </span>
                   </div>
                 ) : null}
-                <PriorityIcon priority={child.priority} />
-                <ChevronRight className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                <span className="flex items-center gap-1 text-muted-foreground transition-transform group-hover:translate-x-0.5">
+                  <PriorityIcon priority={child.priority} />
+                  <ChevronRight className="h-4 w-4" />
+                </span>
               </div>
             </button>
           ))}

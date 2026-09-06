@@ -6,9 +6,10 @@ interface Props {
   itemId: string
   projectId: string
   initialChecklists: Checklist[]
+  onChange?: (checklists: Checklist[]) => void
 }
 
-export function ChecklistSection({ itemId, projectId, initialChecklists }: Props) {
+export function ChecklistSection({ itemId, projectId, initialChecklists, onChange }: Props) {
   const [lists, setLists] = useState<Checklist[]>(initialChecklists)
   const [newListName, setNewListName] = useState('')
   const [showNewForm, setShowNewForm] = useState(false)
@@ -21,6 +22,10 @@ export function ChecklistSection({ itemId, projectId, initialChecklists }: Props
   useEffect(() => {
     setLists(initialChecklists)
   }, [itemId, initialChecklists])
+
+  useEffect(() => {
+    onChange?.(lists)
+  }, [lists, onChange])
 
   function progress(list: Checklist) {
     const total = list.items.length

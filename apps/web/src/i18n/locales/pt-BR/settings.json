@@ -60,5 +60,16 @@
     "emerald": "Esmeralda",
     "graphite": "Grafite",
     "classic": "Clássico"
-  }
+  },
+  "projectVisibility": "Visibilidade do projeto",
+  "projectVisibilityDescription": "Defina quem encontra este projeto ao listar os projetos.",
+  "visibilityRestricted": "Restrito",
+  "visibilityRestrictedDescription": "Só aparece para os membros da equipe e para o gerente do projeto, inclusive para administradores.",
+  "visibilityHidden": "Oculto",
+  "visibilityHiddenDescription": "Não aparece nas listagens. Para enxergá-lo, é preciso ligar a preferência \"Mostrar projetos ocultos\".",
+  "visibilitySaved": "Visibilidade atualizada",
+  "visibilitySaveError": "Não foi possível atualizar a visibilidade",
+  "showHiddenProjects": "Mostrar projetos ocultos",
+  "hiddenProjects": "Projetos ocultos",
+  "showHiddenProjectsHint": "Vale apenas para esta sessão: a opção volta a ser desligada no próximo login."
 }

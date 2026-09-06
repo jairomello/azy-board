@@ -5,7 +5,7 @@ Definir os requisitos da capacidade project management.
 ## Requirements
 
 ### Requirement: Criar projeto
-O sistema SHALL permitir que um usuário autenticado crie um novo projeto informando nome, descrição opcional e modo de board opcional (`HIERARCHICAL` ou `SIMPLE`). Quando não informado, SHALL usar `HIERARCHICAL`.
+O sistema SHALL permitir que um usuário autenticado crie um novo projeto informando nome, descrição opcional, modo de board opcional (`HIERARCHICAL` ou `SIMPLE`) e os sinalizadores opcionais de visibilidade `isRestricted` e `isHidden`. Quando o modo não for informado, SHALL usar `HIERARCHICAL`. Quando os sinalizadores de visibilidade não forem informados, SHALL usar `false` para ambos, produzindo um projeto visível para todos os membros do tenant conforme as regras de escopo por grupo.
 
 #### Scenario: Criação bem-sucedida com colunas padrão
 - **WHEN** usuário envia nome do projeto
@@ -27,14 +27,34 @@ O sistema SHALL permitir que um usuário autenticado crie um novo projeto inform
 - **WHEN** usuário tenta criar projeto com nome já existente no workspace
 - **THEN** sistema retorna erro 409 com mensagem indicando duplicidade
 
+#### Scenario: Projeto criado sem sinalizadores de visibilidade
+- **WHEN** usuário cria projeto sem informar `isRestricted` nem `isHidden`
+- **THEN** sistema persiste ambos como `false` e os devolve na resposta
+
+#### Scenario: Projeto criado restrito
+- **WHEN** usuário cria projeto informando `isRestricted = true`
+- **THEN** sistema persiste o projeto como restrito e o criador, por ser membro, continua visualizando-o na listagem
+
 ---
 
 ### Requirement: Listar projetos do usuário
-O sistema SHALL retornar apenas os projetos nos quais o usuário autenticado é membro.
+O sistema SHALL retornar, na listagem de projetos, apenas os projetos que o usuário autenticado tem permissão de ver: para Membros de Equipe e Gerentes, somente os projetos com vínculo (membership ativa ou indicação como Gerente Geral); para Admin e Root, os projetos do tenant exceto os restritos sem vínculo. Em todos os casos, o sistema SHALL excluir projetos ocultos, a menos que a requisição informe `includeHidden=true`.
 
 #### Scenario: Listagem filtrada por membership
 - **WHEN** usuário solicita lista de projetos
 - **THEN** sistema retorna somente projetos onde o usuário possui membership ativa, independente de IDs passados na URL
+
+#### Scenario: Listagem exclui projetos ocultos por padrão
+- **WHEN** usuário solicita lista de projetos sem informar `includeHidden`
+- **THEN** sistema não retorna os projetos marcados como ocultos
+
+#### Scenario: Listagem inclui projetos ocultos quando solicitado
+- **WHEN** usuário solicita lista de projetos com `includeHidden=true`
+- **THEN** sistema retorna também os projetos ocultos que o usuário tem permissão de ver
+
+#### Scenario: Listagem exclui projetos restritos sem vínculo
+- **WHEN** usuário solicita lista de projetos e existe projeto restrito no tenant sem membership nem gerência do usuário
+- **THEN** sistema não retorna esse projeto, mesmo que o usuário seja Admin ou Root
 
 ---
 
@@ -65,11 +85,19 @@ O sistema SHALL suportar perfis: `ADMIN`, `MEMBER` e `VIEWER`. Cada perfil defin
 ---
 
 ### Requirement: Proteção contra acesso não autorizado a projetos
-O sistema SHALL verificar server-side se o usuário autenticado tem membership no projeto antes de retornar qualquer dado.
+O sistema SHALL verificar server-side se o usuário autenticado tem membership no projeto antes de retornar qualquer dado. Para projetos restritos, Admin e Root também SHALL possuir membership ativa ou estar indicado como Gerente Geral; o grupo global não SHALL conceder bypass dessa regra. A mesma proteção SHALL ser aplicada a acessos por URL, API Key, MCP e agentes.
 
 #### Scenario: Acesso por ID manipulado na URL
 - **WHEN** usuário tenta acessar projeto cujo ID foi inserido manualmente na URL sem ter membership
 - **THEN** sistema retorna erro 404 (não revela existência do recurso)
+
+#### Scenario: Admin sem associação tenta acessar projeto restrito
+- **WHEN** Admin ou Root tenta acessar por URL um projeto restrito no qual não possui membership nem é Gerente Geral
+- **THEN** sistema retorna erro 404 e não revela os dados do projeto
+
+#### Scenario: Agente sem associação tenta acessar projeto restrito
+- **WHEN** agente, MCP ou API Key de um usuário sem associação tenta acessar um projeto restrito
+- **THEN** sistema retorna erro 404 e não revela os dados do projeto
 
 ---
 

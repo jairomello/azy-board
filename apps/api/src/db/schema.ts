@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core'
 import { relations } from 'drizzle-orm'
 
 // [DB-SWAP] Ao migrar para PostgreSQL, trocar importações para 'drizzle-orm/pg-core'
@@ -56,6 +56,129 @@ export const apiKeys = sqliteTable('api_keys', {
   lastUsedAt: text('last_used_at'),
 })
 
+// ---------------------------------------------------------------------------
+// AZY AGENT — configuração e execução persistida, sempre escopada por tenant
+// ---------------------------------------------------------------------------
+export const assistantCredentials = sqliteTable('assistant_credentials', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  provider: text('provider', { enum: ['OPENAI', 'OPENROUTER'] }).notNull(),
+  credentialMode: text('credential_mode', { enum: ['API_KEY'] }).notNull(),
+  ciphertext: text('ciphertext').notNull(),
+  ciphertextVersion: integer('ciphertext_version').notNull().default(1),
+  keyPrefix: text('key_prefix'),
+  scopesJson: text('scopes_json').notNull().default('[]'),
+  expiresAt: text('expires_at'),
+  revokedAt: text('revoked_at'),
+  createdBy: text('created_by').notNull().references(() => users.id),
+  createdAt: text('created_at').notNull(),
+})
+
+export const assistantSettings = sqliteTable('assistant_settings', {
+  tenantId: text('tenant_id').primaryKey().references(() => tenants.id, { onDelete: 'cascade' }),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
+  provider: text('provider', { enum: ['OPENAI', 'OPENROUTER'] }),
+  model: text('model'),
+  credentialMode: text('credential_mode', { enum: ['API_KEY'] }),
+  credentialId: text('credential_id').references(() => assistantCredentials.id),
+  validationStatus: text('validation_status', { enum: ['UNVALIDATED', 'VALID', 'INVALID'] }).notNull().default('UNVALIDATED'),
+  validatedAt: text('validated_at'),
+  requestsPerMinute: integer('requests_per_minute').notNull().default(10),
+  maxActivePerUser: integer('max_active_per_user').notNull().default(1),
+  maxActivePerTenant: integer('max_active_per_tenant').notNull().default(3),
+  dailyBudgetMicros: integer('daily_budget_micros').notNull().default(100_000),
+  tenantDailyBudgetMicros: integer('tenant_daily_budget_micros').notNull().default(1_000_000),
+  maxSteps: integer('max_steps').notNull().default(4),
+  maxToolCalls: integer('max_tool_calls').notNull().default(8),
+  maxInputTokens: integer('max_input_tokens').notNull().default(65_000),
+  maxOutputTokens: integer('max_output_tokens').notNull().default(4_000),
+  maxPayloadBytes: integer('max_payload_bytes').notNull().default(50_000),
+  timeoutMs: integer('timeout_ms').notNull().default(90_000),
+  updatedAt: text('updated_at').notNull(),
+})
+
+export const assistantConversations = sqliteTable('assistant_conversations', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id),
+  projectId: text('project_id').references(() => projects.id),
+  title: text('title'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  deletedAt: text('deleted_at'),
+}, (table) => ({ userUpdated: index('assistant_conversations_tenant_user_updated_idx').on(table.tenantId, table.userId, table.updatedAt) }))
+
+export const assistantMessages = sqliteTable('assistant_messages', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id').notNull().references(() => assistantConversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id').references(() => users.id),
+  role: text('role', { enum: ['USER', 'ASSISTANT', 'SYSTEM', 'TOOL'] }).notNull(),
+  content: text('content').notNull(),
+  metadataJson: text('metadata_json'),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({ conversationCreated: index('assistant_messages_tenant_conversation_created_idx').on(table.tenantId, table.conversationId, table.createdAt) }))
+
+export const assistantRuns = sqliteTable('assistant_runs', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  conversationId: text('conversation_id').notNull().references(() => assistantConversations.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull().references(() => users.id),
+  credentialId: text('credential_id').references(() => assistantCredentials.id),
+  model: text('model'),
+  status: text('status', { enum: ['QUEUED', 'RUNNING', 'WAITING_USER', 'WAITING_APPROVAL', 'COMPLETED', 'FAILED', 'CANCELLED', 'EXPIRED'] }).notNull().default('QUEUED'),
+  idempotencyKey: text('idempotency_key'),
+  currentCursor: integer('current_cursor').notNull().default(0),
+  inputTokens: integer('input_tokens'),
+  outputTokens: integer('output_tokens'),
+  costMicros: integer('cost_micros'),
+  errorCode: text('error_code'),
+  createdAt: text('created_at').notNull(),
+  startedAt: text('started_at'),
+  finishedAt: text('finished_at'),
+  expiresAt: text('expires_at'),
+}, (table) => ({ conversationStatus: index('assistant_runs_tenant_conversation_status_idx').on(table.tenantId, table.conversationId, table.status), idempotency: uniqueIndex('assistant_runs_tenant_user_idempotency_unique').on(table.tenantId, table.userId, table.idempotencyKey) }))
+
+export const assistantEvents = sqliteTable('assistant_events', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  runId: text('run_id').notNull().references(() => assistantRuns.id, { onDelete: 'cascade' }),
+  sequence: integer('sequence').notNull(),
+  eventType: text('event_type', { enum: ['RUN_CREATED', 'RUN_STARTED', 'TEXT_DELTA', 'TOOL_STARTED', 'TOOL_COMPLETED', 'QUESTION', 'APPROVAL_REQUIRED', 'APPROVAL_DECIDED', 'RUN_FAILED', 'RUN_CANCELLED', 'RUN_COMPLETED'] }).notNull(),
+  payloadJson: text('payload_json').notNull().default('{}'),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({ runSequence: uniqueIndex('assistant_events_tenant_run_sequence_unique').on(table.tenantId, table.runId, table.sequence), runCreated: index('assistant_events_tenant_run_created_idx').on(table.tenantId, table.runId, table.createdAt) }))
+
+export const assistantToolCalls = sqliteTable('assistant_tool_calls', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  runId: text('run_id').notNull().references(() => assistantRuns.id, { onDelete: 'cascade' }),
+  toolName: text('tool_name').notNull(),
+  riskLevel: text('risk_level', { enum: ['READ', 'LOW', 'MEDIUM', 'HIGH', 'DESTRUCTIVE'] }).notNull(),
+  status: text('status', { enum: ['PENDING', 'WAITING_APPROVAL', 'RUNNING', 'COMPLETED', 'FAILED', 'REJECTED', 'CANCELLED'] }).notNull().default('PENDING'),
+  argumentsJson: text('arguments_json').notNull().default('{}'),
+  resultSummary: text('result_summary'),
+  operationHash: text('operation_hash'),
+  idempotencyKey: text('idempotency_key'),
+  createdAt: text('created_at').notNull(),
+  startedAt: text('started_at'),
+  finishedAt: text('finished_at'),
+}, (table) => ({ runCreated: index('assistant_tool_calls_tenant_run_created_idx').on(table.tenantId, table.runId, table.createdAt), operation: index('assistant_tool_calls_tenant_operation_hash_idx').on(table.tenantId, table.operationHash) }))
+
+export const assistantApprovals = sqliteTable('assistant_approvals', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  runId: text('run_id').notNull().references(() => assistantRuns.id, { onDelete: 'cascade' }),
+  toolCallId: text('tool_call_id').references(() => assistantToolCalls.id),
+  status: text('status', { enum: ['PENDING', 'APPROVED', 'REJECTED', 'EXPIRED', 'CANCELLED'] }).notNull().default('PENDING'),
+  previewJson: text('preview_json').notNull(),
+  operationHash: text('operation_hash').notNull(),
+  expiresAt: text('expires_at').notNull(),
+  decidedBy: text('decided_by').references(() => users.id),
+  decidedAt: text('decided_at'),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({ pending: index('assistant_approvals_tenant_status_expiry_idx').on(table.tenantId, table.status, table.expiresAt), operation: uniqueIndex('assistant_approvals_run_operation_hash_unique').on(table.tenantId, table.runId, table.operationHash) }))
+
 // IDEMPOTENCY — resultados de mutações repetíveis, retidos por 24 horas.
 // [TENANT] owner_id e tenant_id fazem parte do escopo; payload_hash evita replay com payload diferente.
 // [DB-SWAP] Em PostgreSQL, trocar o índice implícito por UNIQUE (tenant_id, owner_id, tool, idempotency_key).
@@ -86,6 +209,12 @@ export const projects = sqliteTable('projects', {
   simpleStoryId: text('simple_story_id'),
   // Gerente Geral do Projeto — campo informativo, sem RBAC adicional
   managerUserId: text('manager_user_id'),
+  // [TENANT] Restrito: o projeto só aparece na listagem para quem tem vínculo (membro ou gerente),
+  // inclusive para ADMIN/ROOT — o filtro é sempre aplicado dentro do tenant do chamador.
+  isRestricted: integer('is_restricted', { mode: 'boolean' }).notNull().default(false),
+  // [TENANT] Oculto: o projeto sai das listagens por padrão e só volta com includeHidden=true,
+  // também resolvido dentro do tenant do chamador.
+  isHidden: integer('is_hidden', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
 })
 
@@ -283,11 +412,16 @@ export const itemLogs = sqliteTable('item_logs', {
   itemId: text('item_id').notNull().references(() => items.id, { onDelete: 'cascade' }),
   authorId: text('author_id').references(() => users.id),
   type: text('type', { enum: ['auto', 'manual'] }).notNull(),
+  actorType: text('actor_type', { enum: ['HUMAN', 'AGENT', 'SYSTEM', 'UNKNOWN'] }).notNull().default('UNKNOWN'),
+  actorLabel: text('actor_label'),
+  source: text('source', { enum: ['REST', 'MCP', 'SYSTEM', 'UNKNOWN'] }).notNull().default('UNKNOWN'),
   activity: text('activity').notNull(),
   durationMin: integer('duration_min'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
-})
+}, (table) => ({
+  itemTypeDateIdx: index('item_logs_tenant_item_type_date_idx').on(table.tenantId, table.itemId, table.type, table.createdAt),
+}))
 
 // ---------------------------------------------------------------------------
 // TAGS — etiquetas dinâmicas por projeto
@@ -315,7 +449,66 @@ export const itemTags = sqliteTable('item_tags', {
 export const itemSprints = sqliteTable('item_sprints', {
   itemId: text('item_id').notNull().references(() => items.id),
   sprintId: text('sprint_id').notNull().references(() => sprints.id),
-})
+}, (table) => ({
+  pairUnique: uniqueIndex('item_sprints_item_sprint_unique').on(table.itemId, table.sprintId),
+}))
+
+// ---------------------------------------------------------------------------
+// ANALYTICS — histórico mínimo append-only do Dashboard
+// [TENANT] Toda linha é escopada por tenant e projeto.
+// [DB-SWAP] JSON TEXT deve ser jsonb e os índices devem usar UUID no PostgreSQL.
+// ---------------------------------------------------------------------------
+export const projectAnalyticsCoverage = sqliteTable('project_analytics_coverage', {
+  projectId: text('project_id').primaryKey().references(() => projects.id, { onDelete: 'cascade' }),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  coverageStartedAt: text('coverage_started_at').notNull(),
+  baselineEventId: text('baseline_event_id'),
+  createdAt: text('created_at').notNull(),
+}, (table) => ({ tenantProject: index('coverage_tenant_project_idx').on(table.tenantId, table.projectId) }))
+
+export const itemEvents = sqliteTable('item_events', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  itemId: text('item_id'), // intencionalmente sem FK: exclusão do item preserva o histórico
+  eventType: text('event_type', { enum: ['ANALYTICS_BASELINE', 'ITEM_CREATED', 'STATUS_CHANGED', 'POINTS_CHANGED', 'TYPE_CHANGED', 'SPRINT_CHANGED', 'VERSION_CHANGED', 'ITEM_REPARENTED', 'MODULE_CHANGED', 'LEAF_CHANGED', 'ITEM_ARCHIVED', 'ITEM_UNARCHIVED', 'ITEM_DELETED'] }).notNull(),
+  occurredAt: text('occurred_at').notNull(),
+  sequence: integer('sequence').notNull(),
+  actorId: text('actor_id').notNull(),
+  origin: text('origin').notNull(),
+  correlationId: text('correlation_id').notNull(),
+  beforeSnapshot: text('before_snapshot'),
+  afterSnapshot: text('after_snapshot'),
+}, (table) => ({
+  tenantProjectDate: index('item_events_tenant_project_date_idx').on(table.tenantId, table.projectId, table.occurredAt),
+  itemDate: index('item_events_item_date_idx').on(table.tenantId, table.projectId, table.itemId, table.occurredAt),
+  typeDate: index('item_events_type_date_idx').on(table.tenantId, table.projectId, table.eventType, table.occurredAt),
+  correlationUnique: uniqueIndex('item_events_correlation_unique').on(table.tenantId, table.projectId, table.correlationId, table.eventType, table.itemId),
+}))
+
+export const sprintCycles = sqliteTable('sprint_cycles', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  sprintId: text('sprint_id').notNull().references(() => sprints.id, { onDelete: 'cascade' }),
+  startedAt: text('started_at').notNull(),
+  endedAt: text('ended_at'),
+  endReason: text('end_reason', { enum: ['SUSPENDED', 'CLOSED'] }),
+  source: text('source', { enum: ['OPENED', 'MIGRATION'] }).notNull(),
+}, (table) => ({ active: index('sprint_cycles_active_idx').on(table.tenantId, table.projectId, table.sprintId, table.endedAt) }))
+
+export const sprintCycleItems = sqliteTable('sprint_cycle_items', {
+  cycleId: text('cycle_id').notNull().references(() => sprintCycles.id, { onDelete: 'cascade' }),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  itemId: text('item_id').notNull(), // histórico sem FK restritiva
+  type: text('type').notNull(),
+  isLeaf: integer('is_leaf', { mode: 'boolean' }).notNull(),
+  points: integer('points'),
+  status: text('status').notNull(),
+  moduleId: text('module_id'),
+  versionId: text('version_id'),
+}, (table) => ({ pair: uniqueIndex('sprint_cycle_items_unique').on(table.cycleId, table.itemId) }))
 
 // ---------------------------------------------------------------------------
 // ATTACHMENTS — anexos de items

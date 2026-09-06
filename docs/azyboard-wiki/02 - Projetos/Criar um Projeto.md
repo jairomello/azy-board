@@ -22,6 +22,7 @@ A janela contém:
 - Título **Novo projeto**.
 - Campo obrigatório **Nome do projeto**.
 - Seletor do modo: **Hierárquico** ou **Simples**. O modo hierárquico é o padrão.
+- Controles de visibilidade: **Restrito** e **Oculto**, desligados por padrão.
 - Ação **Cancelar**.
 - Ação **Criar**.
 
@@ -33,10 +34,11 @@ O nome deve permitir que os participantes reconheçam a iniciativa na lista e no
 2. Selecione **Criar projeto**.
 3. Informe o nome.
 4. Escolha o modo do Board, se necessário.
-5. Selecione **Criar**.
-6. Aguarde o fechamento da janela.
-7. Localize o novo projeto na lista.
-8. Selecione-o para abrir o Board.
+5. Ligue **Restrito** ou **Oculto**, se o projeto exigir visibilidade limitada.
+6. Selecione **Criar**.
+7. Aguarde o fechamento da janela.
+8. Localize o novo projeto na lista.
+9. Selecione-o para abrir o Board.
 
 ## Cancelar a criação
 
@@ -51,9 +53,9 @@ A aplicação:
 - No modo **Hierárquico**, cria o módulo **Geral**.
 - No modo **Simples**, cria uma história fixa e não exibe módulos ou épicos no Board.
 - Cria as colunas iniciais do Board.
-- Disponibiliza o projeto na lista do criador.
+- Disponibiliza o projeto na lista do criador, mesmo quando ele é restrito ou oculto.
 
-Membros, squads, gerente, versões, sprints, centros de custo e novos módulos podem ser configurados posteriormente.
+Membros, squads, gerente, versões, sprints, centros de custo, novos módulos e a visibilidade podem ser configurados posteriormente.
 
 ## Regras e comportamentos
 
@@ -83,6 +85,7 @@ Para organizar uma nova frente de atendimento, uma pessoa pode criar o projeto *
 
 - [[02 - Projetos/Consultar e Abrir Projetos|Consultar e abrir projetos]]
 - [[02 - Projetos/Estrutura Inicial de um Projeto|Estrutura inicial de um projeto]]
+- [[02 - Projetos/Visibilidade de um Projeto|Visibilidade de um projeto]]
 - [[07 - Configuracoes do Projeto/Configuracoes do Projeto|Configurações do Projeto]]
 
 <details>
@@ -90,7 +93,7 @@ Para organizar uma nova frente de atendimento, uma pessoa pode criar o projeto *
 
 ### Criação
 
-O frontend envia o nome e o modo ao serviço de projetos. A API usa o tenant e o grupo global resolvidos pela sessão, valida a permissão de criação e gera o identificador do novo projeto.
+O frontend envia o nome, o modo e os sinalizadores de visibilidade ao serviço de projetos. A API usa o tenant e o grupo global resolvidos pela sessão, valida a permissão de criação, valida que os sinalizadores são booleanos e gera o identificador do novo projeto.
 
 ### Administração inicial
 

@@ -82,7 +82,7 @@ Somente bugs urgentes de Pagamentos, na Sprint 12, atribuídos a Ana e pertencen
 
 ## Identificar filtros ativos
 
-Quando existe ao menos um filtro, a toolbar apresenta a ação **Limpar** acompanhada da quantidade de critérios ativos. Tags e tipos selecionados também recebem destaque visual.
+Quando existe ao menos um filtro, a toolbar apresenta a ação **Limpar** acompanhada da quantidade de critérios ativos. Logo abaixo da barra de controles, uma linha de filtros ativos mostra cada seleção em uma tag compacta, usando nomes dos catálogos quando disponíveis. O botão **x** de cada tag remove somente aquele filtro ou valor; tipos e tags removem apenas o valor selecionado.
 
 ## Limpar filtros
 

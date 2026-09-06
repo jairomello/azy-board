@@ -11,6 +11,7 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Added
 
+- Dashboard gerencial por projeto com dez blocos, filtros independentes, histórico parcial de burnup/aging, ciclos de sprint e horas registradas.
 - Suporte a projetos nos modos `HIERARCHICAL` e `SIMPLE`, incluindo conversão
   transacional, história fixa no modo simples e preservação dos cards.
 - Autorização MCP herdada do Owner da API Key, com grupos globais, escopo por

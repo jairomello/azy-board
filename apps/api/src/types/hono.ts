@@ -16,5 +16,6 @@ export type HonoEnv = {
     aiModelName: string | null
     apiKeyProjectScope: string[] | null
     apiKeyPermissionScope: string[] | null
+    apiKeyName: string | null
   }
 }

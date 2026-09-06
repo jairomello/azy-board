@@ -19,6 +19,10 @@ Tasks representam atividades. Bugs representam defeitos. Os dois tipos compartil
 
 Selecione o corpo de um card. A janela apresenta o título no cabeçalho, campos de planejamento, descrição, subtasks, checklists, histórico e filhos.
 
+## Organizar a modal
+
+Os grupos de campos ficam em seções recolhíveis. A primeira seção começa aberta e as demais fechadas; use **Expandir tudo** ou **Recolher tudo** para ajustar a visualização. Recolher uma seção não descarta valores digitados, checklists, subtasks ou conteúdo rich text. O cabeçalho do checklist mostra o progresso concluído/total quando houver itens.
+
 ## Campos principais
 
 | Campo | Finalidade |
@@ -153,4 +157,3 @@ Campos são atualizados pela rota unificada de item. As tags são sincronizadas 
 O serviço compara campos relevantes antes e depois da atualização e cria logs automáticos. Eventos de atualização mantêm outras sessões sincronizadas.
 
 </details>
-

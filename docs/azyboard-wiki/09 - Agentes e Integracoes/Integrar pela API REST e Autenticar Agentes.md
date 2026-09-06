@@ -61,6 +61,7 @@ Use variáveis de ambiente para evitar que segredos fiquem gravados no históric
 | Itens | `/projects/{projectId}/items` |
 | Checklists | `/projects/{projectId}/items/{itemId}/checklists` |
 | Tags e versões | `/projects/{projectId}/tags`, `/versions` |
+| Dashboard | `/projects/{projectId}/dashboard/snapshot`, `/burnup`, `/aging`, `/hours`, `/sprints` e `/sprints/{cycleId}` |
 | Shadow Markdown | `/projects/{projectId}/board.md` |
 
 Antes de criar itens, consulte a hierarquia e os identificadores necessários. A API valida o mesmo modelo funcional usado pela interface.
@@ -127,4 +128,3 @@ O middleware aceita sessão JWT em cookie `HttpOnly` para pessoas ou Bearer API 
 Depois da autenticação, o contexto contém `userId`, `tenantId` e e-mail. Rotas de projeto consultam a associação por tenant, usuário e projeto e comparam a hierarquia `VIEWER < MEMBER < ADMIN`. A ausência de associação retorna `404` para não revelar projetos externos.
 
 </details>
-

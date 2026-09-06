@@ -1,0 +1,258 @@
+import {
+  toolAddChecklistItem, toolAddMember, toolActivateSprint, toolArchiveItem, toolBatch,
+  toolCheckItem, toolClaimTask, toolCloseSprint, toolCompleteTask, toolCreateChecklist,
+  toolCreateColumn, toolCreateCostCenter, toolCreateItemLog, toolCreateModule, toolCreateProject, toolCreateProjectStructure,
+  toolCreateSprint, toolCreateSquad, toolCreateTag, toolCreateTask, toolCreateVersion,
+  toolDeleteChecklist, toolDeleteChecklistItem, toolDeleteItem, toolDeleteProject,
+  toolGetBoard, toolGetCurrentSprint, toolGetProject, toolGetShadowMarkdown, toolGetTree,
+  toolListAttachments, toolListChecklists, toolListColumns, toolListCostCenters, toolListItemLogs,
+  toolListMembers, toolListModules, toolListProjects, toolListSprints, toolListSquads,
+  toolListTags, toolListTasks, toolListVersions, toolMoveTask, toolReorderColumns,
+  toolReorderItems, toolReleaseTask, toolRemoveMember, toolSetItemTags, toolUnarchiveItem,
+  toolUpdateChecklist, toolUpdateChecklistItem, toolUpdateItem, toolUpdateItemLog,
+  toolUpdateMember, toolUpdateProject, toolUpdateItems,
+  type ApiCall,
+} from './tools.js'
+import { MCP_TOOL_POLICIES, type McpPolicy } from './policies.js'
+import { validateToolArguments } from './validation.js'
+
+export type ToolSource = 'mcp' | 'azy-agent'
+export type HumanToolContext = {
+  source: ToolSource
+  userId: string
+  tenantId: string
+  globalGroup: McpPolicy['globalGroup']
+  localRole?: McpPolicy['localRole']
+  projectId?: string
+  runId?: string
+}
+
+export type ToolDefinition = {
+  name: string
+  description: string
+  inputSchema: { type: 'object'; properties: Record<string, unknown>; required: string[]; additionalProperties: false }
+  policy: McpPolicy
+  namespace: 'discovery' | 'planning' | 'mutation'
+}
+
+const required: Record<string, string[]> = {
+  list_projects: [], get_project: ['projectId'], get_board: ['projectId'], get_tree: ['projectId'], get_shadow_markdown: ['projectId'],
+  list_tasks: ['projectId'], list_modules: ['projectId'], get_current_sprint: ['projectId'], list_columns: ['projectId'], list_sprints: ['projectId'], list_tags: ['projectId'], list_versions: ['projectId'], list_members: ['projectId'], list_squads: ['projectId'], list_item_logs: ['projectId', 'itemId'], list_cost_centers: ['projectId'], list_attachments: ['projectId'], list_checklists: ['projectId', 'itemId'],
+  claim_task: ['projectId', 'taskId'], move_task: ['projectId', 'taskId', 'columnName'], complete_task: ['projectId', 'taskId'], create_task: ['projectId', 'title'], create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], release_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], delete_project: ['projectId'], archive_item: ['projectId', 'itemId'], unarchive_item: ['projectId', 'itemId'], set_item_tags: ['projectId', 'itemId', 'tagIds'], create_item_log: ['projectId', 'itemId', 'activity'], reorder_items: ['projectId', 'columnId', 'order'], update_checklist: ['projectId', 'itemId', 'checklistId', 'changes'], delete_checklist: ['projectId', 'itemId', 'checklistId'], update_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'changes'], delete_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId'], update_item_log: ['projectId', 'itemId', 'logId', 'changes'], batch: ['projectId', 'operations'],
+  create_project: ['name'], create_project_structure: ['name', 'operations'], update_project: ['projectId'], create_module: ['projectId', 'name'], create_column: ['projectId', 'name', 'baseStatus'], reorder_columns: ['projectId', 'order'], create_sprint: ['projectId', 'name'], activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'], create_tag: ['projectId', 'name'], create_version: ['projectId', 'name'], add_member: ['projectId', 'email', 'role'], update_member: ['projectId', 'userId', 'role'], remove_member: ['projectId', 'userId'], create_squad: ['projectId', 'name'], create_cost_center: ['projectId', 'code'],
+}
+
+const discovery = new Set(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_shadow_markdown', 'list_tasks', 'list_modules', 'get_current_sprint', 'list_columns', 'list_sprints', 'list_tags', 'list_versions', 'list_members', 'list_squads', 'list_item_logs', 'list_cost_centers', 'list_attachments', 'list_checklists'])
+const planning = new Set(['claim_task', 'list_tasks', 'list_checklists', 'create_checklist', 'add_checklist_item', 'check_item', 'get_shadow_markdown'])
+const fieldsByTool: Record<string, string[]> = {
+  list_projects: ['limit', 'cursor'], get_project: ['projectId'], get_board: ['projectId'], get_tree: ['projectId', 'onlyLeaves'], get_current_sprint: ['projectId'],
+  list_tasks: ['projectId', 'status', 'assigneeId', 'sprintId', 'parentId', 'limit', 'cursor'], list_checklists: ['projectId', 'itemId'],
+  create_project: ['name', 'description', 'boardMode'], create_project_structure: ['name', 'description', 'boardMode', 'managerUserId', 'operations'], update_project: ['projectId', 'name', 'description', 'boardMode', 'managerUserId'], delete_project: ['projectId'],
+  create_task: ['projectId', 'title', 'description', 'type', 'priority', 'points', 'parentId', 'moduleId', 'assigneeId', 'status'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], complete_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], move_task: ['projectId', 'taskId', 'columnName'], claim_task: ['projectId', 'taskId'], release_task: ['projectId', 'taskId'],
+  create_sprint: ['projectId', 'name', 'startDate', 'endDate'], activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'],
+  create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'],
+  create_tag: ['projectId', 'name', 'color'], set_item_tags: ['projectId', 'itemId', 'tagIds'],
+}
+
+const itemChangeSchema = {
+  type: 'array', minItems: 1, maxItems: 20,
+  items: {
+    type: 'object', additionalProperties: false, required: ['field', 'operation', 'value'],
+    properties: {
+      field: { type: 'string', enum: ['title', 'description', 'priority', 'type', 'status', 'points', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint'] },
+      operation: { type: 'string', enum: ['SET', 'CLEAR', 'TODAY', 'OFFSET_DAYS', 'COPY_CREATED_DATE'] },
+      value: { type: ['string', 'null'], description: 'Value for SET, or signed day count for OFFSET_DAYS. Use null for operations that need no value.' },
+    },
+  },
+}
+
+const itemFiltersSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['itemIds', 'types', 'statuses', 'sprint', 'version', 'module', 'assignee', 'parent', 'column', 'tag', 'titleContains', 'onlyLeaves', 'matchAll'],
+  properties: {
+    itemIds: { type: ['array', 'null'], items: { type: 'string' } },
+    types: { type: ['array', 'null'], items: { type: 'string', enum: ['EPIC', 'STORY', 'TASK', 'BUG'] } },
+    statuses: { type: ['array', 'null'], items: { type: 'string', enum: ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'] } },
+    sprint: { type: ['string', 'null'], description: 'Sprint ID, exact name, or CURRENT for the active sprint.' },
+    version: { type: ['string', 'null'], description: 'Version ID or exact name.' },
+    module: { type: ['string', 'null'], description: 'Module ID or exact name. Includes descendants of matching epics.' },
+    assignee: { type: ['string', 'null'], description: 'User ID, exact email, or exact member name.' },
+    parent: { type: ['string', 'null'], description: 'Direct parent item ID or exact title.' },
+    column: { type: ['string', 'null'], description: 'Column ID or exact name.' },
+    tag: { type: ['string', 'null'], description: 'Tag ID or exact name.' },
+    titleContains: { type: ['string', 'null'] },
+    onlyLeaves: { type: ['boolean', 'null'] },
+    matchAll: { type: 'boolean', description: 'Must be true when intentionally updating every active item in the project.' },
+  },
+}
+
+function schemaFor(field: string, isRequired: boolean): Record<string, unknown> {
+  // Responses strict function tools require every nested object to reject
+  // undeclared properties as well as the top-level arguments object.
+  const nullable = (schema: Record<string, unknown>) => isRequired ? schema : { ...schema, type: [schema.type, 'null'] }
+  if (field === 'operations') return {
+    type: 'array', maxItems: 50,
+    description: 'Ordered item creations. Use ref and parentRef to express hierarchy within this batch.',
+    items: {
+      type: 'object', additionalProperties: false, required: ['tool', 'args'],
+      properties: {
+        tool: { type: 'string', enum: ['create_task'] },
+        args: {
+          type: 'object', additionalProperties: false,
+          required: ['ref', 'title', 'type', 'parentRef', 'moduleName', 'description', 'priority', 'points', 'assignToCurrentUser'],
+          properties: {
+            ref: { type: 'string', description: 'Unique short reference used by later parentRef values.' },
+            title: { type: 'string' },
+            type: { type: 'string', enum: ['EPIC', 'STORY', 'TASK', 'BUG'] },
+            parentRef: { type: ['string', 'null'], description: 'Ref of an earlier operation, or null for a root item.' },
+            moduleName: { type: ['string', 'null'], description: 'Module name for EPIC items; otherwise null.' },
+            description: { type: ['string', 'null'] },
+            priority: { type: ['string', 'null'], enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL', null] },
+            points: { type: ['number', 'null'] },
+            assignToCurrentUser: { type: 'boolean', description: 'True only when the user asked to assign this item to themselves.' },
+          },
+        },
+      },
+    },
+  }
+  if (field === 'boardMode') return isRequired
+    ? { type: 'string', enum: ['HIERARCHICAL', 'SIMPLE'], description: 'Use only when explicitly requested.' }
+    : { type: ['string', 'null'], enum: ['HIERARCHICAL', 'SIMPLE', null], description: 'Optional. Use null when the user did not specify a board mode; never ask for it.' }
+  if (field === 'tagIds' || field === 'order') return nullable({ type: 'array', items: { type: 'string' } })
+  if (field === 'onlyLeaves' || field === 'atomic' || field === 'confirm' || field === 'dryRun' || field === 'checked') return nullable({ type: 'boolean' })
+  if (field === 'limit' || field === 'durationMin' || field === 'points') return nullable({ type: 'number' })
+  if (field === 'filters') return itemFiltersSchema
+  if (field === 'changes') return itemChangeSchema
+  return nullable({ type: 'string' })
+}
+
+export const SHARED_TOOL_NAMES = Object.freeze(Object.keys(required))
+const friendlyNames: Record<string, string> = {
+  update_items: 'Atualizar itens', update_item: 'Atualizar item', batch: 'Cadastrar estrutura',
+  list_projects: 'Listar projetos', get_project: 'Consultar projeto', get_board: 'Consultar board', get_tree: 'Consultar hierarquia', list_tasks: 'Listar itens',
+  create_project: 'Criar projeto', create_project_structure: 'Criar projeto e estrutura', update_project: 'Atualizar projeto', delete_project: 'Excluir projeto', create_task: 'Criar item', delete_item: 'Excluir item',
+  move_task: 'Mover item', complete_task: 'Concluir item', claim_task: 'Assumir item', release_task: 'Liberar item', archive_item: 'Arquivar item', unarchive_item: 'Desarquivar item',
+  list_sprints: 'Listar sprints', create_sprint: 'Criar sprint', activate_sprint: 'Ativar sprint', close_sprint: 'Fechar sprint', list_members: 'Listar membros',
+  list_modules: 'Listar módulos', create_module: 'Criar módulo', list_versions: 'Listar versões', create_version: 'Criar versão', list_columns: 'Listar colunas', create_column: 'Criar coluna',
+}
+
+export function friendlyToolName(name: string): string {
+  return friendlyNames[name] ?? name.split('_').map((part, index) => index === 0 ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : part).join(' ')
+}
+export const SKILL_COMMAND_INTENTS = Object.freeze({
+  status: 'status', plan: 'plan', start: 'start', update: 'update', complete: 'complete', review: 'review',
+} as const)
+
+export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinition[] {
+  return names.filter(name => required[name]).map(name => ({
+    name,
+    description: name === 'create_project'
+       ? 'Create an Azy Board project. Only name is required. Use null for an unspecified description or boardMode and never ask for optional values. The authenticated user is assigned as manager by the server.'
+       : name === 'create_project_structure'
+         ? 'Create a project and an ordered hierarchy of up to 50 items in one approved operation. Use refs and parentRefs instead of database IDs; moduleName resolves an existing module by name.'
+      : name === 'create_task'
+        ? 'Create a single EPIC, STORY, TASK or BUG. Hierarchical projects require parentId for TASK/BUG (a STORY, TASK or BUG) and for STORY (an EPIC); EPIC is a root with moduleId. Never create an orphan item.'
+        : name === 'batch'
+        ? 'Create an ordered hierarchy of up to 50 EPIC, STORY, TASK, or BUG items in one atomic approval. Use refs and parentRefs instead of database IDs. Use moduleName for EPIC items.'
+      : name === 'update_items'
+         ? 'Atomically update one or many active items selected by filters. For bulk moves, set filters.column to the source column, preserve every other requested criterion, and add a column SET change with the destination. Generic tasks or cards in a bulk move covers leaf TASK and BUG items unless the user explicitly restricts the type. Also supports fixed values, clearing fields, relative dates, today, and copying each item creation date. Use itemIds for one item and matchAll only for every item without narrower filters.'
+      : `Azy Board: ${name}`,
+    inputSchema: (() => {
+       const fields = [...(fieldsByTool[name] ?? required[name]!)]
+      const mandatory = new Set(required[name]!)
+      return { type: 'object' as const, properties: Object.fromEntries(fields.map(field => [field, schemaFor(field, mandatory.has(field))])), required: fields, additionalProperties: false }
+    })(),
+    policy: MCP_TOOL_POLICIES[name]!,
+    namespace: discovery.has(name) ? 'discovery' : planning.has(name) ? 'planning' : 'mutation',
+  }))
+}
+
+export function selectSharedTools(intent: 'read' | 'status' | 'plan' | 'start' | 'update' | 'complete' | 'review' | 'unknown'): ToolDefinition[] {
+  if (intent === 'unknown') return getSharedToolDefinitions(['list_projects', 'get_project', 'get_board', 'get_tree', 'list_tasks', 'get_current_sprint'])
+  if (intent === 'read' || intent === 'review' || intent === 'status') return getSharedToolDefinitions().filter(tool => tool.namespace === 'discovery')
+  if (intent === 'plan') return getSharedToolDefinitions().filter(tool => tool.namespace !== 'mutation' || planning.has(tool.name))
+  return getSharedToolDefinitions()
+}
+
+export function assertHumanContext(context: HumanToolContext): void {
+  if (context.source !== 'azy-agent') return
+  if (!context.userId || !context.tenantId || !context.globalGroup) throw new Error('USER_CONTEXT_REQUIRED')
+}
+
+export type ToolExecution = { api: ApiCall; context: HumanToolContext; authorize?: (context: HumanToolContext, name: string, args: Record<string, unknown>) => Promise<void> }
+
+export async function executeSharedTool(name: string, args: Record<string, unknown>, execution: ToolExecution): Promise<unknown> {
+  const definition = getSharedToolDefinitions().find(tool => tool.name === name)
+  if (!definition) throw new Error('TOOL_NOT_REGISTERED')
+  assertHumanContext(execution.context)
+  validateToolArguments(name, args)
+  if (execution.context.projectId && args.projectId && execution.context.projectId !== args.projectId) throw new Error('PROJECT_CONTEXT_MISMATCH')
+  if (execution.context.source === 'azy-agent' && !execution.authorize) throw new Error('AUTHORIZATION_REVALIDATION_REQUIRED')
+  await execution.authorize?.(execution.context, name, args)
+  const api = execution.api
+  switch (name) {
+    case 'list_projects': return toolListProjects(api)
+    case 'get_project': return toolGetProject(api, args.projectId as string)
+    case 'get_board': return toolGetBoard(api, args.projectId as string)
+    case 'get_tree': return toolGetTree(api, args.projectId as string, args)
+    case 'get_shadow_markdown': return toolGetShadowMarkdown(api, args.projectId as string)
+    case 'list_tasks': return toolListTasks(api, args as Parameters<typeof toolListTasks>[1])
+    case 'list_modules': return toolListModules(api, args.projectId as string)
+    case 'get_current_sprint': return toolGetCurrentSprint(api, args.projectId as string)
+    case 'list_columns': return toolListColumns(api, args.projectId as string)
+    case 'list_sprints': return toolListSprints(api, args.projectId as string)
+    case 'list_tags': return toolListTags(api, args.projectId as string)
+    case 'list_versions': return toolListVersions(api, args.projectId as string)
+    case 'list_members': return toolListMembers(api, args.projectId as string)
+    case 'list_squads': return toolListSquads(api, args.projectId as string)
+    case 'list_item_logs': return toolListItemLogs(api, args.projectId as string, args.itemId as string)
+    case 'list_cost_centers': return toolListCostCenters(api, args.projectId as string)
+    case 'list_attachments': return toolListAttachments(api, args.projectId as string, args.itemId as string)
+    case 'list_checklists': return toolListChecklists(api, args.projectId as string, args.itemId as string)
+    case 'claim_task': return toolClaimTask(api, args.projectId as string, args.taskId as string)
+    case 'move_task': return toolMoveTask(api, args.projectId as string, args.taskId as string, args.columnName as string)
+    case 'complete_task': return toolCompleteTask(api, args.projectId as string, args.taskId as string)
+    case 'create_task': return toolCreateTask(api, args as Parameters<typeof toolCreateTask>[1])
+    case 'create_checklist': return toolCreateChecklist(api, args.projectId as string, args.itemId as string, args.name as string)
+    case 'add_checklist_item': return toolAddChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.text as string)
+    case 'check_item': return toolCheckItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string, args.checked as boolean)
+    case 'update_item': return toolUpdateItem(api, args.projectId as string, args.itemId as string, args.changes as Parameters<typeof toolUpdateItem>[3], execution.context.runId)
+    case 'release_task': return toolReleaseTask(api, args.projectId as string, args.taskId as string)
+    case 'delete_item': return toolDeleteItem(api, args.projectId as string, args.itemId as string, args.dryRun as boolean | undefined)
+    case 'delete_project': return toolDeleteProject(api, args.projectId as string, args.dryRun as boolean | undefined)
+    case 'archive_item': return toolArchiveItem(api, args.projectId as string, args.itemId as string, args.confirm as boolean | undefined, args.dryRun as boolean | undefined)
+    case 'unarchive_item': return toolUnarchiveItem(api, args.projectId as string, args.itemId as string)
+    case 'set_item_tags': return toolSetItemTags(api, args.projectId as string, args.itemId as string, args.tagIds as string[])
+    case 'create_item_log': return toolCreateItemLog(api, args.projectId as string, args.itemId as string, args.activity as string, args.durationMin as number | null | undefined)
+    case 'reorder_items': return toolReorderItems(api, args.projectId as string, args.columnId as string, args.order as string[])
+    case 'update_checklist': return toolUpdateChecklist(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.changes as Record<string, unknown>)
+    case 'delete_checklist': return toolDeleteChecklist(api, args.projectId as string, args.itemId as string, args.checklistId as string)
+    case 'update_checklist_item': return toolUpdateChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string, args.changes as Record<string, unknown>)
+    case 'delete_checklist_item': return toolDeleteChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string)
+    case 'update_item_log': return toolUpdateItemLog(api, args.projectId as string, args.itemId as string, args.logId as string, args.changes as Record<string, unknown>)
+    case 'batch': return toolBatch(api, args as Parameters<typeof toolBatch>[1])
+    case 'update_items': return toolUpdateItems(api, args as Parameters<typeof toolUpdateItems>[1], execution.context.runId)
+     case 'create_project': return toolCreateProject(api, args as Parameters<typeof toolCreateProject>[1])
+     case 'create_project_structure': return toolCreateProjectStructure(api, args as Parameters<typeof toolCreateProjectStructure>[1])
+    case 'update_project': { const { projectId, ...changes } = args; return toolUpdateProject(api, projectId as string, changes) }
+    case 'create_module': return toolCreateModule(api, args.projectId as string, args.name as string, args.description as string | undefined)
+    case 'create_column': return toolCreateColumn(api, args.projectId as string, args as Parameters<typeof toolCreateColumn>[2])
+    case 'reorder_columns': return toolReorderColumns(api, args.projectId as string, args.order as string[])
+    case 'create_sprint': return toolCreateSprint(api, args.projectId as string, args as Parameters<typeof toolCreateSprint>[2])
+    case 'activate_sprint': return toolActivateSprint(api, args.projectId as string, args.sprintId as string)
+    case 'close_sprint': return toolCloseSprint(api, args.projectId as string, args.sprintId as string)
+    case 'create_tag': return toolCreateTag(api, args.projectId as string, args.name as string, args.color as string | undefined)
+    case 'create_version': { const { projectId, ...version } = args; return toolCreateVersion(api, projectId as string, version) }
+    case 'add_member': return toolAddMember(api, args.projectId as string, args.email as string, args.role as string, args.squadId as string | undefined)
+    case 'update_member': return toolUpdateMember(api, args.projectId as string, args.userId as string, args.role as string, args.squadId as string | undefined)
+    case 'remove_member': return toolRemoveMember(api, args.projectId as string, args.userId as string)
+    case 'create_squad': return toolCreateSquad(api, args.projectId as string, args.name as string)
+    case 'create_cost_center': return toolCreateCostCenter(api, args.projectId as string, args.code as string, args.description as string | undefined)
+  }
+}
+
+export function sanitizeToolOutput(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeToolOutput)
+  if (!value || typeof value !== 'object') return typeof value === 'string' && value.length > 20_000 ? `${value.slice(0, 20_000)}…` : value
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !/(secret|token|password|apiKey|ciphertext|prompt)/i.test(key)).map(([key, item]) => [key, sanitizeToolOutput(item)]))
+}

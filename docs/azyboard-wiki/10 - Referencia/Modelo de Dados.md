@@ -36,6 +36,10 @@ erDiagram
     PROJECTS ||--o{ PROJECT_VERSIONS : entrega
     PROJECTS ||--o{ PROJECT_COST_CENTERS : classifica
     PROJECTS ||--o{ ITEMS : contem
+    PROJECTS ||--o{ PROJECT_ANALYTICS_COVERAGE : cobre
+    PROJECTS ||--o{ ITEM_EVENTS : historiza
+    PROJECTS ||--o{ SPRINT_CYCLES : cicla
+    SPRINT_CYCLES ||--o{ SPRINT_CYCLE_ITEMS : registra
 
     MODULES o|--o{ ITEMS : recebe_epicos
     ITEMS o|--o{ ITEMS : parent_child
@@ -68,6 +72,9 @@ O schema possui 19 tabelas:
 | Trabalho | `items` |
 | Classificação e ciclos | `tags`, `item_tags`, `item_sprints` |
 | Conteúdo e auditoria | `item_logs`, `attachments`, `checklists`, `checklist_items` |
+| Analytics do Dashboard | `project_analytics_coverage`, `item_events`, `sprint_cycles`, `sprint_cycle_items` |
+
+`item_events` é append-only e preserva snapshots mínimos após a exclusão de itens. `item_sprints` usa associação única por par `(item_id, sprint_id)` após deduplicação auditada.
 
 ## Fluxo estrutural principal
 
@@ -137,4 +144,3 @@ O mapa foi derivado de:
 - [[03 - Estrutura do Trabalho/Hierarquia dos Itens|Hierarquia dos itens]]
 - [[10 - Referencia/Perfis e Permissoes|Perfis e permissões]]
 - [[10 - Referencia/Tipos Status e Prioridades|Tipos, status e prioridades]]
-

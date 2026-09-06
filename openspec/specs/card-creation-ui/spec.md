@@ -40,7 +40,7 @@ O sistema SHALL exibir um botão "+" no rodapé de cada coluna do board para adi
 - **THEN** item recebe prioridade `MEDIUM`, status `NOT_STARTED` e sem responsável; demais campos ficam vazios para edição posterior na ItemModal
 
 ### Requirement: Botões de criação na toolbar com Módulo incluído
-O sistema SHALL exibir botões de criação de Módulo, Épico, História, Task e Bug na toolbar com labels encurtadas (`+ Módulo`, `+ Épico`, `+ História`, `+ Task`, `+ Bug`), mantendo cores e ícones identificadores de cada tipo.
+O sistema SHALL exibir botões de criação de Módulo, Épico, História, Task e Bug na toolbar com labels encurtadas (`+ Módulo`, `+ Épico`, `+ História`, `+ Task`, `+ Bug`), mantendo cores e ícones identificadores de cada tipo. Os formulários de Épico e História SHALL usar accordions nas seções extensas, com primeira seção aberta e controles globais de expansão/recolhimento.
 
 #### Scenario: Botão de criação de Módulo com label compacta
 - **WHEN** a toolbar do board é renderizada
@@ -54,6 +54,10 @@ O sistema SHALL exibir botões de criação de Módulo, Épico, História, Task 
 - **WHEN** a toolbar do board é renderizada
 - **THEN** os botões de criação exibem labels no formato `+ Tipo` (ex.: `+ Épico`, `+ História`, `+ Task`, `+ Bug`) em vez do formato anterior `Novo Épico`, `Nova Task`
 
-#### Scenario: Funcionalidade de criação preservada para demais tipos
-- **WHEN** o usuário clica em qualquer botão de criação da toolbar (exceto Módulo)
-- **THEN** o modal de criação do tipo correspondente é aberto, com o mesmo comportamento anterior
+#### Scenario: Funcionalidade de criação preservada com accordions
+- **WHEN** o usuário clica em qualquer botão de criação da toolbar
+- **THEN** o modal correspondente é aberto com os campos existentes, e Épico/História exibem o padrão de accordion quando houver mais de uma seção
+
+#### Scenario: Cancelar criação em seção recolhida
+- **WHEN** usuário recolhe ou expande seções e cancela o formulário
+- **THEN** nenhuma entidade é criada e nenhum valor é persistido

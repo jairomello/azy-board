@@ -1,0 +1,12 @@
+{
+  "wipByItems": "By item count",
+  "wipByPoints": "By points",
+  "descriptionProgressScope": "Compares completed work with total scope by items and points.",
+  "descriptionWip": "Shows the current distribution of work in progress by status.",
+  "descriptionBlocked": "Shows how many items are blocked and which have accumulated the most days.",
+  "descriptionOverdue": "Compares overdue items and points with the remaining scope.",
+  "descriptionBurnup": "Shows how scope and completed items changed over time.",
+  "descriptionAging": "Lists the oldest WIP items since their current episode began.",
+  "descriptionTeamLoad": "Shows the amount of work in progress for each assignee.",
+  "descriptionHours": "Sums hours entered in manual logs, grouped by author."
+}

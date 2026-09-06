@@ -1,0 +1,12 @@
+{
+  "wipByItems": "Por cantidad de elementos",
+  "wipByPoints": "Por puntos",
+  "descriptionProgressScope": "Compara el trabajo completado con el alcance total por elementos y puntos.",
+  "descriptionWip": "Muestra la distribución actual del trabajo en progreso por estado.",
+  "descriptionBlocked": "Muestra cuántos elementos están bloqueados y cuáles acumulan más días.",
+  "descriptionOverdue": "Compara los elementos y puntos atrasados con el resto del alcance.",
+  "descriptionBurnup": "Muestra cómo evolucionaron el alcance y los elementos completados.",
+  "descriptionAging": "Lista los elementos WIP más antiguos desde el inicio de su episodio actual.",
+  "descriptionTeamLoad": "Muestra la cantidad de trabajo en progreso por responsable.",
+  "descriptionHours": "Suma las horas de registros manuales, agrupadas por autor."
+}

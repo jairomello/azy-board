@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Settings, LogOut } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { ShowHiddenProjectsSwitch } from './ShowHiddenProjectsSwitch'
 import { UserAvatar } from './UserAvatar'
 
 export function ProfileDropdown() {
@@ -31,7 +32,7 @@ export function ProfileDropdown() {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-48 rounded-lg border border-border bg-card shadow-lg z-50 py-1">
+        <div className="absolute right-0 mt-2 w-60 rounded-lg border border-border bg-card shadow-lg z-50 py-1">
           <button
             onClick={() => { setOpen(false); navigate('/account') }}
             className="flex items-center gap-2 w-full px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors"
@@ -39,6 +40,10 @@ export function ProfileDropdown() {
             <Settings className="w-4 h-4 text-muted-foreground" />
             {t('settings:accountSettings')}
           </button>
+          <div className="my-1 border-t border-border" />
+          <div className="px-1">
+            <ShowHiddenProjectsSwitch labelKey="hiddenProjects" />
+          </div>
           <div className="my-1 border-t border-border" />
           <button
             onClick={() => { setOpen(false); logout() }}

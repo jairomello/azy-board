@@ -5,7 +5,7 @@ import { eq, and } from 'drizzle-orm'
 import { isGlobalGroup, verifyJwt } from '../services/auth'
 import { hasGlobalGroup, hasMemberRole, hasKeyPermission, isValidApiKeyPermissionScope, parseApiKeyScope } from '../services/authorization'
 import { db } from '../db/index'
-import { apiKeys, memberships } from '../db/schema'
+import { apiKeys, memberships, projects } from '../db/schema'
 import type { GlobalGroup, RequestContext, MemberRole } from '@azy-board/types'
 
 // [TENANT] Middleware principal: resolve tenant_id e userId de toda requisição autenticada.
@@ -69,6 +69,7 @@ export async function authMiddleware(c: Context<HonoEnv>, next: Next) {
           ctx = { userId: owner.id, tenantId: keyRecord.tenantId, email: owner.email, globalGroup: owner.globalGroup }
           c.set('apiKeyId', keyRecord.id)
           c.set('aiModelName', keyRecord.aiModelName)
+          c.set('apiKeyName', keyRecord.name)
           c.set('apiKeyProjectScope', projectScope)
           c.set('apiKeyPermissionScope', permissionScope)
           await db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, keyRecord.id))
@@ -95,6 +96,14 @@ export function requireRole(minRole: MemberRole) {
 
     if (!projectId) return c.json({ error: 'Projeto não especificado', code: 'INVALID_REQUEST', retryable: false }, 400)
 
+    // [TENANT] Resolve a visibilidade do projeto no tenant atual antes do bypass global.
+    // Projeto restrito sem membership ou gerência não pode ser acessado por nenhuma rota.
+    const project = await db.query.projects.findFirst({
+      where: (p) => and(eq(p.tenantId, ctx.tenantId), eq(p.id, projectId)),
+      columns: { isRestricted: true, managerUserId: true },
+    })
+    if (!project) return c.json({ error: 'Projeto não encontrado', code: 'RESOURCE_NOT_FOUND', retryable: false }, 404)
+
     const membership = await db.query.memberships.findFirst({
       where: (m) =>
         // [TENANT] Duplo filtro: tenant_id + userId + projectId — nunca confiar só no projectId
@@ -106,18 +115,24 @@ export function requireRole(minRole: MemberRole) {
     })
 
     const globalAdmin = hasGlobalGroup(ctx.globalGroup, 'ADMIN')
+    const isProjectManager = project.managerUserId === ctx.userId
+    if (project.isRestricted && !membership && !isProjectManager) {
+      // Não revelar projeto restrito nem mesmo para ADMIN/ROOT, por URL ou API Key.
+      return c.json({ error: 'Projeto não encontrado', code: 'RESOURCE_NOT_FOUND', retryable: false }, 404)
+    }
+    const isAssociated = Boolean(membership || isProjectManager)
     if (minRole === 'ADMIN' && !hasGlobalGroup(ctx.globalGroup, 'MANAGER')) {
       return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
     }
-    if (!membership && !globalAdmin) {
+    if (!isAssociated && !globalAdmin) {
       // Retorna 404 para não revelar se o projeto existe para outro tenant
       return c.json({ error: 'Projeto não encontrado', code: 'RESOURCE_NOT_FOUND', retryable: false }, 404)
     }
 
-    if (!globalAdmin && !hasGlobalGroup(ctx.globalGroup, 'MANAGER') && !hasMemberRole(membership?.role, minRole)) {
+    if (!globalAdmin && !hasGlobalGroup(ctx.globalGroup, 'MANAGER') && !hasMemberRole(membership?.role, minRole) && !(isProjectManager && minRole === 'VIEWER')) {
       return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
     }
-    if (!globalAdmin && hasGlobalGroup(ctx.globalGroup, 'MANAGER') && minRole === 'ADMIN' && !membership) {
+    if (!globalAdmin && hasGlobalGroup(ctx.globalGroup, 'MANAGER') && minRole === 'ADMIN' && !membership && !isProjectManager) {
       return c.json({ error: 'Projeto não encontrado', code: 'RESOURCE_NOT_FOUND', retryable: false }, 404)
     }
     if (!globalAdmin && membership && !hasMemberRole(membership.role, minRole) && !(hasGlobalGroup(ctx.globalGroup, 'MANAGER') && minRole === 'ADMIN')) {

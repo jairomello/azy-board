@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { eq, and, asc, inArray, sql } from 'drizzle-orm'
+import { eq, and, or, asc, inArray, sql, isNotNull } from 'drizzle-orm'
 import { db } from '../db/index'
 import { projects, memberships, modules, columns, squads, users, items, itemTags, itemSprints, attachments, projectVersions, projectCostCenters, sprints, tags, checklists, checklistItems, itemLogs } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
@@ -8,6 +8,7 @@ import { generateId } from '../utils/id'
 import type { RequestContext, BoardMode, AncestorNode } from '@azy-board/types'
 import { hasGlobalGroup } from '../services/auth'
 import { hasKeyPermission } from '../services/authorization'
+import { appendAnalyticsEvent, ensureCoverage, snapshotItem } from '../services/analytics'
 
 export const projectsRouter = new Hono<HonoEnv>()
 projectsRouter.use('*', authMiddleware)
@@ -22,6 +23,38 @@ const DEFAULT_COLUMNS: Array<{ name: string; baseStatus: 'NOT_STARTED' | 'IN_PRO
   { name: 'Testando', baseStatus: 'IN_PROGRESS' },
   { name: 'Concluídas', baseStatus: 'DONE' },
 ]
+
+interface EscopoVisibilidadeProjetos {
+  tenantId: string
+  userId: string
+  globalGroup: RequestContext['globalGroup']
+  includeHidden: boolean
+}
+
+// Monta as condições de visibilidade da listagem de projetos.
+// [TENANT] O tenant_id é aplicado aqui e nunca pode ser omitido pelo chamador.
+// Projetos restritos sem vínculo ficam fora inclusive para ADMIN/ROOT; os demais grupos
+// continuam vendo somente projetos com membership ativa.
+function condicoesVisibilidadeProjetos({ tenantId, userId, globalGroup, includeHidden }: EscopoVisibilidadeProjetos) {
+  // [TENANT] Vínculo é sempre avaliado dentro do tenant do chamador.
+  const temVinculo = or(isNotNull(memberships.id), eq(projects.managerUserId, userId))
+  const condicoes = [
+    // [TENANT] Nenhuma listagem pode escapar do tenant do chamador.
+    eq(projects.tenantId, tenantId),
+    // Projetos restritos ficam fora da listagem de qualquer grupo sem vínculo, inclusive ADMIN/ROOT.
+    or(eq(projects.isRestricted, false), temVinculo),
+  ]
+  // Membros de Equipe e Gerentes continuam vendo somente os projetos com vínculo.
+  if (!hasGlobalGroup(globalGroup, 'ADMIN')) condicoes.push(temVinculo)
+  // Projetos ocultos só entram na listagem quando a requisição pede explicitamente.
+  if (!includeHidden) condicoes.push(eq(projects.isHidden, false))
+  return condicoes
+}
+
+// Sinalizadores de visibilidade são opcionais, mas quando enviados precisam ser booleanos.
+function ehBooleanoOuAusente(valor: unknown): boolean {
+  return valor === undefined || typeof valor === 'boolean'
+}
 
 async function findOrCreateSimpleStory(tx: ProjectTransaction, tenantId: string, projectId: string, storyId?: string | null) {
   if (storyId) {
@@ -55,25 +88,33 @@ function simpleStoryPath(story: { id: string; title: string; type: string }): An
   return [{ id: story.id, title: story.title, type: story.type }]
 }
 
-async function convertToSimple(tx: ProjectTransaction, tenantId: string, projectId: string, currentStoryId?: string | null) {
+async function convertToSimple(tx: ProjectTransaction, tenantId: string, projectId: string, currentStoryId?: string | null, actorId = 'SYSTEM') {
   const story = await findOrCreateSimpleStory(tx, tenantId, projectId, currentStoryId)
   const allItems = await tx.select().from(items)
     .where(and(eq(items.projectId, projectId), eq(items.tenantId, tenantId)))
   const taskItems = allItems.filter(item => item.type === 'TASK' || item.type === 'BUG')
   const hierarchyItems = allItems.filter(item => item.type === 'EPIC' || item.type === 'STORY')
+  const affectedParents = new Set([story.id, ...allItems.map(item => item.parentId).filter((id): id is string => Boolean(id))])
+  const parentBefore = new Map<string, Awaited<ReturnType<typeof snapshotItem>>>()
+  for (const id of affectedParents) parentBefore.set(id, await snapshotItem(tx, tenantId, projectId, id))
   const path = JSON.stringify(simpleStoryPath(story))
 
   for (const item of taskItems) {
+    const itemBefore = await snapshotItem(tx, tenantId, projectId, item.id)
     await tx.update(items).set({ parentId: story.id, moduleId: null, ancestryPath: path, updatedAt: new Date().toISOString() })
       .where(and(eq(items.id, item.id), eq(items.tenantId, tenantId), eq(items.projectId, projectId)))
+    await appendAnalyticsEvent(tx, { tenantId, projectId, itemId: item.id, eventType: 'ITEM_REPARENTED', actorId, origin: 'REST', before: itemBefore, after: await snapshotItem(tx, tenantId, projectId, item.id) })
   }
 
   const removedIds = hierarchyItems.filter(item => item.id !== story.id).map(item => item.id)
   if (removedIds.length > 0) {
+    const deletedSnapshots = new Map<string, Awaited<ReturnType<typeof snapshotItem>>>()
+    for (const id of removedIds) deletedSnapshots.set(id, await snapshotItem(tx, tenantId, projectId, id))
     await tx.delete(itemTags).where(inArray(itemTags.itemId, removedIds))
     await tx.delete(itemSprints).where(inArray(itemSprints.itemId, removedIds))
     await tx.delete(attachments).where(inArray(attachments.itemId, removedIds))
     await tx.delete(items).where(and(inArray(items.id, removedIds), eq(items.tenantId, tenantId), eq(items.projectId, projectId)))
+    for (const id of removedIds) await appendAnalyticsEvent(tx, { tenantId, projectId, itemId: id, eventType: 'ITEM_DELETED', actorId, origin: 'REST', before: deletedSnapshots.get(id), after: null })
   }
 
   await tx.delete(modules).where(and(eq(modules.projectId, projectId), eq(modules.tenantId, tenantId)))
@@ -81,10 +122,11 @@ async function convertToSimple(tx: ProjectTransaction, tenantId: string, project
     .where(and(eq(items.id, story.id), eq(items.tenantId, tenantId), eq(items.projectId, projectId)))
   await tx.update(projects).set({ boardMode: 'SIMPLE', simpleStoryId: story.id })
     .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)))
+  for (const parentId of affectedParents) { const before = parentBefore.get(parentId); const after = await snapshotItem(tx, tenantId, projectId, parentId); if (before && after && JSON.stringify(before) !== JSON.stringify(after)) await appendAnalyticsEvent(tx, { tenantId, projectId, itemId: parentId, eventType: 'LEAF_CHANGED', actorId, origin: 'REST', before, after }) }
   return story.id
 }
 
-async function convertToHierarchical(tx: ProjectTransaction, tenantId: string, projectId: string, currentStoryId?: string | null) {
+async function convertToHierarchical(tx: ProjectTransaction, tenantId: string, projectId: string, currentStoryId?: string | null, actorId = 'SYSTEM') {
   const story = await findOrCreateSimpleStory(tx, tenantId, projectId, currentStoryId)
   const existingModule = await tx.query.modules.findFirst({
     where: (module) => and(eq(module.projectId, projectId), eq(module.tenantId, tenantId)),
@@ -109,19 +151,24 @@ async function convertToHierarchical(tx: ProjectTransaction, tenantId: string, p
   const storyPath = JSON.stringify([
     { id: epicId, title: epic?.title ?? 'Fluxo contínuo', type: 'EPIC' },
   ])
+  const storyBefore = await snapshotItem(tx, tenantId, projectId, story.id)
   await tx.update(items).set({ parentId: epicId, moduleId: null, ancestryPath: storyPath, updatedAt: new Date().toISOString() })
     .where(and(eq(items.id, story.id), eq(items.tenantId, tenantId), eq(items.projectId, projectId)))
   const projectTasks = await tx.select({ id: items.id }).from(items)
     .where(and(eq(items.projectId, projectId), eq(items.tenantId, tenantId), inArray(items.type, ['TASK', 'BUG'])))
   for (const item of projectTasks) {
+    const itemBefore = await snapshotItem(tx, tenantId, projectId, item.id)
     await tx.update(items).set({ parentId: story.id, moduleId: null, ancestryPath: JSON.stringify([
       { id: epicId, title: epic?.title ?? 'Fluxo contínuo', type: 'EPIC' },
       { id: story.id, title: story.title, type: 'STORY' },
     ]), updatedAt: new Date().toISOString() })
       .where(and(eq(items.id, item.id), eq(items.tenantId, tenantId), eq(items.projectId, projectId)))
+    await appendAnalyticsEvent(tx, { tenantId, projectId, itemId: item.id, eventType: 'ITEM_REPARENTED', actorId, origin: 'REST', before: itemBefore, after: await snapshotItem(tx, tenantId, projectId, item.id) })
   }
   await tx.update(projects).set({ boardMode: 'HIERARCHICAL', simpleStoryId: story.id })
     .where(and(eq(projects.id, projectId), eq(projects.tenantId, tenantId)))
+  const storyAfter = await snapshotItem(tx, tenantId, projectId, story.id)
+  if (storyBefore && storyAfter && JSON.stringify(storyBefore) !== JSON.stringify(storyAfter)) await appendAnalyticsEvent(tx, { tenantId, projectId, itemId: story.id, eventType: 'LEAF_CHANGED', actorId, origin: 'REST', before: storyBefore, after: storyAfter })
   return { moduleId, epicId, storyId: story.id }
 }
 
@@ -130,11 +177,17 @@ projectsRouter.post('/', async (c) => {
   const ctx = c.get('ctx') as RequestContext
   if (!hasGlobalGroup(ctx.globalGroup, 'MANAGER')) return c.json({ error: 'Permissão insuficiente' }, 403)
   if (!hasKeyPermission(c.get('apiKeyPermissionScope'), 'MEMBER')) return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
-  const body = await c.req.json<{ name: string; description?: string; managerUserId?: string; boardMode?: BoardMode }>()
+  const body = await c.req.json<{ name: string; description?: string; managerUserId?: string; boardMode?: BoardMode; isRestricted?: boolean; isHidden?: boolean }>()
   const normalizedName = body.name.trim()
   if (!normalizedName) return c.json({ error: 'O nome do projeto é obrigatório' }, 400)
   const boardMode = body.boardMode ?? 'HIERARCHICAL'
   if (!['HIERARCHICAL', 'SIMPLE'].includes(boardMode)) return c.json({ error: 'Modo de board inválido' }, 400)
+  if (!ehBooleanoOuAusente(body.isRestricted) || !ehBooleanoOuAusente(body.isHidden)) {
+    return c.json({ error: 'Os sinalizadores de visibilidade devem ser booleanos' }, 400)
+  }
+  // Defaults permissivos: um projeto novo nasce visível para todos, conforme o escopo por grupo.
+  const isRestricted = body.isRestricted ?? false
+  const isHidden = body.isHidden ?? false
 
   // [TENANT] Impede nomes duplicados somente dentro do tenant autenticado.
   const duplicate = await db.query.projects.findFirst({
@@ -144,8 +197,10 @@ projectsRouter.post('/', async (c) => {
   if (duplicate) return c.json({ error: 'Já existe um projeto com esse nome' }, 409)
 
   const projectId = generateId()
+  let simpleStoryId: string | null = null
 
-  await db.insert(projects).values({
+  const projectResult = await db.transaction(async (tx) => {
+   await tx.insert(projects).values({
     id: projectId,
     // [TENANT] Projeto sempre vinculado ao tenant do criador
     tenantId: ctx.tenantId,
@@ -157,23 +212,24 @@ projectsRouter.post('/', async (c) => {
     // managerUserId: validação de membership não é possível antes de criar o projeto
     // o criador se torna ADMIN logo abaixo; se managerUserId == ctx.userId é válido
     managerUserId: body.managerUserId ?? null,
+    isRestricted,
+    isHidden,
     createdAt: new Date().toISOString(),
-  })
+   })
 
   // Criador se torna ADMIN automaticamente
-  await db.insert(memberships).values({
+   await tx.insert(memberships).values({
     id: generateId(),
     tenantId: ctx.tenantId,
     userId: ctx.userId,
     projectId,
     role: 'ADMIN',
     createdAt: new Date().toISOString(),
-  })
+   })
 
-  let simpleStoryId: string | null = null
-  if (boardMode === 'HIERARCHICAL') {
+   if (boardMode === 'HIERARCHICAL') {
     // Módulo padrão "Geral" criado automaticamente
-    await db.insert(modules).values({
+     await tx.insert(modules).values({
       id: generateId(),
       tenantId: ctx.tenantId,
       projectId,
@@ -181,13 +237,13 @@ projectsRouter.post('/', async (c) => {
       position: 0,
     })
   } else {
-    const story = await findOrCreateSimpleStory(db as unknown as ProjectTransaction, ctx.tenantId, projectId)
+    const story = await findOrCreateSimpleStory(tx, ctx.tenantId, projectId)
     simpleStoryId = story.id
-    await db.update(projects).set({ simpleStoryId }).where(and(eq(projects.id, projectId), eq(projects.tenantId, ctx.tenantId)))
+    await tx.update(projects).set({ simpleStoryId }).where(and(eq(projects.id, projectId), eq(projects.tenantId, ctx.tenantId)))
   }
 
   // Colunas padrão do board — criadas na ordem de fluxo natural de trabalho
-  await db.insert(columns).values(
+  await tx.insert(columns).values(
     DEFAULT_COLUMNS.map((col, position) => ({
       id: generateId(),
       tenantId: ctx.tenantId,
@@ -198,26 +254,48 @@ projectsRouter.post('/', async (c) => {
     }))
   )
 
-  return c.json({ id: projectId, name: normalizedName, description: body.description ?? null, boardMode, simpleStoryId, role: 'ADMIN' as const }, 201)
+  // A new project starts coverage at creation, including an empty project.
+  await ensureCoverage(tx, ctx.tenantId, projectId, ctx.userId, 'REST')
+  return { simpleStoryId }
+  })
+  simpleStoryId = projectResult.simpleStoryId
+
+  return c.json({ id: projectId, name: normalizedName, description: body.description ?? null, boardMode, simpleStoryId, isRestricted, isHidden, role: 'ADMIN' as const }, 201)
 })
 
-// GET /projects — listar projetos do usuário (apenas os que é membro)
+// GET /projects — listar projetos visíveis para o usuário (membros veem os que participam)
 projectsRouter.get('/', async (c) => {
   const ctx = c.get('ctx') as RequestContext
   if (!hasKeyPermission(c.get('apiKeyPermissionScope'), 'VIEWER')) return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
 
-  const result = hasGlobalGroup(ctx.globalGroup, 'ADMIN')
-    ? await db.select({ project: projects }).from(projects).where(eq(projects.tenantId, ctx.tenantId))
-    : await db.select({ project: projects, role: memberships.role }).from(projects).innerJoin(
-      memberships,
-      and(eq(memberships.projectId, projects.id), eq(memberships.userId, ctx.userId), eq(memberships.tenantId, ctx.tenantId))
-    ).where(and(eq(projects.tenantId, ctx.tenantId), eq(memberships.tenantId, ctx.tenantId)))
+  // Projetos ocultos só são retornados com includeHidden=true — qualquer outro valor é ignorado.
+  const includeHidden = c.req.query('includeHidden') === 'true'
+
+  const result = await db
+    .select({ project: projects, role: memberships.role })
+    .from(projects)
+    .leftJoin(memberships, and(
+      eq(memberships.projectId, projects.id),
+      eq(memberships.userId, ctx.userId),
+      // [TENANT] O vínculo só conta dentro do tenant do chamador.
+      eq(memberships.tenantId, ctx.tenantId),
+    ))
+    .where(and(...condicoesVisibilidadeProjetos({
+      // [TENANT] tenant resolvido do JWT ou da API Key pelo middleware.
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      globalGroup: ctx.globalGroup,
+      includeHidden,
+    })))
 
   const projectScope = c.get('apiKeyProjectScope')
   const scopedProjects = projectScope
     ? result.filter(r => projectScope.includes(r.project.id))
     : result
-  return c.json(scopedProjects.map(r => ({ ...r.project, role: 'role' in r ? r.role : 'ADMIN' })))
+  return c.json(scopedProjects.map(r => ({
+    ...r.project,
+    role: r.role ?? (hasGlobalGroup(ctx.globalGroup, 'ADMIN') ? 'ADMIN' as const : 'MEMBER' as const),
+  })))
 })
 
 // GET /projects/:id/board — contexto estruturado para agentes
@@ -351,10 +429,13 @@ projectsRouter.get('/:id', requireRole('VIEWER'), async (c) => {
 projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const id = c.req.param('id')!
-  const body = await c.req.json<{ name?: string; description?: string; managerUserId?: string | null; boardMode?: BoardMode; dryRun?: boolean }>()
+  const body = await c.req.json<{ name?: string; description?: string; managerUserId?: string | null; boardMode?: BoardMode; dryRun?: boolean; isRestricted?: boolean; isHidden?: boolean }>()
 
   if (body.boardMode !== undefined && !['HIERARCHICAL', 'SIMPLE'].includes(body.boardMode)) {
     return c.json({ error: 'Modo de board inválido' }, 400)
+  }
+  if (!ehBooleanoOuAusente(body.isRestricted) || !ehBooleanoOuAusente(body.isHidden)) {
+    return c.json({ error: 'Os sinalizadores de visibilidade devem ser booleanos' }, 400)
   }
 
   // [TENANT] Lê o modo somente dentro do projeto/membership do tenant atual.
@@ -395,6 +476,8 @@ projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
   if (body.managerUserId !== undefined) updates.managerUserId = body.managerUserId
   const boardModeChanged = body.boardMode !== undefined && body.boardMode !== currentProject.boardMode
   if (body.boardMode !== undefined && !boardModeChanged) updates.boardMode = body.boardMode
+  if (body.isRestricted !== undefined) updates.isRestricted = body.isRestricted
+  if (body.isHidden !== undefined) updates.isHidden = body.isHidden
 
   if (boardModeChanged && body.dryRun) {
     const projectItems = await db.select({ type: items.type }).from(items)
@@ -424,9 +507,9 @@ projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
           await tx.update(projects).set(updates).where(and(eq(projects.id, id), eq(projects.tenantId, ctx.tenantId)))
         }
         if (body.boardMode === 'SIMPLE') {
-          await convertToSimple(tx, ctx.tenantId, id, currentProject.simpleStoryId)
+          await convertToSimple(tx, ctx.tenantId, id, currentProject.simpleStoryId, ctx.userId)
         } else {
-          await convertToHierarchical(tx, ctx.tenantId, id, currentProject.simpleStoryId)
+          await convertToHierarchical(tx, ctx.tenantId, id, currentProject.simpleStoryId, ctx.userId)
         }
       })
     } catch {

@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useEditor, EditorContent } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
-import Placeholder from '@tiptap/extension-placeholder'
+import { useTranslation } from 'react-i18next'
 import { Info, Plus, Check, X, Clock, ChevronLeft } from 'lucide-react'
 import type { Priority, TaskStatus, ItemType, Checklist } from '@azy-board/types'
 import { InlineEdit } from './InlineEdit'
@@ -11,6 +9,11 @@ import { AddCardForm } from './AddCardForm'
 import { ChecklistSection } from './ChecklistSection'
 import { CardChildrenSection } from './CardChildrenSection'
 import { ActivityLogModal } from './ActivityLogModal'
+import { WorkLogModal } from './WorkLogModal'
+import { RichTextEditor } from './RichTextEditor'
+import { AccordionSection } from './AccordionSection'
+import { AccordionToolbar } from './AccordionToolbar'
+import { ChecklistSummary, NeutralSummary } from './AccordionSummary'
 import { api } from '../lib/api'
 
 interface Epic { id: string; title: string }
@@ -146,6 +149,7 @@ export function ItemModal({
   _onBack,
   _onCloseAll,
 }: Props) {
+  const { t } = useTranslation()
   const [title, setTitle] = useState(item.title)
   const [priority, setPriority] = useState<Priority>(item.priority)
   const [status, setStatus] = useState<TaskStatus>(item.status)
@@ -161,13 +165,21 @@ export function ItemModal({
   const [points, setPoints] = useState(item.points?.toString() ?? '')
   const [startDate, setStartDate] = useState(item.startDate ?? '')
   const [dueDate, setDueDate] = useState(item.dueDate ?? '')
+  const [description, setDescription] = useState(item.description ?? '')
   const [showSubtaskForm, setShowSubtaskForm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [checklists, setChecklists] = useState<Checklist[]>([])
   const [showActivityLog, setShowActivityLog] = useState(false)
+  const [showWorkLog, setShowWorkLog] = useState(false)
   const [childStack, setChildStack] = useState<ChildModalState[]>([])
   const [totalMinutes, setTotalMinutes] = useState<number | null>(null)
+  const [workLogCount, setWorkLogCount] = useState(0)
+  const [activityCount, setActivityCount] = useState(0)
+  const [subtaskCount, setSubtaskCount] = useState(0)
+  const [subtaskRefreshKey, setSubtaskRefreshKey] = useState(0)
+  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['item-fields']))
+  const sectionIds = ['item-fields', 'item-description', 'item-subtasks', 'item-checklists', 'item-activity', 'item-work-log']
 
   // Resolução do papel do usuário atual no projeto
   const currentUserRole = members.find(m => m.userId === currentUserId)?.role ?? 'MEMBER'
@@ -187,32 +199,33 @@ export function ItemModal({
   useEffect(() => {
     if (item.id === '__new__') { setTotalMinutes(null); return }
     let cancelled = false
-    api.get<{ data: Array<{ type: string; durationMin: number | null }>; total: number }>(
-      `/projects/${projectId}/items/${item.id}/logs?limit=200`
+    api.get<{ data: Array<{ durationMin: number | null }>; total: number }>(
+      `/projects/${projectId}/items/${item.id}/work-log?limit=100`
     )
       .then(res => {
         if (cancelled) return
         const sum = res.data
-          .filter(l => l.type === 'manual' && l.durationMin != null)
+          .filter(l => l.durationMin != null)
           .reduce((acc, l) => acc + (l.durationMin ?? 0), 0)
         setTotalMinutes(sum > 0 ? sum : null)
+        setWorkLogCount(res.total)
       })
-      .catch(() => { if (!cancelled) setTotalMinutes(null) })
+      .catch(() => {
+        if (cancelled) return
+        setTotalMinutes(null)
+        setWorkLogCount(0)
+      })
     return () => { cancelled = true }
   }, [item.id, projectId])
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Placeholder.configure({ placeholder: 'Adicionar descrição...' }),
-    ],
-    content: item.description ?? '',
-    editorProps: {
-      attributes: {
-        class: 'prose prose-sm dark:prose-invert max-w-none outline-none min-h-[80px] text-sm text-foreground',
-      },
-    },
-  })
+  useEffect(() => {
+    if (item.id === '__new__') { setActivityCount(0); return }
+    let cancelled = false
+    api.get<{ total: number }>(`/projects/${projectId}/items/${item.id}/audit?limit=1`)
+      .then(res => { if (!cancelled) setActivityCount(res.total) })
+      .catch(() => { if (!cancelled) setActivityCount(0) })
+    return () => { cancelled = true }
+  }, [item.id, projectId])
 
   useEffect(() => {
     setTitle(item.title)
@@ -228,6 +241,11 @@ export function ItemModal({
     setPoints(item.points?.toString() ?? '')
     setStartDate(item.startDate ?? '')
     setDueDate(item.dueDate ?? '')
+    setDescription(item.description ?? '')
+    setActivityCount(0)
+    setWorkLogCount(0)
+    setSubtaskCount(0)
+    setSubtaskRefreshKey(0)
   }, [item.id])
 
   // Escape: pop child se houver, senão fecha a modal atual
@@ -277,7 +295,6 @@ export function ItemModal({
     setSaving(true)
     setError('')
     try {
-      const descriptionHtml = editor?.getHTML() ?? ''
       await onSave(item.id, {
         title,
         priority,
@@ -291,7 +308,7 @@ export function ItemModal({
         costCenterId: costCenterId || null,
         startDate: startDate || null,
         dueDate: dueDate || null,
-        description: descriptionHtml === '<p></p>' ? null : descriptionHtml,
+        description: description || null,
       }, selectedTags.map(t => t.id))
       onClose()
     } catch {
@@ -339,19 +356,22 @@ export function ItemModal({
             </button>
           </div>
 
-          <div className="p-6 space-y-5">
-            {/* Box informativa para cards bloqueados (com subtasks) */}
-            {!item.isLeaf && (
-              <div className="flex gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300">
+           <div className="p-6 space-y-4">
+             <AccordionToolbar sectionIds={sectionIds} openIds={openSections} onChange={setOpenSections} />
+             {/* Box informativa para cards bloqueados (com subtasks) */}
+              <AccordionSection id="item-fields" title={t('accordion.itemFields')} summary={t('accordion.itemType', { type: t(type === 'BUG' ? 'accordion.bug' : 'accordion.taskType') })} isOpen={openSections.has('item-fields')} onToggle={id => setOpenSections(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}>
+               {!item.isLeaf && (
+               <div className="flex gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300">
                 <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
                 <p className="text-xs leading-relaxed">
                   Este card tem subtasks. Seu status no board é determinado pelo progresso dos seus filhos — por isso ele não pode ser arrastado manualmente. Para mover este card, mova ou conclua as subtasks.
                 </p>
               </div>
-            )}
+               )}
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
+             <div className="space-y-4">
+             <div className="grid grid-cols-2 gap-4">
+             <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Tipo</label>
                 <select value={type} onChange={e => setType(e.target.value as 'TASK' | 'BUG')}
                   className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
@@ -454,9 +474,9 @@ export function ItemModal({
                     className="w-full px-2 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary" />
                 </div>
               </div>
-            </div>
+             </div>
 
-            {epics.length > 0 && (
+             {epics.length > 0 && (
               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">História pai</label>
                 <StorySelector
@@ -469,31 +489,51 @@ export function ItemModal({
               </div>
             )}
 
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Tags</label>
+             <div>
+               <label className="text-xs font-medium text-muted-foreground mb-1 block">Tags</label>
               <TagSelector
                 allTags={projectTags}
                 selected={selectedTags}
                 onSelect={setSelectedTags}
                 onCreate={onCreateTag}
                 onEdit={onEditTag}
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Descrição</label>
-              <div className="border border-border rounded-lg p-3 bg-background min-h-[100px] cursor-text">
-                <EditorContent editor={editor} />
+               />
               </div>
-            </div>
+             </div>
+             </AccordionSection>
 
-            {item.isLeaf && (
-              <div>
+             <AccordionSection id="item-description" title={t('accordion.description')} summary={description ? t('accordion.contentPresent') : <NeutralSummary />} isOpen={openSections.has('item-description')} onToggle={id => setOpenSections(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}>
+             <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Descrição</label>
+              <RichTextEditor
+                key={item.id}
+                content={description}
+                onChange={setDescription}
+                placeholder={t('richText.itemPlaceholder')}
+                fieldLabel={t('richText.itemField')}
+                minHeight="80px"
+              />
+             </div>
+             </AccordionSection>
+
+              <AccordionSection id="item-subtasks" title={t('accordion.subtasks')} summary={subtaskCount > 0 ? t(subtaskCount === 1 ? 'accordion.subtaskCountOne' : 'accordion.subtaskCountMany', { count: subtaskCount }) : <NeutralSummary />} isOpen={openSections.has('item-subtasks')} onToggle={id => setOpenSections(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}>
+              {item.id !== '__new__' && (
+                <CardChildrenSection
+                  itemId={item.id}
+                  projectId={projectId}
+                  onOpenChild={handleOpenChild}
+                  onCountChange={setSubtaskCount}
+                  refreshKey={subtaskRefreshKey}
+                />
+              )}
+              {item.isLeaf && (
+               <div>
                 <label className="text-xs font-medium text-muted-foreground mb-1 block">Subtasks</label>
                 {showSubtaskForm ? (
                   <AddCardForm
                     onAdd={async (subTitle, subType) => {
                       await onAddSubtask(item.id, subTitle, subType)
+                      setSubtaskRefreshKey(key => key + 1)
                       setShowSubtaskForm(false)
                     }}
                     onCancel={() => setShowSubtaskForm(false)}
@@ -506,29 +546,35 @@ export function ItemModal({
                   </button>
                 )}
               </div>
-            )}
+             )}
+             {item.id === '__new__' && <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}
+             </AccordionSection>
 
-            {item.id !== '__new__' && (
-              <div className="border-t border-border pt-4">
-                <ChecklistSection
+             <AccordionSection id="item-checklists" title={t('accordion.checklists')} summary={checklists.length > 0 ? <ChecklistSummary checked={checklists.reduce((sum, list) => sum + list.items.filter(i => i.checked).length, 0)} total={checklists.reduce((sum, list) => sum + list.items.length, 0)} /> : <NeutralSummary />} isOpen={openSections.has('item-checklists')} onToggle={id => setOpenSections(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}>
+             {item.id !== '__new__' ? (
+               <div>
+                 <ChecklistSection
                   itemId={item.id}
                   projectId={projectId}
-                  initialChecklists={checklists}
-                />
-              </div>
-            )}
+                   initialChecklists={checklists}
+                   onChange={setChecklists}
+                 />
+               </div>
+             ) : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}
+             </AccordionSection>
 
             {error && <p className="text-sm text-red-500">{error}</p>}
 
-            {/* Tarefa 10.1, 10.2 — botão Histórico e soma de horas */}
-            {item.id !== '__new__' && (
-              <div className="flex items-center gap-3 border-t border-border pt-4">
-                <button
-                  onClick={() => setShowActivityLog(true)}
+             {/* Histórico e atividades ficam separados da seção de Subtasks acima. */}
+               <AccordionSection id="item-activity" title={t('accordion.activity')} summary={activityCount > 0 ? t(activityCount === 1 ? 'accordion.activityCountOne' : 'accordion.activityCountMany', { count: activityCount }) : <NeutralSummary />} isOpen={openSections.has('item-activity')} onToggle={id => setOpenSections(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}>
+             {item.id !== '__new__' && (
+               <div className="flex items-center gap-3">
+                 <button
+                   onClick={() => setShowActivityLog(true)}
                   className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition"
                 >
                   <Clock className="w-4 h-4" />
-                  Histórico
+                  Histórico de alterações
                 </button>
                 {totalMinutes != null && (
                   <span className="text-xs text-muted-foreground">
@@ -538,14 +584,20 @@ export function ItemModal({
               </div>
             )}
 
-            {/* Tarefa 7.5 — seção de filhos diretos */}
-            {item.id !== '__new__' && (
-              <CardChildrenSection
-                itemId={item.id}
-                projectId={projectId}
-                onOpenChild={handleOpenChild}
-              />
-            )}
+              {item.id === '__new__' && <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}
+              </AccordionSection>
+
+              <AccordionSection id="item-work-log" title={t('accordion.workLog')} summary={workLogCount > 0 ? t(workLogCount === 1 ? 'accordion.workLogCountOne' : 'accordion.workLogCountMany', { count: workLogCount }) : <NeutralSummary />} isOpen={openSections.has('item-work-log')} onToggle={id => setOpenSections(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}>
+              {item.id !== '__new__' ? (
+                <div className="flex items-center gap-3">
+                  <button onClick={() => setShowWorkLog(true)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition">
+                    <Clock className="h-4 w-4" />
+                    Registrar trabalho
+                  </button>
+                  {totalMinutes != null && <span className="text-xs font-medium text-primary">{formatDuration(totalMinutes)}</span>}
+                </div>
+              ) : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}
+              </AccordionSection>
           </div>
 
           <div className="flex gap-2 px-6 py-4 border-t border-border sticky bottom-0 bg-card">
@@ -569,9 +621,19 @@ export function ItemModal({
           itemId={item.id}
           itemTitle={item.title}
           projectId={projectId}
+          onClose={() => setShowActivityLog(false)}
+        />
+      )}
+      {showWorkLog && currentUserId && (
+        <WorkLogModal
+          itemId={item.id}
+          itemTitle={item.title}
+          projectId={projectId}
           currentUserId={currentUserId}
           currentUserRole={currentUserRole}
-          onClose={() => setShowActivityLog(false)}
+          onCountChange={setWorkLogCount}
+          onTotalChange={setTotalMinutes}
+          onClose={() => setShowWorkLog(false)}
         />
       )}
 

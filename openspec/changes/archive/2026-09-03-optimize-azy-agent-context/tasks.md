@@ -1,0 +1,7 @@
+- [x] Persistir contexto e estado de aprovação retomável
+- [x] Corrigir rota de aprovação para executar e continuar a run
+- [x] Enviar histórico/resumo no contexto do modelo
+- [x] Conectar seleção dinâmica de ferramentas ao harness
+- [x] Carregar histórico e oferecer confirmação explícita no drawer
+- [x] Validar contexto, tools e aprovação com testes existentes e chamadas locais
+- [x] Executar typecheck e testes completos

@@ -100,6 +100,30 @@ Before merging a UI change that touches board state:
 - Every new MCP tool must have a corresponding spec entry and an integration
   test.
 
+### Official Agent Skill
+
+- A fonte oficial da skill fica em `skills/azyboard/` e deve permanecer
+  agnóstica ao cliente. `SKILL.md` é a entrada; referências e comandos são
+  carregados conforme a necessidade.
+- Toda mudança deve avaliar impacto sobre a skill. Alterações em ferramentas
+  MCP, contratos AI/API, Shadow Markdown, segurança, fluxos AI First ou
+  documentação consumida por agentes exigem atualização das referências,
+  comandos e manifesto quando aplicável.
+- Mudanças que não afetem a skill devem registrar essa avaliação e a
+  justificativa no pull request.
+- Execute `bun run test:agent-skill` quando o catálogo MCP, a skill ou seus
+  comandos forem alterados. Nunca inclua credenciais reais nos exemplos.
+
+### Azy Agent humano
+
+Mudanças no chat devem manter a configuração Root por tenant, API key OpenAI
+server-side e o estado desligado por padrão. OAuth/token plan não faz parte do
+escopo do Azy Agent. Antes de alterar
+tools, rotas, SSE, prompts, CSV ou limites, revise `SECURITY_CHECKLIST.md` e
+`docs/AI_AGENT_DATA_POLICY.md`. Teste pelo menos os fluxos de autorização,
+ownership, isolamento tenant/usuário, aprovação por hash, cancelamento, limites
+e prompt injection; não duplique cenários já cobertos.
+
 ---
 
 ## Testing
@@ -149,5 +173,7 @@ footer explaining the impact on agents and API consumers.
 - [ ] Shadow Markdown output remains structurally compatible, or a documented
       migration plan is included.
 - [ ] MCP tool signatures are unchanged, or the change is versioned.
+- [ ] Impacto sobre `skills/azyboard/` foi avaliado e a skill foi atualizada ou
+      a ausência de impacto foi justificada.
 - [ ] Security checklist reviewed — see `SECURITY_CHECKLIST.md`.
 - [ ] No hardcoded secrets, PII in logs, or raw errors in agent-facing output.

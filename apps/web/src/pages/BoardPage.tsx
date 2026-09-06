@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   DndContext,
@@ -31,6 +31,7 @@ import { ItemModal, type FullItemData, type ProjectMember, type ProjectVersion, 
 import { EpicModal, type EpicData } from '../components/EpicModal'
 import { StoryModal, type StoryData } from '../components/StoryModal'
 import type { BoardFilterState } from '../components/BoardFilters'
+import { ActiveFilterChips, removeActiveBoardFilter, type ActiveFilterKey } from '../components/ActiveFilterChips'
 import { useToast } from '../components/Toast'
 import { TreeViewPage, type TreeActionContext, type TreeCreationType } from './TreeViewPage'
 import { useAuth } from '../contexts/AuthContext'
@@ -116,6 +117,10 @@ function computeIsLeaf(allItems: ItemData[]): ItemData[] {
   return allItems.map(i => ({ ...i, isLeaf: !parentIds.has(i.id) }))
 }
 
+function upsertItem(allItems: ItemData[], item: ItemData): ItemData[] {
+  return computeIsLeaf([...allItems.filter(existing => existing.id !== item.id), item])
+}
+
 const DEFAULT_FILTERS: BoardFilterState = {
   moduleId: '',
   sprintId: '',
@@ -137,6 +142,7 @@ const DEFAULT_FILTERS: BoardFilterState = {
 
 export default function BoardPage() {
   const { projectId } = useParams<{ projectId: string }>()
+  const [searchParams] = useSearchParams()
   const { t: tBoard } = useTranslation('board')
   const { user } = useAuth()
   const { toast } = useToast()
@@ -205,6 +211,7 @@ export default function BoardPage() {
       return DEFAULT_FILTERS
     }
   })
+  const filtersProjectIdRef = useRef<string | null>(projectId ?? null)
   const [newItemCreation, setNewItemCreation] = useState<{ type: 'TASK' | 'BUG'; columnId?: string; title?: string; parentId?: string } | null>(null)
   const [treeRefreshToken, setTreeRefreshToken] = useState(0)
   const [moduleModalOpen, setModuleModalOpen] = useState(false)
@@ -216,17 +223,49 @@ export default function BoardPage() {
   const [archivedItems, setArchivedItems] = useState<ArchivedItem[]>([])
   const [archivedLoading, setArchivedLoading] = useState(false)
 
+  useEffect(() => {
+    const itemId = searchParams.get('itemId')
+    if (itemId && allItems.some(item => item.id === itemId)) setItemModalId(itemId)
+  }, [allItems, searchParams])
+
   // Ref para preservar o over ID mais recente durante o drag (evita perder o alvo no momento do drop)
   const lastOverRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!projectId) return
+    if (!projectId || filtersProjectIdRef.current !== projectId) return
     try {
       localStorage.setItem(`board-filters:${projectId}`, JSON.stringify(filters))
     } catch {
       // localStorage indisponível (ex.: SecurityError em modo privativo restrito)
     }
   }, [filters, projectId])
+
+  useEffect(() => {
+    if (!projectId) {
+      filtersProjectIdRef.current = null
+      setFilters(DEFAULT_FILTERS)
+      return
+    }
+    filtersProjectIdRef.current = null
+    let nextFilters = DEFAULT_FILTERS
+    try {
+      const raw = localStorage.getItem(`board-filters:${projectId}`)
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<BoardFilterState> & { showStories?: boolean }
+        const { showStories: _legacyShowStories, ...currentFilters } = parsed
+        nextFilters = {
+          ...DEFAULT_FILTERS,
+          ...currentFilters,
+          types: Array.isArray(currentFilters.types) ? currentFilters.types : [],
+          tagIds: Array.isArray(currentFilters.tagIds) ? currentFilters.tagIds : [],
+        }
+      }
+    } catch {
+      nextFilters = DEFAULT_FILTERS
+    }
+    setFilters(nextFilters)
+    filtersProjectIdRef.current = projectId
+  }, [projectId])
 
   useEffect(() => {
     if (versionsLoaded && filters.versionId && !projectVersions.some(version => version.id === filters.versionId)) {
@@ -328,7 +367,7 @@ export default function BoardPage() {
     },
     ITEM_CREATED: (e: WsEvent) => {
       const item = e.payload as ItemData
-      setAllItems(prev => computeIsLeaf([...prev, { ...item }]))
+      setAllItems(prev => upsertItem(prev, item))
     },
     ITEM_UPDATED: (e: WsEvent) => {
       const { itemId, ...updates } = e.payload as { itemId: string; [k: string]: unknown }
@@ -342,7 +381,7 @@ export default function BoardPage() {
     // Manter compatibilidade com eventos antigos
     CARD_CREATED: (e: WsEvent) => {
       const item = e.payload as ItemData
-      setAllItems(prev => computeIsLeaf([...prev, { ...item }]))
+      setAllItems(prev => upsertItem(prev, item))
     },
     CARD_UPDATED: (e: WsEvent) => {
       const { taskId, itemId, ...updates } = e.payload as { taskId?: string; itemId?: string; [k: string]: unknown }
@@ -363,7 +402,7 @@ export default function BoardPage() {
       // [isLeaf] inclui parentId para que computeIsLeaf marque o pai como não-folha
       const { parentId: newParentId, item, task } = e.payload as { parentId: string; item?: ItemData; task?: ItemData }
       const newItem = item ?? task
-      if (newItem) setAllItems(prev => computeIsLeaf([...prev, { ...newItem, parentId: newParentId }]))
+      if (newItem) setAllItems(prev => upsertItem(prev, { ...newItem, parentId: newParentId }))
     },
     CHECKLIST_UPDATED: (e: WsEvent) => {
       const { itemId, progress } = e.payload as { itemId: string; progress: { checked: number; total: number } }
@@ -562,7 +601,7 @@ export default function BoardPage() {
   ])
 
   const orphanCards = useMemo(() =>
-    allDisplayed.filter(i => !getEpicIdFromPath(i.ancestryPath) && !i.moduleId && !i.id.startsWith('story-virtual-')),
+    allDisplayed.filter(i => ['TASK', 'BUG'].includes(i.type) && !getEpicIdFromPath(i.ancestryPath) && !i.id.startsWith('story-virtual-')),
     [allDisplayed]
   )
 
@@ -972,6 +1011,19 @@ export default function BoardPage() {
 
   const isColumnDrag = activeId?.includes(':col:') ?? false
   const activeCard = !isColumnDrag ? allItems.find(i => i.id === activeId) : null
+  const assistantSelectedItem = useMemo(() => {
+    const selectedId = itemModalId ?? storyModalData?.story?.id ?? epicModalData?.epic?.id
+    const selected = selectedId ? allItems.find(item => item.id === selectedId) : undefined
+    if (!selected) return null
+    let ancestry: AncestorNode[] = []
+    try {
+      const parsed = JSON.parse(selected.ancestryPath || '[]')
+      if (Array.isArray(parsed)) ancestry = parsed.filter(node => node && typeof node.id === 'string' && typeof node.title === 'string' && typeof node.type === 'string')
+    } catch {
+      ancestry = []
+    }
+    return { id: selected.id, title: selected.title, type: selected.type, ancestry }
+  }, [allItems, epicModalData?.epic?.id, itemModalId, storyModalData?.story?.id])
 
   if (loading) return (
     <div className="flex items-center justify-center h-screen bg-background">
@@ -1086,6 +1138,7 @@ export default function BoardPage() {
             onDelete={handleDeleteItem}
             onArchive={handleArchiveRequest}
             storyGroups={filters.storyDisplay === 'lanes' ? storyGroups : undefined}
+            defaultParentId={storyGroups.find(group => group.story)?.story?.id ?? null}
             collapsedStories={collapsedStories}
             onToggleStory={toggleStory}
             onEditStory={story => openStoryModal(story)}
@@ -1096,10 +1149,22 @@ export default function BoardPage() {
     )
   }
 
+  const activeFilterLabels = {
+    filterLabel: tBoard('activeFilters'), module: tBoard('filterModule'), sprint: tBoard('filterSprint'), version: tBoard('filterVersion'),
+    squad: tBoard('filterSquad'), assignee: tBoard('filterAssignee'), author: tBoard('filterAuthor'), costCenter: tBoard('filterCostCenter'),
+    priority: tBoard('filterPriority'), status: tBoard('filterStatus'), type: tBoard('filterType'), tag: tBoard('filterTag'),
+    hideEmptyEpics: tBoard('hideEmptyEpics'), hideEmptyStories: tBoard('hideEmptyStories'), showSubtasks: tBoard('showSubtasks'),
+    storyDisplay: tBoard('storyDisplay'), moduleViewMode: tBoard('moduleViewMode'), typeValues: { TASK: tBoard('typeTask'), BUG: tBoard('typeBug') },
+    priorityValues: { LOW: tBoard('priorityLow'), MEDIUM: tBoard('priorityMedium'), HIGH: tBoard('priorityHigh'), CRITICAL: tBoard('priorityCritical') },
+    statusValues: { NOT_STARTED: tBoard('statusNotStarted'), IN_PROGRESS: tBoard('statusInProgress'), BLOCKED: tBoard('statusBlocked'), DONE: tBoard('statusDone'), CANCELLED: tBoard('statusCancelled') },
+    storyDisplayCards: tBoard('storyDisplayCards'), moduleViewTabs: tBoard('moduleViewTabs'), enabled: tBoard('enabled'), remove: tBoard('removeFilter'),
+  }
+
   return (
     <AppShell
       projectId={projectId}
       projectName={projectName}
+      assistantSelectedItem={assistantSelectedItem}
       sectionLabel={view === 'kanban' ? 'Board' : 'Árvore'}
       contextLabel={activeSprint?.name ?? 'Fluxo do projeto'}
       headerMeta={syncState === 'synced' ? (
@@ -1144,6 +1209,13 @@ export default function BoardPage() {
       contentClassName="overflow-hidden"
     >
       <div className="h-full min-h-0 flex flex-col gap-3">
+        <ActiveFilterChips
+          filters={filters}
+          catalogs={{ modules, sprints, versions: projectVersions, squads: projectSquads, members, tags: projectTags, costCenters: projectCostCenters }}
+          labels={activeFilterLabels}
+          visualContext={{ isSimpleBoard, view }}
+          onRemove={(key: ActiveFilterKey, value) => setFilters(previous => removeActiveBoardFilter(previous, key, value))}
+        />
         <BoardContextHeader
           sprintName={activeSprint?.name}
           completed={sprintCompleted}
@@ -1209,10 +1281,11 @@ export default function BoardPage() {
 
                {/* Swimlane itens órfãos */}
                {!isSimpleBoard && orphanCards.length > 0 && (
-                <Swimlane
-                  swimlaneId="orphan"
-                  title="Sem épico"
-                   columns={columns}
+                 <Swimlane
+                   swimlaneId="orphan"
+                   title="Sem épico"
+                   allowAdd={false}
+                    columns={columns}
                    versions={projectVersions}
                    sprints={sprints}
                    tasks={orphanCards}
@@ -1528,6 +1601,8 @@ interface SwimlaneProps {
   storyGroups?: StoryLaneGroup[]
   collapsedStories?: Set<string>
   onToggleStory?: (storyId: string) => void
+  defaultParentId?: string | null
+  allowAdd?: boolean
   onEditStory?: (story: ItemData) => void
 }
 
@@ -1553,6 +1628,8 @@ function Swimlane({
   collapsedStories,
   onToggleStory,
   onEditStory,
+  defaultParentId,
+  allowAdd,
 }: SwimlaneProps) {
   const doneCount = tasks.filter(task => task.status === 'DONE').length
   const progress = tasks.length > 0 ? Math.round((doneCount / tasks.length) * 100) : 0
@@ -1634,6 +1711,8 @@ function Swimlane({
               versions={versions}
               sprints={sprints}
               tasks={tasks}
+          parentId={defaultParentId ?? undefined}
+          allowAdd={allowAdd ?? true}
           columnAddForms={columnAddForms}
           onShowAddForm={onShowAddForm}
           onHideAddForm={onHideAddForm}
@@ -1763,6 +1842,7 @@ interface BoardColumnsProps {
   sprints: Sprint[]
   tasks: ItemData[]
   parentId?: string
+  allowAdd?: boolean
   columnAddForms: Record<string, boolean>
   onShowAddForm: (formKey: string) => void
   onHideAddForm: (formKey: string) => void
@@ -1780,6 +1860,7 @@ function BoardColumns({
   sprints,
   tasks,
   parentId,
+  allowAdd = true,
   columnAddForms,
   onShowAddForm,
   onHideAddForm,
@@ -1826,7 +1907,7 @@ function BoardColumns({
                   </SortableContext>
                 </div>
                 <div className="p-2 mt-1">
-                  {columnAddForms[formKey] ? (
+                  {allowAdd && (columnAddForms[formKey] ? (
                     <AddCardForm
                         versions={versions}
                         sprints={sprints}
@@ -1841,7 +1922,7 @@ function BoardColumns({
                       <Plus className="w-3.5 h-3.5" />
                       Adicionar card
                     </button>
-                  )}
+                  ))}
                 </div>
               </DroppableColumn>
             </SortableColumn>

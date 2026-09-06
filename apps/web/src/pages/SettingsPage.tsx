@@ -5,6 +5,7 @@ import { Pencil, Trash2, Check, X, Eye, UserPlus, Users, Network } from 'lucide-
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import { VersionDetailModal } from '../components/VersionDetailModal'
+import { VisibilityToggles } from '../components/VisibilityToggles'
 import { AppShell } from '../components/AppShell'
 import type { BoardMode, ColumnBaseStatus, SprintStatus } from '@azy-board/types'
 
@@ -85,6 +86,10 @@ export default function SettingsPage() {
   const [pendingBoardMode, setPendingBoardMode] = useState<BoardMode | null>(null)
   const [savingBoardMode, setSavingBoardMode] = useState(false)
   const [boardModeError, setBoardModeError] = useState('')
+  const [isRestricted, setIsRestricted] = useState(false)
+  const [isHidden, setIsHidden] = useState(false)
+  const [savingVisibility, setSavingVisibility] = useState(false)
+  const [visibilityError, setVisibilityError] = useState('')
 
   // Centros de Custo
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
@@ -128,12 +133,14 @@ export default function SettingsPage() {
     api.get<ProjectVersion[]>(`/projects/${projectId}/versions`).then(setVersions)
     api.get<CostCenter[]>(`/projects/${projectId}/cost-centers`).then(setCostCenters)
     api.get<Sprint[]>(`/projects/${projectId}/sprints`).then(setSprints).catch(() => {})
-    api.get<{ name: string; manager?: Manager | null; boardMode?: BoardMode }>(`/projects/${projectId}`)
+    api.get<{ name: string; manager?: Manager | null; boardMode?: BoardMode; isRestricted?: boolean; isHidden?: boolean }>(`/projects/${projectId}`)
       .then(p => {
         setProjectName(p.name)
         setManager(p.manager ?? null)
         setManagerUserId(p.manager?.id ?? '')
         setBoardMode(p.boardMode ?? 'HIERARCHICAL')
+        setIsRestricted(Boolean(p.isRestricted))
+        setIsHidden(Boolean(p.isHidden))
       })
       .catch(() => {})
   }, [projectId])
@@ -154,6 +161,23 @@ export default function SettingsPage() {
       setBoardModeError(error instanceof Error ? error.message : 'Não foi possível alterar o formato do board')
     } finally {
       setSavingBoardMode(false)
+    }
+  }
+
+  async function saveVisibility(campo: 'isRestricted' | 'isHidden', valor: boolean) {
+    if (!projectId || !isAdmin) return
+    const anterior = campo === 'isRestricted' ? isRestricted : isHidden
+    const aplicar = campo === 'isRestricted' ? setIsRestricted : setIsHidden
+    aplicar(valor)
+    setSavingVisibility(true)
+    setVisibilityError('')
+    try {
+      await api.patch(`/projects/${projectId}`, { [campo]: valor })
+    } catch (error) {
+      aplicar(anterior)
+      setVisibilityError(error instanceof Error ? error.message : t('settings:visibilitySaveError'))
+    } finally {
+      setSavingVisibility(false)
     }
   }
 
@@ -462,6 +486,27 @@ export default function SettingsPage() {
           </div>
           {!isAdmin && <p className="text-xs text-muted-foreground mt-3">Somente administradores podem alterar o formato.</p>}
           {boardModeError && <p className="text-sm text-destructive mt-3">{boardModeError}</p>}
+        </section>
+
+        {/* Visibilidade do projeto */}
+        <section>
+          <h2 className="text-lg font-semibold text-foreground mb-2">{t('settings:projectVisibility')}</h2>
+          <p className="text-sm text-muted-foreground mb-4">{t('settings:projectVisibilityDescription')}</p>
+          <VisibilityToggles
+            restricted={isRestricted}
+            hidden={isHidden}
+            onChangeRestricted={valor => void saveVisibility('isRestricted', valor)}
+            onChangeHidden={valor => void saveVisibility('isHidden', valor)}
+            restrictedLabel={t('settings:visibilityRestricted')}
+            restrictedHint={t('settings:visibilityRestrictedDescription')}
+            hiddenLabel={t('settings:visibilityHidden')}
+            hiddenHint={t('settings:visibilityHiddenDescription')}
+            restrictedId="project-restricted"
+            hiddenId="project-hidden"
+            disabled={!isAdmin || savingVisibility}
+          />
+          {!isAdmin && <p className="text-xs text-muted-foreground mt-3">Somente administradores podem alterar a visibilidade.</p>}
+          {visibilityError && <p className="text-sm text-destructive mt-3">{visibilityError}</p>}
         </section>
 
         {/* Colunas */}

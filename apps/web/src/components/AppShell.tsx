@@ -7,6 +7,8 @@ import {
   Settings,
   UserRound,
   X,
+  Bot,
+  ChevronDown,
 } from 'lucide-react'
 import { LanguageSelector } from './LanguageSelector'
 import { ProfileDropdown } from './ProfileDropdown'
@@ -15,6 +17,8 @@ import { Tooltip } from './ui/Tooltip'
 import { BrandLogo } from './BrandLogo'
 import { useAuth } from '../contexts/AuthContext'
 import { canAccessAdmin, canAccessProjectSettings } from '../permissions'
+import { useTranslation } from 'react-i18next'
+import { useAssistant, type AssistantSelectedItem } from '../contexts/AssistantContext'
 
 interface AppShellProps {
   children: ReactNode
@@ -26,13 +30,15 @@ interface AppShellProps {
   commandBar?: ReactNode
   statusRail?: ReactNode
   contentClassName?: string
+  assistantSelectedItem?: AssistantSelectedItem | null
 }
 
 interface NavItem {
   label: string
-  href: string
+  href?: string
   icon: typeof FolderKanban
   active: boolean
+  children?: NavItem[]
 }
 
 export function AppShell({
@@ -45,16 +51,29 @@ export function AppShell({
   commandBar,
   statusRail,
   contentClassName = '',
+  assistantSelectedItem,
 }: AppShellProps) {
   const location = useLocation()
   const { user } = useAuth()
+  const { setPageContext } = useAssistant()
+  const { t: tDashboard } = useTranslation('dashboard')
+  const { t: tAssistant } = useTranslation('assistant')
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [adminExpanded, setAdminExpanded] = useState(location.pathname.startsWith('/admin'))
 
   useEffect(() => {
     if (projectId) localStorage.setItem('last-project-id', projectId)
   }, [projectId])
 
+  useEffect(() => {
+    setPageContext({ projectId, projectName, item: assistantSelectedItem ?? null })
+    return () => setPageContext(null)
+  }, [assistantSelectedItem, projectId, projectName, setPageContext])
+
   useEffect(() => setMobileOpen(false), [location.pathname])
+  useEffect(() => {
+    if (location.pathname.startsWith('/admin')) setAdminExpanded(true)
+  }, [location.pathname])
 
   const effectiveProjectId = projectId ?? localStorage.getItem('last-project-id') ?? undefined
   const navItems = useMemo<NavItem[]>(() => {
@@ -79,9 +98,35 @@ export function AppShell({
           active: location.pathname.includes(`/projects/${effectiveProjectId}/settings`),
         })
       }
+      items.push({
+        label: tDashboard('navDashboard', { defaultValue: 'Dashboard' }),
+        href: `/projects/${effectiveProjectId}/dashboard`,
+        icon: LayoutDashboard,
+        active: location.pathname.includes(`/projects/${effectiveProjectId}/dashboard`),
+      })
     }
     if (user && canAccessAdmin(user.globalGroup)) {
-      items.push({ label: 'Admin', href: '/admin/users', icon: UserRound, active: location.pathname.startsWith('/admin') })
+      items.push({
+        label: 'Admin',
+        icon: UserRound,
+        active: location.pathname.startsWith('/admin'),
+        children: [
+          {
+            label: tAssistant('users', { defaultValue: 'Usuários' }),
+            href: '/admin/users',
+            icon: UserRound,
+            active: location.pathname === '/admin/users',
+          },
+          ...(user.globalGroup === 'ROOT'
+            ? [{
+                label: tAssistant('tenantConfiguration', { defaultValue: 'Config. Tenant' }),
+                href: '/admin/assistant',
+                icon: Bot,
+                active: location.pathname === '/admin/assistant',
+              }]
+            : []),
+        ],
+      })
     }
     items.push({
       label: 'Conta',
@@ -90,7 +135,7 @@ export function AppShell({
       active: location.pathname === '/account',
     })
     return items
-  }, [effectiveProjectId, location.pathname, user])
+  }, [effectiveProjectId, location.pathname, user, tDashboard, tAssistant])
 
   const sidebar = (
     <div className="h-full flex flex-col px-3 py-4">
@@ -111,10 +156,21 @@ export function AppShell({
       <nav className="space-y-1 mt-4 min-[1280px]:mt-0" aria-label="Navegação principal">
         {navItems.map(item => {
           const Icon = item.icon
-          const link = (
+          const link = item.children ? (
+            <button
+              key={item.href ?? item.label}
+              type="button"
+              aria-expanded={adminExpanded}
+              onClick={() => setAdminExpanded((expanded) => !expanded)}
+              className={`group h-10 w-full flex items-center gap-3 px-2.5 rounded-lg transition-colors ${item.active ? 'bg-shell-active text-shell-foreground shadow-[inset_3px_0_0_var(--shell-accent)]' : 'text-shell-muted hover:text-shell-foreground hover:bg-white/10'}`}
+            >
+              <Icon className="w-[18px] h-[18px] flex-shrink-0" />
+              <span className="text-sm font-medium hidden min-[1280px]:block">{item.label}</span>
+            </button>
+          ) : (
             <Link
               key={item.href}
-              to={item.href}
+              to={item.href!}
               aria-current={item.active ? 'page' : undefined}
               className={`group h-10 flex items-center gap-3 px-2.5 rounded-lg transition-colors ${
                 item.active
@@ -126,12 +182,54 @@ export function AppShell({
               <span className="text-sm font-medium hidden min-[1280px]:block">{item.label}</span>
             </Link>
           )
+          const children =
+            item.children && adminExpanded ? (
+              <div className="max-lg:block lg:hidden min-[1280px]:block ml-7 mt-1 space-y-1 border-l border-shell-border pl-2">
+                {item.children.map((child) => {
+                  const ChildIcon = child.icon
+                  return (
+                    <Link
+                      key={child.href}
+                      to={child.href}
+                      aria-current={child.active ? 'page' : undefined}
+                      className={`flex h-9 items-center gap-2 rounded-lg px-2 text-xs transition-colors ${child.active ? 'bg-shell-active text-shell-foreground' : 'text-shell-muted hover:bg-white/10 hover:text-shell-foreground'}`}
+                    >
+                      <ChildIcon className="h-4 w-4 flex-shrink-0" />
+                      <span>{child.label}</span>
+                    </Link>
+                  )
+                })}
+              </div>
+            ) : null
+          const itemContent = item.children ? (
+            <div className="flex items-center">
+              <div className="min-w-0 flex-1">{link}</div>
+              <button
+                type="button"
+                aria-label={item.label}
+                aria-expanded={adminExpanded}
+                onClick={() => setAdminExpanded((expanded) => !expanded)}
+                className="-ml-10 mr-1 rounded p-1 text-shell-muted hover:bg-white/10 hover:text-shell-foreground"
+              >
+                <ChevronDown
+                  className={`h-4 w-4 transition-transform ${adminExpanded ? 'rotate-180' : ''}`}
+                />
+              </button>
+            </div>
+          ) : (
+            link
+          )
           return (
             <div key={item.href} className="max-[1279px]:flex max-[1279px]:justify-center">
               <div className="min-[1280px]:hidden">
-                <Tooltip label={item.label}>{link}</Tooltip>
+                <Tooltip label={item.label}>
+                  <>{itemContent}{children}</>
+                </Tooltip>
               </div>
-              <div className="hidden min-[1280px]:block">{link}</div>
+              <div className="hidden min-[1280px]:block">
+                {itemContent}
+                {children}
+              </div>
             </div>
           )
         })}

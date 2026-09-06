@@ -333,10 +333,13 @@ describe('MCP tools regression suite', () => {
   test('passes the optional versionId through create_task', async () => {
     const fake = new InMemoryMcpApi()
     const project = fake.createProject('project-version')
+    const epic = await toolCreateTask(fake.api, { projectId: project.id, title: 'Releases', type: 'EPIC' })
+    const story = await toolCreateTask(fake.api, { projectId: project.id, title: 'v1', type: 'STORY', parentId: epic.id })
 
     await toolCreateTask(fake.api, {
       projectId: project.id,
       title: 'Versioned task',
+      parentId: story.id,
       versionId: 'release-1',
     })
 
@@ -344,6 +347,17 @@ describe('MCP tools regression suite', () => {
       method: 'POST',
       body: expect.objectContaining({ versionId: 'release-1' }),
     })
+  })
+
+  test('recusa TASK sem pai em projeto hierárquico antes de chamar a API', async () => {
+    const fake = new InMemoryMcpApi()
+    const project = fake.createProject('project-orphan')
+
+    await expect(toolCreateTask(fake.api, { projectId: project.id, title: 'Órfã', type: 'TASK' })).rejects.toThrow('requer parentId')
+    await expect(toolCreateTask(fake.api, { projectId: project.id, title: 'Órfão', type: 'BUG' })).rejects.toThrow('requer parentId')
+
+    const postCount = fake.calls.filter(call => call.method === 'POST' && call.path === `/projects/${project.id}/items`).length
+    expect(postCount).toBe(0)
   })
 
   test('rejects invalid hierarchy before creating an item in the API', async () => {
@@ -366,7 +380,9 @@ describe('MCP tools regression suite', () => {
   test('requires a valid EPIC parent for STORY items', async () => {
     const fake = new InMemoryMcpApi()
     const project = fake.createProject('project-story-parent')
-    const task = await toolCreateTask(fake.api, { projectId: project.id, title: 'Loose task' })
+    const epic = await toolCreateTask(fake.api, { projectId: project.id, title: 'Foundation', type: 'EPIC' })
+    const story = await toolCreateTask(fake.api, { projectId: project.id, title: 'Setup', type: 'STORY', parentId: epic.id })
+    const task = await toolCreateTask(fake.api, { projectId: project.id, title: 'Nested task', parentId: story.id })
 
     await expect(toolCreateTask(fake.api, {
       projectId: project.id,
@@ -379,7 +395,9 @@ describe('MCP tools regression suite', () => {
   test('returns actionable movement and completion errors', async () => {
     const fake = new InMemoryMcpApi()
     const project = fake.createProject('project-errors')
-    const task = await toolCreateTask(fake.api, { projectId: project.id, title: 'Deploy preview' })
+    const epic = await toolCreateTask(fake.api, { projectId: project.id, title: 'Deploy', type: 'EPIC' })
+    const story = await toolCreateTask(fake.api, { projectId: project.id, title: 'Preview', type: 'STORY', parentId: epic.id })
+    const task = await toolCreateTask(fake.api, { projectId: project.id, title: 'Deploy preview', parentId: story.id })
 
     await expect(toolMoveTask(fake.api, project.id, task.id, 'QA')).rejects.toThrow(
       'Colunas disponíveis: "Planejamento", "Em Implementação", "Validação", "Concluídas"'

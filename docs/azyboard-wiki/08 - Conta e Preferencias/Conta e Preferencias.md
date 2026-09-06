@@ -23,6 +23,9 @@ Selecione o avatar no cabeçalho e abra **Configurações da conta**. A página 
 - [[08 - Conta e Preferencias/Configurar Tema e Idioma|Configurar tema e idioma]]
   
   Alterne entre os modos claro e escuro, escolha o idioma e entenda como essas preferências são preservadas.
+- [[08 - Conta e Preferencias/Mostrar Projetos Ocultos|Mostrar projetos ocultos]]
+
+  Revele projetos ocultos na listagem com uma preferência que vale apenas para a sessão atual.
 
 ## API Keys
 

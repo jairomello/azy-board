@@ -53,6 +53,19 @@ Cadastre um servidor chamado `azy-board` no cliente. Exemplo com execução pelo
 
 O local exato do arquivo de configuração varia conforme o cliente. Preserve a estrutura de comando, argumentos e ambiente exigida por ele.
 
+## Skill oficial
+
+O repositório mantém a skill oficial e agnóstica de cliente em
+`skills/azyboard/SKILL.md`. Carregue esse arquivo no Claude Code, OpenCode,
+Codex ou outro cliente compatível para obter os playbooks, regras operacionais
+e comandos semânticos do Azy Board. Os arquivos em `skills/azyboard/commands/`
+podem ser copiados para a convenção de slash commands do cliente; quando isso
+não for suportado, use os mesmos comandos como prompts em linguagem natural.
+
+Não copie API Keys para a skill ou para arquivos versionados. A configuração
+deve continuar usando `EASYBOARD_API_KEY` e `EASYBOARD_URL` no ambiente ou no
+cofre de segredos do cliente.
+
 ## Usar a versão compilada
 
 Em ambientes estáveis, compile o servidor e aponte o cliente para `apps/mcp/dist/index.js`. Isso evita recompilação a cada inicialização.
@@ -113,4 +126,3 @@ O processo usa o SDK do Model Context Protocol com `StdioServerTransport`. Na in
 Cada chamada MCP é convertida em uma requisição à API sob `/api`, com `Authorization: Bearer {chave}` e conteúdo JSON. Respostas bem-sucedidas retornam ao cliente como conteúdo textual JSON; falhas são devolvidas como resultado MCP com `isError: true`.
 
 </details>
-

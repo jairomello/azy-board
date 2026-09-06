@@ -41,6 +41,11 @@
     --status-review: #8b5cf6;
     --status-done: #10b981;
     --status-blocked: #f06464;
+    --dashboard-series-scope: #635bff;
+    --dashboard-series-done: #10b981;
+    --dashboard-series-warning: #f59e0b;
+    --dashboard-series-danger: #ef4444;
+    --dashboard-series-neutral: #94a3b8;
   }
 
   :root[data-light-shell-theme="ocean"] {
@@ -121,6 +126,11 @@
     --status-review: #ae81ff;
     --status-done: #35d49a;
     --status-blocked: #ff7979;
+    --dashboard-series-scope: #9b8cff;
+    --dashboard-series-done: #35d49a;
+    --dashboard-series-warning: #fbbf24;
+    --dashboard-series-danger: #ff8585;
+    --dashboard-series-neutral: #8995a7;
   }
 }
 
@@ -152,6 +162,12 @@
   padding-bottom: 0.55rem;
   gap: 0.35rem;
 }
+
+.dashboard-chart-line { fill: none; stroke: hsl(var(--primary)); stroke-width: 2.5; }
+.dashboard-chart-line--done { fill: none; stroke: var(--status-done); stroke-width: 2.5; }
+.dashboard-chart { font-size: 11px; }
+.dashboard-chart .recharts-cartesian-axis-tick-value { fill: hsl(var(--muted-foreground)); }
+.dashboard-chart .recharts-legend-item-text { color: hsl(var(--foreground)); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

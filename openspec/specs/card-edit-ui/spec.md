@@ -21,12 +21,20 @@ O sistema SHALL permitir editar o título do card diretamente no board ao dar du
 
 ---
 
-### Requirement: Modal completa de edição ao duplo clique no corpo do card
-O sistema SHALL abrir uma modal com todos os campos do card ao dar duplo clique em qualquer área do card que não seja o título.
+### Requirement: Modal de edição de card organizada em accordions
+O sistema SHALL apresentar campos do card, descrição, subtasks, checklists, Histórico de alterações e Diário de trabalho em accordions independentes, preservando edição, criação, abertura de filhos e salvamento. A modal SHALL iniciar com a primeira seção aberta e as demais fechadas, sem remover título, descrição rich text (Tiptap), prioridade, responsável, story pai, tags, pontos, data de início ou data de fim.
 
-#### Scenario: Abrir modal completa
-- **WHEN** usuário dá duplo clique no corpo do card (exceto título)
-- **THEN** modal abre exibindo todos os campos: título, descrição rich text (Tiptap), prioridade, responsável, story pai, tags, pontos, data de início, data de fim
+#### Scenario: Seções independentes
+- **WHEN** usuário abre a modal de Task, Bug ou Subtask
+- **THEN** Histórico de alterações e Diário de trabalho aparecem como seções distintas, cada uma com conteúdo, contagem e ação próprios
+
+#### Scenario: Estado inicial
+- **WHEN** modal é aberta
+- **THEN** primeira seção permanece aberta e as demais fechadas conforme o padrão atual
+
+#### Scenario: Contagens dos accordions
+- **WHEN** card possui eventos automáticos ou registros manuais
+- **THEN** cada accordion mostra somente sua própria contagem no resumo, sem usar `Sem conteúdo adicional` quando houver dados
 
 #### Scenario: Salvar edições pela modal
 - **WHEN** usuário altera campos e clica em "Salvar"
@@ -34,7 +42,7 @@ O sistema SHALL abrir uma modal com todos os campos do card ao dar duplo clique 
 
 #### Scenario: Fechar modal sem salvar
 - **WHEN** usuário clica em "Cancelar" ou pressiona Escape
-- **THEN** modal fecha sem persistir alterações
+- **THEN** modal fecha sem persistir alterações, inclusive alterações feitas em seções recolhidas
 
 #### Scenario: Criar subtask pela modal
 - **WHEN** usuário clica em "Adicionar subtask" dentro da modal
@@ -128,18 +136,38 @@ O sistema SHALL exibir um botão "Histórico" (com ícone de relógio) no rodap�
 - **WHEN** usuário clica no botão "Histórico"
 - **THEN** `ActivityLogModal` abre sobre a `CardModal` com z-index superior
 
----
-
 ### Requirement: Seção de filhos diretos no rodapé da modal
-O sistema SHALL exibir, após o botão "Histórico", uma seção "Subtasks" listando os filhos diretos do card em grid de até 2 colunas.
+O sistema SHALL exibir, após o botão "Histórico", uma seção "Subtasks" listando os filhos diretos do card em grid de até 2 colunas. A seção SHALL estar em accordion próprio, separado do accordion de Histórico/Atividades, com ações e resumo de filhos independentes.
 
 #### Scenario: Seção Subtasks no rodapé
 - **WHEN** `CardModal` é aberta para task com filhos diretos
-- **THEN** seção "Subtasks" ocupa o final da modal (após todos os campos e o botão Histórico), com scroll interno se necessário
+- **THEN** seção "Subtasks" ocupa o final da modal em accordion separado, após todos os campos e o botão Histórico, com scroll interno se necessário
 
 #### Scenario: Seção Subtasks ausente para tasks folha
-- **WHEN** `CardModal` é aberta para task sem filhos
+- **WHEN** `CardModal` é aberta para task sem filhos diretos
 - **THEN** seção "Subtasks" exibe mensagem discreta "Nenhuma subtask" sem expandir a modal desnecessariamente
+
+#### Scenario: Histórico não é misturado aos filhos
+- **WHEN** usuário expande ou recolhe Histórico
+- **THEN** a seção Subtasks mantém seu próprio estado e não exibe logs, horas ou atividades
+
+### Requirement: Ações de histórico e diário não se misturam
+O sistema SHALL manter a ação de abrir auditoria separada da ação de registrar trabalho.
+
+#### Scenario: Abrir auditoria
+- **WHEN** usuário aciona Histórico de alterações
+- **THEN** sub-modal de auditoria é aberta e não apresenta campos de horas ou formulário de diário
+
+#### Scenario: Registrar trabalho
+- **WHEN** usuário aciona Registrar trabalho no Diário
+- **THEN** formulário solicita descrição e duração `H:MM`, com autor somente leitura/preenchido pelo contexto
+
+### Requirement: Formatação de conteúdo
+O sistema SHALL renderizar descrições de auditoria e diário de forma legível, preservando texto e quebras relevantes sem exibir tags HTML cruas.
+
+#### Scenario: Descrição rich text no histórico
+- **WHEN** evento contém diferença originada no editor rich text
+- **THEN** UI mostra texto normalizado ou diff seguro, sem literalizar ou executar tags HTML
 
 ---
 

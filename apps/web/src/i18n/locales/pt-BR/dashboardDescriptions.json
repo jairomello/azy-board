@@ -1,0 +1,12 @@
+{
+  "wipByItems": "Por quantidade de itens",
+  "wipByPoints": "Por pontos",
+  "descriptionProgressScope": "Compara o que foi concluído com o escopo total, por itens e pontos.",
+  "descriptionWip": "Mostra a distribuição atual do trabalho em progresso por status.",
+  "descriptionBlocked": "Mostra quantos itens estão bloqueados e quais acumulam mais dias.",
+  "descriptionOverdue": "Compara os itens e pontos atrasados com o restante do escopo.",
+  "descriptionBurnup": "Mostra como o escopo e os itens concluídos evoluíram ao longo do tempo.",
+  "descriptionAging": "Lista os itens WIP mais antigos desde o início do episódio atual.",
+  "descriptionTeamLoad": "Mostra a quantidade de trabalho em progresso por responsável.",
+  "descriptionHours": "Soma as horas informadas em logs manuais, agrupadas por autor."
+}

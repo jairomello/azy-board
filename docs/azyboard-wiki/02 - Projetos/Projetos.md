@@ -29,6 +29,13 @@ Um projeto reúne a estrutura de trabalho, o Board, os participantes, as configu
   - Colunas e status base.
   - Elementos que começam vazios.
 
+### Visibilidade
+
+- [[02 - Projetos/Visibilidade de um Projeto|Visibilidade de um projeto]]
+  - Projetos restritos e ocultos.
+  - Quem encontra cada projeto na listagem.
+  - Onde definir a visibilidade.
+
 ### Organização
 
 - Gerente geral.

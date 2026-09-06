@@ -8,6 +8,7 @@ import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import type { RequestContext } from '@azy-board/types'
 import { validateSprintDates, validateSprintTransition } from '../services/sprints'
+import { closeSprintCycle, createSprintCycle } from '../services/analytics'
 
 export const sprintsRouter = new Hono<HonoEnv>()
 sprintsRouter.use('*', authMiddleware)
@@ -61,8 +62,14 @@ async function transition(c: Context<HonoEnv>, action: 'open' | 'close') {
   const error = validateSprintTransition(requested.status, action)
   if (error) return c.json({ error }, 409)
   await db.transaction(async (tx) => {
-    if (action === 'open') await tx.update(sprints).set({ status: 'PROPOSED' }).where(and(scope(ctx, projectId), eq(sprints.status, 'OPEN')))
+    if (action === 'open') {
+      const open = await tx.query.sprints.findFirst({ where: (s) => and(scope(ctx, projectId), eq(s.status, 'OPEN')) })
+      if (open) await closeSprintCycle(tx, ctx.tenantId, projectId, open.id, 'SUSPENDED')
+      await tx.update(sprints).set({ status: 'PROPOSED' }).where(and(scope(ctx, projectId), eq(sprints.status, 'OPEN')))
+    }
     await tx.update(sprints).set({ status: action === 'open' ? 'OPEN' : 'CLOSED' }).where(scope(ctx, projectId, sprintId))
+    if (action === 'close') await closeSprintCycle(tx, ctx.tenantId, projectId, sprintId, 'CLOSED')
+    else await createSprintCycle(tx, ctx.tenantId, projectId, sprintId, 'OPENED')
   })
   const updated = await db.query.sprints.findFirst({ where: (s) => scope(ctx, projectId, sprintId) })
   return c.json({ sprint: updated })

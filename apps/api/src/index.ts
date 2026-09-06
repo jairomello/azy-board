@@ -23,6 +23,9 @@ import { db } from './db/index'
 import { and, eq } from 'drizzle-orm'
 import { serve } from 'bun'
 import { agentResponseMiddleware } from './middleware/agentResponse'
+import { dashboardRouter } from './routes/dashboard'
+import { assertAnalyticsCutoverReady } from './services/analytics'
+import { assistantRouter } from './routes/assistant'
 
 export const app = new Hono()
 
@@ -56,6 +59,8 @@ api.route('/projects/:projectId/api-keys', apiKeysRouter)
 api.route('/api-keys', userApiKeysRouter)
 api.route('/projects/:projectId/versions', versionsRouter)
 api.route('/users', usersRouter)
+api.route('/projects/:projectId/dashboard', dashboardRouter)
+api.route('/assistant', assistantRouter)
 
 // [DB-SWAP] Para servir uploads em produção com S3, remover esta rota estática
 // e usar URLs pré-assinadas do S3 diretamente
@@ -76,7 +81,8 @@ app.use('/uploads/*', authMiddleware, async (c) => {
   return new Response(file)
 })
 
-export function startServer() {
+export async function startServer() {
+  await assertAnalyticsCutoverReady()
   const PORT = parseInt(process.env.PORT ?? '3000')
 
   // WebSocket server nativo do Bun — sem dependências extras

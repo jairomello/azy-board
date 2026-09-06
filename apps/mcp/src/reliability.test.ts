@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { makeApiCall } from './index.js'
 import { toolBatch, toolListTasks } from './tools.js'
+import { validateToolArguments } from './validation.js'
 
 describe('MCP reliability contracts', () => {
   test('preserva paginação e permite chamadas concorrentes', async () => {
@@ -33,6 +34,23 @@ describe('MCP reliability contracts', () => {
     const api = async () => { calls++; return null }
     await expect(toolBatch(api, { projectId: 'p', operations: Array.from({ length: 51 }, () => ({ tool: 'create_task', args: {} })) })).rejects.toThrow()
     expect(calls).toBe(0)
+  })
+
+  test('rejeita hierarquia de lote promovida, órfã ou fora de ordem', () => {
+    expect(() => validateToolArguments('batch', { projectId: 'p', operations: [
+      { tool: 'create_task', args: { ref: 's1', title: 'Story órfã', type: 'STORY', parentRef: null, moduleName: null, assignToCurrentUser: false } },
+    ] })).toThrow('STORY deve ter um EPIC')
+    expect(() => validateToolArguments('batch', { projectId: 'p', operations: [
+      { tool: 'create_task', args: { ref: 'e1', title: 'Epic', type: 'EPIC', parentRef: null, moduleName: 'Geral', assignToCurrentUser: false } },
+      { tool: 'create_task', args: { ref: 't1', title: 'Task sob epic', type: 'TASK', parentRef: 'e1', moduleName: null, assignToCurrentUser: true } },
+    ] })).toThrow('TASK deve ter uma STORY')
+  })
+
+  test('valida atualizações genéricas filtradas e operações de data', () => {
+    const filters = { itemIds: null, types: ['TASK'], statuses: null, sprint: 'CURRENT', version: null, module: null, assignee: null, parent: null, column: null, tag: null, titleContains: null, onlyLeaves: null, matchAll: false }
+    expect(() => validateToolArguments('update_items', { projectId: 'p', filters, changes: [{ field: 'dueDate', operation: 'OFFSET_DAYS', value: '1' }] })).not.toThrow()
+    expect(() => validateToolArguments('update_items', { projectId: 'p', filters: { ...filters, types: null, sprint: null }, changes: [{ field: 'title', operation: 'SET', value: 'Novo' }] })).toThrow('Informe filtros')
+    expect(() => validateToolArguments('update_items', { projectId: 'p', filters, changes: [{ field: 'title', operation: 'TODAY', value: null }] })).toThrow('só pode ser usado em datas')
   })
 
   test('não duplica chamadas quando o cliente reutiliza a resposta idempotente', async () => {

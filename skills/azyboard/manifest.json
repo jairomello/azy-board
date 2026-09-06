@@ -1,0 +1,26 @@
+{
+  "name": "azyboard",
+  "version": "1.0.0",
+  "entrypoint": "SKILL.md",
+  "toolCatalogSource": "apps/mcp/src/registry.ts",
+  "policySource": "apps/mcp/src/policies.ts",
+  "commands": [
+    "status",
+    "plan",
+    "start",
+    "update",
+    "complete",
+    "review"
+  ],
+  "references": [
+    "references/mcp-operations.md",
+    "references/setup-and-security.md",
+    "references/playbooks.md"
+  ],
+  "distribution": {
+    "claudeCode": "Copy SKILL.md and commands/*.md into the client's skill/commands locations.",
+    "openCode": "Register SKILL.md as a project skill and map commands/*.md to the client's command convention.",
+    "codex": "Load SKILL.md as project instructions and expose commands/*.md as user prompts where supported.",
+    "other": "Load SKILL.md and invoke the semantic commands in natural language."
+  }
+}

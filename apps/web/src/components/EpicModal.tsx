@@ -1,5 +1,10 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { ProjectVersion } from './ItemModal'
+import { RichTextEditor } from './RichTextEditor'
+import { AccordionSection } from './AccordionSection'
+import { AccordionToolbar } from './AccordionToolbar'
+import { NeutralSummary } from './AccordionSummary'
 
 interface Module { id: string; name: string }
 
@@ -20,11 +25,19 @@ interface Props {
 }
 
 export function EpicModal({ modules, epic, projectVersions = [], onSave, onClose }: Props) {
+  const { t } = useTranslation()
   const [title, setTitle] = useState(epic?.title ?? '')
   const [moduleId, setModuleId] = useState(epic?.moduleId ?? modules[0]?.id ?? '')
   const [description, setDescription] = useState(epic?.description ?? '')
   const [versionId, setVersionId] = useState(epic?.versionId ?? '')
   const [loading, setLoading] = useState(false)
+  const sectionIds = ['epic-fields', 'epic-description']
+  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['epic-fields']))
+  const toggleSection = (id: string) => setOpenSections(previous => {
+    const next = new Set(previous)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
 
   async function handleSave() {
     if (!title.trim()) return
@@ -52,6 +65,8 @@ export function EpicModal({ modules, epic, projectVersions = [], onSave, onClose
         </h2>
 
         <div className="space-y-3">
+          <AccordionToolbar sectionIds={sectionIds} openIds={openSections} onChange={setOpenSections} />
+          <AccordionSection id="epic-fields" title={t('accordion.epicFields')} summary={<NeutralSummary />} isOpen={openSections.has('epic-fields')} onToggle={toggleSection}>
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Título</label>
             <input value={title} onChange={e => setTitle(e.target.value)}
@@ -77,12 +92,20 @@ export function EpicModal({ modules, epic, projectVersions = [], onSave, onClose
               </select>
             </div>
           )}
+          </AccordionSection>
 
+          <AccordionSection id="epic-description" title={t('accordion.description')} summary={description ? t('accordion.contentPresent') : <NeutralSummary />} isOpen={openSections.has('epic-description')} onToggle={toggleSection}>
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1 block">Descrição</label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
-              className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary resize-none" />
+            <RichTextEditor
+              content={description}
+              onChange={setDescription}
+              placeholder={t('richText.epicPlaceholder')}
+              fieldLabel={t('richText.epicField')}
+              minHeight="100px"
+            />
           </div>
+          </AccordionSection>
         </div>
 
         <div className="flex gap-2 pt-2">

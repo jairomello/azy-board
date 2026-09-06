@@ -6,15 +6,15 @@ order: 6
 
 # Histórico de Atividades e Tempo Trabalhado
 
-O histórico registra mudanças automáticas e relatos manuais de execução. Ele permite reconstruir o que aconteceu no item e consolidar o tempo informado pela equipe.
+O item possui dois registros independentes: o **Histórico de alterações** reconstrói mudanças automáticas e o **Diário de trabalho** consolida anotações e tempo informado pela equipe.
 
 ## Onde encontrar
 
 1. Abra uma task ou bug existente.
-2. Selecione **Histórico**.
-3. Uma submodal é aberta sobre o item.
+2. Abra o accordion **Histórico** para consultar alterações ou **Diário de trabalho** para lançar horas e anotações.
+3. A ação escolhida abre sua própria submodal sobre o item.
 
-Se existirem registros manuais com duração, o total trabalhado aparece ao lado da ação de histórico na modal principal.
+As duas seções exibem contagens independentes. Se existirem registros no diário com duração, o total trabalhado aparece na seção do diário.
 
 ## Logs automáticos
 
@@ -27,17 +27,17 @@ O sistema cria registros para mudanças relevantes, como:
 - Mudança de status.
 - Movimentação entre colunas.
 
-Um log automático mostra o autor da ação, data, hora e descrição. Ele não pode ser editado.
+Um log automático mostra o executor, origem (humano, agente ou sistema), data, hora e descrição. Ele não pode ser editado.
 
-## Registrar uma atividade manual
+## Registrar trabalho no diário
 
-1. Abra o histórico.
-2. Selecione **Registrar atividade**.
+1. Abra o diário de trabalho.
+2. Selecione **Registrar trabalho**.
 3. Descreva o trabalho realizado.
-4. Informe a duração em minutos, se aplicável.
+4. Informe a duração no formato `H:MM`, por exemplo `2:00`, `8:00`, `29:00` ou `0:50`.
 5. Selecione **Salvar**.
 
-A duração é opcional. Registros sem duração continuam fazendo parte do histórico, mas não contribuem para o total trabalhado.
+A duração pode ser deixada vazia quando o registro for apenas uma anotação. Registros sem duração continuam no diário, mas não contribuem para o total trabalhado.
 
 ## Escrever um bom registro
 
@@ -57,18 +57,18 @@ Trabalhei no card.
 
 1. Localize um registro criado por você.
 2. Selecione a ação de edição.
-3. Altere descrição ou duração.
+3. Altere descrição ou duração no formato `H:MM`.
 4. Salve.
 
 Administradores podem editar registros manuais de qualquer membro. Membros não podem editar registros de outras pessoas.
 
 ## Total trabalhado
 
-O total soma as durações dos logs manuais:
+O total soma as durações dos registros do diário:
 
-- Menos de uma hora: `45min trabalhadas`.
-- Horas inteiras: `2h trabalhadas`.
-- Horas e minutos: `3h 30min trabalhadas`.
+- Menos de uma hora: `0:45`.
+- Horas inteiras: `2:00`.
+- Horas e minutos: `3:30`.
 
 Quando nenhuma duração foi registrada, o total não é exibido.
 
@@ -82,10 +82,10 @@ Selecione o controle de fechamento, clique fora ou pressione `Escape`. A modal d
 
 ## Regras e comportamentos
 
-- Logs automáticos não são editáveis.
-- Descrição é obrigatória em logs manuais.
-- Duração é opcional e registrada em minutos.
-- O total considera somente registros manuais com duração.
+- Eventos automáticos não são editáveis nem excluíveis.
+- Descrição é obrigatória nos registros do diário.
+- Duração usa entrada `H:MM` e é registrada internamente em minutos.
+- O total considera somente registros do diário com duração.
 - Histórico acompanha o item durante arquivamento e restauração.
 - Excluir o item remove seu histórico.
 
@@ -93,11 +93,11 @@ Selecione o controle de fechamento, clique fora ou pressione `Escape`. A modal d
 
 | Ação | Admin | Membro | Visualizador |
 |---|---:|---:|---:|
-| Consultar histórico | Sim | Sim | Sim |
-| Registrar atividade | Sim | Sim | Não |
-| Editar registro próprio | Sim | Sim | Não |
-| Editar registro de outro | Sim | Não | Não |
-| Editar log automático | Não | Não | Não |
+| Consultar histórico e diário | Sim | Sim | Sim |
+| Registrar trabalho | Sim | Sim | Não |
+| Editar/excluir registro próprio | Sim | Sim | Não |
+| Editar/excluir registro de outro | Sim | Não | Não |
+| Editar/excluir evento automático | Não | Não | Não |
 
 ## Funcionalidades relacionadas
 
@@ -110,15 +110,14 @@ Selecione o controle de fechamento, clique fora ou pressione `Escape`. A modal d
 
 ### Tipos de log
 
-Cada registro possui tipo `auto` ou `manual`, autor opcional, texto, duração opcional e timestamps. Logs automáticos são produzidos pela lógica de atualização e movimentação.
+Cada registro possui tipo `auto` ou `manual`, autor, origem, identidade do executor, texto, duração opcional e timestamps. Eventos automáticos são produzidos pela lógica de atualização e movimentação; registros manuais pertencem ao diário.
 
 ### Autorização
 
-A edição valida se o log é manual e se o solicitante é seu autor ou `Admin`. A leitura exige acesso de visualização ao projeto.
+A edição e exclusão validam se o registro é manual e se o solicitante é seu autor ou `Admin`. A leitura exige acesso de visualização ao projeto.
 
 ### Paginação e total
 
-A consulta retorna registros em ordem decrescente com total e página. O frontend soma `durationMin` dos logs manuais para apresentar o tempo trabalhado.
+A auditoria e o diário possuem consultas separadas, ambas em ordem decrescente com total e página. O diário também retorna a soma de `durationMin` para apresentar o tempo trabalhado.
 
 </details>
-

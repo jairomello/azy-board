@@ -17,6 +17,10 @@ Uma história pode ser criada:
 
 Para editar, use a ação no cabeçalho da lane de história, selecione seu card quando o modo de cards estiver ativo ou acesse a história pela hierarquia.
 
+## Organizar a modal
+
+Narrativa, critérios de aceitação e notas ficam em accordions independentes. A primeira seção começa aberta; **Expandir tudo** e **Recolher tudo** controlam todas as seções sem descartar alterações ou formatação rich text.
+
 ## Campos da história
 
 | Campo | Obrigatório | Finalidade |

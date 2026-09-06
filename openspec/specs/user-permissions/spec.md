@@ -16,7 +16,7 @@ O sistema SHALL associar cada usuário a exatamente um grupo global entre `TEAM_
 - **THEN** Root é reconhecido como nível superior a Admin, Gerente e Membro de Equipe
 
 ### Requirement: Escopo de projetos por grupo
-O sistema SHALL permitir que Membros de Equipe e Gerentes visualizem somente projetos com membership ativa, SHALL permitir que Admins visualizem todos os projetos do tenant ativo e SHALL conceder ao Root o mesmo escopo operacional de projetos do Admin nesta versão. Agentes autenticados por API Key SHALL herdar exatamente esse escopo do Owner, limitado adicionalmente pelos escopos da chave.
+O sistema SHALL permitir que Membros de Equipe e Gerentes visualizem somente projetos com membership ativa, SHALL permitir que Admins visualizem os projetos do tenant ativo **exceto** os projetos restritos nos quais não possuam membership nem sejam indicados como Gerente Geral, e SHALL conceder ao Root o mesmo escopo operacional de projetos do Admin nesta versão. Agentes autenticados por API Key SHALL herdar exatamente esse escopo do Owner, limitado adicionalmente pelos escopos da chave. Projetos ocultos SHALL ser excluídos do escopo de qualquer grupo, salvo quando a requisição informar `includeHidden=true`.
 
 #### Scenario: Membro lista projetos
 - **WHEN** um Membro de Equipe ou seu agente MCP solicita a lista de projetos
@@ -30,8 +30,20 @@ O sistema SHALL permitir que Membros de Equipe e Gerentes visualizem somente pro
 - **WHEN** um Admin, Root ou seu agente MCP solicita a lista de projetos
 - **THEN** o sistema retorna somente projetos do tenant ativo permitidos pelo escopo da API Key, quando aplicável
 
+#### Scenario: Admin não lista projeto restrito sem vínculo
+- **WHEN** um Admin, Root ou seu agente MCP solicita a lista de projetos e existe projeto restrito no tenant sem membership e sem gerência do Owner
+- **THEN** o sistema não retorna esse projeto e não revela sua existência
+
+#### Scenario: Admin lista projeto restrito do qual participa
+- **WHEN** um Admin, Root ou seu agente MCP possui membership em um projeto restrito
+- **THEN** o sistema retorna esse projeto na listagem
+
+#### Scenario: Nenhum grupo lista projetos ocultos por padrão
+- **WHEN** qualquer grupo solicita a lista de projetos sem `includeHidden`
+- **THEN** o sistema não retorna os projetos marcados como ocultos
+
 ### Requirement: Permissões dentro do projeto
-O sistema SHALL permitir que Membros de Equipe executem as operações de conteúdo autorizadas pelo projeto, mas SHALL negar o módulo Administração e as configurações do projeto. Gerentes SHALL poder criar projetos e administrar suas configurações, mas SHALL não acessar o módulo Administração. Admins e Root SHALL poder operar qualquer projeto permitido pelo tenant. Agentes MCP SHALL obedecer exatamente às mesmas regras do Owner.
+O sistema SHALL permitir que Membros de Equipe executem as operações de conteúdo autorizadas pelo projeto, mas SHALL negar o módulo Administração e as configurações do projeto. Gerentes SHALL poder criar projetos e administrar suas configurações, mas SHALL não acessar o módulo Administração. Admins e Root SHALL poder operar projetos permitidos pelo tenant, mas projetos restritos SHALL exigir membership ativa ou indicação como Gerente Geral, sem bypass por grupo global. Agentes MCP SHALL obedecer exatamente às mesmas regras do Owner.
 
 #### Scenario: Membro acessa conteúdo do projeto
 - **WHEN** um Membro de Equipe usa a API ou seu agente MCP para operar conteúdo em projeto onde é membro
@@ -48,6 +60,10 @@ O sistema SHALL permitir que Membros de Equipe executem as operações de conte�
 #### Scenario: Gerente tenta acessar Administração
 - **WHEN** um Gerente ou seu agente MCP tenta acessar o módulo Administração
 - **THEN** o sistema retorna 403
+
+#### Scenario: Admin sem associação não acessa projeto restrito
+- **WHEN** Admin ou Root tenta operar projeto restrito sem membership e sem ser Gerente Geral
+- **THEN** o sistema retorna 404 e não expõe nem altera dados do projeto
 
 ### Requirement: Administração de usuários por Admin
 O sistema SHALL exibir um grupo de menu `Admin` e disponibilizar nele a listagem e o cadastro de usuários do tenant para Admin e Root. Admin SHALL poder definir os grupos `TEAM_MEMBER`, `MANAGER` e `ADMIN`, mas SHALL não poder atribuir `ROOT`.

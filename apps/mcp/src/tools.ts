@@ -6,10 +6,38 @@
 export type ApiCall = (path: string, method?: string, body?: unknown) => Promise<unknown>
 
 export type BatchOperation = { tool: 'create_task' | 'create_item'; args: Record<string, unknown> }
+export type ProjectStructureOperation = BatchOperation
 
 export async function toolBatch(api: ApiCall, args: { projectId: string; operations: BatchOperation[]; atomic?: boolean; idempotencyKey?: string; agentRunId?: string }): Promise<unknown> {
   if (!Array.isArray(args.operations) || args.operations.length < 1 || args.operations.length > 50) throw new Error('operations deve conter entre 1 e 50 entradas')
   return api(`/projects/${args.projectId}/batch`, 'POST', args)
+}
+
+export type ItemFieldChange = {
+  field: string
+  operation: 'SET' | 'CLEAR' | 'TODAY' | 'OFFSET_DAYS' | 'COPY_CREATED_DATE'
+  value: string | null
+}
+
+export type ItemUpdateFilters = {
+  itemIds: string[] | null
+  types: string[] | null
+  statuses: string[] | null
+  sprint: string | null
+  version: string | null
+  module: string | null
+  assignee: string | null
+  parent: string | null
+  column: string | null
+  tag: string | null
+  titleContains: string | null
+  onlyLeaves: boolean | null
+  matchAll: boolean
+}
+
+export async function toolUpdateItems(api: ApiCall, args: { projectId: string; filters: ItemUpdateFilters; changes: ItemFieldChange[] }, agentRunId?: string): Promise<unknown> {
+  const { projectId, ...body } = args
+  return api(`/projects/${projectId}/batch/items/update`, 'POST', { ...body, agentRunId })
 }
 
 // ─── Shapes de resposta usadas internamente ────────────────────────────────
@@ -58,14 +86,28 @@ export async function toolGetShadowMarkdown(api: ApiCall, projectId: string): Pr
 
 export async function toolCreateProject(api: ApiCall, args: { name: string; description?: string; boardMode?: 'HIERARCHICAL' | 'SIMPLE'; managerUserId?: string }): Promise<ProjectSummary> {
   if (!args.name?.trim()) throw new Error('name é obrigatório')
-  return api('/projects', 'POST', { ...args, name: args.name.trim() }) as Promise<ProjectSummary>
+  const boardMode = typeof args.boardMode === 'string'
+    ? /^(default|padr[aã]o)$/i.test(args.boardMode.trim()) ? undefined : /^(simple|simples)$/i.test(args.boardMode) ? 'SIMPLE' : /^(hierarchical|hierarquico|hierárquico)$/i.test(args.boardMode) ? 'HIERARCHICAL' : args.boardMode.toUpperCase()
+    : args.boardMode
+  return api('/projects', 'POST', { ...args, boardMode, name: args.name.trim() }) as Promise<ProjectSummary>
+}
+
+export async function toolCreateProjectStructure(api: ApiCall, args: { name: string; description?: string; boardMode?: 'HIERARCHICAL' | 'SIMPLE'; operations: ProjectStructureOperation[]; managerUserId?: string }): Promise<unknown> {
+  if (!args.name?.trim()) throw new Error('name é obrigatório')
+  if (!Array.isArray(args.operations) || args.operations.length < 1 || args.operations.length > 50) throw new Error('operations deve conter entre 1 e 50 entradas')
+  const project = await toolCreateProject(api, { name: args.name, description: args.description, boardMode: args.boardMode, managerUserId: args.managerUserId })
+  const batch = await toolBatch(api, { projectId: project.id, operations: args.operations, atomic: true })
+  return { project, batch }
 }
 
 export async function toolUpdateProject(api: ApiCall, projectId: string, changes: Record<string, unknown>): Promise<ProjectSummary> {
   return api(`/projects/${projectId}`, 'PATCH', changes) as Promise<ProjectSummary>
 }
 
-export async function toolUpdateItem(api: ApiCall, projectId: string, itemId: string, changes: Record<string, unknown>): Promise<unknown> {
+export async function toolUpdateItem(api: ApiCall, projectId: string, itemId: string, changes: Record<string, unknown> | ItemFieldChange[], agentRunId?: string): Promise<unknown> {
+  if (Array.isArray(changes)) {
+    return toolUpdateItems(api, { projectId, filters: { itemIds: [itemId], types: null, statuses: null, sprint: null, version: null, module: null, assignee: null, parent: null, column: null, tag: null, titleContains: null, onlyLeaves: null, matchAll: false }, changes }, agentRunId)
+  }
   return api(`/projects/${projectId}/items/${itemId}`, 'PATCH', changes)
 }
 
@@ -314,6 +356,14 @@ export async function toolCreateTask(
     return api(`/projects/${projectId}/items`, 'POST', { type, ...simpleTaskData }) as Promise<Item>
   }
 
+  // [HIERARQUIA] Projetos hierárquicos não aceitam TASK/BUG sem pai — o card ficaria invisível no board.
+  if ((type === 'TASK' || type === 'BUG') && !taskData.parentId) {
+    throw new Error(
+      `Hierarquia inválida: ${type} requer parentId apontando para uma STORY, TASK ou BUG.\n` +
+      `Use list_tasks com type=STORY para obter as histórias e crie a ${type} sob uma delas.`
+    )
+  }
+
   // Pré-validação de hierarquia — fornece erro acionável antes de bater na API
   if (taskData.parentId) {
     let parent: Item
@@ -336,8 +386,7 @@ export async function toolCreateTask(
         `Hierarquia inválida: ${type} não pode ser filho direto de EPIC ("${parent.title ?? taskData.parentId}").\n\n` +
         `Fluxo correto:\n` +
         `  1. Crie uma STORY com parentId="${taskData.parentId}"\n` +
-        `  2. Crie a ${type} com parentId=<ID da STORY criada>\n\n` +
-        `Ou crie uma ${type} órfã sem parentId — ela vai direto para o Backlog.`
+        `  2. Crie a ${type} com parentId=<ID da STORY criada>`
       )
     }
   }

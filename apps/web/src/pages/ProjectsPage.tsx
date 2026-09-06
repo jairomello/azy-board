@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
@@ -6,21 +6,26 @@ import { api } from '../lib/api'
 import { ArrowUpRight, Edit3, FolderKanban, Plus, Trash2 } from 'lucide-react'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
-import type { BoardMode } from '@azy-board/types'
+import type { BoardMode, ProjectVisibility } from '@azy-board/types'
 import { canCreateProject } from '../permissions'
+import { VisibilityToggles } from '../components/VisibilityToggles'
+import { ProjectVisibilityBadges } from '../components/ProjectVisibilityBadges'
+import { onAssistantMutation } from '../lib/dataEvents'
 
 type ProjectRole = 'ADMIN' | 'MEMBER' | 'VIEWER'
-interface Project { id: string; name: string; description: string | null; role: ProjectRole; boardMode: BoardMode }
+interface Project extends ProjectVisibility { id: string; name: string; description: string | null; role: ProjectRole; boardMode: BoardMode }
 
 export default function ProjectsPage() {
   const { t } = useTranslation()
-  const { user } = useAuth()
+  const { user, showHiddenProjects } = useAuth()
   const { toast } = useToast()
   const navigate = useNavigate()
   const [projects, setProjects] = useState<Project[]>([])
   const [showNew, setShowNew] = useState(false)
   const [newName, setNewName] = useState('')
   const [newBoardMode, setNewBoardMode] = useState<BoardMode>('HIERARCHICAL')
+  const [newIsRestricted, setNewIsRestricted] = useState(false)
+  const [newIsHidden, setNewIsHidden] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [editingName, setEditingName] = useState('')
   const [editError, setEditError] = useState('')
@@ -29,18 +34,45 @@ export default function ProjectsPage() {
   const [deleting, setDeleting] = useState(false)
   const [loading, setLoading] = useState(true)
 
+  // Projetos ocultos só entram na listagem quando a preferência da sessão está ligada.
+  const loadProjects = useCallback(
+    () => api.get<Project[]>(showHiddenProjects ? '/projects?includeHidden=true' : '/projects'),
+    [showHiddenProjects],
+  )
+
   useEffect(() => {
-    api.get<Project[]>('/projects')
+    loadProjects()
       .then(setProjects)
       .finally(() => setLoading(false))
-  }, [])
+  }, [loadProjects])
+
+  useEffect(() => onAssistantMutation(({ toolName, result }) => {
+    if ((toolName === 'create_project' || toolName === 'create_project_structure') && result && typeof result === 'object') {
+      const payload = result as Project & { project?: Project }
+      const project = payload.project ?? payload
+      if (typeof project.id === 'string' && typeof project.name === 'string') {
+        setProjects(current => current.some(item => item.id === project.id) ? current : [...current, project])
+      }
+      return
+    }
+    if (toolName === 'update_project' || toolName === 'delete_project') {
+      void loadProjects().then(setProjects)
+    }
+  }), [loadProjects])
 
   async function createProject(e: React.FormEvent) {
     e.preventDefault()
-    const p = await api.post<Project>('/projects', { name: newName, boardMode: newBoardMode })
+    const p = await api.post<Project>('/projects', {
+      name: newName,
+      boardMode: newBoardMode,
+      isRestricted: newIsRestricted,
+      isHidden: newIsHidden,
+    })
     setProjects(prev => [...prev, p])
     setNewName('')
     setNewBoardMode('HIERARCHICAL')
+    setNewIsRestricted(false)
+    setNewIsHidden(false)
     setShowNew(false)
   }
 
@@ -136,13 +168,16 @@ export default function ProjectsPage() {
                      navigate(`/projects/${p.id}/board`)
                    }
                  }}
-                 role="button"
-                 tabIndex={0}
-                 className="relative overflow-hidden text-left p-5 bg-card border border-border rounded-xl hover:border-primary/40 hover:-translate-y-0.5 hover:shadow-lg transition group cursor-pointer"
-               >
+                  role="button"
+                  tabIndex={0}
+                  // Grupo nomeado: o Tooltip do badge também usa `group` e vazaria ao passar o mouse no card.
+                  className={`relative overflow-hidden text-left p-5 bg-card border border-border rounded-xl hover:border-primary/40 hover:-translate-y-0.5 hover:shadow-lg transition group/card cursor-pointer ${
+                    p.isHidden ? 'border-dashed opacity-70 hover:opacity-100 focus-visible:opacity-100' : ''
+                  }`}
+                >
                  <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary to-status-review opacity-60" />
                  <div className="flex items-start justify-between">
-                   <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition">
+                   <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover/card:bg-primary/20 transition">
                    <span className="text-primary font-bold text-lg">{p.name[0]?.toUpperCase()}</span>
                    </div>
                    <div className="flex items-center gap-2">
@@ -174,14 +209,18 @@ export default function ProjectsPage() {
                           </button>
                         </>
                       )}
-                     <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition" />
+                     <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover/card:text-primary transition" />
                    </div>
                  </div>
                  <h3 className="font-semibold text-foreground">{p.name}</h3>
                  <p className="text-muted-foreground text-xs mt-1 line-clamp-2 min-h-8">
                    {p.description || 'Board, planejamento e colaboração em um só lugar.'}
                  </p>
-                 <span className="inline-flex mt-4 text-[11px] font-medium text-primary">Abrir board</span>
+                  {/* min-h reserva a altura do badge para cards sem sinalização não ficarem menores. */}
+                  <div className="mt-4 flex items-center gap-2 flex-wrap min-h-6">
+                    <span className="inline-flex text-[11px] font-medium text-primary">Abrir board</span>
+                    <ProjectVisibilityBadges isRestricted={p.isRestricted} isHidden={p.isHidden} />
+                  </div>
                </div>
              ))}
            </div>
@@ -212,11 +251,23 @@ export default function ProjectsPage() {
                    <option value="HIERARCHICAL">Hierárquico: módulos, épicos e histórias</option>
                    <option value="SIMPLE">Simples: um único Kanban</option>
                  </select>
-                 <p className="text-xs text-muted-foreground mt-1.5">
-                   O modo simples usa uma história fixa e coloca todas as tarefas em um único fluxo.
-                 </p>
-               </div>
-              <div className="flex gap-3 justify-end">
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    O modo simples usa uma história fixa e coloca todas as tarefas em um único fluxo.
+                  </p>
+                </div>
+               <VisibilityToggles
+                 restricted={newIsRestricted}
+                 hidden={newIsHidden}
+                 onChangeRestricted={setNewIsRestricted}
+                 onChangeHidden={setNewIsHidden}
+                 restrictedLabel={t('newProjectRestricted')}
+                 restrictedHint={t('newProjectRestrictedHint')}
+                 hiddenLabel={t('newProjectHidden')}
+                 hiddenHint={t('newProjectHiddenHint')}
+                 restrictedId="new-project-restricted"
+                 hiddenId="new-project-hidden"
+               />
+               <div className="flex gap-3 justify-end">
                 <button type="button" onClick={() => setShowNew(false)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition">{t('cancel')}</button>
                 <button type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition">{t('create')}</button>
               </div>

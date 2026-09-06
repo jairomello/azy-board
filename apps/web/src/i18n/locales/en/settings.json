@@ -60,5 +60,16 @@
     "emerald": "Emerald",
     "graphite": "Graphite",
     "classic": "Classic"
-  }
+  },
+  "projectVisibility": "Project visibility",
+  "projectVisibilityDescription": "Define who can find this project when listing projects.",
+  "visibilityRestricted": "Restricted",
+  "visibilityRestrictedDescription": "Only team members and the project manager can see it, including administrators.",
+  "visibilityHidden": "Hidden",
+  "visibilityHiddenDescription": "It does not show up in listings. To see it, turn on the \"Show hidden projects\" preference.",
+  "visibilitySaved": "Visibility updated",
+  "visibilitySaveError": "Could not update visibility",
+  "showHiddenProjects": "Show hidden projects",
+  "hiddenProjects": "Hidden projects",
+  "showHiddenProjectsHint": "Session only: this option is turned off again on your next login."
 }

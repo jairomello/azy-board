@@ -26,6 +26,14 @@ describe('MCP protocol handlers', () => {
     expect(result.tools.find(tool => tool.name === 'batch')?.inputSchema).toMatchObject({
       properties: { operations: { type: 'array', maxItems: 50 } },
     })
+    expect(result.tools.find(tool => tool.name === 'update_items')?.inputSchema).toMatchObject({
+      properties: {
+        projectId: { type: 'string' },
+        filters: { type: 'object', additionalProperties: false },
+        changes: { type: 'array', minItems: 1, maxItems: 20 },
+      },
+      required: ['projectId', 'filters', 'changes'],
+    })
   })
 
   test('retorna erro estruturado para argumentos ausentes', async () => {

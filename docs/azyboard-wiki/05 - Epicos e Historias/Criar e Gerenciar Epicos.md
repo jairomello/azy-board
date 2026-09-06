@@ -12,6 +12,10 @@ Um épico representa um objetivo amplo dentro de um módulo. No Board, cada épi
 
 Épicos podem ser criados pela ação **Épico** na toolbar do Kanban. Um épico existente pode ser editado pela ação de edição no cabeçalho de sua swimlane.
 
+## Organizar a modal
+
+Os dados principais e a descrição aparecem em accordions independentes. A primeira seção começa aberta e os controles **Expandir tudo** e **Recolher tudo** alteram apenas a visualização; salvar e cancelar mantêm o comportamento original.
+
 ## Campos do épico
 
 | Campo | Obrigatório | Finalidade |
