@@ -187,6 +187,7 @@ export function AppShell({
               <div className="max-lg:block lg:hidden min-[1280px]:block ml-7 mt-1 space-y-1 border-l border-shell-border pl-2">
                 {item.children.map((child) => {
                   const ChildIcon = child.icon
+                  if (!child.href) return null
                   return (
                     <Link
                       key={child.href}
