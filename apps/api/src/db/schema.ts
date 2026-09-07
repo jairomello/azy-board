@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core'
 import { relations } from 'drizzle-orm'
 
 // [DB-SWAP] Ao migrar para PostgreSQL, trocar importações para 'drizzle-orm/pg-core'
@@ -215,6 +215,11 @@ export const projects = sqliteTable('projects', {
   // [TENANT] Oculto: o projeto sai das listagens por padrão e só volta com includeHidden=true,
   // também resolvido dentro do tenant do chamador.
   isHidden: integer('is_hidden', { mode: 'boolean' }).notNull().default(false),
+  startDate: text('start_date'),
+  plannedEndDate: text('planned_end_date'),
+  plannedPoints: integer('planned_points'),
+  plannedHours: real('planned_hours'),
+  scope: text('scope'),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
 })
 

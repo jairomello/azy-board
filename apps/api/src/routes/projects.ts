@@ -177,13 +177,19 @@ projectsRouter.post('/', async (c) => {
   const ctx = c.get('ctx') as RequestContext
   if (!hasGlobalGroup(ctx.globalGroup, 'MANAGER')) return c.json({ error: 'Permissão insuficiente' }, 403)
   if (!hasKeyPermission(c.get('apiKeyPermissionScope'), 'MEMBER')) return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
-  const body = await c.req.json<{ name: string; description?: string; managerUserId?: string; boardMode?: BoardMode; isRestricted?: boolean; isHidden?: boolean }>()
+  const body = await c.req.json<{ name: string; description?: string; managerUserId?: string; boardMode?: BoardMode; isRestricted?: boolean; isHidden?: boolean; startDate?: string | null; plannedEndDate?: string | null; plannedPoints?: number | null; plannedHours?: number | null; scope?: string | null }>()
   const normalizedName = body.name.trim()
   if (!normalizedName) return c.json({ error: 'O nome do projeto é obrigatório' }, 400)
   const boardMode = body.boardMode ?? 'HIERARCHICAL'
   if (!['HIERARCHICAL', 'SIMPLE'].includes(boardMode)) return c.json({ error: 'Modo de board inválido' }, 400)
   if (!ehBooleanoOuAusente(body.isRestricted) || !ehBooleanoOuAusente(body.isHidden)) {
     return c.json({ error: 'Os sinalizadores de visibilidade devem ser booleanos' }, 400)
+  }
+  if (body.plannedPoints !== undefined && body.plannedPoints !== null && (typeof body.plannedPoints !== 'number' || body.plannedPoints < 0)) {
+    return c.json({ error: 'Total de pontos previsto deve ser um número maior ou igual a zero' }, 422)
+  }
+  if (body.plannedHours !== undefined && body.plannedHours !== null && (typeof body.plannedHours !== 'number' || body.plannedHours < 0)) {
+    return c.json({ error: 'Total de horas previsto deve ser um número maior ou igual a zero' }, 422)
   }
   // Defaults permissivos: um projeto novo nasce visível para todos, conforme o escopo por grupo.
   const isRestricted = body.isRestricted ?? false
@@ -200,22 +206,28 @@ projectsRouter.post('/', async (c) => {
   let simpleStoryId: string | null = null
 
   const projectResult = await db.transaction(async (tx) => {
-   await tx.insert(projects).values({
-    id: projectId,
-    // [TENANT] Projeto sempre vinculado ao tenant do criador
-    tenantId: ctx.tenantId,
-    name: normalizedName,
-    description: body.description,
-    // [TENANT] O modo é persistido no projeto do tenant resolvido pelo middleware.
-    boardMode,
-    simpleStoryId: null,
-    // managerUserId: validação de membership não é possível antes de criar o projeto
-    // o criador se torna ADMIN logo abaixo; se managerUserId == ctx.userId é válido
-    managerUserId: body.managerUserId ?? null,
-    isRestricted,
-    isHidden,
-    createdAt: new Date().toISOString(),
-   })
+    await tx.insert(projects).values({
+     id: projectId,
+     // [TENANT] Projeto sempre vinculado ao tenant do criador
+     tenantId: ctx.tenantId,
+     name: normalizedName,
+     description: body.description,
+     // [TENANT] O modo é persistido no projeto do tenant resolvido pelo middleware.
+     boardMode,
+     simpleStoryId: null,
+      // managerUserId: validação de membership não é possível antes de criar o projeto
+      // o criador se torna ADMIN logo abaixo; se managerUserId == ctx.userId é válido
+      // [TENANT] Fallback para ctx.userId garante que todo projeto tenha um gerente
+      managerUserId: body.managerUserId ?? ctx.userId,
+     isRestricted,
+     isHidden,
+     startDate: body.startDate ?? null,
+     plannedEndDate: body.plannedEndDate ?? null,
+     plannedPoints: body.plannedPoints ?? null,
+     plannedHours: body.plannedHours ?? null,
+     scope: body.scope ?? null,
+     createdAt: new Date().toISOString(),
+    })
 
   // Criador se torna ADMIN automaticamente
    await tx.insert(memberships).values({
@@ -260,7 +272,7 @@ projectsRouter.post('/', async (c) => {
   })
   simpleStoryId = projectResult.simpleStoryId
 
-  return c.json({ id: projectId, name: normalizedName, description: body.description ?? null, boardMode, simpleStoryId, isRestricted, isHidden, role: 'ADMIN' as const }, 201)
+  return c.json({ id: projectId, name: normalizedName, description: body.description ?? null, boardMode, simpleStoryId, managerUserId: body.managerUserId ?? ctx.userId, isRestricted, isHidden, startDate: body.startDate ?? null, plannedEndDate: body.plannedEndDate ?? null, plannedPoints: body.plannedPoints ?? null, plannedHours: body.plannedHours ?? null, scope: body.scope ?? null, role: 'ADMIN' as const }, 201)
 })
 
 // GET /projects — listar projetos visíveis para o usuário (membros veem os que participam)
@@ -306,7 +318,7 @@ projectsRouter.get('/:id/board', requireRole('VIEWER'), async (c) => {
   // [TENANT] Todos os dados do contexto são limitados ao projeto do tenant autenticado.
   const project = await db.query.projects.findFirst({
     where: (p) => and(eq(p.id, projectId), eq(p.tenantId, ctx.tenantId)),
-    columns: { id: true, name: true, description: true, boardMode: true, simpleStoryId: true },
+    columns: { id: true, name: true, description: true, boardMode: true, simpleStoryId: true, startDate: true, plannedEndDate: true, plannedPoints: true, plannedHours: true, scope: true },
   })
   if (!project) return c.json({ error: 'Projeto não encontrado' }, 404)
 
@@ -429,13 +441,19 @@ projectsRouter.get('/:id', requireRole('VIEWER'), async (c) => {
 projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const id = c.req.param('id')!
-  const body = await c.req.json<{ name?: string; description?: string; managerUserId?: string | null; boardMode?: BoardMode; dryRun?: boolean; isRestricted?: boolean; isHidden?: boolean }>()
+  const body = await c.req.json<{ name?: string; description?: string; managerUserId?: string | null; boardMode?: BoardMode; dryRun?: boolean; isRestricted?: boolean; isHidden?: boolean; startDate?: string | null; plannedEndDate?: string | null; plannedPoints?: number | null; plannedHours?: number | null; scope?: string | null }>()
 
   if (body.boardMode !== undefined && !['HIERARCHICAL', 'SIMPLE'].includes(body.boardMode)) {
     return c.json({ error: 'Modo de board inválido' }, 400)
   }
   if (!ehBooleanoOuAusente(body.isRestricted) || !ehBooleanoOuAusente(body.isHidden)) {
     return c.json({ error: 'Os sinalizadores de visibilidade devem ser booleanos' }, 400)
+  }
+  if (body.plannedPoints !== undefined && body.plannedPoints !== null && (typeof body.plannedPoints !== 'number' || body.plannedPoints < 0)) {
+    return c.json({ error: 'Total de pontos previsto deve ser um número maior ou igual a zero' }, 422)
+  }
+  if (body.plannedHours !== undefined && body.plannedHours !== null && (typeof body.plannedHours !== 'number' || body.plannedHours < 0)) {
+    return c.json({ error: 'Total de horas previsto deve ser um número maior ou igual a zero' }, 422)
   }
 
   // [TENANT] Lê o modo somente dentro do projeto/membership do tenant atual.
@@ -474,6 +492,11 @@ projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
   if (normalizedName !== undefined) updates.name = normalizedName
   if (body.description !== undefined) updates.description = body.description
   if (body.managerUserId !== undefined) updates.managerUserId = body.managerUserId
+  if (body.startDate !== undefined) updates.startDate = body.startDate
+  if (body.plannedEndDate !== undefined) updates.plannedEndDate = body.plannedEndDate
+  if (body.plannedPoints !== undefined) updates.plannedPoints = body.plannedPoints
+  if (body.plannedHours !== undefined) updates.plannedHours = body.plannedHours
+  if (body.scope !== undefined) updates.scope = body.scope
   const boardModeChanged = body.boardMode !== undefined && body.boardMode !== currentProject.boardMode
   if (body.boardMode !== undefined && !boardModeChanged) updates.boardMode = body.boardMode
   if (body.isRestricted !== undefined) updates.isRestricted = body.isRestricted

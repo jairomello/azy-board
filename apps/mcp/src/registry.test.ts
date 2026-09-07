@@ -37,8 +37,10 @@ describe('shared MCP/Azy Agent registry', () => {
   test('create_project não pede manager nem campos opcionais desconhecidos', () => {
     const tool = getSharedToolDefinitions(['create_project'])[0]!
     expect(tool.inputSchema.properties).not.toHaveProperty('managerUserId')
-    expect(tool.inputSchema.required).toEqual(['name', 'description', 'boardMode'])
+    expect(tool.inputSchema.required).toEqual(['name', 'description', 'boardMode', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'])
     expect(tool.inputSchema.properties.boardMode).toMatchObject({ enum: ['HIERARCHICAL', 'SIMPLE', null] })
+    expect(tool.inputSchema.properties.startDate).toMatchObject({ description: expect.stringContaining('YYYY-MM-DD') })
+    expect(tool.inputSchema.properties.plannedPoints).toMatchObject({ type: expect.arrayContaining(['number', 'null']) })
     expect(tool.description).toContain('Only name is required')
   })
 

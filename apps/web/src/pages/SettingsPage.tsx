@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Pencil, Trash2, Check, X, Eye, UserPlus, Users, Network } from 'lucide-react'
@@ -6,6 +6,9 @@ import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import { VersionDetailModal } from '../components/VersionDetailModal'
 import { VisibilityToggles } from '../components/VisibilityToggles'
+import { RichTextEditor } from '../components/RichTextEditor'
+import { AccordionSection } from '../components/AccordionSection'
+import { AccordionToolbar } from '../components/AccordionToolbar'
 import { AppShell } from '../components/AppShell'
 import type { BoardMode, ColumnBaseStatus, SprintStatus } from '@azy-board/types'
 
@@ -91,6 +94,15 @@ export default function SettingsPage() {
   const [savingVisibility, setSavingVisibility] = useState(false)
   const [visibilityError, setVisibilityError] = useState('')
 
+  const [startDate, setStartDate] = useState('')
+  const [plannedEndDate, setPlannedEndDate] = useState('')
+  const [plannedPoints, setPlannedPoints] = useState('')
+  const [plannedHours, setPlannedHours] = useState('')
+  const [scope, setScope] = useState('')
+  const [savingPlanning, setSavingPlanning] = useState(false)
+  const [planningError, setPlanningError] = useState('')
+  const scopeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   // Centros de Custo
   const [costCenters, setCostCenters] = useState<CostCenter[]>([])
   const [newCCCode, setNewCCCode] = useState('')
@@ -121,6 +133,22 @@ export default function SettingsPage() {
   const [sprintError, setSprintError] = useState('')
   const [savingSprint, setSavingSprint] = useState(false)
 
+  // Accordion state
+  const allSectionIds = ['board-format', 'visibility', 'planning', 'columns', 'manager', 'members-squads', 'cost-centers', 'modules', 'sprints', 'versions']
+  const [openSections, setOpenSections] = useState<Set<string>>(new Set(['board-format', 'visibility']))
+  const toggleSection = (id: string) => {
+    setOpenSections(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+  const visibleSectionIds = boardMode === 'HIERARCHICAL' ? allSectionIds : allSectionIds.filter(id => id !== 'modules')
+
   const currentMember = members.find(m => m.userId === user?.id)
   const isAdmin = currentMember?.role === 'ADMIN' || ['MANAGER', 'ADMIN', 'ROOT'].includes(user?.globalGroup ?? '')
 
@@ -133,7 +161,7 @@ export default function SettingsPage() {
     api.get<ProjectVersion[]>(`/projects/${projectId}/versions`).then(setVersions)
     api.get<CostCenter[]>(`/projects/${projectId}/cost-centers`).then(setCostCenters)
     api.get<Sprint[]>(`/projects/${projectId}/sprints`).then(setSprints).catch(() => {})
-    api.get<{ name: string; manager?: Manager | null; boardMode?: BoardMode; isRestricted?: boolean; isHidden?: boolean }>(`/projects/${projectId}`)
+    api.get<{ name: string; manager?: Manager | null; boardMode?: BoardMode; isRestricted?: boolean; isHidden?: boolean; startDate?: string | null; plannedEndDate?: string | null; plannedPoints?: number | null; plannedHours?: number | null; scope?: string | null }>(`/projects/${projectId}`)
       .then(p => {
         setProjectName(p.name)
         setManager(p.manager ?? null)
@@ -141,6 +169,11 @@ export default function SettingsPage() {
         setBoardMode(p.boardMode ?? 'HIERARCHICAL')
         setIsRestricted(Boolean(p.isRestricted))
         setIsHidden(Boolean(p.isHidden))
+        setStartDate(p.startDate ?? '')
+        setPlannedEndDate(p.plannedEndDate ?? '')
+        setPlannedPoints(p.plannedPoints != null ? String(p.plannedPoints) : '')
+        setPlannedHours(p.plannedHours != null ? String(p.plannedHours) : '')
+        setScope(p.scope ?? '')
       })
       .catch(() => {})
   }, [projectId])
@@ -178,6 +211,19 @@ export default function SettingsPage() {
       setVisibilityError(error instanceof Error ? error.message : t('settings:visibilitySaveError'))
     } finally {
       setSavingVisibility(false)
+    }
+  }
+
+  async function savePlanning(campo: string, valor: string | number | null) {
+    if (!projectId || !isAdmin) return
+    setSavingPlanning(true)
+    setPlanningError('')
+    try {
+      await api.patch(`/projects/${projectId}`, { [campo]: valor })
+    } catch (error) {
+      setPlanningError(error instanceof Error ? error.message : t('settings:planningSaveError'))
+    } finally {
+      setSavingPlanning(false)
     }
   }
 
@@ -448,11 +494,20 @@ export default function SettingsPage() {
           <h2 className="text-2xl font-bold text-foreground mt-1">{t('settings:settings')}</h2>
          <p className="text-sm text-muted-foreground mt-1">Organize fluxo, pessoas e estrutura sem sair do workspace.</p>
         </div>
-      <main className="space-y-5 [&>section]:bg-card [&>section]:border [&>section]:border-border [&>section]:rounded-xl [&>section]:p-5 [&>section]:shadow-sm">
+        <AccordionToolbar
+          sectionIds={visibleSectionIds}
+          openIds={openSections}
+          onChange={setOpenSections}
+        />
+      <main className="space-y-3">
 
         {/* Formato do board */}
-        <section>
-          <h2 className="text-lg font-semibold text-foreground mb-2">Formato do board</h2>
+        <AccordionSection
+          id="board-format"
+          title={t('settings:boardFormat')}
+          isOpen={openSections.has('board-format')}
+          onToggle={toggleSection}
+        >
           <p className="text-sm text-muted-foreground mb-4">
             Escolha entre um fluxo único para projetos simples ou a organização por módulos, épicos e histórias.
           </p>
@@ -486,11 +541,15 @@ export default function SettingsPage() {
           </div>
           {!isAdmin && <p className="text-xs text-muted-foreground mt-3">Somente administradores podem alterar o formato.</p>}
           {boardModeError && <p className="text-sm text-destructive mt-3">{boardModeError}</p>}
-        </section>
+        </AccordionSection>
 
         {/* Visibilidade do projeto */}
-        <section>
-          <h2 className="text-lg font-semibold text-foreground mb-2">{t('settings:projectVisibility')}</h2>
+        <AccordionSection
+          id="visibility"
+          title={t('settings:projectVisibility')}
+          isOpen={openSections.has('visibility')}
+          onToggle={toggleSection}
+        >
           <p className="text-sm text-muted-foreground mb-4">{t('settings:projectVisibilityDescription')}</p>
           <VisibilityToggles
             restricted={isRestricted}
@@ -507,11 +566,104 @@ export default function SettingsPage() {
           />
           {!isAdmin && <p className="text-xs text-muted-foreground mt-3">Somente administradores podem alterar a visibilidade.</p>}
           {visibilityError && <p className="text-sm text-destructive mt-3">{visibilityError}</p>}
-        </section>
+        </AccordionSection>
+
+        {/* Planejamento */}
+        <AccordionSection
+          id="planning"
+          title={t('settings:planning')}
+          isOpen={openSections.has('planning')}
+          onToggle={toggleSection}
+        >
+          <p className="text-sm text-muted-foreground mb-4">{t('settings:planningDescription')}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="planning-start-date" className="block text-sm font-medium text-foreground mb-1">{t('settings:startDate')}</label>
+              <input
+                id="planning-start-date"
+                type="date"
+                value={startDate}
+                disabled={!isAdmin || savingPlanning}
+                onChange={e => setStartDate(e.target.value)}
+                onBlur={e => savePlanning('startDate', e.target.value || null)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label htmlFor="planned-end-date" className="block text-sm font-medium text-foreground mb-1">{t('settings:plannedEndDate')}</label>
+              <input
+                id="planned-end-date"
+                type="date"
+                value={plannedEndDate}
+                disabled={!isAdmin || savingPlanning}
+                onChange={e => setPlannedEndDate(e.target.value)}
+                onBlur={e => savePlanning('plannedEndDate', e.target.value || null)}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label htmlFor="planned-points" className="block text-sm font-medium text-foreground mb-1">{t('settings:plannedPoints')}</label>
+              <input
+                id="planned-points"
+                type="number"
+                min="0"
+                step="1"
+                value={plannedPoints}
+                disabled={!isAdmin || savingPlanning}
+                onChange={e => setPlannedPoints(e.target.value)}
+                onBlur={e => savePlanning('plannedPoints', e.target.value ? Number(e.target.value) : null)}
+                placeholder={t('settings:plannedPointsPlaceholder')}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label htmlFor="planned-hours" className="block text-sm font-medium text-foreground mb-1">{t('settings:plannedHours')}</label>
+              <input
+                id="planned-hours"
+                type="number"
+                min="0"
+                step="0.5"
+                value={plannedHours}
+                disabled={!isAdmin || savingPlanning}
+                onChange={e => setPlannedHours(e.target.value)}
+                onBlur={e => savePlanning('plannedHours', e.target.value ? Number(e.target.value) : null)}
+                placeholder={t('settings:plannedHoursPlaceholder')}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50"
+              />
+            </div>
+          </div>
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-foreground mb-1">{t('settings:scope')}</label>
+            {isAdmin ? (
+              <RichTextEditor
+                content={scope}
+                onChange={html => {
+                  setScope(html)
+                  if (scopeTimerRef.current) clearTimeout(scopeTimerRef.current)
+                  scopeTimerRef.current = setTimeout(() => savePlanning('scope', html || null), 800)
+                }}
+                placeholder={t('settings:scopePlaceholder')}
+                minHeight="160px"
+                showExpand={true}
+                fieldLabel={t('settings:scope')}
+              />
+            ) : scope ? (
+              <div className="prose prose-sm dark:prose-invert max-w-none rounded-lg border border-border p-3" dangerouslySetInnerHTML={{ __html: scope }} />
+            ) : (
+              <p className="text-sm text-muted-foreground italic">—</p>
+            )}
+          </div>
+          {!isAdmin && <p className="text-xs text-muted-foreground mt-3">Somente administradores podem alterar o planejamento.</p>}
+          {planningError && <p className="text-sm text-destructive mt-3">{planningError}</p>}
+        </AccordionSection>
 
         {/* Colunas */}
-        <section>
-          <h2 className="text-lg font-semibold text-foreground mb-4">{t('settings:columns')}</h2>
+        <AccordionSection
+          id="columns"
+          title={t('settings:columns')}
+          isOpen={openSections.has('columns')}
+          onToggle={toggleSection}
+        >
           <div className="space-y-2">
             {columns.map(col => (
               <div key={col.id} className="flex items-center justify-between bg-card border border-border rounded-lg px-4 py-3">
@@ -573,11 +725,15 @@ export default function SettingsPage() {
               </button>
             </form>
           )}
-        </section>
+        </AccordionSection>
 
         {/* Gerente Geral do Projeto */}
-        <section>
-          <h2 className="text-lg font-semibold text-foreground mb-4">Gerente Geral do Projeto</h2>
+        <AccordionSection
+          id="manager"
+          title={t('settings:projectManager')}
+          isOpen={openSections.has('manager')}
+          onToggle={toggleSection}
+        >
           {manager && (
             <div className="mb-3 flex items-center gap-3 bg-card border border-border rounded-lg px-4 py-3">
               <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm font-medium text-foreground flex-shrink-0">
@@ -610,10 +766,15 @@ export default function SettingsPage() {
               </button>
             </div>
           )}
-        </section>
+        </AccordionSection>
 
         {/* Membros & Squads — redesenhado */}
-        <section>
+        <AccordionSection
+          id="members-squads"
+          title={t('settings:membersAndSquads')}
+          isOpen={openSections.has('members-squads')}
+          onToggle={toggleSection}
+        >
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-foreground">Membros & Squads</h2>
             <button
@@ -744,11 +905,15 @@ export default function SettingsPage() {
               {members.length === 0 && <p className="text-sm text-muted-foreground italic">Nenhum membro no projeto ainda.</p>}
             </div>
           </div>
-        </section>
+        </AccordionSection>
 
         {/* Centros de Custo */}
-        <section>
-          <h2 className="text-lg font-semibold text-foreground mb-4">Centros de Custo</h2>
+        <AccordionSection
+          id="cost-centers"
+          title={t('settings:costCenters')}
+          isOpen={openSections.has('cost-centers')}
+          onToggle={toggleSection}
+        >
           <div className="space-y-2">
             {costCenters.map(cc => (
               <div key={cc.id} className="flex items-center justify-between bg-card border border-border rounded-lg px-4 py-3">
@@ -816,11 +981,15 @@ export default function SettingsPage() {
               </button>
             </form>
           )}
-        </section>
+        </AccordionSection>
 
         {/* Módulos */}
-        {boardMode === 'HIERARCHICAL' && <section>
-          <h2 className="text-lg font-semibold text-foreground mb-4">Módulos</h2>
+        {boardMode === 'HIERARCHICAL' && <AccordionSection
+          id="modules"
+          title={t('settings:modules')}
+          isOpen={openSections.has('modules')}
+          onToggle={toggleSection}
+        >
           <div className="space-y-2">
             {modules.map(mod => (
               <div key={mod.id} className="flex items-center justify-between bg-card border border-border rounded-lg px-4 py-3">
@@ -875,11 +1044,16 @@ export default function SettingsPage() {
               </button>
             </form>
           )}
-        </section>}
+        </AccordionSection>}
 
          {/* Sprints */}
-         <section>
-           <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-semibold text-foreground">Sprints</h2></div>
+         <AccordionSection
+           id="sprints"
+           title={t('settings:sprints')}
+           isOpen={openSections.has('sprints')}
+           onToggle={toggleSection}
+         >
+           <div className="flex items-center justify-between mb-4"></div>
            {sprintError && <p role="alert" className="text-sm text-destructive mb-3">{sprintError}</p>}
            <div className="space-y-2 mb-4">
              {sprints.map(sprint => <div key={sprint.id} className="flex flex-wrap items-center justify-between gap-2 border border-border rounded-lg px-4 py-3">
@@ -892,14 +1066,18 @@ export default function SettingsPage() {
              <input required aria-label="Nome da sprint" placeholder="Nome da sprint" value={sprintForm.name} onChange={e => setSprintForm(p => ({ ...p, name: e.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
              <input required aria-label="Data de início" type="date" value={sprintForm.startDate} onChange={e => setSprintForm(p => ({ ...p, startDate: e.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
              <input required aria-label="Data de fim" type="date" value={sprintForm.endDate} onChange={e => setSprintForm(p => ({ ...p, endDate: e.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-             <button disabled={savingSprint} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">{editingSprintId ? 'Salvar sprint' : 'Criar sprint'}</button>
-           </form>}
-         </section>
+              <button disabled={savingSprint} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">{editingSprintId ? 'Salvar sprint' : 'Criar sprint'}</button>
+            </form>}
+          </AccordionSection>
 
-         {/* Versões */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Versões</h2>
+          {/* Versões */}
+         <AccordionSection
+           id="versions"
+           title={t('settings:versions')}
+           isOpen={openSections.has('versions')}
+           onToggle={toggleSection}
+         >
+           <div className="flex items-center justify-between mb-4">
             {isAdmin && !showVersionForm && (
               <button onClick={() => setShowVersionForm(true)} className="text-sm text-primary hover:underline">
                 + Nova versão
@@ -991,7 +1169,7 @@ export default function SettingsPage() {
               </p>
             )}
           </div>
-        </section>
+        </AccordionSection>
       </main>
       </div>
 

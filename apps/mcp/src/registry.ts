@@ -47,7 +47,7 @@ const planning = new Set(['claim_task', 'list_tasks', 'list_checklists', 'create
 const fieldsByTool: Record<string, string[]> = {
   list_projects: ['limit', 'cursor'], get_project: ['projectId'], get_board: ['projectId'], get_tree: ['projectId', 'onlyLeaves'], get_current_sprint: ['projectId'],
   list_tasks: ['projectId', 'status', 'assigneeId', 'sprintId', 'parentId', 'limit', 'cursor'], list_checklists: ['projectId', 'itemId'],
-  create_project: ['name', 'description', 'boardMode'], create_project_structure: ['name', 'description', 'boardMode', 'managerUserId', 'operations'], update_project: ['projectId', 'name', 'description', 'boardMode', 'managerUserId'], delete_project: ['projectId'],
+  create_project: ['name', 'description', 'boardMode', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], create_project_structure: ['name', 'description', 'boardMode', 'managerUserId', 'operations', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], update_project: ['projectId', 'name', 'description', 'boardMode', 'managerUserId', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], delete_project: ['projectId'],
   create_task: ['projectId', 'title', 'description', 'type', 'priority', 'points', 'parentId', 'moduleId', 'assigneeId', 'status'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], complete_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], move_task: ['projectId', 'taskId', 'columnName'], claim_task: ['projectId', 'taskId'], release_task: ['projectId', 'taskId'],
   create_sprint: ['projectId', 'name', 'startDate', 'endDate'], activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'],
   create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'],
@@ -120,6 +120,11 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
     : { type: ['string', 'null'], enum: ['HIERARCHICAL', 'SIMPLE', null], description: 'Optional. Use null when the user did not specify a board mode; never ask for it.' }
   if (field === 'tagIds' || field === 'order') return nullable({ type: 'array', items: { type: 'string' } })
   if (field === 'onlyLeaves' || field === 'atomic' || field === 'confirm' || field === 'dryRun' || field === 'checked') return nullable({ type: 'boolean' })
+  if (field === 'plannedPoints') return { ...nullable({ type: 'number' }), description: 'Estimated total story points for the project.' }
+  if (field === 'plannedHours') return { ...nullable({ type: 'number' }), description: 'Estimated total hours for the project.' }
+  if (field === 'startDate') return { ...nullable({ type: 'string' }), description: 'Planned start date in YYYY-MM-DD format.' }
+  if (field === 'plannedEndDate') return { ...nullable({ type: 'string' }), description: 'Planned end date in YYYY-MM-DD format.' }
+  if (field === 'scope') return { ...nullable({ type: 'string' }), description: 'Project scope as HTML rich text.' }
   if (field === 'limit' || field === 'durationMin' || field === 'points') return nullable({ type: 'number' })
   if (field === 'filters') return itemFiltersSchema
   if (field === 'changes') return itemChangeSchema

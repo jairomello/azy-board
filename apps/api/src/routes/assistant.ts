@@ -70,7 +70,7 @@ type PromptNode = { id: string; title: string; type: string }
 type AssistantPromptContext = {
   currentDate: string
   authenticatedUser: { id: string; name: string; email: string; globalGroup: string; language: string }
-  selectedProject: { id: string; name: string } | null
+  selectedProject: { id: string; name: string; startDate?: string | null; plannedEndDate?: string | null; plannedPoints?: number | null; plannedHours?: number | null; scope?: string | null } | null
   selectedItem: (PromptNode & { ancestry: PromptNode[] }) | null
 }
 
@@ -389,7 +389,7 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
   if (conversation.projectId && !await canUseProject(ctx.tenantId, ctx.userId, ctx.globalGroup, conversation.projectId)) return operationalError(c, 'PROJECT_NOT_FOUND', 404)
   const [authenticatedUser, selectedProject] = await Promise.all([
     db.query.users.findFirst({ where: (user) => and(eq(user.id, ctx.userId), eq(user.tenantId, ctx.tenantId)), columns: { id: true, name: true, email: true, globalGroup: true, language: true } }),
-    conversation.projectId ? db.query.projects.findFirst({ where: (project) => and(eq(project.id, conversation.projectId!), eq(project.tenantId, ctx.tenantId)), columns: { id: true, name: true } }) : null,
+    conversation.projectId ? db.query.projects.findFirst({ where: (project) => and(eq(project.id, conversation.projectId!), eq(project.tenantId, ctx.tenantId)), columns: { id: true, name: true, startDate: true, plannedEndDate: true, plannedPoints: true, plannedHours: true, scope: true } }) : null,
   ])
   if (!authenticatedUser) return operationalError(c, 'USER_NOT_FOUND', 404)
   const selectedItem = expectedItemId

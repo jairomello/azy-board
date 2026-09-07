@@ -976,3 +976,169 @@ describe('visibilidade de projetos', () => {
     expect(criacaoInvalida.status).toBe(400)
   })
 })
+
+describe('campos de planejamento do projeto', () => {
+  let tenantId: string
+  let adminId: string
+  let adminToken: string
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Tenant Planejamento', slug: `t-${tenantId}`, createdAt: new Date().toISOString() })
+    const admin = await createUser(tenantId, 'admin-planning@test.com', 'Admin Planning')
+    adminId = admin.id
+    adminToken = await token(admin.id, tenantId, admin.email)
+  })
+
+  test('POST /projects aceita campos de planejamento opcionais', async () => {
+    const response = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Projeto com Planejamento',
+        startDate: '2026-01-15',
+        plannedEndDate: '2026-06-30',
+        plannedPoints: 100,
+        plannedHours: 200.5,
+        scope: '<p>Escopo do projeto</p>',
+      }),
+    })
+    expect(response.status).toBe(201)
+    const body = await response.json() as { startDate: string | null; plannedEndDate: string | null; plannedPoints: number | null; plannedHours: number | null; scope: string | null }
+    expect(body.startDate).toBe('2026-01-15')
+    expect(body.plannedEndDate).toBe('2026-06-30')
+    expect(body.plannedPoints).toBe(100)
+    expect(body.plannedHours).toBe(200.5)
+    expect(body.scope).toBe('<p>Escopo do projeto</p>')
+  })
+
+  test('GET /projects/:id retorna campos de planejamento', async () => {
+    const criado = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto GET Planning', startDate: '2026-03-01', plannedPoints: 50 }),
+    })
+    const project = await criado.json() as { id: string }
+
+    const detail = await request(`/projects/${project.id}`, adminToken)
+    expect(detail.status).toBe(200)
+    const body = await detail.json() as { startDate: string | null; plannedEndDate: string | null; plannedPoints: number | null; plannedHours: number | null; scope: string | null }
+    expect(body.startDate).toBe('2026-03-01')
+    expect(body.plannedEndDate).toBeNull()
+    expect(body.plannedPoints).toBe(50)
+    expect(body.plannedHours).toBeNull()
+    expect(body.scope).toBeNull()
+  })
+
+  test('PATCH /projects/:id atualiza campos de planejamento', async () => {
+    const criado = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto PATCH Planning' }),
+    })
+    const project = await criado.json() as { id: string }
+
+    const atualizacao = await request(`/projects/${project.id}`, adminToken, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ startDate: '2026-02-01', plannedEndDate: '2026-08-15', plannedPoints: 80, plannedHours: 160, scope: '<p>Novo escopo</p>' }),
+    })
+    expect(atualizacao.status).toBe(200)
+    const body = await atualizacao.json() as { startDate: string | null; plannedEndDate: string | null; plannedPoints: number | null; plannedHours: number | null; scope: string | null }
+    expect(body.startDate).toBe('2026-02-01')
+    expect(body.plannedEndDate).toBe('2026-08-15')
+    expect(body.plannedPoints).toBe(80)
+    expect(body.plannedHours).toBe(160)
+    expect(body.scope).toBe('<p>Novo escopo</p>')
+  })
+
+  test('PATCH /projects/:id rejeita plannedPoints negativo', async () => {
+    const criado = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto Pontos Negativos' }),
+    })
+    const project = await criado.json() as { id: string }
+
+    const response = await request(`/projects/${project.id}`, adminToken, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plannedPoints: -5 }),
+    })
+    expect(response.status).toBe(422)
+  })
+
+  test('PATCH /projects/:id rejeita plannedHours negativo', async () => {
+    const criado = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto Horas Negativas' }),
+    })
+    const project = await criado.json() as { id: string }
+
+    const response = await request(`/projects/${project.id}`, adminToken, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plannedHours: -10 }),
+    })
+    expect(response.status).toBe(422)
+  })
+
+  test('PATCH /projects/:id permite limpar campos com null', async () => {
+    const criado = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto Limpar Planning', plannedPoints: 50, startDate: '2026-01-01' }),
+    })
+    const project = await criado.json() as { id: string }
+
+    const atualizacao = await request(`/projects/${project.id}`, adminToken, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plannedPoints: null, startDate: null }),
+    })
+    expect(atualizacao.status).toBe(200)
+    const body = await atualizacao.json() as { startDate: string | null; plannedPoints: number | null }
+    expect(body.startDate).toBeNull()
+    expect(body.plannedPoints).toBeNull()
+  })
+})
+
+describe('auto-gerente na criação de projeto', () => {
+  let tenantId: string
+  let adminId: string
+  let adminToken: string
+  let outroUsuarioId: string
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Tenant Auto Manager', slug: `t-${tenantId}`, createdAt: new Date().toISOString() })
+    const admin = await createUser(tenantId, 'admin-automgr@test.com', 'Admin Auto Manager')
+    adminId = admin.id
+    adminToken = await token(admin.id, tenantId, admin.email)
+    const outro = await createUser(tenantId, 'outro-automgr@test.com', 'Outro Usuario')
+    outroUsuarioId = outro.id
+  })
+
+  test('POST /projects sem managerUserId atribui criador como gerente', async () => {
+    const response = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto Sem Gerente' }),
+    })
+    expect(response.status).toBe(201)
+    const body = await response.json() as { managerUserId: string | null }
+    expect(body.managerUserId).toBe(adminId)
+  })
+
+  test('POST /projects com managerUserId explícito respeita o valor informado', async () => {
+    const response = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto Com Gerente', managerUserId: outroUsuarioId }),
+    })
+    expect(response.status).toBe(201)
+    const body = await response.json() as { managerUserId: string | null }
+    expect(body.managerUserId).toBe(outroUsuarioId)
+  })
+})
