@@ -138,22 +138,26 @@ export function AppShell({
   }, [effectiveProjectId, location.pathname, user, tDashboard, tAssistant])
 
   const sidebar = (
-    <div className="h-full flex flex-col px-3 py-4">
-      <Link
-        to="/projects"
-        className="h-11 flex items-center gap-3 px-2 rounded-lg text-shell-foreground"
-        aria-label="AzyBoard"
-      >
-        <BrandLogo
-          markClassName="w-8 h-8 rounded-lg bg-white/95 p-1 shadow-sm"
-          wordmarkClassName="text-[15px] hidden min-[1280px]:block"
-        />
-      </Link>
+    <div className="h-full min-h-0 flex flex-col">
+      <div data-shell-sidebar-brand className="h-16 flex-shrink-0 px-3 min-[1280px]:px-4">
+        <Link
+          data-shell-desktop-brand
+          to="/projects"
+          className="h-full w-full flex items-center justify-start lg:justify-center min-[1280px]:justify-start rounded-lg text-shell-foreground"
+          aria-label="AzyBoard"
+        >
+          <BrandLogo
+            markClassName="w-10 h-10 rounded-xl bg-white/95 p-1.5 shadow-[0_6px_18px_rgba(0,0,0,0.14)]"
+            wordmarkClassName="text-base lg:hidden min-[1280px]:block"
+          />
+        </Link>
+      </div>
 
-      <p className="mt-7 mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-shell-muted hidden min-[1280px]:block">
-        Workspace
-      </p>
-      <nav className="space-y-1 mt-4 min-[1280px]:mt-0" aria-label="Navegação principal">
+      <div className="min-h-0 flex-1 flex flex-col px-3 pb-4">
+        <p className="mt-7 mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-shell-muted hidden min-[1280px]:block">
+          Workspace
+        </p>
+        <nav className="space-y-1 mt-4 min-[1280px]:mt-0" aria-label="Navegação principal">
         {navItems.map(item => {
           const Icon = item.icon
           const link = item.children ? (
@@ -234,17 +238,21 @@ export function AppShell({
             </div>
           )
         })}
-      </nav>
+        </nav>
 
-      <div className="mt-auto px-2 hidden min-[1280px]:block">
-        <p className="text-xs font-medium text-shell-foreground truncate">{projectName ?? 'Seu workspace'}</p>
-        <p className="text-[11px] text-shell-muted mt-0.5">Trabalho conectado</p>
+        <div className="mt-auto px-2 hidden min-[1280px]:block">
+          <p className="text-xs font-medium text-shell-foreground truncate">{projectName ?? 'Seu workspace'}</p>
+          <p className="text-[11px] text-shell-muted mt-0.5">Trabalho conectado</p>
+        </div>
       </div>
     </div>
   )
 
   return (
-    <div className="h-screen overflow-hidden bg-canvas text-foreground flex flex-col">
+    <div
+      data-shell-layout
+      className="h-screen overflow-hidden bg-canvas text-foreground flex flex-col lg:grid lg:grid-cols-[68px_minmax(0,1fr)] min-[1280px]:grid-cols-[220px_minmax(0,1fr)] lg:grid-rows-[64px_minmax(0,1fr)] lg:p-3"
+    >
       {mobileOpen && (
         <div className="fixed inset-x-0 top-[76px] bottom-0 z-50 lg:hidden">
           <button
@@ -265,7 +273,10 @@ export function AppShell({
         </div>
       )}
 
-      <header className="shell-surface mx-3 mt-3 h-16 flex-shrink-0 rounded-2xl border border-shell-border bg-shell-header text-shell-foreground shadow-[0_10px_28px_rgba(20,35,50,0.13)] px-3 sm:px-5 flex items-center gap-3">
+      <header
+        data-shell-header
+        className="shell-surface relative z-0 mx-3 mt-3 h-16 flex-shrink-0 rounded-2xl border border-shell-border bg-shell-header text-shell-foreground shadow-[0_10px_28px_rgba(20,35,50,0.13)] px-3 sm:px-5 flex items-center gap-3 lg:col-start-2 lg:row-start-1 lg:-ml-3 lg:mr-0 lg:mt-0 lg:pl-8 lg:rounded-l-none lg:rounded-r-2xl lg:border-l-0"
+      >
         <button
           onClick={() => setMobileOpen(true)}
           className="lg:hidden w-9 h-9 rounded-lg flex items-center justify-center text-shell-muted hover:text-shell-foreground hover:bg-white/10"
@@ -274,16 +285,17 @@ export function AppShell({
           <Menu className="w-5 h-5" />
         </button>
         <Link
+          data-shell-mobile-brand
           to="/projects"
           aria-label="AzyBoard — Projetos"
-          className="flex-shrink-0 text-shell-foreground"
+          className="flex-shrink-0 text-shell-foreground lg:hidden"
         >
           <BrandLogo
             markClassName="w-9 h-9 rounded-lg bg-white/95 p-1 shadow-sm"
             wordmarkClassName="hidden xl:block text-sm"
           />
         </Link>
-        <div className="hidden sm:block w-px h-8 bg-white/15 flex-shrink-0" aria-hidden />
+        <div className="hidden sm:block lg:hidden w-px h-8 bg-white/15 flex-shrink-0" aria-hidden />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-[11px] text-shell-muted">
             {projectName && <span className="truncate">{projectName}</span>}
@@ -302,28 +314,29 @@ export function AppShell({
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 flex">
-        <aside className="hidden lg:block flex-shrink-0 ml-3 mt-3 mb-3 w-[68px] min-[1280px]:w-[220px] rounded-2xl bg-shell-sidebar border border-shell-border shadow-[0_16px_40px_rgba(20,35,50,0.18)] overflow-hidden">
-          {sidebar}
-        </aside>
+      <aside
+        data-shell-sidebar
+        className="relative z-20 hidden lg:block lg:col-start-1 lg:row-start-1 lg:row-span-2 min-h-0 overflow-hidden rounded-2xl border border-shell-border bg-shell-sidebar shadow-[12px_0_24px_-10px_rgba(3,15,23,0.72),0_16px_40px_rgba(3,15,23,0.24)] lg:border-r-0"
+      >
+        {sidebar}
+      </aside>
 
-        <div className="min-w-0 flex-1 flex flex-col">
-          {commandBar && (
-            <div className="mx-3 mt-3 flex-shrink-0 rounded-xl border border-border/80 bg-surface-floating/90 shadow-[0_8px_24px_rgba(20,35,50,0.09)] backdrop-blur-xl">
-              {commandBar}
-            </div>
-          )}
+      <div data-shell-workspace className="min-h-0 min-w-0 flex-1 flex flex-col lg:col-start-2 lg:row-start-2 lg:pl-3">
+        {commandBar && (
+          <div className="mx-3 mt-3 flex-shrink-0 rounded-xl border border-border/80 bg-surface-floating/90 shadow-[0_8px_24px_rgba(20,35,50,0.09)] backdrop-blur-xl lg:mx-0">
+            {commandBar}
+          </div>
+        )}
 
-          <main className={`min-h-0 flex-1 mx-3 mt-3 ${statusRail ? 'mb-2' : 'mb-3'} ${contentClassName}`}>
-            {children}
-          </main>
+        <main className={`min-h-0 flex-1 mx-3 mt-3 lg:mx-0 ${statusRail ? 'mb-2' : 'mb-3'} ${contentClassName}`}>
+          {children}
+        </main>
 
-          {statusRail && (
-            <div className="mx-3 mb-3 flex-shrink-0 rounded-lg border border-border/70 bg-surface-floating/90 shadow-sm backdrop-blur-xl">
-              {statusRail}
-            </div>
-          )}
-        </div>
+        {statusRail && (
+          <div className="mx-3 mb-3 flex-shrink-0 rounded-lg border border-border/70 bg-surface-floating/90 shadow-sm backdrop-blur-xl lg:mx-0">
+            {statusRail}
+          </div>
+        )}
       </div>
     </div>
   )
