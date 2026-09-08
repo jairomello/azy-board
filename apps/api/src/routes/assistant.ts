@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
-import { and, asc, desc, eq, gt, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantRuns, assistantSettings, assistantToolCalls, items, memberships, projects, users } from '../db/schema'
 import { db } from '../db/index'
 import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
@@ -26,7 +26,7 @@ type Body = Partial<Governance> & { enabled?: unknown; provider?: unknown; model
 const safeError = (code: string, status: 400 | 422 | 500 = 400) => ({ error: 'Não foi possível concluir a operação', code, retryable: status === 500 })
 
 export const MAX_MESSAGE_BYTES = 30_000
-export const MAX_ASSISTANT_ACTIONS = 20
+export const MAX_ASSISTANT_ACTIONS = 40
 
 export function estimateRequestedActions(content: string): number {
   const explicitTypes = content.match(/^\s*tipo\s*:\s*(?:epic|épico|story|história|historia|task|tarefa|bug)\b/gim)?.length ?? 0
@@ -183,17 +183,24 @@ export function toolsForMessage(content: string, recentContext = ''): string[] {
   if (intent === 'start' && bulkMove) return ['update_items']
   if (intent === 'start' && /mova|mover|movimente|movimentar/.test(current)) return ['list_tasks', 'list_columns', 'move_task']
   if (intent === 'start' && /complete|conclua|finalize|finalizar/.test(current)) return ['list_tasks', 'complete_task']
+  if (intent === 'start') {
+    const structureLevels = [/módulos?|modules?/, /épicos?|epicos?/, /histórias?|historias?|stories?/].filter(pattern => pattern.test(current)).length
+    const creationVerb = /cadastr|criar|cria\b|crie\b|adicion|regist|inclu/.test(current)
+    const structureMarker = /(?:estrutura|lote)/.test(current) && /(?:épico|epic|história|historia|story|tarefa|task|bug)/.test(current)
+    if ((creationVerb && structureLevels >= 2) || structureMarker) {
+      if (/(?:cri[ae]\b|criar|cadastr\w*|nov[oa])\s+(?:um\s+|uma\s+|o\s+|a\s+|os\s+|as\s+)?projetos?\b/.test(current)) return ['create_project_structure']
+      return ['batch', 'list_modules']
+    }
+  }
   if (intent === 'start' && /(?:\btodos?\b|\btodas?\b|\bcada\b|\bem lote\b)/.test(current) && /(?:itens?|cards?|tarefas?|tasks?|bugs?|épicos?|epicos?|histórias?|historias?|stories|datas?|títulos?|titulos?|descrições?|descricoes?|responsáveis?|responsaveis?)/.test(current)) return ['update_items']
   if (intent === 'unknown' && /a operação batch|operation batch/.test(contextual)) return ['batch']
   const discovery = (intent === 'start'
     ? getSharedToolDefinitions(['list_projects', 'get_project', 'list_tasks', 'get_current_sprint'])
     : selectSharedTools(intent as Parameters<typeof selectSharedTools>[0])).map(tool => tool.name)
   if (intent !== 'start') return discovery
-  if (/projeto/.test(text) && /(?:estrutura|lote)/.test(text) && /(?:épico|epic|história|historia|story|tarefa|task|bug)/.test(text)) return ['create_project_structure']
-  if (/(?:estrutura|lote)/.test(text) && /(?:épico|epic|história|historia|story|tarefa|task|bug)/.test(text)) return ['batch']
   const names = new Set(discovery)
   const add = (pattern: RegExp, tools: string[]) => { if (pattern.test(text)) tools.forEach(tool => names.add(tool)) }
-  add(/projeto/, ['create_project', 'update_project', 'delete_project'])
+  add(/(?:cri[ae]\b|criar|cadastr|atualiz|edit|remov|delet|exclu)[a-zç]*\s+(?:um\s+|uma\s+|o\s+|a\s+|os\s+|as\s+)?projetos?\b/, ['create_project', 'update_project', 'delete_project'])
     add(/épico|epic|história|historia|story|tarefa|task|bug|item|card/, ['create_task', 'update_item', 'update_items', 'complete_task', 'delete_item', 'move_task', 'claim_task', 'release_task'])
    add(/estrutura|lote|itens|épico|epic|história|historia|story/, ['batch', 'list_modules'])
   add(/sprint/, ['create_sprint', 'activate_sprint', 'close_sprint'])
@@ -396,6 +403,11 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
     ? conversation.projectId ? await resolveSelectedItem(ctx.tenantId, conversation.projectId, expectedItemId) : undefined
     : null
   if (expectedItemId && !selectedItem) return operationalError(c, 'ITEM_NOT_FOUND', 404)
+  // Runs órfãs de restart do servidor: QUEUED/RUNNING além do timeout não têm processo
+  // associado e bloqueariam novas mensagens por maxActivePerUser — expira antes do limite.
+  const staleCutoff = new Date(Date.now() - (limits.timeoutMs + 10_000)).toISOString()
+  await db.update(assistantRuns).set({ status: 'EXPIRED', errorCode: 'TIMEOUT', finishedAt: new Date().toISOString() })
+    .where(and(eq(assistantRuns.tenantId, ctx.tenantId), inArray(assistantRuns.status, ['QUEUED', 'RUNNING']), lt(assistantRuns.startedAt, staleCutoff)))
   if ((await activeRuns(ctx.tenantId, ctx.userId)) >= limits.maxActivePerUser || (await activeRuns(ctx.tenantId)) >= limits.maxActivePerTenant) return operationalError(c, 'CONCURRENCY_LIMIT', 429)
   const now = new Date().toISOString(), messageId = generateId()
   await db.insert(assistantMessages).values({ id: messageId, tenantId: ctx.tenantId, conversationId, userId: ctx.userId, role: 'USER', content, metadataJson: '{}', createdAt: now })

@@ -152,7 +152,7 @@ describe('API de chat do Azy Agent', () => {
     const tooLong = await requestJson(`/assistant/conversations/${conversationId}/messages`, rootId, tenantId, 'POST', { content: 'á'.repeat(15_001) })
     expect(tooLong.status).toBe(413)
     expect(await tooLong.json()).toMatchObject({ code: 'PAYLOAD_LIMIT', retryable: false })
-    const tooMany = Array.from({ length: 21 }, (_, index) => `Task — Ação ${index + 1}`).join('\n')
+    const tooMany = Array.from({ length: 41 }, (_, index) => `Task — Ação ${index + 1}`).join('\n')
     const excessive = await requestJson(`/assistant/conversations/${conversationId}/messages`, rootId, tenantId, 'POST', { content: tooMany })
     expect(excessive.status).toBe(413)
     expect(await excessive.json()).toMatchObject({ code: 'ACTION_LIMIT', retryable: false })
@@ -163,8 +163,42 @@ describe('API de chat do Azy Agent', () => {
   test('estima itens estruturados sem contar cabeçalho e Tipo duas vezes', () => {
     const prompt = 'Épico 1 — E\nTipo: EPIC\nHistória 1.1 — S\nTipo: STORY\nTask — T\nTipo: TASK'
     expect(estimateRequestedActions(prompt)).toBe(3)
-    expect(toolsForMessage(`Cadastre a estrutura abaixo\n${prompt}`)).toEqual(['batch'])
+    expect(toolsForMessage(`Cadastre a estrutura abaixo\n${prompt}`)).toEqual(['batch', 'list_modules'])
     expect(toolsForMessage(`Crie um projeto e cadastre a estrutura abaixo\n${prompt}`)).toEqual(['create_project_structure'])
+  })
+
+  test('classifica cadastro de módulo com épicos e histórias como estrutura em batch', () => {
+    const command = `cadastre esse módulo para mim com toda extrutura que descrevo abaixo:
+
+Módulo: Cadastros Básicos
+
+Épico: Configurações
+
+História: Parâmetros
+
+História: Mails Modelo
+
+Épico: Administrativos
+
+História: Person. jurídicas`
+
+    expect(toolsForMessage(command)).toEqual(['batch', 'list_modules'])
+    expect(itemTypeScopeForMessage(command)).toEqual(['STORY'])
+  })
+
+  test('não confunde item chamado Projetos com criação de projeto', () => {
+    const command = `cadastre esses épicos e histórias no módulo Cadastros Básicos (omita palavras Épicos e Histórias).
+
+Épico: Operação
+
+História: Projetos`
+
+    expect(toolsForMessage(command)).toEqual(['batch', 'list_modules'])
+  })
+
+  test('mantém atualização em lote quando não há verbo de criação', () => {
+    expect(toolsForMessage('Arquive os épicos concluídos e suas histórias')).not.toEqual(['batch', 'list_modules'])
+    expect(toolsForMessage('Registre horas nas tasks e bugs do sprint atual')).not.toEqual(['batch', 'list_modules'])
   })
 
   test('prioriza movimentação atual sobre criação mencionada no histórico', () => {

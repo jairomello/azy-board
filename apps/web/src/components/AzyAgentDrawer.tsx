@@ -9,7 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 import { useAssistant } from "../contexts/AssistantContext";
 import { MarkdownText } from "./MarkdownText";
 import { notifyAssistantMutation } from "../lib/dataEvents";
@@ -287,7 +287,17 @@ export function AzyAgentDrawer() {
       );
       setRun({ id: result.runId, status: result.status, cursor: 0 });
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("runFailed"));
+      if (e instanceof ApiError) {
+        const messages: Record<string, string> = {
+          RATE_LIMITED: t("rateLimit"),
+          CONCURRENCY_LIMIT: t("concurrencyLimit"),
+          QUOTA_EXCEEDED: t("quotaExceeded"),
+          ASSISTANT_UNAVAILABLE: t("assistantUnavailable"),
+        }
+        setError(e.code && messages[e.code] ? messages[e.code] : e.message)
+      } else {
+        setError(e instanceof Error ? e.message : t("runFailed"))
+      }
       setInput(text);
     }
   }

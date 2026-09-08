@@ -7,7 +7,7 @@ process.env.DATABASE_URL = ':memory:'
 
 const { app } = await import('./index')
 const { db } = await import('./db/index')
-const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys } = await import('./db/schema')
+const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys, assistantConversations, assistantMessages, assistantRuns, assistantEvents } = await import('./db/schema')
 const { signJwt, generateApiKey } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 const { appendAnalyticsEvent, assertAnalyticsCutoverReady } = await import('./services/analytics')
@@ -728,6 +728,62 @@ describe('criação hierárquica em lote', () => {
     expect(task).toMatchObject({ parentId: story.id, assigneeId: user.id, columnId, points: 3 })
     expect(JSON.parse(task.ancestryPath)).toEqual([{ id: epic.id, title: 'Epic', type: 'EPIC' }, { id: story.id, title: 'Story', type: 'STORY' }])
   })
+
+  test('cria automaticamente módulo referenciado por nome que não existe', async () => {
+    const tenantId = generateId(), projectId = generateId(), moduleId = generateId(), columnId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Batch Auto Modulo', slug: `batch-auto-${tenantId}`, createdAt: new Date().toISOString() })
+    const user = await createUser(tenantId, 'batch-auto@test.local', 'Batch Auto')
+    const session = await token(user.id, tenantId, user.email)
+    await db.insert(projects).values({ id: projectId, tenantId, name: 'Projeto auto módulo', description: null, boardMode: 'HIERARCHICAL', simpleStoryId: null, managerUserId: user.id, createdAt: new Date().toISOString() })
+    await db.insert(memberships).values({ id: generateId(), tenantId, userId: user.id, projectId, role: 'ADMIN', createdAt: new Date().toISOString() })
+    await db.insert(modules).values({ id: moduleId, tenantId, projectId, name: 'Geral', description: null, position: 0 })
+    await db.insert(columns).values({ id: columnId, tenantId, projectId, name: 'Backlog', baseStatus: 'NOT_STARTED', position: 0 })
+
+    const response = await request(`/projects/${projectId}/batch`, session, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ atomic: true, operations: [
+        { tool: 'create_task', args: { ref: 'e1', title: 'Configurações', type: 'EPIC', parentRef: null, moduleName: 'Cadastros Básicos', priority: null, assignToCurrentUser: false } },
+        { tool: 'create_task', args: { ref: 's1', title: 'Parâmetros', type: 'STORY', parentRef: 'e1', moduleName: null, points: null, assignToCurrentUser: false } },
+      ] }),
+    })
+    expect(response.status).toBe(200)
+
+    const projectModules = await db.select().from(modules).where(eq(modules.projectId, projectId))
+    expect(projectModules.map(module => module.name).sort()).toEqual(['Cadastros Básicos', 'Geral'])
+    const autoModule = projectModules.find(module => module.name === 'Cadastros Básicos')!
+    expect(autoModule.position).toBe(1)
+
+    const created = await db.select().from(items).where(eq(items.projectId, projectId))
+    const epic = created.find(item => item.type === 'EPIC')!, story = created.find(item => item.type === 'STORY')!
+    expect(epic.moduleId).toBe(autoModule.id)
+    expect(story.parentId).toBe(epic.id)
+  })
+
+  test('mantém lote atômico íntegro quando operação inválida é rejeitada', async () => {
+    const tenantId = generateId(), projectId = generateId(), moduleId = generateId(), columnId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Batch Rollback', slug: `batch-rb-${tenantId}`, createdAt: new Date().toISOString() })
+    const user = await createUser(tenantId, 'batch-rb@test.local', 'Batch Rollback')
+    const session = await token(user.id, tenantId, user.email)
+    await db.insert(projects).values({ id: projectId, tenantId, name: 'Projeto rollback', description: null, boardMode: 'HIERARCHICAL', simpleStoryId: null, managerUserId: user.id, createdAt: new Date().toISOString() })
+    await db.insert(memberships).values({ id: generateId(), tenantId, userId: user.id, projectId, role: 'ADMIN', createdAt: new Date().toISOString() })
+    await db.insert(modules).values({ id: moduleId, tenantId, projectId, name: 'Geral', description: null, position: 0 })
+    await db.insert(columns).values({ id: columnId, tenantId, projectId, name: 'Backlog', baseStatus: 'NOT_STARTED', position: 0 })
+
+    const response = await request(`/projects/${projectId}/batch`, session, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ atomic: true, operations: [
+        { tool: 'create_task', args: { ref: 'e1', title: 'Épico válido', type: 'EPIC', parentRef: null, moduleName: 'Geral', priority: null, assignToCurrentUser: false } },
+        { tool: 'create_task', args: { ref: 's1', title: '', type: 'STORY', parentRef: 'e1', moduleName: null, points: null, assignToCurrentUser: false } },
+      ] }),
+    })
+    expect(response.status).toBe(422)
+    const body = await response.json() as { code: string; error: string }
+    expect(body.code).toBe('VALIDATION_ERROR')
+    expect(body.error).toContain('operação 2')
+
+    expect(await db.select().from(modules).where(eq(modules.projectId, projectId))).toHaveLength(1)
+    expect(await db.select().from(items).where(eq(items.projectId, projectId))).toHaveLength(0)
+  })
 })
 
 describe('visibilidade de projetos', () => {
@@ -1140,5 +1196,114 @@ describe('auto-gerente na criação de projeto', () => {
     expect(response.status).toBe(201)
     const body = await response.json() as { managerUserId: string | null }
     expect(body.managerUserId).toBe(outroUsuarioId)
+  })
+})
+
+describe('exclusão de projeto com conversas do agente', () => {
+  let tenantId: string
+  let adminToken: string
+  let userId: string
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Tenant Exclusao Agente', slug: `t-${tenantId}`, createdAt: new Date().toISOString() })
+    const admin = await createUser(tenantId, 'admin-delete-agent@test.local', 'Admin Delete Agente')
+    userId = admin.id
+    adminToken = await token(admin.id, tenantId, admin.email)
+  })
+
+  test('DELETE /projects/:id exclui conversa do agente e dependentes sem órfãos', async () => {
+    const created = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto Com Conversa' }),
+    })
+    expect(created.status).toBe(201)
+    const projectId = ((await created.json()) as { id: string }).id
+
+    const now = new Date().toISOString()
+    const conversationId = generateId()
+    const runId = generateId()
+    await db.insert(assistantConversations).values({ id: conversationId, tenantId, userId, projectId, title: 'Conversa do projeto', createdAt: now, updatedAt: now, deletedAt: null })
+    await db.insert(assistantRuns).values({ id: runId, tenantId, conversationId, userId, createdAt: now })
+    await db.insert(assistantMessages).values({ id: generateId(), tenantId, conversationId, role: 'USER', content: 'oi', createdAt: now })
+    await db.insert(assistantEvents).values({ id: generateId(), tenantId, runId, sequence: 0, eventType: 'RUN_CREATED', createdAt: now })
+
+    const dry = await request(`/projects/${projectId}`, adminToken, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dryRun: true }),
+    })
+    expect(dry.status).toBe(200)
+    const dryBody = await dry.json() as { counts: { conversations: number } }
+    expect(dryBody.counts.conversations).toBe(1)
+
+    const response = await request(`/projects/${projectId}`, adminToken, { method: 'DELETE' })
+    expect(response.status).toBe(200)
+
+    expect(await db.select().from(projects).where(eq(projects.id, projectId))).toHaveLength(0)
+    expect(await db.select().from(assistantConversations).where(eq(assistantConversations.id, conversationId))).toHaveLength(0)
+    expect(await db.select().from(assistantRuns).where(eq(assistantRuns.id, runId))).toHaveLength(0)
+    expect(await db.select().from(assistantMessages).where(eq(assistantMessages.conversationId, conversationId))).toHaveLength(0)
+    expect(await db.select().from(assistantEvents).where(eq(assistantEvents.runId, runId))).toHaveLength(0)
+  })
+
+  test('DELETE /projects/:id sem conversa do agente continua excluindo normalmente', async () => {
+    const created = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto Sem Conversa' }),
+    })
+    expect(created.status).toBe(201)
+    const projectId = ((await created.json()) as { id: string }).id
+
+    const response = await request(`/projects/${projectId}`, adminToken, { method: 'DELETE' })
+    expect(response.status).toBe(200)
+    expect(await db.select().from(projects).where(eq(projects.id, projectId))).toHaveLength(0)
+  })
+})
+
+describe('payload de criação de item para o board', () => {
+  test('POST /items retorna ancestryPath e parentId completos', async () => {
+    const tenantId = generateId(), projectId = generateId(), moduleId = generateId(), columnId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Tenant Payload Board', slug: `t-${tenantId}`, createdAt: new Date().toISOString() })
+    const user = await createUser(tenantId, 'payload-board@test.local', 'Payload Board')
+    const session = await token(user.id, tenantId, user.email)
+    await db.insert(projects).values({ id: projectId, tenantId, name: 'Projeto Payload', description: null, boardMode: 'HIERARCHICAL', simpleStoryId: null, managerUserId: user.id, createdAt: new Date().toISOString() })
+    await db.insert(memberships).values({ id: generateId(), tenantId, userId: user.id, projectId, role: 'ADMIN', createdAt: new Date().toISOString() })
+    await db.insert(modules).values({ id: moduleId, tenantId, projectId, name: 'Geral', description: null, position: 0 })
+    await db.insert(columns).values({ id: columnId, tenantId, projectId, name: 'Backlog', baseStatus: 'NOT_STARTED', position: 0 })
+
+    const epic = await request(`/projects/${projectId}/items`, session, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Épico Payload', type: 'EPIC', moduleId }),
+    })
+    expect(epic.status).toBe(201)
+    const epicBody = await epic.json() as { id: string; parentId: string | null; ancestryPath: string; isLeaf: boolean }
+    expect(epicBody.parentId).toBeNull()
+    expect(JSON.parse(epicBody.ancestryPath)).toHaveLength(0)
+
+    const story = await request(`/projects/${projectId}/items`, session, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Story Payload', type: 'STORY', parentId: epicBody.id }),
+    })
+    expect(story.status).toBe(201)
+    const storyBody = await story.json() as { id: string; parentId: string; ancestryPath: string }
+    expect(storyBody.parentId).toBe(epicBody.id)
+    expect(JSON.parse(storyBody.ancestryPath)).toHaveLength(1)
+
+    const task = await request(`/projects/${projectId}/items`, session, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Task Payload', type: 'TASK', parentId: storyBody.id }),
+    })
+    expect(task.status).toBe(201)
+    const taskBody = await task.json() as { id: string; parentId: string; ancestryPath: string; priority: string; isLeaf: boolean }
+    expect(taskBody.parentId).toBe(storyBody.id)
+    const path = JSON.parse(taskBody.ancestryPath) as Array<{ id: string }>
+    expect(path).toHaveLength(2)
+    expect(path[0]?.id).toBe(epicBody.id)
+    expect(path[1]?.id).toBe(storyBody.id)
+    expect(taskBody.priority).toBe('MEDIUM')
+    expect(taskBody.isLeaf).toBe(true)
   })
 })

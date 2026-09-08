@@ -2,9 +2,10 @@ import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { eq, and, or, asc, inArray, sql, isNotNull } from 'drizzle-orm'
 import { db } from '../db/index'
-import { projects, memberships, modules, columns, squads, users, items, itemTags, itemSprints, attachments, projectVersions, projectCostCenters, sprints, tags, checklists, checklistItems, itemLogs } from '../db/schema'
+import { projects, memberships, modules, columns, squads, users, items, itemTags, itemSprints, attachments, projectVersions, projectCostCenters, sprints, tags, checklists, checklistItems, itemLogs, assistantConversations } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
+import { broadcast } from '../services/websocket'
 import type { RequestContext, BoardMode, AncestorNode } from '@azy-board/types'
 import { hasGlobalGroup } from '../services/auth'
 import { hasKeyPermission } from '../services/authorization'
@@ -346,7 +347,7 @@ projectsRouter.delete('/:id', requireRole('ADMIN'), async (c) => {
   let requestBody: { dryRun?: boolean } = {}
   try { requestBody = await c.req.json() } catch { /* corpo opcional */ }
   if (requestBody.dryRun) {
-    const [projectItems, projectModules, projectTags, projectSprints, projectVersionsRows, projectMembers, projectColumns, projectSquads] = await Promise.all([
+    const [projectItems, projectModules, projectTags, projectSprints, projectVersionsRows, projectMembers, projectColumns, projectSquads, projectConversations] = await Promise.all([
       db.select({ id: items.id }).from(items).where(and(eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId))),
       db.select({ id: modules.id }).from(modules).where(and(eq(modules.projectId, projectId), eq(modules.tenantId, ctx.tenantId))),
       db.select({ id: tags.id }).from(tags).where(and(eq(tags.projectId, projectId), eq(tags.tenantId, ctx.tenantId))),
@@ -355,8 +356,9 @@ projectsRouter.delete('/:id', requireRole('ADMIN'), async (c) => {
       db.select({ id: memberships.id }).from(memberships).where(and(eq(memberships.projectId, projectId), eq(memberships.tenantId, ctx.tenantId))),
       db.select({ id: columns.id }).from(columns).where(and(eq(columns.projectId, projectId), eq(columns.tenantId, ctx.tenantId))),
       db.select({ id: squads.id }).from(squads).where(and(eq(squads.projectId, projectId), eq(squads.tenantId, ctx.tenantId))),
+      db.select({ id: assistantConversations.id }).from(assistantConversations).where(and(eq(assistantConversations.projectId, projectId), eq(assistantConversations.tenantId, ctx.tenantId))),
     ])
-    return c.json({ dryRun: true, projectId, counts: { items: projectItems.length, modules: projectModules.length, tags: projectTags.length, sprints: projectSprints.length, versions: projectVersionsRows.length, members: projectMembers.length, columns: projectColumns.length, squads: projectSquads.length } })
+    return c.json({ dryRun: true, projectId, counts: { items: projectItems.length, modules: projectModules.length, tags: projectTags.length, sprints: projectSprints.length, versions: projectVersionsRows.length, members: projectMembers.length, columns: projectColumns.length, squads: projectSquads.length, conversations: projectConversations.length } })
   }
 
   try {
@@ -402,9 +404,13 @@ projectsRouter.delete('/:id', requireRole('ADMIN'), async (c) => {
       await tx.delete(modules).where(and(eq(modules.projectId, projectId), eq(modules.tenantId, ctx.tenantId)))
       await tx.delete(columns).where(and(eq(columns.projectId, projectId), eq(columns.tenantId, ctx.tenantId)))
       await tx.delete(squads).where(and(eq(squads.projectId, projectId), eq(squads.tenantId, ctx.tenantId)))
+      // [TENANT] Conversas do agente vinculadas ao projeto são excluídas junto do projeto;
+      // messages/runs/events/toolCalls/approvals são removidos pelas FKs em cascata.
+      await tx.delete(assistantConversations).where(and(eq(assistantConversations.projectId, projectId), eq(assistantConversations.tenantId, ctx.tenantId)))
       await tx.delete(projects).where(and(eq(projects.id, projectId), eq(projects.tenantId, ctx.tenantId)))
     })
-  } catch {
+  } catch (error) {
+    console.error('[projects] falha ao excluir projeto', { projectId, error })
     return c.json({ error: 'Não foi possível excluir o projeto' }, 500)
   }
 
@@ -571,6 +577,8 @@ projectsRouter.post('/:id/modules', requireRole('ADMIN'), async (c) => {
     description: body.description,
     position,
   })
+
+  broadcast(projectId, { type: 'MODULE_CREATED', projectId, payload: { id: moduleId, name: body.name, position, description: body.description ?? null } })
 
   return c.json({ id: moduleId, name: body.name }, 201)
 })

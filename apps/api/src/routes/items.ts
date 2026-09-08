@@ -639,7 +639,31 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     throw error
   }
 
-  const payload = { id, title: body.title, type, projectId, columnId, status: 'NOT_STARTED', versionId: body.versionId ?? null, sprintId: body.sprintId ?? null }
+  const payload = {
+    id,
+    projectId,
+    parentId: effectiveParentId,
+    ancestryPath: JSON.stringify(ancestryPath),
+    title: body.title,
+    description: body.description ?? null,
+    type,
+    columnId,
+    status: 'NOT_STARTED' as const,
+    priority: body.priority ?? 'MEDIUM',
+    points: body.points ?? null,
+    assigneeId: body.assigneeId ?? null,
+    authorId: ctx.userId,
+    versionId: body.versionId ?? null,
+    costCenterId,
+    moduleId: project.boardMode === 'SIMPLE' ? null : (body.moduleId ?? null),
+    sprintId: body.sprintId ?? null,
+    isLeaf: true,
+    startDate: body.startDate ?? null,
+    dueDate: body.dueDate ?? null,
+    position: 0,
+    createdAt: now,
+    updatedAt: now,
+  }
 
   if (effectiveParentId) {
     broadcast(projectId, { type: 'SUBTASK_CREATED', projectId, payload: { parentId: effectiveParentId, item: payload } })

@@ -93,7 +93,7 @@ Items marked ★ are critical — a failed check must block the push.
 - [ ] **Aprovação e replay**: mutações têm preview, diff, hash, expiração,
       idempotency key e confirmação explícita para exclusões/cascatas. Rejeitar
       hash ou contexto alterado.
-- [ ] **Loop e custo**: aplicar 8 passos, 20 tool calls, 100 KB, 60 segundos,
+- [ ] **Loop e custo**: aplicar 16 passos, 40 tool calls, 100 KB, 60 segundos,
       quotas, concorrência e orçamento antes de cada continuação; interromper
       sem novas tools ao atingir limite.
 - [ ] **SSE e ownership**: `runId`, cursor, perguntas, aprovações e eventos

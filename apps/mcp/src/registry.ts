@@ -158,7 +158,7 @@ export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinit
       : name === 'create_task'
         ? 'Create a single EPIC, STORY, TASK or BUG. Hierarchical projects require parentId for TASK/BUG (a STORY, TASK or BUG) and for STORY (an EPIC); EPIC is a root with moduleId. Never create an orphan item.'
         : name === 'batch'
-        ? 'Create an ordered hierarchy of up to 50 EPIC, STORY, TASK, or BUG items in one atomic approval. Use refs and parentRefs instead of database IDs. Use moduleName for EPIC items.'
+        ? 'Create an ordered hierarchy of up to 50 EPIC, STORY, TASK, or BUG items in one atomic approval. Use refs and parentRefs instead of database IDs. Use moduleName for EPIC items; a module referenced by name that does not exist yet is created automatically.'
       : name === 'update_items'
          ? 'Atomically update one or many active items selected by filters. For bulk moves, set filters.column to the source column, preserve every other requested criterion, and add a column SET change with the destination. Generic tasks or cards in a bulk move covers leaf TASK and BUG items unless the user explicitly restricts the type. Also supports fixed values, clearing fields, relative dates, today, and copying each item creation date. Use itemIds for one item and matchAll only for every item without narrower filters.'
       : `Azy Board: ${name}`,

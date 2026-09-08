@@ -369,6 +369,10 @@ export default function BoardPage() {
       const item = e.payload as ItemData
       setAllItems(prev => upsertItem(prev, item))
     },
+    MODULE_CREATED: (e: WsEvent) => {
+      const module = e.payload as Module
+      setModules(prev => prev.some(item => item.id === module.id) ? prev : [...prev, module])
+    },
     ITEM_UPDATED: (e: WsEvent) => {
       const { itemId, ...updates } = e.payload as { itemId: string; [k: string]: unknown }
       // [isLeaf] parentId pode ter mudado → recalcular folhas
@@ -757,7 +761,7 @@ export default function BoardPage() {
       type: newItemCreation.type,
       columnId: newItemCreation.columnId ?? columns[0]?.id,
     })
-    setAllItems(prev => computeIsLeaf([...prev, created]))
+    setAllItems(prev => upsertItem(prev, created))
     setTreeRefreshToken(value => value + 1)
     if (tagIds.length > 0) {
       await api.post(`/projects/${projectId}/items/${created.id}/tags`, { tagIds })
@@ -952,7 +956,7 @@ export default function BoardPage() {
         notes: data.notes,
         description: data.description,
       })
-       setAllItems(prev => computeIsLeaf([...prev, item]))
+       setAllItems(prev => upsertItem(prev, item))
        setTreeRefreshToken(value => value + 1)
     }
   }, [projectId])
@@ -965,7 +969,7 @@ export default function BoardPage() {
       parentId: epicId,
       title,
     })
-    setAllItems(prev => computeIsLeaf([...prev, item]))
+    setAllItems(prev => upsertItem(prev, item))
     return { id: item.id, title: item.title, epicId }
   }, [projectId])
 
@@ -986,7 +990,7 @@ export default function BoardPage() {
         title: data.title,
         description: data.description,
       })
-      setAllItems(prev => computeIsLeaf([...prev, item]))
+      setAllItems(prev => upsertItem(prev, item))
     }
   }, [projectId])
 

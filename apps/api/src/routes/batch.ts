@@ -322,37 +322,59 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
       return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
     }
   }
+  let failedAt = -1
+  let failedReason = ''
+  const createdModules: Array<{ id: string; name: string; position: number; description: string | null }> = []
   const execute = async (tx: BatchDb) => {
     const refs = new Map<string, string>()
     const projectModules = await tx.select({ id: modules.id, name: modules.name }).from(modules).where(and(eq(modules.projectId, projectId), eq(modules.tenantId, ctx.tenantId)))
+    const ensureModule = async (name: string) => {
+      const existing = projectModules.find(module => module.name.localeCompare(name, undefined, { sensitivity: 'accent' }) === 0)
+      if (existing) return existing
+      const id = generateId()
+      const position = projectModules.length
+      await tx.insert(modules).values({ id, tenantId: ctx.tenantId, projectId, name, description: null, position })
+      projectModules.push({ id, name })
+      createdModules.push({ id, name, position, description: null })
+      return { id, name }
+    }
     // Validate local references before writing; relation IDs are resolved as preceding operations execute.
+    // [TENANT] Módulos inexistentes citados no lote são criados no projeto do tenant autenticado.
     if (atomic) {
       const declaredRefs = new Set<string>()
-      for (const operation of input.operations) {
-        const tool = operation.tool ?? (operation.method === 'POST' && operation.path === '/items' ? 'create_task' : '')
-        const body = operation.args ?? operation.body ?? {}
-        if ((tool !== 'create_task' && tool !== 'create_item') || typeof body.title !== 'string' || !body.title.trim()) throw new Error('VALIDATION_ERROR')
-        const project = await tx.query.projects.findFirst({ where: (p) => and(eq(p.id, projectId), eq(p.tenantId, ctx.tenantId)), columns: { id: true } })
-        if (!project) throw new Error('VALIDATION_ERROR')
-        const ref = typeof body.ref === 'string' ? body.ref : null
-        if (ref && declaredRefs.has(ref)) throw new Error('VALIDATION_ERROR')
-        const parentRef = typeof body.parentRef === 'string' ? body.parentRef : null
-        if (parentRef && !declaredRefs.has(parentRef)) throw new Error('VALIDATION_ERROR')
-        if (ref) declaredRefs.add(ref)
-        const parentId = typeof body.parentId === 'string' ? body.parentId : null
-        if (parentId) {
-          const parent = await tx.query.items.findFirst({ where: (i) => and(eq(i.id, parentId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)), columns: { id: true } })
-          if (!parent) throw new Error('RELATION_OUT_OF_SCOPE')
+      const missingModules = new Set<string>()
+      for (const [index, operation] of input.operations.entries()) {
+        try {
+          const tool = operation.tool ?? (operation.method === 'POST' && operation.path === '/items' ? 'create_task' : '')
+          const body = operation.args ?? operation.body ?? {}
+          if ((tool !== 'create_task' && tool !== 'create_item') || typeof body.title !== 'string' || !body.title.trim()) throw new Error('VALIDATION_ERROR')
+          const project = await tx.query.projects.findFirst({ where: (p) => and(eq(p.id, projectId), eq(p.tenantId, ctx.tenantId)), columns: { id: true } })
+          if (!project) throw new Error('VALIDATION_ERROR')
+          const ref = typeof body.ref === 'string' ? body.ref : null
+          if (ref && declaredRefs.has(ref)) throw new Error('VALIDATION_ERROR')
+          const parentRef = typeof body.parentRef === 'string' ? body.parentRef : null
+          if (parentRef && !declaredRefs.has(parentRef)) throw new Error('VALIDATION_ERROR')
+          if (ref) declaredRefs.add(ref)
+          const parentId = typeof body.parentId === 'string' ? body.parentId : null
+          if (parentId) {
+            const parent = await tx.query.items.findFirst({ where: (i) => and(eq(i.id, parentId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)), columns: { id: true } })
+            if (!parent) throw new Error('RELATION_OUT_OF_SCOPE')
+          }
+          if (typeof body.moduleId === 'string') {
+            const module = await tx.query.modules.findFirst({ where: (m) => and(eq(m.id, body.moduleId as string), eq(m.projectId, projectId), eq(m.tenantId, ctx.tenantId)), columns: { id: true } })
+            if (!module) throw new Error('RELATION_OUT_OF_SCOPE')
+          }
+          if (typeof body.moduleName === 'string' && !projectModules.some(module => module.name.localeCompare(body.moduleName as string, undefined, { sensitivity: 'accent' }) === 0)) missingModules.add(body.moduleName)
+        } catch (error) {
+          failedAt = index
+          failedReason = error instanceof Error ? error.message : 'INTERNAL_ERROR'
+          throw error
         }
-        if (typeof body.moduleId === 'string') {
-          const module = await tx.query.modules.findFirst({ where: (m) => and(eq(m.id, body.moduleId as string), eq(m.projectId, projectId), eq(m.tenantId, ctx.tenantId)), columns: { id: true } })
-          if (!module) throw new Error('RELATION_OUT_OF_SCOPE')
-        }
-        if (typeof body.moduleName === 'string' && !projectModules.some(module => module.name.localeCompare(body.moduleName as string, undefined, { sensitivity: 'accent' }) === 0)) throw new Error('RELATION_OUT_OF_SCOPE')
       }
+      for (const name of missingModules) await ensureModule(name)
     }
     const results: Array<{ ok: boolean; data?: unknown; code?: string }> = []
-    for (const operation of input.operations) {
+    for (const [index, operation] of input.operations.entries()) {
       const tool = operation.tool ?? (operation.method === 'POST' && operation.path === '/items' ? 'create_task' : '')
       try {
         if (tool !== 'create_task' && tool !== 'create_item') throw new Error('VALIDATION_ERROR')
@@ -361,12 +383,13 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
         const parentId = parentRef ? refs.get(parentRef) : body.parentId
         if (parentRef && !parentId) throw new Error('RELATION_OUT_OF_SCOPE')
         const moduleName = typeof body.moduleName === 'string' ? body.moduleName : null
-        const moduleId = moduleName ? projectModules.find(module => module.name.localeCompare(moduleName, undefined, { sensitivity: 'accent' }) === 0)?.id : body.moduleId
-        if (moduleName && !moduleId) throw new Error('RELATION_OUT_OF_SCOPE')
+        const moduleId = moduleName ? (await ensureModule(moduleName)).id : body.moduleId
         const data = await runCreate(ctx, projectId, { ...body, parentId, moduleId }, tx)
         if (typeof body.ref === 'string') refs.set(body.ref, data.id)
         results.push({ ok: true, data })
       } catch (error) {
+        failedAt = index
+        failedReason = error instanceof Error ? error.message : 'INTERNAL_ERROR'
         if (atomic) throw error
         const code = error instanceof Error && ['VALIDATION_ERROR', 'RELATION_OUT_OF_SCOPE', 'HIERARCHY_REQUIRED'].includes(error.message) ? error.message : 'INTERNAL_ERROR'
         results.push({ ok: false, code })
@@ -377,6 +400,7 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
   try {
     const result = atomic ? await db.transaction(tx => execute(tx)) : await execute(db)
     if (key) await saveIdempotent(ctx, 'batch', key, payload, result)
+    for (const module of createdModules) broadcast(projectId, { type: 'MODULE_CREATED', projectId, payload: module })
     for (const entry of result.results) {
       if (!entry.ok || !entry.data || typeof entry.data !== 'object') continue
       const item = entry.data as { id: string; parentId?: string | null }
@@ -384,6 +408,8 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
     }
     return c.json(result, 200)
   } catch (error) {
-    return c.json({ code: error instanceof Error && ['VALIDATION_ERROR', 'HIERARCHY_REQUIRED'].includes(error.message) ? error.message : 'BATCH_ROLLED_BACK', error: atomic ? 'Lote desfeito; nenhuma operação foi aplicada' : 'Erro no lote' }, 422)
+    const code = error instanceof Error && ['VALIDATION_ERROR', 'HIERARCHY_REQUIRED'].includes(error.message) ? error.message : 'BATCH_ROLLED_BACK'
+    const detail = failedAt >= 0 ? ` (operação ${failedAt + 1}: ${failedReason})` : ''
+    return c.json({ code, error: atomic ? `Lote desfeito; nenhuma operação foi aplicada${detail}` : 'Erro no lote' }, 422)
   }
 })

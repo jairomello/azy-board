@@ -85,6 +85,20 @@ describe('Azy Agent harness', () => {
     expect(flat).toMatchObject({ operations: [{ tool: 'create_task', args: { ref: 'e1', title: 'Epic', type: 'EPIC' } }] })
   })
 
+  test('preview de batch distingue módulos a criar dos existentes', () => {
+    const structureArgs = { projectId: 'p1', operations: [
+      { tool: 'create_task', args: { ref: 'e1', title: 'Epic', type: 'EPIC', parentRef: null, moduleName: 'Novo Módulo' } },
+      { tool: 'create_task', args: { ref: 's1', title: 'Story', type: 'STORY', parentRef: 'e1', moduleName: 'Geral' } },
+    ] }
+    const preview = approvalPreview('batch', structureArgs, { userId }, ['Geral'])
+    expect(preview.summary).toBe('Cadastrar 2 itens e criar 1 módulo(s) (1 épico(s), 1 história(s), 0 task(s), 0 bug(s))')
+    expect(String(preview.markdown)).toContain('Novo Módulo (a criar)')
+    expect(String(preview.markdown)).toContain('Geral (existente)')
+    const semCatalogo = approvalPreview('batch', structureArgs, { userId })
+    expect(semCatalogo.summary).toBe('Cadastrar 2 itens (1 épico(s), 1 história(s), 0 task(s), 0 bug(s))')
+    expect(String(semCatalogo.markdown)).toContain('**Módulos:** Novo Módulo, Geral')
+  })
+
   test('gera prévia amigável para atualização filtrada', () => {
     const args = canonicalArguments('update_items', {
       filters: { types: null, sprint: null, matchAll: true },
@@ -169,10 +183,10 @@ describe('Azy Agent harness', () => {
     expect(executions).toBe(1)
   })
 
-  test('bloqueia lote acima de vinte ações antes da aprovação', async () => {
+  test('bloqueia lote acima de quarenta ações antes da aprovação', async () => {
     class LargeBatchProvider extends MockProvider {
       async createRun(): Promise<ModelResponse> {
-        return { id: 'large', output: [{ type: 'function_call', name: 'batch', callId: 'large-call', arguments: JSON.stringify({ projectId: 'p1', operations: Array.from({ length: 21 }, (_, index) => ({ tool: 'create_task', args: { ref: `e${index}`, title: `Epic ${index}`, type: 'EPIC', parentRef: null, moduleName: 'Geral', description: null, priority: null, points: null, assignToCurrentUser: false } })) }) }] }
+        return { id: 'large', output: [{ type: 'function_call', name: 'batch', callId: 'large-call', arguments: JSON.stringify({ projectId: 'p1', operations: Array.from({ length: 41 }, (_, index) => ({ tool: 'create_task', args: { ref: `e${index}`, title: `Epic ${index}`, type: 'EPIC', parentRef: null, moduleName: 'Geral', description: null, priority: null, points: null, assignToCurrentUser: false } })) }) }] }
       }
     }
     const result = await new AssistantHarness({ provider: new LargeBatchProvider(), executeTool: async () => { throw new Error('não deve executar') } })
