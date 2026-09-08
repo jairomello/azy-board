@@ -295,6 +295,7 @@ export type WsEventType =
   | 'ITEM_UPDATED'
   | 'ITEM_DELETED'
   | 'CHECKLIST_UPDATED'
+  | 'MODULE_CREATED'
 
 export interface WsEvent<T = unknown> {
   type: WsEventType

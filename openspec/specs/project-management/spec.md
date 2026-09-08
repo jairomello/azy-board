@@ -5,7 +5,7 @@ Definir os requisitos da capacidade project management.
 ## Requirements
 
 ### Requirement: Criar projeto
-O sistema SHALL permitir que um usuário autenticado crie um novo projeto informando nome, descrição opcional, modo de board opcional (`HIERARCHICAL` ou `SIMPLE`) e os sinalizadores opcionais de visibilidade `isRestricted` e `isHidden`. Quando o modo não for informado, SHALL usar `HIERARCHICAL`. Quando os sinalizadores de visibilidade não forem informados, SHALL usar `false` para ambos, produzindo um projeto visível para todos os membros do tenant conforme as regras de escopo por grupo.
+O sistema SHALL permitir que um usuário autenticado crie um novo projeto informando nome, descrição opcional, modo de board opcional (`HIERARCHICAL` ou `SIMPLE`), os sinalizadores opcionais de visibilidade `isRestricted` e `isHidden`, e os campos opcionais de planejamento `startDate`, `plannedEndDate`, `plannedPoints`, `plannedHours` e `scope`. Quando o modo não for informado, SHALL usar `HIERARCHICAL`. Quando os sinalizadores de visibilidade não forem informados, SHALL usar `false` para ambos, produzindo um projeto visível para todos os membros do tenant conforme as regras de escopo por grupo. Quando os campos de planejamento não forem informados, SHALL persisti-los como `null`. Quando `managerUserId` não for informado, o sistema SHALL atribuir automaticamente o usuário autenticado (`ctx.userId`) como gerente do projeto.
 
 #### Scenario: Criação bem-sucedida com colunas padrão
 - **WHEN** usuário envia nome do projeto
@@ -37,6 +37,17 @@ O sistema SHALL permitir que um usuário autenticado crie um novo projeto inform
 
 ---
 
+#### Scenario: Projeto criado com gerente explícito diferente do criador
+- **WHEN** usuário cria projeto informando `managerUserId` com um valor específico
+- **THEN** sistema persiste o `managerUserId` informado sem sobrescrever com `ctx.userId`
+
+#### Scenario: Projeto criado sem gerente informado tem criador como gerente
+- **WHEN** usuário cria projeto sem informar `managerUserId`
+- **THEN** sistema atribui `ctx.userId` (o criador autenticado) como `managerUserId` e o retorna na resposta
+
+#### Scenario: Projeto criado com campos de planejamento
+- **WHEN** usuário cria projeto informando `startDate`, `plannedEndDate`, `plannedPoints`, `plannedHours` e/ou `scope`
+- **THEN** sistema persiste os campos de planejamento informados e os retorna na resposta
 ### Requirement: Listar projetos do usuário
 O sistema SHALL retornar, na listagem de projetos, apenas os projetos que o usuário autenticado tem permissão de ver: para Membros de Equipe e Gerentes, somente os projetos com vínculo (membership ativa ou indicação como Gerente Geral); para Admin e Root, os projetos do tenant exceto os restritos sem vínculo. Em todos os casos, o sistema SHALL excluir projetos ocultos, a menos que a requisição informe `includeHidden=true`.
 

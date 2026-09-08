@@ -64,3 +64,8 @@ uploads/
 
 # Homelab deployment notes (must stay local)
 DEPLOY_LABAPPS_LOCAL.md
+
+# Wiki internal editorial process (private authoring state)
+docs/azyboard-wiki/controle/
+docs/azyboard-wiki/modelos/
+docs/azyboard-wiki/.obsidian/
