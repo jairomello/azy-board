@@ -18,7 +18,7 @@ export type HarnessContext = HumanToolContext & { conversationId: string; runId:
 type HarnessLimits = { [Key in keyof typeof HARNESS_LIMITS]: number }
 export type HarnessOptions = { db?: DrizzleDb; provider: ModelProvider; executeTool: (name: string, args: Record<string, unknown>, context: HarnessContext) => Promise<unknown>; authorize?: (context: HarnessContext, name: string, args: Record<string, unknown>) => Promise<void>; assertAvailable?: (context: HarnessContext) => Promise<void>; limits?: Partial<HarnessLimits> }
 
-const mutationNames = new Set(getSharedToolDefinitions().filter(tool => tool.namespace === 'mutation').map(tool => tool.name))
+const mutationNames = new Set(getSharedToolDefinitions().filter(tool => tool.routing.operation !== 'read').map(tool => tool.name))
 const destructiveNames = new Set(['delete_item', 'delete_project', 'archive_item', 'delete_checklist', 'delete_checklist_item', 'remove_member'])
 
 export function riskForTool(name: string): RiskLevel {
@@ -42,6 +42,28 @@ export function safeError(error: unknown): string {
   if (/^(PAYLOAD_LIMIT|ACTION_LIMIT|STEP_LIMIT|TOKEN_LIMIT|COST_LIMIT|TOOL_CALL_LIMIT|TIMEOUT|INVALID_TOOL_CALL|TOOL_NOT_REGISTERED|TOOL_NOT_ALLOWED_FOR_RUN|REPEATED_TOOL_CALL)$/.test(message)) return message
   if (/insufficient[_ ]quota|billing[_ ]hard[_ ]limit|no credits remaining|add credits|credit balance|saldo insuficiente/i.test(message)) return 'Saldo insuficiente no provedor de IA. Adicione créditos à conta do provedor para continuar.'
   return /secret|token|password|api.?key|ciphertext|prompt|pii/i.test(message) ? 'Falha segura na execução' : message.slice(0, 300)
+}
+
+const terminalToolErrors = /^(?:USER_CONTEXT_REQUIRED|AUTHORIZATION_REVALIDATION_REQUIRED|PROJECT_CONTEXT_MISMATCH|TOOL_NOT_REGISTERED|TOOL_NOT_ALLOWED_FOR_RUN|REPEATED_TOOL_CALL|PAYLOAD_LIMIT|ACTION_LIMIT|STEP_LIMIT|TOKEN_LIMIT|COST_LIMIT|TOOL_CALL_LIMIT|TIMEOUT|ASSISTANT_UNAVAILABLE|APPROVAL_[A-Z_]+|HTTP (?:401|403)\b)/
+
+function recoverableToolError(error: unknown): { code: string; message: string } | null {
+  const raw = error instanceof Error ? error.message : String(error)
+  const code = raw.match(/\b(?:VALIDATION_ERROR|RELATION_OUT_OF_SCOPE|HIERARCHY_REQUIRED|CONFLICT|NOT_FOUND|HTTP \d{3})\b/)?.[0]
+    ?? (/Campo obrigatório|inválid|deve ser/i.test(raw) ? 'VALIDATION_ERROR' : 'TOOL_FAILED')
+  if (terminalToolErrors.test(raw) || /^HTTP (?:401|403)\b/.test(raw)) return null
+  if (code === 'TOOL_FAILED' && !/^HTTP (?:400|404|409|422)\b/.test(raw)) return null
+  const messages: Record<string, string> = {
+    VALIDATION_ERROR: 'A operação precisa de argumentos diferentes. Revise os campos e tente novamente.',
+    RELATION_OUT_OF_SCOPE: 'Uma relação ou recurso não foi encontrado neste projeto. Consulte os catálogos e tente novamente.',
+    HIERARCHY_REQUIRED: 'A hierarquia do item é inválida. Consulte os pais disponíveis e tente novamente.',
+    CONFLICT: 'O estado mudou ou já existe um recurso equivalente. Consulte o estado atual e tente novamente.',
+    NOT_FOUND: 'O recurso não foi encontrado. Atualize a busca e tente novamente.',
+    'HTTP 400': 'A operação precisa de argumentos diferentes. Revise os campos e tente novamente.',
+    'HTTP 404': 'O recurso não foi encontrado. Atualize a busca e tente novamente.',
+    'HTTP 409': 'O estado mudou ou já existe um recurso equivalente. Consulte o estado atual e tente novamente.',
+    'HTTP 422': 'A operação foi rejeitada por dados inválidos. Revise os campos e tente novamente.',
+  }
+  return { code, message: messages[code] ?? 'A operação não pôde ser concluída automaticamente. Tente uma abordagem diferente.' }
 }
 
 function toolsForModel(context: HarnessContext, allowlist?: readonly string[]): ModelTool[] {
@@ -106,38 +128,43 @@ export class AssistantHarness {
         if ((counts.calls += calls.length) > this.limits.toolCalls) throw new Error('TOOL_CALL_LIMIT')
         const outputs: Record<string, unknown>[] = []
         for (const call of calls) {
-          const name = call.name ?? '', args = canonicalArguments(name, parseArguments(call.arguments), fullContext)
-          if (!call.callId) throw new Error('INVALID_TOOL_CALL')
-          const signature = `${name}:${operationHash(name, args)}`
-          const tool = getSharedToolDefinitions().find(item => item.name === name)
-          if (!tool) throw new Error('TOOL_NOT_REGISTERED')
-          if (allowlist && !allowlist.includes(name)) throw new Error('TOOL_NOT_ALLOWED_FOR_RUN')
-          if (name === 'batch' && Array.isArray(args.operations) && args.operations.length > HARNESS_LIMITS.toolCalls) throw new Error('ACTION_LIMIT')
-          validateToolArguments(name, args)
-          const risk = riskForTool(name), hash = operationHash(name, args), callId = randomUUID()
-          if (seen.has(signature)) {
-            if (risk !== 'READ') throw new Error('REPEATED_TOOL_CALL')
-            outputs.push({ type: 'function_call_output', call_id: call.callId, output: JSON.stringify(seen.get(signature)) })
-            continue
+          try {
+            const name = call.name ?? '', args = canonicalArguments(name, parseArguments(call.arguments), fullContext)
+            if (!call.callId) throw new Error('INVALID_TOOL_CALL')
+            const signature = `${name}:${operationHash(name, args)}`
+            const tool = getSharedToolDefinitions().find(item => item.name === name)
+            if (!tool) throw new Error('TOOL_NOT_REGISTERED')
+            if (name === 'batch' && Array.isArray(args.operations) && args.operations.length > HARNESS_LIMITS.toolCalls) throw new Error('ACTION_LIMIT')
+            validateToolArguments(name, args)
+            const risk = riskForTool(name), hash = operationHash(name, args), callId = randomUUID()
+            if (seen.has(signature)) {
+              if (risk !== 'READ') throw new Error('REPEATED_TOOL_CALL')
+              outputs.push({ type: 'function_call_output', call_id: call.callId, output: JSON.stringify(seen.get(signature)) })
+              continue
+            }
+            await this.options.assertAvailable?.(fullContext)
+            await this.options.authorize?.(fullContext, name, args)
+            await this.database.insert(assistantToolCalls).values({ id: callId, tenantId: context.tenantId, runId, toolName: name, riskLevel: risk, status: risk === 'READ' ? 'RUNNING' : 'WAITING_APPROVAL', argumentsJson: JSON.stringify(redact(args)), operationHash: hash, idempotencyKey: `${runId}:${hash}`, createdAt: new Date().toISOString() })
+            if (risk !== 'READ') {
+              const existingModules = name === 'batch' && typeof args.projectId === 'string'
+                ? (await this.database.select({ name: modules.name }).from(modules).where(and(eq(modules.projectId, args.projectId as string), eq(modules.tenantId, context.tenantId)))).map(row => row.name)
+                : undefined
+              await this.database.insert(assistantApprovals).values({ id: randomUUID(), tenantId: context.tenantId, runId, toolCallId: callId, previewJson: JSON.stringify(approvalPreview(name, args, fullContext, existingModules)), operationHash: hash, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), createdAt: new Date().toISOString() })
+              await this.event(runId, context.tenantId, 'APPROVAL_REQUIRED', { tool: name, operationHash: hash, domain: tool.routing.domain, expanded: Boolean(allowlist && !allowlist.includes(name)), catalogCount: allowlist?.length ?? null })
+              await this.database.update(assistantRuns).set({ status: 'WAITING_APPROVAL' }).where(eq(assistantRuns.id, runId))
+              return { runId, status: 'WAITING_APPROVAL' }
+            }
+            await this.event(runId, context.tenantId, 'TOOL_STARTED', { tool: name, domain: tool.routing.domain, expanded: Boolean(allowlist && !allowlist.includes(name)), catalogCount: allowlist?.length ?? null })
+            const result = sanitizeToolOutput(await this.retrySafe(() => this.options.executeTool(name, args, fullContext), risk === 'READ'))
+            seen.set(signature, result)
+            await this.database.update(assistantToolCalls).set({ status: 'COMPLETED', resultSummary: JSON.stringify(summary(result)), finishedAt: new Date().toISOString() }).where(eq(assistantToolCalls.id, callId))
+            await this.event(runId, context.tenantId, 'TOOL_COMPLETED', { tool: name, result: summary(result) })
+            outputs.push({ type: 'function_call_output', call_id: call.callId, output: JSON.stringify(result) })
+          } catch (error) {
+            const recoverable = recoverableToolError(error)
+            if (!recoverable) throw error
+            outputs.push({ type: 'function_call_output', call_id: call.callId ?? randomUUID(), output: JSON.stringify({ ok: false, recoverable: true, code: recoverable.code, error: recoverable.message }) })
           }
-          await this.database.insert(assistantToolCalls).values({ id: callId, tenantId: context.tenantId, runId, toolName: name, riskLevel: risk, status: risk === 'READ' ? 'RUNNING' : 'WAITING_APPROVAL', argumentsJson: JSON.stringify(redact(args)), operationHash: hash, idempotencyKey: `${runId}:${hash}`, createdAt: new Date().toISOString() })
-          if (risk !== 'READ') {
-            const existingModules = name === 'batch' && typeof args.projectId === 'string'
-              ? (await this.database.select({ name: modules.name }).from(modules).where(and(eq(modules.projectId, args.projectId as string), eq(modules.tenantId, context.tenantId)))).map(row => row.name)
-              : undefined
-            await this.database.insert(assistantApprovals).values({ id: randomUUID(), tenantId: context.tenantId, runId, toolCallId: callId, previewJson: JSON.stringify(approvalPreview(name, args, fullContext, existingModules)), operationHash: hash, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), createdAt: new Date().toISOString() })
-            await this.event(runId, context.tenantId, 'APPROVAL_REQUIRED', { tool: name, operationHash: hash })
-            await this.database.update(assistantRuns).set({ status: 'WAITING_APPROVAL' }).where(eq(assistantRuns.id, runId))
-            return { runId, status: 'WAITING_APPROVAL' }
-          }
-          await this.event(runId, context.tenantId, 'TOOL_STARTED', { tool: name })
-          await this.options.assertAvailable?.(fullContext)
-          await this.options.authorize?.(fullContext, name, args)
-          const result = sanitizeToolOutput(await this.retrySafe(() => this.options.executeTool(name, args, fullContext), risk === 'READ'))
-          seen.set(signature, result)
-          await this.database.update(assistantToolCalls).set({ status: 'COMPLETED', resultSummary: JSON.stringify(summary(result)), finishedAt: new Date().toISOString() }).where(eq(assistantToolCalls.id, callId))
-          await this.event(runId, context.tenantId, 'TOOL_COMPLETED', { tool: name, result: summary(result) })
-          outputs.push({ type: 'function_call_output', call_id: call.callId, output: JSON.stringify(result) })
         }
          current = await this.withTimeout(this.provider().createRun({ model, input: outputs, previousResponse: current, tools: toolsForModel(fullContext, allowlist), userId: context.userId }), runId)
       }
@@ -207,8 +234,9 @@ export class AssistantHarness {
 }
 
 function parseArguments(value?: string): Record<string, unknown> { if (!value) throw new Error('INVALID_TOOL_ARGUMENTS'); try { const parsed = JSON.parse(value); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(); return Object.fromEntries(Object.entries(parsed as Record<string, unknown>).filter(([, item]) => item !== null && item !== 'null' && item !== '')) } catch { throw new Error('INVALID_TOOL_ARGUMENTS') } }
-export function canonicalArguments(name: string, args: Record<string, unknown>, context: Pick<HarnessContext, 'userId' | 'projectId' | 'itemTypeScope'>): Record<string, unknown> {
-  const scopedArgs = context.projectId && name !== 'list_projects' && name !== 'create_project' && name !== 'create_project_structure' ? { ...args, projectId: context.projectId } : args
+export function canonicalArguments(name: string, args: Record<string, unknown>, context: Pick<HarnessContext, 'userId' | 'projectId' | 'targetProjectId' | 'itemTypeScope'>): Record<string, unknown> {
+  const scopedProjectId = context.targetProjectId ?? context.projectId
+  const scopedArgs = scopedProjectId && name !== 'list_projects' && name !== 'create_project' && name !== 'create_project_structure' ? { ...args, projectId: scopedProjectId } : args
   if (name === 'update_items' && context.itemTypeScope?.length) {
     const filters = scopedArgs.filters && typeof scopedArgs.filters === 'object' && !Array.isArray(scopedArgs.filters) ? scopedArgs.filters as Record<string, unknown> : {}
     const changes = Array.isArray(scopedArgs.changes) ? scopedArgs.changes : []
@@ -236,7 +264,7 @@ export function canonicalArguments(name: string, args: Record<string, unknown>, 
   }
   return name === 'create_project_structure' ? { ...projectArgs, operations: args.operations } : projectArgs
 }
-export function approvalPreview(name: string, args: Record<string, unknown>, context: Pick<HarnessContext, 'userId'>, existingModules?: readonly string[]): Record<string, unknown> {
+export function approvalPreview(name: string, args: Record<string, unknown>, context: Pick<HarnessContext, 'userId' | 'projectId' | 'itemId'>, existingModules?: readonly string[]): Record<string, unknown> {
   if (name === 'create_project' || name === 'create_project_structure') {
     const fields = [
       ['Nome', args.name],
@@ -267,10 +295,12 @@ export function approvalPreview(name: string, args: Record<string, unknown>, con
       ? moduleNames.filter(moduleName => !existingModules.some(existing => existing.localeCompare(moduleName, undefined, { sensitivity: 'accent' }) === 0))
       : moduleNames
     const moduleEntries = moduleNames.map(moduleName => existingModules ? `${moduleName}${newModules.includes(moduleName) ? ' (a criar)' : ' (existente)'}` : moduleName)
+    const target = context.projectId ?? (typeof args.projectId === 'string' ? args.projectId : null)
+    const targetSection = `${target ? `- **Projeto:** ${target}\n` : ''}${context.itemId ? `- **Item:** ${context.itemId}\n` : ''}`
     const moduleSection = moduleNames.length ? `- **Módulos:** ${moduleEntries.join(', ')}\n` : ''
     const summaryModules = existingModules && newModules.length ? ` e criar ${newModules.length} módulo(s)` : ''
     const headingModules = existingModules && newModules.length ? ` + ${newModules.length} módulo(s)` : ''
-    return { summary: `Cadastrar ${operations.length} itens${summaryModules} (${breakdown})`, markdown: `### Cadastrar estrutura (${operations.length} itens${headingModules})\n\n${moduleSection}${breakdown}\n\n${lines.join('\n')}`, count: operations.length, counts }
+    return { summary: `Cadastrar ${operations.length} itens${summaryModules} (${breakdown})`, markdown: `### Cadastrar estrutura (${operations.length} itens${headingModules})\n\n${targetSection}${moduleSection}${breakdown}\n\n${lines.join('\n')}`, count: operations.length, counts }
   }
   if (name === 'update_items' && args.filters && Array.isArray(args.changes)) {
     const filters = args.filters as Record<string, unknown>

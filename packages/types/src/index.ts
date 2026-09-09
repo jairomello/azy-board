@@ -28,6 +28,7 @@ export interface ProjectVisibility {
 }
 export type Theme = 'light' | 'dark'
 export type Language = 'pt-BR' | 'en' | 'es'
+export type AssistantScreen = 'projects-index' | 'project-board-kanban' | 'project-board-tree' | 'project-dashboard' | 'project-settings' | 'item-detail' | 'account' | 'admin-users' | 'admin-assistant' | 'global-other'
 export type ActivityActorType = 'HUMAN' | 'AGENT' | 'SYSTEM' | 'UNKNOWN'
 export type ActivitySource = 'REST' | 'MCP' | 'SYSTEM' | 'UNKNOWN'
 

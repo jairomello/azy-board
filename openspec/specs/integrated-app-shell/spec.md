@@ -23,7 +23,7 @@ O sistema SHALL apresentar, em viewports desktop (`lg+`), uma sidebar iniciando 
 - **AND** breadcrumb, titulo, `headerMeta`, idioma, tema e perfil permanecem disponiveis
 
 ### Requirement: Continuidade do workspace principal
-O sistema SHALL preservar a area principal do `AppShell`, incluindo os slots opcionais `commandBar` e `statusRail`, sem sobreposicao, corte ou perda do comportamento de scroll apos a integracao do header com a sidebar.
+O sistema SHALL preservar a area principal do `AppShell`, incluindo os slots opcionais `commandBar` e `statusRail`, sem sobreposicao, corte ou perda do comportamento de scroll apos a integracao do header com a sidebar. Em telas associadas a um projeto, o titulo contextual principal SHALL exibir o nome do projeto limitado visualmente a 60 caracteres; quando o projeto nao estiver disponivel, SHALL manter o `contextLabel` como fallback.
 
 #### Scenario: Pagina com command bar e status rail
 - **WHEN** uma pagina fornece `commandBar` e `statusRail`
@@ -33,6 +33,19 @@ O sistema SHALL preservar a area principal do `AppShell`, incluindo os slots opc
 #### Scenario: Pagina sem slots opcionais
 - **WHEN** uma pagina nao fornece `commandBar` ou `statusRail`
 - **THEN** o conteudo utiliza o espaco disponivel sem lacunas reservadas para esses slots
+
+#### Scenario: Nome do projeto no header
+- **WHEN** uma tela project-scoped possui `projectId` e `projectName`
+- **THEN** o titulo contextual principal exibe o nome do projeto em vez do texto generico de fluxo
+
+#### Scenario: Nome maior que 60 caracteres
+- **WHEN** o nome do projeto possui mais de 60 caracteres
+- **THEN** o texto visual e truncado para no maximo 60 caracteres
+- **AND** o nome completo permanece disponivel por tooltip ou atributo acessivel
+
+#### Scenario: Tela sem projeto
+- **WHEN** uma tela global nao possui projeto atual
+- **THEN** o header mantem o `contextLabel` e nao reutiliza o nome de projeto anterior
 
 ### Requirement: Navegacao mobile preservada
 O sistema SHALL manter abaixo de `lg` um header de largura total com botao de menu, marca, contexto da pagina e controles globais, e SHALL continuar abrindo a sidebar como drawer sobreposto.

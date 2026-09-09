@@ -163,7 +163,7 @@ describe('API de chat do Azy Agent', () => {
   test('estima itens estruturados sem contar cabeçalho e Tipo duas vezes', () => {
     const prompt = 'Épico 1 — E\nTipo: EPIC\nHistória 1.1 — S\nTipo: STORY\nTask — T\nTipo: TASK'
     expect(estimateRequestedActions(prompt)).toBe(3)
-    expect(toolsForMessage(`Cadastre a estrutura abaixo\n${prompt}`)).toEqual(['batch', 'list_modules'])
+    expect(toolsForMessage(`Cadastre a estrutura abaixo\n${prompt}`)).toEqual(['batch', 'list_modules', 'list_tasks', 'list_columns'])
     expect(toolsForMessage(`Crie um projeto e cadastre a estrutura abaixo\n${prompt}`)).toEqual(['create_project_structure'])
   })
 
@@ -182,7 +182,7 @@ História: Mails Modelo
 
 História: Person. jurídicas`
 
-    expect(toolsForMessage(command)).toEqual(['batch', 'list_modules'])
+    expect(toolsForMessage(command)).toEqual(['batch', 'list_modules', 'list_tasks', 'list_columns'])
     expect(itemTypeScopeForMessage(command)).toEqual(['STORY'])
   })
 
@@ -193,7 +193,17 @@ História: Person. jurídicas`
 
 História: Projetos`
 
-    expect(toolsForMessage(command)).toEqual(['batch', 'list_modules'])
+    expect(toolsForMessage(command)).toEqual(['batch', 'list_modules', 'list_tasks', 'list_columns'])
+  })
+
+  test('permite pedido cross-domain de projeto sem exigir rota específica', () => {
+    expect(toolsForMessage('Crie um novo projeto chamado Financeiro')).toContain('create_project')
+    expect(toolsForMessage('Crie um novo projeto chamado Financeiro')).not.toContain('update_items')
+  })
+
+  test('preserva mutação pendente quando a resposta do usuário é apenas um título', () => {
+    const tools = toolsForMessage('teste', 'Usuário: crie uma task no Projeto E2E Verificado.\nAssistente: Qual título devo usar?')
+    expect(tools).toContain('create_task')
   })
 
   test('mantém atualização em lote quando não há verbo de criação', () => {

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import type { AncestorNode, ItemType } from '@azy-board/types'
+import type { AncestorNode, AssistantScreen, ItemType } from '@azy-board/types'
 import { useAuth } from './AuthContext'
 import { api } from '../lib/api'
 
@@ -22,9 +22,12 @@ export interface AssistantSelectedItem {
 }
 
 export interface AssistantPageContext {
+  screen: AssistantScreen
   projectId?: string
   projectName?: string
   item?: AssistantSelectedItem | null
+  boardView?: 'kanban' | 'tree'
+  filters?: Record<string, string | boolean | null>
 }
 
 interface AssistantContextValue {

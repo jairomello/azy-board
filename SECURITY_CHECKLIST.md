@@ -81,6 +81,11 @@ Items marked ★ are critical — a failed check must block the push.
       fed back into LLM contexts are checked to ensure they do not contain
       attacker-controlled content that could redirect agent behaviour (e.g.,
       malicious card titles containing instruction-like text).
+- [ ] **Adaptive tool routing**: screen/project/item context prioritises tools but
+      never grants or revokes permission. Explicit cross-domain requests may
+      expand the toolset only after tenant, membership, role, API-key scope and
+      approval policy are revalidated; recoverable tool errors must not expose
+      SQL, stack traces, secrets or unscoped resource identifiers.
 
 ### 4.1 Azy Agent threat model ★
 

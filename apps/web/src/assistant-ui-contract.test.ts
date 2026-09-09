@@ -40,7 +40,7 @@ describe('contratos de interação do Azy Agent', () => {
     expect(text.includes('history')).toBe(false)
     expect(text.includes('function openDrawer')).toBe(true)
     expect(text.includes('conversation.projectId === (projectId ?? null)')).toBe(true)
-    expect(text.includes('{ content: text, projectId: projectId ?? null, itemId: itemId ?? null }')).toBe(true)
+    expect(text.includes('{ content: text, screen: pageContext?.screen ?? \'global-other\', projectId: projectId ?? null, itemId: itemId ?? null }')).toBe(true)
   })
   test('propaga item selecionado, mostra breadcrumb e reconcilia conclusão por runId', async () => {
     const drawer = await source('./components/AzyAgentDrawer.tsx')
@@ -48,7 +48,9 @@ describe('contratos de interação do Azy Agent', () => {
     const shell = await source('./components/AppShell.tsx')
     const board = await source('./pages/BoardPage.tsx')
     expect(context.includes('pageContext')).toBe(true)
+    expect(context.includes('screen')).toBe(true)
     expect(shell.includes('assistantSelectedItem')).toBe(true)
+    expect(shell.includes('inferredScreen')).toBe(true)
     expect(board.includes('storyModalData?.story?.id')).toBe(true)
     expect(board.includes('epicModalData?.epic?.id')).toBe(true)
     expect(drawer.includes('aria-label={t("contextBreadcrumb")}')).toBe(true)

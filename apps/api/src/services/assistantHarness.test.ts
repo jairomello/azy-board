@@ -48,6 +48,38 @@ describe('Azy Agent harness', () => {
     expect(provider.calls).toBe(2)
   })
 
+  test('devolve erro recuperável ao provider e continua a mesma run', async () => {
+    class RecoverableProvider extends MockProvider {
+      async createRun(): Promise<ModelResponse> {
+        this.calls++
+        if (this.calls === 1) return { id: 'recoverable-1', output: [{ type: 'function_call', name: 'list_projects', callId: 'recoverable-call', arguments: '{}' }] }
+        return { id: 'recoverable-2', output: [{ type: 'message', text: 'Consultei novamente após o conflito.' }] }
+      }
+    }
+    const provider = new RecoverableProvider()
+    const harness = new AssistantHarness({ provider, executeTool: async () => { throw new Error('HTTP 409: já existe um recurso equivalente') }, authorize: async () => {} })
+    const result = await harness.run({ source: 'azy-agent', userId, tenantId, globalGroup: 'TEAM_MEMBER', conversationId }, 'gpt-4o-mini', 'consulte projetos', `recoverable-${id()}`)
+    expect(result.status).toBe('COMPLETED')
+    expect(result.text).toBe('Consultei novamente após o conflito.')
+    expect(provider.calls).toBe(2)
+  })
+
+  test('trata argumento obrigatório ausente como erro recuperável', async () => {
+    class InvalidArgumentProvider extends MockProvider {
+      async createRun(): Promise<ModelResponse> {
+        this.calls++
+        if (this.calls === 1) return { id: 'invalid-1', output: [{ type: 'function_call', name: 'create_task', callId: 'invalid-call', arguments: JSON.stringify({ title: 'Sem contexto' }) }] }
+        return { id: 'invalid-2', output: [{ type: 'message', text: 'Vou usar o projeto correto e tentar novamente.' }] }
+      }
+    }
+    const provider = new InvalidArgumentProvider()
+    const harness = new AssistantHarness({ provider, executeTool: async () => undefined, authorize: async () => {} })
+    const result = await harness.run({ source: 'azy-agent', userId, tenantId, globalGroup: 'TEAM_MEMBER', conversationId }, 'gpt-4o-mini', 'crie uma task', `invalid-${id()}`)
+    expect(result.status).toBe('COMPLETED')
+    expect(result.text).toBe('Vou usar o projeto correto e tentar novamente.')
+    expect(provider.calls).toBe(2)
+  })
+
   test('bloqueia mutações até aprovação e detecta operações repetidas', async () => {
     expect(riskForTool('delete_item')).toBe('DESTRUCTIVE')
     expect(riskForTool('list_projects')).toBe('READ')
@@ -81,6 +113,7 @@ describe('Azy Agent harness', () => {
       count: 2,
       counts: { EPIC: 1, STORY: 1, TASK: 0, BUG: 0 },
     })
+    expect(canonicalArguments('batch', { projectId: 'inventado', operations }, { userId, projectId: 'selecionado', targetProjectId: 'explicito' }).projectId).toBe('explicito')
     const flat = canonicalArguments('batch', { operations: [{ ref: 'e1', title: 'Epic', type: 'EPIC' }] }, { userId, projectId: 'selecionado' })
     expect(flat).toMatchObject({ operations: [{ tool: 'create_task', args: { ref: 'e1', title: 'Epic', type: 'EPIC' } }] })
   })

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createMcpServer } from './index.js'
-import { executeSharedTool, getSharedToolDefinitions, sanitizeToolOutput, selectSharedTools, SHARED_TOOL_NAMES, SKILL_COMMAND_INTENTS } from './registry.js'
+import { dependencyToolsFor, executeSharedTool, getSharedToolDefinitions, sanitizeToolOutput, searchSharedTools, selectSharedTools, SHARED_TOOL_NAMES, SKILL_COMMAND_INTENTS } from './registry.js'
 
 describe('shared MCP/Azy Agent registry', () => {
   test('mantém paridade de nomes com o catálogo exposto pelo servidor MCP', async () => {
@@ -50,5 +50,29 @@ describe('shared MCP/Azy Agent registry', () => {
     expect(output).not.toHaveProperty('apiKey')
     expect(output).not.toHaveProperty('nested.ciphertext')
     expect(String(output.text).length).toBe(20_001)
+  })
+
+  test('expõe metadata de routing e dependencies para todo o catálogo', () => {
+    const definitions = getSharedToolDefinitions()
+    expect(definitions).toHaveLength(SHARED_TOOL_NAMES.length)
+    expect(definitions.every(tool => tool.routing.domain && tool.routing.scope && tool.routing.operation && tool.routing.risk && Array.isArray(tool.routing.supportedScreens))).toBe(true)
+    expect(getSharedToolDefinitions(['claim_task'])[0]?.routing.operation).toBe('update')
+    expect(getSharedToolDefinitions(['delete_project'])[0]?.routing.risk).toBe('DESTRUCTIVE')
+    expect(dependencyToolsFor(['batch'])).toEqual(['list_tasks', 'list_modules', 'list_columns'])
+    expect(searchSharedTools('project').map(tool => tool.name)).toContain('create_project')
+  })
+
+  test('mantém matriz de telas, intenções e policies coerente', () => {
+    const definitions = getSharedToolDefinitions()
+    const screens = [...new Set(definitions.flatMap(tool => tool.routing.supportedScreens))]
+    const intents = ['read', 'plan', 'start'] as const
+    for (const screen of ['projects-index', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'item-detail', 'account', 'admin-users', 'admin-assistant', 'global-other']) expect(screens.includes(screen as typeof screens[number])).toBe(true)
+    for (const screen of screens) {
+      expect(definitions.some(tool => tool.routing.supportedScreens.includes(screen))).toBe(true)
+      for (const intent of intents) {
+        const selected = selectSharedTools(intent)
+        expect(selected.every(tool => tool.policy.globalGroup)).toBe(true)
+      }
+    }
   })
 })

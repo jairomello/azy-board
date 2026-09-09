@@ -15,6 +15,7 @@ import {
 } from './tools.js'
 import { MCP_TOOL_POLICIES, type McpPolicy } from './policies.js'
 import { validateToolArguments } from './validation.js'
+import type { AssistantScreen } from '@azy-board/types'
 
 export type ToolSource = 'mcp' | 'azy-agent'
 export type HumanToolContext = {
@@ -24,7 +25,24 @@ export type HumanToolContext = {
   globalGroup: McpPolicy['globalGroup']
   localRole?: McpPolicy['localRole']
   projectId?: string
+  targetProjectId?: string
+  itemId?: string
+  screen?: AssistantScreen
   runId?: string
+}
+
+export type ToolDomain = 'projects' | 'board' | 'items' | 'planning' | 'collaboration' | 'evidence' | 'account' | 'administration'
+export type ToolScope = 'global' | 'project' | 'item'
+export type ToolOperation = 'read' | 'create' | 'update' | 'execute' | 'delete'
+export type ToolRisk = 'READ' | 'LOW' | 'MEDIUM' | 'HIGH' | 'DESTRUCTIVE'
+export type ToolRoutingMetadata = {
+  domain: ToolDomain
+  scope: ToolScope
+  operation: ToolOperation
+  risk: ToolRisk
+  dependencyTools: string[]
+  targetKinds: Array<'tenant' | 'project' | 'item'>
+  supportedScreens: AssistantScreen[]
 }
 
 export type ToolDefinition = {
@@ -33,20 +51,38 @@ export type ToolDefinition = {
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required: string[]; additionalProperties: false }
   policy: McpPolicy
   namespace: 'discovery' | 'planning' | 'mutation'
+  routing: ToolRoutingMetadata
 }
 
 const required: Record<string, string[]> = {
   list_projects: [], get_project: ['projectId'], get_board: ['projectId'], get_tree: ['projectId'], get_shadow_markdown: ['projectId'],
-  list_tasks: ['projectId'], list_modules: ['projectId'], get_current_sprint: ['projectId'], list_columns: ['projectId'], list_sprints: ['projectId'], list_tags: ['projectId'], list_versions: ['projectId'], list_members: ['projectId'], list_squads: ['projectId'], list_item_logs: ['projectId', 'itemId'], list_cost_centers: ['projectId'], list_attachments: ['projectId'], list_checklists: ['projectId', 'itemId'],
+  list_tasks: ['projectId'], list_modules: ['projectId'], get_current_sprint: ['projectId'], list_columns: ['projectId'], list_sprints: ['projectId'], list_tags: ['projectId'], list_versions: ['projectId'], list_members: ['projectId'], list_squads: ['projectId'], list_item_logs: ['projectId', 'itemId'], list_cost_centers: ['projectId'], list_attachments: ['projectId', 'itemId'], list_checklists: ['projectId', 'itemId'],
   claim_task: ['projectId', 'taskId'], move_task: ['projectId', 'taskId', 'columnName'], complete_task: ['projectId', 'taskId'], create_task: ['projectId', 'title'], create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], release_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], delete_project: ['projectId'], archive_item: ['projectId', 'itemId'], unarchive_item: ['projectId', 'itemId'], set_item_tags: ['projectId', 'itemId', 'tagIds'], create_item_log: ['projectId', 'itemId', 'activity'], reorder_items: ['projectId', 'columnId', 'order'], update_checklist: ['projectId', 'itemId', 'checklistId', 'changes'], delete_checklist: ['projectId', 'itemId', 'checklistId'], update_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'changes'], delete_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId'], update_item_log: ['projectId', 'itemId', 'logId', 'changes'], batch: ['projectId', 'operations'],
   create_project: ['name'], create_project_structure: ['name', 'operations'], update_project: ['projectId'], create_module: ['projectId', 'name'], create_column: ['projectId', 'name', 'baseStatus'], reorder_columns: ['projectId', 'order'], create_sprint: ['projectId', 'name'], activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'], create_tag: ['projectId', 'name'], create_version: ['projectId', 'name'], add_member: ['projectId', 'email', 'role'], update_member: ['projectId', 'userId', 'role'], remove_member: ['projectId', 'userId'], create_squad: ['projectId', 'name'], create_cost_center: ['projectId', 'code'],
 }
 
 const discovery = new Set(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_shadow_markdown', 'list_tasks', 'list_modules', 'get_current_sprint', 'list_columns', 'list_sprints', 'list_tags', 'list_versions', 'list_members', 'list_squads', 'list_item_logs', 'list_cost_centers', 'list_attachments', 'list_checklists'])
 const planning = new Set(['claim_task', 'list_tasks', 'list_checklists', 'create_checklist', 'add_checklist_item', 'check_item', 'get_shadow_markdown'])
+const projectTools = new Set(['list_projects', 'get_project', 'create_project', 'create_project_structure', 'update_project', 'delete_project'])
+const boardTools = new Set(['get_board', 'get_tree', 'get_shadow_markdown', 'list_columns', 'reorder_columns', 'reorder_items'])
+const planningTools = new Set(['get_current_sprint', 'list_sprints', 'create_sprint', 'activate_sprint', 'close_sprint', 'list_modules', 'create_module', 'list_tags', 'create_tag', 'set_item_tags', 'list_versions', 'create_version', 'list_cost_centers', 'create_cost_center'])
+const collaborationTools = new Set(['list_members', 'add_member', 'update_member', 'remove_member', 'list_squads', 'create_squad'])
+const evidenceTools = new Set(['list_item_logs', 'create_item_log', 'update_item_log', 'list_attachments', 'list_checklists', 'create_checklist', 'update_checklist', 'delete_checklist', 'add_checklist_item', 'check_item', 'update_checklist_item', 'delete_checklist_item'])
+const destructiveTools = new Set(['delete_item', 'delete_project', 'archive_item', 'delete_checklist', 'delete_checklist_item', 'remove_member'])
+const createTools = new Set(['create_project', 'create_project_structure', 'create_task', 'create_module', 'create_column', 'create_sprint', 'create_tag', 'create_version', 'create_item_log', 'create_checklist', 'add_checklist_item', 'create_squad', 'create_cost_center', 'add_member'])
+const updateTools = new Set(['update_project', 'update_item', 'update_items', 'move_task', 'complete_task', 'claim_task', 'release_task', 'unarchive_item', 'set_item_tags', 'reorder_items', 'reorder_columns', 'activate_sprint', 'close_sprint', 'update_checklist', 'check_item', 'update_checklist_item', 'update_item_log', 'update_member'])
+function routingFor(name: string): ToolRoutingMetadata {
+  const domain: ToolDomain = projectTools.has(name) ? 'projects' : boardTools.has(name) ? 'board' : collaborationTools.has(name) ? 'collaboration' : evidenceTools.has(name) ? 'evidence' : planningTools.has(name) ? 'planning' : 'items'
+  const operation: ToolOperation = destructiveTools.has(name) ? 'delete' : createTools.has(name) ? 'create' : updateTools.has(name) ? 'update' : 'read'
+  const scope: ToolScope = name === 'list_projects' || name === 'create_project' || name === 'create_project_structure' ? 'global' : evidenceTools.has(name) || ['update_item', 'update_items', 'create_task', 'claim_task', 'release_task', 'move_task', 'complete_task', 'delete_item', 'archive_item', 'unarchive_item', 'set_item_tags', 'reorder_items'].includes(name) ? 'item' : 'project'
+  const risk: ToolRisk = destructiveTools.has(name) ? 'DESTRUCTIVE' : operation === 'read' ? 'READ' : operation === 'create' || operation === 'update' ? 'MEDIUM' : 'LOW'
+  const supportedScreens: AssistantScreen[] = scope === 'global' ? ['projects-index', 'global-other', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'account', 'admin-users', 'admin-assistant'] : scope === 'item' ? ['project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'item-detail'] : ['projects-index', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'global-other']
+  const dependencyTools = name === 'create_task' || name === 'batch' ? ['list_tasks', 'list_modules', 'list_columns'] : name === 'move_task' ? ['list_columns'] : name === 'update_project' || name === 'delete_project' ? ['list_projects'] : []
+  return { domain, scope, operation, risk, dependencyTools, targetKinds: scope === 'global' ? ['tenant', 'project'] : scope === 'project' ? ['project'] : ['project', 'item'], supportedScreens }
+}
 const fieldsByTool: Record<string, string[]> = {
   list_projects: ['limit', 'cursor'], get_project: ['projectId'], get_board: ['projectId'], get_tree: ['projectId', 'onlyLeaves'], get_current_sprint: ['projectId'],
-  list_tasks: ['projectId', 'status', 'assigneeId', 'sprintId', 'parentId', 'limit', 'cursor'], list_checklists: ['projectId', 'itemId'],
+  list_tasks: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'onlyLeaves', 'limit', 'cursor'], list_checklists: ['projectId', 'itemId'],
   create_project: ['name', 'description', 'boardMode', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], create_project_structure: ['name', 'description', 'boardMode', 'managerUserId', 'operations', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], update_project: ['projectId', 'name', 'description', 'boardMode', 'managerUserId', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], delete_project: ['projectId'],
   create_task: ['projectId', 'title', 'description', 'type', 'priority', 'points', 'parentId', 'moduleId', 'assigneeId', 'status'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], complete_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], move_task: ['projectId', 'taskId', 'columnName'], claim_task: ['projectId', 'taskId'], release_task: ['projectId', 'taskId'],
   create_sprint: ['projectId', 'name', 'startDate', 'endDate'], activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'],
@@ -168,8 +204,26 @@ export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinit
       return { type: 'object' as const, properties: Object.fromEntries(fields.map(field => [field, schemaFor(field, mandatory.has(field))])), required: fields, additionalProperties: false }
     })(),
     policy: MCP_TOOL_POLICIES[name]!,
-    namespace: discovery.has(name) ? 'discovery' : planning.has(name) ? 'planning' : 'mutation',
+     namespace: discovery.has(name) ? 'discovery' : planning.has(name) ? 'planning' : 'mutation',
+     routing: routingFor(name),
   }))
+}
+
+export function dependencyToolsFor(names: readonly string[]): string[] {
+  const dependencies = new Set<string>()
+  for (const name of names) {
+    const definition = getSharedToolDefinitions([name])[0]
+    for (const dependency of definition?.routing.dependencyTools ?? []) dependencies.add(dependency)
+  }
+  return [...dependencies].filter(name => !names.includes(name))
+}
+
+export function searchSharedTools(query: string, names = SHARED_TOOL_NAMES): ToolDefinition[] {
+  const terms = query.toLocaleLowerCase('pt-BR').split(/\s+/).filter(Boolean)
+  return getSharedToolDefinitions(names).filter(tool => {
+    const haystack = `${tool.name} ${tool.description} ${tool.routing.domain} ${tool.routing.scope} ${tool.routing.operation}`.toLocaleLowerCase('pt-BR')
+    return terms.length === 0 || terms.some(term => haystack.includes(term))
+  })
 }
 
 export function selectSharedTools(intent: 'read' | 'status' | 'plan' | 'start' | 'update' | 'complete' | 'review' | 'unknown'): ToolDefinition[] {

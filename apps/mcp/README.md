@@ -40,7 +40,7 @@ Adicione ao seu `.claude/settings.json`:
 | `list_projects` / `get_project` | Descobre projetos e configurações |
 | `get_board` / `get_tree` | Consulta board estruturado e árvore |
 | `get_shadow_markdown` | Consulta o board em Markdown |
-| `create_project` / `update_project` | Cria e configura projeto |
+| `create_project` / `create_project_structure` / `update_project` | Cria e configura projeto e estrutura |
 | `update_item` | Atualiza campos de item |
 | `update_items` | Atualiza atomicamente itens selecionados por tipo, status, sprint, versão, módulo, responsável, pai, coluna, tag, título ou IDs |
 | `release_task` | Libera atribuição de task |

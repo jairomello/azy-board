@@ -3,16 +3,18 @@ import type { Context } from 'hono'
 import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantRuns, assistantSettings, assistantToolCalls, items, memberships, projects, users } from '../db/schema'
 import { db } from '../db/index'
+import type { AssistantScreen } from '@azy-board/types'
 import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
 import { AssistantEncryptionError, decryptAssistantSecret, encryptAssistantSecret } from '../services/assistantEncryption'
 import { OpenAIProvider, probeOpenAICredential } from '../services/openaiProvider'
 import { OpenRouterProvider, probeOpenRouterCredential } from '../services/openrouterProvider'
-import { AssistantHarness } from '../services/assistantHarness'
-import { executeSharedTool, friendlyToolName, getSharedToolDefinitions, sanitizeToolOutput, selectSharedTools } from '../services/assistantTools'
+import { AssistantHarness, operationHash } from '../services/assistantHarness'
+import { dependencyToolsFor, executeSharedTool, friendlyToolName, getSharedToolDefinitions, sanitizeToolOutput, selectSharedTools, type HumanToolContext } from '../services/assistantTools'
 import { generateId } from '../utils/id'
 import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/types'
 import { hasGlobalGroup } from '../services/authorization'
+import { MCP_TOOL_POLICIES } from '../../../mcp/src/policies.js'
 
 export const assistantRouter = new Hono<HonoEnv>()
 assistantRouter.use('*', authMiddleware)
@@ -21,6 +23,41 @@ type ProviderName = 'OPENAI' | 'OPENROUTER'
 type Governance = {
   requestsPerMinute: number; maxActivePerUser: number; maxActivePerTenant: number; dailyBudgetMicros: number; tenantDailyBudgetMicros: number;
   maxSteps: number; maxToolCalls: number; maxInputTokens: number; maxOutputTokens: number; maxPayloadBytes: number; timeoutMs: number
+}
+
+const globalGroupRank: Record<HumanToolContext['globalGroup'], number> = { TEAM_MEMBER: 0, MANAGER: 1, ADMIN: 2, ROOT: 3 }
+const localRoleRank: Record<'VIEWER' | 'MEMBER' | 'ADMIN', number> = { VIEWER: 0, MEMBER: 1, ADMIN: 2 }
+
+async function authorizeAssistantTool(toolContext: HumanToolContext, name: string, args: Record<string, unknown>): Promise<void> {
+  const definition = getSharedToolDefinitions([name])[0]
+  const policy = MCP_TOOL_POLICIES[name]
+  if (!definition || !policy) throw new Error('TOOL_NOT_REGISTERED')
+  if (globalGroupRank[toolContext.globalGroup] < globalGroupRank[policy.globalGroup]) throw new Error('TOOL_PERMISSION_REQUIRED')
+  const projectId = typeof args.projectId === 'string' ? args.projectId : toolContext.projectId
+  if (definition.routing.scope === 'global') return
+  if (!projectId) throw new Error('PROJECT_CONTEXT_REQUIRED')
+  if (!await canUseProject(toolContext.tenantId, toolContext.userId, toolContext.globalGroup, projectId)) throw new Error('PROJECT_PERMISSION_REQUIRED')
+  if (!policy.localRole) return
+  if (globalGroupRank[toolContext.globalGroup] >= globalGroupRank.ADMIN) return
+  const [project, membership] = await Promise.all([
+    db.query.projects.findFirst({ where: (item) => and(eq(item.id, projectId), eq(item.tenantId, toolContext.tenantId)), columns: { managerUserId: true } }),
+    db.query.memberships.findFirst({ where: (item) => and(eq(item.projectId, projectId), eq(item.tenantId, toolContext.tenantId), eq(item.userId, toolContext.userId)), columns: { role: true } }),
+  ])
+  const effectiveRole = project?.managerUserId === toolContext.userId ? 'ADMIN' : membership?.role
+  if (!effectiveRole || localRoleRank[effectiveRole] < localRoleRank[policy.localRole]) throw new Error('PROJECT_ROLE_REQUIRED')
+}
+
+async function filterToolsByPolicy(ctx: RequestContext, names: string[], projectId?: string): Promise<string[]> {
+  const allowed: string[] = []
+  for (const name of names) {
+    try {
+      await authorizeAssistantTool({ source: 'azy-agent', userId: ctx.userId, tenantId: ctx.tenantId, globalGroup: ctx.globalGroup, projectId, screen: 'global-other' }, name, projectId ? { projectId } : {})
+      allowed.push(name)
+    } catch {
+      // A capability sem policy efetiva não chega ao provider; a rota continua revalidando.
+    }
+  }
+  return allowed
 }
 type Body = Partial<Governance> & { enabled?: unknown; provider?: unknown; model?: unknown; secret?: unknown }
 const safeError = (code: string, status: 400 | 422 | 500 = 400) => ({ error: 'Não foi possível concluir a operação', code, retryable: status === 500 })
@@ -137,6 +174,17 @@ async function activeRuns(tenantId: string, userId?: string) {
   return rows.length
 }
 
+async function resolveExplicitProject(content: string, ctx: RequestContext, currentProjectId?: string | null): Promise<string | undefined> {
+  const text = content.toLocaleLowerCase('pt-BR')
+  const projectsInTenant = await db.query.projects.findMany({ where: (project) => eq(project.tenantId, ctx.tenantId), columns: { id: true, name: true } })
+  const matches: string[] = []
+  for (const project of projectsInTenant) {
+    if (project.id === currentProjectId || project.name.trim().length < 2) continue
+    if (text.includes(project.name.toLocaleLowerCase('pt-BR')) && await canUseProject(ctx.tenantId, ctx.userId, ctx.globalGroup, project.id)) matches.push(project.id)
+  }
+  return matches.length === 1 ? matches[0] : undefined
+}
+
 function jsonValue(value: string | null | undefined): Record<string, unknown> {
   try { const parsed = JSON.parse(value ?? '{}'); return parsed && typeof parsed === 'object' ? parsed : {} } catch { return {} }
 }
@@ -171,36 +219,39 @@ export function toolsForMessage(content: string, recentContext = ''): string[] {
   const mutationPattern = /crie|criar|cadastre|cadastrar|registre|registrar|adicione|adicionar|mova|mover|complete|conclua|atualize|editar|edite|altere|alterar|mude|troque|defina|definir|estabeleça|estabelecer|remova|delete|arquive|create_project|create_task|prévia da mutação|aprovação/
   const planPattern = /planeje|planejar|organize|organizar|como faço|como fazer/
   const readPattern = /status|andamento|progresso|revise|revisar|liste|listar|mostre|mostrar|consulte|consultar|verifique|verificar/
-  const intent = mutationPattern.test(current)
-    ? 'start'
-    : planPattern.test(current)
-      ? 'plan'
-      : readPattern.test(current)
-        ? 'read'
-        : 'unknown'
-  const text = intent === 'unknown' ? contextual : current
+  const classifyIntent = (value: string) => mutationPattern.test(value)
+    ? 'start' as const
+    : planPattern.test(value)
+      ? 'plan' as const
+      : readPattern.test(value)
+        ? 'read' as const
+        : 'unknown' as const
+  const directIntent = classifyIntent(current)
+  const intent = directIntent === 'unknown' ? classifyIntent(contextual) : directIntent
+  const text = directIntent === 'unknown' ? contextual : current
+  const withDependencies = (names: string[]) => [...new Set([...names, ...dependencyToolsFor(names)])]
   const bulkMove = isBulkMoveMessage(current)
-  if (intent === 'start' && bulkMove) return ['update_items']
-  if (intent === 'start' && /mova|mover|movimente|movimentar/.test(current)) return ['list_tasks', 'list_columns', 'move_task']
-  if (intent === 'start' && /complete|conclua|finalize|finalizar/.test(current)) return ['list_tasks', 'complete_task']
+  if (intent === 'start' && bulkMove) return withDependencies(['update_items'])
+  if (intent === 'start' && /mova|mover|movimente|movimentar/.test(current)) return withDependencies(['list_tasks', 'list_columns', 'move_task'])
+  if (intent === 'start' && /complete|conclua|finalize|finalizar/.test(current)) return withDependencies(['list_tasks', 'complete_task'])
   if (intent === 'start') {
     const structureLevels = [/módulos?|modules?/, /épicos?|epicos?/, /histórias?|historias?|stories?/].filter(pattern => pattern.test(current)).length
     const creationVerb = /cadastr|criar|cria\b|crie\b|adicion|regist|inclu/.test(current)
     const structureMarker = /(?:estrutura|lote)/.test(current) && /(?:épico|epic|história|historia|story|tarefa|task|bug)/.test(current)
     if ((creationVerb && structureLevels >= 2) || structureMarker) {
-      if (/(?:cri[ae]\b|criar|cadastr\w*|nov[oa])\s+(?:um\s+|uma\s+|o\s+|a\s+|os\s+|as\s+)?projetos?\b/.test(current)) return ['create_project_structure']
-      return ['batch', 'list_modules']
+      if (/(?:cri[ae]\b|criar|cadastr\w*|nov[oa])\s+(?:um\s+|uma\s+|o\s+|a\s+|os\s+|as\s+)?(?:novo\s+|nova\s+)?projetos?\b/.test(current)) return withDependencies(['create_project_structure'])
+      return withDependencies(['batch', 'list_modules'])
     }
   }
-  if (intent === 'start' && /(?:\btodos?\b|\btodas?\b|\bcada\b|\bem lote\b)/.test(current) && /(?:itens?|cards?|tarefas?|tasks?|bugs?|épicos?|epicos?|histórias?|historias?|stories|datas?|títulos?|titulos?|descrições?|descricoes?|responsáveis?|responsaveis?)/.test(current)) return ['update_items']
-  if (intent === 'unknown' && /a operação batch|operation batch/.test(contextual)) return ['batch']
+  if (intent === 'start' && /(?:\btodos?\b|\btodas?\b|\bcada\b|\bem lote\b)/.test(current) && /(?:itens?|cards?|tarefas?|tasks?|bugs?|épicos?|epicos?|histórias?|historias?|stories|datas?|títulos?|titulos?|descrições?|descricoes?|responsáveis?|responsaveis?)/.test(current)) return withDependencies(['update_items'])
+  if (intent === 'unknown' && /a operação batch|operation batch/.test(contextual)) return withDependencies(['batch'])
   const discovery = (intent === 'start'
     ? getSharedToolDefinitions(['list_projects', 'get_project', 'list_tasks', 'get_current_sprint'])
     : selectSharedTools(intent as Parameters<typeof selectSharedTools>[0])).map(tool => tool.name)
   if (intent !== 'start') return discovery
   const names = new Set(discovery)
   const add = (pattern: RegExp, tools: string[]) => { if (pattern.test(text)) tools.forEach(tool => names.add(tool)) }
-  add(/(?:cri[ae]\b|criar|cadastr|atualiz|edit|remov|delet|exclu)[a-zç]*\s+(?:um\s+|uma\s+|o\s+|a\s+|os\s+|as\s+)?projetos?\b/, ['create_project', 'update_project', 'delete_project'])
+  add(/(?:cri[ae]\b|criar|cadastr|atualiz|edit|remov|delet|exclu)[a-zç]*\s+(?:um\s+|uma\s+|o\s+|a\s+|os\s+|as\s+)?(?:novo\s+|nova\s+)?projetos?\b/, ['create_project', 'update_project', 'delete_project'])
     add(/épico|epic|história|historia|story|tarefa|task|bug|item|card/, ['create_task', 'update_item', 'update_items', 'complete_task', 'delete_item', 'move_task', 'claim_task', 'release_task'])
    add(/estrutura|lote|itens|épico|epic|história|historia|story/, ['batch', 'list_modules'])
   add(/sprint/, ['create_sprint', 'activate_sprint', 'close_sprint'])
@@ -208,7 +259,11 @@ export function toolsForMessage(content: string, recentContext = ''): string[] {
   add(/tag/, ['create_tag', 'set_item_tags'])
   add(/checklist/, ['create_checklist', 'add_checklist_item', 'check_item', 'update_checklist', 'delete_checklist'])
   if (names.size === discovery.length) getSharedToolDefinitions(['list_projects']).forEach(tool => names.add(tool.name))
-  return [...names]
+  return withDependencies([...names])
+}
+
+export function assistantToolRoutingMode(): 'adaptive' | 'legacy' {
+  return process.env.AZY_AGENT_TOOL_ROUTING === 'legacy' ? 'legacy' : 'adaptive'
 }
 
 export function itemTypeScopeForMessage(content: string): Array<'EPIC' | 'STORY' | 'TASK' | 'BUG'> | undefined {
@@ -381,7 +436,9 @@ assistantRouter.delete('/conversations/:conversationId', async (c) => {
   return c.json({ ok: true })
 })
 
-async function runMessage(c: Context<HonoEnv>, conversationId: string, content: string, idempotencyKey: string, modelContext?: string, expectedProjectId?: string | null, expectedItemId?: string | null) {
+const assistantScreens = new Set<AssistantScreen>(['projects-index', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'item-detail', 'account', 'admin-users', 'admin-assistant', 'global-other'])
+
+async function runMessage(c: Context<HonoEnv>, conversationId: string, content: string, idempotencyKey: string, modelContext?: string, expectedProjectId?: string | null, expectedItemId?: string | null, screen: AssistantScreen = 'global-other') {
   const ctx = context(c), config = await available(ctx.tenantId)
   if (!config) return operationalError(c, 'ASSISTANT_UNAVAILABLE', 422)
   if (!content.trim()) return operationalError(c, 'INVALID_REQUEST', 400)
@@ -394,12 +451,14 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
   if (!conversation) return operationalError(c, 'CONVERSATION_NOT_FOUND', 404)
   if (expectedProjectId !== undefined && conversation.projectId !== expectedProjectId) return c.json({ error: 'A conversa não pertence ao projeto selecionado. Inicie uma nova conversa neste projeto.', code: 'CONVERSATION_PROJECT_MISMATCH', retryable: false }, 409)
   if (conversation.projectId && !await canUseProject(ctx.tenantId, ctx.userId, ctx.globalGroup, conversation.projectId)) return operationalError(c, 'PROJECT_NOT_FOUND', 404)
+  const explicitProjectId = await resolveExplicitProject(content, ctx, conversation.projectId)
+  const effectiveProjectId = explicitProjectId ?? conversation.projectId
   const [authenticatedUser, selectedProject] = await Promise.all([
     db.query.users.findFirst({ where: (user) => and(eq(user.id, ctx.userId), eq(user.tenantId, ctx.tenantId)), columns: { id: true, name: true, email: true, globalGroup: true, language: true } }),
-    conversation.projectId ? db.query.projects.findFirst({ where: (project) => and(eq(project.id, conversation.projectId!), eq(project.tenantId, ctx.tenantId)), columns: { id: true, name: true, startDate: true, plannedEndDate: true, plannedPoints: true, plannedHours: true, scope: true } }) : null,
+    effectiveProjectId ? db.query.projects.findFirst({ where: (project) => and(eq(project.id, effectiveProjectId), eq(project.tenantId, ctx.tenantId)), columns: { id: true, name: true, startDate: true, plannedEndDate: true, plannedPoints: true, plannedHours: true, scope: true } }) : null,
   ])
   if (!authenticatedUser) return operationalError(c, 'USER_NOT_FOUND', 404)
-  const selectedItem = expectedItemId
+  const selectedItem = expectedItemId && !explicitProjectId
     ? conversation.projectId ? await resolveSelectedItem(ctx.tenantId, conversation.projectId, expectedItemId) : undefined
     : null
   if (expectedItemId && !selectedItem) return operationalError(c, 'ITEM_NOT_FOUND', 404)
@@ -419,24 +478,29 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
   const secret = await decryptAssistantSecret(config.credential.ciphertext, config.credential.ciphertextVersion)
     const providerOptions = { timeoutMs: limits.timeoutMs, maxRetries: 0, maxOutputTokens: limits.maxOutputTokens }
    const provider = config.row.provider === 'OPENROUTER' ? new OpenRouterProvider(secret, providerOptions) : new OpenAIProvider(secret, providerOptions)
-  const harness = new AssistantHarness({ provider, limits: { steps: limits.maxSteps, toolCalls: limits.maxToolCalls, inputTokens: limits.maxInputTokens, outputTokens: limits.maxOutputTokens, payloadBytes: limits.maxPayloadBytes, timeoutMs: limits.timeoutMs, costMicros: limits.dailyBudgetMicros }, executeTool: async (name, args, toolContext) => executeSharedTool(name, args, { api: toolApi(c), context: toolContext, authorize: async () => {} }), authorize: async () => {}, assertAvailable: async () => { if (!await available(ctx.tenantId)) throw new Error('ASSISTANT_UNAVAILABLE') } })
+  const harness = new AssistantHarness({ provider, limits: { steps: limits.maxSteps, toolCalls: limits.maxToolCalls, inputTokens: limits.maxInputTokens, outputTokens: limits.maxOutputTokens, payloadBytes: limits.maxPayloadBytes, timeoutMs: limits.timeoutMs, costMicros: limits.dailyBudgetMicros }, executeTool: async (name, args, toolContext) => executeSharedTool(name, args, { api: toolApi(c), context: toolContext, authorize: authorizeAssistantTool }), authorize: authorizeAssistantTool, assertAvailable: async () => { if (!await available(ctx.tenantId)) throw new Error('ASSISTANT_UNAVAILABLE') } })
   const itemTypeScope = itemTypeScopeForMessage(content)
-  const runContext = { source: 'azy-agent' as const, userId: ctx.userId, tenantId: ctx.tenantId, globalGroup: ctx.globalGroup, projectId: conversation.projectId ?? undefined, conversationId, itemTypeScope }
+  const runContext = { source: 'azy-agent' as const, userId: ctx.userId, tenantId: ctx.tenantId, globalGroup: ctx.globalGroup, projectId: conversation.projectId ?? undefined, targetProjectId: effectiveProjectId ?? undefined, itemId: explicitProjectId ? undefined : expectedItemId ?? undefined, screen, conversationId, itemTypeScope }
   const runId = await harness.createRun(runContext, config.row.model!, idempotencyKey)
   const toolContext = recentMessages.slice(-3).map(message => message.content).join(' ')
-  void harness.run(runContext, config.row.model!, modelInput, idempotencyKey, toolsForMessage(content, `${toolContext} ${modelContext ?? ''}`)).then(async result => {
+  const candidateTools = assistantToolRoutingMode() === 'legacy'
+    ? getSharedToolDefinitions(['list_projects', 'get_project', 'get_board', 'get_tree', 'list_tasks', 'get_current_sprint']).map(tool => tool.name)
+    : toolsForMessage(content, `${toolContext} ${modelContext ?? ''}`)
+  const toolAllowlist = await filterToolsByPolicy(ctx, candidateTools, effectiveProjectId ?? undefined)
+  void harness.run(runContext, config.row.model!, modelInput, idempotencyKey, toolAllowlist).then(async result => {
     if (result.text) await db.insert(assistantMessages).values({ id: generateId(), tenantId: ctx.tenantId, conversationId, userId: null, role: 'ASSISTANT', content: result.text.slice(0, 20_000), metadataJson: JSON.stringify({ runId: result.runId }), createdAt: new Date().toISOString() })
   }).catch(() => undefined)
   return c.json({ messageId, runId, status: 'QUEUED' }, 202)
 }
 
 assistantRouter.post('/conversations/:conversationId/messages', async (c) => {
-  const body = await c.req.json<{ content?: unknown; projectId?: unknown; itemId?: unknown }>().catch(() => ({} as { content?: unknown; projectId?: unknown; itemId?: unknown }))
+  const body = await c.req.json<{ content?: unknown; projectId?: unknown; itemId?: unknown; screen?: unknown }>().catch(() => ({} as { content?: unknown; projectId?: unknown; itemId?: unknown; screen?: unknown }))
   if (typeof body.content !== 'string') return operationalError(c, 'INVALID_REQUEST', 400)
   if (body.projectId !== undefined && body.projectId !== null && typeof body.projectId !== 'string') return operationalError(c, 'INVALID_REQUEST', 400)
   if (body.itemId !== undefined && body.itemId !== null && typeof body.itemId !== 'string') return operationalError(c, 'INVALID_REQUEST', 400)
+  if (body.screen !== undefined && body.screen !== null && (typeof body.screen !== 'string' || !assistantScreens.has(body.screen as AssistantScreen))) return operationalError(c, 'INVALID_REQUEST', 400)
   const key = c.req.header('Idempotency-Key') ?? `message:${context(c).userId}:${generateId()}`
-  return runMessage(c, c.req.param('conversationId'), body.content, key, undefined, body.projectId === undefined ? undefined : body.projectId as string | null, body.itemId === undefined ? undefined : body.itemId as string | null)
+  return runMessage(c, c.req.param('conversationId'), body.content, key, undefined, body.projectId === undefined ? undefined : body.projectId as string | null, body.itemId === undefined ? undefined : body.itemId as string | null, body.screen as AssistantScreen | undefined)
 })
 
 assistantRouter.post('/conversations/:conversationId/resume', async (c) => {
@@ -519,7 +583,12 @@ assistantRouter.post('/runs/:runId/approval', async (c) => {
       try {
         await db.update(assistantToolCalls).set({ status: 'RUNNING', startedAt: new Date().toISOString() }).where(and(eq(assistantToolCalls.id, call.id), eq(assistantToolCalls.tenantId, ctx.tenantId)))
         const argumentsValue = jsonValue(call.argumentsJson)
-        const result = await executeSharedTool(call.toolName, Object.fromEntries(Object.entries(argumentsValue).filter(([, value]) => value !== 'null' && value !== '')), { api: toolApi(c), context: { ...ctx, source: 'azy-agent', runId: run.id }, authorize: async () => {} })
+        const approvedArgs = Object.fromEntries(Object.entries(argumentsValue).filter(([, value]) => value !== 'null' && value !== ''))
+        if (operationHash(call.toolName, approvedArgs) !== body.operationHash) throw new Error('APPROVAL_INVALID')
+        if (!await available(ctx.tenantId)) throw new Error('ASSISTANT_UNAVAILABLE')
+        const executionContext: HumanToolContext = { ...ctx, source: 'azy-agent', runId: run.id, projectId: typeof approvedArgs.projectId === 'string' ? approvedArgs.projectId : undefined, itemId: typeof approvedArgs.itemId === 'string' ? approvedArgs.itemId : undefined, screen: 'global-other' }
+        await authorizeAssistantTool(executionContext, call.toolName, approvedArgs)
+        const result = await executeSharedTool(call.toolName, approvedArgs, { api: toolApi(c), context: executionContext, authorize: authorizeAssistantTool })
         await db.update(assistantToolCalls).set({ status: 'COMPLETED', resultSummary: JSON.stringify(sanitizeToolOutput(result)), finishedAt: new Date().toISOString() }).where(eq(assistantToolCalls.id, call.id))
         await db.update(assistantRuns).set({ status: 'COMPLETED', finishedAt: new Date().toISOString() }).where(eq(assistantRuns.id, run.id))
         await db.insert(assistantMessages).values({ id: generateId(), tenantId: ctx.tenantId, conversationId: run.conversationId, userId: null, role: 'ASSISTANT', content: successMessage(call.toolName, result), metadataJson: JSON.stringify({ runId: run.id }), createdAt: new Date().toISOString() })

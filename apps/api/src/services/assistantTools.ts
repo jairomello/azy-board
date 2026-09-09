@@ -4,6 +4,8 @@ export {
   executeSharedTool,
   friendlyToolName,
   getSharedToolDefinitions,
+  dependencyToolsFor,
+  searchSharedTools,
   sanitizeToolOutput,
   selectSharedTools,
   SKILL_COMMAND_INTENTS,

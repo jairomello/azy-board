@@ -24,6 +24,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { api } from '../lib/api'
+import { onAssistantMutation } from '../lib/dataEvents'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { KanbanCard, type CardData } from '../components/KanbanCard'
 import { AddCardForm } from '../components/AddCardForm'
@@ -149,6 +150,7 @@ export default function BoardPage() {
 
   const [columns, setColumns] = useState<Column[]>([])
   const [allItems, setAllItems] = useState<ItemData[]>([])
+  const [assistantRefresh, setAssistantRefresh] = useState(0)
   const [modules, setModules] = useState<Module[]>([])
   const [sprints, setSprints] = useState<Sprint[]>([])
   const [members, setMembers] = useState<ProjectMember[]>([])
@@ -267,6 +269,16 @@ export default function BoardPage() {
     filtersProjectIdRef.current = projectId
   }, [projectId])
 
+  useEffect(() => onAssistantMutation(({ result }) => {
+    const payload = result && typeof result === 'object' ? result as Record<string, unknown> : null
+    const resultProjectId = typeof payload?.projectId === 'string'
+      ? payload.projectId
+      : payload?.project && typeof payload.project === 'object' && typeof (payload.project as Record<string, unknown>).id === 'string'
+        ? (payload.project as Record<string, unknown>).id as string
+        : null
+    if (!resultProjectId || resultProjectId === projectId) setAssistantRefresh(value => value + 1)
+  }), [projectId])
+
   useEffect(() => {
     if (versionsLoaded && filters.versionId && !projectVersions.some(version => version.id === filters.versionId)) {
       setFilters(previous => ({ ...previous, versionId: '' }))
@@ -357,7 +369,7 @@ export default function BoardPage() {
        setBoardMode(proj.boardMode ?? 'HIERARCHICAL')
        setSimpleStoryId(proj.simpleStoryId ?? null)
     }).finally(() => setLoading(false))
-  }, [projectId])
+   }, [assistantRefresh, projectId])
 
   // WebSocket: atualizações em tempo real
   const syncState = useWebSocket(projectId ?? null, {
@@ -1169,6 +1181,9 @@ export default function BoardPage() {
       projectId={projectId}
       projectName={projectName}
       assistantSelectedItem={assistantSelectedItem}
+      assistantScreen={view === 'tree' ? 'project-board-tree' : 'project-board-kanban'}
+      assistantBoardView={view}
+      assistantFilters={{ hideEmptyEpics: filters.hideEmptyEpics, hideEmptyStories: filters.hideEmptyStories, moduleId: filters.moduleId || null, sprintId: filters.sprintId || null, versionId: filters.versionId || null, squadId: filters.squadId || null, assigneeId: filters.assigneeId || null, types: filters.types.length ? filters.types.join(',') : null }}
       sectionLabel={view === 'kanban' ? 'Board' : 'Árvore'}
       contextLabel={activeSprint?.name ?? 'Fluxo do projeto'}
       headerMeta={syncState === 'synced' ? (

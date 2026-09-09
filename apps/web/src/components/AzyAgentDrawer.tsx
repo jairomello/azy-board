@@ -55,6 +55,10 @@ function friendlyRunError(error: string | null | undefined, t: (key: string) => 
     TIMEOUT: t("runTimeout"),
     ACTION_LIMIT: t("actionLimit"),
     REPEATED_TOOL_CALL: t("repeatedToolCall"),
+    TOOL_NOT_ALLOWED_FOR_RUN: t("toolUnavailable"),
+    TOOL_NOT_REGISTERED: t("toolUnavailable"),
+    PROJECT_CONTEXT_MISMATCH: t("contextMismatch"),
+    CAPABILITY_NOT_IMPLEMENTED: t("capabilityUnavailable"),
   };
   return messages[error] ?? error;
 }
@@ -283,7 +287,7 @@ export function AzyAgentDrawer() {
       const current = await ensureConversation();
       const result = await api.post<{ runId: string; status: string }>(
         `/assistant/conversations/${current.id}/messages`,
-        { content: text, projectId: projectId ?? null, itemId: itemId ?? null },
+        { content: text, screen: pageContext?.screen ?? 'global-other', projectId: projectId ?? null, itemId: itemId ?? null },
       );
       setRun({ id: result.runId, status: result.status, cursor: 0 });
     } catch (e) {
@@ -344,7 +348,7 @@ export function AzyAgentDrawer() {
     try {
       const result = await api.post<{ runId: string; status: string }>(
         `/assistant/runs/${run.id}/adjust`,
-        { instruction, operationHash: run.approval.operationHash, projectId: projectId ?? null, itemId: itemId ?? null },
+        { instruction, operationHash: run.approval.operationHash, screen: pageContext?.screen ?? 'global-other', projectId: projectId ?? null, itemId: itemId ?? null },
       );
       setRun({ id: result.runId, status: result.status, cursor: 0 });
       setAdjusting(false);

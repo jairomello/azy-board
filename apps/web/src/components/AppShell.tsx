@@ -19,6 +19,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { canAccessAdmin, canAccessProjectSettings } from '../permissions'
 import { useTranslation } from 'react-i18next'
 import { useAssistant, type AssistantSelectedItem } from '../contexts/AssistantContext'
+import type { AssistantScreen } from '@azy-board/types'
+import { isProjectNameTruncated, truncateProjectName } from '../lib/projectName'
 
 interface AppShellProps {
   children: ReactNode
@@ -31,6 +33,9 @@ interface AppShellProps {
   statusRail?: ReactNode
   contentClassName?: string
   assistantSelectedItem?: AssistantSelectedItem | null
+  assistantScreen?: AssistantScreen
+  assistantBoardView?: 'kanban' | 'tree'
+  assistantFilters?: Record<string, string | boolean | null>
 }
 
 interface NavItem {
@@ -52,6 +57,9 @@ export function AppShell({
   statusRail,
   contentClassName = '',
   assistantSelectedItem,
+  assistantScreen,
+  assistantBoardView,
+  assistantFilters,
 }: AppShellProps) {
   const location = useLocation()
   const { user } = useAuth()
@@ -60,15 +68,32 @@ export function AppShell({
   const { t: tAssistant } = useTranslation('assistant')
   const [mobileOpen, setMobileOpen] = useState(false)
   const [adminExpanded, setAdminExpanded] = useState(location.pathname.startsWith('/admin'))
+  const inferredScreen: AssistantScreen = location.pathname === '/projects'
+    ? 'projects-index'
+    : location.pathname.includes('/settings')
+      ? 'project-settings'
+      : location.pathname.includes('/dashboard')
+        ? 'project-dashboard'
+        : location.pathname.startsWith('/admin/users')
+          ? 'admin-users'
+          : location.pathname.startsWith('/admin/assistant')
+            ? 'admin-assistant'
+            : location.pathname.startsWith('/account')
+              ? 'account'
+              : location.pathname.includes('/board')
+                ? (assistantBoardView === 'tree' ? 'project-board-tree' : 'project-board-kanban')
+                : 'global-other'
+  const displayTitle = projectId && projectName ? truncateProjectName(projectName) : (contextLabel ?? sectionLabel)
+  const titleIsTruncated = Boolean(projectId && projectName && isProjectNameTruncated(projectName))
 
   useEffect(() => {
     if (projectId) localStorage.setItem('last-project-id', projectId)
   }, [projectId])
 
   useEffect(() => {
-    setPageContext({ projectId, projectName, item: assistantSelectedItem ?? null })
+    setPageContext({ screen: assistantScreen ?? inferredScreen, projectId, projectName, item: assistantSelectedItem ?? null, boardView: assistantBoardView, filters: assistantFilters })
     return () => setPageContext(null)
-  }, [assistantSelectedItem, projectId, projectName, setPageContext])
+  }, [assistantBoardView, assistantFilters, assistantScreen, assistantSelectedItem, inferredScreen, projectId, projectName, setPageContext])
 
   useEffect(() => setMobileOpen(false), [location.pathname])
   useEffect(() => {
@@ -303,7 +328,7 @@ export function AppShell({
             <span>{sectionLabel}</span>
           </div>
           <div className="flex items-center gap-3 min-w-0">
-            <h1 className="text-sm sm:text-base font-semibold truncate">{contextLabel ?? sectionLabel}</h1>
+            <h1 className="text-sm sm:text-base font-semibold truncate" title={titleIsTruncated ? projectName : undefined} aria-label={titleIsTruncated ? projectName : undefined}>{displayTitle}</h1>
             {headerMeta}
           </div>
         </div>
