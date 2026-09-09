@@ -17,7 +17,7 @@ import { wsHandler } from './services/websocket'
 import { authMiddleware } from './middleware/auth'
 import type { WsClientData } from './services/websocket'
 import type { RequestContext } from '@azy-board/types'
-import { verifyJwt } from './services/auth'
+import { hasGlobalGroup, verifyJwt } from './services/auth'
 import { getCookie } from 'hono/cookie'
 import { db } from './db/index'
 import { and, eq } from 'drizzle-orm'
@@ -104,12 +104,22 @@ export async function startServer() {
 
         try {
           const payload = await verifyJwt(token)
-          // [TENANT] Só aceita WebSocket para projetos nos quais o usuário tem membership.
-          const membership = await db.query.memberships.findFirst({
-            where: (m) => and(eq(m.projectId, projectId), eq(m.userId, payload.sub), eq(m.tenantId, payload.tenantId)),
-            columns: { id: true },
-          })
-          if (!membership) return new Response('Projeto não encontrado', { status: 404 })
+          const [project, membership] = await Promise.all([
+            db.query.projects.findFirst({
+              where: (project) => and(eq(project.id, projectId), eq(project.tenantId, payload.tenantId)),
+              columns: { id: true, isRestricted: true, managerUserId: true },
+            }),
+            db.query.memberships.findFirst({
+              where: (m) => and(eq(m.projectId, projectId), eq(m.userId, payload.sub), eq(m.tenantId, payload.tenantId)),
+              columns: { id: true },
+            }),
+          ])
+          if (!project) return new Response('Projeto não encontrado', { status: 404 })
+          // [TENANT] Projeto restrito exige vínculo/gerência; projeto público também
+          // permite os grupos administrativos, em paridade com a API REST.
+          const isManager = project.managerUserId === payload.sub
+          const isGlobalAdmin = payload.globalGroup ? hasGlobalGroup(payload.globalGroup, 'ADMIN') : false
+          if (!membership && !isManager && (project.isRestricted || !isGlobalAdmin)) return new Response('Projeto não encontrado', { status: 404 })
           // [TENANT] tenantId armazenado na conexão WebSocket para isolamento de broadcast
           server.upgrade(req, {
             data: { projectId, tenantId: payload.tenantId, userId: payload.sub } satisfies WsClientData,
