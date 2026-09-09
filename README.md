@@ -52,25 +52,26 @@ board state programmatically:
 
 | Tool | Description |
 |------|-------------|
-| `list_projects` / `get_project` | Descobre projetos e suas configurações |
-| `get_board` / `get_tree` | Lê o board estruturado ou sua árvore |
-| `get_shadow_markdown` | Retorna a projeção Shadow Markdown |
-| `create_project` / `update_project` | Cria e configura projetos |
-| `create_task` / `update_item` | Cria e atualiza items e subtasks |
+| `list_projects` / `get_project` | Discovers projects and their configuration |
+| `get_board` / `get_tree` | Reads the structured board or its tree |
+| `get_shadow_markdown` | Returns the Shadow Markdown projection |
+| `create_project` / `update_project` | Creates and configures projects |
+| `create_task` / `update_item` | Creates and updates items and subtasks |
 
-O Board permite filtrar em memória por tag (tags selecionadas usam OR), versão,
-prioridade, status e autor. Dimensões diferentes são combinadas com AND. O
-vínculo de versão é opcional e fica em `items.version_id`; pode ser informado
-na criação rápida de TASK/BUG ou no `create_task` do MCP.
-| `claim_task` / `release_task` | Atribui ou libera trabalho |
-| `move_task` / `complete_task` | Move e conclui cards |
-| `archive_item` / `unarchive_item` / `delete_item` | Gerencia ciclo de vida de items |
-| `create_module`, sprints, tags e versões | Administra planejamento do projeto |
-| `list_members` / `list_squads` | Consulta colaboração e equipe |
-| `list_checklists`, logs e tags | Registra evidências de execução |
+| `claim_task` / `release_task` | Claims or releases work |
+| `move_task` / `complete_task` | Moves and completes cards |
+| `archive_item` / `unarchive_item` / `delete_item` | Manages the item lifecycle |
+| `create_module`, sprints, tags, and versions | Manages project planning |
+| `list_members` / `list_squads` | Queries team collaboration and membership |
+| `list_checklists`, logs, and tags | Records execution evidence |
 
-As ferramentas legadas `list_tasks` e `list_modules` continuam disponíveis para
-compatibilidade com agentes já configurados.
+The Board supports in-memory filtering by tag (selected tags use OR), version,
+priority, status, and author. Different dimensions are combined with AND. The
+version link is optional and stored in `items.version_id`; it can be provided
+when quickly creating a TASK/BUG or through the MCP `create_task` tool.
+
+The legacy `list_tasks` and `list_modules` tools remain available for
+compatibility with already configured agents.
 
 MCP tools are auditable, scoped to a tenant, and enforce the same RBAC rules
 as the REST API. Agents cannot escalate beyond the role granted to their API
@@ -90,31 +91,31 @@ Validate the catalog, references and commands locally with:
 bun run test:agent-skill
 ```
 
-### Azy Agent (chat humano)
+### Azy Agent (human chat)
 
-O Azy Agent fica desligado por padrão. Um usuário `ROOT` deve configurar, no
-tenant, um modelo OpenAI e uma API key válida no painel de administração, testar
-a conexão e ativar o toggle. A chave fica somente no backend, cifrada, e nunca
-é enviada ao browser, ao chat ou aos logs. O modelo recomendado para começar é
-`gpt-5.6-luna`. O Azy Agent suporta somente API keys oficiais para chamadas à
-API de modelos. Login ChatGPT, Codex access tokens e outros tokens de produto não
-fazem parte do contrato de credenciais do assistente.
+The Azy Agent is disabled by default. A `ROOT` user must configure an OpenAI
+model and a valid API key for the tenant in the administration panel, test the
+connection, and enable the toggle. The key remains encrypted on the backend and
+is never sent to the browser, chat, or logs. The recommended model to start
+with is `gpt-5.6-luna`. The Azy Agent supports only official API keys for model
+API calls. ChatGPT login credentials, Codex access tokens, and other product
+tokens are not part of the assistant's credential contract.
 
-Limites iniciais econômicos: 10 mensagens por minuto por usuário, 1 run ativa
-por usuário, 3 por tenant, 50 KB por mensagem/payload, 4 passos, 8 tool calls,
-45 segundos e orçamento diário de 100.000 micros por usuário (1.000.000 por
-tenant). O Root pode acompanhar consumo, runs ativas e ajustar esses parâmetros
-na seção de governança do tenant, sempre dentro de faixas de segurança. Runs
-interrompidas por limite ficam registradas com código operacional; mutações exigem
-prévia e aprovação humana. Cards, texto colado e CSV são dados não confiáveis e
-não podem substituir as regras do sistema.
+Initial economic limits: 10 messages per minute per user, 1 active run per
+user, 3 per tenant, 50 KB per message/payload, 4 steps, 8 tool calls, 45
+seconds, and a daily budget of 100,000 micros per user (1,000,000 per tenant).
+The Root user can monitor usage and active runs and adjust these parameters in
+the tenant governance section, always within safe ranges. Runs interrupted by a
+limit are recorded with an operational code; mutations require preview and
+human approval. Cards, pasted text, and CSV files are untrusted data and cannot
+override system rules.
 
-O chat oferece o histórico do usuário, perguntas de esclarecimento, aprovação,
-cancelamento, importação CSV com prévia e stream SSE reconectável. Comandos
-semânticos equivalentes à skill: `/azyboard-status`, `/azyboard-plan`,
-`/azyboard-start`, `/azyboard-update`, `/azyboard-complete` e
-`/azyboard-review`. Consulte a [página do Azy Agent na wiki](docs/azyboard-wiki/09%20-%20Agentes%20e%20Integracoes/Azy%20Agent%20humano.md)
-e `docs/AI_AGENT_DATA_POLICY.md` antes de habilitar o recurso.
+The chat provides user history, clarification questions, approval,
+cancellation, CSV import with preview, and a reconnectable SSE stream. Semantic
+commands equivalent to the skill are: `/azyboard-status`, `/azyboard-plan`,
+`/azyboard-start`, `/azyboard-update`, `/azyboard-complete`, and
+`/azyboard-review`. See the [Azy Agent wiki page](docs/azyboard-wiki/09%20-%20Agentes%20e%20Integracoes/Azy%20Agent%20humano.md)
+and `docs/AI_AGENT_DATA_POLICY.md` before enabling the feature.
 
 ---
 
