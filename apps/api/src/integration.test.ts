@@ -567,6 +567,34 @@ describe('batch e idempotencia', () => {
     expect((await db.select().from(itemLogs)).filter(log => log.itemId === id && log.activity.includes('Campos alterados em lote'))).toHaveLength(1)
   })
 
+  test('update de campos não-hierárquicos ignora hierarquia preexistente inválida', async () => {
+    const storyId = generateId(); const taskId = generateId(); const versionId = generateId()
+    const now = new Date().toISOString()
+    // STORY órfã preexistente (sem EPIC pai) não deve bloquear updates de versão/sprint.
+    await db.insert(items).values([
+      { id: storyId, tenantId, projectId, type: 'STORY', parentId: null, moduleId: null, title: 'Story órfã', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 90, createdAt: now, updatedAt: now },
+      { id: taskId, tenantId, projectId, type: 'TASK', parentId: storyId, moduleId: null, title: 'Task sob story órfã', ancestryPath: JSON.stringify([{ id: storyId, title: 'Story órfã', type: 'STORY' }]), status: 'NOT_STARTED', priority: 'MEDIUM', position: 91, createdAt: now, updatedAt: now },
+    ])
+    await db.insert((await import('./db/schema')).projectVersions).values({ id: versionId, tenantId, projectId, name: '2.00', status: 'IN_DEV', createdAt: now })
+    const filters = { itemIds: null, types: null, statuses: null, sprint: null, version: null, module: null, assignee: null, parent: null, column: null, tag: null, titleContains: null, onlyLeaves: null, matchAll: true }
+    const changes = [{ field: 'version', operation: 'SET', value: '2.00' }]
+    const response = await request(`/projects/${projectId}/batch/items/update`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filters, changes }) })
+    expect(response.status).toBe(200)
+    const updatedStory = (await db.select().from(items)).find(item => item.id === storyId)!
+    const updatedTask = (await db.select().from(items)).find(item => item.id === taskId)!
+    expect(updatedStory.versionId).toBe(versionId)
+    expect(updatedTask.versionId).toBe(versionId)
+  })
+
+  test('update que altera pai continua validando hierarquia', async () => {
+    const storyId = generateId(); const now = new Date().toISOString()
+    await db.insert(items).values({ id: storyId, tenantId, projectId, type: 'STORY', parentId: null, moduleId: null, title: 'Story órfã move', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 92, createdAt: now, updatedAt: now })
+    const filters = { itemIds: [storyId], types: null, statuses: null, sprint: null, version: null, module: null, assignee: null, parent: null, column: null, tag: null, titleContains: null, onlyLeaves: null, matchAll: false }
+    const changes = [{ field: 'parent', operation: 'CLEAR', value: null }]
+    const response = await request(`/projects/${projectId}/batch/items/update`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filters, changes }) })
+    expect(response.status).toBe(422)
+  })
+
   test('rollback atômico remove mutação quando o evento falha', async () => {
     const id = generateId(); const now = new Date().toISOString()
     let failed = false

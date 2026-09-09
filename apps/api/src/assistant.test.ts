@@ -206,6 +206,11 @@ História: Projetos`
     expect(tools).toContain('create_task')
   })
 
+  test('cards genéricos delimitam escopo TASK/BUG fora de bulk move', () => {
+    expect(itemTypeScopeForMessage('Atualize a versão de todos os cards para 1.00')).toEqual(['TASK', 'BUG'])
+    expect(itemTypeScopeForMessage('Atualize somente as tasks do projeto')).toEqual(['TASK'])
+  })
+
   test('mantém atualização em lote quando não há verbo de criação', () => {
     expect(toolsForMessage('Arquive os épicos concluídos e suas histórias')).not.toEqual(['batch', 'list_modules'])
     expect(toolsForMessage('Registre horas nas tasks e bugs do sprint atual')).not.toEqual(['batch', 'list_modules'])

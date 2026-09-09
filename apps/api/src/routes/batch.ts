@@ -249,13 +249,17 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
     }
 
     const resulting = new Map<string, typeof projectItems[number]>(projectItems.map(item => [item.id, { ...item, ...(updatesById.get(item.id) ?? {}) } as typeof item]))
-    for (const item of matched) {
-      const next = resulting.get(item.id)!
-      if (next.parentId === next.id) throw new Error('INVALID_HIERARCHY')
-      const parent = next.parentId ? resulting.get(next.parentId) : null
-      if (next.type === 'EPIC' && (next.parentId || !next.moduleId)) throw new Error('INVALID_HIERARCHY')
-      if (next.type === 'STORY' && parent?.type !== 'EPIC') throw new Error('INVALID_HIERARCHY')
-      if ((next.type === 'TASK' || next.type === 'BUG') && parent && !['STORY', 'TASK', 'BUG'].includes(parent.type)) throw new Error('INVALID_HIERARCHY')
+    // A hierarquia só é revalidada quando a mutação toca pai/tipo: estruturas preexistentes
+    // inválidas não devem bloquear updates de campos (versão, sprint, responsável etc.).
+    if (changedFields.has('parent') || changedFields.has('type')) {
+      for (const item of matched) {
+        const next = resulting.get(item.id)!
+        if (next.parentId === next.id) throw new Error('INVALID_HIERARCHY')
+        const parent = next.parentId ? resulting.get(next.parentId) : null
+        if (next.type === 'EPIC' && (next.parentId || !next.moduleId)) throw new Error('INVALID_HIERARCHY')
+        if (next.type === 'STORY' && parent?.type !== 'EPIC') throw new Error('INVALID_HIERARCHY')
+        if ((next.type === 'TASK' || next.type === 'BUG') && parent && !['STORY', 'TASK', 'BUG'].includes(parent.type)) throw new Error('INVALID_HIERARCHY')
+      }
     }
     const pathCache = new Map<string, Array<{ id: string; title: string; type: string }>>()
     const ancestryFor = (id: string, visiting = new Set<string>()): Array<{ id: string; title: string; type: string }> => {

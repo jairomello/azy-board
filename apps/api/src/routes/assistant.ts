@@ -273,6 +273,11 @@ export function itemTypeScopeForMessage(content: string): Array<'EPIC' | 'STORY'
   const mentionsCards = /\bcards?\b/.test(text)
   const excludesBugs = /\b(?:sem|exceto)\s+bugs?\b/.test(text)
   const taskOnly = /\b(?:apenas|somente|exclusivamente)\s+(?:as\s+)?(?:tasks?|tarefas?)\b|\b(?:tasks?|tarefas?)\s+(?:apenas|somente)\b|\b(?:tipo|type)\s*:?\s*task\b/.test(text) || excludesBugs
+  // "Cards" genéricos são os cards de trabalho (TASK e BUG), igual à regra de bulk move.
+  if (mentionsCards && !taskOnly && !/\b(?:tasks?|tarefas?)\b/.test(text)) {
+    if (!types.includes('TASK')) types.push('TASK')
+    if (!types.includes('BUG')) types.push('BUG')
+  }
   if (mentionsTasks) types.push('TASK')
   if (/\bbugs?\b/.test(text) && !excludesBugs) types.push('BUG')
   if (/\b(?:stories|story|histórias?|historias?)\b/.test(text)) types.push('STORY')
