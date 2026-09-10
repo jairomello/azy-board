@@ -5,10 +5,56 @@
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL%201.1-f59e0b)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
+<p align="center">
+  <img src="docs/screenshots/board-hierarchy.png" alt="Azy Board hierarchical Kanban board" width="720" />
+</p>
+
 Azy Board is a Kanban project management hub purpose-built for mixed Human-AI
-teams. It treats AI agents as first-class collaborators — not integrations bolted
-on top of a human-centric tool — and provides dedicated protocols for both
-reading and mutating board state.
+teams. It treats AI agents as first-class collaborators — not integrations
+bolted on top of a human-centric tool — and provides dedicated protocols for
+both reading and mutating board state.
+
+## AI by Design
+
+Azy Board is AI by design: intelligence is not an add-on, it flows naturally
+through the product. The same board that humans see is exposed to agents
+through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) and
+the Shadow Markdown projection, so agents read real state, act with typed
+tools, and every mutation goes through human approval, RBAC and tenant
+isolation. People and agents share a single source of truth — without
+friction.
+
+<p align="center">
+  <img src="docs/screenshots/agent-approval.png" alt="Azy Agent asking for approval to create a project" width="600" />
+</p>
+
+### Highlights
+
+- **Azy Agent** — built-in conversational agent: create projects, plan
+  hierarchies, move cards and generate dashboards by chatting. Mutations
+  require explicit human approval with a readable preview.
+- **MCP native** — full REST parity through typed MCP tools, ready for Claude
+  Code, Codex, OpenCode or any MCP-compatible client, plus an
+  [official agent skill](skills/azyboard/SKILL.md).
+- **Advanced Kanban hierarchy** — projects organize work as
+  `Module → Epic → Story → Task/Bug`, with nested board lanes, collapsible
+  groups and a drag-and-drop tree view.
+- **Real-time collaboration** — WebSocket synchronization, per-project rooms,
+  agent actions appear instantly for humans (and vice versa).
+- **Project dashboard** — burnup, WIP by items/points, aging, blocked and
+  overdue analytics with UTC daily series.
+- **AI API keys** — per-key scopes, traceable agent identity, badges and
+  audit trail for every AI action.
+
+### A guided look
+
+| Projects workspace | Project dashboard |
+|:---:|:---:|
+| ![Projects workspace](docs/screenshots/projects.png) | ![Project dashboard](docs/screenshots/dashboard.png) |
+
+| Azy Agent tenant configuration | Account preferences |
+|:---:|:---:|
+| ![Azy Agent configuration](docs/screenshots/agent-config.png) | ![Account preferences](docs/screenshots/account.png) |
 
 ### Sprint lifecycle
 
@@ -57,7 +103,6 @@ board state programmatically:
 | `get_shadow_markdown` | Returns the Shadow Markdown projection |
 | `create_project` / `update_project` | Creates and configures projects |
 | `create_task` / `update_item` | Creates and updates items and subtasks |
-
 | `claim_task` / `release_task` | Claims or releases work |
 | `move_task` / `complete_task` | Moves and completes cards |
 | `archive_item` / `unarchive_item` / `delete_item` | Manages the item lifecycle |
@@ -93,11 +138,14 @@ bun run test:agent-skill
 
 ### Azy Agent (human chat)
 
-The Azy Agent is disabled by default. A `ROOT` user must configure an OpenAI
-model and a valid API key for the tenant in the administration panel, test the
-connection, and enable the toggle. The key remains encrypted on the backend and
-is never sent to the browser, chat, or logs. The recommended model to start
-with is `gpt-5.6-luna`. The Azy Agent supports only official API keys for model
+The Azy Agent is disabled by default. A `ROOT` user must configure the AI
+provider, a model, and a valid API key for the tenant in the administration
+panel, test the connection, and enable the toggle. OpenAI and OpenRouter are
+supported out of the box, and any model capable of tool use can drive the
+agent — in our tests, Muse Spark (OpenRouter, free tier) performed remarkably
+well. The key remains encrypted on the backend and
+is never sent to the browser, chat, or logs. The Azy Agent supports only
+official API keys for model
 API calls. ChatGPT login credentials, Codex access tokens, and other product
 tokens are not part of the assistant's credential contract.
 
@@ -221,6 +269,7 @@ bun run test:mcp          # MCP tools without external services or credentials
 bun run test:mcp-catalog  # MCP catalog and authorization policies
 bun run test:agent-skill   # skill, commands and references
 bun run test:smoke        # HTTP smoke test; use SMOKE_URL for a published app
+bun run check:i18n        # translation key parity and hardcoded-text inventory
 ```
 
 ---
