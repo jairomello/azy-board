@@ -61,21 +61,21 @@ export function EpicModal({ modules, epic, projectVersions = [], onSave, onClose
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative bg-card border border-border rounded-xl shadow-xl w-full max-w-md p-6 space-y-4 mx-4">
         <h2 className="text-lg font-semibold text-foreground">
-          {epic?.id ? 'Editar épico' : 'Novo épico'}
+          {epic?.id ? t('editEpic') : t('newEpicTitle')}
         </h2>
 
         <div className="space-y-3">
           <AccordionToolbar sectionIds={sectionIds} openIds={openSections} onChange={setOpenSections} />
           <AccordionSection id="epic-fields" title={t('accordion.epicFields')} summary={<NeutralSummary />} isOpen={openSections.has('epic-fields')} onToggle={toggleSection}>
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Título</label>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('epicTitle')}</label>
             <input value={title} onChange={e => setTitle(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSave()} autoFocus
               className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary" />
           </div>
 
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Módulo</label>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('moduleLabel')}</label>
             <select value={moduleId} onChange={e => setModuleId(e.target.value)}
               className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
               {modules.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -84,10 +84,10 @@ export function EpicModal({ modules, epic, projectVersions = [], onSave, onClose
 
           {projectVersions.length > 0 && (
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Versão</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('filterVersion')}</label>
               <select value={versionId} onChange={e => setVersionId(e.target.value)}
                 className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                <option value="">Sem versão</option>
+                <option value="">{t('noVersion')}</option>
                 {projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             </div>
@@ -96,7 +96,7 @@ export function EpicModal({ modules, epic, projectVersions = [], onSave, onClose
 
           <AccordionSection id="epic-description" title={t('accordion.description')} summary={description ? t('accordion.contentPresent') : <NeutralSummary />} isOpen={openSections.has('epic-description')} onToggle={toggleSection}>
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Descrição</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('descriptionLabel')}</label>
             <RichTextEditor
               content={description}
               onChange={setDescription}
@@ -111,11 +111,11 @@ export function EpicModal({ modules, epic, projectVersions = [], onSave, onClose
         <div className="flex gap-2 pt-2">
           <button onClick={handleSave} disabled={loading || !title.trim()}
             className="flex-1 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition">
-            {loading ? 'Salvando...' : 'Salvar'}
+            {loading ? t('saving') : t('save')}
           </button>
           <button onClick={onClose}
             className="flex-1 py-2 text-sm border border-border rounded-lg hover:bg-muted text-muted-foreground transition">
-            Cancelar
+            {t('cancel')}
           </button>
         </div>
       </div>

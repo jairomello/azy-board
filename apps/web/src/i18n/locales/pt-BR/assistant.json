@@ -65,5 +65,22 @@
   "operationFailed": "Não foi possível concluir a operação.",
   "securityNote": "Credenciais não são exibidas nem enviadas ao navegador.",
   "accessDenied": "Acesso permitido somente a Root",
-  "loading": "Carregando"
+  "loading": "Carregando",
+  "governance": "Governança e limites",
+  "governanceHelp": "Controle o consumo do modelo e a capacidade de execução deste tenant. O backend mantém faixas de segurança.",
+  "activeRuns": "Execuções ativas agora",
+  "costToday": "Custo hoje",
+  "requestsPerMinute": "Mensagens por minuto/usuário",
+  "maxActivePerUser": "Execuções simultâneas/usuário",
+  "maxActivePerTenant": "Execuções simultâneas/tenant",
+  "maxSteps": "Etapas por execução",
+  "maxToolCalls": "Chamadas de ferramenta por execução",
+  "maxInputTokens": "Tokens de entrada por execução",
+  "maxOutputTokens": "Tokens de saída por execução",
+  "maxPayloadBytes": "Payload máximo (bytes)",
+  "timeoutMs": "Timeout da execução (ms)",
+  "dailyBudgetMicros": "Orçamento diário/usuário (micros USD)",
+  "tenantDailyBudgetMicros": "Orçamento diário/tenant (micros USD)",
+  "saveLimits": "Salvar limites",
+  "governanceSaved": "Governança salva com segurança."
 }

@@ -131,7 +131,7 @@ export default function RootAssistantSettings() {
     setError("");
     try {
       await api.patch("/assistant/root/governance", governance);
-      setMessage("Governança salva com segurança.");
+       setMessage(t("governanceSaved"));
       await refresh();
       const current = await api.get<{ activeRuns: number; dailyCostMicros: number }>("/assistant/root/governance/usage");
       setUsage(current);
@@ -215,26 +215,26 @@ export default function RootAssistantSettings() {
         </section>
         <section className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm">
           <div>
-            <h3 className="font-semibold">Governança e limites</h3>
-            <p className="text-sm text-muted-foreground">Controle o consumo do modelo e a capacidade de execução deste tenant. O backend mantém faixas de segurança.</p>
+             <h3 className="font-semibold">{t("governance")}</h3>
+             <p className="text-sm text-muted-foreground">{t("governanceHelp")}</p>
           </div>
-          {usage && <div className="grid gap-3 rounded-lg bg-muted/50 p-3 text-sm sm:grid-cols-2"><span>Runs ativas agora: <strong>{usage.activeRuns}</strong></span><span>Custo hoje: <strong>${(usage.dailyCostMicros / 1_000_000).toFixed(2)}</strong></span></div>}
+           {usage && <div className="grid gap-3 rounded-lg bg-muted/50 p-3 text-sm sm:grid-cols-2"><span>{t("activeRuns")}: <strong>{usage.activeRuns}</strong></span><span>{t("costToday")}: <strong>${(usage.dailyCostMicros / 1_000_000).toFixed(2)}</strong></span></div>}
           <div className="grid gap-3 sm:grid-cols-2">
             {([
-              ["requestsPerMinute", "Mensagens por minuto/usuário"],
-              ["maxActivePerUser", "Runs simultâneas/usuário"],
-              ["maxActivePerTenant", "Runs simultâneas/tenant"],
-              ["maxSteps", "Passos por run"],
-              ["maxToolCalls", "Tool calls por run"],
-              ["maxInputTokens", "Tokens de entrada por run"],
-              ["maxOutputTokens", "Tokens de saída por run"],
-              ["maxPayloadBytes", "Payload máximo (bytes)"],
-              ["timeoutMs", "Timeout da run (ms)"],
-              ["dailyBudgetMicros", "Budget diário/usuário (micros USD)"],
-              ["tenantDailyBudgetMicros", "Budget diário/tenant (micros USD)"],
+              ["requestsPerMinute", t("requestsPerMinute")],
+              ["maxActivePerUser", t("maxActivePerUser")],
+              ["maxActivePerTenant", t("maxActivePerTenant")],
+              ["maxSteps", t("maxSteps")],
+              ["maxToolCalls", t("maxToolCalls")],
+              ["maxInputTokens", t("maxInputTokens")],
+              ["maxOutputTokens", t("maxOutputTokens")],
+              ["maxPayloadBytes", t("maxPayloadBytes")],
+              ["timeoutMs", t("timeoutMs")],
+              ["dailyBudgetMicros", t("dailyBudgetMicros")],
+              ["tenantDailyBudgetMicros", t("tenantDailyBudgetMicros")],
             ] as [keyof typeof governance, string][]).map(([key, label]) => <label key={key} className="text-sm">{label}<input type="number" min={1} value={governance[key]} onChange={(e) => setGovernance((current) => ({ ...current, [key]: Number(e.target.value) }))} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2" /></label>)}
           </div>
-          <button type="button" disabled={busy} onClick={() => void saveGovernance()} className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">Salvar limites</button>
+           <button type="button" disabled={busy} onClick={() => void saveGovernance()} className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">{t("saveLimits")}</button>
         </section>
         <section className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-sm">
           <h3 className="font-semibold">{t("provider")}</h3>

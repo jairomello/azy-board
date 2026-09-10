@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface Epic { id: string; title: string }
 
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function StorySelector({ epics, stories, value, onChange, onCreateStory }: Props) {
+  const { t } = useTranslation('board')
   const [open, setOpen] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newEpicId, setNewEpicId] = useState(epics[0]?.id ?? '')
@@ -76,7 +78,7 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
         className="w-full flex items-center justify-between px-3 py-2 text-sm bg-background border border-border rounded-lg hover:border-primary transition text-left"
       >
         <span className={selected ? 'text-foreground' : 'text-muted-foreground'}>
-          {selected ? selected.title : 'Selecionar história...'}
+           {selected ? selected.title : t('selectStory')}
         </span>
         <svg className="w-4 h-4 text-muted-foreground flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -95,7 +97,7 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
             onClick={() => { onChange(null); setOpen(false) }}
             className="w-full text-left px-3 py-2 text-sm text-muted-foreground hover:bg-muted"
           >
-            Sem história
+             {t('noStory')}
           </button>
 
           {epics.map(epic => {
@@ -128,7 +130,7 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
               onClick={() => setShowCreate(true)}
               className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-muted border-t border-border"
             >
-              + Nova história
+               {t('newStory')}
             </button>
           ) : (
             <div className="p-3 border-t border-border space-y-2" onMouseDown={e => e.stopPropagation()}>
@@ -137,7 +139,7 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
                 onChange={e => setNewTitle(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleCreate()}
                 autoFocus
-                placeholder="Título da história..."
+                 placeholder={t('storyTitlePlaceholder')}
                 className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded outline-none focus:border-primary"
               />
               <select
@@ -154,14 +156,14 @@ export function StorySelector({ epics, stories, value, onChange, onCreateStory }
                   disabled={creating || !newTitle.trim()}
                   className="flex-1 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50 transition"
                 >
-                  {creating ? '...' : 'Criar'}
+                   {creating ? '...' : t('createAction')}
                 </button>
                 <button
                   type="button"
                   onClick={() => { setShowCreate(false); setNewTitle('') }}
                   className="flex-1 py-1 text-xs border border-border rounded hover:bg-muted text-muted-foreground transition"
                 >
-                  Cancelar
+                   {t('cancel')}
                 </button>
               </div>
             </div>

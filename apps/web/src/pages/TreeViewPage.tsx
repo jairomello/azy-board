@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, Fragment } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Archive, Bug as BugIcon, Pencil, Plus } from 'lucide-react'
 import { api } from '../lib/api'
 import type { BoardFilterState } from '../components/BoardFilters'
@@ -29,14 +30,6 @@ const STATUS_COLOR: Record<string, string> = {
   BLOCKED: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300',
   DONE: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300',
   CANCELLED: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500',
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  NOT_STARTED: 'Não iniciada',
-  IN_PROGRESS: 'Em andamento',
-  BLOCKED: 'Bloqueada',
-  DONE: 'Concluída',
-  CANCELLED: 'Cancelada',
 }
 
 const TYPE_ICON: Record<string, { label: string; cls: string }> = {
@@ -113,6 +106,7 @@ export interface TreeActionContext {
 }
 
 function Row({ depth, label, type, status, points, progress, startDate, dueDate, assigneeName, expanded, hasChildren, onToggle, onArchive, onEdit, onCreate }: RowProps) {
+  const { t } = useTranslation()
   const indentPx = depth * 20
   const typeInfo = TYPE_ICON[type.toUpperCase()]
 
@@ -124,7 +118,7 @@ function Row({ depth, label, type, status, points, progress, startDate, dueDate,
             <button
               type="button"
               onClick={onToggle}
-              aria-label={`${expanded ? 'Recolher' : 'Expandir'} ${label}`}
+              aria-label={t(expanded ? 'tree.collapseNode' : 'tree.expandNode', { label })}
               aria-expanded={expanded}
               className="text-muted-foreground hover:text-foreground transition flex-shrink-0"
             >
@@ -153,7 +147,7 @@ function Row({ depth, label, type, status, points, progress, startDate, dueDate,
       <td className="py-2 px-2 text-sm">
         {status && (
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[status] ?? ''}`}>
-            {STATUS_LABEL[status] ?? status}
+             {t(`status.${status}`, { defaultValue: status })}
           </span>
         )}
       </td>
@@ -165,7 +159,7 @@ function Row({ depth, label, type, status, points, progress, startDate, dueDate,
       </td>
       <td className="py-2 px-2 text-sm w-24">
         {progress != null ? (
-          <div className="flex items-center gap-1.5" aria-label={`Progresso: ${clampProgress(progress)}%`}>
+            <div className="flex items-center gap-1.5" aria-label={t('tree.progressLabel', { progress: clampProgress(progress) })}>
             <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
               <div
                 className="h-full bg-primary rounded-full transition-all"
@@ -199,8 +193,8 @@ function Row({ depth, label, type, status, points, progress, startDate, dueDate,
                       key={childType}
                       type="button"
                       onClick={event => { event.stopPropagation(); onCreate(childType, {}) }}
-                      aria-label={`Adicionar ${childType} em ${label}`}
-                      title={`Adicionar ${childType}`}
+                       aria-label={t('tree.addChild', { type: t(`tree.types.${childType.toLowerCase()}`), label })}
+                       title={t('tree.add', { type: t(`tree.types.${childType.toLowerCase()}`) })}
                       className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-primary/10"
                     >
                       {childType === 'BUG' ? <BugIcon className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
@@ -212,8 +206,8 @@ function Row({ depth, label, type, status, points, progress, startDate, dueDate,
               <button
                 type="button"
                 onClick={event => { event.stopPropagation(); onEdit() }}
-                aria-label={`Editar ${label}`}
-                title="Editar item"
+                 aria-label={t('tree.edit', { label })}
+                 title={t('tree.editItem')}
                 className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-primary/10"
               >
                 <Pencil className="w-3.5 h-3.5" />
@@ -223,8 +217,8 @@ function Row({ depth, label, type, status, points, progress, startDate, dueDate,
               <button
                 type="button"
                 onClick={event => { event.stopPropagation(); onArchive() }}
-                aria-label={`Arquivar ${label}`}
-                title="Arquivar este item"
+                 aria-label={t('tree.archive', { label })}
+                 title={t('tree.archiveItem')}
                 className="p-1 rounded text-muted-foreground hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50"
               >
                 <Archive className="w-3.5 h-3.5" />
@@ -304,6 +298,7 @@ interface Props {
 }
 
 export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, canEdit = true, refreshToken = 0, onCreate, onEdit }: Props) {
+  const { t } = useTranslation()
   const [tree, setTree] = useState<TreeNode[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -394,20 +389,20 @@ export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, 
             onClick={() => onCreate(type, {})}
             className="text-xs text-muted-foreground hover:text-foreground border border-border px-3 py-1.5 rounded-lg transition hover:bg-muted"
           >
-            + {type === 'MODULE' ? 'Módulo' : type === 'EPIC' ? 'Épico' : type === 'STORY' ? 'História' : type === 'TASK' ? 'Task' : 'Bug'}
+             + {t(`tree.types.${type.toLowerCase()}`)}
           </button>
         ))}
         <button
           onClick={() => setExpanded(collectAllIds(tree))}
           className="text-xs text-muted-foreground hover:text-foreground border border-border px-3 py-1.5 rounded-lg transition hover:bg-muted"
         >
-          Expandir tudo
+           {t('expandAll')}
         </button>
         <button
           onClick={() => setExpanded(new Set())}
           className="text-xs text-muted-foreground hover:text-foreground border border-border px-3 py-1.5 rounded-lg transition hover:bg-muted"
         >
-          Recolher tudo
+           {t('collapseAll')}
         </button>
       </div>
 
@@ -415,13 +410,13 @@ export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, 
         <table className="w-full">
           <thead>
             <tr className="border-b border-border bg-muted/30">
-              <th className="text-left py-2.5 pl-4 pr-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Nome</th>
-              <th className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Status</th>
-              <th className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Responsável</th>
-              <th className="text-right py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Pontos</th>
-              <th className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide w-24">Progresso</th>
-              <th className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Início</th>
-              <th className="text-left py-2.5 px-2 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Fim / Ações</th>
+               <th className="text-left py-2.5 pl-4 pr-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('tree.name')}</th>
+               <th className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('tree.status')}</th>
+               <th className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('tree.assignee')}</th>
+               <th className="text-right py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('points')}</th>
+               <th className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide w-24">{t('progress')}</th>
+               <th className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('tree.start')}</th>
+               <th className="text-left py-2.5 px-2 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('tree.endActions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -439,7 +434,7 @@ export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, 
 
         {displayTree.length === 0 && (
           <div className="text-center py-12 text-muted-foreground text-sm">
-            Nenhum item no projeto
+             {t('tree.empty')}
           </div>
         )}
       </div>
@@ -449,22 +444,22 @@ export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, 
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setLocalArchiveConfirm(null)} />
           <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="font-semibold text-foreground mb-2">Arquivar item</h3>
+             <h3 className="font-semibold text-foreground mb-2">{t('tree.archiveTitle')}</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Este item possui <strong>{localArchiveConfirm.childrenCount}</strong> filho(s) direto(s) que também serão arquivados em cascata. Deseja continuar?
+               {t('tree.archiveDescription', { count: localArchiveConfirm.childrenCount })}
             </p>
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => setLocalArchiveConfirm(null)}
                 className="px-3 py-1.5 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition"
               >
-                Cancelar
+                 {t('cancel')}
               </button>
               <button
                 onClick={() => executeLocalArchive(localArchiveConfirm.itemId)}
                 className="px-4 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition"
               >
-                Arquivar tudo
+                 {t('tree.archiveAll')}
               </button>
             </div>
           </div>

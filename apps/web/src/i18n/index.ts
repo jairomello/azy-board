@@ -32,6 +32,10 @@ i18n
   .init({
     fallbackLng: 'pt-BR',
     defaultNS: 'common',
+    returnNull: false,
+    missingKeyHandler: (_lngs, namespace, key) => {
+      console.warn(`[i18n] Missing translation: ${namespace}:${key}`)
+    },
     interpolation: { escapeValue: false },
     detection: {
       order: ['localStorage', 'navigator'],

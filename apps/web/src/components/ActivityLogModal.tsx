@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, Bot, User, ChevronDown } from 'lucide-react'
 import { api } from '../lib/api'
+import { formatDateTime } from '../lib/formatters'
 
 interface AuditLog {
   id: string
@@ -21,13 +22,6 @@ interface Props {
   onClose: () => void
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('pt-BR', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
-}
-
 function readableActivity(value: string): string {
   return value
     .replace(/<br\s*\/?\s*>/gi, '\n')
@@ -43,7 +37,7 @@ function readableActivity(value: string): string {
 
 function Actor({ log, t }: { log: AuditLog; t: (key: string) => string }) {
   const isAgent = log.actorType === 'AGENT' || log.source === 'MCP'
-  const label = log.actorLabel ?? log.author?.name ?? (log.actorType === 'SYSTEM' ? 'Sistema' : 'Usuário')
+  const label = log.actorLabel ?? log.author?.name ?? (log.actorType === 'SYSTEM' ? t('accordion.system') : t('accordion.human'))
   return (
     <div className="flex items-center gap-1.5 min-w-0">
       {isAgent ? <Bot className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" /> : <User className="w-3.5 h-3.5 text-primary flex-shrink-0" />}
@@ -51,7 +45,7 @@ function Actor({ log, t }: { log: AuditLog; t: (key: string) => string }) {
       <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">
         {isAgent ? t('accordion.agent') : log.actorType === 'SYSTEM' ? t('accordion.system') : t('accordion.human')}
       </span>
-      <span className="text-[10px] text-muted-foreground flex-shrink-0">{formatDate(log.createdAt)}</span>
+       <span className="text-[10px] text-muted-foreground flex-shrink-0">{formatDateTime(log.createdAt)}</span>
     </div>
   )
 }
@@ -93,12 +87,12 @@ export function ActivityLogModal({ itemId, itemTitle, projectId, onClose }: Prop
             <p className="text-xs text-muted-foreground mb-0.5">{t('accordion.activityHistoryTitle')}</p>
             <p className="text-sm font-semibold text-foreground truncate max-w-xs">{itemTitle}</p>
           </div>
-          <button onClick={onClose} aria-label="Fechar histórico" className="text-muted-foreground hover:text-foreground transition">
+           <button onClick={onClose} aria-label={t('close')} className="text-muted-foreground hover:text-foreground transition">
             <X className="w-5 h-5" />
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {loading && logs.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">Carregando...</p>}
+           {loading && logs.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">{t('loading')}</p>}
           {!loading && logs.length === 0 && <p className="text-xs text-muted-foreground text-center py-4 italic">{t('accordion.noAudit')}</p>}
           {logs.map(log => (
             <article key={log.id} className="rounded-lg border border-border bg-background p-3">

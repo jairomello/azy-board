@@ -20,6 +20,7 @@
     "test:smoke": "bun run scripts/smoke.ts",
     "test:mcp-catalog": "bun run scripts/check-mcp-catalog.ts",
     "test:agent-skill": "bun run scripts/check-agent-skill.ts",
+    "check:i18n": "bun run scripts/check-i18n.ts",
     "test:mcp": "bun run --cwd apps/mcp test",
     "lint": "bun run scripts/lint.ts",
     "typecheck": "bun run --cwd packages/types typecheck && bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck && bun run --cwd apps/mcp typecheck",

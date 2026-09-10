@@ -57,8 +57,8 @@ describe('contrato do shell integrado', () => {
     for (const contract of ['commandBar', 'statusRail', 'contentClassName', 'top-[76px]', 'bg-shell-sidebar', 'bg-shell-header', 'border-shell-border']) {
       contains(shell, contract)
     }
-    contains(shell, 'aria-label="Abrir menu"')
-    contains(shell, 'aria-label="Fechar menu"')
-    contains(shell, 'aria-label="Fechar navegação"')
+    contains(shell, "tCommon('openMenu')")
+    contains(shell, "tCommon('closeMenu')")
+    contains(shell, "tCommon('closeNavigation')")
   })
 })

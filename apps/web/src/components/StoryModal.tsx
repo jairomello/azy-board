@@ -80,7 +80,7 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
         {/* Header */}
         <div className="flex items-center justify-between p-6 pb-4 border-b border-border sticky top-0 bg-card z-10">
           <h2 className="font-semibold text-foreground text-lg">
-            {story?.id ? 'Editar história' : 'Nova história'}
+            {story?.id ? t('editStory') : t('newStoryForm')}
           </h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -95,17 +95,17 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
           <AccordionSection id="story-fields" title={t('accordion.storyFields')} summary={<NeutralSummary />} isOpen={openSections.has('story-fields')} onToggle={toggleSection}>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Título da história *</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('storyTitle')}</label>
               <input
                 value={title}
                 onChange={e => setTitle(e.target.value)}
                 autoFocus
-                placeholder="Ex: Gerenciamento de tarefas por sprint"
+                placeholder={t('storyTitleExample')}
                 className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
               />
             </div>
             <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Épico *</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('epicRequired')}</label>
               <select
                 value={epicId}
                 onChange={e => setEpicId(e.target.value)}
@@ -119,10 +119,10 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
           {/* Campo Versão — exibido apenas quando há versões no projeto */}
           {projectVersions.length > 0 && (
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Versão</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('filterVersion')}</label>
               <select value={versionId} onChange={e => setVersionId(e.target.value)}
                 className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                <option value="">Sem versão</option>
+                <option value="">{t('noVersion')}</option>
                 {projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             </div>
@@ -132,9 +132,9 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
           {/* Campos ágeis padrão */}
           <AccordionSection id="story-narrative" title={t('accordion.narrative')} summary={persona || goal || benefit ? t('accordion.contentPresent') : <NeutralSummary />} isOpen={openSections.has('story-narrative')} onToggle={toggleSection}>
           <div className="bg-muted/20 border border-border rounded-lg p-4 space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Narrativa ágil</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('agileNarrative')}</p>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Como</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('as')}</label>
               <input
                 value={persona}
                 onChange={e => setPersona(e.target.value)}
@@ -143,7 +143,7 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Eu quero</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('iWant')}</label>
               <input
                 value={goal}
                 onChange={e => setGoal(e.target.value)}
@@ -152,7 +152,7 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Para que</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('soThat')}</label>
               <input
                 value={benefit}
                 onChange={e => setBenefit(e.target.value)}
@@ -166,7 +166,7 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
           {/* Critérios de Aceitação */}
           <AccordionSection id="story-criteria" title={t('accordion.acceptanceCriteria')} summary={acceptanceCriteria ? t('accordion.contentPresent') : <NeutralSummary />} isOpen={openSections.has('story-criteria')} onToggle={toggleSection}>
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Critérios de aceitação</label>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('acceptanceCriteriaLabel')}</label>
             <RichTextEditor
               content={acceptanceCriteria}
                onChange={setAcceptanceCriteria}
@@ -180,7 +180,7 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
           {/* Notas */}
           <AccordionSection id="story-notes" title={t('accordion.notes')} summary={notes ? t('accordion.contentPresent') : <NeutralSummary />} isOpen={openSections.has('story-notes')} onToggle={toggleSection}>
           <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">Notas</label>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('notesLabel')}</label>
             <RichTextEditor
               content={notes}
                onChange={setNotes}
@@ -200,13 +200,13 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
             disabled={saving || !title.trim() || !epicId}
             className="flex-1 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition"
           >
-            {saving ? 'Salvando...' : 'Salvar história'}
+            {saving ? t('saving') : t('saveStory')}
           </button>
           <button
             onClick={onClose}
             className="flex-1 py-2 text-sm border border-border rounded-lg hover:bg-muted text-muted-foreground transition"
           >
-            Cancelar
+            {t('cancel')}
           </button>
         </div>
       </div>

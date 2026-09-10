@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Plus, X } from 'lucide-react'
 import type { ItemType } from '@azy-board/types'
+import { useTranslation } from 'react-i18next'
 
 interface Props {
   versions?: Array<{ id: string; name: string }>
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function AddCardForm({ versions = [], sprints = [], onAdd, onCancel }: Props) {
+  const { t } = useTranslation('board')
   const [title, setTitle] = useState('')
   const [type, setType] = useState<ItemType>('TASK')
   const [versionId, setVersionId] = useState('')
@@ -40,7 +42,7 @@ export function AddCardForm({ versions = [], sprints = [], onAdd, onCancel }: Pr
           if (e.key === 'Enter') { e.preventDefault(); handleSubmit() }
           if (e.key === 'Escape') onCancel()
         }}
-        placeholder="Título do card..."
+        placeholder={t('formTitlePlaceholder')}
         className="w-full px-2 py-1.5 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
       />
       <select
@@ -48,17 +50,17 @@ export function AddCardForm({ versions = [], sprints = [], onAdd, onCancel }: Pr
         onChange={e => setType(e.target.value as ItemType)}
         className="w-full px-2 py-1 text-xs bg-background border border-border rounded-lg outline-none focus:border-primary"
       >
-        <option value="TASK">Tarefa</option>
-        <option value="BUG">Bug</option>
+        <option value="TASK">{t('typeTask')}</option>
+        <option value="BUG">{t('typeBug')}</option>
       </select>
-      <select aria-label="Sprint" value={sprintId} onChange={e => setSprintId(e.target.value)} className="w-full px-2 py-1 text-xs bg-background border border-border rounded-lg outline-none focus:border-primary">
-        <option value="">Sem sprint</option>
-        {sprints.length === 0 && <option disabled>Nenhuma sprint cadastrada</option>}
+       <select aria-label={t('filterSprint')} value={sprintId} onChange={e => setSprintId(e.target.value)} className="w-full px-2 py-1 text-xs bg-background border border-border rounded-lg outline-none focus:border-primary">
+        <option value="">{t('noSprint')}</option>
+        {sprints.length === 0 && <option disabled>{t('noSprints')}</option>}
         {sprints.filter(sprint => sprint.status !== 'CLOSED').map(sprint => <option key={sprint.id} value={sprint.id}>{sprint.name}</option>)}
       </select>
-      <select aria-label="Versão" value={versionId} onChange={e => setVersionId(e.target.value)} className="w-full px-2 py-1 text-xs bg-background border border-border rounded-lg outline-none focus:border-primary">
-        <option value="">Sem versão</option>
-        {versions.length === 0 && <option disabled>Nenhuma versão cadastrada</option>}
+       <select aria-label={t('filterVersion')} value={versionId} onChange={e => setVersionId(e.target.value)} className="w-full px-2 py-1 text-xs bg-background border border-border rounded-lg outline-none focus:border-primary">
+        <option value="">{t('noVersion')}</option>
+        {versions.length === 0 && <option disabled>{t('noVersions')}</option>}
         {versions.map(version => <option key={version.id} value={version.id}>{version.name}</option>)}
       </select>
       <div className="flex gap-2">
@@ -68,14 +70,14 @@ export function AddCardForm({ versions = [], sprints = [], onAdd, onCancel }: Pr
           className="flex-1 flex items-center justify-center gap-1 py-1 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 transition"
         >
           <Plus className="w-3.5 h-3.5" />
-          {loading ? '...' : 'Adicionar'}
+          {loading ? '...' : t('add')}
         </button>
         <button
           onClick={onCancel}
           className="flex-1 flex items-center justify-center gap-1 py-1 text-xs bg-muted text-muted-foreground rounded-md hover:bg-muted/80 transition"
         >
           <X className="w-3.5 h-3.5" />
-          Cancelar
+          {t('cancel')}
         </button>
       </div>
     </div>

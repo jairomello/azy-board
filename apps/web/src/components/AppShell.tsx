@@ -64,6 +64,7 @@ export function AppShell({
   const location = useLocation()
   const { user } = useAuth()
   const { setPageContext } = useAssistant()
+  const { t: tCommon } = useTranslation('common')
   const { t: tDashboard } = useTranslation('dashboard')
   const { t: tAssistant } = useTranslation('assistant')
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -103,21 +104,21 @@ export function AppShell({
   const effectiveProjectId = projectId ?? localStorage.getItem('last-project-id') ?? undefined
   const navItems = useMemo<NavItem[]>(() => {
     const items: NavItem[] = [{
-      label: 'Projetos',
+       label: tCommon('projects', { defaultValue: 'Projects' }),
       href: '/projects',
       icon: FolderKanban,
       active: location.pathname === '/projects',
     }]
     if (effectiveProjectId) {
       items.push({
-        label: 'Board',
+        label: tCommon('board', { defaultValue: 'Board' }),
         href: `/projects/${effectiveProjectId}/board`,
         icon: LayoutDashboard,
         active: location.pathname.includes(`/projects/${effectiveProjectId}/board`),
       })
       if (canAccessProjectSettings(user?.globalGroup)) {
         items.push({
-          label: 'Configurações',
+          label: tCommon('settings'),
           href: `/projects/${effectiveProjectId}/settings`,
           icon: Settings,
           active: location.pathname.includes(`/projects/${effectiveProjectId}/settings`),
@@ -132,12 +133,12 @@ export function AppShell({
     }
     if (user && canAccessAdmin(user.globalGroup)) {
       items.push({
-        label: 'Admin',
+        label: tCommon('admin'),
         icon: UserRound,
         active: location.pathname.startsWith('/admin'),
         children: [
           {
-            label: tAssistant('users', { defaultValue: 'Usuários' }),
+            label: tCommon('users'),
             href: '/admin/users',
             icon: UserRound,
             active: location.pathname === '/admin/users',
@@ -154,13 +155,13 @@ export function AppShell({
       })
     }
     items.push({
-      label: 'Conta',
+      label: tCommon('account'),
       href: '/account',
       icon: UserRound,
       active: location.pathname === '/account',
     })
     return items
-  }, [effectiveProjectId, location.pathname, user, tDashboard, tAssistant])
+  }, [effectiveProjectId, location.pathname, user, tCommon, tDashboard, tAssistant])
 
   const sidebar = (
     <div className="h-full min-h-0 flex flex-col">
@@ -180,9 +181,9 @@ export function AppShell({
 
       <div className="min-h-0 flex-1 flex flex-col px-3 pb-4">
         <p className="mt-7 mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-shell-muted hidden min-[1280px]:block">
-          Workspace
+          {tCommon('workspace')}
         </p>
-        <nav className="space-y-1 mt-4 min-[1280px]:mt-0" aria-label="Navegação principal">
+        <nav className="space-y-1 mt-4 min-[1280px]:mt-0" aria-label={tCommon('navigation')}>
         {navItems.map(item => {
           const Icon = item.icon
           const link = item.children ? (
@@ -266,8 +267,8 @@ export function AppShell({
         </nav>
 
         <div className="mt-auto px-2 hidden min-[1280px]:block">
-          <p className="text-xs font-medium text-shell-foreground truncate">{projectName ?? 'Seu workspace'}</p>
-          <p className="text-[11px] text-shell-muted mt-0.5">Trabalho conectado</p>
+          <p className="text-xs font-medium text-shell-foreground truncate">{projectName ?? tCommon('workspace')}</p>
+          <p className="text-[11px] text-shell-muted mt-0.5">{tCommon('connectedWork')}</p>
         </div>
       </div>
     </div>
@@ -282,14 +283,14 @@ export function AppShell({
         <div className="fixed inset-x-0 top-[76px] bottom-0 z-50 lg:hidden">
           <button
             className="absolute inset-0 bg-black/45 backdrop-blur-sm"
-            aria-label="Fechar navegação"
+            aria-label={tCommon('closeNavigation')}
             onClick={() => setMobileOpen(false)}
           />
           <aside className="absolute inset-y-3 left-3 w-[250px] rounded-2xl bg-shell-sidebar border border-shell-border shadow-2xl overflow-hidden [&_span]:!block">
             <button
               onClick={() => setMobileOpen(false)}
               className="absolute right-3 top-4 p-2 rounded-lg text-shell-muted hover:text-shell-foreground hover:bg-white/10 z-10"
-              aria-label="Fechar menu"
+               aria-label={tCommon('closeMenu')}
             >
               <X className="w-4 h-4" />
             </button>
@@ -305,14 +306,14 @@ export function AppShell({
         <button
           onClick={() => setMobileOpen(true)}
           className="lg:hidden w-9 h-9 rounded-lg flex items-center justify-center text-shell-muted hover:text-shell-foreground hover:bg-white/10"
-          aria-label="Abrir menu"
+           aria-label={tCommon('openMenu')}
         >
           <Menu className="w-5 h-5" />
         </button>
         <Link
           data-shell-mobile-brand
           to="/projects"
-          aria-label="AzyBoard — Projetos"
+           aria-label={`${tCommon('appName')} — ${tCommon('projects', { defaultValue: 'Projects' })}`}
           className="flex-shrink-0 text-shell-foreground lg:hidden"
         >
           <BrandLogo

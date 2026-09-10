@@ -8,9 +8,9 @@ describe('contrato estrutural do espaçamento da ItemModal', () => {
   test('mantém os grupos após Datas em um fluxo vertical espaçado', async () => {
     const text = await source('./components/ItemModal.tsx')
     const fields = text.indexOf('<div className="space-y-4">')
-    const dates = text.indexOf('>Início</label>')
-    const parent = text.indexOf('>História pai</label>')
-    const tags = text.indexOf('>Tags</label>')
+    const dates = text.indexOf("t('startDate')")
+    const parent = text.indexOf("t('parentStory')")
+    const tags = text.indexOf("t('tagsLabel')")
 
     expect(fields > -1).toBe(true)
     expect(dates > fields).toBe(true)

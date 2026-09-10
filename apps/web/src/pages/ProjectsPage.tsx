@@ -94,7 +94,7 @@ export default function ProjectsPage() {
 
     const name = editingName.trim()
     if (!name) {
-      setEditError('O nome do projeto é obrigatório')
+      setEditError(t('projectNameRequired'))
       return
     }
 
@@ -105,7 +105,7 @@ export default function ProjectsPage() {
       setProjects(prev => prev.map(project => project.id === updated.id ? updated : project))
       closeEdit()
     } catch (error) {
-      setEditError(error instanceof Error ? error.message : 'Não foi possível atualizar o projeto')
+      setEditError(error instanceof Error ? error.message : t('projectUpdateFailed'))
     } finally {
       setSavingEdit(false)
     }
@@ -119,22 +119,22 @@ export default function ProjectsPage() {
       await api.delete(`/projects/${deletingProject.id}`)
       setProjects(prev => prev.filter(project => project.id !== deletingProject.id))
       setDeletingProject(null)
-      toast('Projeto excluído com sucesso')
+      toast(t('projectDeleted'))
     } catch (error) {
-      toast(error instanceof Error ? error.message : 'Não foi possível excluir o projeto', 'error')
+      toast(error instanceof Error ? error.message : t('projectDeleteFailed'), 'error')
     } finally {
       setDeleting(false)
     }
   }
 
   return (
-    <AppShell sectionLabel="Projetos" contextLabel="Seu workspace" contentClassName="overflow-y-auto">
+    <AppShell sectionLabel={t('projects', { defaultValue: 'Projects' })} contextLabel={t('workspace')} contentClassName="overflow-y-auto">
       <div className="max-w-5xl mx-auto py-6 sm:py-9">
         <div className="flex items-end justify-between gap-4 mb-7">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">Workspace</p>
-            <h2 className="text-2xl sm:text-3xl font-bold text-foreground mt-1">Olá, {user?.name?.split(' ')[0]}</h2>
-            <p className="text-muted-foreground text-sm mt-1">Escolha onde você quer continuar trabalhando.</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">{t('workspace')}</p>
+            <h2 className="text-2xl sm:text-3xl font-bold text-foreground mt-1">{t('greeting', { name: user?.name?.split(' ')[0] ?? '' })}</h2>
+            <p className="text-muted-foreground text-sm mt-1">{t('chooseWorkspace')}</p>
           </div>
           <button
              onClick={() => setShowNew(true)}
@@ -142,18 +142,18 @@ export default function ProjectsPage() {
             className="h-10 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition flex items-center gap-2 shadow-sm"
           >
             <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">{t('create')} projeto</span>
+             <span className="hidden sm:inline">{t('createProject')}</span>
           </button>
         </div>
 
         {loading ? (
-          <div className="bg-card border border-border rounded-xl text-center py-16 text-muted-foreground">Carregando...</div>
+           <div className="bg-card border border-border rounded-xl text-center py-16 text-muted-foreground">{t('loadingProjects')}</div>
         ) : projects.length === 0 ? (
           <div className="text-center py-16 border-2 border-dashed border-border rounded-xl bg-card/50">
             <FolderKanban className="w-10 h-10 mx-auto mb-3 text-muted-foreground/50" />
-            <p className="text-muted-foreground">Nenhum projeto ainda.</p>
+             <p className="text-muted-foreground">{t('noResults')}</p>
              <button onClick={() => setShowNew(true)} disabled={!canCreateProject(user?.globalGroup)} className="mt-4 text-primary text-sm font-medium hover:underline disabled:opacity-50">
-              Criar primeiro projeto
+               {t('firstProject')}
             </button>
           </div>
         ) : (
@@ -185,8 +185,8 @@ export default function ProjectsPage() {
                         <>
                           <button
                             type="button"
-                            aria-label={`Editar projeto ${p.name}`}
-                            title="Editar projeto"
+                             aria-label={`${t('editProject')} ${p.name}`}
+                             title={t('editProject')}
                             onClick={e => {
                               e.stopPropagation()
                               openEdit(p)
@@ -197,8 +197,8 @@ export default function ProjectsPage() {
                           </button>
                           <button
                             type="button"
-                            aria-label={`Excluir projeto ${p.name}`}
-                            title="Excluir projeto"
+                             aria-label={`${t('deleteProject')} ${p.name}`}
+                             title={t('deleteProject')}
                             onClick={e => {
                               e.stopPropagation()
                               setDeletingProject(p)
@@ -214,11 +214,11 @@ export default function ProjectsPage() {
                  </div>
                  <h3 className="font-semibold text-foreground">{p.name}</h3>
                  <p className="text-muted-foreground text-xs mt-1 line-clamp-2 min-h-8">
-                   {p.description || 'Board, planejamento e colaboração em um só lugar.'}
+                    {p.description || t('defaultProjectDescription')}
                  </p>
                   {/* min-h reserva a altura do badge para cards sem sinalização não ficarem menores. */}
                   <div className="mt-4 flex items-center gap-2 flex-wrap min-h-6">
-                    <span className="inline-flex text-[11px] font-medium text-primary">Abrir board</span>
+                     <span className="inline-flex text-[11px] font-medium text-primary">{t('openBoard')}</span>
                     <ProjectVisibilityBadges isRestricted={p.isRestricted} isHidden={p.isHidden} />
                   </div>
                </div>
@@ -230,29 +230,29 @@ export default function ProjectsPage() {
         {showNew && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <form onSubmit={createProject} className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-xl space-y-4">
-              <h3 className="font-bold text-foreground text-lg">Novo projeto</h3>
+               <h3 className="font-bold text-foreground text-lg">{t('newProject')}</h3>
                <input
                 autoFocus
                 type="text"
                 required
-                placeholder="Nome do projeto"
+                 placeholder={t('projectName')}
                 value={newName}
                 onChange={e => setNewName(e.target.value)}
                  className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition"
                />
                <div>
-                 <label htmlFor="new-project-board-mode" className="text-xs font-medium text-muted-foreground block mb-1.5">Formato do board</label>
+                  <label htmlFor="new-project-board-mode" className="text-xs font-medium text-muted-foreground block mb-1.5">{t('boardFormat')}</label>
                  <select
                    id="new-project-board-mode"
                    value={newBoardMode}
                    onChange={e => setNewBoardMode(e.target.value as BoardMode)}
                    className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition"
                  >
-                   <option value="HIERARCHICAL">Hierárquico: módulos, épicos e histórias</option>
-                   <option value="SIMPLE">Simples: um único Kanban</option>
+                    <option value="HIERARCHICAL">{t('hierarchicalBoard')}</option>
+                    <option value="SIMPLE">{t('simpleBoard')}</option>
                  </select>
                   <p className="text-xs text-muted-foreground mt-1.5">
-                    O modo simples usa uma história fixa e coloca todas as tarefas em um único fluxo.
+                     {t('simpleBoardHint')}
                   </p>
                 </div>
                <VisibilityToggles
@@ -280,11 +280,11 @@ export default function ProjectsPage() {
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
             <form onSubmit={saveProjectName} className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-xl space-y-4">
               <div>
-                <h3 className="font-bold text-foreground text-lg">Editar projeto</h3>
-                <p className="text-sm text-muted-foreground mt-1">Atualize o nome do projeto.</p>
+                 <h3 className="font-bold text-foreground text-lg">{t('editProject')}</h3>
+                 <p className="text-sm text-muted-foreground mt-1">{t('updateProjectName')}</p>
               </div>
               <div>
-                <label htmlFor="edit-project-name" className="sr-only">Nome do projeto</label>
+                 <label htmlFor="edit-project-name" className="sr-only">{t('projectName')}</label>
                 <input
                   id="edit-project-name"
                   autoFocus
@@ -301,7 +301,7 @@ export default function ProjectsPage() {
               <div className="flex gap-3 justify-end">
                 <button type="button" onClick={closeEdit} disabled={savingEdit} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition disabled:opacity-50">{t('cancel')}</button>
                 <button type="submit" disabled={savingEdit} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition disabled:opacity-50">
-                  {savingEdit ? 'Salvando...' : 'Salvar'}
+                   {savingEdit ? t('saving') : t('saveChanges')}
                 </button>
               </div>
             </form>
@@ -319,9 +319,9 @@ export default function ProjectsPage() {
               className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-xl space-y-4"
             >
               <div>
-                <h3 id="delete-project-title" className="font-bold text-foreground text-lg">Excluir projeto?</h3>
+                <h3 id="delete-project-title" className="font-bold text-foreground text-lg">{t('deleteProjectQuestion')}</h3>
                 <p id="delete-project-description" className="text-sm text-muted-foreground mt-2">
-                  O projeto <strong className="text-foreground">{deletingProject.name}</strong> e todos os seus registros filhos serão excluídos permanentemente. Essa ação não pode ser desfeita.
+                   {t('deleteProjectDescription', { name: deletingProject.name })}
                 </p>
               </div>
               <div className="flex gap-3 justify-end">
@@ -339,7 +339,7 @@ export default function ProjectsPage() {
                   disabled={deleting}
                   className="rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground hover:bg-destructive/90 transition disabled:opacity-50"
                 >
-                  {deleting ? 'Excluindo...' : 'Excluir permanentemente'}
+                   {deleting ? t('deleting') : t('deletePermanently')}
                 </button>
               </div>
             </div>

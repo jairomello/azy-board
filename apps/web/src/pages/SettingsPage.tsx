@@ -10,6 +10,7 @@ import { RichTextEditor } from '../components/RichTextEditor'
 import { AccordionSection } from '../components/AccordionSection'
 import { AccordionToolbar } from '../components/AccordionToolbar'
 import { AppShell } from '../components/AppShell'
+import { formatDate } from '../lib/formatters'
 import type { BoardMode, ColumnBaseStatus, SprintStatus } from '@azy-board/types'
 
 interface Column { id: string; name: string; baseStatus: ColumnBaseStatus; position: number }
@@ -31,13 +32,6 @@ export interface ProjectVersion {
 
 const COLUMN_STATUS_OPTIONS: ColumnBaseStatus[] = ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED']
 
-const VERSION_STATUS_LABELS: Record<ProjectVersion['status'], string> = {
-  PLANNED: 'Planejada',
-  IN_DEV: 'Em desenvolvimento',
-  RELEASED: 'Lançada',
-  CANCELLED: 'Cancelada',
-}
-
 const VERSION_STATUS_COLORS: Record<ProjectVersion['status'], string> = {
   PLANNED: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
   IN_DEV: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300',
@@ -45,7 +39,6 @@ const VERSION_STATUS_COLORS: Record<ProjectVersion['status'], string> = {
   CANCELLED: 'bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-300',
 }
 
-const ROLE_LABELS: Record<string, string> = { ADMIN: 'Admin', MEMBER: 'Membro', VIEWER: 'Visualizador' }
 const ROLE_COLORS: Record<string, string> = {
   ADMIN: 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300',
   MEMBER: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300',
@@ -179,7 +172,7 @@ export default function SettingsPage() {
   }, [projectId])
 
   if (user?.globalGroup === 'TEAM_MEMBER') {
-    return <AppShell projectId={projectId} sectionLabel="Configurações" contextLabel="Acesso negado"><div className="max-w-xl mx-auto py-12"><div role="alert" className="rounded-xl border border-border bg-card p-6 text-center"><h2 className="text-lg font-semibold text-foreground">Acesso negado</h2><p className="text-sm text-muted-foreground mt-2">Membros de Equipe não podem acessar as configurações do projeto.</p></div></div></AppShell>
+    return <AppShell projectId={projectId} sectionLabel={t('settings:settings')} contextLabel={t('settings:accessDenied')}><div className="max-w-xl mx-auto py-12"><div role="alert" className="rounded-xl border border-border bg-card p-6 text-center"><h2 className="text-lg font-semibold text-foreground">{t('settings:accessDenied')}</h2><p className="text-sm text-muted-foreground mt-2">{t('settings:teamMemberSettingsDenied')}</p></div></div></AppShell>
   }
 
   async function saveBoardMode(nextMode: BoardMode) {
@@ -485,14 +478,14 @@ export default function SettingsPage() {
       projectId={projectId}
       projectName={projectName}
       sectionLabel={t('settings:settings')}
-      contextLabel="Estrutura do projeto"
+       contextLabel={t('settings:projectStructure')}
       contentClassName="overflow-y-auto"
     >
       <div className="max-w-4xl mx-auto py-6 sm:py-8">
         <div className="mb-7">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary">{projectName}</p>
           <h2 className="text-2xl font-bold text-foreground mt-1">{t('settings:settings')}</h2>
-         <p className="text-sm text-muted-foreground mt-1">Organize fluxo, pessoas e estrutura sem sair do workspace.</p>
+          <p className="text-sm text-muted-foreground mt-1">{t('settings:projectSettingsDescription')}</p>
         </div>
         <AccordionToolbar
           sectionIds={visibleSectionIds}
@@ -508,9 +501,7 @@ export default function SettingsPage() {
           isOpen={openSections.has('board-format')}
           onToggle={toggleSection}
         >
-          <p className="text-sm text-muted-foreground mb-4">
-            Escolha entre um fluxo único para projetos simples ou a organização por módulos, épicos e histórias.
-          </p>
+           <p className="text-sm text-muted-foreground mb-4">{t('settings:boardFormatDescription')}</p>
           <div className="flex flex-col sm:flex-row gap-3">
             <label className={`flex-1 rounded-lg border p-3 cursor-pointer transition ${boardMode === 'SIMPLE' ? 'border-primary bg-primary/5' : 'border-border'}`}>
               <input
@@ -522,8 +513,8 @@ export default function SettingsPage() {
                 onChange={() => setPendingBoardMode('SIMPLE')}
                 className="sr-only"
               />
-              <span className="block text-sm font-semibold text-foreground">Simples</span>
-              <span className="block text-xs text-muted-foreground mt-1">Um Kanban único com uma história fixa.</span>
+               <span className="block text-sm font-semibold text-foreground">{t('settings:simple')}</span>
+               <span className="block text-xs text-muted-foreground mt-1">{t('settings:simpleBoardDescription')}</span>
             </label>
             <label className={`flex-1 rounded-lg border p-3 cursor-pointer transition ${boardMode === 'HIERARCHICAL' ? 'border-primary bg-primary/5' : 'border-border'}`}>
               <input
@@ -535,11 +526,11 @@ export default function SettingsPage() {
                 onChange={() => saveBoardMode('HIERARCHICAL')}
                 className="sr-only"
               />
-              <span className="block text-sm font-semibold text-foreground">Hierárquico</span>
-              <span className="block text-xs text-muted-foreground mt-1">Módulos, épicos, histórias e cards.</span>
+               <span className="block text-sm font-semibold text-foreground">{t('settings:hierarchical')}</span>
+               <span className="block text-xs text-muted-foreground mt-1">{t('settings:hierarchicalBoardDescription')}</span>
             </label>
           </div>
-          {!isAdmin && <p className="text-xs text-muted-foreground mt-3">Somente administradores podem alterar o formato.</p>}
+           {!isAdmin && <p className="text-xs text-muted-foreground mt-3">{t('settings:adminOnly')}</p>}
           {boardModeError && <p className="text-sm text-destructive mt-3">{boardModeError}</p>}
         </AccordionSection>
 
@@ -564,7 +555,7 @@ export default function SettingsPage() {
             hiddenId="project-hidden"
             disabled={!isAdmin || savingVisibility}
           />
-          {!isAdmin && <p className="text-xs text-muted-foreground mt-3">Somente administradores podem alterar a visibilidade.</p>}
+           {!isAdmin && <p className="text-xs text-muted-foreground mt-3">{t('settings:adminOnly')}</p>}
           {visibilityError && <p className="text-sm text-destructive mt-3">{visibilityError}</p>}
         </AccordionSection>
 
@@ -653,7 +644,7 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground italic">—</p>
             )}
           </div>
-          {!isAdmin && <p className="text-xs text-muted-foreground mt-3">Somente administradores podem alterar o planejamento.</p>}
+           {!isAdmin && <p className="text-xs text-muted-foreground mt-3">{t('settings:adminOnly')}</p>}
           {planningError && <p className="text-sm text-destructive mt-3">{planningError}</p>}
         </AccordionSection>
 
@@ -776,7 +767,7 @@ export default function SettingsPage() {
           onToggle={toggleSection}
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-foreground">Membros & Squads</h2>
+             <h2 className="text-lg font-semibold text-foreground">{t('settings:membersAndSquads')}</h2>
             <button
               onClick={() => setShowStructureModal(true)}
               className="flex items-center gap-1.5 text-sm text-primary hover:underline"
@@ -790,7 +781,7 @@ export default function SettingsPage() {
           <div className="mb-6">
             <div className="flex items-center gap-2 mb-3">
               <Users className="w-4 h-4 text-muted-foreground" />
-              <h3 className="text-sm font-semibold text-foreground">Squads</h3>
+               <h3 className="text-sm font-semibold text-foreground">{t('settings:squads')}</h3>
             </div>
             <div className="space-y-2">
               {squads.map(sq => (
@@ -832,16 +823,16 @@ export default function SettingsPage() {
                   )}
                 </div>
               ))}
-              {squads.length === 0 && <p className="text-sm text-muted-foreground italic">Nenhum squad cadastrado.</p>}
+               {squads.length === 0 && <p className="text-sm text-muted-foreground italic">{t('settings:noSquads')}</p>}
             </div>
             {isAdmin && (
               <form onSubmit={createSquad} className="mt-3 flex gap-3">
-                <input type="text" placeholder="Nome do squad"
+               <input type="text" placeholder={t('settings:squadNamePlaceholder')}
                   value={newSquadName} onChange={e => setNewSquadName(e.target.value)}
                   className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
                 <button type="submit"
                   className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition">
-                  + Criar squad
+                   {t('settings:createSquad')}
                 </button>
               </form>
             )}
@@ -850,14 +841,14 @@ export default function SettingsPage() {
           {/* Subseção Membros */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-foreground">Membros do Projeto</h3>
+               <h3 className="text-sm font-semibold text-foreground">{t('settings:projectMembers')}</h3>
               {isAdmin && (
                 <button
                   onClick={() => { setAddMemberDialog(true); setMemberForm({ email: '', role: 'MEMBER', squadId: '' }) }}
                   className="flex items-center gap-1.5 text-sm text-primary hover:underline"
                 >
                   <UserPlus className="w-4 h-4" />
-                  Adicionar membro
+                   {t('settings:addMember')}
                 </button>
               )}
             </div>
@@ -880,7 +871,7 @@ export default function SettingsPage() {
                       </span>
                     )}
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ROLE_COLORS[m.role] ?? ''}`}>
-                      {ROLE_LABELS[m.role] ?? m.role}
+                       {m.role === 'ADMIN' ? 'Admin' : m.role === 'MEMBER' ? t('settings:roleMember') : m.role === 'VIEWER' ? t('settings:roleViewer') : m.role}
                     </span>
                     {isAdmin && (
                       <>
@@ -902,7 +893,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
               ))}
-              {members.length === 0 && <p className="text-sm text-muted-foreground italic">Nenhum membro no projeto ainda.</p>}
+               {members.length === 0 && <p className="text-sm text-muted-foreground italic">{t('settings:noMembers')}</p>}
             </div>
           </div>
         </AccordionSection>
@@ -922,13 +913,13 @@ export default function SettingsPage() {
                     <input
                       value={editCCCode}
                       onChange={e => setEditCCCode(e.target.value)}
-                      placeholder="Código"
+                       placeholder={t('settings:costCenterCode')}
                       className="w-28 text-sm px-2 py-1 border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
                     />
                     <input
                       value={editCCDesc}
                       onChange={e => setEditCCDesc(e.target.value)}
-                      placeholder="Descrição"
+                       placeholder={t('settings:costCenterDescription')}
                       className="flex-1 text-sm px-2 py-1 border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
                     />
                     <button onClick={() => saveCostCenterEdit(cc.id)} className="text-primary hover:text-primary/80">
@@ -959,25 +950,25 @@ export default function SettingsPage() {
                 )}
               </div>
             ))}
-            {costCenters.length === 0 && <p className="text-sm text-muted-foreground italic">Nenhum centro de custo cadastrado.</p>}
+             {costCenters.length === 0 && <p className="text-sm text-muted-foreground italic">{t('settings:noCostCenters')}</p>}
           </div>
           {isAdmin && (
             <form onSubmit={createCostCenter} className="mt-4 flex gap-3">
               <input
-                type="text" required placeholder="Código (ex: CC-001)"
+                 type="text" required placeholder={t('settings:costCenterCodePlaceholder')}
                 value={newCCCode} onChange={e => setNewCCCode(e.target.value)}
                 maxLength={20}
                 className="w-40 rounded-lg border border-input bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
               />
               <input
-                type="text" placeholder="Descrição (opcional)"
+                 type="text" placeholder={t('settings:costCenterDescriptionPlaceholder')}
                 value={newCCDesc} onChange={e => setNewCCDesc(e.target.value)}
                 maxLength={200}
                 className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
               <button type="submit"
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition">
-                Adicionar
+                 {t('settings:add')}
               </button>
             </form>
           )}
@@ -1028,19 +1019,19 @@ export default function SettingsPage() {
               </div>
             ))}
             {modules.length === 0 && (
-              <p className="text-sm text-muted-foreground italic">Nenhum módulo cadastrado.</p>
+               <p className="text-sm text-muted-foreground italic">{t('settings:noModulesCreated')}</p>
             )}
           </div>
           {isAdmin && (
             <form onSubmit={createModule} className="mt-4 flex gap-3">
               <input
-                type="text" placeholder="Nome do módulo"
+                 type="text" placeholder={t('settings:moduleNamePlaceholder')}
                 value={newModuleName} onChange={e => setNewModuleName(e.target.value)}
                 className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
               <button type="submit"
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition">
-                Criar módulo
+                 {t('settings:createModuleAction')}
               </button>
             </form>
           )}
@@ -1058,15 +1049,15 @@ export default function SettingsPage() {
            <div className="space-y-2 mb-4">
              {sprints.map(sprint => <div key={sprint.id} className="flex flex-wrap items-center justify-between gap-2 border border-border rounded-lg px-4 py-3">
                <div><span className="font-medium text-sm text-foreground">{sprint.name}</span><span className="ml-2 text-xs text-muted-foreground">{sprint.startDate} a {sprint.endDate}</span><span className="ml-2 text-xs rounded-full bg-muted px-2 py-1">{sprint.status}</span></div>
-               {isAdmin && <div className="flex gap-2"><button className="text-xs text-primary" onClick={() => { setEditingSprintId(sprint.id); setSprintForm({ name: sprint.name, startDate: sprint.startDate, endDate: sprint.endDate }) }}>Editar</button>{sprint.status === 'PROPOSED' && <button className="text-xs text-primary" onClick={() => transitionSprint(sprint, 'open')}>Abrir</button>}{sprint.status === 'OPEN' && <button className="text-xs text-destructive" onClick={() => transitionSprint(sprint, 'close')}>Fechar</button>}</div>}
+                {isAdmin && <div className="flex gap-2"><button className="text-xs text-primary" onClick={() => { setEditingSprintId(sprint.id); setSprintForm({ name: sprint.name, startDate: sprint.startDate, endDate: sprint.endDate }) }}>{t('settings:edit')}</button>{sprint.status === 'PROPOSED' && <button className="text-xs text-primary" onClick={() => transitionSprint(sprint, 'open')}>{t('settings:open')}</button>}{sprint.status === 'OPEN' && <button className="text-xs text-destructive" onClick={() => transitionSprint(sprint, 'close')}>{t('settings:close')}</button>}</div>}
              </div>)}
-             {sprints.length === 0 && <p className="text-sm text-muted-foreground italic">Nenhuma sprint cadastrada.</p>}
+              {sprints.length === 0 && <p className="text-sm text-muted-foreground italic">{t('settings:noSprints')}</p>}
            </div>
            {isAdmin && <form onSubmit={saveSprint} className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-             <input required aria-label="Nome da sprint" placeholder="Nome da sprint" value={sprintForm.name} onChange={e => setSprintForm(p => ({ ...p, name: e.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-             <input required aria-label="Data de início" type="date" value={sprintForm.startDate} onChange={e => setSprintForm(p => ({ ...p, startDate: e.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-             <input required aria-label="Data de fim" type="date" value={sprintForm.endDate} onChange={e => setSprintForm(p => ({ ...p, endDate: e.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-              <button disabled={savingSprint} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">{editingSprintId ? 'Salvar sprint' : 'Criar sprint'}</button>
+              <input required aria-label={t('settings:sprintName')} placeholder={t('settings:sprintName')} value={sprintForm.name} onChange={e => setSprintForm(p => ({ ...p, name: e.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              <input required aria-label={t('settings:startDateLabel')} type="date" value={sprintForm.startDate} onChange={e => setSprintForm(p => ({ ...p, startDate: e.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              <input required aria-label={t('settings:endDateLabel')} type="date" value={sprintForm.endDate} onChange={e => setSprintForm(p => ({ ...p, endDate: e.target.value }))} className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+               <button disabled={savingSprint} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">{editingSprintId ? t('settings:saveSprint') : t('settings:createSprint')}</button>
             </form>}
           </AccordionSection>
 
@@ -1080,7 +1071,7 @@ export default function SettingsPage() {
            <div className="flex items-center justify-between mb-4">
             {isAdmin && !showVersionForm && (
               <button onClick={() => setShowVersionForm(true)} className="text-sm text-primary hover:underline">
-                + Nova versão
+                 + {t('settings:newVersionAction')}
               </button>
             )}
           </div>
@@ -1089,29 +1080,29 @@ export default function SettingsPage() {
             <form onSubmit={createVersion} className="mb-4 p-4 bg-card border border-border rounded-xl space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="col-span-2">
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Nome *</label>
+                   <label className="text-xs font-medium text-muted-foreground block mb-1">{t('settings:nameRequired')}</label>
                   <input type="text" required placeholder="Ex: v1.0.0"
                     value={newVersion.name} onChange={e => setNewVersion(p => ({ ...p, name: e.target.value }))}
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Data de lançamento</label>
+                   <label className="text-xs font-medium text-muted-foreground block mb-1">{t('settings:releaseDate')}</label>
                   <input type="date"
                     value={newVersion.releaseDate} onChange={e => setNewVersion(p => ({ ...p, releaseDate: e.target.value }))}
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Situação</label>
+                   <label className="text-xs font-medium text-muted-foreground block mb-1">{t('settings:statusLabel')}</label>
                   <select value={newVersion.status} onChange={e => setNewVersion(p => ({ ...p, status: e.target.value as ProjectVersion['status'] }))}
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
-                    {(Object.keys(VERSION_STATUS_LABELS) as ProjectVersion['status'][]).map(s => (
-                      <option key={s} value={s}>{VERSION_STATUS_LABELS[s]}</option>
+                     {(['PLANNED', 'IN_DEV', 'RELEASED', 'CANCELLED'] as ProjectVersion['status'][]).map(s => (
+                       <option key={s} value={s}>{t(`settings:versionStatus${s === 'IN_DEV' ? 'InDev' : s[0] + s.slice(1).toLowerCase()}`)}</option>
                     ))}
                   </select>
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Descrição</label>
-                  <input type="text" placeholder="Descrição opcional"
+                   <label className="text-xs font-medium text-muted-foreground block mb-1">{t('settings:description')}</label>
+                   <input type="text" placeholder={t('settings:optionalDescription')}
                     value={newVersion.description} onChange={e => setNewVersion(p => ({ ...p, description: e.target.value }))}
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
                 </div>
@@ -1119,11 +1110,11 @@ export default function SettingsPage() {
               <div className="flex gap-2 justify-end">
                 <button type="button" onClick={() => setShowVersionForm(false)}
                   className="px-3 py-1.5 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition">
-                  Cancelar
+                   {t('common:cancel')}
                 </button>
                 <button type="submit"
                   className="px-4 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition">
-                  Criar versão
+                   {t('settings:createVersion')}
                 </button>
               </div>
             </form>
@@ -1134,28 +1125,28 @@ export default function SettingsPage() {
               <div key={v.id} className="flex items-center justify-between bg-card border border-border rounded-lg px-4 py-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${VERSION_STATUS_COLORS[v.status]}`}>
-                    {VERSION_STATUS_LABELS[v.status]}
+                     {t(`settings:versionStatus${v.status === 'IN_DEV' ? 'InDev' : v.status[0] + v.status.slice(1).toLowerCase()}`)}
                   </span>
                   <span className="font-medium text-foreground text-sm truncate">{v.name}</span>
                   {v.releaseDate && (
                     <span className="text-xs text-muted-foreground flex-shrink-0">
-                      {new Date(v.releaseDate).toLocaleDateString('pt-BR')}
+                       {formatDate(v.releaseDate)}
                     </span>
                   )}
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0 ml-2">
                   <button onClick={() => setVersionModal({ version: v, mode: 'view' })}
-                    className="text-muted-foreground hover:text-foreground transition p-1" title="Ver">
+                     className="text-muted-foreground hover:text-foreground transition p-1" title={t('settings:view')}>
                     <Eye className="w-3.5 h-3.5" />
                   </button>
                   {isAdmin && (
                     <>
                       <button onClick={() => setVersionModal({ version: v, mode: 'edit' })}
-                        className="text-muted-foreground hover:text-foreground transition p-1" title="Editar">
+                         className="text-muted-foreground hover:text-foreground transition p-1" title={t('settings:edit')}>
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
                       <button onClick={() => deleteVersion(v.id)}
-                        className="text-destructive hover:text-destructive/80 transition p-1" title="Excluir">
+                         className="text-destructive hover:text-destructive/80 transition p-1" title={t('common:delete')}>
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </>
@@ -1164,8 +1155,8 @@ export default function SettingsPage() {
               </div>
             ))}
             {versions.length === 0 && !showVersionForm && (
-              <p className="text-sm text-muted-foreground italic">Nenhuma versão cadastrada.
-                {isAdmin && <button onClick={() => setShowVersionForm(true)} className="ml-1 text-primary hover:underline">Criar primeira versão</button>}
+               <p className="text-sm text-muted-foreground italic">{t('settings:noVersionsCreated')}
+                 {isAdmin && <button onClick={() => setShowVersionForm(true)} className="ml-1 text-primary hover:underline">{t('settings:createFirstVersion')}</button>}
               </p>
             )}
           </div>
@@ -1178,10 +1169,10 @@ export default function SettingsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setAddMemberDialog(false)} />
           <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="font-semibold text-foreground mb-4">Adicionar membro</h3>
+             <h3 className="font-semibold text-foreground mb-4">{t('settings:addMemberTitle')}</h3>
             <form onSubmit={addMember} className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">E-mail *</label>
+                 <label className="text-xs font-medium text-muted-foreground block mb-1">{t('settings:emailRequired')}</label>
                 <input
                   type="email" required placeholder="usuario@empresa.com"
                   value={memberForm.email} onChange={e => setMemberForm(p => ({ ...p, email: e.target.value }))}
@@ -1189,20 +1180,20 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Papel *</label>
+                 <label className="text-xs font-medium text-muted-foreground block mb-1">{t('settings:roleRequired')}</label>
                 <select value={memberForm.role} onChange={e => setMemberForm(p => ({ ...p, role: e.target.value }))}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
                   <option value="ADMIN">Admin</option>
-                  <option value="MEMBER">Membro</option>
-                  <option value="VIEWER">Visualizador</option>
+                   <option value="MEMBER">{t('settings:roleMember')}</option>
+                   <option value="VIEWER">{t('settings:roleViewer')}</option>
                 </select>
               </div>
               {squads.length > 0 && (
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Squad (opcional)</label>
+                 <label className="text-xs font-medium text-muted-foreground block mb-1">{t('settings:squadOptional')}</label>
                   <select value={memberForm.squadId} onChange={e => setMemberForm(p => ({ ...p, squadId: e.target.value }))}
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
-                    <option value="">— Nenhum —</option>
+                   <option value="">— {t('settings:none')} —</option>
                     {squads.map(sq => <option key={sq.id} value={sq.id}>{sq.name}</option>)}
                   </select>
                 </div>
@@ -1210,11 +1201,11 @@ export default function SettingsPage() {
               <div className="flex gap-2 justify-end pt-1">
                 <button type="button" onClick={() => setAddMemberDialog(false)}
                   className="px-3 py-1.5 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition">
-                  Cancelar
+                   {t('common:cancel')}
                 </button>
                 <button type="submit"
                   className="px-4 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition">
-                  Confirmar
+                   {t('common:confirm')}
                 </button>
               </div>
             </form>
@@ -1227,24 +1218,24 @@ export default function SettingsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setEditMemberDialog(null)} />
           <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="font-semibold text-foreground mb-1">Editar membro</h3>
+             <h3 className="font-semibold text-foreground mb-1">{t('settings:editMemberTitle')}</h3>
             <p className="text-sm text-muted-foreground mb-4">{editMemberDialog.name} · {editMemberDialog.email}</p>
             <form onSubmit={editMember} className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Papel *</label>
+                 <label className="text-xs font-medium text-muted-foreground block mb-1">{t('settings:roleRequired')}</label>
                 <select value={memberForm.role} onChange={e => setMemberForm(p => ({ ...p, role: e.target.value }))}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
                   <option value="ADMIN">Admin</option>
-                  <option value="MEMBER">Membro</option>
-                  <option value="VIEWER">Visualizador</option>
+                   <option value="MEMBER">{t('settings:roleMember')}</option>
+                   <option value="VIEWER">{t('settings:roleViewer')}</option>
                 </select>
               </div>
               {squads.length > 0 && (
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Squad</label>
+                   <label className="text-xs font-medium text-muted-foreground block mb-1">{t('settings:squads')}</label>
                   <select value={memberForm.squadId} onChange={e => setMemberForm(p => ({ ...p, squadId: e.target.value }))}
                     className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
-                    <option value="">— Nenhum —</option>
+                     <option value="">— {t('settings:none')} —</option>
                     {squads.map(sq => <option key={sq.id} value={sq.id}>{sq.name}</option>)}
                   </select>
                 </div>
@@ -1252,11 +1243,11 @@ export default function SettingsPage() {
               <div className="flex gap-2 justify-end pt-1">
                 <button type="button" onClick={() => setEditMemberDialog(null)}
                   className="px-3 py-1.5 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition">
-                  Cancelar
+                   {t('common:cancel')}
                 </button>
                 <button type="submit"
                   className="px-4 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition">
-                  Salvar
+                   {t('common:save')}
                 </button>
               </div>
             </form>
@@ -1269,13 +1260,13 @@ export default function SettingsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setDeleteColConfirm(null)} />
           <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="font-semibold text-foreground mb-2">Excluir coluna "{deleteColConfirm.name}"</h3>
+            <h3 className="font-semibold text-foreground mb-2">{t('settings:deleteColumnTitle', { name: deleteColConfirm.name })}</h3>
             {columns.filter(c => c.id !== deleteColConfirm.id).length > 0 ? (
               <>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Os cards desta coluna serão movidos para a coluna escolhida abaixo.
+                   {t('settings:cardsMovedDescription')}
                 </p>
-                <label className="block text-xs font-medium text-foreground mb-1.5">Mover cards para</label>
+                 <label className="block text-xs font-medium text-foreground mb-1.5">{t('settings:moveCardsTo')}</label>
                 <select
                   value={moveToColId}
                   onChange={e => setMoveToColId(e.target.value)}
@@ -1288,7 +1279,7 @@ export default function SettingsPage() {
               </>
             ) : (
               <p className="text-sm text-muted-foreground mb-4">
-                Esta é a única coluna. Não há cards para mover.
+                 {t('settings:onlyColumnDescription')}
               </p>
             )}
             <div className="flex gap-2 justify-end">
@@ -1296,13 +1287,13 @@ export default function SettingsPage() {
                 onClick={() => setDeleteColConfirm(null)}
                 className="px-4 py-2 text-sm rounded-lg border border-border hover:bg-muted transition"
               >
-                Cancelar
+                 {t('common:cancel')}
               </button>
               <button
                 onClick={confirmDeleteColumn}
                 className="px-4 py-2 text-sm rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 transition font-medium"
               >
-                Excluir coluna
+                 {t('settings:deleteColumn')}
               </button>
             </div>
           </div>
@@ -1317,7 +1308,7 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between mb-5">
               <h3 className="font-semibold text-foreground flex items-center gap-2">
                 <Network className="w-4 h-4 text-primary" />
-                Estrutura do Projeto
+                 {t('settings:projectStructure')}
               </h3>
               <button onClick={() => setShowStructureModal(false)} className="text-muted-foreground hover:text-foreground">
                 <X className="w-4 h-4" />
@@ -1331,17 +1322,17 @@ export default function SettingsPage() {
                   {manager ? manager.name[0]?.toUpperCase() : '—'}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground truncate">{manager?.name ?? 'Sem gerente definido'}</p>
+                   <p className="text-sm font-semibold text-foreground truncate">{manager?.name ?? t('settings:noManagerDefined')}</p>
                   {manager && <p className="text-xs text-muted-foreground truncate">{manager.email}</p>}
                 </div>
-                <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium flex-shrink-0">Gerente</span>
+                 <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium flex-shrink-0">{t('settings:manager')}</span>
               </div>
             </div>
 
             {/* Squads */}
             <div className="space-y-3 pl-4 border-l-2 border-border">
               {squads.length === 0 && (
-                <p className="text-sm text-muted-foreground italic py-2">Nenhum squad cadastrado.</p>
+                 <p className="text-sm text-muted-foreground italic py-2">{t('settings:noSquads')}</p>
               )}
               {squads.map(sq => {
                 const squadMembers = members.filter(m => m.squadId === sq.id)
@@ -1354,7 +1345,7 @@ export default function SettingsPage() {
                     </div>
                     <div className="space-y-1.5 pl-4 border-l-2 border-border">
                       {squadMembers.length === 0 && (
-                        <p className="text-xs text-muted-foreground italic py-1">Nenhum membro neste squad.</p>
+                         <p className="text-xs text-muted-foreground italic py-1">{t('settings:noMembersInSquad')}</p>
                       )}
                       {squadMembers.map(m => (
                         <div key={m.userId} className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-muted/50">
@@ -1363,7 +1354,7 @@ export default function SettingsPage() {
                           </div>
                           <span className="text-xs font-medium text-foreground truncate flex-1">{m.name}</span>
                           <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${ROLE_COLORS[m.role] ?? ''}`}>
-                            {ROLE_LABELS[m.role] ?? m.role}
+                             {m.role === 'ADMIN' ? 'Admin' : m.role === 'MEMBER' ? t('settings:roleMember') : m.role === 'VIEWER' ? t('settings:roleViewer') : m.role}
                           </span>
                         </div>
                       ))}
@@ -1380,7 +1371,7 @@ export default function SettingsPage() {
                   <div>
                     <div className="flex items-center gap-2 mb-2">
                       <div className="w-2 h-2 rounded-full bg-slate-400 flex-shrink-0" />
-                      <span className="text-sm font-semibold text-muted-foreground">Sem squad</span>
+                       <span className="text-sm font-semibold text-muted-foreground">{t('settings:unassignedSquad')}</span>
                     </div>
                     <div className="space-y-1.5 pl-4 border-l-2 border-border">
                       {unassigned.map(m => (
@@ -1390,7 +1381,7 @@ export default function SettingsPage() {
                           </div>
                           <span className="text-xs font-medium text-foreground truncate flex-1">{m.name}</span>
                           <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${ROLE_COLORS[m.role] ?? ''}`}>
-                            {ROLE_LABELS[m.role] ?? m.role}
+                             {m.role === 'ADMIN' ? 'Admin' : m.role === 'MEMBER' ? t('settings:roleMember') : m.role === 'VIEWER' ? t('settings:roleViewer') : m.role}
                           </span>
                         </div>
                       ))}
@@ -1408,18 +1399,18 @@ export default function SettingsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setRemoveMemberConfirm(null)} />
           <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="font-semibold text-foreground mb-2">Remover membro</h3>
+            <h3 className="font-semibold text-foreground mb-2">{t('settings:removeMemberTitle')}</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Remover <strong>{removeMemberConfirm.name}</strong> do projeto? Esta ação não pode ser desfeita.
+               {t('settings:removeMemberDescription', { name: removeMemberConfirm.name })}
             </p>
             <div className="flex gap-2 justify-end">
               <button onClick={() => setRemoveMemberConfirm(null)}
                 className="px-3 py-1.5 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition">
-                Cancelar
+                 {t('common:cancel')}
               </button>
               <button onClick={() => removeMember(removeMemberConfirm)}
                 className="px-4 py-1.5 text-sm bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition">
-                Remover
+                 {t('settings:remove')}
               </button>
             </div>
           </div>
@@ -1431,20 +1422,20 @@ export default function SettingsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setDeleteSquadConfirm(null)} />
           <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="font-semibold text-foreground mb-2">Excluir squad "{deleteSquadConfirm.name}"</h3>
+            <h3 className="font-semibold text-foreground mb-2">{t('settings:deleteSquadTitle', { name: deleteSquadConfirm.name })}</h3>
             {deleteSquadConfirm.memberCount > 0 && (
               <p className="text-sm text-muted-foreground mb-4">
-                {deleteSquadConfirm.memberCount} membro(s) terão o squad removido. Eles continuarão como membros do projeto.
+                 {t('settings:squadMembersRemoved', { count: deleteSquadConfirm.memberCount })}
               </p>
             )}
             <div className="flex gap-2 justify-end">
               <button onClick={() => setDeleteSquadConfirm(null)}
                 className="px-3 py-1.5 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition">
-                Cancelar
+                 {t('common:cancel')}
               </button>
               <button onClick={() => confirmDeleteSquad(deleteSquadConfirm)}
                 className="px-4 py-1.5 text-sm bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition">
-                Excluir squad
+                 {t('settings:deleteSquad')}
               </button>
             </div>
           </div>
@@ -1456,16 +1447,16 @@ export default function SettingsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setDeleteModuleConfirm(null)} />
           <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="font-semibold text-foreground mb-2">Excluir módulo "{deleteModuleConfirm.name}"</h3>
+            <h3 className="font-semibold text-foreground mb-2">{t('settings:deleteModuleTitle', { name: deleteModuleConfirm.name })}</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Este módulo possui <strong>{deleteModuleConfirm.epicCount}</strong> épico(s). O que deseja fazer com eles?
+               {t('settings:moduleEpicsDescription', { count: deleteModuleConfirm.epicCount })}
             </p>
             {modules.filter(m => m.id !== deleteModuleConfirm.id).length > 0 && (
               <div className="mb-4">
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Mover épicos para:</label>
+                 <label className="text-xs font-medium text-muted-foreground block mb-1">{t('settings:moveEpicsTo')}</label>
                 <select value={deleteModuleTargetId} onChange={e => setDeleteModuleTargetId(e.target.value)}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none">
-                  <option value="">Excluir épicos em cascata</option>
+                   <option value="">{t('settings:cascadeDeleteEpics')}</option>
                   {modules.filter(m => m.id !== deleteModuleConfirm.id).map(m => (
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
@@ -1475,11 +1466,11 @@ export default function SettingsPage() {
             <div className="flex gap-2 justify-end">
               <button onClick={() => setDeleteModuleConfirm(null)}
                 className="px-3 py-1.5 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition">
-                Cancelar
+                 {t('common:cancel')}
               </button>
               <button onClick={handleDeleteModuleConfirm}
                 className="px-4 py-1.5 text-sm bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition">
-                {deleteModuleTargetId ? 'Mover e excluir' : 'Excluir tudo'}
+                 {deleteModuleTargetId ? t('settings:moveAndDelete') : t('settings:deleteAll')}
               </button>
             </div>
           </div>
@@ -1490,16 +1481,16 @@ export default function SettingsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setPendingBoardMode(null)} />
           <div role="dialog" aria-modal="true" aria-labelledby="simple-mode-title" className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-md p-6">
-            <h3 id="simple-mode-title" className="font-semibold text-foreground mb-2">Usar board simples?</h3>
+             <h3 id="simple-mode-title" className="font-semibold text-foreground mb-2">{t('settings:simpleBoardQuestion')}</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Módulos e épicos serão removidos. Todos os cards de tarefas e bugs serão preservados e movidos para uma única história fixa.
+               {t('settings:simpleBoardConversionDescription')}
             </p>
             <div className="flex gap-2 justify-end">
               <button onClick={() => setPendingBoardMode(null)} disabled={savingBoardMode} className="px-3 py-1.5 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition disabled:opacity-50">
-                Cancelar
+                 {t('common:cancel')}
               </button>
               <button onClick={() => saveBoardMode('SIMPLE')} disabled={savingBoardMode} className="px-4 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition disabled:opacity-50">
-                {savingBoardMode ? 'Convertendo...' : 'Confirmar conversão'}
+                 {savingBoardMode ? t('settings:converting') : t('settings:confirmConversion')}
               </button>
             </div>
           </div>

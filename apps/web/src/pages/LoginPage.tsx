@@ -54,16 +54,16 @@ export default function LoginPage() {
           <div className="relative my-auto max-w-md">
             <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-shell-accent">
               <Sparkles className="w-4 h-4" />
-              Trabalho conectado
+               {t('connectedWork')}
             </span>
             <h2 className="text-4xl font-bold tracking-tight leading-tight mt-4">
-              Planeje, entregue e evolua com contexto.
+               {t('loginHeadline')}
             </h2>
             <p className="text-shell-muted mt-4 leading-relaxed">
-              Um board operacional para times e agentes trabalharem juntos, com hierarquia clara e atualizações em tempo real.
+               {t('loginDescription')}
             </p>
             <div className="mt-8 space-y-3">
-              {['Board, árvore e sprints no mesmo fluxo', 'Preferências sincronizadas entre dispositivos', 'Rastreabilidade para pessoas e agentes'].map(item => (
+               {[t('loginFeatureBoard'), t('loginFeaturePreferences'), t('loginFeatureTraceability')].map(item => (
                 <div key={item} className="flex items-center gap-2.5 text-sm text-shell-muted">
                   <CheckCircle2 className="w-4 h-4 text-shell-accent" />
                   {item}
@@ -107,7 +107,7 @@ export default function LoginPage() {
               value={email}
               onChange={e => setEmail(e.target.value)}
               className="w-full h-11 rounded-lg border border-input bg-background px-4 text-sm text-foreground placeholder-muted-foreground focus:border-primary transition"
-              placeholder="voce@empresa.com"
+               placeholder={t('emailPlaceholder')}
             />
           </div>
 
@@ -131,7 +131,7 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition shadow-sm"
           >
-            {loading ? '...' : t('loginButton')}
+             {loading ? t('loading') : t('loginButton')}
           </button>
         </form>
           </div>

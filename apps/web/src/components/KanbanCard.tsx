@@ -6,6 +6,7 @@ import { Trash2, GitBranch, Archive } from 'lucide-react'
 import { UserAvatar } from './UserAvatar'
 import { InlineEdit } from './InlineEdit'
 import type { AncestorNode, Priority, TaskStatus, ItemType, ChecklistProgress } from '@azy-board/types'
+import { useTranslation } from 'react-i18next'
 
 const PRIORITY_COLORS: Record<Priority, string> = {
   LOW: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
@@ -61,6 +62,7 @@ interface Props {
 }
 
 export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchive }: Props) {
+  const { t } = useTranslation('board')
   const [breadcrumbOpen, setBreadcrumbOpen] = useState(false)
   const [tooltipPos, setTooltipPos] = useState({ top: 0, left: 0 })
   const breadcrumbRef = useRef<HTMLDivElement>(null)
@@ -130,7 +132,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
         {onArchive && (
           <button
             className="p-1 rounded text-muted-foreground hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50"
-            title="Arquivar item"
+            title={t('archiveItem')}
             onClick={e => {
               e.stopPropagation()
               onArchive(card.id)
@@ -142,10 +144,10 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
         {onDelete && (
           <button
             className="p-1 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50"
-            title="Excluir item"
+            title={t('deleteItem')}
             onClick={e => {
               e.stopPropagation()
-              if (window.confirm('Excluir este item e todos os seus filhos (subtasks, checklists)? Esta ação é permanente.')) {
+              if (window.confirm(t('deleteItemConfirmation'))) {
                 onDelete(card.id)
               }
             }}
@@ -165,7 +167,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
             ? 'cursor-grab active:cursor-grabbing text-muted-foreground/25 hover:text-muted-foreground/60'
             : 'cursor-not-allowed text-muted-foreground/20',
         ].join(' ')}
-        title={card.isLeaf ? 'Arrastar card' : undefined}
+        title={card.isLeaf ? t('dragCard') : undefined}
       >
         <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" aria-hidden>
           <circle cx="2.5" cy="2.5"  r="1.5" />
@@ -277,7 +279,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
           <div className="flex items-center gap-1.5">
             {card.type && TYPE_STYLES[card.type] && (
               <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_STYLES[card.type]!.cls}`}>
-                {TYPE_STYLES[card.type]!.label}
+                {t(card.type === 'EPIC' ? 'typeEpic' : card.type === 'STORY' ? 'typeStory' : card.type === 'TASK' ? 'typeTask' : 'typeBug')}
               </span>
             )}
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[card.priority]}`}>
@@ -290,7 +292,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
             {(card.childrenCount ?? 0) > 0 && (
               <span
                 className="flex items-center gap-0.5 text-xs text-muted-foreground"
-                title={`${card.childrenCount} subtasks`}
+                title={`${card.childrenCount} ${t('showSubtasks').toLowerCase()}`}
               >
                 <GitBranch className="w-3 h-3" />
                 {card.childrenCount}

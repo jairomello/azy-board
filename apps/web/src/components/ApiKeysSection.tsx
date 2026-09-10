@@ -2,10 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Copy, Check, Trash2, KeyRound } from 'lucide-react'
 import { useApiKeys } from '../hooks/useApiKeys'
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-}
+import { formatDate } from '../lib/formatters'
 
 export function ApiKeysSection() {
   const { t } = useTranslation('settings')
@@ -84,7 +81,7 @@ export function ApiKeysSection() {
                 <span className="text-sm font-medium text-foreground truncate">{k.name}</span>
                 <div className="flex items-center gap-3 text-xs text-muted-foreground">
                   {k.aiModelName && <span>{k.aiModelName}</span>}
-                  <span>{t('apiKeyCreated')}: {formatDate(k.createdAt)}</span>
+                   <span>{t('apiKeyCreated')}: {formatDate(k.createdAt)}</span>
                   <span>
                     {k.lastUsedAt
                       ? `${t('apiKeyLastUsed')}: ${formatDate(k.lastUsedAt)}`
@@ -116,7 +113,7 @@ export function ApiKeysSection() {
                   autoFocus
                   value={newName}
                   onChange={e => setNewName(e.target.value)}
-                  placeholder="ex: Claude Code local"
+                   placeholder={t('apiKeyNamePlaceholder')}
                   className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                   required
                 />
@@ -126,7 +123,7 @@ export function ApiKeysSection() {
                 <input
                   value={newModel}
                   onChange={e => setNewModel(e.target.value)}
-                  placeholder="ex: claude-sonnet-4-6"
+                   placeholder={t('apiKeyModelPlaceholder')}
                   className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
@@ -136,7 +133,7 @@ export function ApiKeysSection() {
                   onClick={() => { setShowCreate(false); setNewName(''); setNewModel('') }}
                   className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition"
                 >
-                  Cancelar
+                   {t('common:cancel')}
                 </button>
                 <button
                   type="submit"
@@ -193,7 +190,7 @@ export function ApiKeysSection() {
                 onClick={() => setRevokeTarget(null)}
                 className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition"
               >
-                Cancelar
+                 {t('common:cancel')}
               </button>
               <button
                 onClick={handleRevoke}

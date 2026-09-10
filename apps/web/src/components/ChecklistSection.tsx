@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { api } from '../lib/api'
 import type { Checklist, ChecklistItem } from '@azy-board/types'
+import { useTranslation } from 'react-i18next'
 
 interface Props {
   itemId: string
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function ChecklistSection({ itemId, projectId, initialChecklists, onChange }: Props) {
+  const { t } = useTranslation('board')
   const [lists, setLists] = useState<Checklist[]>(initialChecklists)
   const [newListName, setNewListName] = useState('')
   const [showNewForm, setShowNewForm] = useState(false)
@@ -86,12 +88,12 @@ export function ChecklistSection({ itemId, projectId, initialChecklists, onChang
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">Checklists</h3>
+        <h3 className="text-sm font-semibold text-foreground">{t('checklists')}</h3>
         <button
           onClick={() => setShowNewForm(v => !v)}
           className="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:border-border/80 transition"
         >
-          + Novo checklist
+          {t('newChecklist')}
         </button>
       </div>
 
@@ -102,14 +104,14 @@ export function ChecklistSection({ itemId, projectId, initialChecklists, onChang
             value={newListName}
             onChange={e => setNewListName(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleCreateList(); if (e.key === 'Escape') setShowNewForm(false) }}
-            placeholder="Nome do checklist"
+            placeholder={t('checklistName')}
             className="flex-1 text-sm px-2 py-1 rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
           />
           <button
             onClick={handleCreateList}
             className="text-xs px-3 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition"
           >
-            Criar
+            {t('createAction')}
           </button>
           <button
             onClick={() => setShowNewForm(false)}
@@ -133,7 +135,7 @@ export function ChecklistSection({ itemId, projectId, initialChecklists, onChang
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm font-medium text-foreground truncate">{list.name}</span>
                   <span className={`text-xs tabular-nums ${done ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
-                    {checked}/{total} concluídos
+                    {checked}/{total} {t('completedItems')}
                   </span>
                 </div>
                 {total > 0 && (
@@ -148,7 +150,7 @@ export function ChecklistSection({ itemId, projectId, initialChecklists, onChang
               <button
                 onClick={() => handleDeleteList(list.id)}
                 className="flex-shrink-0 p-1 rounded text-muted-foreground/40 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950 transition"
-                title="Excluir checklist"
+                title={t('deleteChecklist')}
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -193,7 +195,7 @@ export function ChecklistSection({ itemId, projectId, initialChecklists, onChang
                     if (e.key === 'Enter') handleAddItem(list.id)
                     if (e.key === 'Escape') { setAddingToList(null); setNewItemText('') }
                   }}
-                  placeholder="Novo item..."
+                  placeholder={t('newItem')}
                   className="flex-1 text-sm px-2 py-1 rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 <button
@@ -214,7 +216,7 @@ export function ChecklistSection({ itemId, projectId, initialChecklists, onChang
                 onClick={() => { setAddingToList(list.id); setNewItemText('') }}
                 className="pl-1 text-xs text-muted-foreground hover:text-foreground transition"
               >
-                + Adicionar item
+                {t('addItem')}
               </button>
             )}
           </div>

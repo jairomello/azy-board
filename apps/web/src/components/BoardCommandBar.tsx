@@ -107,7 +107,7 @@ export function BoardCommandBar({
 
   return (
     <div className="h-[54px] px-2.5 flex items-center gap-2 overflow-visible">
-      <div className="flex items-center rounded-lg bg-muted p-1 flex-shrink-0" aria-label="Visualização">
+        <div className="flex items-center rounded-lg bg-muted p-1 flex-shrink-0" aria-label={t('display')}>
         <button
           onClick={() => onViewChange('kanban')}
           aria-pressed={view === 'kanban'}
@@ -115,7 +115,7 @@ export function BoardCommandBar({
             view === 'kanban' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           }`}
         >
-          Board
+          {t('viewBoard')}
         </button>
         <button
           onClick={() => onViewChange('tree')}
@@ -124,7 +124,7 @@ export function BoardCommandBar({
             view === 'tree' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
           }`}
         >
-          Árvore
+          {t('viewTree')}
         </button>
       </div>
 
@@ -147,7 +147,7 @@ export function BoardCommandBar({
              <div className="flex items-center justify-between mb-3">
               <div>
                 <p className="text-sm font-semibold text-foreground">{t('filtersMenu')}</p>
-                <p className="text-xs text-muted-foreground">Refine os itens visíveis sem alterar o projeto.</p>
+                 <p className="text-xs text-muted-foreground">{t('refineDescription')}</p>
               </div>
               {activeCount > 0 && (
                 <button
@@ -165,7 +165,7 @@ export function BoardCommandBar({
                    })}
                   className="text-xs font-medium text-primary hover:underline"
                 >
-                  Limpar {activeCount}
+                   {t('clear')} {activeCount}
                 </button>
               )}
             </div>
@@ -240,12 +240,12 @@ export function BoardCommandBar({
         <label className="hidden xl:flex items-center gap-1.5 flex-shrink-0">
           <Network className="w-3.5 h-3.5 text-muted-foreground" />
           <select
-            aria-label="Filtrar por squad"
+             aria-label={t('filterSquad')}
             value={filters.squadId}
             onChange={event => quickUpdate({ squadId: event.target.value })}
             className={`${controlClass} max-w-36`}
           >
-            <option value="">Todos os squads</option>
+             <option value="">{t('allSquads')}</option>
             {squads.map(squad => <option key={squad.id} value={squad.id}>{squad.name}</option>)}
           </select>
         </label>
@@ -254,17 +254,17 @@ export function BoardCommandBar({
       <div className="ml-auto flex items-center gap-2 flex-shrink-0">
         <button
           onClick={() => onDensityChange(density === 'comfortable' ? 'compact' : 'comfortable')}
-          title={`Densidade: ${density === 'comfortable' ? 'confortável' : 'compacta'}`}
-          aria-label="Alternar densidade"
+           title={`${t('density')}: ${density === 'comfortable' ? t('comfortable') : t('compact')}`}
+           aria-label={t('toggleDensity')}
           className={`${controlClass} hidden sm:flex items-center gap-2`}
         >
           <Gauge className="w-3.5 h-3.5" />
-          <span className="hidden xl:inline">{density === 'comfortable' ? 'Confortável' : 'Compacta'}</span>
+           <span className="hidden xl:inline">{density === 'comfortable' ? t('comfortable') : t('compact')}</span>
         </button>
         <button
           onClick={onOpenArchived}
-          title="Itens arquivados"
-          aria-label="Itens arquivados"
+           title={t('archivedItems')}
+           aria-label={t('archivedItems')}
           className={`${controlClass} w-9 !px-0 inline-flex items-center justify-center`}
         >
           <Archive className="w-3.5 h-3.5" />
@@ -278,17 +278,17 @@ export function BoardCommandBar({
               className="h-9 px-3.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-2 hover:bg-primary/90 shadow-sm transition"
             >
               <Plus className="w-4 h-4" />
-              Criar
+               {t('create')}
               <ChevronDown className="w-3.5 h-3.5 opacity-80" />
             </button>
             {createOpen && (
               <div className="absolute right-0 top-full mt-2 z-40 w-52 rounded-xl border border-border bg-popover shadow-2xl p-1.5">
                 {([
-                  ['MODULE', 'Módulo', Package, 'text-slate-600 bg-slate-500/10'],
-                  ['EPIC', 'Épico', Layers, 'text-amber-600 bg-amber-500/10'],
-                  ['STORY', 'História', BookOpen, 'text-violet-600 bg-violet-500/10'],
-                  ['TASK', 'Task', CheckSquare, 'text-blue-600 bg-blue-500/10'],
-                  ['BUG', 'Bug', Bug, 'text-red-600 bg-red-500/10'],
+                   ['MODULE', t('moduleLabel'), Package, 'text-slate-600 bg-slate-500/10'],
+                   ['EPIC', t('typeEpic'), Layers, 'text-amber-600 bg-amber-500/10'],
+                   ['STORY', t('typeStory'), BookOpen, 'text-violet-600 bg-violet-500/10'],
+                   ['TASK', t('typeTask'), CheckSquare, 'text-blue-600 bg-blue-500/10'],
+                   ['BUG', t('typeBug'), Bug, 'text-red-600 bg-red-500/10'],
                 ] as const).filter(([type]) => boardMode === 'HIERARCHICAL' || type === 'TASK' || type === 'BUG').map(([type, label, Icon, colors]) => (
                   <button
                     key={type}

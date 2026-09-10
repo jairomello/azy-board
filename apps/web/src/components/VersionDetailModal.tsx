@@ -3,6 +3,8 @@ import { X, Bug, CheckSquare, BookOpen, Layers } from 'lucide-react'
 import { api } from '../lib/api'
 import type { ProjectVersion } from '../pages/SettingsPage'
 import type { ItemType } from '@azy-board/types'
+import { formatDate } from '../lib/formatters'
+import { useTranslation } from 'react-i18next'
 
 interface VersionItem {
   id: string
@@ -22,13 +24,6 @@ interface Props {
   onSave: (data: Partial<ProjectVersion>) => Promise<void>
 }
 
-const STATUS_LABELS: Record<ProjectVersion['status'], string> = {
-  PLANNED: 'Planejada',
-  IN_DEV: 'Em desenvolvimento',
-  RELEASED: 'Lançada',
-  CANCELLED: 'Cancelada',
-}
-
 const STATUS_COLORS: Record<ProjectVersion['status'], string> = {
   PLANNED: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
   IN_DEV: 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300',
@@ -44,6 +39,7 @@ function TypeIcon({ type }: { type: ItemType }) {
 }
 
 export function VersionDetailModal({ version, projectId, mode, onClose, onSave }: Props) {
+  const { t } = useTranslation('settings')
   const [editName, setEditName] = useState(version.name)
   const [editDate, setEditDate] = useState(version.releaseDate ?? '')
   const [editDesc, setEditDesc] = useState(version.description ?? '')
@@ -101,12 +97,12 @@ export function VersionDetailModal({ version, projectId, mode, onClose, onSave }
         <div className="flex items-start justify-between p-5 border-b border-border">
           <div>
             <p className="text-xs text-muted-foreground mb-0.5">
-              {mode === 'edit' ? 'Editar versão' : 'Detalhes da versão'}
+               {mode === 'edit' ? t('editVersion') : t('versionDetails')}
             </p>
             <div className="flex items-center gap-2">
               <p className="text-sm font-semibold text-foreground">{version.name}</p>
               <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[version.status]}`}>
-                {STATUS_LABELS[version.status]}
+                 {t(`versionStatus${version.status === 'IN_DEV' ? 'InDev' : version.status[0] + version.status.slice(1).toLowerCase()}`)}
               </span>
             </div>
           </div>
@@ -119,7 +115,7 @@ export function VersionDetailModal({ version, projectId, mode, onClose, onSave }
           {/* Campos */}
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Nome</label>
+               <label className="text-xs font-medium text-muted-foreground block mb-1">{t('name')}</label>
               {mode === 'edit' ? (
                 <input type="text" value={editName} onChange={e => setEditName(e.target.value)}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
@@ -128,36 +124,36 @@ export function VersionDetailModal({ version, projectId, mode, onClose, onSave }
               )}
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Data de lançamento</label>
+               <label className="text-xs font-medium text-muted-foreground block mb-1">{t('releaseDate')}</label>
               {mode === 'edit' ? (
                 <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
               ) : (
                 <p className="text-sm text-foreground">
-                  {version.releaseDate ? new Date(version.releaseDate).toLocaleDateString('pt-BR') : '—'}
+                  {version.releaseDate ? formatDate(version.releaseDate) : '—'}
                 </p>
               )}
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Situação</label>
+               <label className="text-xs font-medium text-muted-foreground block mb-1">{t('statusLabel')}</label>
               {mode === 'edit' ? (
                 <select value={editStatus} onChange={e => setEditStatus(e.target.value as ProjectVersion['status'])}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring">
-                  {(Object.keys(STATUS_LABELS) as ProjectVersion['status'][]).map(s => (
-                    <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                   {(['PLANNED', 'IN_DEV', 'RELEASED', 'CANCELLED'] as ProjectVersion['status'][]).map(s => (
+                     <option key={s} value={s}>{t(`versionStatus${s === 'IN_DEV' ? 'InDev' : s[0] + s.slice(1).toLowerCase()}`)}</option>
                   ))}
                 </select>
               ) : (
                 <span className={`text-xs px-2 py-1 rounded-full font-medium inline-block ${STATUS_COLORS[version.status]}`}>
-                  {STATUS_LABELS[version.status]}
+                   {t(`versionStatus${version.status === 'IN_DEV' ? 'InDev' : version.status[0] + version.status.slice(1).toLowerCase()}`)}
                 </span>
               )}
             </div>
             <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Descrição</label>
+               <label className="text-xs font-medium text-muted-foreground block mb-1">{t('description')}</label>
               {mode === 'edit' ? (
                 <input type="text" value={editDesc} onChange={e => setEditDesc(e.target.value)}
-                  placeholder="Descrição opcional"
+                   placeholder={t('optionalDescription')}
                   className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
               ) : (
                 <p className="text-sm text-foreground">{version.description || <span className="text-muted-foreground">—</span>}</p>
@@ -168,13 +164,13 @@ export function VersionDetailModal({ version, projectId, mode, onClose, onSave }
           {/* Itens vinculados */}
           <div>
             <p className="text-xs font-medium text-muted-foreground mb-2">
-              Itens desta versão {total > 0 && <span className="text-foreground">({total})</span>}
+               {t('versionItems')} {total > 0 && <span className="text-foreground">({total})</span>}
             </p>
             {loadingItems && items.length === 0 && (
-              <p className="text-xs text-muted-foreground">Carregando...</p>
+               <p className="text-xs text-muted-foreground">{t('common:loading')}</p>
             )}
             {!loadingItems && items.length === 0 && (
-              <p className="text-xs text-muted-foreground italic">Nenhum item vinculado a esta versão.</p>
+               <p className="text-xs text-muted-foreground italic">{t('noVersionItems')}</p>
             )}
             <div className="space-y-1.5">
               {items.map(item => (
@@ -198,7 +194,7 @@ export function VersionDetailModal({ version, projectId, mode, onClose, onSave }
               <button onClick={() => { const next = page + 1; setPage(next); fetchItems(next, true) }}
                 disabled={loadingItems}
                 className="mt-2 w-full text-xs text-primary hover:underline disabled:opacity-50">
-                Carregar mais ({total - items.length} restantes)
+                 {t('common:loadMore')} ({total - items.length})
               </button>
             )}
           </div>
@@ -209,11 +205,11 @@ export function VersionDetailModal({ version, projectId, mode, onClose, onSave }
           <div className="flex gap-2 p-4 border-t border-border">
             <button onClick={handleSave} disabled={saving}
               className="flex-1 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition">
-              {saving ? 'Salvando...' : 'Salvar'}
+               {saving ? t('saving') : t('common:save')}
             </button>
             <button onClick={onClose}
               className="flex-1 py-2 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition">
-              Cancelar
+               {t('common:cancel')}
             </button>
           </div>
         )}

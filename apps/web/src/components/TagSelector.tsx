@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
 
 const TAG_COLORS = [
   '#6366f1', '#8b5cf6', '#ec4899', '#ef4444',
@@ -24,6 +25,7 @@ interface Props {
 interface DropdownPos { top: number; left: number; width: number }
 
 export function TagSelector({ allTags, selected, onSelect, onCreate, onEdit }: Props) {
+  const { t } = useTranslation('board')
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
@@ -117,7 +119,7 @@ export function TagSelector({ allTags, selected, onSelect, onCreate, onEdit }: P
           value={search}
           onChange={e => setSearch(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && canCreate && handleCreate()}
-          placeholder="Buscar ou criar tag..."
+          placeholder={t('searchOrCreateTag')}
           className="w-full px-2 py-1 text-xs bg-background border border-border rounded outline-none focus:border-primary"
         />
       </div>
@@ -154,12 +156,12 @@ export function TagSelector({ allTags, selected, onSelect, onCreate, onEdit }: P
             disabled={creating}
             className="w-full text-left text-xs text-primary hover:underline disabled:opacity-50"
           >
-            {creating ? 'Criando...' : `Criar tag "${search}"`}
+            {creating ? t('creating') : t('createTag', { name: search })}
           </button>
         </div>
       )}
       {filtered.length === 0 && !canCreate && (
-        <p className="px-3 py-2 text-xs text-muted-foreground">Nenhuma tag encontrada</p>
+        <p className="px-3 py-2 text-xs text-muted-foreground">{t('noTags')}</p>
       )}
     </div>
   ) : null
@@ -189,14 +191,14 @@ export function TagSelector({ allTags, selected, onSelect, onCreate, onEdit }: P
           </span>
         ))}
         {selected.length === 0 && (
-          <span className="text-xs text-muted-foreground self-center">Selecionar tags...</span>
+           <span className="text-xs text-muted-foreground self-center">{t('selectTags')}</span>
         )}
       </div>
 
       {/* Modal de edição de tag */}
       {editingTag && (
         <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-popover border border-border rounded-lg shadow-xl p-3 space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Editar tag</p>
+         <p className="text-xs font-medium text-muted-foreground">{t('editTag')}</p>
           <input
             value={editName}
             onChange={e => setEditName(e.target.value)}

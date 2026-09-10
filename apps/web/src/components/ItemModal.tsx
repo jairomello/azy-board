@@ -71,12 +71,12 @@ export interface FullItemData {
   ancestryPath: string
 }
 
-function formatDuration(min: number): string {
+function formatDuration(min: number, worked: string): string {
   const h = Math.floor(min / 60)
   const m = min % 60
-  if (h === 0) return `${m}min trabalhadas`
-  if (m === 0) return `${h}h trabalhadas`
-  return `${h}h ${m}min trabalhadas`
+  if (h === 0) return `${m}min ${worked}`
+  if (m === 0) return `${h}h ${worked}`
+  return `${h}h ${m}min ${worked}`
 }
 
 const PRIORITY_OPTIONS: { value: Priority; label: string }[] = [
@@ -312,7 +312,7 @@ export function ItemModal({
       }, selectedTags.map(t => t.id))
       onClose()
     } catch {
-      setError('Erro ao salvar. Tente novamente.')
+      setError(t('errorSave'))
     } finally {
       setSaving(false)
     }
@@ -345,7 +345,7 @@ export function ItemModal({
                 onSave={setTitle}
                 className="text-base font-semibold"
                 autoEdit={item.id === '__new__'}
-                placeholder={item.type === 'BUG' ? 'Novo Bug' : 'Nova Task'}
+                 placeholder={item.type === 'BUG' ? `${t('newTask')} (${t('typeBug')})` : t('newTask')}
               />
             </div>
             <button
@@ -364,7 +364,7 @@ export function ItemModal({
                <div className="flex gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300">
                 <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
                 <p className="text-xs leading-relaxed">
-                  Este card tem subtasks. Seu status no board é determinado pelo progresso dos seus filhos — por isso ele não pode ser arrastado manualmente. Para mover este card, mova ou conclua as subtasks.
+                   {t('moveBlocked')}
                 </p>
               </div>
                )}
@@ -372,61 +372,61 @@ export function ItemModal({
              <div className="space-y-4">
              <div className="grid grid-cols-2 gap-4">
              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Tipo</label>
+                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('itemTypeLabel')}</label>
                 <select value={type} onChange={e => setType(e.target.value as 'TASK' | 'BUG')}
                   className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
                   {TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Status</label>
+                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('statusLabel')}</label>
                 <select value={status} onChange={e => setStatus(e.target.value as TaskStatus)}
                   className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
                   {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Prioridade</label>
+                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('priorityLabel')}</label>
                 <select value={priority} onChange={e => setPriority(e.target.value as Priority)}
                   className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
                   {PRIORITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Responsável</label>
+                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('filterAssignee')}</label>
                 <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
                   className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                  <option value="">Não atribuído</option>
+                   <option value="">{t('unassigned')}</option>
                   {members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Sprint</label>
+                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('filterSprint')}</label>
                 <select aria-label="Sprint" value={sprintId} onChange={e => setSprintId(e.target.value)}
                   className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                  <option value="">Sem sprint</option>
-                  {projectSprints.length === 0 && <option disabled>Nenhuma sprint cadastrada</option>}
+                   <option value="">{t('noSprint')}</option>
+                   {projectSprints.length === 0 && <option disabled>{t('noSprints')}</option>}
                   {projectSprints.filter(sprint => sprint.status !== 'CLOSED').map(sprint => (
                     <option key={sprint.id} value={sprint.id}>{sprint.name}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Versão</label>
+                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('filterVersion')}</label>
                 <select value={versionId} onChange={e => setVersionId(e.target.value)}
                   className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                  <option value="">Sem versão</option>
-                  {projectVersions.length === 0 && <option disabled>Nenhuma versão cadastrada</option>}
+                   <option value="">{t('noVersion')}</option>
+                   {projectVersions.length === 0 && <option disabled>{t('noVersions')}</option>}
                   {projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
                 </select>
               </div>
               {/* Campo Centro de Custo — exibido apenas quando o projeto possui centros cadastrados */}
               {projectCostCenters.length > 0 && (
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Centro de Custo</label>
+                   <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('costCenterLabel')}</label>
                   <select value={costCenterId} onChange={e => setCostCenterId(e.target.value)}
                     className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                    <option value="">— Nenhum —</option>
+                     <option value="">{t('none')}</option>
                     {projectCostCenters.map(cc => (
                       <option key={cc.id} value={cc.id}>{cc.code}{cc.description ? ` — ${cc.description}` : ''}</option>
                     ))}
@@ -435,7 +435,7 @@ export function ItemModal({
               )}
               {/* Tarefa 9.1 — campo Autor somente leitura */}
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Autor</label>
+                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('authorLabel')}</label>
                 <div className="flex items-center gap-2 px-3 py-2 text-sm bg-background border border-border rounded-lg">
                   {item.author ? (
                     <>
@@ -457,19 +457,19 @@ export function ItemModal({
                 </div>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Pontos</label>
+                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('pointsLabel')}</label>
                 <input type="number" min="0" value={points} onChange={e => setPoints(e.target.value)}
                   className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
                   placeholder="0" />
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Início</label>
+                   <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('startDate')}</label>
                   <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
                     className="w-full px-2 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground mb-1 block">Fim</label>
+                   <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('dueDate')}</label>
                   <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
                     className="w-full px-2 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary" />
                 </div>
@@ -478,7 +478,7 @@ export function ItemModal({
 
              {epics.length > 0 && (
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">História pai</label>
+                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('parentStory')}</label>
                 <StorySelector
                   epics={epics}
                   stories={stories}
@@ -490,7 +490,7 @@ export function ItemModal({
             )}
 
              <div>
-               <label className="text-xs font-medium text-muted-foreground mb-1 block">Tags</label>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('tagsLabel')}</label>
               <TagSelector
                 allTags={projectTags}
                 selected={selectedTags}
@@ -504,7 +504,7 @@ export function ItemModal({
 
              <AccordionSection id="item-description" title={t('accordion.description')} summary={description ? t('accordion.contentPresent') : <NeutralSummary />} isOpen={openSections.has('item-description')} onToggle={id => setOpenSections(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}>
              <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Descrição</label>
+               <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('descriptionLabel')}</label>
               <RichTextEditor
                 key={item.id}
                 content={description}
@@ -528,7 +528,7 @@ export function ItemModal({
               )}
               {item.isLeaf && (
                <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">Subtasks</label>
+                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('showSubtasks')}</label>
                 {showSubtaskForm ? (
                   <AddCardForm
                     onAdd={async (subTitle, subType) => {
@@ -542,7 +542,7 @@ export function ItemModal({
                   <button onClick={() => setShowSubtaskForm(true)}
                     className="flex items-center gap-1 text-sm text-primary hover:underline">
                     <Plus className="w-3.5 h-3.5" />
-                    Adicionar subtask
+                     {t('addSubtask')}
                   </button>
                 )}
               </div>
@@ -574,11 +574,11 @@ export function ItemModal({
                   className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition"
                 >
                   <Clock className="w-4 h-4" />
-                  Histórico de alterações
+                   {t('changeHistory')}
                 </button>
                 {totalMinutes != null && (
                   <span className="text-xs text-muted-foreground">
-                    ⏱ {formatDuration(totalMinutes)}
+                     ⏱ {formatDuration(totalMinutes, t('worked'))}
                   </span>
                 )}
               </div>
@@ -592,9 +592,9 @@ export function ItemModal({
                 <div className="flex items-center gap-3">
                   <button onClick={() => setShowWorkLog(true)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition">
                     <Clock className="h-4 w-4" />
-                    Registrar trabalho
+                     {t('registerWork')}
                   </button>
-                  {totalMinutes != null && <span className="text-xs font-medium text-primary">{formatDuration(totalMinutes)}</span>}
+                   {totalMinutes != null && <span className="text-xs font-medium text-primary">{formatDuration(totalMinutes, t('worked'))}</span>}
                 </div>
               ) : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}
               </AccordionSection>
@@ -604,12 +604,12 @@ export function ItemModal({
             <button onClick={handleSave} disabled={saving}
               className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition">
               <Check className="w-4 h-4" />
-              {saving ? 'Salvando...' : 'Salvar'}
+               {saving ? t('saving') : t('save')}
             </button>
             <button onClick={_onBack ?? onClose}
               className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition">
               <X className="w-4 h-4" />
-              {_onBack ? 'Voltar' : 'Cancelar'}
+               {_onBack ? t('back') : t('cancel')}
             </button>
           </div>
         </div>

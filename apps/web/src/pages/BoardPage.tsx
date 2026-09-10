@@ -26,6 +26,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { api } from '../lib/api'
 import { onAssistantMutation } from '../lib/dataEvents'
 import { useWebSocket } from '../hooks/useWebSocket'
+import { formatDate } from '../lib/formatters'
 import { KanbanCard, type CardData } from '../components/KanbanCard'
 import { AddCardForm } from '../components/AddCardForm'
 import { ItemModal, type FullItemData, type ProjectMember, type ProjectVersion, type CostCenter } from '../components/ItemModal'
@@ -1184,12 +1185,12 @@ export default function BoardPage() {
       assistantScreen={view === 'tree' ? 'project-board-tree' : 'project-board-kanban'}
       assistantBoardView={view}
       assistantFilters={{ hideEmptyEpics: filters.hideEmptyEpics, hideEmptyStories: filters.hideEmptyStories, moduleId: filters.moduleId || null, sprintId: filters.sprintId || null, versionId: filters.versionId || null, squadId: filters.squadId || null, assigneeId: filters.assigneeId || null, types: filters.types.length ? filters.types.join(',') : null }}
-      sectionLabel={view === 'kanban' ? 'Board' : 'Árvore'}
-      contextLabel={activeSprint?.name ?? 'Fluxo do projeto'}
+       sectionLabel={view === 'kanban' ? tBoard('viewBoard') : tBoard('viewTree')}
+       contextLabel={activeSprint?.name ?? tBoard('optionsDescription')}
       headerMeta={syncState === 'synced' ? (
         <span className="hidden sm:inline-flex items-center gap-1.5 text-[10px] text-shell-muted">
           <span className="w-1.5 h-1.5 rounded-full bg-status-done" />
-          Sincronizado
+           {tBoard('synced')}
         </span>
       ) : undefined}
       commandBar={(
@@ -1302,7 +1303,7 @@ export default function BoardPage() {
                {!isSimpleBoard && orphanCards.length > 0 && (
                  <Swimlane
                    swimlaneId="orphan"
-                   title="Sem épico"
+                    title={tBoard('noModule')}
                    allowAdd={false}
                     columns={columns}
                    versions={projectVersions}
@@ -1366,18 +1367,18 @@ export default function BoardPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setModuleModalOpen(false)} />
           <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-foreground">Novo módulo</h2>
+             <h2 className="text-lg font-semibold text-foreground">{tBoard('newModule')}</h2>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block" htmlFor="module-name">Nome</label>
-              <input id="module-name" autoFocus value={newModuleName} onChange={event => setNewModuleName(event.target.value)} className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary" placeholder="Nome do módulo" />
+               <label className="text-xs font-medium text-muted-foreground mb-1 block" htmlFor="module-name">{tBoard('moduleLabel')}</label>
+               <input id="module-name" autoFocus value={newModuleName} onChange={event => setNewModuleName(event.target.value)} className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary" placeholder={tBoard('moduleNamePlaceholder')} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block" htmlFor="module-description">Descrição (opcional)</label>
-              <textarea id="module-description" value={newModuleDescription} onChange={event => setNewModuleDescription(event.target.value)} rows={3} className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary resize-none" placeholder="Descrição do módulo" />
+               <label className="text-xs font-medium text-muted-foreground mb-1 block" htmlFor="module-description">{tBoard('descriptionLabel')}</label>
+               <textarea id="module-description" value={newModuleDescription} onChange={event => setNewModuleDescription(event.target.value)} rows={3} className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary resize-none" placeholder={tBoard('moduleDescriptionPlaceholder')} />
             </div>
             <div className="flex gap-2 pt-2">
-              <button onClick={handleModuleCreate} disabled={!newModuleName.trim()} className="flex-1 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50">Criar</button>
-              <button onClick={() => setModuleModalOpen(false)} className="flex-1 py-2 text-sm border border-border rounded-lg hover:bg-muted text-muted-foreground">Cancelar</button>
+               <button onClick={handleModuleCreate} disabled={!newModuleName.trim()} className="flex-1 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50">{tBoard('create')}</button>
+               <button onClick={() => setModuleModalOpen(false)} className="flex-1 py-2 text-sm border border-border rounded-lg hover:bg-muted text-muted-foreground">{tBoard('cancel')}</button>
             </div>
           </div>
         </div>
@@ -1432,7 +1433,7 @@ export default function BoardPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setArchiveConfirm(null)} />
           <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="font-semibold text-foreground mb-2">Arquivar item</h3>
+             <h3 className="font-semibold text-foreground mb-2">{tBoard('archiveItem')}</h3>
             <p className="text-sm text-muted-foreground mb-4">
               Este item possui <strong>{archiveConfirm.childrenCount}</strong> descendente(s) que também serão arquivados em cascata. Deseja continuar?
             </p>
@@ -1441,13 +1442,13 @@ export default function BoardPage() {
                 onClick={() => setArchiveConfirm(null)}
                 className="px-3 py-1.5 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition"
               >
-                Cancelar
+                 {tBoard('cancel')}
               </button>
               <button
                 onClick={() => executeArchive(archiveConfirm.itemId)}
                 className="px-4 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition"
               >
-                Arquivar tudo
+                 {tBoard('archiveItem')}
               </button>
             </div>
           </div>
@@ -1462,7 +1463,7 @@ export default function BoardPage() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-shrink-0">
               <h3 className="font-semibold text-foreground flex items-center gap-2">
                 <Archive className="w-4 h-4 text-muted-foreground" />
-                Itens Arquivados
+                 {tBoard('archivedItems')}
               </h3>
               <button onClick={() => setArchivedModal(false)} className="text-muted-foreground hover:text-foreground transition">
                 <X className="w-5 h-5" />
@@ -1521,7 +1522,7 @@ export default function BoardPage() {
                             {item.statusBeforeArchive ? (STATUS_LABEL[item.statusBeforeArchive] ?? item.statusBeforeArchive) : '—'}
                           </td>
                           <td className="py-2.5 pr-3 text-muted-foreground text-xs whitespace-nowrap">
-                            {new Date(item.updatedAt).toLocaleDateString('pt-BR')}
+                             {formatDate(item.updatedAt)}
                           </td>
                           <td className="py-2.5 text-right">
                             {/* Tarefa 10.6 — botão Restaurar */}
@@ -1529,7 +1530,7 @@ export default function BoardPage() {
                               onClick={() => handleUnarchive(item.id)}
                               className="text-xs text-primary hover:underline font-medium px-2 py-1 rounded hover:bg-primary/10 transition"
                             >
-                              Restaurar
+                               {tBoard('back')}
                             </button>
                           </td>
                         </tr>
