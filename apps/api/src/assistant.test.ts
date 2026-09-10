@@ -199,6 +199,8 @@ História: Projetos`
   test('permite pedido cross-domain de projeto sem exigir rota específica', () => {
     expect(toolsForMessage('Crie um novo projeto chamado Financeiro')).toContain('create_project')
     expect(toolsForMessage('Crie um novo projeto chamado Financeiro')).not.toContain('update_items')
+    expect(toolsForMessage("Create a project called Azy Git")).toContain('create_project')
+    expect(toolsForMessage("Create a project called Azy Git")).not.toContain('update_items')
   })
 
   test('preserva mutação pendente quando a resposta do usuário é apenas um título', () => {

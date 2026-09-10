@@ -216,9 +216,9 @@ function successMessage(tool: string, result: unknown): string {
 export function toolsForMessage(content: string, recentContext = ''): string[] {
   const current = content.toLocaleLowerCase('pt-BR')
   const contextual = `${recentContext} ${content}`.toLocaleLowerCase('pt-BR')
-  const mutationPattern = /crie|criar|cadastre|cadastrar|registre|registrar|adicione|adicionar|mova|mover|complete|conclua|atualize|editar|edite|altere|alterar|mude|troque|defina|definir|estabeleça|estabelecer|remova|delete|arquive|create_project|create_task|prévia da mutação|aprovação/
-  const planPattern = /planeje|planejar|organize|organizar|como faço|como fazer/
-  const readPattern = /status|andamento|progresso|revise|revisar|liste|listar|mostre|mostrar|consulte|consultar|verifique|verificar/
+  const mutationPattern = /crie|criar|cadastre|cadastrar|registre|registrar|adicione|adicionar|mova|mover|complete|conclua|atualize|editar|edite|altere|alterar|mude|troque|defina|definir|estabeleça|estabelecer|remova|delete|arquive|create|add|register|move|complete|update|edit|change|set|remove|archive|create_project|create_task|prévia da mutação|aprovação/
+  const planPattern = /planeje|planejar|organize|organizar|como faço|como fazer|plan|organize|how do i|how can i/
+  const readPattern = /status|andamento|progresso|revise|revisar|liste|listar|mostre|mostrar|consulte|consultar|verifique|verificar|progress|list|show|check|review|describe/
   const classifyIntent = (value: string) => mutationPattern.test(value)
     ? 'start' as const
     : planPattern.test(value)
@@ -236,7 +236,7 @@ export function toolsForMessage(content: string, recentContext = ''): string[] {
   if (intent === 'start' && /complete|conclua|finalize|finalizar/.test(current)) return withDependencies(['list_tasks', 'complete_task'])
   if (intent === 'start') {
     const structureLevels = [/módulos?|modules?/, /épicos?|epicos?/, /histórias?|historias?|stories?/].filter(pattern => pattern.test(current)).length
-    const creationVerb = /cadastr|criar|cria\b|crie\b|adicion|regist|inclu/.test(current)
+    const creationVerb = /cadastr|criar|cria\b|crie\b|adicion|regist|inclu|creat|add|register|make/.test(current)
     const structureMarker = /(?:estrutura|lote)/.test(current) && /(?:épico|epic|história|historia|story|tarefa|task|bug)/.test(current)
     if ((creationVerb && structureLevels >= 2) || structureMarker) {
       if (/(?:cri[ae]\b|criar|cadastr\w*|nov[oa])\s+(?:um\s+|uma\s+|o\s+|a\s+|os\s+|as\s+)?(?:novo\s+|nova\s+)?projetos?\b/.test(current)) return withDependencies(['create_project_structure'])
@@ -251,7 +251,7 @@ export function toolsForMessage(content: string, recentContext = ''): string[] {
   if (intent !== 'start') return discovery
   const names = new Set(discovery)
   const add = (pattern: RegExp, tools: string[]) => { if (pattern.test(text)) tools.forEach(tool => names.add(tool)) }
-  add(/(?:cri[ae]\b|criar|cadastr|atualiz|edit|remov|delet|exclu)[a-zç]*\s+(?:um\s+|uma\s+|o\s+|a\s+|os\s+|as\s+)?(?:novo\s+|nova\s+)?projetos?\b/, ['create_project', 'update_project', 'delete_project'])
+  add(/(?:cri[ae]\b|criar|cadastr|atualiz|edit|remov|delet|exclu|creat|add|updat|chang|delet|remov|mak)[a-zç]*\s+(?:(?:um|uma|o|a|os|as|the|a)\s+)?(?:novo\s+|nova\s+|new\s+)?(?:projetos?|projects?)\b/, ['create_project', 'update_project', 'delete_project'])
     add(/épico|epic|história|historia|story|tarefa|task|bug|item|card/, ['create_task', 'update_item', 'update_items', 'complete_task', 'delete_item', 'move_task', 'claim_task', 'release_task'])
    add(/estrutura|lote|itens|épico|epic|história|historia|story/, ['batch', 'list_modules'])
   add(/sprint/, ['create_sprint', 'activate_sprint', 'close_sprint'])
