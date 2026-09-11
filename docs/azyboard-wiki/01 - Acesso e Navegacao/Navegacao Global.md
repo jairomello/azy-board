@@ -6,7 +6,7 @@ order: 2
 
 # Navegação Global
 
-A navegação do Azy Board mantém os principais destinos no cabeçalho e utiliza breadcrumbs para indicar o contexto atual.
+A navegação do Azy Board é organizada em uma casca integrada: uma **barra lateral fixa** com as áreas principais, um **cabeçalho contextual** que identifica o local atual e uma **barra de comandos** específica de cada tela.
 
 ## Áreas principais
 
@@ -15,6 +15,7 @@ flowchart TD
     Login[Login] --> Projetos[Lista de projetos]
     Projetos --> Board[Board do projeto]
     Board --> Arvore[Visualização em árvore]
+    Board --> Dashboard[Dashboard do projeto]
     Board --> Config[Configurações do projeto]
     Board --> Item[Detalhes dos itens]
     Projetos --> Conta[Conta]
@@ -22,59 +23,60 @@ flowchart TD
     Projetos --> Admin[Administração]
 ```
 
-## Cabeçalho da lista de projetos
+## Barra lateral
 
-Na lista de projetos, o cabeçalho apresenta:
+A barra lateral fica fixa à esquerda nas telas protegidas e concentra a navegação:
 
-- Marca **Azy Board**.
-- Seletor de idioma.
-- Controle de tema.
-- Avatar e menu do perfil.
+- Marca **Azy Board** no topo, com retorno à lista de projetos.
+- **Projetos**, sempre disponível.
+- **Board**, quando há um projeto em contexto.
+- **Configurações**, quando o grupo global da conta permite configurar o projeto atual.
+- **Dashboard**, quando há um projeto em contexto.
+- **Administração**, para Admin e Root, com o submenu **Usuários** — e, para Root, **Config. Tenant**.
+- **Conta**, no fim da lista.
 
-O conteúdo central apresenta os projetos e a ação de criação.
+Em telas estreitas, a barra lateral vira um menu de gaveta acionado por um botão. No desktop, ela pode ficar recolhida em modo de ícones, com nomes apresentados por tooltip.
 
-## Cabeçalho do Board
+## Cabeçalho contextual
 
-Ao abrir um projeto, o cabeçalho passa a apresentar o contexto do trabalho atual:
+O cabeçalho não repete a navegação: ele identifica o contexto e reúne preferências.
 
-- Marca com retorno à lista de projetos.
-- Breadcrumb **Projetos > Board · Nome do projeto**.
-- Controle segmentado entre **Kanban** e **Árvore**.
-- Seletor de idioma.
-- Controle de tema.
-- Acesso às configurações do projeto.
-- Acesso ao menu **Admin**, quando a conta é Admin ou Root.
-- Menu do perfil.
+- Na lista de projetos, apresenta o título da área.
+- Dentro de um projeto, apresenta **Nome do projeto • seção atual** (por exemplo, **Portal do Cliente • Board**). Nomes longos são truncados com o nome completo disponível por tooltip.
+- À direita, ficam o seletor de idioma (oculto em telas muito estreitas), o alternador de tema e o menu do perfil.
 
-O nome do projeto no breadcrumb ajuda a diferenciar o contexto quando a pessoa participa de vários projetos.
+## Barra de comandos
+
+Cada tela oferece sua própria barra de comandos abaixo do cabeçalho. No Board, ela contém a alternância segmentada entre **Kanban** e **Árvore**, os painéis **Filtros** e **Opções**, o seletor rápido de squad, a densidade e o menu **Criar**. Os detalhes estão em [[04 - Board e Visualizacoes/Conhecer o Board|Conhecer o Board]].
 
 ## Alternar entre Kanban e árvore
 
 1. Abra o Board de um projeto.
-2. No cabeçalho, selecione **Kanban** ou **Árvore**.
+2. Na barra de comandos, selecione **Kanban** ou **Árvore**.
 3. O conteúdo principal é substituído sem sair do projeto.
 
 Os filtros compatíveis são preservados durante a troca. Controles específicos do Kanban, como expandir ou recolher swimlanes, aparecem somente quando fazem sentido.
 
 ## Abrir as configurações do projeto
 
-1. No cabeçalho do Board, selecione o controle de configurações.
+1. Na barra lateral, selecione **Configurações**.
 2. A aplicação abre as configurações do projeto atual.
-3. Use **Voltar ao board** para retornar.
+3. Use a barra lateral para retornar ao Board ou a outra área.
 
-As seções e ações dependem do grupo global e do papel local da pessoa. Membros de Equipe não veem Configurações; Gerentes podem configurar projetos associados, mas não veem Administração. Admins e Root veem Administração, e Admins visualizam todos os projetos do tenant.
+As seções e ações dependem do grupo global e do papel local da pessoa. Membros de Equipe não veem Configurações; Gerentes, Admins e Root veem as configurações dos projetos em contexto. Administração aparece somente para Admin e Root.
 
 ## Usar o menu do perfil
 
 1. Selecione o avatar no canto direito do cabeçalho.
 2. Escolha uma das opções:
    - **Configurações da conta** para abrir a conta e as API Keys.
+   - **Mostrar projetos ocultos** para alternar a preferência da sessão.
    - **Sair** para encerrar a sessão.
 3. Clique fora do menu para fechá-lo sem navegar.
 
 ## Navegar pela conta
 
-A tela da conta apresenta um link de retorno a **Projetos**, além dos controles de idioma e tema. A conta não pertence a um projeto específico.
+A tela da conta usa a mesma barra lateral e reúne perfil, tema, temas claros, idioma, projetos ocultos e API Keys. A conta não pertence a um projeto específico.
 
 ## Modais e navegação contextual
 
@@ -100,17 +102,19 @@ Fechar uma modal retorna ao contexto anterior. Em itens com filhos, a navegaçã
 
 ## Permissões
 
-| Área | Admin | Membro | Visualizador |
+| Área | Membro de Equipe | Gerente | Admin e Root |
 |---|---:|---:|---:|
-| Lista de projetos | Todos do tenant | Associados | Associados |
-| Board e árvore | Sim | Sim | Sim |
+| Lista de projetos | Associados | Associados | Todos do tenant, exceto restritos sem participação |
+| Board, árvore e Dashboard | Sim | Sim | Sim |
+| Configurações do projeto | Não | Sim, nos projetos em contexto | Sim, nos projetos em contexto |
+| Administração de usuários | Não | Não | Sim |
 | Conta e preferências | Sim | Sim | Sim |
-| Configurações do projeto | Sim | Não | Conforme papel local |
-| Administração de usuários | Sim | Não | Não |
+
+A visibilidade de itens do menu acompanha o grupo global da conta e é aplicada também no servidor; esconder um item de menu não substitui a autorização da API.
 
 ## Exemplo prático
 
-Uma pessoa abre o projeto **Portal do Cliente**, alterna para a árvore para conferir a hierarquia e retorna ao Kanban. Em seguida, abre as configurações, consulta uma versão e volta ao mesmo Board pelo link do cabeçalho.
+Uma pessoa abre o projeto **Portal do Cliente**, alterna para a árvore para conferir a hierarquia e retorna ao Kanban. Em seguida, abre as configurações pela barra lateral, consulta uma versão e volta ao mesmo Board.
 
 ## Funcionalidades relacionadas
 
@@ -124,7 +128,7 @@ Uma pessoa abre o projeto **Portal do Cliente**, alterna para a árvore para con
 
 ### Rotas
 
-A interface utiliza rotas para login, projetos, Board, configurações de projeto, Administração e conta. As rotas funcionais são carregadas sob demanda para reduzir o conteúdo inicial necessário.
+A interface utiliza rotas para login, projetos, Board, configurações de projeto, Dashboard, Administração e conta. As rotas funcionais são carregadas sob demanda para reduzir o conteúdo inicial necessário.
 
 ### Proteção
 

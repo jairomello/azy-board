@@ -16,7 +16,7 @@ Os grupos são cumulativos, do menor para o maior privilégio:
 |---|---|
 | `TEAM_MEMBER` — Membro de Equipe | Vê somente projetos dos quais participa e opera o conteúdo. Não acessa Administração nem Configurações do projeto. |
 | `MANAGER` — Gerente | Vê projetos dos quais participa, pode criar projetos e configurar seus projetos. Não acessa Administração. |
-| `ADMIN` — Admin | Vê todos os projetos do tenant, pode operar qualquer projeto e administra usuários. Não pode atribuir `ROOT`. |
+| `ADMIN` — Admin | Vê todos os projetos do tenant, pode operar qualquer projeto e administra usuários. Não pode atribuir `ROOT`. Exceção: projetos restritos dos quais não participa permanecem inacessíveis, inclusive para Admin e Root. |
 | `ROOT` — Root | Nível máximo reservado para funções futuras de plataforma; nesta versão opera projetos como Admin. |
 
 Um usuário não pode elevar o próprio grupo. Admin pode atribuir somente `TEAM_MEMBER`, `MANAGER` ou `ADMIN`; a atribuição de `ROOT` é reservada ao Root.
@@ -38,7 +38,7 @@ O `Admin` administra a estrutura e os participantes do projeto. Além das açõe
 - Criar, editar e excluir squads.
 - Gerenciar módulos e centros de custo.
 - Criar, editar e excluir versões.
-- Ativar ou encerrar sprints.
+- Criar, abrir e encerrar sprints.
 
 ## Membro
 
@@ -50,7 +50,7 @@ O `Membro` participa da execução do projeto. Pode:
 - Criar subtasks e checklists.
 - Registrar atividades.
 - Arquivar, restaurar e excluir itens.
-- Criar sprints e associar itens a elas.
+- Associar itens a sprints existentes.
 - Usar integrações conforme as credenciais vinculadas à sua conta.
 
 ## Visualizador
@@ -72,6 +72,7 @@ O `Visualizador` consulta o projeto sem alterar seu conteúdo. Pode:
 | Mover cards | Sim | Sim | Não |
 | Checklists e atividades | Sim | Sim | Não |
 | Arquivar, restaurar e excluir itens | Sim | Sim | Não |
+| Criar, abrir e encerrar sprints | Sim | Não | Não |
 | Gerenciar estrutura do projeto | Sim | Não | Não |
 | Gerenciar membros e squads | Sim | Não | Não |
 | Gerenciar versões | Sim | Não | Não |

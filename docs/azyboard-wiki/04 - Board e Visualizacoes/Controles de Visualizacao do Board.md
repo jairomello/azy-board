@@ -8,6 +8,8 @@ order: 5
 
 Os controles de visualização modificam a forma de apresentar o mesmo projeto. Eles não alteram hierarquia, status ou conteúdo dos itens.
 
+Os controles desta página ficam no painel suspenso **Opções**, na barra de comandos do Board, e aparecem somente em projetos hierárquicos — no modo `SIMPLE` não há lanes nem subtasks para alternar.
+
 ## Mostrar subtasks
 
 Esse controle alterna o nível operacional apresentado no Kanban.
@@ -75,13 +77,14 @@ São lembrados separadamente para cada projeto:
 
 - Exibição de subtasks.
 - Modo de histórias: lanes ou cards.
+- Modo de exibição dos módulos: hierarquia ou abas.
 - Ocultação de épicos vazios.
 - Ocultação de histórias vazias.
 - Lanes de épico recolhidas.
 - Lanes de história recolhidas.
 - Filtros de conteúdo.
 
-Ao usar **Limpar**, o modo de histórias e a exibição de subtasks mantêm seu estado atual. Os filtros e as ocultações de lanes vazias retornam ao padrão.
+Ao usar **Limpar**, o modo de histórias, a exibição de subtasks e o modo de exibição dos módulos mantêm seu estado atual. Os filtros e as ocultações de lanes vazias retornam ao padrão.
 
 ## Valores padrão
 

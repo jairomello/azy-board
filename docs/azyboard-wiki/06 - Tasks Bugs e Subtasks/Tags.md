@@ -10,7 +10,7 @@ Tags são marcadores coloridos do projeto. Elas classificam itens, facilitam a l
 
 ## Onde encontrar
 
-O seletor de tags aparece na janela de tasks e bugs. Tags associadas também aparecem diretamente no card e na toolbar de filtros.
+O seletor de tags aparece na janela de tasks e bugs. Tags associadas também aparecem diretamente no card e no painel Filtros.
 
 ## Selecionar tags existentes
 
@@ -67,7 +67,7 @@ Cada associação é apresentada como um chip com nome e cor. Várias tags podem
 
 ## Filtrar por tags
 
-Na toolbar, selecione uma ou mais tags. Um card é apresentado quando possui pelo menos uma das tags selecionadas e atende aos demais filtros ativos.
+No painel **Filtros**, selecione uma ou mais tags. Um card é apresentado quando possui pelo menos uma das tags selecionadas e atende aos demais filtros ativos.
 
 ## Boas práticas
 

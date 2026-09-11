@@ -12,9 +12,10 @@ Esta matriz oferece uma visão rápida das capacidades do Azy Board e indica ond
 |---|---|---|
 | Acesso | Login, sessão, logout e proteção de rotas | [[01 - Acesso e Navegacao/Acesso e Navegacao|Acesso e Navegação]] |
 | Projetos | Listagem, seleção, criação e estrutura inicial | [[02 - Projetos/Projetos|Projetos]] |
+| Modo do board | Formatos hierárquico e simples, escolha e conversão | [[02 - Projetos/Modo do Board Hierarquico e Simples|Modo do Board hierárquico e simples]] |
 | Hierarquia | Módulos, épicos, histórias, tasks, bugs e subtasks | [[03 - Estrutura do Trabalho/Hierarquia dos Itens|Hierarquia dos itens]] |
 | Board | Lanes aninhadas de épicos e histórias, colunas, cards, criação e movimentação | [[04 - Board e Visualizacoes/Conhecer o Board|Conhecer o Board]] |
-| Dashboard | Dez blocos gerenciais com gráficos, legendas, estados, filtros, cobertura histórica e horas registradas | [[04 - Board e Visualizacoes/Consultar o Dashboard do Projeto|Consultar o Dashboard do Projeto]] |
+| Dashboard | Oito blocos gerenciais com gráficos, legendas, estados, filtros, cobertura histórica e horas registradas | [[04 - Board e Visualizacoes/Consultar o Dashboard do Projeto|Consultar o Dashboard do Projeto]] |
 | Leitura do Dashboard | Objetivo, interpretação, cores e limites de cada quadro | [[04 - Board e Visualizacoes/Objetivos dos Quadros do Dashboard|Objetivos dos Quadros do Dashboard]] |
 | Filtros | Squad, módulo, sprint, responsável, tipo, tags e ocultação de lanes vazias | [[04 - Board e Visualizacoes/Filtros do Board|Filtros do Board]] |
 | Tree View | Hierarquia expandível, progresso, datas e arquivamento | [[04 - Board e Visualizacoes/Visualizacao em Arvore|Visualização em árvore]] |
@@ -34,13 +35,17 @@ Esta matriz oferece uma visão rápida das capacidades do Azy Board e indica ond
 | Versões | Releases, situações e escopo vinculado | [[07 - Configuracoes do Projeto/Gerenciar Versoes|Gerenciar versões]] |
 | Sprints | Ciclos planejados, sprint ativa e encerramento | [[07 - Configuracoes do Projeto/Gerenciar Sprints|Gerenciar sprints]] |
 | Conta | Perfil, acesso às configurações e encerramento da sessão | [[08 - Conta e Preferencias/Acessar e Consultar a Conta|Acessar e consultar a conta]] |
+| Administração | Usuários do tenant, criação de contas e grupos globais | [[08 - Conta e Preferencias/Administrar Usuarios do Tenant|Administrar usuários do tenant]] |
 | Preferências | Tema claro ou escuro e idioma | [[08 - Conta e Preferencias/Configurar Tema e Idioma|Configurar tema e idioma]] |
 | API Keys | Criação, cópia, acompanhamento e revogação | [[08 - Conta e Preferencias/Gerenciar API Keys|Gerenciar API Keys]] |
 | Configuração MCP | Transporte `stdio`, ambiente e conexão do cliente | [[09 - Agentes e Integracoes/Configurar o Servidor MCP|Configurar o servidor MCP]] |
+| Azy Agent | Chat interno com aprovação humana, prévia e governança | [[09 - Agentes e Integracoes/Usar o Chat do Azy Agent|Usar o chat do Azy Agent]] |
 | Ferramentas MCP | Consulta, criação, claim, movimentação e checklists | [[09 - Agentes e Integracoes/Usar as Ferramentas MCP|Usar as ferramentas MCP]] |
 | Shadow Markdown | Leitura e atualização textual do Board | [[09 - Agentes e Integracoes/Ler e Atualizar o Board com Shadow Markdown|Ler e atualizar o Board com Shadow Markdown]] |
 | API para agentes | REST, Bearer API Key, permissões e isolamento | [[09 - Agentes e Integracoes/Integrar pela API REST e Autenticar Agentes|Integrar pela API REST e autenticar agentes]] |
 | Auditoria de agentes | Identidade, eventos, conflitos e rastreabilidade | [[09 - Agentes e Integracoes/Entender a Sincronizacao e Auditoria|Entender a sincronização e auditoria]] |
+| Azy Agent | Chat interno com aprovação humana, guardrails e governança de limites | [[09 - Agentes e Integracoes/Azy Agent humano|Azy Agent humano]] |
+| Operações em lote | Atualização em massa e criação estruturada via MCP | [[09 - Agentes e Integracoes/Usar as Ferramentas MCP|Usar as ferramentas MCP]] |
 | Tempo real | Eventos e sincronização por projeto | [[04 - Board e Visualizacoes/Sincronizacao em Tempo Real|Sincronização em tempo real]] |
 | Segurança | Multi-tenancy, associação ao projeto e RBAC | [[10 - Referencia/Perfis e Permissoes|Perfis e permissões]] |
-| Modelo de dados | 19 tabelas, relações, hierarquia, cascatas e isolamento | [[10 - Referencia/Modelo de Dados|Modelo de dados]] |
+| Modelo de dados | 32 tabelas, relações, hierarquia, cascatas e isolamento | [[10 - Referencia/Modelo de Dados|Modelo de dados]] |

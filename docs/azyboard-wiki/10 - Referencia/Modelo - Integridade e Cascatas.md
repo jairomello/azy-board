@@ -49,7 +49,11 @@ O schema TypeScript não repete `onDelete: 'set null'` em `items.version_id`, em
 O banco declara unicidade para:
 
 - `tenants.slug`;
-- `api_keys.key_hash`.
+- `api_keys.key_hash`;
+- associação única entre item e sprint (`item_sprints_item_sprint_unique`);
+- sequência de eventos por run (`assistant_events_tenant_run_sequence_unique`);
+- hash de operação por run (`assistant_approvals_run_operation_hash_unique`);
+- par ciclo e item (`sprint_cycle_items_unique`).
 
 Outras unicidades funcionais dependem da aplicação ou ainda precisam de constraints explícitas:
 
@@ -57,8 +61,7 @@ Outras unicidades funcionais dependem da aplicação ou ainda precisam de constr
 - um membership por usuário e projeto;
 - código de centro de custo por projeto;
 - associação única entre item e tag;
-- associação única entre item e sprint;
-- somente uma sprint `ACTIVE` por projeto.
+- somente uma sprint `OPEN` por projeto.
 
 ## Isolamento multi-tenant
 
@@ -129,7 +132,7 @@ Regras esperadas:
 
 - épico sem pai e com módulo;
 - história filha de épico;
-- task ou bug filho de história, task ou bug, ou órfão;
+- task ou bug filho de história, task ou bug — a criação sem pai é rejeitada pela API em projetos hierárquicos;
 - pai e filho no mesmo tenant e projeto;
 - nenhum item pode ser ancestral de si mesmo;
 - `ancestry_path` precisa refletir a cadeia atual.
@@ -144,9 +147,12 @@ As migrations declaram explicitamente:
 |---|---|
 | `api_keys_key_hash_unique` | Autenticação e unicidade da credencial. |
 | `tenants_slug_unique` | Resolução única do tenant. |
-| `item_logs_item_id_created_at_idx` | Histórico do item em ordem temporal. |
-| `item_logs_tenant_id_idx` | Filtro por tenant. |
+| `item_sprints_item_sprint_unique` | Impede associação duplicada entre item e sprint. |
+| `item_events_correlation_unique` | Sequência determinística de eventos por projeto e item. |
+| `item_logs_tenant_item_type_date_idx` | Histórico do item em ordem temporal, com filtro por tenant e tipo. |
 | `project_versions_project_tenant_idx` | Listagem de versões do projeto. |
+| `assistant_runs_tenant_conversation_status_idx` | Consulta de runs por conversa e status. |
+| `assistant_approvals_tenant_status_expiry_idx` | Aprovações pendentes por tenant e validade. |
 
 Consultas frequentes por `tenant_id`, `project_id`, `parent_id`, `column_id`, `status`, tabelas associativas e posições se beneficiariam de índices adicionais conforme o volume crescer.
 

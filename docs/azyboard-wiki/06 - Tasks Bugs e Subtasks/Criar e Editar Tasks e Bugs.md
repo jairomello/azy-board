@@ -10,7 +10,7 @@ Tasks representam atividades. Bugs representam defeitos. Os dois tipos compartil
 
 ## Formas de criar
 
-- Ação **Task** ou **Bug** na toolbar.
+- Menu **Criar** na barra de comandos, opção **Task** ou **Bug**.
 - Ação **Adicionar card** em uma coluna.
 - Criação de subtask dentro de outro item.
 - Criação por agente via API ou MCP.
@@ -43,7 +43,7 @@ Os grupos de campos ficam em seções recolhíveis. A primeira seção começa a
 
 Campos de versão e centro de custo aparecem quando o projeto possui opções cadastradas.
 
-## Criar pela toolbar
+## Criar pela barra de comandos
 
 1. Selecione **Task** ou **Bug**.
 2. Edite o título inicial.

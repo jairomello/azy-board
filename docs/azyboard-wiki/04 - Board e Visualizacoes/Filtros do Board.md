@@ -8,6 +8,8 @@ order: 4
 
 Os filtros reduzem o conteúdo visível sem alterar os itens do projeto. Eles podem ser combinados para responder perguntas específicas sobre o trabalho.
 
+Os controles ficam no painel suspenso **Filtros**, na barra de comandos do Board. O botão exibe um contador com a quantidade de critérios ativos.
+
 ## Filtro por squad
 
 Apresenta itens atribuídos a integrantes do squad selecionado. Itens sem responsável ou atribuídos a pessoas de outros squads são ocultados.
@@ -42,7 +44,7 @@ Ao selecionar um centro, somente itens cujo `costCenterId` corresponde ao centro
 
 ## Filtro por tipo
 
-Os controles **Tarefa** e **Bug** podem ser ativados individualmente ou em conjunto.
+Os controles **Tarefa** e **Bug**, dentro do painel **Filtros**, podem ser ativados individualmente ou em conjunto.
 
 - Somente **Tarefa**: oculta bugs.
 - Somente **Bug**: oculta tasks.
@@ -82,15 +84,15 @@ Somente bugs urgentes de Pagamentos, na Sprint 12, atribuídos a Ana e pertencen
 
 ## Identificar filtros ativos
 
-Quando existe ao menos um filtro, a toolbar apresenta a ação **Limpar** acompanhada da quantidade de critérios ativos. Logo abaixo da barra de controles, uma linha de filtros ativos mostra cada seleção em uma tag compacta, usando nomes dos catálogos quando disponíveis. O botão **x** de cada tag remove somente aquele filtro ou valor; tipos e tags removem apenas o valor selecionado.
+O botão **Filtros** exibe um contador com a quantidade de critérios ativos. Logo abaixo da barra de comandos, uma linha de filtros ativos mostra cada seleção em uma tag compacta, usando nomes dos catálogos quando disponíveis. O botão **x** de cada tag remove somente aquele filtro ou valor; tipos e tags removem apenas o valor selecionado.
 
 ## Limpar filtros
 
-1. Localize **Limpar** na toolbar.
+1. Abra o painel **Filtros**.
 2. Confira a quantidade de filtros ativos.
-3. Selecione a ação.
+3. Selecione **Limpar** dentro do painel.
 
-São removidos squad, módulo, sprint, responsável, autor, centro de custo, versão, prioridade, status, tipos, tags e as ocultações de épicos e histórias vazias. O modo de histórias e o controle de subtasks são preservados.
+São removidos squad, módulo, sprint, responsável, autor, centro de custo, versão, prioridade, status, tipos, tags e as ocultações de épicos e histórias vazias. O modo de histórias, o controle de subtasks e o modo de exibição dos módulos (hierarquia ou abas) são preservados.
 
 ## Persistência por projeto
 
@@ -111,7 +113,7 @@ Módulo, sprint, responsável e ocultação de épicos vazios também influencia
 - O estado é independente por projeto.
 - Centro de custo vazio significa todos os centros, inclusive itens sem associação.
 - Ocultar histórias vazias só participa da contagem no modo de lanes.
-- Limpar filtros não redefine o modo de histórias nem o controle de subtasks.
+- Limpar filtros não redefine o modo de histórias, o controle de subtasks nem o modo de exibição dos módulos.
 
 ## Permissões
 

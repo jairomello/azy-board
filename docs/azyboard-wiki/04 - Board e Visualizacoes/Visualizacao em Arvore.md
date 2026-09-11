@@ -86,13 +86,13 @@ nenhuma alteração é persistida.
 
 O novo título é propagado aos breadcrumbs dos descendentes.
 
-## Alterar o responsável inline
+## Editar o item pela linha
 
-1. Selecione a célula de responsável.
-2. Escolha um membro do projeto ou deixe o item sem responsável.
-3. Confirme.
+1. Acione **Editar** na linha do item.
+2. A janela completa do item é aberta para alterações de campos, incluindo o responsável.
+3. Confirme a edição.
 
-Essa ação evita abrir a modal completa quando a única alteração é a atribuição.
+O novo título é propagado aos breadcrumbs dos descendentes.
 
 ## Aplicação dos filtros
 
@@ -125,7 +125,7 @@ Quando não existem itens ou nenhum resultado atende aos filtros, a tabela apres
 | Consultar e expandir | Sim | Sim | Sim |
 | Criar itens | Sim | Sim | Não |
 | Editar itens | Sim | Sim | Não |
-| Editar título e responsável inline | Sim | Sim | Não |
+| Editar itens pela linha | Sim | Sim | Não |
 | Arquivar | Sim | Sim | Não |
 
 ## Exemplo prático

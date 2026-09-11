@@ -32,6 +32,11 @@ Cada projeto é apresentado como um bloco selecionável com:
 - Inicial do nome.
 - Nome do projeto.
 - Descrição, quando informada.
+- Indicação **Abrir board**.
+- Badges **Restrito** e **Oculto**, quando aplicáveis.
+- Ações de renomear e excluir, disponíveis a contas com permissão de administração.
+
+Projetos ocultos exibidos com a preferência ativada aparecem com borda tracejada e opacidade reduzida, sinalizando o estado sem ocultar o conteúdo.
 
 ## Abrir um projeto
 

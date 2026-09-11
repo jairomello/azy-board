@@ -63,7 +63,7 @@ erDiagram
 
 ## Inventário das tabelas
 
-O schema possui 19 tabelas:
+O schema possui 32 tabelas:
 
 | Domínio | Tabelas |
 |---|---|
@@ -73,8 +73,10 @@ O schema possui 19 tabelas:
 | Classificação e ciclos | `tags`, `item_tags`, `item_sprints` |
 | Conteúdo e auditoria | `item_logs`, `attachments`, `checklists`, `checklist_items` |
 | Analytics do Dashboard | `project_analytics_coverage`, `item_events`, `sprint_cycles`, `sprint_cycle_items` |
+| Azy Agent | `assistant_credentials`, `assistant_settings`, `assistant_conversations`, `assistant_messages`, `assistant_runs`, `assistant_events`, `assistant_tool_calls`, `assistant_approvals` |
+| Operações | `idempotency_records` |
 
-`item_events` é append-only e preserva snapshots mínimos após a exclusão de itens. `item_sprints` usa associação única por par `(item_id, sprint_id)` após deduplicação auditada.
+`item_events` é append-only e preserva snapshots mínimos após a exclusão de itens. `item_sprints` usa associação única por par `(item_id, sprint_id)` garantida por índice físico único.
 
 ## Fluxo estrutural principal
 
@@ -131,7 +133,7 @@ Essa unificação permite navegar a árvore com uma auto-relação e aplicar reg
 O mapa foi derivado de:
 
 - `apps/api/src/db/schema.ts`;
-- migrations `0000` a `0004`;
+- migrations `0000` a `0019`;
 - relações Drizzle;
 - rotas que implementam integridade transacional e cascatas;
 - tipos de domínio compartilhados em `packages/types`.

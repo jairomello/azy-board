@@ -8,63 +8,37 @@ order: 7
 
 Anexos mantêm arquivos relevantes junto ao item de trabalho. Eles podem representar evidências, documentos, imagens, exemplos de entrada ou materiais de apoio.
 
-## Onde encontrar
+## Situação atual
 
-A seção **Anexos** fica na janela de detalhes do item e apresenta os arquivos já vinculados, a ação de upload e os controles de visualização ou remoção.
+A camada de anexos está disponível pela **API REST** e pelo catálogo de ferramentas MCP (consulta), e ainda **não possui interface própria** na janela de detalhes do item. Integrações e agentes podem anexar e consultar arquivos; a visualização dentro do Board será oferecida em uma versão futura.
 
-## Adicionar um arquivo
+## Enviar um arquivo pela API
 
-1. Abra o item.
-2. Localize **Anexos**.
-3. Selecione a ação de upload.
-4. Escolha um arquivo do dispositivo.
-5. Aguarde a conclusão.
-6. Confirme o arquivo na lista.
+```text
+POST /api/projects/{projectId}/items/{itemId}/attachments
+Content-Type: multipart/form-data
+```
 
-Vários arquivos podem ser adicionados ao mesmo item, um após o outro.
+- O campo do arquivo é enviado como `multipart/form-data`.
+- A API valida item, projeto, tenant, papel e tamanho antes de persistir.
+- O limite padrão é 10 MB por arquivo e pode ser configurado pela organização.
+- Arquivos acima do limite são rejeitados sem criar um anexo incompleto.
 
-## Informações apresentadas
+## Consultar os anexos
 
-Cada anexo mostra:
+```text
+GET /api/projects/{projectId}/items/{itemId}/attachments
+```
 
-- Nome original.
-- Tipo ou ícone correspondente.
-- Tamanho.
-- Data de inclusão.
-- Ação para abrir ou baixar.
-- Ação de exclusão, quando permitida.
-
-## Limite de tamanho
-
-O limite padrão é 10 MB por arquivo. A organização pode configurar outro valor.
-
-Quando o arquivo ultrapassa o limite, o upload é rejeitado sem criar um anexo incompleto.
-
-## Tipos de arquivo
-
-O Azy Board aceita arquivos de diferentes formatos. A forma de abertura depende do tipo:
-
-- Imagens podem ser visualizadas diretamente.
-- Outros formatos oferecem abertura ou download.
-
-## Visualizar imagens
-
-1. Selecione uma imagem anexada.
-2. A imagem abre em lightbox.
-3. Use as setas para navegar entre imagens do mesmo item.
-4. Pressione `Escape` ou clique fora para fechar.
+Cada anexo apresenta nome original, tipo MIME, tamanho e data de inclusão. Pelo MCP, a ferramenta `list_attachments` retorna a lista de anexos de um item.
 
 ## Baixar um arquivo
 
-Selecione o nome ou a ação de download. O acesso utiliza sua sessão atual; compartilhar somente a URL não concede acesso a terceiros.
+O download exige autenticação válida: compartilhar somente a URL não concede acesso a terceiros. O tenant e o item são verificados antes de servir o conteúdo.
 
 ## Excluir um anexo
 
-1. Localize o arquivo.
-2. Selecione a ação de exclusão.
-3. Confirme quando solicitado.
-
-O arquivo é removido da lista, do armazenamento e dos metadados do item.
+A exclusão remove o registro e o objeto do armazenamento. O arquivo é removido da lista e dos metadados do item.
 
 > [!warning] Remoção do arquivo
 > Excluir um anexo não arquiva o arquivo. Para preservar uma evidência, mantenha o anexo ou registre-o em outro repositório autorizado antes da exclusão.
@@ -91,6 +65,7 @@ O arquivo é removido da lista, do armazenamento e dos metadados do item.
 ## Funcionalidades relacionadas
 
 - [[06 - Tasks Bugs e Subtasks/Criar e Editar Tasks e Bugs|Criar e editar tasks e bugs]]
+- [[09 - Agentes e Integracoes/Integrar pela API REST e Autenticar Agentes|Integrar pela API REST e autenticar agentes]]
 - [[04 - Board e Visualizacoes/Arquivar Restaurar e Excluir Itens|Arquivar, restaurar e excluir itens]]
 
 <details>
@@ -98,7 +73,7 @@ O arquivo é removido da lista, do armazenamento e dos metadados do item.
 
 ### Upload
 
-O frontend envia `multipart/form-data`. A API valida item, projeto, tenant, papel e tamanho, entrega o conteúdo ao adaptador de storage e persiste os metadados.
+O cliente envia `multipart/form-data`. A API valida item, projeto, tenant, papel e tamanho, entrega o conteúdo ao adaptador de storage e persiste os metadados.
 
 ### Storage
 
@@ -109,4 +84,3 @@ A camada de armazenamento abstrai filesystem local e provedores de objeto, como 
 Listagem e download exigem autenticação. O caminho servido inclui tenant e item, e a API impede acesso a arquivos fora do contexto permitido.
 
 </details>
-

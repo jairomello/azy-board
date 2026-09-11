@@ -46,8 +46,6 @@ O editor oferece controles para:
 - Listas com marcadores e numeradas.
 - Citações.
 - Código inline.
-- Links.
-- Tabelas.
 
 O controle ativo recebe destaque quando o cursor está sobre um trecho formatado.
 
@@ -84,7 +82,6 @@ Para histórias grandes:
 - Conteúdo vazio não gera marcação residual.
 - A formatação é preservada ao reabrir a história.
 - Cancelar a janela descarta alterações ainda não salvas.
-- Links não são abertos durante a edição, evitando navegação acidental.
 
 ## Permissões
 

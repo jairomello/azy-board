@@ -33,6 +33,8 @@ O Azy Board é uma plataforma de gestão de projetos para equipes formadas por p
 
 ## Estrutura central do trabalho
 
+No modo hierárquico (padrão):
+
 ```text
 Projeto
 └── Módulo
@@ -42,7 +44,7 @@ Projeto
                 └── Subtask
 ```
 
-Essa hierarquia organiza tanto a visão estratégica quanto a execução diária. O Board apresenta os itens executáveis, enquanto a visualização em árvore permite observar toda a estrutura do projeto.
+Projetos também podem usar o modo **Simples**, com uma história fixa e um fluxo único. Essa estrutura organiza tanto a visão estratégica quanto a execução diária. O Board apresenta os itens executáveis, enquanto a visualização em árvore permite observar toda a estrutura do projeto.
 
 ## Referência rápida
 

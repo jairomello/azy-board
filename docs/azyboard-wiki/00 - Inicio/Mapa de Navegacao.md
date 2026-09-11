@@ -26,20 +26,18 @@ O login recebe e-mail e senha. Depois da autenticação, a pessoa é direcionada
 
 ## Projetos
 
-A lista de projetos permite abrir um projeto existente ou criar um novo. O menu do perfil dá acesso à conta e à opção de sair.
+A lista de projetos permite abrir um projeto existente ou criar um novo. O menu do perfil dá acesso à conta, à alternância de projetos ocultos e à opção de sair.
 
 ## Board do projeto
 
-O cabeçalho do Board contém:
+A barra lateral do projeto contém:
 
-- Link de retorno aos projetos.
-- Identificação do projeto atual.
-- Alternância entre Kanban e árvore.
-- Seletor de idioma e tema.
-- Acesso às configurações do projeto.
-- Menu do perfil.
+- Marca **Azy Board**, com retorno aos projetos.
+- **Projetos**, **Board**, **Dashboard**, **Configurações** (conforme permissões), **Administração** (Admin e Root) e **Conta**.
 
-A toolbar contém os controles de visualização, filtros, itens arquivados e ações de criação.
+O cabeçalho contextual identifica o projeto e a seção atual e reúne seletor de idioma, tema e menu do perfil.
+
+A barra de comandos contém a alternância entre Kanban e árvore, os painéis de filtros e opções, itens arquivados e o menu de criação.
 
 ## Detalhes dos itens
 
@@ -47,7 +45,7 @@ A toolbar contém os controles de visualização, filtros, itens arquivados e a�
 
 ## Configurações
 
-As configurações são acessadas pelo cabeçalho do Board e retornam ao mesmo projeto. As ações administrativas disponíveis dependem do papel do usuário.
+As configurações são acessadas pela barra lateral e permanecem no contexto do projeto. As ações administrativas disponíveis dependem do grupo global e do papel do usuário.
 
 ## Conta
 

@@ -27,6 +27,12 @@ Selecione o avatar no cabeçalho e abra **Configurações da conta**. A página 
 
   Revele projetos ocultos na listagem com uma preferência que vale apenas para a sessão atual.
 
+## Administração do tenant
+
+- [[08 - Conta e Preferencias/Administrar Usuarios do Tenant|Administrar usuários do tenant]]
+
+  Liste contas do tenant, crie usuários e ajuste grupos globais. Disponível para Admin e Root.
+
 ## API Keys
 
 - [[08 - Conta e Preferencias/Gerenciar API Keys|Gerenciar API Keys]]

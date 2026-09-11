@@ -27,9 +27,9 @@ O Azy Board centraliza o planejamento, a organização e o acompanhamento de pro
 
 ### Projetos
 
-A tela de projetos é o ponto de entrada após o login. Ela apresenta apenas os projetos dos quais a pessoa faz parte e permite criar um novo projeto.
+A tela de projetos é o ponto de entrada após o login. Ela apresenta os projetos acessíveis à pessoa — membros de Equipe e Gerentes veem os projetos de que participam; Admins e Root veem todos os projetos do tenant, exceto os restritos dos quais não participam — e permite criar um novo projeto.
 
-Ao criar um projeto, a aplicação prepara uma estrutura inicial com o módulo **Geral** e as colunas **Backlog**, **A Fazer**, **Fazendo**, **A Testar**, **Testando** e **Concluídas**.
+Ao criar um projeto no modo hierárquico, a aplicação prepara uma estrutura inicial com o módulo **Geral** e as colunas **Backlog**, **A Fazer**, **Fazendo**, **A Testar**, **Testando** e **Concluídas**. No modo simples, a estrutura contém a história fixa **Fluxo contínuo** e as mesmas colunas.
 
 ### Board
 
@@ -65,7 +65,7 @@ Pessoas usam a interface web. Agentes usam contratos próprios, mas acessam o me
 
 ### Isolamento e permissões
 
-Os dados são isolados por organização, e o acesso a cada projeto depende da associação do usuário ao projeto. Os papéis disponíveis são `Admin`, `Membro` e `Visualizador`.
+Os dados são isolados por organização, e o acesso a cada projeto depende da associação do usuário ao projeto. O modelo tem duas camadas: o **grupo global** da conta (`Membro de Equipe`, `Gerente`, `Admin` ou `Root`) define o escopo de navegação e administração, e o **papel local** no projeto (`Admin`, `Membro` ou `Visualizador`) define as operações dentro de cada projeto.
 
 <details>
 <summary><strong>Como funciona tecnicamente</strong></summary>

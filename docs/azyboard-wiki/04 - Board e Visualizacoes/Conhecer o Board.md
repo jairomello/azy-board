@@ -14,61 +14,53 @@ O Board é o ambiente operacional principal do projeto. Ele pode combinar o flux
 2. Selecione um projeto.
 3. A aplicação abre o Board na visualização Kanban.
 
-O breadcrumb do cabeçalho mostra **Projetos > Board · Nome do projeto**.
+O cabeçalho contextual mostra **Nome do projeto • Board**. A navegação entre áreas fica na barra lateral fixa.
 
 ## Estrutura da tela
 
-O Board é dividido em quatro áreas:
+O Board é dividido em cinco áreas:
 
-1. Cabeçalho global.
-2. Toolbar de visualização, filtros e ações.
-3. Lanes de épico e história no modo **Hierárquico**, ou uma lane única no modo **Simples**.
-4. Colunas e cards dentro do agrupamento ativo.
+1. Barra lateral de navegação (Projetos, Board, Dashboard, Configurações, Administração e Conta, conforme permissões).
+2. Cabeçalho contextual com idioma, tema e menu do perfil.
+3. Barra de comandos com visualização, filtros, opções e criação.
+4. Lanes de épico e história no modo **Hierárquico**, ou uma lane única no modo **Simples**.
+5. Colunas e cards dentro do agrupamento ativo.
 
-## Cabeçalho
+## Navegação e cabeçalho
 
-O cabeçalho permite:
+- A barra lateral mantém as áreas do projeto acessíveis a qualquer momento; em telas estreitas ela vira um menu de gaveta.
+- O cabeçalho contextual confirma o projeto atual e reúne o seletor de idioma, o alternador de tema e o menu do perfil (conta, projetos ocultos e sair).
+- O botão flutuante do Azy Agent fica disponível em todas as telas protegidas.
 
-- Retornar à lista de projetos.
-- Confirmar o projeto atual.
-- Alternar entre Kanban e árvore.
-- Mudar idioma e tema.
-- Abrir as configurações do projeto.
-- Acessar a conta ou sair.
+## Barra de comandos
 
-## Toolbar
+A barra de comandos reúne os controles do Board.
 
-A toolbar é organizada em zonas.
+### Visualização
 
-### Controles de visualização
-
-- Mostrar ou ocultar subtasks.
-- Alternar histórias entre lanes e cards.
-- Expandir todas as lanes.
-- Recolher todas as lanes.
+- Alternância segmentada entre **Board** e **Árvore**.
+- Seletor rápido de squad.
+- Alternância de densidade (confortável ou compacta).
+- Consulta de itens arquivados (botão de ícone).
 
 ### Filtros
 
-- Squad.
-- Módulo.
-- Sprint.
-- Responsável.
-- Tipo de item.
-- Tags.
-- Ocultar épicos vazios.
-- Ocultar histórias vazias no modo de lanes.
+- Painel suspenso **Filtros** com squad, módulo, sprint, responsável, tipo, tags, prioridade, status, versão e centro de custo.
+- O botão exibe um contador de filtros ativos.
 
-### Ações
+### Opções
 
-- Consultar itens arquivados.
-- Criar épico.
-- Criar história.
-- Criar task.
-- Criar bug.
+- Painel suspenso **Opções** (disponível no modo hierárquico): mostrar ou ocultar subtasks, alternar histórias entre lanes e cards, ocultar épicos vazios e ocultar histórias vazias.
 
-Os botões de criação aparecem na visualização Kanban e também na Tree View.
-Na árvore, ações adicionais por linha permitem criar filhos no contexto do
-módulo, épico, história, task ou bug selecionado.
+### Criar
+
+- Menu suspenso **Criar** com **Módulo, Épico, História, Task e Bug**.
+- Disponível na visualização Kanban e na Tree View.
+- Na árvore, ações adicionais por linha permitem criar filhos no contexto do módulo, épico, história, task ou bug selecionado.
+
+### Modo de exibição dos módulos
+
+Em projetos hierárquicos, os módulos podem ser exibidos em **Hierarquia** (lanes aninhadas contínuas) ou em **Abas** (um módulo por vez). A escolha fica na barra de comandos e é persistida por projeto.
 
 ## Lanes de épico e história
 

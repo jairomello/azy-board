@@ -17,6 +17,20 @@ Selecione o botão de tema no cabeçalho:
 
 A mudança é aplicada imediatamente a toda a interface, incluindo Board, modais, menus, formulários e páginas de configuração.
 
+## Escolher o preset do tema claro
+
+No tema claro, a página **Minha conta** oferece presets visuais que alteram a paleta da casca da aplicação — barra lateral, cabeçalho e superfícies:
+
+| Preset | Característica |
+|---|---|
+| Petróleo | Tons profundos de azul esverdeado. |
+| Oceano | Azuis frios e sóbrios. |
+| Esmeralda | Verdes suaves. |
+| Grafite | Neutros escuros, aparência mais técnica. |
+| Clássico | Neutros claros, aparência tradicional. |
+
+O preset escolhido é aplicado imediatamente, salvo no navegador e na conta, e afeta somente o tema claro — o modo escuro mantém sua própria paleta.
+
 ## Tema usado na primeira visita
 
 Quando o navegador ainda não possui uma preferência do Azy Board, a aplicação consulta o tema claro ou escuro configurado no sistema operacional e o usa como ponto de partida.
@@ -60,7 +74,7 @@ Quando uma chave de tradução não existe no idioma selecionado, a aplicação 
 <details>
 <summary><strong>Como funciona tecnicamente</strong></summary>
 
-O tema é representado por `light` ou `dark`. Antes do primeiro render, a aplicação lê `localStorage['theme']`; se não houver valor, consulta `prefers-color-scheme` e persiste o resultado. O modo escuro é aplicado pela classe `dark` no elemento raiz.
+O tema é representado por `light` ou `dark`. Antes do primeiro render, a aplicação lê `localStorage['theme']`; se não houver valor, consulta `prefers-color-scheme` e persiste o resultado. O modo escuro é aplicado pela classe `dark` no elemento raiz. O preset do tema claro é lido de `localStorage['light-shell-theme']` e persistido no campo `light_shell_theme` da conta.
 
 O idioma usa `i18next` com detecção por `localStorage['language']` e, na ausência, pelo navegador. Os recursos são separados por namespaces e possuem `pt-BR` como fallback. Alterações autenticadas também atualizam os campos de preferência do usuário no backend.
 

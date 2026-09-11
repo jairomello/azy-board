@@ -18,11 +18,11 @@ Mostra o trabalho atualmente em andamento ou bloqueado. A distribuição por sta
 
 ## Bloqueados
 
-Mostra o trabalho que não pode avançar por um impedimento explícito. A distribuição indica se os bloqueios estão atribuídos ou sem responsável, e a lista deve ser usada para abrir o item e entender o motivo.
+Mostra o trabalho que não pode avançar por um impedimento explícito. O ranking destaca os itens com mais tempo bloqueado, em dias, e cada barra abre o item para revelar o motivo do impedimento.
 
 ## Atrasados
 
-Mostra itens não concluídos cuja data planejada já passou. As faixas respondem **“o atraso é recente ou persistente?”**. Um item sem `dueDate` não aparece como atrasado.
+Mostra itens não concluídos cuja data planejada já passou. Os donuts comparativos respondem **“quanto do escopo está atrasado, em itens e em pontos?”**. Um item sem `dueDate` não aparece como atrasado.
 
 ## Burnup
 

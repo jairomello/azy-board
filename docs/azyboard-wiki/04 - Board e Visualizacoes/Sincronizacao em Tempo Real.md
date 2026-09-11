@@ -43,7 +43,7 @@ Se a conexão em tempo real for interrompida:
 - A interface continua disponível para leitura e ações que alcancem a API.
 - O cliente tenta reconectar automaticamente.
 - O intervalo entre tentativas aumenta até um limite.
-- Depois da reconexão, o estado atual é reconciliado para incluir mudanças perdidas.
+- A reconexão não recarrega o estado automaticamente: mudanças ocorridas durante a interrupção aparecem na próxima consulta ou recarregamento.
 
 ## Isolamento
 
@@ -86,7 +86,7 @@ Mutações REST emitem eventos tipados, como item criado, atualizado, movido, ex
 
 ### Reconexão
 
-Em caso de fechamento ou erro, o cliente tenta novamente com backoff até o limite configurado. Após recuperar a conexão, uma reconciliação com o estado atual evita lacunas entre eventos.
+Em caso de fechamento ou erro, o cliente tenta novamente com backoff até o limite configurado. A reconexão restabelece apenas o canal de eventos; eventos perdidos durante a interrupção não são reproduzidos, e o estado é atualizado na próxima consulta ou recarregamento.
 
 </details>
 

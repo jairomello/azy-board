@@ -35,6 +35,13 @@ O Azy Board oferece caminhos complementares:
 - [[09 - Agentes e Integracoes/Ler e Atualizar o Board com Shadow Markdown|Ler e atualizar o Board com Shadow Markdown]]
 - [[09 - Agentes e Integracoes/Integrar pela API REST e Autenticar Agentes|Integrar pela API REST e autenticar agentes]]
 
+## Assistente interno
+
+- [[09 - Agentes e Integracoes/Usar o Chat do Azy Agent|Usar o chat do Azy Agent]]
+  
+  Abra o chat, faça pedidos em linguagem natural e aprove mutações com prévia.
+- [[09 - Agentes e Integracoes/Azy Agent humano|Azy Agent (configuração e limites)]]
+
 ## Acompanhar as mudanças
 
 - [[09 - Agentes e Integracoes/Entender a Sincronizacao e Auditoria|Entender a sincronização e auditoria]]

@@ -72,13 +72,13 @@ Tasks e bugs representam trabalho operacional:
 - `Task`: atividade necessária para produzir um resultado.
 - `Bug`: defeito ou comportamento incorreto que precisa ser corrigido.
 
-Eles podem ser vinculados diretamente a uma história ou existir sem pai. Também podem conter outras tasks e bugs.
+Eles são vinculados a uma história, a outra task ou a outro bug. Também podem conter outras tasks e bugs.
 
 ## Subtask
 
 Subtask é o nome funcional de uma task ou bug criada abaixo de outra task ou bug. Não existe um tipo separado chamado subtask.
 
-Essa estrutura permite decompor o trabalho em vários níveis. Recomenda-se limitar a profundidade para que a navegação continue compreensível.
+Essa estrutura permite decompor o trabalho em vários níveis. A profundidade máxima recomendada é de cinco níveis abaixo da história.
 
 ## Relações permitidas
 
@@ -87,21 +87,23 @@ Essa estrutura permite decompor o trabalho em vários níveis. Recomenda-se limi
 | Módulo | Projeto | Sim, épicos |
 | Épico | Módulo | Sim, histórias |
 | História | Épico | Sim, tasks e bugs |
-| Task | História, task, bug ou nenhum pai | Sim, tasks e bugs |
-| Bug | História, task, bug ou nenhum pai | Sim, tasks e bugs |
+| Task | História, task ou bug | Sim, tasks e bugs |
+| Bug | História, task ou bug | Sim, tasks e bugs |
 
-## Itens sem pai operacional
+A API rejeita a criação de task ou bug sem pai em projetos hierárquicos. Em projetos do modo **Simples**, o item é anexado automaticamente à história fixa do projeto.
 
-Uma task ou bug sem história ou item pai é considerado órfão. No Board, itens sem épico são reunidos em **Sem épico**. Quando existe um épico ancestral, mas não uma história ancestral, o item aparece no agrupamento **Sem história** daquele épico.
+## Agrupamentos de contexto
 
-Itens órfãos são úteis para triagem inicial, mas vinculá-los a uma história melhora o contexto e os relatórios.
+No Board, itens sem épico são reunidos em **Sem épico**. Quando existe um épico ancestral, mas não uma história ancestral, o item aparece no agrupamento **Sem história** daquele épico.
+
+Esses agrupamentos são úteis para triagem inicial, mas vincular o item a uma história melhora o contexto e os relatórios.
 
 ## Breadcrumb
 
-O breadcrumb de um card mostra seus ancestrais. Um exemplo de caminho é:
+O breadcrumb de um card mostra seus ancestrais na hierarquia de itens — épico, história e itens acima. Um exemplo de caminho é:
 
 ```text
-Pagamentos > Cobrança recorrente > Renovar assinatura > Validar cartão
+Cobrança recorrente > Renovar assinatura > Validar cartão
 ```
 
 Quando o caminho é longo, o card apresenta uma versão abreviada. Posicionar o cursor sobre o breadcrumb revela o caminho completo.

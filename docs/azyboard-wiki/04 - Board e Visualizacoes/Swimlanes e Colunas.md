@@ -56,7 +56,7 @@ O estado de cada épico e história é lembrado separadamente para cada projeto.
 
 ## Expandir ou recolher todas
 
-Na toolbar do Kanban:
+No painel **Opções** do Kanban:
 
 - Use **Expandir tudo** para abrir todas as lanes de épico e história.
 - Use **Recolher tudo** para manter apenas os cabeçalhos.

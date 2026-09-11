@@ -60,7 +60,8 @@ A sessão carrega as seguintes informações da conta:
 - Identificador do usuário.
 - Nome e e-mail.
 - Avatar, quando configurado.
-- Tema preferido.
+- Grupo global da conta, que define as áreas visíveis na navegação.
+- Tema preferido e preset do tema claro.
 - Idioma preferido.
 
 ## Encerrar a sessão
@@ -75,9 +76,9 @@ Encerrar a sessão não remove preferências locais nem altera projetos ou itens
 
 - E-mail e senha são obrigatórios.
 - Cada sessão pertence a uma única conta e organização.
+- A sessão dura uma hora e não há renovação automática: expirado o prazo, uma nova autenticação é necessária.
 - Somente projetos associados à conta autenticada são apresentados.
 - Abrir uma rota protegida sem autenticação leva à tela de login.
-- Uma sessão expirada exige nova autenticação.
 - Sair da aplicação invalida a sessão atual no navegador.
 
 ## Permissões
@@ -108,7 +109,7 @@ Uma pessoa recebe uma conta da organização e participa de dois projetos. Depoi
 
 O frontend envia e-mail e senha ao serviço de autenticação. O backend localiza a conta, compara a senha com o hash armazenado e retorna os dados públicos do usuário.
 
-Uma autenticação bem-sucedida cria um token de sessão com identificador do usuário, tenant, e-mail e validade. O token é armazenado em cookie `HttpOnly`, indisponível para scripts da página.
+Uma autenticação bem-sucedida cria um token de sessão com identificador do usuário, tenant, grupo global, e-mail e validade de uma hora. O token é armazenado em cookie `HttpOnly`, indisponível para scripts da página.
 
 ### Restauração da sessão
 

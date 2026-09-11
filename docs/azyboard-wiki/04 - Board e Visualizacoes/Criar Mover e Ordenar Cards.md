@@ -8,9 +8,9 @@ order: 3
 
 Cards podem ser criados diretamente no fluxo, movidos entre etapas e ordenados dentro de uma coluna.
 
-## Criar pela toolbar
+## Criar pela barra de comandos
 
-1. No Kanban, selecione **Task** ou **Bug** na toolbar.
+1. No Kanban, abra o menu **Criar** na barra de comandos e selecione **Task** ou **Bug**.
 2. A janela completa do item é aberta.
 3. Preencha os campos necessários.
 4. Salve.

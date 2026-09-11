@@ -116,7 +116,7 @@ Tabela associativa entre `items` e `sprints`.
 | `item_id` | Sim | Item planejado. |
 | `sprint_id` | Sim | Sprint associada. |
 
-A relação muitos para muitos permite preservar a participação do item em diferentes ciclos. Assim como `item_tags`, não existe chave composta física no schema atual e a aplicação precisa impedir duplicidade do par.
+A relação muitos para muitos permite preservar a participação do item em diferentes ciclos. O par `(item_id, sprint_id)` é protegido por um índice físico único, que impede associações duplicadas no banco.
 
 ## `item_logs`
 
@@ -131,12 +131,15 @@ Histórico automático e manual de um item.
 | `type` | Sim | `auto` ou `manual`. |
 | `activity` | Sim | Texto que descreve a atividade. |
 | `duration_min` | Não | Tempo trabalhado em minutos. |
+| `actor_type` | Não | Origem do autor: `HUMAN`, `AGENT`, `SYSTEM` ou `UNKNOWN`. |
+| `actor_label` | Não | Rótulo exibível do autor, útil para identificar agentes. |
+| `source` | Não | Canal da ação: `REST`, `MCP`, `SYSTEM` ou `UNKNOWN`. |
 | `created_at` | Sim | Data de criação. |
 | `updated_at` | Sim | Data da última edição. |
 
 Logs automáticos representam mudanças do sistema e não são editáveis. Logs manuais podem conter duração e ser alterados pelo fluxo permitido.
 
-A foreign key de `item_id` usa `ON DELETE CASCADE`. A migration também cria índices por `(item_id, created_at)` e por `tenant_id` para acelerar histórico e isolamento.
+A foreign key de `item_id` usa `ON DELETE CASCADE`. A migration cria um índice composto por `(tenant_id, item_id, type, created_at)` para acelerar histórico e isolamento.
 
 ## `attachments`
 

@@ -95,10 +95,19 @@ Raiz do espaço de trabalho.
 | `tenant_id` | Sim | Tenant proprietário. |
 | `name` | Sim | Nome exibido no portfólio e no Board. |
 | `description` | Não | Contexto geral do projeto. |
+| `board_mode` | Sim | `HIERARCHICAL` ou `SIMPLE`. |
+| `simple_story_id` | Não | História fixa usada no modo `SIMPLE`. |
+| `is_restricted` | Sim | Restringe o projeto a membros e ao gerente (padrão `false`). |
+| `is_hidden` | Sim | Oculta o projeto das listagens (padrão `false`). |
 | `manager_user_id` | Não | Gerente geral, com função informativa. |
+| `start_date` | Não | Data de início do projeto. |
+| `planned_end_date` | Não | Data de término prevista. |
+| `planned_points` | Não | Estimativa de pontos do escopo. |
+| `planned_hours` | Não | Estimativa de horas do escopo. |
+| `scope` | Não | Escopo do projeto em texto rico. |
 | `created_at` | Sim | Data de criação. |
 
-O gerente precisa ser membro do projeto, mas essa validação é lógica; o campo não declara foreign key física no schema atual.
+O gerente precisa ser membro do projeto, mas essa validação é lógica; o campo não declara foreign key física no schema atual. Na criação, quando o gerente não é informado, o criador do projeto assume a função.
 
 ## `squads`
 
@@ -156,12 +165,12 @@ Ciclos temporais de execução.
 | `tenant_id` | Sim | Tenant da sprint. |
 | `project_id` | Sim | Projeto proprietário. |
 | `name` | Sim | Nome do ciclo. |
-| `status` | Sim | `PLANNED`, `ACTIVE` ou `DONE`. |
-| `start_date` | Não | Início planejado. |
-| `end_date` | Não | Fim planejado. |
+| `status` | Sim | `PROPOSED`, `OPEN` ou `CLOSED`. |
+| `start_date` | Sim | Início planejado. |
+| `end_date` | Sim | Fim planejado. |
 | `created_at` | Sim | Data de criação. |
 
-Itens e sprints têm relação muitos para muitos por `item_sprints`. A aplicação garante que somente uma sprint fique ativa por projeto.
+Itens e sprints têm relação muitos para muitos por `item_sprints`. A aplicação garante que somente uma sprint fique aberta por projeto; abrir uma sprint rebaixa a anterior para `PROPOSED`, e sprints encerradas rejeitam novas associações de itens.
 
 ## `project_versions`
 
@@ -220,7 +229,8 @@ Esses vínculos são independentes e podem coexistir no mesmo item.
 Ao criar um projeto, a aplicação também cria:
 
 - o membership `ADMIN` do criador;
-- o módulo padrão **Geral**;
+- no modo `HIERARCHICAL`, o módulo padrão **Geral**;
+- no modo `SIMPLE`, a história fixa **Fluxo contínuo**;
 - as colunas padrão do fluxo.
 
 Sprints, versões, squads e centros de custo são adicionados conforme a necessidade.

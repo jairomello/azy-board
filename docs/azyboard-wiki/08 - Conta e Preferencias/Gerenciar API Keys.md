@@ -69,7 +69,7 @@ A listagem nunca apresenta o segredo completo.
 2. Confira o nome apresentado.
 3. Confirme em **Revogar**.
 
-A revogação é permanente e interrompe novas autenticações com aquele segredo. Cancelar a confirmação mantém a chave ativa.
+A revogação interrompe novas autenticações com aquele segredo e não pode ser desfeita pela interface. Cancelar a confirmação mantém a chave ativa.
 
 ## Escopo e permissões
 
@@ -78,6 +78,8 @@ A revogação é permanente e interrompe novas autenticações com aquele segred
 - O acesso a um projeto depende da associação do proprietário ao projeto.
 - As operações continuam sujeitas ao papel e às regras da funcionalidade.
 - Uma pessoa não pode listar nem revogar chaves de outra conta.
+
+Além da herança, a API suporta restrições opcionais por chave: limite a projetos específicos (`projectScope`), limite de permissões (`permissionScope`, com os valores `read`, `write`, `admin` e `delete`) e data de expiração (`expiresAt`). Esses campos apenas restringem o acesso herdado do proprietário — nunca o ampliam. A tela atual expõe nome e modelo do agente; os demais campos podem ser usados por integrações via API.
 
 ## Em caso de exposição
 

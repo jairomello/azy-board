@@ -12,7 +12,7 @@ Uma história descreve uma necessidade funcional sob a perspectiva de quem receb
 
 Uma história pode ser criada:
 
-- Pela ação **História** na toolbar do Kanban.
+- Pelo menu **Criar** na barra de comandos do Kanban ou da árvore.
 - Diretamente pelo seletor de história pai ao criar uma task ou bug.
 
 Para editar, use a ação no cabeçalho da lane de história, selecione seu card quando o modo de cards estiver ativo ou acesse a história pela hierarquia.
@@ -34,10 +34,10 @@ Narrativa, critérios de aceitação e notas ficam em accordions independentes. 
 | Critérios de aceitação | Não | Definir condições para considerar a história concluída. |
 | Notas | Não | Registrar contexto e referências adicionais. |
 
-## Como criar pela toolbar
+## Como criar pela barra de comandos
 
 1. Abra o Kanban.
-2. Selecione **História**.
+2. Abra o menu **Criar** e selecione **História**.
 3. Informe o título.
 4. Escolha o épico pai.
 5. Se necessário, associe uma versão.

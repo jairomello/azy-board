@@ -44,10 +44,12 @@ Quando o texto é longo:
 
 O título ocupa a área principal e pode usar até duas linhas. Ele pode ser editado inline sem abrir a modal completa.
 
-- Clique para abrir os detalhes.
-- Duplo clique no título para editar.
+- Clique no card para abrir os detalhes.
+- Clique no título para editar; a edição cancela a abertura dos detalhes.
 - `Enter` ou perda de foco confirma.
 - `Escape` cancela.
+
+Junto ao breadcrumb, o card também exibe um identificador curto do item, no formato `#xxxxxxxx`, e o rótulo do tipo em maiúsculas.
 
 ## Tags
 
@@ -117,7 +119,7 @@ O card recebe um adaptador comum com tipo, título, status, prioridade, pontos, 
 
 ### Drag e clique
 
-A alça concentra os listeners de drag. A área de conteúdo abre detalhes, enquanto o título controla a edição inline e evita conflito entre clique simples e duplo.
+A alça concentra os listeners de drag. A área de conteúdo abre detalhes, enquanto o título controla a edição inline e cancela a abertura agendada dos detalhes para evitar conflito entre as duas ações.
 
 ### Identidade de IA
 

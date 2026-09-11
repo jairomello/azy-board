@@ -39,7 +39,7 @@ O status anterior de cada item é preservado individualmente.
 
 ## Consultar itens arquivados
 
-1. No Board, selecione **Itens arquivados** na toolbar.
+1. No Board, selecione **Itens arquivados** na barra de comandos.
 2. A janela apresenta uma tabela com:
    - Tipo.
    - Título.

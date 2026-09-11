@@ -58,10 +58,10 @@ A ordem deve refletir o fluxo normal de execução da esquerda para a direita.
 2. Escolha outra coluna para receber os cards existentes.
 3. Confirme a exclusão.
 
-Se houver outras colunas, a transferência preserva os itens e muda seu estado para o status base do destino. A aplicação não deve deixar cards apontando para uma coluna removida.
+Se houver outras colunas, a transferência preserva os itens e os reposiciona na coluna de destino. O status de cada card transferido é mantido; apenas a coluna muda. A aplicação não deixa cards apontando para uma coluna removida.
 
 > [!warning] Última coluna
-> Um projeto precisa manter uma etapa válida para receber trabalho. Antes de remover a única coluna, crie uma substituta.
+> Um projeto precisa manter uma etapa válida para receber trabalho. Antes de remover a única coluna, crie uma substituta: a exclusão da última coluna deixa o projeto sem fluxo e não é bloqueada automaticamente.
 
 ## Efeitos no Board
 

@@ -33,7 +33,7 @@ A sprint é criada como **Proposta**. Administradores controlam a abertura e o e
 
 ## Editar o planejamento
 
-Enquanto a sprint não estiver encerrada, ajuste nome e datas para refletir o período acordado. A edição não altera automaticamente os itens vinculados. Nome, início e fim são obrigatórios, e o início não pode ser posterior ao fim.
+Ajuste nome e datas para refletir o período acordado. A edição não altera automaticamente os itens vinculados. Nome, início e fim são obrigatórios, e o início não pode ser posterior ao fim.
 
 ## Adicionar ou remover cards
 
@@ -41,22 +41,22 @@ Abra um item e use o campo **Sprint** para incluí-lo em um ciclo. Remova a sele
 
 Um card sem sprint continua no projeto e aparece na visão **Todos**, mas não no filtro de uma sprint específica. Sprints `CLOSED` não aparecem no formulário de criação e rejeitam novas associações na API.
 
-## Ativar uma sprint
+## Abrir uma sprint
 
 1. Abra a sprint proposta.
-2. Selecione **Ativar**.
+2. Selecione **Abrir**.
 3. Confirme.
 
 Se outra sprint estiver ativa, ela deixa de ocupar esse estado para que o projeto mantenha apenas um ciclo corrente.
 
 ## Acompanhar no Board
 
-Selecione a sprint na toolbar de filtros. O Board mantém somente os cards vinculados a ela e combina essa seleção com filtros de módulo, squad, responsável, tipo e tags.
+Selecione a sprint no painel **Filtros** do Board. O Board mantém somente os cards vinculados a ela e combina essa seleção com filtros de módulo, squad, responsável, tipo e tags.
 
-## Encerrar uma sprint
+## Fechar uma sprint
 
 1. Abra a sprint aberta.
-2. Selecione **Encerrar**.
+2. Selecione **Fechar**.
 3. Confirme.
 
 A sprint passa para **Fechada**. Cards já associados permanecem no histórico; o encerramento não os exclui e não muda seu status automaticamente.
@@ -68,7 +68,7 @@ A sprint passa para **Fechada**. Cards já associados permanecem no histórico; 
 | Consultar e filtrar por sprint | Sim | Sim | Sim |
 | Criar sprint proposta | Sim | Não | Não |
 | Associar cards | Sim | Sim | Não |
-| Editar, ativar ou encerrar | Sim | Não | Não |
+| Criar, abrir ou fechar | Sim | Não | Não |
 
 ## Funcionalidades relacionadas
 

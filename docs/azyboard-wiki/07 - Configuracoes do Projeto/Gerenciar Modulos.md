@@ -10,14 +10,14 @@ Módulos são o primeiro agrupamento funcional dentro de um projeto. Eles organi
 
 ## Onde encontrar
 
-Na página **Configurações**, localize **Módulos**. A lista segue a ordem usada pelo projeto e apresenta a quantidade de épicos de cada módulo.
+Na página **Configurações**, localize **Módulos**. A lista apresenta os módulos cadastrados, e a quantidade de épicos é exibida na confirmação de exclusão.
 
 ## Criar um módulo
 
 1. Informe um nome representativo.
 2. Selecione **Criar módulo**.
 
-O módulo passa a aparecer na criação de épicos e no filtro de módulos do Board. Uma descrição opcional pode registrar o propósito e os limites da área.
+O módulo passa a aparecer na criação de épicos e no filtro de módulos do Board.
 
 ## Renomear
 
@@ -29,7 +29,7 @@ A alteração é refletida nos épicos vinculados e nos filtros, sem modificar a
 
 ## Reordenar
 
-Arraste os módulos para ajustar sua ordem. A sequência configurada é usada nas listas e nos filtros do projeto.
+A ordem dos módulos acompanha a sequência de criação e é usada nas listas e nos filtros do projeto.
 
 ## Relação com épicos
 

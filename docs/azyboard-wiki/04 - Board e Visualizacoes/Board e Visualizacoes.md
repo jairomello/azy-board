@@ -21,7 +21,7 @@ O Board é o espaço principal de acompanhamento e operação do projeto. Ele ap
 ### Operação
 
 - [[04 - Board e Visualizacoes/Criar Mover e Ordenar Cards|Criar, mover e ordenar cards]]
-  - Criação pela toolbar ou coluna.
+  - Criação pelo menu **Criar** ou direto na coluna.
   - Movimentação, ordenação, edição rápida e exclusão.
 
 ### Filtros e controles

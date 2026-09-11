@@ -10,7 +10,7 @@ Um épico representa um objetivo amplo dentro de um módulo. No Board, cada épi
 
 ## Onde encontrar
 
-Épicos podem ser criados pela ação **Épico** na toolbar do Kanban. Um épico existente pode ser editado pela ação de edição no cabeçalho de sua swimlane.
+Épicos podem ser criados pelo menu **Criar** na barra de comandos do Kanban ou da árvore. Um épico existente pode ser editado pela ação de edição no cabeçalho de sua swimlane.
 
 ## Organizar a modal
 
@@ -30,7 +30,7 @@ O campo **Versão** aparece quando o projeto possui versões cadastradas.
 ## Como criar
 
 1. Abra o Kanban do projeto.
-2. Selecione **Épico** na toolbar.
+2. Abra o menu **Criar** e selecione **Épico**.
 3. Informe um título.
 4. Escolha o módulo.
 5. Se necessário, associe uma versão.

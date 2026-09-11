@@ -29,6 +29,13 @@ Um projeto reúne a estrutura de trabalho, o Board, os participantes, as configu
   - Colunas e status base.
   - Elementos que começam vazios.
 
+### Formato do Board
+
+- [[02 - Projetos/Modo do Board Hierarquico e Simples|Modo do Board hierárquico e simples]]
+  - Diferenças entre os modos.
+  - Escolha na criação.
+  - Conversão posterior e seus efeitos.
+
 ### Visibilidade
 
 - [[02 - Projetos/Visibilidade de um Projeto|Visibilidade de um projeto]]

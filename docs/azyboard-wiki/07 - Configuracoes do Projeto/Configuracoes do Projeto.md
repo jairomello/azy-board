@@ -10,9 +10,18 @@ As configurações determinam como o projeto é organizado, quem participa dele 
 
 ## Acessar as configurações
 
-No cabeçalho do Board, selecione **Configurações**. A página apresenta todas as seções do projeto e oferece a ação **Voltar ao board**.
+Na barra lateral, selecione **Configurações**. A página apresenta todas as seções do projeto em accordions e a navegação de retorno fica na própria barra lateral.
 
-Participantes podem consultar as configurações. Os controles de administração aparecem conforme o papel da pessoa no projeto.
+Membros de Equipe não acessam a página. Gerentes, Admins e Root veem as seções, e os controles de administração aparecem conforme o papel da pessoa no projeto.
+
+## Seções da página
+
+A página reúne dez seções:
+
+- **Formato do board**: alterna entre os modos `HIERARCHICAL` e `SIMPLE`, com confirmação explícita para conversão.
+- **Visibilidade do projeto**: marca o projeto como restrito ou oculto.
+- **Planejamento**: datas de início e término previstas, pontos e horas planejadas e escopo em texto rico.
+- **Fluxo do Board**, **Pessoas e organização** e as demais seções descritas abaixo.
 
 ## Fluxo do Board
 
@@ -35,7 +44,7 @@ Participantes podem consultar as configurações. Os controles de administraçã
 
 ## Quem pode configurar
 
-Administradores mantêm a estrutura e os participantes. Membros operam o trabalho e podem preparar sprints. Visualizadores consultam as definições sem alterá-las. Consulte a matriz completa em [[10 - Referencia/Perfis e Permissoes|Perfis e permissões]].
+Administradores mantêm a estrutura e os participantes. Membros operam o trabalho. Visualizadores consultam as definições sem alterá-las. Consulte a matriz completa em [[10 - Referencia/Perfis e Permissoes|Perfis e permissões]].
 
 ## Funcionalidades relacionadas
 

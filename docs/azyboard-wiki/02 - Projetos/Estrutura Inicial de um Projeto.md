@@ -6,17 +6,17 @@ order: 3
 
 # Estrutura Inicial de um Projeto
 
-Todo projeto nasce com uma estrutura mínima para que a equipe possa começar a organizar o trabalho imediatamente.
+Todo projeto nasce com uma estrutura mínima para que a equipe possa começar a organizar o trabalho imediatamente. Os componentes variam conforme o modo escolhido na criação.
 
 ## Componentes criados automaticamente
 
-### Administrador inicial
+### Administrador inicial e gerência
 
-A pessoa que cria o projeto torna-se `Admin`. Ela pode configurar a estrutura, adicionar participantes e distribuir permissões.
+A pessoa que cria o projeto torna-se `Admin` e assume a gerência geral. Ela pode configurar a estrutura, adicionar participantes e distribuir permissões.
 
-### Módulo Geral
+### Módulo Geral (modo hierárquico)
 
-O módulo **Geral** recebe os primeiros épicos do projeto e pode ser usado para trabalho que ainda não exige uma divisão funcional específica.
+Em projetos do modo **Hierárquico**, o módulo **Geral** recebe os primeiros épicos do projeto e pode ser usado para trabalho que ainda não exige uma divisão funcional específica.
 
 O administrador pode posteriormente:
 
@@ -24,6 +24,10 @@ O administrador pode posteriormente:
 - Criar outros módulos.
 - Mover épicos entre módulos.
 - Excluir o módulo, transferindo ou removendo seus épicos conforme a ação escolhida.
+
+### História fixa (modo simples)
+
+Em projetos do modo **Simples**, não existe módulo. A aplicação cria a história fixa **Fluxo contínuo**, que recebe diretamente as tasks e bugs do projeto e dá nome à lane única do Board.
 
 ### Colunas do Board
 
@@ -42,16 +46,16 @@ As colunas representam etapas iniciais sugeridas. Elas podem ser reordenadas, re
 
 Um projeto novo não possui automaticamente:
 
-- Épicos, histórias, tasks, bugs ou subtasks.
+- No modo hierárquico: épicos, histórias, tasks, bugs ou subtasks.
+- No modo simples: tasks ou bugs dentro da história fixa.
 - Outros membros ou squads.
-- Gerente geral definido.
 - Tags.
 - Sprints.
 - Versões.
 - Centros de custo.
 - Checklists, atividades ou anexos.
 
-Esses elementos são adicionados conforme a necessidade do projeto.
+O gerente geral já vem definido com o criador do projeto e pode ser alterado depois. Os demais elementos são adicionados conforme a necessidade do projeto.
 
 ## Sequência sugerida de preparação
 

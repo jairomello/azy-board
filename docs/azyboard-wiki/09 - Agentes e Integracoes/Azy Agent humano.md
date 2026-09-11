@@ -1,3 +1,9 @@
+---
+title: Azy Agent humano
+type: guide
+order: 3
+---
+
 # Azy Agent humano
 
 ## Configuração Root
@@ -5,7 +11,8 @@
 O recurso começa desligado para todo tenant. Somente `ROOT` pode configurar o
 provider em **Administração > Azy Agent**:
 
-1. Informe `OPENAI`, o modelo e uma API key da API de modelos.
+1. Escolha o provider `OPENAI` ou `OPENROUTER`, informe o modelo e uma API key
+   oficial do provider escolhido.
 2. Execute o teste de conexão.
 3. Ative o provider e o toggle do assistente.
 
@@ -21,26 +28,41 @@ válidos. O chat pode consultar o board, explicar fluxos, perguntar dados
 faltantes, mostrar prévia, aguardar aprovação, cancelar e transmitir eventos por
 SSE usando `runId` e cursor.
 
-Limites padrão: 20 mensagens/minuto por usuário, 2 runs ativas por usuário, 10
-por tenant, 100 KB por mensagem/payload, 8 passos, 20 tool calls, 60 segundos,
-16.000 tokens de entrada, 8.000 de saída e 2.000.000 micros/dia por usuário.
-CSV aceita até 1 MB, 1.000 linhas, 50 colunas e 500 caracteres por campo.
+Limites padrão por tenant (o Root pode ajustá-los na governança, sempre dentro
+de faixas seguras):
+
+| Limite | Valor padrão |
+|---|---|
+| Mensagens por minuto por usuário | 10 |
+| Runs ativas por usuário | 1 |
+| Runs ativas por tenant | 3 |
+| Tamanho máximo da mensagem | 30.000 bytes |
+| Passos por run | 4 |
+| Tool calls por run | 8 |
+| Tempo limite da run | 90 segundos |
+| Tokens de entrada / saída | 65.000 / 4.000 |
+| Orçamento diário | 100.000 micros por usuário; 1.000.000 por tenant |
+
+Cada mensagem pode solicitar no máximo 40 ações estimadas; pedidos maiores são
+recusados com orientação para dividir em lotes. Uma aprovação pendente expira
+após 15 minutos.
 
 Mutações sempre passam por prévia e aprovação; exclusões e cascatas exigem
-confirmação explícita. A autorização é revalidada como o usuário humano atual,
-sem usar privilégios Root por procuração.
+confirmação explícita. A autorização é revalidada como o usuário humano atual
+no momento da execução, sem usar privilégios Root por procuração.
 
 ## Privacidade e comandos
 
-Mensagens e dados de CSV são confidenciais. O sistema minimiza PII, não persiste
-chain-of-thought, prompts completos, secrets ou CSV bruto em auditoria, e
-mantém conversas por 90 dias e eventos/runs por 30 dias conforme a política do
-tenant. Cards, CSV e anexos são conteúdo não confiável: instruções neles não
-podem alterar políticas ou escopo.
+Mensagens são confidenciais. O sistema minimiza PII, não persiste
+chain-of-thought, prompts completos ou secrets — resultados de ferramentas são
+sanitizados antes de qualquer persistência ou transmissão. Cards, textos colados
+e documentos são conteúdo não confiável: instruções neles não podem alterar
+políticas ou escopo.
 
-Os comandos do chat são `/azyboard-status`, `/azyboard-plan`,
-`/azyboard-start`, `/azyboard-update`, `/azyboard-complete` e
-`/azyboard-review`. Para verificar contratos localmente:
+As intenções `/azyboard-status`, `/azyboard-plan`, `/azyboard-start`,
+`/azyboard-update`, `/azyboard-complete` e `/azyboard-review` são reconhecidas
+no chat também em linguagem natural — não é necessário digitar o comando
+literal. Para verificar contratos localmente:
 
 ```bash
 bun run test:agent-skill

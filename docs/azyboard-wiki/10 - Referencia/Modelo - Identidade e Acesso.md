@@ -84,11 +84,13 @@ Representa uma conta humana.
 | `password_hash` | Sim | Hash da senha; a senha original não é persistida. |
 | `name` | Sim | Nome exibido na aplicação. |
 | `avatar_url` | Não | Endereço da imagem de perfil. |
+| `global_group` | Sim | Grupo global: `TEAM_MEMBER`, `MANAGER`, `ADMIN` ou `ROOT`. |
 | `theme` | Sim | `light` ou `dark`. |
+| `light_shell_theme` | Não | Preset do tema claro: `petroleum`, `ocean`, `emerald`, `graphite` ou `classic`. |
 | `language` | Sim | `pt-BR`, `en` ou `es`. |
 | `created_at` | Sim | Data de criação. |
 
-O usuário pode ser autor, responsável, gerente de projeto, autor de atividade e proprietário de API Keys.
+O usuário pode ser autor, responsável, gerente de projeto, autor de atividade e proprietário de API Keys. O grupo global define o escopo de navegação e administração.
 
 ## `api_keys`
 
@@ -102,10 +104,14 @@ Credenciais pessoais para agentes e integrações.
 | `name` | Sim | Nome funcional da credencial. |
 | `key_hash` | Sim | SHA-256 do segredo, único globalmente. |
 | `ai_model_name` | Não | Nome ou modelo do agente. |
+| `project_scope` | Não | Lista de projetos permitidos; vazia significa sem restrição adicional. |
+| `permission_scope` | Não | Lista de permissões permitidas: `read`, `write`, `admin` ou `delete`. |
+| `expires_at` | Não | Data de expiração opcional. |
+| `revoked_at` | Não | Data de revogação, quando aplicada. |
 | `created_at` | Sim | Data de criação. |
 | `last_used_at` | Não | Última autenticação registrada. |
 
-O segredo integral existe somente na criação. Em um `claim`, `items.assignee_api_key_id` identifica qual agente operou em nome do proprietário.
+O segredo integral existe somente na criação. Em um `claim`, `items.assignee_api_key_id` identifica qual agente operou em nome do proprietário. Escopos e expiração apenas restringem o acesso herdado do proprietário; a interface atual expõe nome e modelo, e os demais campos são suportados pela API.
 
 ## `memberships`
 

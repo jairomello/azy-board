@@ -14,12 +14,12 @@ Cada bloco combina uma métrica principal, um gráfico e um detalhe textual equi
 
 | Card | Visualização | O que representa |
 |---|---|---|
-| Progresso e Escopo | Donut de concluídos/restantes e barras de quantidade/pontos | Folhas concluídas e escopo atual; pontos aparecem somente quando há estimativa. |
-| WIP | Barras por status e lista compacta | Itens ativos no estado atual, incluindo a parcela bloqueada. |
-| Bloqueados | Distribuição por squad ou responsável e lista de motivos | Itens explicitamente impedidos; a distribuição não é ranking. |
-| Atrasados | Barras por faixa de dias e itens mais antigos | Itens cuja data planejada é anterior à data de consulta. |
-| Burnup | Área temporal de escopo e concluídos | Evolução diária dentro do histórico disponível, com linha de cobertura quando aplicável. |
-| Aging WIP | Histograma de faixas de idade e lista ordenada | Idade do episódio ativo atual; itens iniciados antes da cobertura têm idade mínima conhecida. |
+| Progresso e Escopo | Dois medidores (gauges) de concluídos/restantes, em itens e em pontos | Folhas concluídas e escopo atual; o rodapé informa a cobertura de estimativa em pontos. |
+| WIP | Dois donuts por status, em itens e em pontos | Itens ativos no estado atual, incluindo a parcela bloqueada; o rodapé informa a cobertura de pontos. |
+| Bloqueados | Total e ranking horizontal dos dez itens com mais tempo bloqueado, em dias | Itens explicitamente impedidos; clicar em uma barra abre o detalhe do item com o motivo do bloqueio. |
+| Atrasados | Total e dois donuts comparativos (atrasados versus restante), em itens e em pontos | Itens cuja data planejada é anterior à data de consulta; clicar em uma fatia abre a lista correspondente. |
+| Burnup | Área temporal de escopo e concluídos, com alternância entre itens e pontos | Evolução diária dentro do histórico disponível, com linha de cobertura quando aplicável. |
+| Aging WIP | Ranking horizontal dos dez itens mais antigos, em dias | Idade do episódio ativo atual; itens iniciados antes da cobertura têm idade mínima conhecida. |
 | Carga da Equipe | Barras por pessoa com alternância entre itens e pontos | Quantidade de itens WIP não bloqueados por pessoa, ou pontos estimados quando houver cobertura. Não é ranking. |
 | Horas Registradas | Big-number e donut por autor do log | Soma de logs manuais com duração positiva; hover/foco mostra autor e total de horas. |
 

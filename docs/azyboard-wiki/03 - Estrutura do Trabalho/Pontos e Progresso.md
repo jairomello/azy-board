@@ -115,7 +115,7 @@ O serviço percorre os descendentes de um item, identifica folhas operacionais e
 
 ### Mudanças
 
-Alterações de status, pontos ou hierarquia invalidam os valores agregados dos ancestrais. A cadeia é recalculada até o épico correspondente.
+Alterações de status, pontos ou hierarquia invalidam os valores agregados dos ancestrais. A cadeia é recalculada até o épico correspondente, e o cabeçalho de cada swimlane de módulo também exibe o progresso e os pontos agregados de seus épicos.
 
 ### Estado concluído
 

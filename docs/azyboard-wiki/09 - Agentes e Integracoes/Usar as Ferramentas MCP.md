@@ -10,19 +10,75 @@ As ferramentas MCP permitem que agentes consultem a estrutura, criem itens, assu
 
 ## Catálogo de ferramentas
 
+O servidor MCP publica 57 ferramentas organizadas em seis domínios:
+
+**Projetos**
+
 | Ferramenta | Finalidade |
 |---|---|
-| `list_tasks` | Listar itens com filtros de tipo, sprint e folhas. |
-| `list_modules` | Obter módulos e seus identificadores. |
-| `get_current_sprint` | Consultar a sprint ativa. |
+| `list_projects` | Listar projetos do tenant. |
+| `get_project` | Obter configuração de um projeto. |
+| `create_project` | Criar projeto. |
+| `create_project_structure` | Criar projeto com estrutura completa em operação atômica. |
+| `update_project` | Atualizar configuração do projeto. |
+| `delete_project` | Excluir projeto (suporta `dryRun`). |
+
+**Board**
+
+| Ferramenta | Finalidade |
+|---|---|
+| `get_board` | Ler o board estruturado (colunas e cards). |
+| `get_tree` | Ler a árvore hierárquica do projeto. |
+| `get_shadow_markdown` | Obter a projeção Shadow Markdown do board. |
+| `list_columns` | Listar colunas do board. |
+| `reorder_columns` | Reordenar colunas. |
+| `reorder_items` | Reordenar cards dentro de uma coluna. |
+
+**Itens**
+
+| Ferramenta | Finalidade |
+|---|---|
+| `list_tasks` | Listar itens com filtros de tipo, sprint, status, responsável, tags e folhas. |
+| `create_task` | Criar `EPIC`, `STORY`, `TASK`, `BUG` ou subtask. |
+| `update_item` | Atualizar campos de um item. |
+| `update_items` | Atualização em massa com filtros (até 500 itens). |
 | `claim_task` | Reivindicar uma `TASK` ou `BUG`. |
+| `release_task` | Liberar uma reivindicação. |
 | `move_task` | Mover um card folha pelo nome exato da coluna. |
 | `complete_task` | Concluir um item usando o tratamento adequado ao tipo. |
-| `create_task` | Criar `EPIC`, `STORY`, `TASK`, `BUG` ou subtask. |
+| `delete_item` | Excluir item com cascata (suporta `dryRun`). |
+| `archive_item` / `unarchive_item` | Arquivar e restaurar itens (suportam `dryRun`). |
+| `batch` | Executar até 50 operações de criação em lote atômico. |
+| `create_column` | Criar coluna no board. |
+
+**Planejamento**
+
+| Ferramenta | Finalidade |
+|---|---|
+| `get_current_sprint` | Consultar a sprint ativa. |
+| `list_sprints` / `create_sprint` | Listar e criar sprints. |
+| `activate_sprint` / `close_sprint` | Abrir e encerrar sprints. |
+| `list_modules` / `create_module` | Listar e criar módulos. |
+| `list_tags` / `create_tag` / `set_item_tags` | Gerenciar tags e associá-las a itens. |
+| `list_versions` / `create_version` | Listar e criar versões. |
+| `list_cost_centers` / `create_cost_center` | Listar e criar centros de custo. |
+
+**Evidências**
+
+| Ferramenta | Finalidade |
+|---|---|
+| `list_item_logs` / `create_item_log` / `update_item_log` | Consultar e registrar histórico e tempo trabalhado. |
+| `list_attachments` | Listar anexos de um item. |
 | `list_checklists` | Consultar listas, itens e progresso de um card. |
-| `create_checklist` | Criar uma lista nomeada. |
-| `add_checklist_item` | Acrescentar um passo verificável. |
-| `check_item` | Marcar ou reabrir um passo. |
+| `create_checklist` / `update_checklist` / `delete_checklist` | Gerenciar listas verificáveis. |
+| `add_checklist_item` / `update_checklist_item` / `delete_checklist_item` / `check_item` | Gerenciar e marcar passos. |
+
+**Colaboração**
+
+| Ferramenta | Finalidade |
+|---|---|
+| `list_members` / `add_member` / `update_member` / `remove_member` | Gerenciar membros do projeto. |
+| `list_squads` / `create_squad` | Consultar e criar squads. |
 
 ## Navegar pela hierarquia
 
@@ -30,6 +86,8 @@ As ferramentas MCP permitem que agentes consultem a estrutura, criem itens, assu
 
 - `type`: um tipo ou vários separados por vírgula, como `TASK,BUG`;
 - `sprintId`: restringe o resultado a uma sprint;
+- `status`, `assigneeId`, `tagIds`, `parentId`, `columnId`, `moduleId`: filtros adicionais;
+- `limit` e `cursor`: paginação;
 - `onlyLeaves`: quando omitido, retorna apenas itens sem filhos.
 
 Use `onlyLeaves: false` para procurar pais antes de criar uma hierarquia. Exemplos:
@@ -67,7 +125,9 @@ Fluxo recomendado:
 3. Crie a `STORY` com `parentId` igual ao épico.
 4. Crie `TASK` ou `BUG` com `parentId` igual à história.
 
-Uma `TASK` ou `BUG` sem pai é válida e entra diretamente no fluxo do projeto. Uma história sem épico e uma task filha direta de épico são rejeitadas com orientação para corrigir a hierarquia.
+Em projetos hierárquicos, uma `TASK` ou `BUG` sem pai é rejeitada: toda task ou bug precisa de um pai (`STORY`, `TASK` ou `BUG`). Em projetos `SIMPLE`, o servidor anexa automaticamente o item à história fixa do projeto. Uma história sem épico e uma task filha direta de épico são rejeitadas com orientação para corrigir a hierarquia.
+
+Para criar estruturas completas de uma vez, prefira `create_project_structure` ou `batch`: ambas executam até 50 operações de criação em lote atômico, com referências entre itens (`ref`/`parentRef`) validadas antes da aplicação.
 
 ## Reivindicar trabalho
 
@@ -75,7 +135,7 @@ Uma `TASK` ou `BUG` sem pai é válida e entra diretamente no fluxo do projeto. 
 2. Escolha uma `TASK` ou `BUG` sem responsável.
 3. Execute `claim_task` com `projectId` e `taskId`.
 
-O card passa para trabalho em andamento e registra o proprietário humano e a API Key do agente. Se já estiver atribuído, a ferramenta retorna conflito em vez de sobrescrever o responsável.
+O card passa para trabalho em andamento e registra o proprietário humano e a API Key do agente. Se já estiver atribuído, a ferramenta retorna conflito em vez de sobrescrever o responsável. Use `release_task` para liberar a reivindicação.
 
 ## Movimentar e concluir
 
@@ -136,6 +196,9 @@ grupo, tenant, estado da chave e autorização do recurso em cada chamada. O
 servidor resolve nomes de coluna, pré-valida relações de pai, encontra o módulo
 padrão e escolhe a estratégia de conclusão antes de chamar a API.
 
-O contrato MCP declara schemas JSON para cada entrada. A suíte `bun run test:mcp` exercita o fluxo completo contra uma API em memória, incluindo hierarquia, claim, movimentação, conclusão e checklists.
+O catálogo compartilhado vive em `apps/mcp/src/registry.ts` e é a mesma fonte
+usada pelo Azy Agent interno. O contrato MCP declara schemas JSON para cada
+entrada. A suíte `bun run test:mcp` exercita o fluxo completo contra uma API em
+memória, incluindo hierarquia, claim, movimentação, conclusão e checklists.
 
 </details>

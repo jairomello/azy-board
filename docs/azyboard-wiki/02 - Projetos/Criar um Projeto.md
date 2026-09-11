@@ -49,22 +49,22 @@ Selecione **Cancelar** para fechar a janela sem criar um projeto. O texto inform
 A aplicação:
 
 - Cria o projeto dentro da organização da conta.
-- Torna o criador `Admin` do projeto.
+- Torna o criador `Admin` do projeto e o gerente geral inicial.
 - No modo **Hierárquico**, cria o módulo **Geral**.
-- No modo **Simples**, cria uma história fixa e não exibe módulos ou épicos no Board.
+- No modo **Simples**, cria a história fixa **Fluxo contínuo** e não exibe módulos ou épicos no Board.
 - Cria as colunas iniciais do Board.
-- Disponibiliza o projeto na lista do criador, mesmo quando ele é restrito ou oculto.
 
-Membros, squads, gerente, versões, sprints, centros de custo, novos módulos e a visibilidade podem ser configurados posteriormente.
+Membros, squads, versões, sprints, centros de custo, novos módulos e a visibilidade podem ser configurados posteriormente.
 
 ## Regras e comportamentos
 
-- O nome é obrigatório.
+- O nome é obrigatório e único dentro do tenant; nomes duplicados são recusados.
 - O projeto pertence ao tenant da conta criadora.
-- O criador recebe permissão administrativa.
+- O criador recebe permissão administrativa e a gerência geral inicial.
 - A estrutura inicial é criada automaticamente conforme o modo escolhido.
 - Criar um projeto não adiciona outros participantes.
 - O novo projeto começa sem itens de trabalho.
+- Um projeto criado como oculto só aparece na lista do criador quando a preferência **Mostrar projetos ocultos** está ativada na sessão.
 
 ## Permissões
 

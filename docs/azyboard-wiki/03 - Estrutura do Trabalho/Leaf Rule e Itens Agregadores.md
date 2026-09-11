@@ -111,7 +111,7 @@ A task **Implementar cobrança** começa como folha e pode ser movida. Depois qu
 
 ### Cálculo de folha
 
-Um item é folha quando nenhum outro item ativo utiliza seu identificador como pai. A API valida essa condição antes de aceitar uma movimentação.
+Um item é folha quando nenhum outro item utiliza seu identificador como pai — inclusive filhos arquivados contam para essa verificação na movimentação. A API valida essa condição antes de aceitar uma movimentação.
 
 ### Cards reais e referências
 

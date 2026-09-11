@@ -16,8 +16,7 @@ O Board reage a eventos como:
 - reivindicação de uma task por agente;
 - criação de subtask e mudança da `Leaf Rule`;
 - atualização do progresso de checklists;
-- arquivamento e restauração;
-- mudança da sprint ativa.
+- arquivamento e restauração.
 
 Assim, uma ação de agente pode aparecer para uma pessoa sem recarregar a página, e uma alteração humana fica disponível para a próxima consulta do agente.
 
@@ -43,7 +42,9 @@ Essa identificação permite exibir um badge de IA e distinguir agentes que pert
 
 ## Histórico funcional
 
-O detalhe do item registra mudanças relevantes, autor e horário. Atividades manuais podem complementar o registro com descrição e duração.
+O detalhe do item registra mudanças relevantes, autor e horário. Atividades manuais podem complementar o registro com descrição e duração. Registros de atividade distinguem a origem da ação (`REST`, `MCP` ou sistema) e o tipo de autor (humano, agente ou sistema), permitindo auditar quem executou cada mudança e por qual canal.
+
+Além do histórico funcional, a API mantém uma camada estruturada de eventos de item (`item_events`), alimentada de forma incremental, que guarda o estado anterior e posterior de cada transição com um identificador de correlação. Essa camada sustenta as análises do dashboard — como envelhecimento e tempo bloqueado — e sobrevive à exclusão do item.
 
 Para reconstruir uma execução:
 
@@ -55,9 +56,7 @@ Para reconstruir uma execução:
 
 ## Reconexão
 
-Se a conexão em tempo real cair, o cliente tenta reconectar automaticamente com intervalos crescentes, até o limite configurado. Após restabelecer a conexão, o estado atual é recarregado para incorporar eventos perdidos.
-
-Durante a interrupção, ações confirmadas pela API continuam persistidas. Se houver dúvida, recarregue o Board ou consulte novamente o recurso antes de repetir a operação.
+Se a conexão em tempo real cair, o cliente tenta reconectar automaticamente com intervalos crescentes, até o limite configurado. A reconexão não recarrega o estado automaticamente: eventos ocorridos durante a interrupção não são reproduzidos. Durante a interrupção, ações confirmadas pela API continuam persistidas; se houver dúvida sobre o estado atual, recarregue o Board ou consulte novamente o recurso antes de repetir a operação.
 
 ## Conflitos entre participantes
 
@@ -85,7 +84,8 @@ A conexão exige autenticação válida e um `projectId`. A autorização de cad
 | `TASK_CLAIMED` | Trabalho reivindicado por pessoa ou agente. |
 | `SUBTASK_CREATED` | Filho criado e agregação recalculada. |
 | `CHECKLIST_UPDATED` | Progresso de checklist alterado. |
-| `SPRINT_CHANGED` | Sprint ativa modificada. |
+
+Mudanças de sprint não disparam eventos em tempo real: telas abertas refletem a sprint ativa na próxima consulta ou recarregamento.
 
 Eventos legados de card continuam reconhecidos para compatibilidade.
 
