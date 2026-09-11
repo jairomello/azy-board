@@ -1,0 +1,25 @@
+name: agent-evals
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  eval-gate:
+    name: Eval gate (Azy Agent)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - name: Run eval gate on release
+        env:
+          AZY_PROVIDER_API_KEY: ${{ secrets.AZY_PROVIDER_API_KEY }}
+        run: bun run evals:gate
+      - name: Upload eval report
+        if: always() && hashFiles('tmp/eval-reports/*.md') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: tmp/eval-reports

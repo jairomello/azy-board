@@ -272,6 +272,34 @@ bun run test:smoke        # HTTP smoke test; use SMOKE_URL for a published app
 bun run check:i18n        # translation key parity and hardcoded-text inventory
 ```
 
+### Evals (AI quality tests)
+
+Beyond the deterministic tests above, **Azy Agent runs through eval tests**
+(`evals`) — structured evaluations that measure the quality, safety and accuracy
+of the model's answers against a versioned dataset, following the market best
+practice of gating each release instead of trusting "it looks like it works".
+
+- **`bun run evals`** — informal run with a full report in `tmp/eval-reports/`
+  (scores per dimension, failed cases, judge justifications, dataset hash).
+- **`bun run evals:gate`** — release gate. Runs on every version/tag via
+  `.github/workflows/evals.yml` and fails the release when any dimension falls
+  below its threshold.
+- **`bun run evals:env`** — local convenience: deciphers the credential already
+  in use by the local Azy Agent (`apps/api/dev.db`) into the git-ignored
+  `apps/api/.env.evals`, so evals run with the exact same cheap model configured
+  in the app.
+
+Measured dimensions: task completion, tool correctness, faithfulness
+(hallucination detection), scope/relevance, safety (toxicity/bias), secret-exit
+leak prevention, correct refusals (e.g. requests above the action limit) and
+system-prompt alignment. Deterministic code graders are used whenever ground
+truth exists; an LLM-as-judge covers qualitative criteria. See `TESTING.md`.
+
+```bash
+bun run evals --filter bulk-move   # run a single case group
+bun run evals --dry-run            # list cases without calling the provider
+```
+
 ---
 
 ## License

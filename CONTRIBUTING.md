@@ -145,6 +145,10 @@ Requirements:
 - New MCP tools require integration tests covering at least the happy path and
   a permission-denied scenario.
 - Bug fixes require a regression test that reproduces the failure before the fix.
+- Changes to Azy Agent behavior (system prompt, tools, harness) that could alter
+  model answers should add eval cases in `apps/api/src/evals/datasets/`. See
+  `TESTING.md` ("Evals do Azy Agent"): the deterministic check stays in
+  `bun run check`; model quality runs per release via `bun run evals:gate`.
 
 ---
 

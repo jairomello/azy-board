@@ -40,6 +40,10 @@ function normalizeResponse(raw: Record<string, unknown>): ModelResponse {
   const message = choice.message && typeof choice.message === 'object' ? choice.message as Record<string, unknown> : {}
   const output: ModelResponse['output'] = []
   if (typeof message.content === 'string' && message.content) output.push({ type: 'message', text: message.content })
+  else if (Array.isArray(message.content)) {
+    const text = message.content.map(part => part && typeof part === 'object' && typeof (part as Record<string, unknown>).text === 'string' ? (part as Record<string, unknown>).text as string : '').join('')
+    if (text) output.push({ type: 'message', text })
+  }
   if (Array.isArray(message.tool_calls)) for (const call of message.tool_calls) {
     if (!call || typeof call !== 'object') continue
     const value = call as Record<string, unknown>

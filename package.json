@@ -22,6 +22,9 @@
     "test:agent-skill": "bun run scripts/check-agent-skill.ts",
     "check:i18n": "bun run scripts/check-i18n.ts",
     "test:mcp": "bun run --cwd apps/mcp test",
+    "evals": "bun run scripts/evals.ts",
+    "evals:gate": "bun run scripts/evalGate.ts",
+    "evals:env": "bun run scripts/buildEvalEnv.ts",
     "lint": "bun run scripts/lint.ts",
     "typecheck": "bun run --cwd packages/types typecheck && bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck && bun run --cwd apps/mcp typecheck",
     "check": "bun run typecheck && bun run lint && bun test && bun run build"
