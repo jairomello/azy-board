@@ -122,6 +122,12 @@ MCP tools are auditable, scoped to a tenant, and enforce the same RBAC rules
 as the REST API. Agents cannot escalate beyond the role granted to their API
 key.
 
+> **Tip — pair MCP with the official skill:** MCP clients work best when
+> combined with the [official Azy Board skill](#official-agent-skill). The
+> skill loads the mandatory discovery flow, playbooks and safety rules into
+> the agent, so it calls the right tools in the right order — fewer wasted
+> calls, fewer conflicts and safer mutations.
+
 ### Official Agent Skill
 
 The official, client-agnostic agent skill is maintained in
@@ -192,6 +198,49 @@ packages/
   types/        Shared TypeScript types (ItemType, CardData, WsEvent…)
 openspec/       Spec-driven change history and capability registry
 ```
+
+### Runtime architecture
+
+<p align="center">
+  <img src="docs/architecture/azy-board-runtime.png" alt="Azy Board runtime architecture" width="820" />
+</p>
+
+The runtime architecture shows how humans and agents reach the same board
+state through parallel entry points. Human traffic flows from the browser into
+the React 18 SPA, which talks to the Hono API over REST (`/api`) and stays in
+sync through the native Bun WebSocket (`/ws`, per-project rooms). External AI
+agents connect through the MCP server (stdio transport, 40+ typed tools) and
+execute mutations against the same API, authenticated by an API key that
+resolves to the human owner's identity, tenant and RBAC role. The built-in Azy
+Agent lives inside the API as an assistant harness: it calls LLM providers
+(OpenAI/OpenRouter) with encrypted tenant credentials and executes tools
+through the same shared registry, with guardrails, budgets and a human
+approval gate for every non-read operation. All paths converge on the
+multi-tenant database (SQLite in dev, PostgreSQL in production) accessed via
+Drizzle ORM, inside a tenant isolation boundary — every server-side component
+scopes every query by `tenant_id`.
+
+### Intelligence tooling pipeline
+
+<p align="center">
+  <img src="docs/architecture/azyboard-tools-pipeline.png" alt="MCP and Azy Agent shared tool pipeline" width="820" />
+</p>
+
+The intelligence layer is built on a single source of truth: `apps/mcp/src`
+hosts the shared tool registry (57 tools across 6 domains), the canonical
+argument validator, the authorization policy map and the transport-agnostic
+tool implementations. Both entry points consume the exact same registry — the
+MCP server dispatches external `CallTool` requests, while the Azy Agent
+invokes it in-process through a source-level re-export bridge
+(`assistantTools.ts`). Each execution goes through the same pipeline: argument
+validation → policy check (global group + local project role) → tool dispatch
+→ REST call into the Hono API, which remains the final RBAC enforcement point.
+The Azy Agent adds an extra safety layer on top: intent routing and policy
+filtering before the model even sees the tools, server-side injection of the
+current project id (the model cannot target arbitrary projects), and a human
+approval workflow — every write operation pauses in `WAITING_APPROVAL` and
+only executes after explicit approval, with a SHA-256 hash binding the
+authorized operation to the executed one (TOCTOU-safe).
 
 **Multi-tenancy**: every table carries `tenant_id`. All queries go through a
 `withTenant(tenantId)` helper. Tenants are provisioned via CLI only — no

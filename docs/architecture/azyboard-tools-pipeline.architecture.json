@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Azy Board — Pipeline de Tools: MCP + Azy Agent",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 580],
+    "views": [
+      {
+        "id": "caminho-mcp",
+        "label": "Caminho MCP (agente externo)",
+        "focus": ["mcp-client", "mcp-server", "registry", "tools", "api"],
+        "note": "Claude Code/Codex conecta via stdio; auth delegada à API via Bearer API Key."
+      },
+      {
+        "id": "caminho-azy",
+        "label": "Caminho Azy Agent (built-in)",
+        "focus": ["azy-ui", "assistant", "registry", "tools", "api"],
+        "note": "AssistantHarness filtra tools por intent + policy; auth in-process com re-validação TOCTOU."
+      },
+      {
+        "id": "aprovacao-humana",
+        "label": "Aprovação humana (escrita)",
+        "focus": ["assistant", "approvals", "registry", "api"],
+        "note": "Toda tool não-READ pausa em WAITING_APPROVAL; execução só via /runs/:id/approval com hash verificado."
+      },
+      {
+        "id": "fonte-unica",
+        "label": "Registry compartilhado",
+        "focus": ["registry", "validation", "policies", "tools"],
+        "note": "57 tools, 6 domínios, 5 níveis de policy — mesma fonte de verdade para ambos os transportes."
+      }
+    ]
+  },
+  "components": [
+    { "id": "mcp-client", "type": "external", "label": "Agente Externo", "sublabel": "Claude Code, Codex…", "pos": [40, 70], "size": [170, 60] },
+    { "id": "azy-ui", "type": "frontend", "label": "Azy Agent UI", "sublabel": "Drawer no browser", "pos": [40, 190], "size": [170, 60] },
+    { "id": "mcp-server", "type": "backend", "label": "MCP Server", "sublabel": "stdio JSON-RPC", "pos": [270, 70], "size": [170, 60], "tag": "apps/mcp" },
+    { "id": "assistant", "type": "backend", "label": "Assistant + Harness", "sublabel": "routes + loop agentic", "pos": [270, 190], "size": [170, 60], "tag": "apps/api" },
+    { "id": "approvals", "type": "security", "label": "Aprovação Humana", "sublabel": "WAITING_APPROVAL + hash", "pos": [270, 310], "size": [170, 60], "tag": "não-READ" },
+    { "id": "registry", "type": "backend", "label": "registry.ts", "sublabel": "executeSharedTool · 57 tools", "pos": [520, 150], "size": [190, 70], "tag": "fonte única" },
+    { "id": "validation", "type": "security", "label": "validation.ts", "sublabel": "validateToolArguments", "pos": [480, 45], "size": [170, 50] },
+    { "id": "policies", "type": "security", "label": "policies.ts", "sublabel": "RBAC: grupo + papel local", "pos": [790, 45], "size": [170, 50] },
+    { "id": "tools", "type": "backend", "label": "tools.ts", "sublabel": "57 implementações tool*", "pos": [790, 150], "size": [170, 60] },
+    { "id": "api", "type": "backend", "label": "Hono REST API", "sublabel": "authMiddleware + RBAC final", "pos": [780, 280], "size": [190, 60], "tag": "enforcement final" },
+    { "id": "db", "type": "database", "label": "SQLite / PostgreSQL", "sublabel": "Drizzle · multi-tenant", "pos": [780, 390], "size": [190, 56] }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "apps/mcp/src — fonte única",
+      "wraps": ["registry", "validation", "policies", "tools"]
+    }
+  ],
+  "connections": [
+    { "id": "client-to-mcp", "from": "mcp-client", "to": "mcp-server", "label": "MCP stdio", "variant": "emphasis" },
+    { "id": "ui-to-assistant", "from": "azy-ui", "to": "assistant", "label": "HTTP + SSE", "variant": "emphasis" },
+    { "id": "mcp-to-registry", "from": "mcp-server", "to": "registry", "label": "CallTool", "variant": "emphasis" },
+    { "id": "assistant-to-registry", "from": "assistant", "to": "registry", "label": "bridge (re-export)", "variant": "emphasis", "labelAt": [500, 234] },
+    { "id": "registry-to-validation", "from": "registry", "to": "validation", "label": "valida args", "fromSide": "top", "toSide": "bottom" },
+    { "id": "registry-to-policies", "from": "registry", "to": "policies", "label": "policy check", "fromSide": "top", "toSide": "bottom" },
+    { "id": "assistant-to-approvals", "from": "assistant", "to": "approvals", "label": "escrita → pausa", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelDy": 24 },
+    { "id": "approvals-to-registry", "from": "approvals", "to": "registry", "label": "aprova → executa", "variant": "dashed", "fromSide": "right", "toSide": "bottom", "via": [[505, 340], [505, 250], [615, 250]], "labelAt": [600, 238] },
+    { "id": "registry-to-tools", "from": "registry", "to": "tools", "label": "dispatch" },
+    { "id": "tools-to-api", "from": "tools", "to": "api", "label": "ApiCall (REST)", "variant": "emphasis", "labelDy": 24 },
+    { "id": "api-to-db", "from": "api", "to": "db", "label": "Drizzle ORM", "labelDy": 24 }
+  ],
+  "cards": [
+    { "dot": "violet", "title": "Registry compartilhado", "items": ["57 tools em 6 domínios, 5 níveis de policy", "MCP e Azy Agent executam via o mesmo executeSharedTool", "Auth MCP delegada à API (API Key); Azy Agent re-valida em cada execução (TOCTOU)"] },
+    { "dot": "amber", "title": "Extras do Azy Agent", "items": ["Intent routing + filtro de policy antes do modelo", "Aprovação humana para toda escrita · guardrails + budget", "projectId injetado no servidor — modelo não escolhe projeto"] }
+  ]
+}

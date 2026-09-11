@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Azy Board — Runtime Architecture",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "human-request-path",
+        "label": "Human request path",
+        "focus": ["browser", "web", "api", "db"],
+        "note": "A human opens the board: SPA loads from Vite, fetches data from Hono API, persists to SQLite/PostgreSQL."
+      },
+      {
+        "id": "agent-path",
+        "label": "AI agent path",
+        "focus": ["agent", "mcp", "api", "db"],
+        "note": "An AI agent connects via MCP stdio, calls typed tools, and mutations go through the same API with RBAC and tenant isolation."
+      },
+      {
+        "id": "assistant-flow",
+        "label": "Azy Agent conversation",
+        "focus": ["browser", "web", "api", "azy-agent", "llm"],
+        "note": "Built-in assistant receives user messages, calls LLM providers, and executes approved tool calls against the API."
+      },
+      {
+        "id": "realtime-sync",
+        "label": "Realtime sync",
+        "focus": ["browser", "web", "api", "ws"],
+        "note": "Bun native WebSocket broadcasts board mutations to all connected clients in per-project rooms."
+      }
+    ]
+  },
+  "components": [
+    { "id": "browser", "type": "external", "label": "Browser", "sublabel": "Human user", "pos": [40, 240], "size": [130, 60] },
+    { "id": "agent", "type": "external", "label": "AI Agent", "sublabel": "MCP client (Claude, Codex…)", "pos": [40, 380], "size": [180, 60] },
+    { "id": "web", "type": "frontend", "label": "Web SPA", "sublabel": "React 18 + Vite :5173", "pos": [280, 240], "size": [170, 60] },
+    { "id": "api", "type": "backend", "label": "API Server", "sublabel": "Hono + Bun :3000", "pos": [560, 240], "size": [170, 60] },
+    { "id": "ws", "type": "backend", "label": "WebSocket", "sublabel": "Bun native :3000/ws", "pos": [560, 110], "size": [170, 60], "tag": "per-project rooms" },
+    { "id": "mcp", "type": "backend", "label": "MCP Server", "sublabel": "40+ tools, stdio", "pos": [280, 380], "size": [170, 60] },
+    { "id": "azy-agent", "type": "backend", "label": "Azy Agent", "sublabel": "Assistant harness", "pos": [560, 380], "size": [170, 60], "tag": "guardrails + approval" },
+    { "id": "db", "type": "database", "label": "Database", "sublabel": "SQLite (dev) / PostgreSQL", "pos": [840, 240], "size": [170, 60], "tag": "Drizzle ORM, multi-tenant" },
+    { "id": "llm", "type": "external", "label": "LLM Providers", "sublabel": "OpenAI / OpenRouter", "pos": [840, 380], "size": [170, 60] }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "Tenant isolation boundary",
+      "wraps": ["api", "ws", "mcp", "azy-agent", "db"]
+    }
+  ],
+  "connections": [
+    { "id": "browser-to-web", "from": "browser", "to": "web", "label": "HTTPS", "variant": "emphasis" },
+    { "id": "web-to-api", "from": "web", "to": "api", "label": "REST /api", "variant": "emphasis", "labelDy": 28 },
+    { "id": "web-to-ws", "from": "web", "to": "ws", "label": "WS /ws", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "id": "api-to-db", "from": "api", "to": "db", "label": "SQL via Drizzle", "variant": "emphasis" },
+    { "id": "api-to-ws", "from": "api", "to": "ws", "label": "broadcast", "variant": "dashed", "fromSide": "top", "toSide": "bottom" },
+    { "id": "agent-to-mcp", "from": "agent", "to": "mcp", "label": "MCP stdio", "variant": "emphasis" },
+    { "id": "mcp-to-api", "from": "mcp", "to": "api", "label": "HTTP tool calls", "variant": "default", "fromSide": "right", "toSide": "bottom", "labelDy": -5 },
+    { "id": "azy-to-api", "from": "azy-agent", "to": "api", "label": "tool calls + invoke", "variant": "default", "fromSide": "top", "toSide": "bottom", "labelAt": [652, 456] },
+    { "id": "azy-to-llm", "from": "azy-agent", "to": "llm", "label": "chat completions", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "API Layer", "items": ["Hono on Bun, JWT + RBAC, multi-tenant isolation"] },
+    { "dot": "violet", "title": "Agent-Native", "items": ["MCP server with 40+ tools, Shadow Markdown, Azy Agent with guardrails"] }
+  ]
+}
