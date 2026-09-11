@@ -6,7 +6,7 @@ Definir a suíte determinística de regressão dos fluxos de mutação do Azy Ag
 
 ### Requirement: Suíte recorrente de regressão do agente
 
-O projeto SHALL manter uma suíte determinística de regressão executada pelo fluxo padrão de testes, cobrindo os principais fluxos de mutação do Azy Agent sem credenciais ou provedor externo.
+O projeto SHALL manter uma suíte determinística de regressão executada pelo fluxo padrão de testes, cobrindo os principais fluxos de mutação do Azy Agent sem credenciais ou provedor externo. A suíte determinística SHALL permanecer sem dependência de rede, provider de LLM ou judge; a avaliação de qualidade do modelo com provider real SHALL ser coberta separadamente pela suíte de evals por release (`agent-eval-suite`).
 
 #### Scenario: Criação de projeto com dados mínimos
 - **WHEN** o agente chama a operação de criação de projeto informando somente o nome
