@@ -1447,3 +1447,95 @@ describe('segurança de anexos', () => {
     expect(response.status).toBe(404)
   })
 })
+
+describe('reparenting transacional', () => {
+  let tenantId: string
+  let admin: { id: string; email: string }
+  let adminToken: string
+  let projectId: string
+  let moduleId: string
+  let epicId: string
+  let story1Id: string
+  let story2Id: string
+  let taskAId: string
+  let taskBId: string
+
+  function pathIds(ancestryPath: string): string[] {
+    return (JSON.parse(ancestryPath) as Array<{ id: string }>).map(node => node.id)
+  }
+
+  async function itemById(id: string) {
+    return (await db.select().from(items)).find(item => item.id === id)!
+  }
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Reparenting', slug: `rep-${tenantId}`, createdAt: new Date().toISOString() })
+    admin = await createUser(tenantId, 'rep-admin@test.local', 'Admin Reparenting')
+    adminToken = await token(admin.id, tenantId, admin.email)
+
+    const projectResponse = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Projeto reparenting' }),
+    })
+    projectId = ((await projectResponse.json()) as { id: string }).id
+    moduleId = (await db.select().from(modules)).find(module => module.projectId === projectId)!.id
+
+    // EPIC → STORY1 → TASK A → TASK B (4 níveis) + STORY2 como alvo
+    epicId = generateId(); story1Id = generateId(); story2Id = generateId(); taskAId = generateId(); taskBId = generateId()
+    const now = new Date().toISOString()
+    const base = { tenantId, projectId, moduleId: null, columnId: null, status: 'NOT_STARTED' as const, priority: 'MEDIUM' as const, position: 0, authorId: admin.id, createdAt: now, updatedAt: now }
+    await db.insert(items).values([
+      { ...base, id: epicId, type: 'EPIC', parentId: null, moduleId, title: 'Épico', ancestryPath: '[]' },
+      { ...base, id: story1Id, type: 'STORY', parentId: epicId, title: 'História 1', ancestryPath: JSON.stringify([{ id: epicId, title: 'Épico', type: 'EPIC' }]) },
+      { ...base, id: story2Id, type: 'STORY', parentId: epicId, title: 'História 2', ancestryPath: JSON.stringify([{ id: epicId, title: 'Épico', type: 'EPIC' }]) },
+      { ...base, id: taskAId, type: 'TASK', parentId: story1Id, title: 'Task A', ancestryPath: JSON.stringify([{ id: epicId, title: 'Épico', type: 'EPIC' }, { id: story1Id, title: 'História 1', type: 'STORY' }]) },
+      { ...base, id: taskBId, type: 'TASK', parentId: taskAId, title: 'Task B', ancestryPath: JSON.stringify([{ id: epicId, title: 'Épico', type: 'EPIC' }, { id: story1Id, title: 'História 1', type: 'STORY' }, { id: taskAId, title: 'Task A', type: 'TASK' }]) },
+    ])
+  })
+
+  test('rejeita reparenting para o próprio item', async () => {
+    const response = await request(`/projects/${projectId}/items/${taskAId}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parentId: taskAId }),
+    })
+    expect(response.status).toBe(400)
+    expect((await response.json() as { code?: string }).code).toBe('HIERARCHY_CYCLE')
+    expect((await itemById(taskAId)).parentId).toBe(story1Id)
+  })
+
+  test('rejeita reparenting para descendente (ciclo) sem corromper a árvore', async () => {
+    const response = await request(`/projects/${projectId}/items/${taskAId}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parentId: taskBId }),
+    })
+    expect(response.status).toBe(400)
+    expect((await response.json() as { code?: string }).code).toBe('HIERARCHY_CYCLE')
+    const taskA = await itemById(taskAId)
+    expect(taskA.parentId).toBe(story1Id)
+    expect(pathIds(taskA.ancestryPath)).toEqual([epicId, story1Id])
+    expect(pathIds((await itemById(taskBId)).ancestryPath)).toEqual([epicId, story1Id, taskAId])
+  })
+
+  test('reparenting com 3+ níveis atualiza item e descendentes atomicamente', async () => {
+    const response = await request(`/projects/${projectId}/items/${taskAId}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parentId: story2Id }),
+    })
+    expect(response.status).toBe(200)
+    const taskA = await itemById(taskAId)
+    const taskB = await itemById(taskBId)
+    expect(taskA.parentId).toBe(story2Id)
+    expect(pathIds(taskA.ancestryPath)).toEqual([epicId, story2Id])
+    // O descendente vê o caminho NOVO (bug original: ficava com o caminho antigo)
+    expect(pathIds(taskB.ancestryPath)).toEqual([epicId, story2Id, taskAId])
+    expect((JSON.parse(taskB.ancestryPath) as Array<{ title: string }>)[1]?.title).toBe('História 2')
+  })
+
+  test('rename de título propaga para netos na mesma transação', async () => {
+    const response = await request(`/projects/${projectId}/items/${taskAId}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Task A renomeada' }),
+    })
+    expect(response.status).toBe(200)
+    const taskB = await itemById(taskBId)
+    const path = JSON.parse(taskB.ancestryPath) as Array<{ id: string; title: string }>
+    expect(pathIds(taskB.ancestryPath)).toEqual([epicId, story2Id, taskAId])
+    expect(path[2]?.title).toBe('Task A renomeada')
+  })
+})

@@ -3,14 +3,23 @@ import { db } from '../db/index'
 import { items } from '../db/schema'
 import type { AncestorNode } from '@azy-board/types'
 
+// [HIERARQUIA] Aceita o `db` global ou o `tx` de uma transação: cascatas de
+// reparenting e rename precisam rodar DENTRO da mesma transação que atualiza o item.
+export type AncestryDb = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+// Limite defensivo de profundidade: protege contra dados já corrompidos e
+// interrompe caminhadas em caso de ciclo pré-existente.
+const MAX_ANCESTRY_DEPTH = 50
+
 // Constrói o ancestry_path de um item a partir do seu pai imediato
 // Aproveita o ancestryPath já desnormalizado do pai para O(1) na cadeia
 export async function buildAncestryPath(
+  tx: AncestryDb,
   tenantId: string,
   parentId: string
 ): Promise<AncestorNode[]> {
   // [TENANT] sempre filtra por tenantId
-  const parent = await db.query.items.findFirst({
+  const parent = await tx.query.items.findFirst({
     where: (i) => and(eq(i.id, parentId), eq(i.tenantId, tenantId)),
   })
   if (!parent) return []
@@ -22,26 +31,65 @@ export async function buildAncestryPath(
   return [...parentPath, { id: parent.id, title: parent.title, type: parent.type }]
 }
 
-// Atualiza ancestry_path em cascata para todos os filhos quando um ancestral é renomeado
+// [HIERARQUIA] Detecta ciclo ANTES da escrita de um reparenting: sobe a cadeia
+// de pais a partir de newParentId; se alcançar itemId (ou um nó já visitado,
+// indicando dado pré-corrompido), o reparenting criaria/manteria um ciclo.
+export async function detectReparentCycle(
+  tx: AncestryDb,
+  tenantId: string,
+  projectId: string,
+  itemId: string,
+  newParentId: string
+): Promise<boolean> {
+  let currentId: string | null = newParentId
+  const visited = new Set<string>()
+  for (let depth = 0; currentId && depth < MAX_ANCESTRY_DEPTH; depth++) {
+    if (currentId === itemId) return true
+    if (visited.has(currentId)) return true
+    visited.add(currentId)
+    const node = await tx.query.items.findFirst({
+      where: (i) => and(eq(i.id, currentId!), eq(i.projectId, projectId), eq(i.tenantId, tenantId)),
+      columns: { parentId: true },
+    })
+    currentId = node?.parentId ?? null
+  }
+  // Cadeia mais profunda que o limite: tratar como inválida (defesa contra dados corrompidos).
+  return currentId !== null
+}
+
+// Atualiza ancestry_path em cascata para todos os filhos quando um ancestral é
+// reparentado ou renomeado. Deve rodar na mesma transação do update do item,
+// DEPOIS que o item foi atualizado, para que os descendentes leiam o caminho novo.
 // [TENANT] Sempre filtra por tenantId para não afetar outros tenants
 // [DB-SWAP] PostgreSQL permite UPDATE em cascata mais eficiente com CTEs recursivas
 export async function updateDescendantAncestry(
+  tx: AncestryDb,
   tenantId: string,
-  parentId: string
+  parentId: string,
+  visiting: Set<string> = new Set()
 ): Promise<void> {
-  const children = await db.query.items.findMany({
+  if (visiting.has(parentId)) return // defesa contra dados já cíclicos
+  visiting.add(parentId)
+
+  const children = await tx.query.items.findMany({
     where: (i) => and(eq(i.parentId, parentId), eq(i.tenantId, tenantId)),
+    columns: { id: true },
   })
 
-  for (const child of children) {
-    const newPath = await buildAncestryPath(tenantId, parentId)
-    await db.update(items)
-      .set({ ancestryPath: JSON.stringify(newPath) })
-      .where(and(eq(items.id, child.id), eq(items.tenantId, tenantId)))
+  if (children.length > 0) {
+    // Todos os filhos diretos compartilham o mesmo caminho.
+    const newPath = JSON.stringify(await buildAncestryPath(tx, tenantId, parentId))
+    for (const child of children) {
+      await tx.update(items)
+        .set({ ancestryPath: newPath })
+        .where(and(eq(items.id, child.id), eq(items.tenantId, tenantId)))
 
-    // Recursão para filhos dos filhos
-    await updateDescendantAncestry(tenantId, child.id)
+      // Recursão para filhos dos filhos
+      await updateDescendantAncestry(tx, tenantId, child.id, visiting)
+    }
   }
+
+  visiting.delete(parentId)
 }
 
 // Calcula progresso de items pai com base nas tasks folha TASK/BUG descendentes

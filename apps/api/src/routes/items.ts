@@ -5,7 +5,7 @@ import { db } from '../db/index'
 import { projects, items, columns, itemTags, itemSprints, modules, checklists, checklistItems, attachments, itemLogs, projectVersions, projectCostCenters, tags, sprints, memberships, users } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
-import { buildAncestryPath, calculateProgress, calculatePoints, updateDescendantAncestry } from '../services/ancestry'
+import { buildAncestryPath, calculateProgress, calculatePoints, detectReparentCycle, updateDescendantAncestry } from '../services/ancestry'
 import { broadcast } from '../services/websocket'
 import { addTreeProgress, type TreeProgressNode } from '../services/treeProgress'
 import type { RequestContext, Priority, ItemType, ActivityActorType, ActivitySource } from '@azy-board/types'
@@ -575,7 +575,7 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   const parentBefore = effectiveParentId ? await snapshotItem(db, ctx.tenantId, projectId, effectiveParentId) : null
 
   const ancestryPath = effectiveParentId
-    ? await buildAncestryPath(ctx.tenantId, effectiveParentId)
+    ? await buildAncestryPath(db, ctx.tenantId, effectiveParentId)
     : []
 
   // Auto-preenchimento do centro de custo: se o body não informou, buscar o primeiro do projeto
@@ -903,23 +903,36 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     if (sprint?.status === 'CLOSED') return c.json({ error: 'Não é possível associar itens a uma sprint fechada' }, 409)
   }
 
-  // Se parentId mudou, recalcular ancestryPath
-  if (safeBody.parentId !== undefined || (project.boardMode === 'SIMPLE' && prevItem && ['TASK', 'BUG'].includes(prevItem.type))) {
-    const newParentId = (updates.parentId as string | null | undefined) ?? safeBody.parentId
-    const newPath = newParentId
-      ? await buildAncestryPath(ctx.tenantId, newParentId)
-      : []
-    updates.ancestryPath = JSON.stringify(newPath)
-    // Atualizar descendentes em cascata
-    await updateDescendantAncestry(ctx.tenantId, itemId)
-  }
+  // [HIERARQUIA] Reparenting: valida ciclo/profundidade ANTES de qualquer escrita
+  // e recalcula ancestryPath do item e dos descendentes DENTRO da transação.
+  const reparenting = safeBody.parentId !== undefined || (project.boardMode === 'SIMPLE' && prevItem && ['TASK', 'BUG'].includes(prevItem.type))
   const requestedParent = updates.parentId as string | null | undefined
+  if (reparenting) {
+    const newParentId = requestedParent ?? safeBody.parentId
+    if (newParentId && newParentId !== prevItem.parentId) {
+      if (newParentId === itemId) {
+        return c.json({ error: 'Item não pode ser pai de si mesmo', code: 'HIERARCHY_CYCLE', retryable: false }, 400)
+      }
+      if (await detectReparentCycle(db, ctx.tenantId, projectId, itemId, newParentId)) {
+        return c.json({ error: 'Reparenting recusado: o novo pai é descendente deste item, o que criaria um ciclo na hierarquia.', code: 'HIERARCHY_CYCLE', retryable: false }, 400)
+      }
+    }
+  }
   const newParentBefore = requestedParent && requestedParent !== analyticsBefore?.parentId ? await snapshotItem(db, ctx.tenantId, projectId, requestedParent) : null
 
   await db.transaction(async (tx) => {
+    if (reparenting) {
+      const newParentId = (updates.parentId as string | null | undefined) ?? safeBody.parentId
+      updates.ancestryPath = JSON.stringify(newParentId ? await buildAncestryPath(tx, ctx.tenantId, newParentId) : [])
+    }
     await tx.update(items).set(updates)
       // [TENANT] Anti-IDOR: filtra por tenantId + projectId + itemId.
       .where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+    // [HIERARQUIA] Cascata de descendentes na mesma transação, DEPOIS do update do
+    // item: cobre reparenting e mudança de título sem janela de caminho antigo.
+    if (reparenting || safeBody.title) {
+      await updateDescendantAncestry(tx, ctx.tenantId, itemId)
+    }
     if (safeBody.sprintId !== undefined) {
       await tx.delete(itemSprints).where(eq(itemSprints.itemId, itemId))
       if (safeBody.sprintId) await tx.insert(itemSprints).values({ itemId, sprintId: safeBody.sprintId as string }).onConflictDoNothing()
@@ -934,11 +947,6 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     if (oldParentBefore && analyticsBefore?.parentId !== (after?.parentId ?? null)) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: analyticsBefore!.parentId!, eventType: 'LEAF_CHANGED', actorId: ctx.userId, origin: 'REST', before: oldParentBefore, after: await snapshotItem(tx, ctx.tenantId, projectId, analyticsBefore!.parentId!) })
     if (newParentBefore && requestedParent) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: requestedParent, eventType: 'LEAF_CHANGED', actorId: ctx.userId, origin: 'REST', before: newParentBefore, after: await snapshotItem(tx, ctx.tenantId, projectId, requestedParent) })
   })
-
-  // Se título mudou, atualizar ancestryPath dos filhos
-  if (safeBody.title) {
-    await updateDescendantAncestry(ctx.tenantId, itemId)
-  }
 
   // Tarefa 5.1 — gerar log automático apenas se algum campo loggável mudou
   if (prevItem) {
