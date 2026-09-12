@@ -29,7 +29,8 @@ export class LocalStorageAdapter implements StorageAdapter {
 
     await Bun.write(storagePath, data)
 
-    // URL relativa — servida pela rota /uploads/* com verificação de membership
+    // [SECURITY] URL mantida apenas para compatibilidade interna do adapter;
+    // o download público acontece pela rota autorizada de attachments.
     const url = `/uploads/${tenantId}/${taskId}/${uniqueName}`
     return { storagePath, url }
   }

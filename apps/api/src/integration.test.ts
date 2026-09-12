@@ -1335,3 +1335,115 @@ describe('payload de criação de item para o board', () => {
     expect(taskBody.isLeaf).toBe(true)
   })
 })
+
+describe('segurança de anexos', () => {
+  let tenantId: string
+  let member: { id: string; email: string }
+  let outsider: { id: string; email: string }
+  let projectId: string
+  let itemId: string
+  let memberToken: string
+  let outsiderToken: string
+
+  async function criarArquivo(conteudo: string): Promise<string> {
+    const path = `/tmp/azy-attachment-test-${generateId()}.bin`
+    await Bun.write(path, conteudo)
+    return path
+  }
+
+  async function inserirAnexo(mimeType: string, originalName: string, conteudo: string) {
+    const id = generateId()
+    const storagePath = await criarArquivo(conteudo)
+    await db.insert(attachments).values({
+      id, tenantId, itemId, filename: storagePath.split('/').pop()!, originalName,
+      mimeType, size: new TextEncoder().encode(conteudo).length, storagePath,
+      createdAt: new Date().toISOString(),
+    })
+    return id
+  }
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Anexos', slug: `att-${tenantId}`, createdAt: new Date().toISOString() })
+    member = await createUser(tenantId, 'att-member@test.local', 'Membro Anexos', 'TEAM_MEMBER')
+    // [SECURITY] Outsider é ADMIN global do MESMO tenant — o cenário da vulnerabilidade original.
+    outsider = await createUser(tenantId, 'att-outsider@test.local', 'Estranho Anexos', 'ADMIN')
+    memberToken = await token(member.id, tenantId, member.email)
+    outsiderToken = await token(outsider.id, tenantId, outsider.email)
+
+    projectId = generateId()
+    await db.insert(projects).values({
+      id: projectId, tenantId, name: 'Projeto restrito anexos', description: null,
+      boardMode: 'HIERARCHICAL', simpleStoryId: null, managerUserId: null,
+      isRestricted: true, isHidden: false, createdAt: new Date().toISOString(),
+    })
+    await db.insert(memberships).values({ id: generateId(), tenantId, userId: member.id, projectId, role: 'MEMBER', createdAt: new Date().toISOString() })
+    itemId = generateId()
+    const now = new Date().toISOString()
+    await db.insert(items).values({ id: itemId, tenantId, projectId, type: 'TASK', parentId: null, moduleId: null, columnId: null, ancestryPath: '[]', title: 'Card com anexo', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, authorId: member.id, createdAt: now, updatedAt: now })
+  })
+
+  test('rejeita upload de MIME fora da allowlist (HTML e SVG)', async () => {
+    for (const mimeType of ['text/html', 'image/svg+xml', 'application/x-sh']) {
+      const form = new FormData()
+      form.append('file', new File(['<script>alert(1)</script>'], 'malicioso.html', { type: mimeType }))
+      const response = await request(`/projects/${projectId}/items/${itemId}/attachments`, memberToken, { method: 'POST', body: form })
+      expect(response.status).toBe(415)
+    }
+  })
+
+  test('aceita upload permitido e retorna URL da rota autorizada', async () => {
+    const form = new FormData()
+    form.append('file', new File(['conteudo seguro'], 'nota.txt', { type: 'text/plain' }))
+    const response = await request(`/projects/${projectId}/items/${itemId}/attachments`, memberToken, { method: 'POST', body: form })
+    expect(response.status).toBe(201)
+    const created = await response.json() as { id: string; url: string }
+    expect(created.url).toBe(`/api/projects/${projectId}/items/${itemId}/attachments/${created.id}/download`)
+    expect(created.url).not.toContain('/uploads/')
+  })
+
+  test('membro baixa anexo com headers seguros', async () => {
+    const attachmentId = await inserirAnexo('text/plain', 'relatorio.txt', 'dados')
+    const response = await request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/download`, memberToken)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-disposition')).toContain('attachment')
+    expect(response.headers.get('content-disposition')).toContain('relatorio.txt')
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(await response.text()).toBe('dados')
+  })
+
+  test('imagem rasterizada pode ser servida inline', async () => {
+    const attachmentId = await inserirAnexo('image/png', 'foto.png', 'png-bytes')
+    const response = await request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/download`, memberToken)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-disposition')).toContain('inline')
+  })
+
+  test('usuário do mesmo tenant sem vínculo não acessa anexo de projeto restrito', async () => {
+    const attachmentId = await inserirAnexo('text/plain', 'segredo.txt', 'confidencial')
+    const download = await request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/download`, outsiderToken)
+    expect(download.status).toBe(404)
+    const list = await request(`/projects/${projectId}/items/${itemId}/attachments`, outsiderToken)
+    expect(list.status).toBe(404)
+  })
+
+  test('rota estática /uploads/* não serve mais arquivos', async () => {
+    const attachment = (await db.select().from(attachments)).find(a => a.itemId === itemId)!
+    const legacyUrl = `/uploads/${tenantId}/${itemId}/${attachment.storagePath.split('/').pop()}`
+    const response = await app.fetch(new Request(`http://test.local${legacyUrl}`, { headers: { cookie: `session=${memberToken}` } }))
+    expect(response.status).toBe(404)
+  })
+
+  test('download exige item ancorado no projeto (anti-IDOR entre projetos do tenant)', async () => {
+    const attachmentId = await inserirAnexo('text/plain', 'ancorado.txt', 'x')
+    const outroProjeto = generateId()
+    await db.insert(projects).values({
+      id: outroProjeto, tenantId, name: 'Outro projeto', description: null,
+      boardMode: 'HIERARCHICAL', simpleStoryId: null, managerUserId: null,
+      isRestricted: false, isHidden: false, createdAt: new Date().toISOString(),
+    })
+    await db.insert(memberships).values({ id: generateId(), tenantId, userId: member.id, projectId: outroProjeto, role: 'MEMBER', createdAt: new Date().toISOString() })
+    const response = await request(`/projects/${outroProjeto}/items/${itemId}/attachments/${attachmentId}/download`, memberToken)
+    expect(response.status).toBe(404)
+  })
+})

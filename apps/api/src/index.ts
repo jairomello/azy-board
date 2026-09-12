@@ -14,11 +14,8 @@ import { versionsRouter } from './routes/versions'
 import { usersRouter } from './routes/users'
 import { batchRouter } from './routes/batch'
 import { wsHandler } from './services/websocket'
-import { authMiddleware } from './middleware/auth'
 import type { WsClientData } from './services/websocket'
-import type { RequestContext } from '@azy-board/types'
 import { hasGlobalGroup, verifyJwt } from './services/auth'
-import { getCookie } from 'hono/cookie'
 import { db } from './db/index'
 import { and, eq } from 'drizzle-orm'
 import { serve } from 'bun'
@@ -62,24 +59,13 @@ api.route('/users', usersRouter)
 api.route('/projects/:projectId/dashboard', dashboardRouter)
 api.route('/assistant', assistantRouter)
 
-// [DB-SWAP] Para servir uploads em produção com S3, remover esta rota estática
-// e usar URLs pré-assinadas do S3 diretamente
-app.use('/uploads/*', authMiddleware, async (c) => {
-  const ctx = c.get('ctx') as RequestContext
-  const filePath = c.req.path.replace('/uploads/', '')
-
-  // [TENANT] Verifica que o primeiro segmento do path é o tenantId do usuário
-  const pathParts = filePath.split('/')
-  const fileTenantId = pathParts[0]
-  if (fileTenantId !== ctx.tenantId) {
-    return c.json({ error: 'Acesso negado' }, 403)
-  }
-
-  const file = Bun.file(`./uploads/${filePath}`)
-  if (!(await file.exists())) return c.json({ error: 'Arquivo não encontrado' }, 404)
-
-  return new Response(file)
-})
+// [DB-SWAP] Para servir uploads em produção com S3, gerar URLs pré-assinadas no
+// adapter e remover a rota de download local.
+// [SECURITY] A rota estática /uploads/* foi removida: ela validava apenas o
+// tenant no path e permitia acesso a anexos de projetos restritos por qualquer
+// usuário autenticado do mesmo tenant. Anexos agora são servidos exclusivamente
+// por /api/projects/:projectId/items/:itemId/attachments/:attachmentId/download,
+// que valida membership, item, projeto e tenant e aplica Content-Disposition.
 
 export async function startServer() {
   await assertAnalyticsCutoverReady()
