@@ -40,6 +40,16 @@ export async function toolUpdateItems(api: ApiCall, args: { projectId: string; f
   return api(`/projects/${projectId}/batch/items/update`, 'POST', { ...body, agentRunId })
 }
 
+export async function toolBatchMove(api: ApiCall, args: { projectId: string; itemIds: string[]; columnName: string }, agentRunId?: string): Promise<unknown> {
+  if (!Array.isArray(args.itemIds) || args.itemIds.length < 1 || args.itemIds.length > 500) throw new Error('itemIds deve conter entre 1 e 500 IDs')
+  if (typeof args.columnName !== 'string' || !args.columnName.trim()) throw new Error('columnName é obrigatório')
+  return toolUpdateItems(api, {
+    projectId: args.projectId,
+    filters: { itemIds: args.itemIds, types: null, statuses: null, sprint: null, version: null, module: null, assignee: null, parent: null, column: null, tag: null, titleContains: null, onlyLeaves: null, matchAll: false },
+    changes: [{ field: 'column', operation: 'SET', value: args.columnName.trim() }],
+  }, agentRunId)
+}
+
 // ─── Shapes de resposta usadas internamente ────────────────────────────────
 
 interface Column   { id: string; name: string; baseStatus: string }

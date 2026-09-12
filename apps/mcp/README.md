@@ -31,6 +31,7 @@ Adicione ao seu `.claude/settings.json`:
 | `get_current_sprint` | Retorna sprint ativa do projeto |
 | `claim_task` | Reivindica uma task para o agente |
 | `move_task` | Move card para outra coluna pelo nome |
+| `batch_move` | Move até 500 itens folha para uma coluna em uma única operação atômica (itemIds + nome exato ou ID da coluna) |
 | `complete_task` | Marca task como concluída |
 | `create_task` | Cria nova task (pode criar subtasks via `parentId` e versão opcional via `versionId`); em projetos hierárquicos TASK/BUG exigem `parentId` válido — não há cards órfãos |
 | `list_checklists` | Lista checklists de um card com itens e progresso |
@@ -67,6 +68,55 @@ Adicione ao seu `.claude/settings.json`:
 
 `update_item` e `update_items` recebem alterações no formato `{ field, operation, value }`. As operações são `SET`, `CLEAR`, `TODAY`, `OFFSET_DAYS` e `COPY_CREATED_DATE`; filtros aceitam IDs ou nomes exatos, e `sprint: "CURRENT"` seleciona a sprint ativa.
 
+## Projeto padrão da codebase (`AZYBOARD_PROJECT_ID`)
+
+Quando um agente trabalha sempre no mesmo projeto (caso típico: um repositório
+de código vinculado a um projeto do Azy Board), defina `AZYBOARD_PROJECT_ID` no
+ambiente do servidor MCP. Efeitos:
+
+- `projectId` passa a ser **opcional** em todas as ferramentas; quando omitido,
+  o servidor injeta o projeto padrão.
+- O `projectId` omitido pode ser informado explicitamente para operar outro
+  projeto — o padrão não restringe o escopo da API Key.
+
+```json
+{
+  "mcpServers": {
+    "azy-board": {
+      "command": "bun",
+      "args": ["run", "/caminho/para/azyboard/apps/mcp/src/index.ts"],
+      "env": {
+        "EASYBOARD_API_KEY": "azb_sua_chave_aqui",
+        "EASYBOARD_URL": "http://localhost:3000",
+        "AZYBOARD_PROJECT_ID": "01abcdef-0000-0000-0000-000000000000"
+      }
+    }
+  }
+}
+```
+
+O valor obtido na URL `/projects/<id>/...` é o formato recomendado. Como a API
+Key continua sendo um segredo, prefira o cofre de segredos do cliente; o ID do
+projeto não é sensível e pode ficar versionado no `opencode.json`/settings do
+repositório.
+
+## Resolução de projeto por nome
+
+Todas as ferramentas que recebem `projectId` aceitam **o ID (UUID) ou o nome
+exato do projeto**. Nomes são resolvidos contra os projetos acessíveis à API
+Key; nomes ambíguos ou inexistentes retornam erro corrigível
+(`AMBIGUOUS_PROJECT_NAME` / `PROJECT_NOT_FOUND`) sem executar a operação.
+
+## Operações em lote
+
+Para reduzir chamadas repetidas, prefira operações em lote:
+
+| Cenário | Ferramenta |
+|---|---|
+| Criar até 50 itens com hierarquia | `batch` ou `create_project_structure` |
+| Mover vários cards para outra coluna | `batch_move` |
+| Atualizar campos de vários itens por filtro | `update_items` |
+
 ## Exemplo de fluxo de um agente
 
 ```
@@ -92,6 +142,7 @@ Adicione ao seu `.claude/settings.json`:
 |---|---|---|
 | `EASYBOARD_API_KEY` | API Key gerada no painel do Azy Board | obrigatório |
 | `EASYBOARD_URL` | URL base da API | `http://localhost:3000` |
+| `AZYBOARD_PROJECT_ID` | Projeto padrão da codebase; torna `projectId` opcional nas ferramentas | opcional |
 
 ## Autorização
 

@@ -26,8 +26,19 @@ Consulte [[08 - Conta e Preferencias/Gerenciar API Keys|Gerenciar API Keys]] ant
 |---|---:|---|
 | `EASYBOARD_API_KEY` | Sim | Segredo integral da API Key. |
 | `EASYBOARD_URL` | Não | URL base do backend; padrão `http://localhost:3000`. |
+| `AZYBOARD_PROJECT_ID` | Não | Projeto padrão da codebase; quando definido, `projectId` torna-se opcional nas ferramentas. |
 
 Embora o nome técnico das variáveis mantenha `EASYBOARD`, elas configuram o servidor MCP do Azy Board.
+
+## Projeto padrão da codebase
+
+Quando um repositório de código trabalha sempre com o mesmo projeto do Azy
+Board, defina `AZYBOARD_PROJECT_ID` no ambiente do servidor MCP. Com isso, o
+agente não precisa descobrir o projeto a cada comando: `projectId` vira
+opcional e o servidor injeta o padrão. Informar `projectId` explicitamente
+continua permitindo operar outros projetos acessíveis à chave. O ID aparece na
+URL `/projects/<id>/...`; ele não é um segredo e pode ficar versionado na
+configuração MCP do repositório.
 
 ## Configuração de um cliente MCP
 
@@ -91,7 +102,9 @@ O identificador do projeto aparece na URL das páginas do projeto, entre `/proje
           ^^^^^^^^ projectId
 ```
 
-Use o identificador integral nas ferramentas.
+Use o identificador integral nas ferramentas. As ferramentas também aceitam o
+nome exato do projeto no lugar do ID; nomes ambíguos ou inexistentes retornam
+erro corrigível sem executar a operação.
 
 ## Problemas comuns
 

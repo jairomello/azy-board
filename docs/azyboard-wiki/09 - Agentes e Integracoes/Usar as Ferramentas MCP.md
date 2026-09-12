@@ -10,7 +10,7 @@ As ferramentas MCP permitem que agentes consultem a estrutura, criem itens, assu
 
 ## Catálogo de ferramentas
 
-O servidor MCP publica 57 ferramentas organizadas em seis domínios:
+O servidor MCP publica 58 ferramentas organizadas em seis domínios:
 
 **Projetos**
 
@@ -45,6 +45,7 @@ O servidor MCP publica 57 ferramentas organizadas em seis domínios:
 | `claim_task` | Reivindicar uma `TASK` ou `BUG`. |
 | `release_task` | Liberar uma reivindicação. |
 | `move_task` | Mover um card folha pelo nome exato da coluna. |
+| `batch_move` | Mover até 500 cards folha para uma coluna em operação atômica. |
 | `complete_task` | Concluir um item usando o tratamento adequado ao tipo. |
 | `delete_item` | Excluir item com cascata (suporta `dryRun`). |
 | `archive_item` / `unarchive_item` | Arquivar e restaurar itens (suportam `dryRun`). |
@@ -140,6 +141,12 @@ O card passa para trabalho em andamento e registra o proprietário humano e a AP
 ## Movimentar e concluir
 
 `move_task` recebe o nome exato e diferencia maiúsculas e minúsculas. Se a coluna não existir, a resposta informa os nomes disponíveis.
+
+Para mover vários cards de uma vez, use `batch_move` com `itemIds` (até 500) e
+a coluna de destino: a operação é atômica e substitui múltiplas chamadas de
+`move_task`. Para mover por critério (tipo, sprint, responsável etc.) sem IDs
+explícitos, use `update_items` com filtro de coluna de origem e alteração
+`column` para o destino.
 
 Prefira `complete_task` para finalizar:
 

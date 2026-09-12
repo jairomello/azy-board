@@ -7,11 +7,14 @@ Configure o cliente com transporte `stdio` e o servidor `apps/mcp/src/index.ts` 
 ```text
 EASYBOARD_API_KEY=azb_sua_chave_aqui
 EASYBOARD_URL=http://localhost:3000
+AZYBOARD_PROJECT_ID=<uuid do projeto padrão>   # opcional
 ```
 
 Não coloque valores reais em arquivos versionados. Gere uma chave por agente, cliente e ambiente; use o cofre de segredos do cliente quando disponível.
 
-Depois de recarregar o cliente, confirme que `list_tasks` e `list_modules` aparecem e execute `list_modules` em um `projectId` autorizado. O `projectId` pode ser obtido na URL `/projects/<id>/...`.
+`AZYBOARD_PROJECT_ID` pré-define o projeto da codebase: com ela configurada, `projectId` torna-se opcional nas ferramentas e o servidor injeta o padrão em cada chamada. O ID do projeto não é segredo e pode ficar versionado na configuração MCP do repositório; a API Key não.
+
+Depois de recarregar o cliente, confirme que `list_tasks` e `list_modules` aparecem e execute `list_modules` em um `projectId` autorizado. O `projectId` pode ser obtido na URL `/projects/<id>/...`. As ferramentas também aceitam o nome exato do projeto no lugar do ID.
 
 O contexto da tela e do projeto serve como prioridade e alvo padrão; não impeça uma
 capacidade explicitamente solicitada quando o Owner humano tiver permissão. O Azy

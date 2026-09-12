@@ -9,11 +9,11 @@ Use o Azy Board como fonte compartilhada de planejamento e execução para pesso
 
 ## Fluxo obrigatório
 
-1. Use `list_projects` para localizar o projeto; confirme o modo com `get_project`.
+1. Descubra o projeto: se `AZYBOARD_PROJECT_ID` estiver configurada no ambiente MCP, o projeto da codebase já é o padrão e `projectId` pode ser omitido nas ferramentas. Caso contrário, use `list_projects` para localizar o projeto. `projectId` também aceita o nome exato do projeto. Confirme o modo com `get_project`.
 2. Use `get_board` ou `get_tree` e consulte sprint, colunas e recursos necessários.
 3. Planeje no nível correto: EPIC -> STORY -> TASK/BUG em projetos `HIERARCHICAL`; TASK/BUG direto em projetos `SIMPLE`.
 4. Para trabalho atribuível, use `claim_task` antes de iniciar.
-5. Registre mudanças relevantes com `update_item`, checklists ou `create_item_log`.
+5. Registre mudanças relevantes com `update_item`, checklists ou `create_item_log`. Prefira operações em lote (`batch`, `batch_move`, `update_items`) a chamadas repetidas.
 6. Use `complete_task` para concluir e confirme o estado final com `get_board`.
 
 ## Regras de segurança

@@ -62,6 +62,8 @@ uploads/
 .mcp.*
 .codex
 .codex/
+.agents/
+opencode.json
 
 # Homelab deployment notes (must stay local)
 DEPLOY_LABAPPS_LOCAL.md

@@ -1,5 +1,5 @@
 import {
-  toolAddChecklistItem, toolAddMember, toolActivateSprint, toolArchiveItem, toolBatch,
+  toolAddChecklistItem, toolAddMember, toolActivateSprint, toolArchiveItem, toolBatch, toolBatchMove,
   toolCheckItem, toolClaimTask, toolCloseSprint, toolCompleteTask, toolCreateChecklist,
   toolCreateColumn, toolCreateCostCenter, toolCreateItemLog, toolCreateModule, toolCreateProject, toolCreateProjectStructure,
   toolCreateSprint, toolCreateSquad, toolCreateTag, toolCreateTask, toolCreateVersion,
@@ -57,7 +57,7 @@ export type ToolDefinition = {
 const required: Record<string, string[]> = {
   list_projects: [], get_project: ['projectId'], get_board: ['projectId'], get_tree: ['projectId'], get_shadow_markdown: ['projectId'],
   list_tasks: ['projectId'], list_modules: ['projectId'], get_current_sprint: ['projectId'], list_columns: ['projectId'], list_sprints: ['projectId'], list_tags: ['projectId'], list_versions: ['projectId'], list_members: ['projectId'], list_squads: ['projectId'], list_item_logs: ['projectId', 'itemId'], list_cost_centers: ['projectId'], list_attachments: ['projectId', 'itemId'], list_checklists: ['projectId', 'itemId'],
-  claim_task: ['projectId', 'taskId'], move_task: ['projectId', 'taskId', 'columnName'], complete_task: ['projectId', 'taskId'], create_task: ['projectId', 'title'], create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], release_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], delete_project: ['projectId'], archive_item: ['projectId', 'itemId'], unarchive_item: ['projectId', 'itemId'], set_item_tags: ['projectId', 'itemId', 'tagIds'], create_item_log: ['projectId', 'itemId', 'activity'], reorder_items: ['projectId', 'columnId', 'order'], update_checklist: ['projectId', 'itemId', 'checklistId', 'changes'], delete_checklist: ['projectId', 'itemId', 'checklistId'], update_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'changes'], delete_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId'], update_item_log: ['projectId', 'itemId', 'logId', 'changes'], batch: ['projectId', 'operations'],
+  claim_task: ['projectId', 'taskId'], move_task: ['projectId', 'taskId', 'columnName'], batch_move: ['projectId', 'itemIds', 'columnName'], complete_task: ['projectId', 'taskId'], create_task: ['projectId', 'title'], create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], release_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], delete_project: ['projectId'], archive_item: ['projectId', 'itemId'], unarchive_item: ['projectId', 'itemId'], set_item_tags: ['projectId', 'itemId', 'tagIds'], create_item_log: ['projectId', 'itemId', 'activity'], reorder_items: ['projectId', 'columnId', 'order'], update_checklist: ['projectId', 'itemId', 'checklistId', 'changes'], delete_checklist: ['projectId', 'itemId', 'checklistId'], update_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'changes'], delete_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId'], update_item_log: ['projectId', 'itemId', 'logId', 'changes'], batch: ['projectId', 'operations'],
   create_project: ['name'], create_project_structure: ['name', 'operations'], update_project: ['projectId'], create_module: ['projectId', 'name'], create_column: ['projectId', 'name', 'baseStatus'], reorder_columns: ['projectId', 'order'], create_sprint: ['projectId', 'name'], activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'], create_tag: ['projectId', 'name'], create_version: ['projectId', 'name'], add_member: ['projectId', 'email', 'role'], update_member: ['projectId', 'userId', 'role'], remove_member: ['projectId', 'userId'], create_squad: ['projectId', 'name'], create_cost_center: ['projectId', 'code'],
 }
 
@@ -70,21 +70,21 @@ const collaborationTools = new Set(['list_members', 'add_member', 'update_member
 const evidenceTools = new Set(['list_item_logs', 'create_item_log', 'update_item_log', 'list_attachments', 'list_checklists', 'create_checklist', 'update_checklist', 'delete_checklist', 'add_checklist_item', 'check_item', 'update_checklist_item', 'delete_checklist_item'])
 const destructiveTools = new Set(['delete_item', 'delete_project', 'archive_item', 'delete_checklist', 'delete_checklist_item', 'remove_member'])
 const createTools = new Set(['create_project', 'create_project_structure', 'create_task', 'create_module', 'create_column', 'create_sprint', 'create_tag', 'create_version', 'create_item_log', 'create_checklist', 'add_checklist_item', 'create_squad', 'create_cost_center', 'add_member'])
-const updateTools = new Set(['update_project', 'update_item', 'update_items', 'move_task', 'complete_task', 'claim_task', 'release_task', 'unarchive_item', 'set_item_tags', 'reorder_items', 'reorder_columns', 'activate_sprint', 'close_sprint', 'update_checklist', 'check_item', 'update_checklist_item', 'update_item_log', 'update_member'])
+const updateTools = new Set(['update_project', 'update_item', 'update_items', 'move_task', 'batch_move', 'complete_task', 'claim_task', 'release_task', 'unarchive_item', 'set_item_tags', 'reorder_items', 'reorder_columns', 'activate_sprint', 'close_sprint', 'update_checklist', 'check_item', 'update_checklist_item', 'update_item_log', 'update_member'])
 function routingFor(name: string): ToolRoutingMetadata {
   const domain: ToolDomain = projectTools.has(name) ? 'projects' : boardTools.has(name) ? 'board' : collaborationTools.has(name) ? 'collaboration' : evidenceTools.has(name) ? 'evidence' : planningTools.has(name) ? 'planning' : 'items'
   const operation: ToolOperation = destructiveTools.has(name) ? 'delete' : createTools.has(name) ? 'create' : updateTools.has(name) ? 'update' : 'read'
-  const scope: ToolScope = name === 'list_projects' || name === 'create_project' || name === 'create_project_structure' ? 'global' : evidenceTools.has(name) || ['update_item', 'update_items', 'create_task', 'claim_task', 'release_task', 'move_task', 'complete_task', 'delete_item', 'archive_item', 'unarchive_item', 'set_item_tags', 'reorder_items'].includes(name) ? 'item' : 'project'
+  const scope: ToolScope = name === 'list_projects' || name === 'create_project' || name === 'create_project_structure' ? 'global' : evidenceTools.has(name) || ['update_item', 'update_items', 'create_task', 'claim_task', 'release_task', 'move_task', 'batch_move', 'complete_task', 'delete_item', 'archive_item', 'unarchive_item', 'set_item_tags', 'reorder_items'].includes(name) ? 'item' : 'project'
   const risk: ToolRisk = destructiveTools.has(name) ? 'DESTRUCTIVE' : operation === 'read' ? 'READ' : operation === 'create' || operation === 'update' ? 'MEDIUM' : 'LOW'
   const supportedScreens: AssistantScreen[] = scope === 'global' ? ['projects-index', 'global-other', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'account', 'admin-users', 'admin-assistant'] : scope === 'item' ? ['project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'item-detail'] : ['projects-index', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'global-other']
-  const dependencyTools = name === 'create_task' || name === 'batch' ? ['list_tasks', 'list_modules', 'list_columns'] : name === 'move_task' ? ['list_columns'] : name === 'update_project' || name === 'delete_project' ? ['list_projects'] : []
+  const dependencyTools = name === 'create_task' || name === 'batch' ? ['list_tasks', 'list_modules', 'list_columns'] : name === 'move_task' || name === 'batch_move' ? ['list_columns'] : name === 'update_project' || name === 'delete_project' ? ['list_projects'] : []
   return { domain, scope, operation, risk, dependencyTools, targetKinds: scope === 'global' ? ['tenant', 'project'] : scope === 'project' ? ['project'] : ['project', 'item'], supportedScreens }
 }
 const fieldsByTool: Record<string, string[]> = {
   list_projects: ['limit', 'cursor'], get_project: ['projectId'], get_board: ['projectId'], get_tree: ['projectId', 'onlyLeaves'], get_current_sprint: ['projectId'],
   list_tasks: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'onlyLeaves', 'limit', 'cursor'], list_checklists: ['projectId', 'itemId'],
   create_project: ['name', 'description', 'boardMode', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], create_project_structure: ['name', 'description', 'boardMode', 'managerUserId', 'operations', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], update_project: ['projectId', 'name', 'description', 'boardMode', 'managerUserId', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], delete_project: ['projectId'],
-  create_task: ['projectId', 'title', 'description', 'type', 'priority', 'points', 'parentId', 'moduleId', 'assigneeId', 'status'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], complete_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], move_task: ['projectId', 'taskId', 'columnName'], claim_task: ['projectId', 'taskId'], release_task: ['projectId', 'taskId'],
+  create_task: ['projectId', 'title', 'description', 'type', 'priority', 'points', 'parentId', 'moduleId', 'assigneeId', 'status'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], complete_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], move_task: ['projectId', 'taskId', 'columnName'], batch_move: ['projectId', 'itemIds', 'columnName'], claim_task: ['projectId', 'taskId'], release_task: ['projectId', 'taskId'],
   create_sprint: ['projectId', 'name', 'startDate', 'endDate'], activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'],
   create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'],
   create_tag: ['projectId', 'name', 'color'], set_item_tags: ['projectId', 'itemId', 'tagIds'],
@@ -155,12 +155,14 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
     ? { type: 'string', enum: ['HIERARCHICAL', 'SIMPLE'], description: 'Use only when explicitly requested.' }
     : { type: ['string', 'null'], enum: ['HIERARCHICAL', 'SIMPLE', null], description: 'Optional. Use null when the user did not specify a board mode; never ask for it.' }
   if (field === 'tagIds' || field === 'order') return nullable({ type: 'array', items: { type: 'string' } })
+  if (field === 'itemIds') return { ...nullable({ type: 'array', items: { type: 'string' } }), maxItems: 500, description: 'Item IDs to move (1 to 500).' }
   if (field === 'onlyLeaves' || field === 'atomic' || field === 'confirm' || field === 'dryRun' || field === 'checked') return nullable({ type: 'boolean' })
   if (field === 'plannedPoints') return { ...nullable({ type: 'number' }), description: 'Estimated total story points for the project.' }
   if (field === 'plannedHours') return { ...nullable({ type: 'number' }), description: 'Estimated total hours for the project.' }
   if (field === 'startDate') return { ...nullable({ type: 'string' }), description: 'Planned start date in YYYY-MM-DD format.' }
   if (field === 'plannedEndDate') return { ...nullable({ type: 'string' }), description: 'Planned end date in YYYY-MM-DD format.' }
   if (field === 'scope') return { ...nullable({ type: 'string' }), description: 'Project scope as HTML rich text.' }
+  if (field === 'projectId') return { ...nullable({ type: 'string' }), description: 'Project ID (UUID) or the exact project name; names are resolved against the projects accessible to the API key.' }
   if (field === 'limit' || field === 'durationMin' || field === 'points') return nullable({ type: 'number' })
   if (field === 'filters') return itemFiltersSchema
   if (field === 'changes') return itemChangeSchema
@@ -169,7 +171,7 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
 
 export const SHARED_TOOL_NAMES = Object.freeze(Object.keys(required))
 const friendlyNames: Record<string, string> = {
-  update_items: 'Atualizar itens', update_item: 'Atualizar item', batch: 'Cadastrar estrutura',
+  update_items: 'Atualizar itens', update_item: 'Atualizar item', batch: 'Cadastrar estrutura', batch_move: 'Mover itens em lote',
   list_projects: 'Listar projetos', get_project: 'Consultar projeto', get_board: 'Consultar board', get_tree: 'Consultar hierarquia', list_tasks: 'Listar itens',
   create_project: 'Criar projeto', create_project_structure: 'Criar projeto e estrutura', update_project: 'Atualizar projeto', delete_project: 'Excluir projeto', create_task: 'Criar item', delete_item: 'Excluir item',
   move_task: 'Mover item', complete_task: 'Concluir item', claim_task: 'Assumir item', release_task: 'Liberar item', archive_item: 'Arquivar item', unarchive_item: 'Desarquivar item',
@@ -197,6 +199,8 @@ export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinit
         ? 'Create an ordered hierarchy of up to 50 EPIC, STORY, TASK, or BUG items in one atomic approval. Use refs and parentRefs instead of database IDs. Use moduleName for EPIC items; a module referenced by name that does not exist yet is created automatically.'
       : name === 'update_items'
          ? 'Atomically update one or many active items selected by filters. For bulk moves, set filters.column to the source column, preserve every other requested criterion, and add a column SET change with the destination. Generic tasks or cards in a bulk move covers leaf TASK and BUG items unless the user explicitly restricts the type. Also supports fixed values, clearing fields, relative dates, today, and copying each item creation date. Use itemIds for one item and matchAll only for every item without narrower filters.'
+      : name === 'batch_move'
+        ? 'Move up to 500 leaf items to a column in one atomic operation. Requires itemIds and the exact destination column name (or column ID). Prefer this over multiple move_task calls when moving several cards at once. For filter-based bulk moves without explicit IDs, use update_items.'
       : `Azy Board: ${name}`,
     inputSchema: (() => {
        const fields = [...(fieldsByTool[name] ?? required[name]!)]
@@ -240,11 +244,28 @@ export function assertHumanContext(context: HumanToolContext): void {
 
 export type ToolExecution = { api: ApiCall; context: HumanToolContext; authorize?: (context: HumanToolContext, name: string, args: Record<string, unknown>) => Promise<void> }
 
+const PROJECT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Aceita UUID (uso direto) ou nome exato do projeto (resolvido via list_projects). */
+export async function resolveProjectId(api: ApiCall, selector: string): Promise<string> {
+  const value = selector.trim()
+  if (PROJECT_ID_PATTERN.test(value)) return value
+  const projects = await toolListProjects(api)
+  const matches = projects.filter(project => project.name.localeCompare(value, undefined, { sensitivity: 'base' }) === 0)
+  if (matches.length === 1) return matches[0]!.id
+  if (matches.length > 1) throw new Error(`AMBIGUOUS_PROJECT_NAME: há vários projetos chamados "${value}"; informe o projectId`)
+  throw new Error(`PROJECT_NOT_FOUND: projeto "${value}" não encontrado; use list_projects para ver os projetos acessíveis`)
+}
+
 export async function executeSharedTool(name: string, args: Record<string, unknown>, execution: ToolExecution): Promise<unknown> {
   const definition = getSharedToolDefinitions().find(tool => tool.name === name)
   if (!definition) throw new Error('TOOL_NOT_REGISTERED')
   assertHumanContext(execution.context)
   validateToolArguments(name, args)
+  // [PROJECT RESOLUTION] projectId aceita ID ou nome exato; resolução só chama a API para nomes.
+  if (typeof args.projectId === 'string' && args.projectId.trim()) {
+    args = { ...args, projectId: await resolveProjectId(execution.api, args.projectId) }
+  }
   if (execution.context.projectId && args.projectId && execution.context.projectId !== args.projectId) throw new Error('PROJECT_CONTEXT_MISMATCH')
   if (execution.context.source === 'azy-agent' && !execution.authorize) throw new Error('AUTHORIZATION_REVALIDATION_REQUIRED')
   await execution.authorize?.(execution.context, name, args)
@@ -270,6 +291,7 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'list_checklists': return toolListChecklists(api, args.projectId as string, args.itemId as string)
     case 'claim_task': return toolClaimTask(api, args.projectId as string, args.taskId as string)
     case 'move_task': return toolMoveTask(api, args.projectId as string, args.taskId as string, args.columnName as string)
+    case 'batch_move': return toolBatchMove(api, args as Parameters<typeof toolBatchMove>[1], execution.context.runId)
     case 'complete_task': return toolCompleteTask(api, args.projectId as string, args.taskId as string)
     case 'create_task': return toolCreateTask(api, args as Parameters<typeof toolCreateTask>[1])
     case 'create_checklist': return toolCreateChecklist(api, args.projectId as string, args.itemId as string, args.name as string)

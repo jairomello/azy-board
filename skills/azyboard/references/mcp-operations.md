@@ -2,11 +2,13 @@
 
 ## Descoberta
 
-- `list_projects`: localiza projetos acessíveis.
+- `list_projects`: localiza projetos acessíveis. Quando `AZYBOARD_PROJECT_ID` está configurada, o projeto já é conhecido e esta etapa pode ser pulada.
 - `get_project`: confirma `boardMode`, papel e configuração.
 - `get_board` ou `get_tree`: lê o estado atual antes de planejar.
 - `get_current_sprint`, `list_columns`, `list_tags`, `list_versions` e `list_members`: consulte apenas o contexto necessário.
 - `get_shadow_markdown`: use quando uma visão textual for melhor para análise.
+
+`projectId` aceita o ID (UUID) ou o nome exato do projeto; nomes são resolvidos contra os projetos acessíveis à API Key e erros de nome são corrigíveis.
 
 ## Catálogo
 
@@ -30,6 +32,7 @@ Use `list_modules` antes de criar EPIC quando necessário. `create_task` resolve
 - Crie ou atualize somente depois de ler o estado atual.
 - Use `claim_task` para reservar TASK/BUG e `release_task` para liberar.
 - Use `move_task` com nome exato da coluna; prefira `complete_task` ao concluir.
+- Prefira operações em lote a chamadas repetidas: `batch_move` move até 500 cards para uma coluna atomicamente; `update_items` atualiza campos por filtro; `batch` cria hierarquias.
 - Use `batch` para criações relacionadas que se beneficiem de atomicidade, com `idempotencyKey` quando houver reenvio possível.
 - Use checklist para passos verificáveis da mesma unidade; use subtask quando houver responsável, estimativa ou ciclo Kanban independente.
 
