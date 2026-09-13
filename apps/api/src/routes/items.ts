@@ -749,7 +749,12 @@ itemsRouter.patch('/:itemId/claim', requireRole('MEMBER'), async (c) => {
   const apiKeyId = c.get('apiKeyId') as string | undefined
 
   const audit = auditContext(c)
-  const claimed = await claimItem({ tenantId: ctx.tenantId, projectId, itemId, userId: ctx.userId, apiKeyId, actor: audit })
+  const progressColumn = await db.query.columns.findFirst({
+    where: (column) => and(eq(column.projectId, projectId), eq(column.tenantId, ctx.tenantId), eq(column.baseStatus, 'IN_PROGRESS')),
+    orderBy: (column, { asc }) => [asc(column.position)],
+    columns: { id: true },
+  })
+  const claimed = await claimItem({ tenantId: ctx.tenantId, projectId, itemId, userId: ctx.userId, apiKeyId, actor: audit, columnId: progressColumn?.id ?? item.columnId })
   if (!claimed) return c.json({ error: 'Item já está sendo trabalhado por outro usuário' }, 409)
 
   broadcast(projectId, { type: 'TASK_CLAIMED', projectId, payload: { itemId, assigneeId: ctx.userId, apiKeyId } })

@@ -17,6 +17,7 @@ type ItemMutationInput = {
   itemId: string
   userId: string
   apiKeyId?: string
+  columnId?: string | null
   actor: MutationActor
 }
 
@@ -26,6 +27,7 @@ export async function claimItem(input: ItemMutationInput): Promise<boolean> {
     const updated = await tx.update(items).set({
       assigneeId: input.userId,
       assigneeApiKeyId: input.apiKeyId ?? null,
+      columnId: input.columnId ?? null,
       status: 'IN_PROGRESS',
       updatedAt: new Date().toISOString(),
     }).where(and(
