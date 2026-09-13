@@ -154,5 +154,15 @@
   "deleteWorkLogConfirmation": "Excluir este registro de trabalho?",
   "save": "Salvar",
   "back": "Voltar",
-  "synced": "Sincronizado"
+  "synced": "Sincronizado",
+  "connecting": "Conectando",
+  "offline": "Offline",
+  "realtimeUpdates": "Atualizações em tempo real",
+  "visibleItemOne": "{{count}} item visível",
+  "visibleItemMany": "{{count}} itens visíveis"
+  ,"archiveCascadeConfirmation": "Este item possui {{count}} descendente(s) que também serão arquivados em cascata. Deseja continuar?"
+  ,"title": "Título"
+  ,"editEpic": "Editar épico"
+  ,"noStoriesInEpic": "Nenhuma história neste épico."
+  ,"editStory": "Editar história"
 }

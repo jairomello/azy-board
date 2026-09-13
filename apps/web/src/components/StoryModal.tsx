@@ -138,7 +138,7 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
               <input
                 value={persona}
                 onChange={e => setPersona(e.target.value)}
-                placeholder="[persona / papel de usuário]"
+                placeholder={t('storyPersonaPlaceholder')}
                 className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
               />
             </div>
@@ -147,7 +147,7 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
               <input
                 value={goal}
                 onChange={e => setGoal(e.target.value)}
-                placeholder="[ação que desejo realizar]"
+                placeholder={t('storyGoalPlaceholder')}
                 className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
               />
             </div>
@@ -156,7 +156,7 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
               <input
                 value={benefit}
                 onChange={e => setBenefit(e.target.value)}
-                placeholder="[benefício ou resultado esperado]"
+                placeholder={t('storyBenefitPlaceholder')}
                 className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
               />
             </div>

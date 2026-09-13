@@ -34,10 +34,11 @@ export function BoardContextHeader({ sprintName, completed, total }: BoardContex
 }
 
 export function BoardStatusRail({ syncState, visibleItems }: { syncState: SyncState; visibleItems: number }) {
+  const { t } = useTranslation('board')
   const config = {
-    connecting: { label: 'Conectando', icon: LoaderCircle, className: 'text-amber-600 animate-spin' },
-    synced: { label: 'Sincronizado', icon: Cloud, className: 'text-status-done' },
-    offline: { label: 'Offline', icon: CloudOff, className: 'text-status-blocked' },
+    connecting: { label: t('connecting'), icon: LoaderCircle, className: 'text-amber-600 animate-spin' },
+    synced: { label: t('synced'), icon: Cloud, className: 'text-status-done' },
+    offline: { label: t('offline'), icon: CloudOff, className: 'text-status-blocked' },
   }[syncState]
   const Icon = config.icon
 
@@ -48,8 +49,8 @@ export function BoardStatusRail({ syncState, visibleItems }: { syncState: SyncSt
         {config.label}
       </span>
       <span className="w-px h-3 bg-border" />
-      <span>Atualizações em tempo real</span>
-      <span className="ml-auto tabular-nums">{visibleItems} {visibleItems === 1 ? 'item visível' : 'itens visíveis'}</span>
+      <span>{t('realtimeUpdates')}</span>
+      <span className="ml-auto tabular-nums">{t(visibleItems === 1 ? 'visibleItemOne' : 'visibleItemMany', { count: visibleItems })}</span>
     </div>
   )
 }

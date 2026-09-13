@@ -1435,7 +1435,7 @@ export default function BoardPage() {
           <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
              <h3 className="font-semibold text-foreground mb-2">{tBoard('archiveItem')}</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              Este item possui <strong>{archiveConfirm.childrenCount}</strong> descendente(s) que também serão arquivados em cascata. Deseja continuar?
+               {tBoard('archiveCascadeConfirmation', { count: archiveConfirm.childrenCount })}
             </p>
             <div className="flex gap-2 justify-end">
               <button
@@ -1487,7 +1487,7 @@ export default function BoardPage() {
                   <thead>
                     <tr className="border-b border-border text-xs text-muted-foreground uppercase tracking-wide">
                       <th className="pb-2 text-left font-medium">Tipo</th>
-                      <th className="pb-2 text-left font-medium">Título</th>
+                       <th className="pb-2 text-left font-medium">{tBoard('title')}</th>
                       <th className="pb-2 text-left font-medium">Coluna original</th>
                       <th className="pb-2 text-left font-medium">Data</th>
                       <th className="pb-2" />
@@ -1651,6 +1651,7 @@ function Swimlane({
   defaultParentId,
   allowAdd,
 }: SwimlaneProps) {
+  const { t: tBoard } = useTranslation('board')
   const doneCount = tasks.filter(task => task.status === 'DONE').length
   const progress = tasks.length > 0 ? Math.round((doneCount / tasks.length) * 100) : 0
 
@@ -1687,7 +1688,7 @@ function Swimlane({
           <button
             onClick={onEditEpic}
             className="text-muted-foreground hover:text-foreground transition flex-shrink-0 p-1 rounded hover:bg-muted"
-            title="Editar épico"
+             title={tBoard('editEpic')}
           >
             <Pencil className="w-3.5 h-3.5" />
           </button>
@@ -1698,7 +1699,7 @@ function Swimlane({
         <div className="ml-2 sm:ml-4 pl-3 sm:pl-5 border-l-2 border-violet-400/30 space-y-2.5">
           {storyGroups.length === 0 && (
             <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">
-              Nenhuma história neste épico.
+               {tBoard('noStoriesInEpic')}
             </div>
           )}
           {storyGroups.map(group => (
@@ -1782,6 +1783,7 @@ function StorySwimlane({
   onArchive,
   onEdit,
 }: StorySwimlaneProps) {
+  const { t: tBoard } = useTranslation('board')
   const doneCount = group.tasks.filter(task => task.status === 'DONE').length
   const progress = group.tasks.length > 0 ? Math.round((doneCount / group.tasks.length) * 100) : 0
 
@@ -1823,8 +1825,8 @@ function StorySwimlane({
           <button
             onClick={onEdit}
             className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition"
-            title="Editar história"
-            aria-label={`Editar história ${group.title}`}
+             title={tBoard('editStory')}
+             aria-label={`${tBoard('editStory')} ${group.title}`}
           >
             <Pencil className="w-3.5 h-3.5" />
           </button>

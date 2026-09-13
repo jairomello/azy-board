@@ -122,7 +122,7 @@ export function BoardFilters({
 
       {showOptions && <div className="flex items-center gap-1.5 flex-wrap">
          <span className="w-20 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t('display')}</span>
-         {showModuleViewMode && <div className="flex items-center rounded-lg border border-border bg-background p-0.5" aria-label="Modo de módulos">
+         {showModuleViewMode && <div className="flex items-center rounded-lg border border-border bg-background p-0.5" aria-label={t('moduleModeLabel')}>
           <button
             type="button"
             aria-pressed={filters.moduleViewMode === 'hierarchy'}
@@ -247,7 +247,7 @@ export function BoardFilters({
           {members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
         </select>
       )}
-      <select aria-label="Versão" value={filters.versionId} onChange={e => update({ versionId: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
+      <select aria-label={t('filterVersion')} value={filters.versionId} onChange={e => update({ versionId: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
          <option value="">{t('filterVersion')}</option>
          {versions.length === 0 && <option disabled>{t('noVersions')}</option>}
         {versions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}

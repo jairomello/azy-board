@@ -37,7 +37,10 @@ if (missing.length || extra.length) {
 }
 
 const sourceRoot = join(import.meta.dir, '..', 'apps', 'web', 'src')
-const literalPattern = /(?:>\s*|(?:aria-label|title|placeholder)\s*=\s*["'`])([^<{}`"']*[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ][^<{}`"']*)/g
+const literalPatterns = [
+  />\s*([^<{]*[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ][^<{]*)\s*</g,
+  /(?:aria-label|title|placeholder)\s*=\s*["']([^"']*[áàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ][^"']*)["']/g,
+]
 const findings: string[] = []
 
 async function scan(directory: string) {
@@ -45,18 +48,23 @@ async function scan(directory: string) {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) await scan(path)
     if (!entry.isFile() || !/\.(tsx|ts)$/.test(entry.name)) continue
-    const content = await Bun.file(path).text()
-    for (const match of content.matchAll(literalPattern)) {
-      const text = match[1].trim()
-      if (text) findings.push(`${relative(join(import.meta.dir, '..'), path)}: ${text}`)
+    const content = (await Bun.file(path).text())
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '')
+    for (const pattern of literalPatterns) {
+      for (const match of content.matchAll(pattern)) {
+        const text = match[1].trim()
+        if (text) findings.push(`${relative(join(import.meta.dir, '..'), path)}: ${text}`)
+      }
     }
   }
 }
 
 await scan(sourceRoot)
 if (findings.length) {
-  console.warn(`Potential hardcoded localized UI text (${findings.length}):`)
-  console.warn(findings.join('\n'))
+  console.error(`Hardcoded localized UI text (${findings.length}):`)
+  console.error(findings.join('\n'))
+  process.exit(1)
 }
 
 console.log(`i18n resources are structurally aligned for ${locales.join(', ')}.`)

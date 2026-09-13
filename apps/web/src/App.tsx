@@ -5,6 +5,7 @@ import { ToastProvider } from './components/Toast'
 import { AssistantProvider } from './contexts/AssistantContext'
 import { AzyAgentDrawer } from './components/AzyAgentDrawer'
 import RootAssistantSettings from './components/RootAssistantSettings'
+import i18n from './i18n'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null }
@@ -18,7 +19,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
       return (
         <div className="flex flex-col items-center justify-center h-screen bg-background gap-4 p-8">
           <div className="max-w-2xl w-full bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-xl p-6">
-            <h2 className="text-red-700 dark:text-red-300 font-bold text-lg mb-2">Erro de renderização</h2>
+            <h2 className="text-red-700 dark:text-red-300 font-bold text-lg mb-2">{i18n.t('renderError')}</h2>
             <p className="text-red-600 dark:text-red-400 text-sm font-mono bg-red-100 dark:bg-red-900 rounded p-3 break-all">
               {err.message}
             </p>
