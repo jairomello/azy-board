@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { eq, and, isNull, inArray, asc, desc, sql } from 'drizzle-orm'
+import { eq, and, inArray, asc, desc, sql } from 'drizzle-orm'
 import { db } from '../db/index'
 import { projects, items, columns, itemTags, itemSprints, modules, checklists, checklistItems, attachments, itemLogs, projectVersions, projectCostCenters, tags, sprints, memberships, users } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
@@ -12,6 +12,7 @@ import type { RequestContext, Priority, ItemType, ActivityActorType, ActivitySou
 import { parseWorkDuration } from '@azy-board/types'
 import { getIdempotent, saveIdempotent } from '../services/idempotency'
 import { appendAnalyticsEvent, snapshotItem } from '../services/analytics'
+import { claimItem, releaseItem } from '../services/itemMutations'
 
 export const itemsRouter = new Hono<HonoEnv>()
 itemsRouter.use('*', authMiddleware)
@@ -748,16 +749,7 @@ itemsRouter.patch('/:itemId/claim', requireRole('MEMBER'), async (c) => {
   const apiKeyId = c.get('apiKeyId') as string | undefined
 
   const audit = auditContext(c)
-  const claimed = await db.transaction(async (tx) => {
-    const before = await snapshotItem(tx, ctx.tenantId, projectId, itemId)
-    const updated = await tx.update(items).set({ assigneeId: ctx.userId, assigneeApiKeyId: apiKeyId ?? null, status: 'IN_PROGRESS', updatedAt: new Date().toISOString() })
-      .where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId), isNull(items.assigneeId)))
-      .returning({ id: items.id })
-    if (!updated.length) return false
-    await tx.insert(itemLogs).values({ id: generateId(), tenantId: ctx.tenantId, itemId, authorId: ctx.userId, type: 'auto', actorType: audit.actorType, actorLabel: audit.actorLabel, source: audit.source, activity: 'Card assumido para trabalho', durationMin: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
-    await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId, eventType: 'STATUS_CHANGED', actorId: ctx.userId, origin: apiKeyId ? 'MCP' : 'REST', before, after: await snapshotItem(tx, ctx.tenantId, projectId, itemId) })
-    return true
-  })
+  const claimed = await claimItem({ tenantId: ctx.tenantId, projectId, itemId, userId: ctx.userId, apiKeyId, actor: audit })
   if (!claimed) return c.json({ error: 'Item já está sendo trabalhado por outro usuário' }, 409)
 
   broadcast(projectId, { type: 'TASK_CLAIMED', projectId, payload: { itemId, assigneeId: ctx.userId, apiKeyId } })
@@ -776,13 +768,8 @@ itemsRouter.patch('/:itemId/release', requireRole('MEMBER'), async (c) => {
   })
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
-  const before = await snapshotItem(db, ctx.tenantId, projectId, itemId)
   const audit = auditContext(c)
-  await db.transaction(async (tx) => {
-    await tx.update(items).set({ assigneeId: null, assigneeApiKeyId: null, status: 'NOT_STARTED', updatedAt: new Date().toISOString() }).where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
-    await tx.insert(itemLogs).values({ id: generateId(), tenantId: ctx.tenantId, itemId, authorId: ctx.userId, type: 'auto', actorType: audit.actorType, actorLabel: audit.actorLabel, source: audit.source, activity: 'Trabalho liberado', durationMin: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
-    await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId, eventType: 'STATUS_CHANGED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before, after: await snapshotItem(tx, ctx.tenantId, projectId, itemId) })
-  })
+  await releaseItem({ tenantId: ctx.tenantId, projectId, itemId, userId: ctx.userId, apiKeyId: c.get('apiKeyId') as string | undefined, actor: audit })
 
   broadcast(projectId, { type: 'CARD_UPDATED', projectId, payload: { itemId, assigneeId: null } })
   const updated = await db.query.items.findFirst({ where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)) })
