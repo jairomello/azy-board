@@ -178,16 +178,20 @@ export class AssistantHarness {
   async approve(runId: string, tenantId: string, userId: string, operation: string): Promise<void> {
     const approval = await this.database.query.assistantApprovals.findFirst({ where: (a) => and(eq(a.runId, runId), eq(a.tenantId, tenantId), eq(a.operationHash, operation), eq(a.status, 'PENDING')) })
     if (!approval || approval.expiresAt <= new Date().toISOString()) throw new Error('APPROVAL_EXPIRED')
-    await this.database.update(assistantApprovals).set({ status: 'APPROVED', decidedBy: userId, decidedAt: new Date().toISOString() }).where(eq(assistantApprovals.id, approval.id))
-    await this.database.update(assistantRuns).set({ status: 'QUEUED' }).where(and(eq(assistantRuns.id, runId), eq(assistantRuns.tenantId, tenantId)))
+    const decided = await this.database.update(assistantApprovals).set({ status: 'APPROVED', decidedBy: userId, decidedAt: new Date().toISOString() })
+      .where(and(eq(assistantApprovals.id, approval.id), eq(assistantApprovals.status, 'PENDING'))).returning({ id: assistantApprovals.id })
+    if (!decided.length) throw new Error('APPROVAL_INVALID')
+    await this.database.update(assistantRuns).set({ status: 'QUEUED' }).where(and(eq(assistantRuns.id, runId), eq(assistantRuns.tenantId, tenantId), eq(assistantRuns.status, 'WAITING_APPROVAL')))
     await this.event(runId, tenantId, 'APPROVAL_DECIDED', { approved: true })
   }
 
   async reject(runId: string, tenantId: string, userId: string, operation: string): Promise<void> {
     const approval = await this.database.query.assistantApprovals.findFirst({ where: (a) => and(eq(a.runId, runId), eq(a.tenantId, tenantId), eq(a.operationHash, operation), eq(a.status, 'PENDING')) })
     if (!approval || approval.expiresAt <= new Date().toISOString()) throw new Error('APPROVAL_EXPIRED')
-    await this.database.update(assistantApprovals).set({ status: 'REJECTED', decidedBy: userId, decidedAt: new Date().toISOString() }).where(eq(assistantApprovals.id, approval.id))
-    await this.database.update(assistantRuns).set({ status: 'COMPLETED', finishedAt: new Date().toISOString() }).where(and(eq(assistantRuns.id, runId), eq(assistantRuns.tenantId, tenantId)))
+    const decided = await this.database.update(assistantApprovals).set({ status: 'REJECTED', decidedBy: userId, decidedAt: new Date().toISOString() })
+      .where(and(eq(assistantApprovals.id, approval.id), eq(assistantApprovals.status, 'PENDING'))).returning({ id: assistantApprovals.id })
+    if (!decided.length) throw new Error('APPROVAL_INVALID')
+    await this.database.update(assistantRuns).set({ status: 'COMPLETED', finishedAt: new Date().toISOString() }).where(and(eq(assistantRuns.id, runId), eq(assistantRuns.tenantId, tenantId), eq(assistantRuns.status, 'WAITING_APPROVAL')))
     await this.event(runId, tenantId, 'APPROVAL_DECIDED', { approved: false })
   }
 

@@ -565,8 +565,16 @@ assistantRouter.post('/runs/:runId/question', async (c) => {
   if (run.status !== 'WAITING_USER') return operationalError(c, 'RUN_STATE_CONFLICT', 409)
   const body = await c.req.json<{ answer?: unknown }>().catch(() => ({} as { answer?: unknown }))
   if (typeof body.answer !== 'string' || !body.answer.trim()) return operationalError(c, 'INVALID_REQUEST', 400)
-  await db.insert(assistantMessages).values({ id: generateId(), tenantId: ctx.tenantId, conversationId: run.conversationId, userId: ctx.userId, role: 'USER', content: body.answer.slice(0, 20_000), metadataJson: JSON.stringify({ runId: run.id, kind: 'question_answer' }), createdAt: new Date().toISOString() })
-  await db.update(assistantRuns).set({ status: 'QUEUED', errorCode: null }).where(and(eq(assistantRuns.id, run.id), eq(assistantRuns.tenantId, ctx.tenantId), eq(assistantRuns.userId, ctx.userId)))
+  const answer = body.answer.slice(0, 20_000)
+  const resumed = await db.transaction(async (tx) => {
+    const updated = await tx.update(assistantRuns).set({ status: 'QUEUED', errorCode: null })
+      .where(and(eq(assistantRuns.id, run.id), eq(assistantRuns.tenantId, ctx.tenantId), eq(assistantRuns.userId, ctx.userId), eq(assistantRuns.status, 'WAITING_USER')))
+      .returning({ id: assistantRuns.id })
+    if (!updated.length) return false
+    await tx.insert(assistantMessages).values({ id: generateId(), tenantId: ctx.tenantId, conversationId: run.conversationId, userId: ctx.userId, role: 'USER', content: answer, metadataJson: JSON.stringify({ runId: run.id, kind: 'question_answer' }), createdAt: new Date().toISOString() })
+    return true
+  })
+  if (!resumed) return operationalError(c, 'RUN_STATE_CONFLICT', 409)
   return c.json({ runId: run.id, status: 'QUEUED' })
 })
 
@@ -643,7 +651,13 @@ assistantRouter.post('/runs/:runId/cancel', async (c) => {
   const ctx = context(c), run = await ownedRun(ctx.tenantId, ctx.userId, c.req.param('runId'))
   if (!run) return operationalError(c, 'RUN_NOT_FOUND', 404)
   if (['COMPLETED', 'FAILED', 'CANCELLED', 'EXPIRED'].includes(run.status)) return c.json({ runId: run.id, status: run.status })
-  await db.update(assistantRuns).set({ status: 'CANCELLED', finishedAt: new Date().toISOString(), errorCode: 'CANCELLED' }).where(and(eq(assistantRuns.id, run.id), eq(assistantRuns.tenantId, ctx.tenantId), eq(assistantRuns.userId, ctx.userId)))
+  const cancelled = await db.update(assistantRuns).set({ status: 'CANCELLED', finishedAt: new Date().toISOString(), errorCode: 'CANCELLED' })
+    .where(and(eq(assistantRuns.id, run.id), eq(assistantRuns.tenantId, ctx.tenantId), eq(assistantRuns.userId, ctx.userId), inArray(assistantRuns.status, ['QUEUED', 'RUNNING', 'WAITING_USER', 'WAITING_APPROVAL'])))
+    .returning({ id: assistantRuns.id })
+  if (!cancelled.length) {
+    const current = await ownedRun(ctx.tenantId, ctx.userId, run.id)
+    return c.json({ runId: run.id, status: current?.status ?? run.status })
+  }
   const last = await db.query.assistantEvents.findFirst({ where: (event) => and(eq(event.tenantId, ctx.tenantId), eq(event.runId, run.id)), orderBy: [desc(assistantEvents.sequence)] })
   await db.insert(assistantEvents).values({ id: generateId(), tenantId: ctx.tenantId, runId: run.id, sequence: (last?.sequence ?? 0) + 1, eventType: 'RUN_CANCELLED', payloadJson: JSON.stringify({ actor: ctx.userId }), createdAt: new Date().toISOString() })
   return c.json({ runId: run.id, status: 'CANCELLED' })

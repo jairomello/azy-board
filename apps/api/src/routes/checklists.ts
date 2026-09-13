@@ -73,19 +73,21 @@ checklistsRouter.post('/', requireRole('MEMBER'), async (c) => {
   const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)
   if (!allowed) return c.json({ error: 'Item não encontrado' }, 404)
 
-  const maxPos = await db.select({ pos: max(checklists.position) })
-    .from(checklists)
-    .where(and(eq(checklists.itemId, itemId), eq(checklists.tenantId, ctx.tenantId)))
-  const position = (maxPos[0]?.pos ?? -1) + 1
-
   const id = generateId()
-  await db.insert(checklists).values({
-    id,
-    tenantId: ctx.tenantId, // [TENANT]
-    itemId,
-    name: body.name.trim(),
-    position,
-    createdAt: new Date().toISOString(),
+  const position = await db.transaction(async (tx) => {
+    const maxPos = await tx.select({ pos: max(checklists.position) })
+      .from(checklists)
+      .where(and(eq(checklists.itemId, itemId), eq(checklists.tenantId, ctx.tenantId)))
+    const nextPosition = (maxPos[0]?.pos ?? -1) + 1
+    await tx.insert(checklists).values({
+      id,
+      tenantId: ctx.tenantId, // [TENANT]
+      itemId,
+      name: body.name.trim(),
+      position: nextPosition,
+      createdAt: new Date().toISOString(),
+    })
+    return nextPosition
   })
 
   const progress = await getChecklistProgress(ctx.tenantId, itemId)
@@ -155,19 +157,21 @@ checklistsRouter.post('/:checklistId/items', requireRole('MEMBER'), async (c) =>
   })
   if (!cl) return c.json({ error: 'Checklist não encontrado' }, 404)
 
-  const maxPos = await db.select({ pos: max(checklistItems.position) })
-    .from(checklistItems)
-    .where(and(eq(checklistItems.checklistId, checklistId), eq(checklistItems.tenantId, ctx.tenantId)))
-  const position = (maxPos[0]?.pos ?? -1) + 1
-
   const id = generateId()
-  await db.insert(checklistItems).values({
-    id,
-    tenantId: ctx.tenantId, // [TENANT]
-    checklistId,
-    text: body.text.trim(),
-    checked: false,
-    position,
+  const position = await db.transaction(async (tx) => {
+    const maxPos = await tx.select({ pos: max(checklistItems.position) })
+      .from(checklistItems)
+      .where(and(eq(checklistItems.checklistId, checklistId), eq(checklistItems.tenantId, ctx.tenantId)))
+    const nextPosition = (maxPos[0]?.pos ?? -1) + 1
+    await tx.insert(checklistItems).values({
+      id,
+      tenantId: ctx.tenantId, // [TENANT]
+      checklistId,
+      text: body.text.trim(),
+      checked: false,
+      position: nextPosition,
+    })
+    return nextPosition
   })
 
   const newItem = { id, text: body.text.trim(), checked: false, position }
