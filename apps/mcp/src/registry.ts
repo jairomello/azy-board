@@ -135,12 +135,12 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
         tool: { type: 'string', enum: ['create_task'] },
         args: {
           type: 'object', additionalProperties: false,
-          required: ['ref', 'title', 'type', 'parentRef', 'moduleName', 'description', 'priority', 'points', 'assignToCurrentUser'],
+          required: ['ref', 'title', 'type', 'assignToCurrentUser'],
           properties: {
             ref: { type: 'string', description: 'Unique short reference used by later parentRef values.' },
             title: { type: 'string' },
             type: { type: 'string', enum: ['EPIC', 'STORY', 'TASK', 'BUG'] },
-            parentRef: { type: ['string', 'null'], description: 'Ref of an earlier operation, or null for a root item.' },
+            parentRef: { type: ['string', 'null'], description: 'Ref of an earlier operation, or null for a root item / SIMPLE project tasks.' },
             moduleName: { type: ['string', 'null'], description: 'Module name for EPIC items; otherwise null.' },
             description: { type: ['string', 'null'] },
             priority: { type: ['string', 'null'], enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL', null] },
@@ -199,7 +199,7 @@ export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinit
        : name === 'create_project_structure'
          ? 'Create a project and an ordered hierarchy of up to 50 items in one approved operation. Use refs and parentRefs instead of database IDs; moduleName resolves an existing module by name.'
       : name === 'create_task'
-        ? 'Create a single EPIC, STORY, TASK or BUG. Hierarchical projects require parentId for TASK/BUG (a STORY, TASK or BUG) and for STORY (an EPIC); EPIC is a root with moduleId. Never create an orphan item.'
+        ? 'Create a single EPIC, STORY, TASK or BUG. SIMPLE projects: TASK/BUG auto-assign to the project story; parentId and moduleId are optional. HIERARCHICAL projects: parentId required for TASK/BUG (a STORY, TASK or BUG) and for STORY (an EPIC); EPIC is a root with moduleId.'
         : name === 'batch'
         ? 'Create an ordered hierarchy of up to 50 EPIC, STORY, TASK, or BUG items in one atomic approval. Use refs and parentRefs instead of database IDs. Use moduleName for EPIC items; a module referenced by name that does not exist yet is created automatically.'
       : name === 'update_items'

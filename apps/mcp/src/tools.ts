@@ -10,7 +10,8 @@ export type ProjectStructureOperation = BatchOperation
 
 export async function toolBatch(api: ApiCall, args: { projectId: string; operations: BatchOperation[]; atomic?: boolean; idempotencyKey?: string; agentRunId?: string }): Promise<unknown> {
   if (!Array.isArray(args.operations) || args.operations.length < 1 || args.operations.length > 50) throw new Error('operations deve conter entre 1 e 50 entradas')
-  return api(`/projects/${args.projectId}/batch`, 'POST', args)
+  const { projectId, ...body } = args
+  return api(`/projects/${projectId}/batch`, 'POST', body)
 }
 
 export type ItemFieldChange = {

@@ -336,6 +336,8 @@ export const items = sqliteTable('items', {
   type: text('type', {
     enum: ['EPIC', 'STORY', 'TASK', 'BUG'],
   }).notNull().default('TASK'),
+  // Identificador visual sequencial por tipo e projeto (ex: E1, S1, T1, B3)
+  sequenceCode: text('sequence_code'),
   // Auto-referência para hierarquia (STORY → EPIC, TASK → STORY, subtask → TASK/BUG)
   parentId: text('parent_id'),
   // [TENANT] moduleId obrigatório para EPIC; null para demais tipos

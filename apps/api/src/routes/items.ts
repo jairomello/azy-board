@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { eq, and, inArray, asc, desc, sql } from 'drizzle-orm'
+import { eq, and, inArray, asc, desc, sql, like } from 'drizzle-orm'
 import { db } from '../db/index'
 import { projects, items, columns, itemTags, itemSprints, modules, checklists, checklistItems, attachments, itemLogs, projectVersions, projectCostCenters, tags, sprints, memberships, users } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
@@ -58,6 +58,29 @@ function normalizeAuditText(value: unknown): string {
     .replace(/&gt;/gi, '>')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
+}
+
+const SEQUENCE_PREFIX: Record<string, string> = { EPIC: 'E', STORY: 'S', TASK: 'T', BUG: 'B' }
+
+// Gera o próximo sequenceCode disponível para o tipo no projeto
+// [TENANT] filtrado por tenantId + projectId
+async function nextSequenceCode(tenantId: string, projectId: string, type: string): Promise<string> {
+  const prefix = SEQUENCE_PREFIX[type] ?? 'T'
+  const rows = await db.select({ code: items.sequenceCode })
+    .from(items)
+    .where(and(
+      eq(items.tenantId, tenantId),
+      eq(items.projectId, projectId),
+      like(items.sequenceCode, `${prefix}%`)
+    ))
+  let max = 0
+  for (const row of rows) {
+    if (row.code) {
+      const num = parseInt(row.code.slice(prefix.length), 10)
+      if (!isNaN(num) && num > max) max = num
+    }
+  }
+  return `${prefix}${max + 1}`
 }
 
 // Verifica se item é folha (sem filhos) — Leaf Rule
@@ -576,6 +599,20 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     costCenterId = firstCostCenter?.id ?? null
   }
 
+  // Gerar sequenceCode automaticamente se não informado
+  // [TENANT] nextSequenceCode já filtra por tenantId + projectId
+  let sequenceCode = body.sequenceCode ?? null
+  if (sequenceCode === null) {
+    sequenceCode = await nextSequenceCode(ctx.tenantId, projectId, type)
+  } else {
+    // Validar unicidade se informado explicitamente
+    const existing = await db.query.items.findFirst({
+      where: (i) => and(eq(i.tenantId, ctx.tenantId), eq(i.projectId, projectId), eq(i.sequenceCode, sequenceCode!)),
+      columns: { id: true },
+    })
+    if (existing) return c.json({ error: `Código "${sequenceCode}" já existe neste projeto` }, 409)
+  }
+
   // [TENANT] tenantId vem do JWT — nunca do body
   // authorId capturado do contexto de autenticação (humano ou agente de IA)
   try {
@@ -590,6 +627,7 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     tenantId: ctx.tenantId,
     projectId,
     type,
+    sequenceCode,
     parentId: effectiveParentId,
     moduleId: project.boardMode === 'SIMPLE' ? null : (body.moduleId ?? null),
     columnId,
@@ -633,6 +671,7 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     title: body.title,
     description: body.description ?? null,
     type,
+    sequenceCode,
     columnId,
     status: 'NOT_STARTED' as const,
     priority: body.priority ?? 'MEDIUM',
@@ -776,7 +815,7 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
   const writableFields = new Set([
     'title', 'description', 'priority', 'type', 'status', 'points', 'assigneeId',
     'columnId', 'parentId', 'moduleId', 'startDate', 'dueDate', 'blockedReason',
-    'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'versionId', 'costCenterId', 'sprintId',
+    'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'versionId', 'costCenterId', 'sprintId', 'sequenceCode',
   ])
   const safeBody = Object.fromEntries(Object.entries(body).filter(([field]) => writableFields.has(field))) as Omit<typeof body, 'authorId'>
   const updates: Record<string, unknown> = { ...safeBody, updatedAt: new Date().toISOString() }
@@ -793,11 +832,21 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
   type LoggableField = typeof LOGGABLE_FIELDS[number]
   const prevItem = await db.query.items.findFirst({
     where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
-    columns: { title: true, description: true, priority: true, assigneeId: true, points: true, startDate: true, dueDate: true, status: true, type: true, parentId: true, moduleId: true },
+    columns: { title: true, description: true, priority: true, assigneeId: true, points: true, startDate: true, dueDate: true, status: true, type: true, parentId: true, moduleId: true, sequenceCode: true },
   })
   if (!prevItem) return c.json({ error: 'Item não encontrado' }, 404)
   const analyticsBefore = await snapshotItem(db, ctx.tenantId, projectId, itemId)
   const oldParentBefore = analyticsBefore?.parentId ? await snapshotItem(db, ctx.tenantId, projectId, analyticsBefore.parentId) : null
+
+  // Validar unicidade do sequenceCode se mudou
+  // [TENANT] filtrado por tenantId + projectId
+  if (updates.sequenceCode !== undefined && updates.sequenceCode !== null && updates.sequenceCode !== prevItem?.sequenceCode) {
+    const existing = await db.query.items.findFirst({
+      where: (i) => and(eq(i.tenantId, ctx.tenantId), eq(i.projectId, projectId), eq(i.sequenceCode, updates.sequenceCode as string), eq(i.id, itemId)),
+      columns: { id: true },
+    })
+    if (existing) return c.json({ error: `Código "${updates.sequenceCode}" já existe neste projeto` }, 409)
+  }
 
   if (project.boardMode === 'SIMPLE' && prevItem && ['TASK', 'BUG'].includes(prevItem.type)) {
     if (!project.simpleStoryId) return c.json({ error: 'Projeto simples não possui história fixa configurada' }, 409)

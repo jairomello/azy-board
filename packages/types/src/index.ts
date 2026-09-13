@@ -84,6 +84,7 @@ export interface Card {
   id: string
   type: ItemType
   title: string
+  sequenceCode: string | null
   columnId: string | null
   priority: Priority
   status: TaskStatus
@@ -104,6 +105,7 @@ export function toCard(item: {
   id: string
   type: ItemType
   title: string
+  sequenceCode?: string | null
   columnId?: string | null
   priority: Priority
   status: TaskStatus
@@ -122,6 +124,7 @@ export function toCard(item: {
     id: item.id,
     type: item.type,
     title: item.title,
+    sequenceCode: item.sequenceCode ?? null,
     columnId: item.columnId ?? null,
     priority: item.priority,
     status: item.status,

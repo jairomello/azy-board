@@ -107,10 +107,16 @@ export function validateToolArguments(name: string, args: Record<string, unknown
       const type = operation.args.type as string
       const parentRef = typeof operation.args.parentRef === 'string' ? operation.args.parentRef : null
       if (parentRef && !refs.has(parentRef)) throw new Error(`parentRef desconhecido ou fora de ordem: ${parentRef}`)
-      if (type === 'EPIC' && (parentRef || typeof operation.args.moduleName !== 'string' || !operation.args.moduleName.trim())) throw new Error('EPIC deve ser raiz e informar moduleName')
-      if (type !== 'EPIC' && operation.args.moduleName !== null) throw new Error(`${type} não deve informar moduleName`)
+      // EPIC sempre precisa de moduleName e não tem parent
+      if (type === 'EPIC') {
+        if (parentRef) throw new Error('EPIC não pode ter parentRef')
+        if (typeof operation.args.moduleName !== 'string' || !operation.args.moduleName.trim()) throw new Error('EPIC deve informar moduleName')
+      }
+      if (type !== 'EPIC' && operation.args.moduleName !== null && operation.args.moduleName !== undefined) throw new Error(`${type} não deve informar moduleName`)
+      // Validação de hierarquia: STORY precisa de EPIC como parent; TASK/BUG precisa de STORY, TASK ou BUG.
+      // Para projetos SIMPLE, TASK/BUG podem não ter parentRef (o servidor atribui ao simpleStoryId automaticamente).
       if (type === 'STORY' && (!parentRef || typesByRef.get(parentRef) !== 'EPIC')) throw new Error('STORY deve ter um EPIC anterior como parentRef')
-      if ((type === 'TASK' || type === 'BUG') && (!parentRef || !['STORY', 'TASK', 'BUG'].includes(typesByRef.get(parentRef) ?? ''))) throw new Error(`${type} deve ter uma STORY, TASK ou BUG anterior como parentRef`)
+      if ((type === 'TASK' || type === 'BUG') && parentRef && !['STORY', 'TASK', 'BUG'].includes(typesByRef.get(parentRef) ?? '')) throw new Error(`${type} com parentRef deve apontar para uma STORY, TASK ou BUG anterior`)
       if (refs.has(operation.args.ref)) throw new Error(`ref duplicado: ${operation.args.ref}`)
       refs.add(operation.args.ref)
       typesByRef.set(operation.args.ref as string, type)

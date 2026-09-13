@@ -37,6 +37,7 @@ export interface CardData {
   status: TaskStatus
   priority: Priority
   type?: ItemType | null
+  sequenceCode?: string | null
   points?: number | null
   ancestryPath: string // JSON
   assignee?: { id: string; name: string; avatarUrl: string | null } | null
@@ -222,13 +223,17 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
           onDoubleClick={e => { e.stopPropagation(); cancelScheduledOpen() }}
         >
           {onTitleSave ? (
-            <InlineEdit
-              value={card.title}
-              onSave={title => onTitleSave(card.id, title)}
-              onEditStart={cancelScheduledOpen}
-            />
+            <div className="flex items-center">
+              {card.sequenceCode && <span className="text-xs font-mono text-muted-foreground mr-1 flex-shrink-0">{card.sequenceCode} -</span>}
+              <InlineEdit
+                value={card.title}
+                onSave={title => onTitleSave(card.id, title)}
+                onEditStart={cancelScheduledOpen}
+              />
+            </div>
           ) : (
             <p className="text-sm font-medium text-foreground leading-snug line-clamp-2">
+              {card.sequenceCode && <span className="text-xs font-mono text-muted-foreground mr-1">{card.sequenceCode} -</span>}
               {card.title}
             </p>
           )}

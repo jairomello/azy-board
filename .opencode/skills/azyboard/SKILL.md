@@ -14,9 +14,10 @@ Use o Azy Board como fonte compartilhada de planejamento e execução para pesso
 3. Planeje no nível correto: EPIC -> STORY -> TASK/BUG em projetos `HIERARCHICAL`; TASK/BUG direto em projetos `SIMPLE`.
 4. Antes de codificar qualquer tarefa, confirme no `get_board`/`get_tree` que ela está na coluna `A Fazer` ou outra coluna cujo `baseStatus` seja `NOT_STARTED`. Se estiver em `Backlog`, não a pegue: o usuário ainda não decidiu iniciá-la.
 5. Para trabalho atribuível, execute `claim_task` e confirme novamente no board real que o card está em uma coluna cujo `baseStatus` seja `IN_PROGRESS` (normalmente `Fazendo`) e que está atribuído ao agente. Não comece a codificar enquanto essa confirmação não passar.
-6. Registre mudanças relevantes com `update_item`, checklists ou `create_item_log`. Prefira operações em lote (`batch`, `batch_move`, `update_items`) a chamadas repetidas.
-7. Ao terminar a implementação, execute `complete_task` e confirme no board real que o card está em uma coluna cujo `baseStatus` seja `DONE` (normalmente `Concluídas`). Se a confirmação falhar, não declare a tarefa concluída.
-8. O `get_shadow_markdown` é apenas uma visão derivada. Quando houver divergência, trate `get_board` como fonte operacional, corrija a operação que causou a divergência e registre o incidente; não prossiga silenciosamente.
+6. Ao iniciar a implementação de um card já existente que esteja em `Backlog` ou `A Fazer`, mova-o para `Fazendo` (ou coluna com `baseStatus=IN_PROGRESS`) com `move_task` antes de começar a codar. Se o card já estiver em `Fazendo`, não é necessário movê-lo novamente.
+7. Registre mudanças relevantes com `update_item`, checklists ou `create_item_log`. Prefira operações em lote (`batch`, `batch_move`, `update_items`) a chamadas repetidas.
+8. Ao terminar a implementação, execute `complete_task` e confirme no board real que o card está em uma coluna cujo `baseStatus` seja `DONE` (normalmente `Concluídas`). Se a confirmação falhar, não declare a tarefa concluída.
+9. O `get_shadow_markdown` é apenas uma visão derivada. Quando houver divergência, trate `get_board` como fonte operacional, corrija a operação que causou a divergência e registre o incidente; não prossiga silenciosamente.
 
 ## Rastreamento de tarefas da codebase
 

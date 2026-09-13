@@ -49,6 +49,7 @@ const itemTextFields = {
 export const createItemSchema = z.object({
   title: z.string().trim().min(1).max(500),
   type: itemTypeSchema.optional(),
+  sequenceCode: z.string().regex(/^[ESTB]\d+$/).max(20).nullable().optional(),
   parentId: optionalId,
   moduleId: optionalId,
   columnId: optionalId,
@@ -69,6 +70,7 @@ export const updateItemSchema = z.object({
   title: z.string().trim().min(1).max(500).optional(),
   priority: prioritySchema.optional(),
   type: z.enum(['TASK', 'BUG']).optional(),
+  sequenceCode: z.string().regex(/^[ESTB]\d+$/).max(20).nullable().optional(),
   status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED']).optional(),
   points: z.number().finite().min(0).nullable().optional(),
   assigneeId: optionalId,
