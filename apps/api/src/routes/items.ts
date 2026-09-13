@@ -12,7 +12,7 @@ import type { RequestContext, Priority, ItemType, ActivityActorType, ActivitySou
 import { parseWorkDuration } from '@azy-board/types'
 import { getIdempotent, saveIdempotent } from '../services/idempotency'
 import { appendAnalyticsEvent, snapshotItem } from '../services/analytics'
-import { claimItem, releaseItem } from '../services/itemMutations'
+import { claimItem, moveItem, releaseItem } from '../services/itemMutations'
 
 export const itemsRouter = new Hono<HonoEnv>()
 itemsRouter.use('*', authMiddleware)
@@ -717,13 +717,8 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
     fromColName = fromCol?.name ?? fromColName
   }
 
-  const before = await snapshotItem(db, ctx.tenantId, projectId, itemId)
   const audit = auditContext(c)
-  await db.transaction(async (tx) => {
-    await tx.update(items).set({ columnId: body.columnId, status: col.baseStatus, updatedAt: new Date().toISOString() }).where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
-    await tx.insert(itemLogs).values({ id: generateId(), tenantId: ctx.tenantId, itemId, authorId: ctx.userId, type: 'auto', actorType: audit.actorType, actorLabel: audit.actorLabel, source: audit.source, activity: `Movido de '${fromColName}' para '${col.name}'`, durationMin: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
-    await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId, eventType: 'STATUS_CHANGED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before, after: await snapshotItem(tx, ctx.tenantId, projectId, itemId) })
-  })
+  await moveItem({ tenantId: ctx.tenantId, projectId, itemId, userId: ctx.userId, apiKeyId: c.get('apiKeyId') as string | undefined, actor: audit, columnId: body.columnId, columnName: col.name, baseStatus: col.baseStatus, fromColumnName: fromColName })
 
   broadcast(projectId, {
     type: 'CARD_MOVED',
