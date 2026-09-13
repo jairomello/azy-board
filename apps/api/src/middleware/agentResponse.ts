@@ -14,14 +14,6 @@ export async function agentResponseMiddleware(c: Context, next: Next) {
   if (body === null) return
 
   if (c.res.status >= 400) {
-    const legacy = body as Record<string, unknown>
-    const code = typeof legacy.code === 'string' ? legacy.code : `HTTP_${c.res.status}`
-    const message = typeof legacy.error === 'string'
-      ? legacy.error
-      : typeof legacy.message === 'string' ? legacy.message : 'A requisição não pôde ser processada'
-    c.res = new Response(JSON.stringify({
-      error: { code, message, details: typeof legacy.details === 'object' ? legacy.details : null, retryable: legacy.retryable === true || c.res.status >= 500 },
-    }), { status: c.res.status, headers: { 'Content-Type': 'application/json' } })
     return
   }
 

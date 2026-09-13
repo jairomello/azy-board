@@ -43,7 +43,7 @@ describe('MCP reliability contracts', () => {
     expect(() => validateToolArguments('batch', { projectId: 'p', operations: [
       { tool: 'create_task', args: { ref: 'e1', title: 'Epic', type: 'EPIC', parentRef: null, moduleName: 'Geral', assignToCurrentUser: false } },
       { tool: 'create_task', args: { ref: 't1', title: 'Task sob epic', type: 'TASK', parentRef: 'e1', moduleName: null, assignToCurrentUser: true } },
-    ] })).toThrow('TASK deve ter uma STORY')
+    ] })).toThrow('TASK com parentRef deve apontar para uma STORY')
   })
 
   test('valida atualizações genéricas filtradas e operações de data', () => {

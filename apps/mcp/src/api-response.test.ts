@@ -11,7 +11,7 @@ describe('MCP API adapter', () => {
     })) as unknown as typeof fetch
     try {
       await expect(api('/projects')).rejects.toBeInstanceOf(ApiError)
-      await expect(api('/projects')).rejects.toMatchObject({ code: 'INVALID_API_RESPONSE', retryable: true })
+      await expect(api('/projects')).rejects.toMatchObject({ code: 'INVALID_API_RESPONSE', retryable: true, details: null })
     } finally {
       globalThis.fetch = originalFetch
     }
@@ -24,7 +24,7 @@ describe('MCP API adapter', () => {
       init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
     })) as unknown as typeof fetch
     try {
-      await expect(api('/projects')).rejects.toMatchObject({ code: 'NETWORK_ERROR', retryable: true })
+      await expect(api('/projects')).rejects.toMatchObject({ code: 'NETWORK_ERROR', retryable: true, details: null })
     } finally {
       globalThis.fetch = originalFetch
     }

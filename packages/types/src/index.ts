@@ -32,6 +32,16 @@ export type AssistantScreen = 'projects-index' | 'project-board-kanban' | 'proje
 export type ActivityActorType = 'HUMAN' | 'AGENT' | 'SYSTEM' | 'UNKNOWN'
 export type ActivitySource = 'REST' | 'MCP' | 'SYSTEM' | 'UNKNOWN'
 
+export type ErrorDetails = Record<string, unknown> | unknown[] | null
+export interface ApiErrorPayload {
+  error: {
+    code: string
+    message: string
+    retryable: boolean
+    details: ErrorDetails
+  }
+}
+
 export interface WorkLog {
   id: string
   itemId: string

@@ -3,11 +3,13 @@ const BASE = '/api'
 export class ApiError extends Error {
   readonly status: number
   readonly code: string | undefined
+  readonly details: unknown
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, details: unknown = null) {
     super(message)
     this.status = status
     this.code = code
+    this.details = details
   }
 }
 
@@ -33,8 +35,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: 'Erro desconhecido' }))
-    throw new ApiError(body.error ?? `HTTP ${res.status}`, res.status, body.code)
+    const body = await res.json().catch(() => null) as { error?: string | { code?: string; message?: string; details?: unknown; retryable?: boolean }; code?: string } | null
+    const error = body?.error
+    if (error && typeof error === 'object') throw new ApiError(error.message ?? `HTTP ${res.status}`, res.status, error.code, error.details)
+    throw new ApiError(typeof error === 'string' ? error : `HTTP ${res.status}`, res.status, body?.code)
   }
 
   if (res.status === 204) return undefined as T

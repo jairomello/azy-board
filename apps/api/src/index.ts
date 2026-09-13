@@ -24,19 +24,21 @@ import { dashboardRouter } from './routes/dashboard'
 import { assertAnalyticsCutoverReady } from './services/analytics'
 import { assistantRouter } from './routes/assistant'
 import { openApiDocument } from './validation'
+import { errorResponseMiddleware, normalizeErrorPayload } from './middleware/errorResponse'
 
 export const app = new Hono()
 
 app.onError((error, c) => {
   // Não expor stack trace, SQL ou identificadores internos para clientes/agentes.
   console.error('Erro interno da API:', error instanceof Error ? error.message : 'erro desconhecido')
-  return c.json({ error: 'Erro interno', code: 'INTERNAL_ERROR', retryable: true }, 500)
+  return c.json(normalizeErrorPayload(null, 500), 500)
 })
 
 app.use('*', cors({
   origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
   credentials: true,
 }))
+app.use('*', errorResponseMiddleware)
 
 // Rotas públicas
 app.route('/api/auth', authRouter)

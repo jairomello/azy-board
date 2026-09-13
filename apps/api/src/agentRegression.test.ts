@@ -166,6 +166,6 @@ describe('regressão dos fluxos recorrentes do Azy Agent', () => {
     const project = await createProject('Projeto sem órfãos')
     const orphan = await request(`/projects/${project.id}/items`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Órfã', type: 'TASK' }) })
     expect(orphan.status).toBe(400)
-    expect((await orphan.json()).code).toBe('HIERARCHY_REQUIRED')
+    expect((await orphan.json()).error.code).toBe('HIERARCHY_REQUIRED')
   })
 })

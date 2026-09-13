@@ -133,7 +133,7 @@ describe('modos de board de projetos', () => {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ checked: true }),
     })
     expect(patch.status).toBe(404)
-    expect(await patch.json()).toMatchObject({ code: 'CHECKLIST_ITEM_MISMATCH', retryable: false })
+    expect(await patch.json()).toMatchObject({ error: { code: 'CHECKLIST_ITEM_MISMATCH', retryable: false } })
 
     const remove = await request(`/projects/${project.id}/items/${cardB}/checklists/${checklistId}/items/${checklistItemId}`, adminToken, { method: 'DELETE' })
     expect(remove.status).toBe(404)
@@ -401,7 +401,7 @@ describe('modos de board de projetos', () => {
       body: JSON.stringify({ title: 'Sem pai', type: 'TASK' }),
     })
     expect(orphan.status).toBe(400)
-    expect(await orphan.json()).toMatchObject({ code: 'HIERARCHY_REQUIRED', retryable: false })
+      expect(await orphan.json()).toMatchObject({ error: { code: 'HIERARCHY_REQUIRED', retryable: false } })
 
     const { epicId, storyId } = await seedHierarchyFixture(tenantId, project.id, adminId, 'strict')
     const underEpic = await request(`/projects/${project.id}/items`, adminToken, {
@@ -425,7 +425,7 @@ describe('modos de board de projetos', () => {
       body: JSON.stringify({ parentId: null }),
     })
     expect(clear.status).toBe(400)
-    expect(await clear.json()).toMatchObject({ code: 'HIERARCHY_REQUIRED' })
+      expect(await clear.json()).toMatchObject({ error: { code: 'HIERARCHY_REQUIRED' } })
 
     const titleOnly = await request(`/projects/${project.id}/items/${createdId}`, adminToken, {
       method: 'PATCH',
@@ -440,7 +440,7 @@ describe('modos de board de projetos', () => {
       body: JSON.stringify({ filters: { itemIds: [createdId], types: null, statuses: null, sprint: null, version: null, module: null, assignee: null, parent: null, column: null, tag: null, titleContains: null, onlyLeaves: null, matchAll: false }, changes: [{ field: 'parent', operation: 'CLEAR', value: null }] }),
     })
     expect(bulkClear.status).toBe(422)
-    expect(await bulkClear.json()).toMatchObject({ code: 'HIERARCHY_REQUIRED' })
+      expect(await bulkClear.json()).toMatchObject({ error: { code: 'HIERARCHY_REQUIRED' } })
   })
 
   test('aplica escopo e revogação de API Key', async () => {
@@ -529,7 +529,7 @@ describe('modos de board de projetos', () => {
     const project = await response.json() as { id: string }
     const invalidCursor = await request(`/projects/${project.id}/items?cursor=not-a-cursor`, adminToken)
     expect(invalidCursor.status).toBe(400)
-    expect(await invalidCursor.json()).toMatchObject({ code: 'INVALID_CURSOR', retryable: false })
+    expect(await invalidCursor.json()).toMatchObject({ error: { code: 'INVALID_CURSOR', retryable: false } })
   })
 })
 
@@ -833,9 +833,9 @@ describe('criação hierárquica em lote', () => {
       ] }),
     })
     expect(response.status).toBe(422)
-    const body = await response.json() as { code: string; error: string }
-    expect(body.code).toBe('VALIDATION_ERROR')
-    expect(body.error).toContain('operação 2')
+    const body = await response.json() as { error: { code: string; message: string } }
+    expect(body.error.code).toBe('VALIDATION_ERROR')
+    expect(body.error.message).toContain('operação 2')
 
     expect(await db.select().from(modules).where(eq(modules.projectId, projectId))).toHaveLength(1)
     expect(await db.select().from(items).where(eq(items.projectId, projectId))).toHaveLength(0)
@@ -1271,7 +1271,7 @@ describe('validação runtime de payloads', () => {
       body: '{',
     }))
     expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({ code: 'INVALID_REQUEST', retryable: false })
+    expect(await response.json()).toMatchObject({ error: { code: 'INVALID_REQUEST', retryable: false } })
   })
 
   test('rejeita campos desconhecidos na criação de projeto', async () => {
@@ -1284,7 +1284,7 @@ describe('validação runtime de payloads', () => {
       body: JSON.stringify({ name: 'Projeto inválido', unexpected: true }),
     })
     expect(response.status).toBe(400)
-    expect(await response.json()).toMatchObject({ code: 'INVALID_REQUEST', retryable: false })
+    expect(await response.json()).toMatchObject({ error: { code: 'INVALID_REQUEST', retryable: false } })
   })
 })
 
@@ -1559,7 +1559,7 @@ describe('reparenting transacional', () => {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parentId: taskAId }),
     })
     expect(response.status).toBe(400)
-    expect((await response.json() as { code?: string }).code).toBe('HIERARCHY_CYCLE')
+    expect((await response.json() as { error?: { code?: string } }).error?.code).toBe('HIERARCHY_CYCLE')
     expect((await itemById(taskAId)).parentId).toBe(story1Id)
   })
 
@@ -1568,7 +1568,7 @@ describe('reparenting transacional', () => {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parentId: taskBId }),
     })
     expect(response.status).toBe(400)
-    expect((await response.json() as { code?: string }).code).toBe('HIERARCHY_CYCLE')
+    expect((await response.json() as { error?: { code?: string } }).error?.code).toBe('HIERARCHY_CYCLE')
     const taskA = await itemById(taskAId)
     expect(taskA.parentId).toBe(story1Id)
     expect(pathIds(taskA.ancestryPath)).toEqual([epicId, story1Id])

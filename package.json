@@ -19,6 +19,7 @@
     "test:integration": "bun run --cwd apps/api test:integration",
     "test:smoke": "bun run scripts/smoke.ts",
     "test:mcp-catalog": "bun run scripts/check-mcp-catalog.ts",
+    "test:error-contract": "bun test apps/api/src/middleware/errorResponse.test.ts apps/mcp/src/handlers.test.ts",
     "test:agent-skill": "bun run scripts/check-agent-skill.ts",
     "check:i18n": "bun run scripts/check-i18n.ts",
     "test:mcp": "bun run --cwd apps/mcp test",

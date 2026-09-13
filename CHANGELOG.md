@@ -25,6 +25,9 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 - Documentação de permissões, modos de Board, testes e configuração MCP
   atualizada para refletir o comportamento atual.
+- Respostas de erro HTTP, MCP e Azy Agent normalizadas no envelope
+  `{ error: { code, message, retryable, details } }`.
+- Clientes web e MCP atualizados para consumir o contrato de erro aninhado.
 
 ---
 

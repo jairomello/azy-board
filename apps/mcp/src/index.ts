@@ -49,16 +49,17 @@ export async function makeApiCall(apiUrl: string, apiKey: string, options: { tim
     }
 
     if (!res.ok) {
-      const body = await res.json().catch(() => null) as { code?: string; error?: string | { message?: string }; retryable?: boolean } | null
-      const message = typeof body?.error === 'object' ? body.error.message : body?.error
-      throw new ApiError(body?.code ?? `HTTP_${res.status}`, message ?? `Erro HTTP ${res.status}`, body?.retryable ?? res.status >= 500)
+      const body = await res.json().catch(() => null) as { code?: string; error?: string | { code?: string; message?: string; retryable?: boolean; details?: unknown }; retryable?: boolean } | null
+      const error = body?.error
+      if (error && typeof error === 'object') throw new ApiError(error.code ?? `HTTP_${res.status}`, error.message ?? `Erro HTTP ${res.status}`, error.retryable === true, error.details)
+      throw new ApiError(body?.code ?? `HTTP_${res.status}`, typeof error === 'string' ? error : `Erro HTTP ${res.status}`, body?.retryable ?? res.status >= 500)
     }
     const contentType = res.headers.get('content-type') ?? ''
     if (!contentType.includes('application/json')) return res.text()
     try {
-      const payload = await res.json() as { data?: unknown; error?: { code?: string; message?: string; retryable?: boolean } }
+      const payload = await res.json() as { data?: unknown; error?: { code?: string; message?: string; retryable?: boolean; details?: unknown } }
       if (payload.error) {
-        throw new ApiError(payload.error.code ?? `HTTP_${res.status}`, payload.error.message ?? `Erro HTTP ${res.status}`, payload.error.retryable === true)
+        throw new ApiError(payload.error.code ?? `HTTP_${res.status}`, payload.error.message ?? `Erro HTTP ${res.status}`, payload.error.retryable === true, payload.error.details)
       }
       return payload.data
     } catch (error) {
@@ -69,7 +70,7 @@ export async function makeApiCall(apiUrl: string, apiKey: string, options: { tim
 }
 
 export class ApiError extends Error {
-  constructor(readonly code: string, message: string, readonly retryable: boolean) {
+  constructor(readonly code: string, message: string, readonly retryable: boolean, readonly details: unknown = null) {
     super(message)
     this.name = 'ApiError'
   }
@@ -137,9 +138,11 @@ export function createMcpServer(apiCall: ApiCall, options: McpServerOptions = {}
       const message = error instanceof Error ? error.message : 'Erro desconhecido'
       const code = error instanceof ApiError ? error.code : 'MCP_TOOL_ERROR'
       const retryable = error instanceof ApiError ? error.retryable : false
+      const details = error instanceof ApiError ? error.details : null
+      const errorPayload = { error: { code, message, retryable, details } }
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ code, message, retryable }) }],
-        structuredContent: { code, message, retryable },
+        content: [{ type: 'text' as const, text: JSON.stringify(errorPayload) }],
+        structuredContent: errorPayload,
         isError: true,
       }
     }

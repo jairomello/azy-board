@@ -40,7 +40,7 @@ describe('MCP protocol handlers', () => {
     const { client } = await connectedClient()
     const result = await client.callTool({ name: 'create_task', arguments: {} })
     expect(result.isError).toBe(true)
-    expect(result.structuredContent).toMatchObject({ code: 'MCP_TOOL_ERROR', retryable: false })
+    expect(result.structuredContent).toMatchObject({ error: { code: 'MCP_TOOL_ERROR', retryable: false, details: null } })
     expect(JSON.stringify(result)).not.toContain('at ')
   })
 
@@ -69,7 +69,7 @@ describe('MCP protocol handlers', () => {
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)])
     const result = await client.callTool({ name: 'tool_without_policy', arguments: {} })
     expect(result.isError).toBe(true)
-    expect(result.structuredContent).toMatchObject({ code: 'MCP_POLICY_REQUIRED', retryable: false })
+    expect(result.structuredContent).toMatchObject({ error: { code: 'MCP_POLICY_REQUIRED', retryable: false, details: null } })
     expect(calls).toBe(0)
   })
 

@@ -46,7 +46,8 @@ describe('migration de analytics', () => {
     insertLegacyProject.run(projectId, tenantId, 'Current', 'HIERARCHICAL', now)
     insertLegacyProject.run(emptyProjectId, tenantId, 'Empty', 'HIERARCHICAL', now)
     await database.insert(schema.sprints).values([{ id: openSprintId, tenantId, projectId, name: 'Open', status: 'OPEN', startDate: '2026-01-01', endDate: '2026-01-14', createdAt: now }, { id: closedSprintId, tenantId, projectId, name: 'Closed', status: 'CLOSED', startDate: '2026-01-15', endDate: '2026-01-28', createdAt: now }])
-    await database.insert(schema.items).values({ id: itemId, tenantId, projectId, type: 'TASK', parentId: null, moduleId: null, title: 'Legacy item', ancestryPath: '[]', status: 'IN_PROGRESS', priority: 'MEDIUM', points: 3, position: 0, createdAt: now, updatedAt: now })
+    // Simula uma linha criada antes da migration 0020, quando sequence_code ainda não existia.
+    sqlite.query('INSERT INTO items (id, tenant_id, project_id, type, parent_id, module_id, title, ancestry_path, status, priority, points, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(itemId, tenantId, projectId, 'TASK', null, null, 'Legacy item', '[]', 'IN_PROGRESS', 'MEDIUM', 3, 0, now, now)
     await database.insert(schema.itemSprints).values([{ itemId, sprintId: openSprintId }, { itemId, sprintId: openSprintId }])
 
     await migrate(database, { migrationsFolder: source })

@@ -151,11 +151,11 @@ describe('API de chat do Azy Agent', () => {
     const runsBefore = (await db.select().from(assistantRuns)).length
     const tooLong = await requestJson(`/assistant/conversations/${conversationId}/messages`, rootId, tenantId, 'POST', { content: 'á'.repeat(15_001) })
     expect(tooLong.status).toBe(413)
-    expect(await tooLong.json()).toMatchObject({ code: 'PAYLOAD_LIMIT', retryable: false })
+    expect(await tooLong.json()).toMatchObject({ error: { code: 'PAYLOAD_LIMIT', retryable: false } })
     const tooMany = Array.from({ length: 41 }, (_, index) => `Task — Ação ${index + 1}`).join('\n')
     const excessive = await requestJson(`/assistant/conversations/${conversationId}/messages`, rootId, tenantId, 'POST', { content: tooMany })
     expect(excessive.status).toBe(413)
-    expect(await excessive.json()).toMatchObject({ code: 'ACTION_LIMIT', retryable: false })
+    expect(await excessive.json()).toMatchObject({ error: { code: 'ACTION_LIMIT', retryable: false } })
     expect(await db.select().from(assistantMessages)).toHaveLength(messagesBefore)
     expect(await db.select().from(assistantRuns)).toHaveLength(runsBefore)
   })
@@ -269,10 +269,10 @@ História: Projetos`
     const runsBefore = (await db.select().from(assistantRuns)).length
     const malformed = await requestJson(`/assistant/conversations/${conversationId}/messages`, rootId, tenantId, 'POST', { content: 'Revise', itemId: { id: 'inventado' } })
     expect(malformed.status).toBe(400)
-    expect(await malformed.json()).toMatchObject({ code: 'INVALID_REQUEST' })
+    expect(await malformed.json()).toMatchObject({ error: { code: 'INVALID_REQUEST' } })
     const missing = await requestJson(`/assistant/conversations/${conversationId}/messages`, rootId, tenantId, 'POST', { content: 'Revise', itemId: generateId() })
     expect(missing.status).toBe(404)
-    expect(await missing.json()).toMatchObject({ code: 'ITEM_NOT_FOUND' })
+    expect(await missing.json()).toMatchObject({ error: { code: 'ITEM_NOT_FOUND' } })
     expect(await db.select().from(assistantMessages)).toHaveLength(messagesBefore)
     expect(await db.select().from(assistantRuns)).toHaveLength(runsBefore)
   })
@@ -280,7 +280,7 @@ História: Projetos`
   test('recusa reutilizar conversa fora do projeto selecionado', async () => {
     const response = await requestJson(`/assistant/conversations/${conversationId}/messages`, rootId, tenantId, 'POST', { content: 'Liste as tasks', projectId: generateId() })
     expect(response.status).toBe(409)
-    expect(await response.json()).toMatchObject({ code: 'CONVERSATION_PROJECT_MISMATCH', retryable: false })
+    expect(await response.json()).toMatchObject({ error: { code: 'CONVERSATION_PROJECT_MISMATCH', retryable: false } })
   })
 
   test('entrega eventos SSE somente após o cursor informado', async () => {
