@@ -15,6 +15,7 @@ import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/types'
 import { hasGlobalGroup } from '../services/authorization'
 import { MCP_TOOL_POLICIES } from '../../../mcp/src/policies.js'
+import { assistantAdjustSchema, assistantAnswerSchema, assistantApprovalSchema, assistantAvailabilitySchema, assistantGovernanceSchema, assistantMessageSchema, assistantProviderSchema, conversationSchema, parseJson } from '../validation'
 
 export const assistantRouter = new Hono<HonoEnv>()
 assistantRouter.use('*', authMiddleware)
@@ -326,7 +327,9 @@ assistantRouter.get('/availability', async (c) => {
 })
 
 assistantRouter.patch('/root/availability', requireGlobalGroup('ROOT'), async (c) => {
-  const body = await c.req.json<Body>().catch(() => ({} as Body))
+  const parsed = await parseJson(c, assistantAvailabilitySchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   if (typeof body.enabled !== 'boolean') return c.json(safeError('INVALID_REQUEST'), 400)
   const tenantId = c.get('ctx').tenantId
   const now = new Date().toISOString()
@@ -336,7 +339,9 @@ assistantRouter.patch('/root/availability', requireGlobalGroup('ROOT'), async (c
 })
 
 assistantRouter.patch('/root/governance', requireGlobalGroup('ROOT'), async (c) => {
-  const body = await c.req.json<Body>().catch(() => ({} as Body))
+  const parsed = await parseJson(c, assistantGovernanceSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data as Body
   const patch = governancePatch(body)
   if (!patch) return c.json(safeError('INVALID_GOVERNANCE'), 400)
   const tenantId = c.get('ctx').tenantId
@@ -358,7 +363,9 @@ assistantRouter.get('/root/governance/usage', requireGlobalGroup('ROOT'), async 
 })
 
 async function configure(c: Context<HonoEnv>) {
-  const body = await c.req.json<Body>().catch(() => ({} as Body))
+  const parsed = await parseJson(c, assistantProviderSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   if ((body.provider !== 'OPENAI' && body.provider !== 'OPENROUTER') || typeof body.model !== 'string' || typeof body.secret !== 'string') return c.json(safeError('INVALID_REQUEST'), 400)
   const provider = body.provider as ProviderName
   const probe = provider === 'OPENROUTER' ? await probeOpenRouterCredential(body.secret, body.model) : await probeOpenAICredential(body.secret, body.model)
@@ -382,7 +389,9 @@ async function configure(c: Context<HonoEnv>) {
 assistantRouter.post('/root/provider', requireGlobalGroup('ROOT'), configure)
 assistantRouter.post('/root/provider/rotate', requireGlobalGroup('ROOT'), configure)
 assistantRouter.post('/root/provider/test', requireGlobalGroup('ROOT'), async (c) => {
-  const body = await c.req.json<Body>().catch(() => ({} as Body))
+  const parsed = await parseJson(c, assistantProviderSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   if ((body.provider !== 'OPENAI' && body.provider !== 'OPENROUTER') || typeof body.model !== 'string' || typeof body.secret !== 'string') return c.json(safeError('INVALID_REQUEST'), 400)
   const result = body.provider === 'OPENROUTER'
     ? await probeOpenRouterCredential(body.secret, body.model)
@@ -416,7 +425,9 @@ assistantRouter.get('/conversations', async (c) => {
 assistantRouter.post('/conversations', async (c) => {
   const ctx = context(c)
   if (!await available(ctx.tenantId)) return operationalError(c, 'ASSISTANT_UNAVAILABLE', 422)
-  const body = await c.req.json<{ projectId?: unknown; title?: unknown }>().catch(() => ({} as { projectId?: unknown; title?: unknown }))
+  const parsed = await parseJson(c, conversationSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   const projectId = typeof body.projectId === 'string' ? body.projectId : null
   if (projectId && !await canUseProject(ctx.tenantId, ctx.userId, ctx.globalGroup, projectId)) return operationalError(c, 'PROJECT_NOT_FOUND', 404)
   const now = new Date().toISOString(), id = generateId()
@@ -499,11 +510,9 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
 }
 
 assistantRouter.post('/conversations/:conversationId/messages', async (c) => {
-  const body = await c.req.json<{ content?: unknown; projectId?: unknown; itemId?: unknown; screen?: unknown }>().catch(() => ({} as { content?: unknown; projectId?: unknown; itemId?: unknown; screen?: unknown }))
-  if (typeof body.content !== 'string') return operationalError(c, 'INVALID_REQUEST', 400)
-  if (body.projectId !== undefined && body.projectId !== null && typeof body.projectId !== 'string') return operationalError(c, 'INVALID_REQUEST', 400)
-  if (body.itemId !== undefined && body.itemId !== null && typeof body.itemId !== 'string') return operationalError(c, 'INVALID_REQUEST', 400)
-  if (body.screen !== undefined && body.screen !== null && (typeof body.screen !== 'string' || !assistantScreens.has(body.screen as AssistantScreen))) return operationalError(c, 'INVALID_REQUEST', 400)
+  const parsed = await parseJson(c, assistantMessageSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   const key = c.req.header('Idempotency-Key') ?? `message:${context(c).userId}:${generateId()}`
   return runMessage(c, c.req.param('conversationId'), body.content, key, undefined, body.projectId === undefined ? undefined : body.projectId as string | null, body.itemId === undefined ? undefined : body.itemId as string | null, body.screen as AssistantScreen | undefined)
 })
@@ -563,8 +572,9 @@ assistantRouter.post('/runs/:runId/question', async (c) => {
   const ctx = context(c), run = await ownedRun(ctx.tenantId, ctx.userId, c.req.param('runId'))
   if (!run) return operationalError(c, 'RUN_NOT_FOUND', 404)
   if (run.status !== 'WAITING_USER') return operationalError(c, 'RUN_STATE_CONFLICT', 409)
-  const body = await c.req.json<{ answer?: unknown }>().catch(() => ({} as { answer?: unknown }))
-  if (typeof body.answer !== 'string' || !body.answer.trim()) return operationalError(c, 'INVALID_REQUEST', 400)
+  const parsed = await parseJson(c, assistantAnswerSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   const answer = body.answer.slice(0, 20_000)
   const resumed = await db.transaction(async (tx) => {
     const updated = await tx.update(assistantRuns).set({ status: 'QUEUED', errorCode: null })
@@ -582,8 +592,9 @@ assistantRouter.post('/runs/:runId/approval', async (c) => {
   const ctx = context(c), run = await ownedRun(ctx.tenantId, ctx.userId, c.req.param('runId'))
   if (!run) return operationalError(c, 'RUN_NOT_FOUND', 404)
   if (run.status !== 'WAITING_APPROVAL') return operationalError(c, 'RUN_STATE_CONFLICT', 409)
-  const body = await c.req.json<{ approved?: unknown; operationHash?: unknown }>().catch(() => ({} as { approved?: unknown; operationHash?: unknown }))
-  if (typeof body.approved !== 'boolean' || typeof body.operationHash !== 'string') return operationalError(c, 'INVALID_REQUEST', 400)
+  const parsed = await parseJson(c, assistantApprovalSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   const harness = new AssistantHarness({ provider: { name: 'approval', capabilities: { tools: false, streaming: false, cancellation: false }, createRun: async () => ({ id: '', output: [] }), streamRun: async function* () {} }, executeTool: async () => undefined })
   try {
     if (body.approved) await harness.approve(run.id, ctx.tenantId, ctx.userId, body.operationHash)
@@ -624,10 +635,9 @@ assistantRouter.post('/runs/:runId/adjust', async (c) => {
   const ctx = context(c), run = await ownedRun(ctx.tenantId, ctx.userId, c.req.param('runId'))
   if (!run) return operationalError(c, 'RUN_NOT_FOUND', 404)
   if (run.status !== 'WAITING_APPROVAL') return operationalError(c, 'RUN_STATE_CONFLICT', 409)
-  const body = await c.req.json<{ instruction?: unknown; operationHash?: unknown; projectId?: unknown; itemId?: unknown }>().catch(() => ({} as { instruction?: unknown; operationHash?: unknown; projectId?: unknown; itemId?: unknown }))
-  if (typeof body.instruction !== 'string' || !body.instruction.trim() || typeof body.operationHash !== 'string') return operationalError(c, 'INVALID_REQUEST', 400)
-  if (body.projectId !== undefined && body.projectId !== null && typeof body.projectId !== 'string') return operationalError(c, 'INVALID_REQUEST', 400)
-  if (body.itemId !== undefined && body.itemId !== null && typeof body.itemId !== 'string') return operationalError(c, 'INVALID_REQUEST', 400)
+  const parsed = await parseJson(c, assistantAdjustSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   const approval = await db.query.assistantApprovals.findFirst({ where: (item) => and(eq(item.runId, run.id), eq(item.tenantId, ctx.tenantId), eq(item.operationHash, body.operationHash as string), eq(item.status, 'PENDING')) })
   const call = approval?.toolCallId ? await db.query.assistantToolCalls.findFirst({ where: (item) => and(eq(item.id, approval.toolCallId!), eq(item.tenantId, ctx.tenantId), eq(item.runId, run.id)) }) : undefined
   if (!approval || !call) return operationalError(c, 'APPROVAL_INVALID', 409)

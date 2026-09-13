@@ -13,7 +13,7 @@ import { parseWorkDuration } from '@azy-board/types'
 import { getIdempotent, saveIdempotent } from '../services/idempotency'
 import { appendAnalyticsEvent, snapshotItem } from '../services/analytics'
 import { claimItem, moveItem, releaseItem } from '../services/itemMutations'
-import { createItemSchema, moveItemSchema, parseJson, reorderItemsSchema, updateItemSchema } from '../validation'
+import { confirmationSchema, createItemSchema, itemLogSchema, itemSprintSchema, itemTagsSchema, moveItemSchema, parseJson, parseOptionalJson, reorderItemsSchema, updateItemLogSchema, updateItemSchema, updateWorkLogSchema, workLogSchema } from '../validation'
 
 export const itemsRouter = new Hono<HonoEnv>()
 itemsRouter.use('*', authMiddleware)
@@ -941,8 +941,9 @@ itemsRouter.delete('/:itemId', requireRole('MEMBER'), async (c) => {
   })
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
-  let requestBody: { dryRun?: boolean } = {}
-  try { requestBody = await c.req.json() } catch { /* corpo opcional */ }
+  const parsedBody = await parseOptionalJson(c, confirmationSchema)
+  if (!parsedBody.ok) return parsedBody.response
+  const requestBody = parsedBody.data
 
   // Coletar IDs de todos os descendentes via BFS
   // [TENANT] filtragem por tenantId em cada nível garante isolamento cross-tenant
@@ -988,7 +989,9 @@ itemsRouter.delete('/:itemId', requireRole('MEMBER'), async (c) => {
 itemsRouter.post('/:itemId/tags', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId } = c.req.param()
-  const body = await c.req.json<{ tagIds: string[] }>()
+  const parsed = await parseJson(c, itemTagsSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   // Verificar que item pertence ao tenant — [TENANT] Anti-IDOR
   const item = await db.query.items.findFirst({
@@ -1027,7 +1030,9 @@ itemsRouter.post('/:itemId/tags', requireRole('MEMBER'), async (c) => {
 itemsRouter.post('/:itemId/sprint', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId } = c.req.param()
-  const body = await c.req.json<{ sprintId: string }>()
+  const parsed = await parseJson(c, itemSprintSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   // [TENANT] Verificar ownership antes de inserir
   const item = await db.query.items.findFirst({
@@ -1130,7 +1135,9 @@ itemsRouter.get('/:itemId/work-log', requireRole('VIEWER'), async (c) => listIte
 itemsRouter.post('/:itemId/work-log', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId } = c.req.param()
-  const body = await c.req.json<{ activity: string; duration?: string | null }>()
+  const parsed = await parseJson(c, workLogSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   if (!body.activity?.trim()) return c.json({ error: 'Descrição do trabalho é obrigatória' }, 400)
 
   const durationMin = body.duration == null || body.duration === '' ? null : parseWorkDuration(body.duration)
@@ -1161,7 +1168,9 @@ itemsRouter.patch('/:itemId/work-log/:logId', requireRole('MEMBER'), async (c) =
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId, logId } = c.req.param()
   const memberRole = c.get('memberRole') as string
-  const body = await c.req.json<{ activity?: string; duration?: string | null }>()
+  const parsed = await parseJson(c, updateWorkLogSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   const log = await db.query.itemLogs.findFirst({
     where: (l) => and(eq(l.id, logId), eq(l.itemId, itemId), eq(l.tenantId, ctx.tenantId), eq(l.type, 'manual')),
   })
@@ -1246,7 +1255,9 @@ itemsRouter.get('/:itemId/logs', requireRole('VIEWER'), async (c) => {
 itemsRouter.post('/:itemId/logs', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId } = c.req.param()
-  const body = await c.req.json<{ activity: string; durationMin?: number | null }>()
+  const parsed = await parseJson(c, itemLogSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   if (!body.activity?.trim()) return c.json({ error: 'activity é obrigatório' }, 400)
 
@@ -1280,7 +1291,9 @@ itemsRouter.patch('/:itemId/logs/:logId', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { itemId, logId } = c.req.param()
   const memberRole = c.get('memberRole') as string
-  const body = await c.req.json<{ activity?: string; durationMin?: number | null }>()
+  const parsed = await parseJson(c, updateItemLogSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   // [TENANT] Anti-IDOR: buscar log verificando tenantId
   const log = await db.query.itemLogs.findFirst({
@@ -1334,7 +1347,9 @@ itemsRouter.post('/:itemId/archive', requireRole('MEMBER'), async (c) => {
   }
 
   const descendantCount = allIds.length - 1
-  const { confirm, dryRun } = await c.req.json<{ confirm?: boolean; dryRun?: boolean }>().catch(() => ({ confirm: false, dryRun: false }))
+  const parsedBody = await parseOptionalJson(c, confirmationSchema)
+  if (!parsedBody.ok) return parsedBody.response
+  const { confirm, dryRun } = parsedBody.data
   if (dryRun) return c.json({ dryRun: true, itemId, projectId, descendantCount, totalCount: allIds.length })
   if (descendantCount > 0 && !confirm) {
     return c.json({ warning: true, descendantCount, message: `${descendantCount} item(s) descendente(s) serão arquivados junto` }, 200)

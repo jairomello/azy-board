@@ -10,7 +10,8 @@ import type { RequestContext, BoardMode, AncestorNode } from '@azy-board/types'
 import { hasGlobalGroup } from '../services/auth'
 import { hasKeyPermission } from '../services/authorization'
 import { appendAnalyticsEvent, ensureCoverage, snapshotItem } from '../services/analytics'
-import { createProjectSchema, parseJson, updateProjectSchema } from '../validation'
+import { confirmationSchema, createProjectSchema, parseJson, parseOptionalJson, updateProjectSchema } from '../validation'
+import { addProjectMemberSchema, costCenterSchema, deleteModuleSchema, moduleSchema, projectMemberSchema, squadMemberSchema, squadSchema, updateCostCenterSchema, updateModuleSchema } from '../validation'
 
 export const projectsRouter = new Hono<HonoEnv>()
 projectsRouter.use('*', authMiddleware)
@@ -347,8 +348,9 @@ projectsRouter.delete('/:id', requireRole('ADMIN'), async (c) => {
   })
   if (!project) return c.json({ error: 'Projeto não encontrado' }, 404)
 
-  let requestBody: { dryRun?: boolean } = {}
-  try { requestBody = await c.req.json() } catch { /* corpo opcional */ }
+  const parsedBody = await parseOptionalJson(c, confirmationSchema)
+  if (!parsedBody.ok) return parsedBody.response
+  const requestBody = parsedBody.data
   if (requestBody.dryRun) {
     const [projectItems, projectModules, projectTags, projectSprints, projectVersionsRows, projectMembers, projectColumns, projectSquads, projectConversations] = await Promise.all([
       db.select({ id: items.id }).from(items).where(and(eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId))),
@@ -567,7 +569,9 @@ projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
 projectsRouter.post('/:id/modules', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('id')!
-  const body = await c.req.json<{ name: string; description?: string }>()
+  const parsed = await parseJson(c, moduleSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   const moduleId = generateId()
   const existing = await db.select().from(modules)
@@ -605,7 +609,9 @@ projectsRouter.get('/:id/modules', requireRole('VIEWER'), async (c) => {
 projectsRouter.patch('/:id/modules/:moduleId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { id: projectId, moduleId } = c.req.param()
-  const body = await c.req.json<{ name?: string; position?: number }>()
+  const parsed = await parseJson(c, updateModuleSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   const existing = await db.query.modules.findFirst({
     where: (module) => and(eq(module.id, moduleId), eq(module.projectId, projectId), eq(module.tenantId, ctx.tenantId)),
@@ -638,8 +644,9 @@ projectsRouter.delete('/:id/modules/:moduleId', requireRole('ADMIN'), async (c) 
 
   const epicCount = epics.length
 
-  let body: { targetModuleId?: string; cascade?: boolean } = {}
-  try { body = await c.req.json() } catch { /* body vazio */ }
+  const parsedBody = await parseOptionalJson(c, deleteModuleSchema)
+  if (!parsedBody.ok) return parsedBody.response
+  const body = parsedBody.data
 
   if (epicCount > 0 && !body.targetModuleId && !body.cascade) {
     return c.json({ error: 'Módulo possui épicos vinculados', epicCount }, 409)
@@ -683,7 +690,9 @@ projectsRouter.delete('/:id/modules/:moduleId', requireRole('ADMIN'), async (c) 
 projectsRouter.post('/:id/squads', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('id')!
-  const body = await c.req.json<{ name: string }>()
+  const parsed = await parseJson(c, squadSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   const squadId = generateId()
   await db.insert(squads).values({
@@ -700,7 +709,9 @@ projectsRouter.post('/:id/squads', requireRole('ADMIN'), async (c) => {
 projectsRouter.post('/:id/squads/:squadId/members', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { id: projectId, squadId } = c.req.param()
-  const body = await c.req.json<{ userId: string; role: 'ADMIN' | 'MEMBER' | 'VIEWER' }>()
+  const parsed = await parseJson(c, squadMemberSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   const squad = await db.query.squads.findFirst({
     where: (candidate) => and(eq(candidate.id, squadId), eq(candidate.projectId, projectId), eq(candidate.tenantId, ctx.tenantId)),
@@ -725,7 +736,9 @@ projectsRouter.post('/:id/squads/:squadId/members', requireRole('ADMIN'), async 
 projectsRouter.patch('/:id/members/:userId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { id: projectId, userId } = c.req.param()
-  const body = await c.req.json<{ role: 'ADMIN' | 'MEMBER' | 'VIEWER'; squadId?: string | null }>()
+  const parsed = await parseJson(c, projectMemberSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   // [TENANT] Filtra por tenantId — não permite alterar membros de projetos de outros tenants
   await db.update(memberships)
@@ -815,7 +828,9 @@ projectsRouter.delete('/:id/squads/:squadId/members/:userId', requireRole('ADMIN
 projectsRouter.patch('/:id/squads/:squadId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { id: projectId, squadId } = c.req.param()
-  const body = await c.req.json<{ name: string }>()
+  const parsed = await parseJson(c, squadSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   // [TENANT] Anti-IDOR: verificar que squad pertence ao projeto do tenant
   const squad = await db.query.squads.findFirst({
@@ -849,7 +864,9 @@ projectsRouter.delete('/:id/squads/:squadId', requireRole('ADMIN'), async (c) =>
     .where(and(eq(memberships.squadId, squadId), eq(memberships.tenantId, ctx.tenantId)))
   const count = memberCount[0]?.count ?? 0
 
-  const { confirm } = await c.req.json<{ confirm?: boolean }>().catch(() => ({ confirm: false }))
+  const parsedBody = await parseOptionalJson(c, confirmationSchema)
+  if (!parsedBody.ok) return parsedBody.response
+  const { confirm } = parsedBody.data
   if (count > 0 && !confirm) {
     return c.json({ warning: true, memberCount: count, message: `${count} membro(s) terão squad removido ao confirmar` }, 200)
   }
@@ -872,7 +889,9 @@ projectsRouter.delete('/:id/squads/:squadId', requireRole('ADMIN'), async (c) =>
 projectsRouter.patch('/:id/members/:userId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { id: projectId, userId } = c.req.param()
-  const body = await c.req.json<{ role?: 'ADMIN' | 'MEMBER' | 'VIEWER'; squadId?: string | null }>()
+  const parsed = await parseJson(c, projectMemberSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   if (body.squadId) {
     const squad = await db.query.squads.findFirst({
@@ -909,7 +928,9 @@ projectsRouter.patch('/:id/members/:userId', requireRole('ADMIN'), async (c) => 
 projectsRouter.post('/:id/members', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('id')!
-  const body = await c.req.json<{ email: string; role: 'ADMIN' | 'MEMBER' | 'VIEWER'; squadId?: string | null }>()
+  const parsed = await parseJson(c, addProjectMemberSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   if (body.squadId) {
     const squad = await db.query.squads.findFirst({
@@ -988,7 +1009,9 @@ projectsRouter.get('/:id/cost-centers', requireRole('VIEWER'), async (c) => {
 projectsRouter.post('/:id/cost-centers', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('id')!
-  const body = await c.req.json<{ code: string; description?: string }>()
+  const parsed = await parseJson(c, costCenterSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   if (!body.code?.trim()) return c.json({ error: 'Código é obrigatório' }, 400)
 
@@ -1026,7 +1049,9 @@ projectsRouter.post('/:id/cost-centers', requireRole('ADMIN'), async (c) => {
 projectsRouter.patch('/:id/cost-centers/:ccId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { id: projectId, ccId } = c.req.param()
-  const body = await c.req.json<{ code?: string; description?: string }>()
+  const parsed = await parseJson(c, updateCostCenterSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   // [TENANT] Anti-IDOR: verificar ownership antes de atualizar
   const cc = await db.query.projectCostCenters.findFirst({

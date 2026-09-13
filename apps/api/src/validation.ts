@@ -152,6 +152,36 @@ export const groupSchema = z.object({ globalGroup: z.enum(['TEAM_MEMBER', 'MANAG
 export const preferencesSchema = z.object({ theme: z.enum(['light', 'dark']).optional(), lightShellTheme: z.enum(['petroleum', 'ocean', 'emerald', 'graphite', 'classic']).optional(), language: z.enum(['pt-BR', 'en', 'es']).optional() }).strict()
 export const projectApiKeySchema = z.object({ name: z.string().trim().min(1).max(200), aiModelName: z.string().max(200).optional(), permissionScope: z.array(z.string().min(1)).optional(), expiresAt: z.string().nullable().optional() }).strict()
 export const userApiKeySchema = projectApiKeySchema.extend({ projectScope: z.array(z.string().min(1)).optional() }).strict()
+const governanceShape = {
+  requestsPerMinute: z.number().int().min(1).optional(), maxActivePerUser: z.number().int().min(1).optional(), maxActivePerTenant: z.number().int().min(1).optional(),
+  dailyBudgetMicros: z.number().int().min(1).optional(), tenantDailyBudgetMicros: z.number().int().min(1).optional(), maxSteps: z.number().int().min(1).optional(),
+  maxToolCalls: z.number().int().min(1).optional(), maxInputTokens: z.number().int().min(1).optional(), maxOutputTokens: z.number().int().min(1).optional(),
+  maxPayloadBytes: z.number().int().min(1).optional(), timeoutMs: z.number().int().min(1).optional(),
+}
+export const assistantAvailabilitySchema = z.object({ enabled: z.boolean() }).strict()
+export const assistantGovernanceSchema = z.object(governanceShape).strict()
+export const assistantProviderSchema = z.object({ provider: z.enum(['OPENAI', 'OPENROUTER']), model: z.string().trim().min(1).max(200), secret: z.string().min(1).max(500) }).strict()
+export const conversationSchema = z.object({ projectId: z.string().min(1).nullable().optional(), title: z.string().max(200).nullable().optional() }).strict()
+export const assistantMessageSchema = z.object({ content: z.string().trim().min(1).max(20_000), projectId: z.string().min(1).nullable().optional(), itemId: z.string().min(1).nullable().optional(), screen: z.enum(['projects-index', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'item-detail', 'account', 'admin-users', 'admin-assistant', 'global-other']).nullable().optional() }).strict()
+export const assistantAnswerSchema = z.object({ answer: z.string().trim().min(1).max(20_000) }).strict()
+export const assistantApprovalSchema = z.object({ approved: z.boolean(), operationHash: z.string().min(1).max(500) }).strict()
+export const assistantAdjustSchema = z.object({ instruction: z.string().trim().min(1).max(20_000), operationHash: z.string().min(1).max(500), projectId: z.string().min(1).nullable().optional(), itemId: z.string().min(1).nullable().optional() }).strict()
+export const itemTagsSchema = z.object({ tagIds: z.array(z.string().min(1)).max(500) }).strict()
+export const itemSprintSchema = z.object({ sprintId: z.string().min(1) }).strict()
+export const workLogSchema = z.object({ activity: z.string().trim().min(1).max(20_000), duration: z.string().max(20).nullable().optional() }).strict()
+export const updateWorkLogSchema = workLogSchema.partial().strict()
+export const itemLogSchema = z.object({ activity: z.string().trim().min(1).max(20_000), durationMin: z.number().finite().min(0).nullable().optional() }).strict()
+export const updateItemLogSchema = itemLogSchema.partial().strict()
+export const confirmationSchema = z.object({ confirm: z.boolean().optional(), dryRun: z.boolean().optional() }).strict()
+export const moduleSchema = z.object({ name: z.string().trim().min(1).max(200), description: optionalText().nullable().optional() }).strict()
+export const updateModuleSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), position: z.number().int().min(0).optional() }).strict()
+export const deleteModuleSchema = z.object({ targetModuleId: z.string().min(1).optional(), cascade: z.boolean().optional() }).strict()
+export const squadSchema = z.object({ name: z.string().trim().min(1).max(200) }).strict()
+export const squadMemberSchema = z.object({ userId: z.string().min(1), role: z.enum(['ADMIN', 'MEMBER', 'VIEWER']) }).strict()
+export const projectMemberSchema = z.object({ role: z.enum(['ADMIN', 'MEMBER', 'VIEWER']).optional(), squadId: z.string().min(1).nullable().optional() }).strict()
+export const addProjectMemberSchema = z.object({ email: z.string().trim().email().max(320), role: z.enum(['ADMIN', 'MEMBER', 'VIEWER']), squadId: z.string().min(1).nullable().optional() }).strict()
+export const costCenterSchema = z.object({ code: z.string().trim().min(1).max(100), description: optionalText(2_000).nullable().optional() }).strict()
+export const updateCostCenterSchema = costCenterSchema.partial().strict()
 
 const openApiSchemaMap = {
   LoginRequest: loginSchema,
@@ -185,6 +215,19 @@ export async function parseJson<T extends Schema>(c: Context, schema: T): Promis
   let body: unknown
   try {
     body = await c.req.json()
+  } catch {
+    return { ok: false, response: c.json({ error: 'JSON inválido', code: 'INVALID_REQUEST', retryable: false }, 400) }
+  }
+  const result = schema.safeParse(body)
+  if (!result.success) return { ok: false, response: c.json({ error: 'Corpo da requisição inválido', code: 'INVALID_REQUEST', retryable: false }, 400) }
+  return { ok: true, data: result.data }
+}
+
+export async function parseOptionalJson<T extends Schema>(c: Context, schema: T): Promise<{ ok: true; data: z.output<T> } | { ok: false; response: Response }> {
+  let body: unknown = {}
+  try {
+    const raw = await c.req.text()
+    if (raw.trim()) body = JSON.parse(raw)
   } catch {
     return { ok: false, response: c.json({ error: 'JSON inválido', code: 'INVALID_REQUEST', retryable: false }, 400) }
   }
