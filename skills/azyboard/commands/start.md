@@ -1,3 +1,3 @@
 # /azyboard-start
 
-Liste TASK/BUG folhas disponíveis, confirme o item e use `claim_task` antes de iniciar. Se o item já estiver atribuído, informe o conflito e não sobrescreva o responsável.
+Descubra se `AZYBOARD_PROJECT_ID` vincula a codebase ao board. Para trabalho relevante, pergunte se deve criar ou usar um card, salvo preferência explícita da sessão. Procure um card correspondente antes de criar outro; se criar, use o nível hierárquico correto, coloque a tarefa atual em `IN_PROGRESS` e só então use `claim_task`. Para várias tarefas, deixe as tarefas seguintes em `NOT_STARTED` sem reivindicá-las. Se o item já estiver atribuído, informe o conflito e não sobrescreva o responsável. Para uma tarefa longa, pergunte se os passos devem ser registrados em checklist e marque-os durante a execução.

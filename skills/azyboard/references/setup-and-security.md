@@ -14,6 +14,8 @@ Não coloque valores reais em arquivos versionados. Gere uma chave por agente, c
 
 `AZYBOARD_PROJECT_ID` pré-define o projeto da codebase: com ela configurada, `projectId` torna-se opcional nas ferramentas e o servidor injeta o padrão em cada chamada. O ID do projeto não é segredo e pode ficar versionado na configuração MCP do repositório; a API Key não.
 
+Essa variável também é o sinal operacional de que a codebase está vinculada ao projeto padrão do Azy Board. Nesse caso, tarefas relevantes devem ser oferecidas para acompanhamento em card, respeitando a confirmação do usuário ou uma preferência explícita da sessão. Sem a variável, não presuma vínculo automático; descubra o projeto somente com autorização do usuário.
+
 Depois de recarregar o cliente, confirme que `list_tasks` e `list_modules` aparecem e execute `list_modules` em um `projectId` autorizado. O `projectId` pode ser obtido na URL `/projects/<id>/...`. As ferramentas também aceitam o nome exato do projeto no lugar do ID.
 
 O contexto da tela e do projeto serve como prioridade e alvo padrão; não impeça uma

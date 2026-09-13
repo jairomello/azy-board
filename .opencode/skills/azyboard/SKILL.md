@@ -18,6 +18,16 @@ Use o Azy Board como fonte compartilhada de planejamento e execução para pesso
 7. Ao terminar a implementação, execute `complete_task` e confirme no board real que o card está em uma coluna cujo `baseStatus` seja `DONE` (normalmente `Concluídas`). Se a confirmação falhar, não declare a tarefa concluída.
 8. O `get_shadow_markdown` é apenas uma visão derivada. Quando houver divergência, trate `get_board` como fonte operacional, corrija a operação que causou a divergência e registre o incidente; não prossiga silenciosamente.
 
+## Rastreamento de tarefas da codebase
+
+- Quando `AZYBOARD_PROJECT_ID` estiver configurada no MCP, trate o projeto atual como vinculado ao projeto padrão do Azy Board. Para uma solicitação de trabalho relevante, pergunte antes de criar um card, a menos que o usuário tenha definido a preferência da sessão como "sempre criar cards" ou tenha pedido explicitamente o cadastro.
+- Se o usuário aprovar o rastreamento, procure primeiro um card existente correspondente para não duplicar trabalho. Se não existir, crie-o no nível hierárquico correto e coloque a tarefa atual em uma coluna com `baseStatus=IN_PROGRESS` (normalmente `Fazendo`), depois faça `claim_task` quando o item for atribuível.
+- Para várias tarefas independentes, coloque somente a primeira tarefa executada em `IN_PROGRESS`; cadastre as demais em uma coluna com `baseStatus=NOT_STARTED` (normalmente `A Fazer`) e não as reivindique ainda.
+- Se não houver `AZYBOARD_PROJECT_ID`, não presuma vínculo automático. Só use o board se o usuário indicar o projeto ou autorizar sua descoberta por `list_projects`.
+- Para trabalho com muitos passos verificáveis ou duração relevante, pergunte também se o usuário deseja um checklist. Com aprovação, use `create_checklist`, `add_checklist_item` e `check_item`; marque cada passo assim que for concluído e acrescente passos descobertos durante a execução.
+- Use checklist para passos da mesma unidade de trabalho. Use subtasks quando houver responsabilidade, estimativa ou ciclo Kanban independente.
+- Uma preferência explícita como "sempre criar cards" ou "não criar cards" vale para a sessão atual. Não transforme essa preferência em configuração persistente sem solicitação explícita.
+
 ## Regras de segurança
 
 - A API Key identifica um Owner humano. O agente herda tenant, grupo, membership, papel e escopos restritivos; nunca tente informar ou elevar esses valores.
