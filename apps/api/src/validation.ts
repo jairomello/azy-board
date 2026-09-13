@@ -134,6 +134,53 @@ export const batchSchema = z.object({
   agentRunId: z.string().min(1).max(200).optional(),
 }).strict()
 
+export const checklistSchema = z.object({ name: z.string().trim().min(1).max(200) }).strict()
+export const updateChecklistSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), position: z.number().int().min(0).optional() }).strict()
+export const checklistItemSchema = z.object({ text: z.string().trim().min(1).max(2_000) }).strict()
+export const updateChecklistItemSchema = z.object({ text: z.string().trim().min(1).max(2_000).optional(), checked: z.boolean().optional(), position: z.number().int().min(0).optional() }).strict()
+export const columnSchema = z.object({ name: z.string().trim().min(1).max(200), baseStatus: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'DONE']) }).strict()
+export const updateColumnSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), baseStatus: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'DONE']).optional() }).strict()
+export const reorderSchema = z.object({ order: z.array(z.string().min(1)).max(500) }).strict()
+export const deleteColumnSchema = z.object({ moveToColumnId: z.string().min(1).nullable() }).strict()
+export const sprintSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), startDate: z.string().min(1).optional(), endDate: z.string().min(1).optional() }).strict()
+export const tagSchema = z.object({ name: z.string().trim().min(1).max(100), color: z.string().trim().max(30).optional() }).strict()
+export const updateTagSchema = z.object({ name: z.string().trim().min(1).max(100).optional(), color: z.string().trim().max(30).optional() }).strict()
+export const versionSchema = z.object({ name: z.string().trim().min(1).max(200), releaseDate: z.string().nullable().optional(), description: optionalText().nullable().optional(), status: z.enum(['PLANNED', 'IN_DEV', 'RELEASED', 'CANCELLED']).optional() }).strict()
+export const updateVersionSchema = versionSchema.partial().extend({ position: z.number().int().min(0).optional() }).strict()
+export const createUserSchema = z.object({ email: z.string().trim().email().max(320).optional(), name: z.string().trim().min(1).max(200).optional(), password: z.string().min(1).max(200).optional(), globalGroup: z.enum(['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT']).optional() }).strict()
+export const groupSchema = z.object({ globalGroup: z.enum(['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT']) }).strict()
+export const preferencesSchema = z.object({ theme: z.enum(['light', 'dark']).optional(), lightShellTheme: z.enum(['petroleum', 'ocean', 'emerald', 'graphite', 'classic']).optional(), language: z.enum(['pt-BR', 'en', 'es']).optional() }).strict()
+export const projectApiKeySchema = z.object({ name: z.string().trim().min(1).max(200), aiModelName: z.string().max(200).optional(), permissionScope: z.array(z.string().min(1)).optional(), expiresAt: z.string().nullable().optional() }).strict()
+export const userApiKeySchema = projectApiKeySchema.extend({ projectScope: z.array(z.string().min(1)).optional() }).strict()
+
+const openApiSchemaMap = {
+  LoginRequest: loginSchema,
+  CreateProjectRequest: createProjectSchema,
+  UpdateProjectRequest: updateProjectSchema,
+  CreateItemRequest: createItemSchema,
+  UpdateItemRequest: updateItemSchema,
+  BatchUpdateRequest: batchUpdateSchema,
+  BatchRequest: batchSchema,
+  ChecklistRequest: checklistSchema,
+  ChecklistItemRequest: checklistItemSchema,
+  ColumnRequest: columnSchema,
+  SprintRequest: sprintSchema,
+  TagRequest: tagSchema,
+  VersionRequest: versionSchema,
+  CreateUserRequest: createUserSchema,
+  PreferencesRequest: preferencesSchema,
+  ApiKeyRequest: userApiKeySchema,
+} as const
+
+export function openApiDocument() {
+  return {
+    openapi: '3.1.0',
+    info: { title: 'Azy Board API', version: '1.0.0' },
+    paths: {},
+    components: { schemas: Object.fromEntries(Object.entries(openApiSchemaMap).map(([name, schema]) => [name, z.toJSONSchema(schema)])) },
+  }
+}
+
 export async function parseJson<T extends Schema>(c: Context, schema: T): Promise<{ ok: true; data: z.output<T> } | { ok: false; response: Response }> {
   let body: unknown
   try {

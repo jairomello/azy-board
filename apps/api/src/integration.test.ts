@@ -1228,6 +1228,14 @@ describe('auto-gerente na criação de projeto', () => {
 })
 
 describe('validação runtime de payloads', () => {
+  test('publica schemas OpenAPI derivados da validação runtime', async () => {
+    const response = await app.fetch(new Request('http://test.local/api/openapi.json'))
+    expect(response.status).toBe(200)
+    const body = await response.json() as { openapi: string; components: { schemas: Record<string, unknown> } }
+    expect(body.openapi).toBe('3.1.0')
+    expect(body.components.schemas.CreateItemRequest).toBeDefined()
+  })
+
   test('rejeita JSON inválido no login sem virar erro interno', async () => {
     const response = await app.fetch(new Request('http://test.local/api/auth/login', {
       method: 'POST',

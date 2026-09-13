@@ -7,6 +7,7 @@ import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import { broadcast } from '../services/websocket'
 import type { RequestContext, ColumnBaseStatus } from '@azy-board/types'
+import { columnSchema, deleteColumnSchema, parseJson, reorderSchema, updateColumnSchema } from '../validation'
 
 export const columnsRouter = new Hono<HonoEnv>()
 columnsRouter.use('*', authMiddleware)
@@ -28,7 +29,9 @@ columnsRouter.get('/', requireRole('VIEWER'), async (c) => {
 columnsRouter.post('/', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
-  const body = await c.req.json<{ name: string; baseStatus: ColumnBaseStatus }>()
+  const parsed = await parseJson(c, columnSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   const existing = await db.select().from(columns)
     .where(and(eq(columns.projectId, projectId), eq(columns.tenantId, ctx.tenantId)))
@@ -51,7 +54,9 @@ columnsRouter.post('/', requireRole('ADMIN'), async (c) => {
 columnsRouter.patch('/reorder', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
-  const body = await c.req.json<{ order: string[] }>()
+  const parsed = await parseJson(c, reorderSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   await db.transaction(async (tx) => {
     for (let i = 0; i < body.order.length; i++) {
@@ -71,7 +76,9 @@ columnsRouter.patch('/:colId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
   const colId = c.req.param('colId')!
-  const body = await c.req.json<{ name?: string; baseStatus?: ColumnBaseStatus }>()
+  const parsed = await parseJson(c, updateColumnSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   const existing = await db.query.columns.findFirst({
     where: (col) => and(eq(col.id, colId), eq(col.projectId, projectId), eq(col.tenantId, ctx.tenantId)),
@@ -92,7 +99,9 @@ columnsRouter.delete('/:colId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const colId = c.req.param('colId')!
   const projectId = c.req.param('projectId')!
-  const body = await c.req.json<{ moveToColumnId: string | null }>()
+  const parsed = await parseJson(c, deleteColumnSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   const existing = await db.query.columns.findFirst({
     where: (col) => and(eq(col.id, colId), eq(col.projectId, projectId), eq(col.tenantId, ctx.tenantId)),

@@ -7,6 +7,7 @@ import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import { broadcast } from '../services/websocket'
 import type { RequestContext } from '@azy-board/types'
+import { checklistItemSchema, checklistSchema, parseJson, updateChecklistItemSchema, updateChecklistSchema } from '../validation'
 
 // Calcula progresso agregado dos checklists de um item para enviar no broadcast
 async function getChecklistProgress(tenantId: string, itemId: string) {
@@ -65,7 +66,9 @@ checklistsRouter.get('/', requireRole('VIEWER'), async (c) => {
 checklistsRouter.post('/', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId } = c.req.param()
-  const body = await c.req.json<{ name: string }>()
+  const parsed = await parseJson(c, checklistSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   if (!body.name?.trim()) return c.json({ error: 'name é obrigatório' }, 400)
 
@@ -100,7 +103,9 @@ checklistsRouter.post('/', requireRole('MEMBER'), async (c) => {
 checklistsRouter.patch('/:checklistId', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId, checklistId } = c.req.param()
-  const body = await c.req.json<{ name?: string; position?: number }>()
+  const parsed = await parseJson(c, updateChecklistSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   // [TENANT] verifica acesso via item
   const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)
@@ -143,7 +148,9 @@ checklistsRouter.delete('/:checklistId', requireRole('MEMBER'), async (c) => {
 checklistsRouter.post('/:checklistId/items', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId, checklistId } = c.req.param()
-  const body = await c.req.json<{ text: string }>()
+  const parsed = await parseJson(c, checklistItemSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   if (!body.text?.trim()) return c.json({ error: 'text é obrigatório' }, 400)
 
@@ -185,7 +192,9 @@ checklistsRouter.post('/:checklistId/items', requireRole('MEMBER'), async (c) =>
 checklistsRouter.patch('/:checklistId/items/:checklistItemId', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId, checklistId, checklistItemId } = c.req.param()
-  const body = await c.req.json<{ text?: string; checked?: boolean; position?: number }>()
+  const parsed = await parseJson(c, updateChecklistItemSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   // [TENANT] verifica acesso via item
   const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)

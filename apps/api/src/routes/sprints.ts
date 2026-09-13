@@ -9,6 +9,7 @@ import { generateId } from '../utils/id'
 import type { RequestContext } from '@azy-board/types'
 import { validateSprintDates, validateSprintTransition } from '../services/sprints'
 import { closeSprintCycle, createSprintCycle } from '../services/analytics'
+import { parseJson, sprintSchema } from '../validation'
 
 export const sprintsRouter = new Hono<HonoEnv>()
 sprintsRouter.use('*', authMiddleware)
@@ -30,7 +31,9 @@ sprintsRouter.get('/current', requireRole('VIEWER'), async (c) => {
 sprintsRouter.post('/', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
-  const body = await c.req.json<{ name?: string; startDate?: string; endDate?: string }>()
+  const parsed = await parseJson(c, sprintSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   const error = validateSprintDates(body.name, body.startDate, body.endDate)
   if (error) return c.json({ error }, 422)
   const id = generateId()
@@ -43,7 +46,9 @@ sprintsRouter.patch('/:sprintId', requireRole('ADMIN'), async (c) => {
   const { projectId, sprintId } = c.req.param()
   const current = await db.query.sprints.findFirst({ where: (s) => scope(ctx, projectId, sprintId) })
   if (!current) return c.json({ error: 'Sprint não encontrada' }, 404)
-  const body = await c.req.json<{ name?: string; startDate?: string; endDate?: string }>()
+  const parsed = await parseJson(c, sprintSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   const error = validateSprintDates(body.name ?? current.name, body.startDate ?? current.startDate, body.endDate ?? current.endDate)
   if (error) return c.json({ error }, 422)
   await db.update(sprints).set({ name: (body.name ?? current.name).trim(), startDate: body.startDate ?? current.startDate, endDate: body.endDate ?? current.endDate }).where(scope(ctx, projectId, sprintId))

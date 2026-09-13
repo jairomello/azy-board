@@ -8,6 +8,7 @@ import { generateApiKey } from '../services/auth'
 import { generateId } from '../utils/id'
 import type { RequestContext } from '@azy-board/types'
 import { API_KEY_PERMISSIONS } from '../services/authorization'
+import { parseJson, projectApiKeySchema, userApiKeySchema } from '../validation'
 
 export const apiKeysRouter = new Hono<HonoEnv>()
 apiKeysRouter.use('*', authMiddleware)
@@ -16,7 +17,9 @@ apiKeysRouter.use('*', authMiddleware)
 // POST /projects/:projectId/api-keys — gerar nova API Key (rota legada, mantida por compatibilidade)
 apiKeysRouter.post('/', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const body = await c.req.json<{ name: string; aiModelName?: string; permissionScope?: string[]; expiresAt?: string | null }>()
+  const parsed = await parseJson(c, projectApiKeySchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   const { key } = generateApiKey()
   const keyHash = await hashKey(key)
@@ -87,7 +90,9 @@ userApiKeysRouter.get('/', async (c) => {
 // POST /api-keys — gerar nova chave
 userApiKeysRouter.post('/', async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const body = await c.req.json<{ name: string; aiModelName?: string; projectScope?: string[]; permissionScope?: string[]; expiresAt?: string | null }>()
+  const parsed = await parseJson(c, userApiKeySchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   if (!body.name?.trim()) return c.json({ error: 'Nome obrigatório' }, 400)
   if (body.permissionScope && (!Array.isArray(body.permissionScope) || body.permissionScope.some(scope => !API_KEY_PERMISSIONS.includes(scope as typeof API_KEY_PERMISSIONS[number])))) {

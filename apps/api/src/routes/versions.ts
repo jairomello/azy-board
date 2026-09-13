@@ -6,6 +6,7 @@ import { projectVersions, items } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import type { RequestContext } from '@azy-board/types'
+import { parseJson, updateVersionSchema, versionSchema } from '../validation'
 
 export const versionsRouter = new Hono<HonoEnv>()
 versionsRouter.use('*', authMiddleware)
@@ -30,12 +31,9 @@ versionsRouter.get('/', requireRole('VIEWER'), async (c) => {
 versionsRouter.post('/', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
-  const body = await c.req.json<{
-    name: string
-    releaseDate?: string | null
-    description?: string | null
-    status?: VersionStatus
-  }>()
+  const parsed = await parseJson(c, versionSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   if (!body.name?.trim()) return c.json({ error: 'name é obrigatório' }, 400)
 
@@ -66,13 +64,9 @@ versionsRouter.post('/', requireRole('ADMIN'), async (c) => {
 versionsRouter.patch('/:versionId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, versionId } = c.req.param()
-  const body = await c.req.json<{
-    name?: string
-    releaseDate?: string | null
-    description?: string | null
-    status?: VersionStatus
-    position?: number
-  }>()
+  const parsed = await parseJson(c, updateVersionSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   // [TENANT] Anti-IDOR
   const version = await db.query.projectVersions.findFirst({

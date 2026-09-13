@@ -7,6 +7,7 @@ import { users } from '../db/schema'
 import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
 import { hasGlobalGroup, hashPassword, isGlobalGroup } from '../services/auth'
 import { generateId } from '../utils/id'
+import { createUserSchema, groupSchema, parseJson, preferencesSchema } from '../validation'
 
 const THEMES = new Set<Theme>(['light', 'dark'])
 const LANGUAGES = new Set<Language>(['pt-BR', 'en', 'es'])
@@ -38,7 +39,9 @@ usersRouter.get('/', requireGlobalGroup('ADMIN'), async (c) => {
 
 usersRouter.post('/', requireGlobalGroup('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const body = await c.req.json<{ email?: string; name?: string; password?: string; globalGroup?: GlobalGroup }>()
+  const parsed = await parseJson(c, createUserSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   const group = body.globalGroup ?? 'TEAM_MEMBER'
   if (!body.email?.trim() || !body.name?.trim() || !body.password) return c.json({ error: 'Nome, e-mail e senha são obrigatórios' }, 400)
   const email = body.email.trim()
@@ -57,7 +60,9 @@ usersRouter.patch('/:userId/group', requireGlobalGroup('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const userId = c.req.param('userId')
   if (!userId) return c.json({ error: 'Usuário não especificado' }, 400)
-  const body = await c.req.json<{ globalGroup?: GlobalGroup }>()
+  const parsed = await parseJson(c, groupSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   if (!isGlobalGroup(body.globalGroup)) return c.json({ error: 'Grupo inválido' }, 400)
   if (userId === ctx.userId) return c.json({ error: 'Não é permitido alterar o próprio grupo' }, 403)
   if (!hasGlobalGroup(ctx.globalGroup, body.globalGroup) || (ctx.globalGroup === 'ADMIN' && body.globalGroup === 'ROOT')) return c.json({ error: 'Grupo não permitido' }, 403)
@@ -68,12 +73,9 @@ usersRouter.patch('/:userId/group', requireGlobalGroup('ADMIN'), async (c) => {
 })
 
 usersRouter.patch('/me', async (c) => {
-  let body: Record<string, unknown>
-  try {
-    body = await c.req.json<Record<string, unknown>>()
-  } catch {
-    return c.json({ error: 'JSON inválido' }, 400)
-  }
+  const parsed = await parseJson(c, preferencesSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   const keys = Object.keys(body)
   if (keys.length === 0 || keys.some((key) => !ALLOWED_FIELDS.has(key))) {

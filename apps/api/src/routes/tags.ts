@@ -6,6 +6,7 @@ import { tags, itemTags } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import type { RequestContext } from '@azy-board/types'
+import { parseJson, tagSchema, updateTagSchema } from '../validation'
 
 export const tagsRouter = new Hono<HonoEnv>()
 tagsRouter.use('*', authMiddleware)
@@ -14,7 +15,9 @@ tagsRouter.use('*', authMiddleware)
 tagsRouter.post('/', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
-  const body = await c.req.json<{ name: string; color?: string }>()
+  const parsed = await parseJson(c, tagSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   const id = generateId()
   await db.insert(tags).values({
@@ -44,7 +47,9 @@ tagsRouter.get('/', requireRole('VIEWER'), async (c) => {
 tagsRouter.patch('/:tagId', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, tagId } = c.req.param()
-  const body = await c.req.json<{ name?: string; color?: string }>()
+  const parsed = await parseJson(c, updateTagSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   const existing = await db.query.tags.findFirst({
     where: (tag) => and(eq(tag.id, tagId), eq(tag.projectId, projectId), eq(tag.tenantId, ctx.tenantId)),

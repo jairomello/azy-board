@@ -23,6 +23,7 @@ import { agentResponseMiddleware } from './middleware/agentResponse'
 import { dashboardRouter } from './routes/dashboard'
 import { assertAnalyticsCutoverReady } from './services/analytics'
 import { assistantRouter } from './routes/assistant'
+import { openApiDocument } from './validation'
 
 export const app = new Hono()
 
@@ -43,6 +44,7 @@ app.route('/api/auth', authRouter)
 // Rotas protegidas
 const api = app.basePath('/api')
 api.use('*', agentResponseMiddleware)
+api.get('/openapi.json', (c) => c.json(openApiDocument()))
 api.route('/projects', projectsRouter)
 api.route('/projects/:projectId/columns', columnsRouter)
 api.route('/projects/:projectId/sprints', sprintsRouter)
