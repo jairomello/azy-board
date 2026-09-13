@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   type ApiCall,
   toolAddChecklistItem,
+  toolAddChecklistItemToTask,
   toolCheckItem,
   toolClaimTask,
   toolCompleteTask,
@@ -308,6 +309,25 @@ describe('MCP tools regression suite', () => {
       columnId: project.columns.find(column => column.baseStatus === 'DONE')!.id,
       status: 'DONE',
     })
+  })
+
+  test('adiciona passo resolvendo checklist pelo card pai e nome', async () => {
+    const fake = new InMemoryMcpApi()
+    const project = fake.createProject('project-checklist-helper')
+    const epic = await toolCreateTask(fake.api, { projectId: project.id, title: 'Épico', type: 'EPIC' })
+    const story = await toolCreateTask(fake.api, { projectId: project.id, title: 'História', type: 'STORY', parentId: epic.id })
+    const task = await toolCreateTask(fake.api, { projectId: project.id, title: 'Card pai', type: 'TASK', parentId: story.id })
+
+    const first = await toolAddChecklistItemToTask(fake.api, project.id, task.id, 'Validação', 'Executar testes')
+    expect(first.checklist).toMatchObject({ name: 'Validação' })
+    expect(first.item).toMatchObject({ text: 'Executar testes', checked: false })
+
+    const second = await toolAddChecklistItemToTask(fake.api, project.id, task.id, 'Validação', 'Revisar resultado')
+    expect(second.checklist.id).toBe(first.checklist.id)
+    expect(second.item.id).not.toBe(first.item.id)
+    await expect(toolListChecklists(fake.api, project.id, task.id)).resolves.toMatchObject([
+      { id: first.checklist.id, items: [{ id: first.item.id }, { id: second.item.id }] },
+    ])
   })
 
   test('lists items by type and hides parents by default when onlyLeaves is omitted', async () => {

@@ -1,6 +1,6 @@
 import {
   toolAddChecklistItem, toolAddMember, toolActivateSprint, toolArchiveItem, toolBatch, toolBatchMove,
-  toolCheckItem, toolClaimTask, toolCloseSprint, toolCompleteTask, toolCreateChecklist,
+  toolCheckItem, toolClaimTask, toolCloseSprint, toolCompleteTask, toolCreateChecklist, toolAddChecklistItemToTask,
   toolCreateColumn, toolCreateCostCenter, toolCreateItemLog, toolCreateModule, toolCreateProject, toolCreateProjectStructure,
   toolCreateSprint, toolCreateSquad, toolCreateTag, toolCreateTask, toolCreateVersion,
   toolDeleteChecklist, toolDeleteChecklistItem, toolDeleteItem, toolDeleteProject,
@@ -57,19 +57,19 @@ export type ToolDefinition = {
 const required: Record<string, string[]> = {
   list_projects: [], get_project: ['projectId'], get_board: ['projectId'], get_tree: ['projectId'], get_shadow_markdown: ['projectId'],
   list_tasks: ['projectId'], list_modules: ['projectId'], get_current_sprint: ['projectId'], list_columns: ['projectId'], list_sprints: ['projectId'], list_tags: ['projectId'], list_versions: ['projectId'], list_members: ['projectId'], list_squads: ['projectId'], list_item_logs: ['projectId', 'itemId'], list_cost_centers: ['projectId'], list_attachments: ['projectId', 'itemId'], list_checklists: ['projectId', 'itemId'],
-  claim_task: ['projectId', 'taskId'], move_task: ['projectId', 'taskId', 'columnName'], batch_move: ['projectId', 'itemIds', 'columnName'], complete_task: ['projectId', 'taskId'], create_task: ['projectId', 'title'], create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], release_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], delete_project: ['projectId'], archive_item: ['projectId', 'itemId'], unarchive_item: ['projectId', 'itemId'], set_item_tags: ['projectId', 'itemId', 'tagIds'], create_item_log: ['projectId', 'itemId', 'activity'], reorder_items: ['projectId', 'columnId', 'order'], update_checklist: ['projectId', 'itemId', 'checklistId', 'changes'], delete_checklist: ['projectId', 'itemId', 'checklistId'], update_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'changes'], delete_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId'], update_item_log: ['projectId', 'itemId', 'logId', 'changes'], batch: ['projectId', 'operations'],
+  claim_task: ['projectId', 'taskId'], move_task: ['projectId', 'taskId', 'columnName'], batch_move: ['projectId', 'itemIds', 'columnName'], complete_task: ['projectId', 'taskId'], create_task: ['projectId', 'title'], create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'], add_checklist_item_to_task: ['projectId', 'itemId', 'checklistName', 'text'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], release_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], delete_project: ['projectId'], archive_item: ['projectId', 'itemId'], unarchive_item: ['projectId', 'itemId'], set_item_tags: ['projectId', 'itemId', 'tagIds'], create_item_log: ['projectId', 'itemId', 'activity'], reorder_items: ['projectId', 'columnId', 'order'], update_checklist: ['projectId', 'itemId', 'checklistId', 'changes'], delete_checklist: ['projectId', 'itemId', 'checklistId'], update_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'changes'], delete_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId'], update_item_log: ['projectId', 'itemId', 'logId', 'changes'], batch: ['projectId', 'operations'],
   create_project: ['name'], create_project_structure: ['name', 'operations'], update_project: ['projectId'], create_module: ['projectId', 'name'], create_column: ['projectId', 'name', 'baseStatus'], reorder_columns: ['projectId', 'order'], create_sprint: ['projectId', 'name'], activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'], create_tag: ['projectId', 'name'], create_version: ['projectId', 'name'], add_member: ['projectId', 'email', 'role'], update_member: ['projectId', 'userId', 'role'], remove_member: ['projectId', 'userId'], create_squad: ['projectId', 'name'], create_cost_center: ['projectId', 'code'],
 }
 
 const discovery = new Set(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_shadow_markdown', 'list_tasks', 'list_modules', 'get_current_sprint', 'list_columns', 'list_sprints', 'list_tags', 'list_versions', 'list_members', 'list_squads', 'list_item_logs', 'list_cost_centers', 'list_attachments', 'list_checklists'])
-const planning = new Set(['claim_task', 'list_tasks', 'list_checklists', 'create_checklist', 'add_checklist_item', 'check_item', 'get_shadow_markdown'])
+const planning = new Set(['claim_task', 'list_tasks', 'list_checklists', 'create_checklist', 'add_checklist_item', 'add_checklist_item_to_task', 'check_item', 'get_shadow_markdown'])
 const projectTools = new Set(['list_projects', 'get_project', 'create_project', 'create_project_structure', 'update_project', 'delete_project'])
 const boardTools = new Set(['get_board', 'get_tree', 'get_shadow_markdown', 'list_columns', 'reorder_columns', 'reorder_items'])
 const planningTools = new Set(['get_current_sprint', 'list_sprints', 'create_sprint', 'activate_sprint', 'close_sprint', 'list_modules', 'create_module', 'list_tags', 'create_tag', 'set_item_tags', 'list_versions', 'create_version', 'list_cost_centers', 'create_cost_center'])
 const collaborationTools = new Set(['list_members', 'add_member', 'update_member', 'remove_member', 'list_squads', 'create_squad'])
 const evidenceTools = new Set(['list_item_logs', 'create_item_log', 'update_item_log', 'list_attachments', 'list_checklists', 'create_checklist', 'update_checklist', 'delete_checklist', 'add_checklist_item', 'check_item', 'update_checklist_item', 'delete_checklist_item'])
 const destructiveTools = new Set(['delete_item', 'delete_project', 'archive_item', 'delete_checklist', 'delete_checklist_item', 'remove_member'])
-const createTools = new Set(['create_project', 'create_project_structure', 'create_task', 'create_module', 'create_column', 'create_sprint', 'create_tag', 'create_version', 'create_item_log', 'create_checklist', 'add_checklist_item', 'create_squad', 'create_cost_center', 'add_member'])
+const createTools = new Set(['create_project', 'create_project_structure', 'create_task', 'create_module', 'create_column', 'create_sprint', 'create_tag', 'create_version', 'create_item_log', 'create_checklist', 'add_checklist_item', 'add_checklist_item_to_task', 'create_squad', 'create_cost_center', 'add_member'])
 const updateTools = new Set(['update_project', 'update_item', 'update_items', 'move_task', 'batch_move', 'complete_task', 'claim_task', 'release_task', 'unarchive_item', 'set_item_tags', 'reorder_items', 'reorder_columns', 'activate_sprint', 'close_sprint', 'update_checklist', 'check_item', 'update_checklist_item', 'update_item_log', 'update_member'])
 function routingFor(name: string): ToolRoutingMetadata {
   const domain: ToolDomain = projectTools.has(name) ? 'projects' : boardTools.has(name) ? 'board' : collaborationTools.has(name) ? 'collaboration' : evidenceTools.has(name) ? 'evidence' : planningTools.has(name) ? 'planning' : 'items'
@@ -86,7 +86,7 @@ const fieldsByTool: Record<string, string[]> = {
   create_project: ['name', 'description', 'boardMode', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], create_project_structure: ['name', 'description', 'boardMode', 'managerUserId', 'operations', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], update_project: ['projectId', 'name', 'description', 'boardMode', 'managerUserId', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], delete_project: ['projectId'],
   create_task: ['projectId', 'title', 'description', 'type', 'priority', 'points', 'parentId', 'moduleId', 'assigneeId', 'status'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], complete_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], move_task: ['projectId', 'taskId', 'columnName'], batch_move: ['projectId', 'itemIds', 'columnName'], claim_task: ['projectId', 'taskId'], release_task: ['projectId', 'taskId'],
   create_sprint: ['projectId', 'name', 'startDate', 'endDate'], activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'],
-  create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'],
+  create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'], add_checklist_item_to_task: ['projectId', 'itemId', 'checklistName', 'text'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'],
   create_tag: ['projectId', 'name', 'color'], set_item_tags: ['projectId', 'itemId', 'tagIds'],
 }
 
@@ -166,6 +166,11 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
   if (field === 'limit' || field === 'durationMin' || field === 'points') return nullable({ type: 'number' })
   if (field === 'filters') return itemFiltersSchema
   if (field === 'changes') return itemChangeSchema
+  if (field === 'itemId') return nullable({ type: 'string', description: 'Board item/card ID. For checklist tools, this is the parent card that owns the checklist; never use checklistId or checklistItemId.' })
+  if (field === 'checklistId') return nullable({ type: 'string', description: 'Checklist ID belonging to the board item identified by itemId.' })
+  if (field === 'checklistItemId') return nullable({ type: 'string', description: 'Checklist step ID belonging to checklistId.' })
+  if (field === 'checklistName') return nullable({ type: 'string', description: 'Checklist name to find or create on the board item identified by itemId.' })
+  if (field === 'text') return nullable({ type: 'string', description: 'Checklist step text.' })
   return nullable({ type: 'string' })
 }
 
@@ -199,7 +204,17 @@ export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinit
         ? 'Create an ordered hierarchy of up to 50 EPIC, STORY, TASK, or BUG items in one atomic approval. Use refs and parentRefs instead of database IDs. Use moduleName for EPIC items; a module referenced by name that does not exist yet is created automatically.'
       : name === 'update_items'
          ? 'Atomically update one or many active items selected by filters. For bulk moves, set filters.column to the source column, preserve every other requested criterion, and add a column SET change with the destination. Generic tasks or cards in a bulk move covers leaf TASK and BUG items unless the user explicitly restricts the type. Also supports fixed values, clearing fields, relative dates, today, and copying each item creation date. Use itemIds for one item and matchAll only for every item without narrower filters.'
-      : name === 'batch_move'
+       : name === 'add_checklist_item_to_task'
+         ? 'Add a checklist step to a board card. itemId is the parent card ID, checklistName is the checklist name, and the tool creates the checklist when it does not exist. Use this when you do not already have a checklistId; it returns both checklist and checklist item IDs.'
+       : name === 'add_checklist_item'
+         ? 'Add a step to an existing checklist. itemId is the parent board card ID; checklistId must belong to that card; text is the step text. Do not use checklistId or checklistItemId as itemId.'
+       : name === 'check_item'
+         ? 'Set a checklist step state. itemId is the parent board card ID, checklistId belongs to that card, and checklistItemId belongs to that checklist.'
+       : name === 'create_checklist'
+         ? 'Create a named checklist on a board card. itemId is the parent card ID, not a checklist or checklist item ID.'
+       : name === 'list_checklists'
+         ? 'List checklists and their steps for a board card. itemId is the parent card ID.'
+       : name === 'batch_move'
         ? 'Move up to 500 leaf items to a column in one atomic operation. Requires itemIds and the exact destination column name (or column ID). Prefer this over multiple move_task calls when moving several cards at once. For filter-based bulk moves without explicit IDs, use update_items.'
       : `Azy Board: ${name}`,
     inputSchema: (() => {
@@ -295,7 +310,8 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'complete_task': return toolCompleteTask(api, args.projectId as string, args.taskId as string)
     case 'create_task': return toolCreateTask(api, args as Parameters<typeof toolCreateTask>[1])
     case 'create_checklist': return toolCreateChecklist(api, args.projectId as string, args.itemId as string, args.name as string)
-    case 'add_checklist_item': return toolAddChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.text as string)
+     case 'add_checklist_item': return toolAddChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.text as string)
+     case 'add_checklist_item_to_task': return toolAddChecklistItemToTask(api, args.projectId as string, args.itemId as string, args.checklistName as string, args.text as string)
     case 'check_item': return toolCheckItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string, args.checked as boolean)
     case 'update_item': return toolUpdateItem(api, args.projectId as string, args.itemId as string, args.changes as Parameters<typeof toolUpdateItem>[3], execution.context.runId)
     case 'release_task': return toolReleaseTask(api, args.projectId as string, args.taskId as string)

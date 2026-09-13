@@ -36,6 +36,20 @@ Use `list_modules` antes de criar EPIC quando necessário. `create_task` resolve
 - Use `batch` para criações relacionadas que se beneficiem de atomicidade, com `idempotencyKey` quando houver reenvio possível.
 - Use checklist para passos verificáveis da mesma unidade; use subtask quando houver responsável, estimativa ou ciclo Kanban independente.
 
+### Checklists
+
+Use `add_checklist_item_to_task` quando o objetivo for apenas adicionar um passo por nome de checklist. Essa operação resolve ou cria o checklist e retorna o checklist e o passo criados.
+
+Nas operações de baixo nível, preserve a relação dos IDs:
+
+```text
+itemId          = card/item pai
+checklistId     = checklist pertencente ao itemId
+checklistItemId = passo pertencente ao checklistId
+```
+
+Fluxo recomendado: `list_tasks` para obter o `itemId`, `list_checklists` para obter o `checklistId`, e então `add_checklist_item` ou `check_item` usando os IDs retornados. Não invente UUIDs para esses campos.
+
 ## Erros
 
 Respostas de erro têm `code`, `message` e `retryable`. Conflitos de claim, validação, autorização e IDs fora do escopo não devem ser repetidos automaticamente. Falhas transitórias só podem ser repetidas quando `retryable` for verdadeiro e a operação for segura/idempotente.

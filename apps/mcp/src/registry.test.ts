@@ -44,6 +44,15 @@ describe('shared MCP/Azy Agent registry', () => {
     expect(tool.description).toContain('Only name is required')
   })
 
+  test('documenta a hierarquia semântica dos IDs de checklist', () => {
+    const definitions = getSharedToolDefinitions(['add_checklist_item', 'add_checklist_item_to_task', 'check_item'])
+    for (const tool of definitions) {
+      expect(tool.inputSchema.properties.itemId).toMatchObject({ description: expect.stringContaining('parent card') })
+      if (tool.inputSchema.properties.checklistId) expect(tool.inputSchema.properties.checklistId).toMatchObject({ description: expect.stringContaining('itemId') })
+    }
+    expect(getSharedToolDefinitions(['add_checklist_item_to_task'])[0]?.description).toContain('creates the checklist')
+  })
+
   test('sanitiza segredos e limita strings de saída', () => {
     const output = sanitizeToolOutput({ token: 'secret', apiKey: 'secret', title: 'ok', nested: { ciphertext: 'secret' }, text: 'x'.repeat(20_001) }) as Record<string, unknown>
     expect(output).not.toHaveProperty('token')

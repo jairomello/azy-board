@@ -112,6 +112,34 @@ describe('modos de board de projetos', () => {
     expect((await db.select().from(items)).find(item => item.id === createdItem.id)?.parentId).toBe(created.simpleStoryId)
   })
 
+  test('rejeita IDs cruzados entre card, checklist e passo', async () => {
+    const projectResponse = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Checklist ownership', boardMode: 'SIMPLE' }),
+    })
+    const project = await projectResponse.json() as { id: string; simpleStoryId: string }
+    const now = new Date().toISOString()
+    const cardA = generateId()
+    const cardB = generateId()
+    await db.insert(items).values([
+      { id: cardA, tenantId, projectId: project.id, type: 'TASK', parentId: project.simpleStoryId, moduleId: null, title: 'Card A', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now },
+      { id: cardB, tenantId, projectId: project.id, type: 'TASK', parentId: project.simpleStoryId, moduleId: null, title: 'Card B', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 1, createdAt: now, updatedAt: now },
+    ])
+    const checklistId = generateId()
+    const checklistItemId = generateId()
+    await db.insert(checklists).values({ id: checklistId, tenantId, itemId: cardA, name: 'Validação', position: 0, createdAt: now })
+    await db.insert(checklistItems).values({ id: checklistItemId, tenantId, checklistId, text: 'Executar testes', checked: false, position: 0 })
+
+    const patch = await request(`/projects/${project.id}/items/${cardB}/checklists/${checklistId}/items/${checklistItemId}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ checked: true }),
+    })
+    expect(patch.status).toBe(404)
+    expect(await patch.json()).toMatchObject({ code: 'CHECKLIST_ITEM_MISMATCH', retryable: false })
+
+    const remove = await request(`/projects/${project.id}/items/${cardB}/checklists/${checklistId}/items/${checklistItemId}`, adminToken, { method: 'DELETE' })
+    expect(remove.status).toBe(404)
+    expect((await db.select().from(checklistItems)).find(item => item.id === checklistItemId)?.checked).toBe(false)
+  })
+
   test('retorna progresso bottom-up, exclui arquivados e recalcula filtros e SIMPLE', async () => {
     const projectResponse = await request('/projects', adminToken, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Tree progress' }),

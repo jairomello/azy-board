@@ -37,6 +37,7 @@ Adicione ao seu `.claude/settings.json`:
 | `list_checklists` | Lista checklists de um card com itens e progresso |
 | `create_checklist` | Cria um checklist nomeado em um card |
 | `add_checklist_item` | Adiciona um item a um checklist existente |
+| `add_checklist_item_to_task` | Localiza ou cria um checklist pelo nome e adiciona um passo, retornando os IDs gerados |
 | `check_item` | Marca item de checklist como concluído ou não |
 | `list_projects` / `get_project` | Descobre projetos e configurações |
 | `get_board` / `get_tree` | Consulta board estruturado e árvore |
@@ -67,6 +68,29 @@ Adicione ao seu `.claude/settings.json`:
 | `delete_project` | Exclui projeto ou gera preview |
 
 `update_item` e `update_items` recebem alterações no formato `{ field, operation, value }`. As operações são `SET`, `CLEAR`, `TODAY`, `OFFSET_DAYS` e `COPY_CREATED_DATE`; filtros aceitam IDs ou nomes exatos, e `sprint: "CURRENT"` seleciona a sprint ativa.
+
+### IDs de checklist
+
+Os IDs formam uma hierarquia obrigatória:
+
+```text
+itemId = card/item pai que possui o checklist
+checklistId = checklist pertencente ao itemId
+checklistItemId = passo pertencente ao checklistId
+```
+
+Nunca use `checklistId` ou `checklistItemId` como `itemId`. Para adicionar um passo sem conhecer os IDs internos do checklist, prefira:
+
+```json
+{
+  "projectId": "project-123",
+  "itemId": "card-456",
+  "checklistName": "Validação",
+  "text": "Executar testes"
+}
+```
+
+O fluxo manual é `list_tasks` → `list_checklists` → `add_checklist_item` → `check_item`, sempre reutilizando os IDs retornados pela etapa anterior.
 
 ## Projeto padrão da codebase (`AZYBOARD_PROJECT_ID`)
 

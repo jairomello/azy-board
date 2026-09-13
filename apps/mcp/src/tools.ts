@@ -449,6 +449,24 @@ export async function toolAddChecklistItem(
   ) as Promise<ChecklistItem>
 }
 
+export async function toolAddChecklistItemToTask(
+  api: ApiCall,
+  projectId: string,
+  itemId: string,
+  checklistName: string,
+  text: string,
+): Promise<{ checklist: Checklist; item: ChecklistItem }> {
+  if (!itemId?.trim()) throw new Error('itemId é obrigatório e deve ser o ID do card pai do checklist')
+  if (!checklistName?.trim()) throw new Error('checklistName é obrigatório')
+  if (!text?.trim()) throw new Error('text é obrigatório')
+
+  const checklists = await toolListChecklists(api, projectId, itemId)
+  let checklist = checklists.find(candidate => candidate.name === checklistName.trim())
+  if (!checklist) checklist = await toolCreateChecklist(api, projectId, itemId, checklistName.trim())
+  const item = await toolAddChecklistItem(api, projectId, itemId, checklist.id, text.trim())
+  return { checklist, item }
+}
+
 export async function toolCheckItem(
   api: ApiCall,
   projectId: string,

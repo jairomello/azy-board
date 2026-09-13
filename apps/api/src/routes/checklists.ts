@@ -205,6 +205,12 @@ checklistsRouter.patch('/:checklistId/items/:checklistItemId', requireRole('MEMB
   })
   if (!ci) return c.json({ error: 'Item de checklist não encontrado' }, 404)
 
+  const checklist = await db.query.checklists.findFirst({
+    where: (cl) => and(eq(cl.id, checklistId), eq(cl.itemId, itemId), eq(cl.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!checklist) return c.json({ error: 'Checklist não pertence ao item informado', code: 'CHECKLIST_ITEM_MISMATCH', retryable: false }, 404)
+
   const updates: Partial<typeof checklistItems.$inferInsert> = {}
   if (body.text !== undefined) updates.text = body.text.trim()
   if (body.checked !== undefined) updates.checked = body.checked
@@ -227,6 +233,12 @@ checklistsRouter.delete('/:checklistId/items/:checklistItemId', requireRole('MEM
   // [TENANT] verifica acesso via item
   const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)
   if (!allowed) return c.json({ error: 'Item não encontrado' }, 404)
+
+  const checklist = await db.query.checklists.findFirst({
+    where: (cl) => and(eq(cl.id, checklistId), eq(cl.itemId, itemId), eq(cl.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!checklist) return c.json({ error: 'Checklist não pertence ao item informado', code: 'CHECKLIST_ITEM_MISMATCH', retryable: false }, 404)
 
   await db.delete(checklistItems)
     .where(and(
