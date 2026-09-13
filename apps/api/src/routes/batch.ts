@@ -10,6 +10,7 @@ import { getIdempotent, saveIdempotent } from '../services/idempotency'
 import { assertProjectScope } from '../services/scope'
 import { appendAnalyticsEvent, snapshotItem } from '../services/analytics'
 import { broadcast } from '../services/websocket'
+import { batchSchema, batchUpdateSchema, parseJson } from '../validation'
 
 export const batchRouter = new Hono<HonoEnv>()
 batchRouter.use('*', authMiddleware)
@@ -90,7 +91,9 @@ async function runCreate(ctx: RequestContext, projectId: string, body: Record<st
 batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
-  const body = await c.req.json<{ filters?: ItemFilters; changes?: ItemChange[]; agentRunId?: unknown }>().catch(() => ({} as { filters?: ItemFilters; changes?: ItemChange[]; agentRunId?: unknown }))
+  const parsed = await parseJson(c, batchUpdateSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   const agentRunId = typeof body.agentRunId === 'string' ? body.agentRunId : undefined
   const payload = { projectId, filters: body.filters, changes: body.changes }
   if (agentRunId) {
@@ -313,7 +316,9 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
 batchRouter.post('/', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
-  const input = await c.req.json<{ operations: Operation[]; atomic?: boolean; idempotencyKey?: string; agentRunId?: string }>()
+  const parsed = await parseJson(c, batchSchema)
+  if (!parsed.ok) return parsed.response
+  const input = parsed.data
   if (!Array.isArray(input.operations) || input.operations.length === 0 || input.operations.length > 50) return c.json({ code: 'VALIDATION_ERROR', error: 'operations deve conter entre 1 e 50 entradas' }, 422)
   const atomic = input.atomic === true
   const key = input.idempotencyKey

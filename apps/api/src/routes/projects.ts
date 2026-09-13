@@ -10,6 +10,7 @@ import type { RequestContext, BoardMode, AncestorNode } from '@azy-board/types'
 import { hasGlobalGroup } from '../services/auth'
 import { hasKeyPermission } from '../services/authorization'
 import { appendAnalyticsEvent, ensureCoverage, snapshotItem } from '../services/analytics'
+import { createProjectSchema, parseJson, updateProjectSchema } from '../validation'
 
 export const projectsRouter = new Hono<HonoEnv>()
 projectsRouter.use('*', authMiddleware)
@@ -178,7 +179,9 @@ projectsRouter.post('/', async (c) => {
   const ctx = c.get('ctx') as RequestContext
   if (!hasGlobalGroup(ctx.globalGroup, 'MANAGER')) return c.json({ error: 'Permissão insuficiente' }, 403)
   if (!hasKeyPermission(c.get('apiKeyPermissionScope'), 'MEMBER')) return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
-  const body = await c.req.json<{ name: string; description?: string; managerUserId?: string; boardMode?: BoardMode; isRestricted?: boolean; isHidden?: boolean; startDate?: string | null; plannedEndDate?: string | null; plannedPoints?: number | null; plannedHours?: number | null; scope?: string | null }>()
+  const parsed = await parseJson(c, createProjectSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   const normalizedName = body.name.trim()
   if (!normalizedName) return c.json({ error: 'O nome do projeto é obrigatório' }, 400)
   const boardMode = body.boardMode ?? 'HIERARCHICAL'
@@ -447,7 +450,9 @@ projectsRouter.get('/:id', requireRole('VIEWER'), async (c) => {
 projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const id = c.req.param('id')!
-  const body = await c.req.json<{ name?: string; description?: string; managerUserId?: string | null; boardMode?: BoardMode; dryRun?: boolean; isRestricted?: boolean; isHidden?: boolean; startDate?: string | null; plannedEndDate?: string | null; plannedPoints?: number | null; plannedHours?: number | null; scope?: string | null }>()
+  const parsed = await parseJson(c, updateProjectSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   if (body.boardMode !== undefined && !['HIERARCHICAL', 'SIMPLE'].includes(body.boardMode)) {
     return c.json({ error: 'Modo de board inválido' }, 400)

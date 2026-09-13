@@ -18,7 +18,8 @@
     "jose": "^5.9.0",
     "bcryptjs": "^2.4.3",
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "openai": "^7.9.0"
+    "openai": "^7.9.0",
+    "zod": "^4.6.4"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

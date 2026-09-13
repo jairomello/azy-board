@@ -13,6 +13,7 @@ import { parseWorkDuration } from '@azy-board/types'
 import { getIdempotent, saveIdempotent } from '../services/idempotency'
 import { appendAnalyticsEvent, snapshotItem } from '../services/analytics'
 import { claimItem, moveItem, releaseItem } from '../services/itemMutations'
+import { createItemSchema, moveItemSchema, parseJson, reorderItemsSchema, updateItemSchema } from '../validation'
 
 export const itemsRouter = new Hono<HonoEnv>()
 itemsRouter.use('*', authMiddleware)
@@ -110,7 +111,9 @@ async function validateHierarchy(
 itemsRouter.patch('/reorder', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
-  const body = await c.req.json<{ columnId: string; order: string[] }>()
+  const parsed = await parseJson(c, reorderItemsSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   const targetColumn = await db.query.columns.findFirst({
     where: (column) => and(eq(column.id, body.columnId), eq(column.projectId, projectId), eq(column.tenantId, ctx.tenantId)),
@@ -477,27 +480,9 @@ itemsRouter.get('/:itemId', requireRole('VIEWER'), async (c) => {
 itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
-  const body = await c.req.json<{
-    title: string
-    type?: ItemType
-    parentId?: string | null
-    moduleId?: string | null
-    columnId?: string | null
-    priority?: Priority
-    points?: number
-    description?: string
-    persona?: string
-    goal?: string
-    benefit?: string
-    acceptanceCriteria?: string
-    notes?: string
-    assigneeId?: string | null
-    startDate?: string | null
-    dueDate?: string | null
-    versionId?: string | null
-    costCenterId?: string | null
-    sprintId?: string | null
-  }>()
+  const parsed = await parseJson(c, createItemSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
   const idempotencyKey = c.req.header('Idempotency-Key') ?? (body as { idempotencyKey?: string }).idempotencyKey
   const idempotencyPayload = { projectId, body: { ...body, idempotencyKey: undefined } }
   if (idempotencyKey) {
@@ -680,7 +665,9 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
 itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId } = c.req.param()
-  const body = await c.req.json<{ columnId: string }>()
+  const parsed = await parseJson(c, moveItemSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   const item = await db.query.items.findFirst({
     where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
@@ -780,30 +767,9 @@ itemsRouter.patch('/:itemId/release', requireRole('MEMBER'), async (c) => {
 itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId } = c.req.param()
-  const body = await c.req.json<{
-    title?: string
-    description?: string
-    priority?: Priority
-    type?: 'TASK' | 'BUG'
-    status?: string
-    points?: number | null
-    assigneeId?: string | null
-    columnId?: string | null
-    parentId?: string | null
-    moduleId?: string | null
-    startDate?: string | null
-    dueDate?: string | null
-    blockedReason?: string | null
-    persona?: string | null
-    goal?: string | null
-    benefit?: string | null
-    acceptanceCriteria?: string | null
-    notes?: string | null
-     authorId?: unknown
-     versionId?: string | null
-    costCenterId?: string | null
-    sprintId?: string | null
-   }>()
+  const parsed = await parseJson(c, updateItemSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   // Identidade, tenant e relações de autorização são sempre derivados do
   // contexto/rota; nunca aceitamos esses campos do agente.

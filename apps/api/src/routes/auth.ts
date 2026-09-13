@@ -7,13 +7,16 @@ import { users } from '../db/schema'
 import { verifyPassword, signJwt } from '../services/auth'
 import { authMiddleware } from '../middleware/auth'
 import type { RequestContext } from '@azy-board/types'
+import { loginSchema, parseJson } from '../validation'
 
 export const authRouter = new Hono<HonoEnv>()
 
 // POST /auth/login
 // [TENANT] tenant_id é incluído no JWT — a partir daqui toda requisição carrega o contexto de tenant
 authRouter.post('/login', async (c) => {
-  const body = await c.req.json<{ email: string; password: string }>()
+  const parsed = await parseJson(c, loginSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
 
   if (!body.email || !body.password) {
     return c.json({ error: 'E-mail e senha são obrigatórios' }, 400)

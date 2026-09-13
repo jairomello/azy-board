@@ -1227,6 +1227,31 @@ describe('auto-gerente na criação de projeto', () => {
   })
 })
 
+describe('validação runtime de payloads', () => {
+  test('rejeita JSON inválido no login sem virar erro interno', async () => {
+    const response = await app.fetch(new Request('http://test.local/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{',
+    }))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ code: 'INVALID_REQUEST', retryable: false })
+  })
+
+  test('rejeita campos desconhecidos na criação de projeto', async () => {
+    const tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Tenant Validation', slug: `validation-${tenantId}`, createdAt: new Date().toISOString() })
+    const admin = await createUser(tenantId, 'validation@test.local', 'Validation Admin')
+    const response = await request('/projects', await token(admin.id, tenantId, admin.email), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto inválido', unexpected: true }),
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ code: 'INVALID_REQUEST', retryable: false })
+  })
+})
+
 describe('exclusão de projeto com conversas do agente', () => {
   let tenantId: string
   let adminToken: string
