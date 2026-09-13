@@ -45,8 +45,9 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) throw new Error(`Campo obrigatório ausente: ${field}`)
   }
   const input = args ?? {}
-  for (const field of ['projectId', 'itemId', 'taskId', 'sprintId', 'tagId', 'versionId', 'userId', 'columnId', 'moduleId', 'checklistId', 'checklistItemId']) if (field in input && input[field] !== undefined) assertNonEmptyString(input[field], field, 128)
-  for (const field of ['name', 'title', 'description', 'activity', 'text']) if (field in input && input[field] !== undefined) assertNonEmptyString(input[field], field)
+  for (const field of ['projectId', 'itemId', 'taskId', 'sprintId', 'tagId', 'versionId', 'userId', 'columnId', 'moduleId', 'checklistId', 'checklistItemId']) if (field in input && input[field] != null) assertNonEmptyString(input[field], field, 128)
+  for (const field of ['name', 'title', 'activity', 'text']) if (field in input && input[field] != null) assertNonEmptyString(input[field], field)
+  if ('description' in input && input.description != null) assertNonEmptyString(input.description, 'description', 4000)
   if ('tagIds' in input) assertStringArray(input.tagIds, 'tagIds')
   if ('order' in input) assertStringArray(input.order, 'order')
   if ('durationMin' in input && input.durationMin !== undefined && input.durationMin !== null) assertNonNegativeNumber(input.durationMin, 'durationMin')

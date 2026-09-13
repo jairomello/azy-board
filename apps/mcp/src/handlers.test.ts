@@ -72,4 +72,25 @@ describe('MCP protocol handlers', () => {
     expect(result.structuredContent).toMatchObject({ code: 'MCP_POLICY_REQUIRED', retryable: false })
     expect(calls).toBe(0)
   })
+
+  test('aceita campos ID opcionais como null sem erro de validação', async () => {
+    const { client } = await connectedClient()
+    const result = await client.callTool({
+      name: 'create_task',
+      arguments: { projectId: 'p1', title: 'Teste', moduleId: null, parentId: null },
+    })
+    expect(result.isError).toBe(true)
+    expect(JSON.stringify(result.structuredContent)).not.toContain('deve ser uma string não vazia')
+  })
+
+  test('aceita description com até 4000 caracteres sem erro de validação', async () => {
+    const { client } = await connectedClient()
+    const longDescription = 'A'.repeat(4000)
+    const result = await client.callTool({
+      name: 'create_task',
+      arguments: { projectId: 'p1', title: 'Teste', description: longDescription },
+    })
+    expect(result.isError).toBe(true)
+    expect(JSON.stringify(result.structuredContent)).not.toContain('excede o limite')
+  })
 })
