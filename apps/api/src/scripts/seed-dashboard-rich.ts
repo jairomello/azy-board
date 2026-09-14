@@ -68,7 +68,7 @@ await db.transaction(async tx => {
   }))
   await tx.insert(items).values(created)
   const openSprint = projectSprints.find(sprint => sprint.status === 'OPEN') ?? projectSprints[projectSprints.length - 1]!
-  await tx.insert(itemSprints).values(created.slice(0, 8).map(item => ({ itemId: item.id, sprintId: openSprint.id })))
+  await tx.insert(itemSprints).values(created.slice(0, 8).map(item => ({ tenantId, itemId: item.id, sprintId: openSprint.id })))
   for (const [index, item] of created.entries()) {
     await tx.insert(itemLogs).values([0, 1, 2, 3].map(day => ({ id: generateId(), tenantId, itemId: item.id, authorId: item.authorId, type: 'manual' as const, activity: `Dashboard Rich: trabalho registrado ${day + 1}`, durationMin: 45 + ((index + day) % 4) * 30, createdAt: iso(-day - 1), updatedAt: iso(-day - 1) })))
   }

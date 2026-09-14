@@ -21,5 +21,12 @@ console.log('Executando migrações...')
 migrate(db, { migrationsFolder: process.env.MIGRATIONS_DIR || './src/db/migrations' })
 console.log('Migrações concluídas.')
 
+// Verificação pós-migration: nenhuma violação de chave estrangeira residual.
+const foreignKeyViolations = sqlite.query('PRAGMA foreign_key_check').all()
+if (foreignKeyViolations.length > 0) {
+  sqlite.close()
+  throw new Error(`Integridade referencial violada após migração: ${JSON.stringify(foreignKeyViolations.slice(0, 10))}`)
+}
+
 sqlite.exec('PRAGMA foreign_keys = ON;')
 sqlite.close()

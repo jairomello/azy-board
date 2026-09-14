@@ -8,6 +8,7 @@ import { verifyPassword, signJwt } from '../services/auth'
 import { authMiddleware } from '../middleware/auth'
 import type { RequestContext } from '@azy-board/types'
 import { loginSchema, parseJson } from '../validation'
+import { normalizeEmail } from '../utils/email'
 
 export const authRouter = new Hono<HonoEnv>()
 
@@ -24,7 +25,8 @@ authRouter.post('/login', async (c) => {
 
   const user = await db.query.users.findFirst({
     // [TENANT] A identidade persistida, incluindo o grupo, é a autoridade server-side.
-    where: (u) => eq(u.email, body.email),
+    // E-mail canônico (lower + trim) preserva paridade com a unicidade do banco.
+    where: (u) => eq(u.email, normalizeEmail(body.email)),
   })
 
   // Mensagem genérica — não revela qual campo está errado (segurança)

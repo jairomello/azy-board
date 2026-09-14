@@ -11,12 +11,13 @@ import { db } from '../db/index'
 import { tenants, users } from '../db/schema'
 import { hashPassword } from '../services/auth'
 import { generateId } from '../utils/id'
+import { normalizeEmail } from '../utils/email'
 
 const args = Bun.argv.slice(2)
 
 const tenantName = args[0] ?? 'Minha Empresa'
 const tenantSlug = args[1] ?? 'minha-empresa'
-const adminEmail = args[2] ?? 'admin@example.com'
+const adminEmail = normalizeEmail(args[2] ?? 'admin@example.com')
 const adminPassword = args[3] ?? process.env.ADMIN_PASSWORD
 const adminName = args[4] ?? 'Administrador'
 

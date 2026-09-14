@@ -24,11 +24,16 @@ import { dashboardRouter } from './routes/dashboard'
 import { assertAnalyticsCutoverReady } from './services/analytics'
 import { assistantRouter } from './routes/assistant'
 import { openApiDocument } from './validation'
-import { errorResponseMiddleware, normalizeErrorPayload } from './middleware/errorResponse'
+import { classifyDatabaseError, errorResponseMiddleware, normalizeErrorPayload } from './middleware/errorResponse'
 
 export const app = new Hono()
 
 app.onError((error, c) => {
+  // [INTEGRIDADE] Conflitos de constraint são erros de domínio, não erro interno.
+  const classified = classifyDatabaseError(error)
+  if (classified) {
+    return c.json(normalizeErrorPayload({ code: classified.code, error: 'A operação conflita com o estado atual dos dados.' }, classified.status), classified.status)
+  }
   // Não expor stack trace, SQL ou identificadores internos para clientes/agentes.
   console.error('Erro interno da API:', error instanceof Error ? error.message : 'erro desconhecido')
   return c.json(normalizeErrorPayload(null, 500), 500)

@@ -48,7 +48,11 @@ describe('migration de analytics', () => {
     await database.insert(schema.sprints).values([{ id: openSprintId, tenantId, projectId, name: 'Open', status: 'OPEN', startDate: '2026-01-01', endDate: '2026-01-14', createdAt: now }, { id: closedSprintId, tenantId, projectId, name: 'Closed', status: 'CLOSED', startDate: '2026-01-15', endDate: '2026-01-28', createdAt: now }])
     // Simula uma linha criada antes da migration 0020, quando sequence_code ainda não existia.
     sqlite.query('INSERT INTO items (id, tenant_id, project_id, type, parent_id, module_id, title, ancestry_path, status, priority, points, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(itemId, tenantId, projectId, 'TASK', null, null, 'Legacy item', '[]', 'IN_PROGRESS', 'MEDIUM', 3, 0, now, now)
-    await database.insert(schema.itemSprints).values([{ itemId, sprintId: openSprintId }, { itemId, sprintId: openSprintId }])
+    // Inserção legada (migrações 0000-0010): a tabela ainda não possui tenant_id,
+    // por isso usa SQL puro; as duplicatas exercitam a deduplicação da migration 0011.
+    const insertLegacyItemSprint = sqlite.query('INSERT INTO item_sprints (item_id, sprint_id) VALUES (?, ?)')
+    insertLegacyItemSprint.run(itemId, openSprintId)
+    insertLegacyItemSprint.run(itemId, openSprintId)
 
     await migrate(database, { migrationsFolder: source })
     expect((await database.select().from(schema.itemSprints).where(eq(schema.itemSprints.itemId, itemId)))).toHaveLength(1)

@@ -1,0 +1,110 @@
+# Integridade do Banco
+
+Este documento descreve as constraints de integridade introduzidas pela mudança
+`enforce-schema-integrity` e como operar migrations, saneamento e rollback.
+
+## Princípios
+
+- **Escopo por tenant no banco.** Toda relação entre entidades usa chave
+  estrangeira composta que inclui `tenant_id`, e cada tabela pai possui
+  `UNIQUE (tenant_id, id)`. Vínculos cross-tenant são rejeitados mesmo se a
+  aplicação falhar.
+- **Defesa em profundidade.** A validação em runtime continua existindo; as
+  constraints são a última linha de defesa.
+- **Cascata na aplicação.** As FKs de hierarquia usam `NO ACTION`. A exclusão
+  de item/projeto remove os filhos explicitamente, na ordem correta, antes de
+  remover o pai. A política declarativa de cascata/outbox fica para o Item 12.
+- **Erros de constraint são de domínio.** Violações viram `409 CONFLICT`
+  (unicidade/FK) ou `422 INVALID_REQUEST` (CHECK/NOT NULL) no contrato único de
+  erro, nunca `500`.
+
+## Constraints aplicadas
+
+| Tabela | Invariante |
+| --- | --- |
+| `users` | `UNIQUE (tenant_id, email)` (email canônico), `CHECK` de grupo global |
+| `memberships` | `UNIQUE (tenant_id, project_id, user_id)`, FKs compostas |
+| `item_tags` | `PRIMARY KEY (item_id, tag_id)`, `tenant_id`, FKs compostas |
+| `item_sprints` | `tenant_id`, FKs compostas, unicidade item/sprint |
+| `items` | auto-FK composta `(tenant_id, parent_id)`, FKs para projeto/módulo/coluna/usuário/versão/centro de custo/API key, `CHECK` de `points`/`position`/datas/tipo |
+| `projects` | FKs `manager_user_id` e `simple_story_id`, `CHECK` de pontos/horas/datas |
+| `modules`, `columns`, `sprints`, `project_versions`, `checklists` | FKs compostas e `CHECK` de posição/datas |
+| `item_logs`, `attachments`, `checklist_items`, `project_cost_centers`, `tags`, `squads` | FKs compostas e `CHECK` de não-negatividade |
+| Todas as tabelas pai | `UNIQUE (tenant_id, id)` |
+
+## Email canônico
+
+O SQLite/Drizzle não suporta índice por expressão, então a unicidade é
+`UNIQUE (tenant_id, email)` sobre o valor canônico. A canonicalização
+(`trim().toLowerCase()`) é feita em `apps/api/src/utils/email.ts`, usada em
+login, criação de usuário e setup, e também no saneamento da migration.
+
+## Auditoria de integridade
+
+O módulo `apps/api/src/db/integrity.ts` verifica órfãos, cross-tenant,
+duplicatas e valores inválidos. O script:
+
+```bash
+DATABASE_URL=/caminho/azyboard.db bun run apps/api/src/scripts/auditIntegrity.ts
+```
+
+retorna JSON `{ ok, violations: [{ check, table, count }] }` e sai com código 1
+se houver violação.
+
+## Migration e saneamento
+
+A migration `0021_*` faz, nesta ordem:
+
+1. `PRAGMA foreign_keys=OFF` (o runner já desativa antes da transação).
+2. Saneamento determinístico: e-mail canônico, deduplicação de memberships e
+   associações, backfill de `tenant_id` em `item_tags`/`item_sprints`, anulação
+   de referências órfãs/cross-tenant e coerção de números/datas.
+3. Índices únicos dos pais criados nas tabelas antigas (o SQLite valida o alvo
+   da FK no prepare).
+4. Reconstrução das tabelas com FKs compostas e `CHECK`s.
+5. Guard final: `pragma_foreign_key_check`; se houver violação, a transação
+   inteira é revertida.
+
+O runner (`migrate.ts`) revalida `PRAGMA foreign_key_check` após a migration e
+aborta se houver resíduo.
+
+## Relatório de saneamento e deploy
+
+O saneamento só altera dados quando encontra violações. O procedimento de deploy
+arquiva a saída da migration ao lado do backup:
+
+```bash
+# no host do LabApps
+DATA=/opt/labapps/deploy/azyboard/data
+STAMP=$(date +%Y%m%d-%H%M%S)
+cp "$DATA/azyboard.db" "$DATA/backups/azyboard-$STAMP.db"
+docker exec azyboard-api sh -c 'MIGRATIONS_DIR=/app/migrations bun run /app/migrate.ts' \
+  2>&1 | tee "$DATA/backups/sanitization-$STAMP.log"
+```
+
+> A migration não imprime linha a linha para preservar o histórico mais recente
+> de `item_events`. O relatório vivo é obtido com `auditIntegrity.ts` após o
+> deploy (ver abaixo).
+
+## Rollback
+
+1. Reverter a aplicação para o commit anterior.
+2. Restaurar o backup do banco copiado antes do deploy.
+3. Confirmar com `PRAGMA foreign_key_check` e `auditIntegrity.ts`.
+
+Como a migration altera o schema, o rollback exige o backup do banco; não há
+migration reversa.
+
+## Equivalência em PostgreSQL (sem RLS)
+
+A modelagem é portável. Ao migrar (Item 9):
+
+- Manter as chaves compostas e FKs iguais; em PostgreSQL a unicidade de
+  `(tenant_id, id)` pode ser `UNIQUE` explícito.
+- Substituir o índice de e-mail por `UNIQUE (tenant_id, lower(email))`
+  (índice por expressão é suportado).
+- `CHECK`s permanecem iguais; `integer` booleano vira `boolean`.
+- O procedimento de rebuild de tabela não é necessário: usar `ALTER TABLE ...
+  ADD CONSTRAINT` para FKs e checks.
+- Habilitar RLS por `tenant_id` como defesa adicional é o passo seguinte
+  (escopo do Item 9).

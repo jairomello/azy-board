@@ -1,5 +1,5 @@
-import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core'
-import { relations } from 'drizzle-orm'
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, foreignKey, check } from 'drizzle-orm/sqlite-core'
+import { relations, sql } from 'drizzle-orm'
 
 // [DB-SWAP] Ao migrar para PostgreSQL, trocar importações para 'drizzle-orm/pg-core'
 // e substituir 'text' por 'uuid' nos campos de ID, 'integer' por 'serial' onde aplicável
@@ -34,7 +34,16 @@ export const users = sqliteTable('users', {
   }).notNull().default('petroleum'),
   language: text('language', { enum: ['pt-BR', 'en', 'es'] }).notNull().default('pt-BR'),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
-})
+}, (table) => ({
+  // [TENANT] Habilita FKs compostas de tabelas filhas para users(tenant_id, id)
+  tenantIdUnique: uniqueIndex('users_tenant_id_id_unique').on(table.tenantId, table.id),
+  // [TENANT] E-mail único por tenant. A canonicalização (lower + trim) é feita
+  // na aplicação e no saneamento da migration; o SQLite/Drizzle não suporta
+  // índice por expressão aqui, então o índice é simples sobre o valor canônico.
+  emailUnique: uniqueIndex('users_tenant_email_unique').on(table.tenantId, table.email),
+  // [TENANT] Valores permitidos para o grupo global
+  groupCheck: check('users_global_group_check', sql`${table.globalGroup} IN ('TEAM_MEMBER','MANAGER','ADMIN','ROOT')`),
+}))
 
 // ---------------------------------------------------------------------------
 // API KEYS — para agentes de IA
@@ -54,7 +63,10 @@ export const apiKeys = sqliteTable('api_keys', {
   revokedAt: text('revoked_at'),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
   lastUsedAt: text('last_used_at'),
-})
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('api_keys_tenant_id_id_unique').on(table.tenantId, table.id),
+  ownerFk: foreignKey(() => ({ columns: [table.tenantId, table.ownerId], foreignColumns: [users.tenantId, users.id] })),
+}))
 
 // ---------------------------------------------------------------------------
 // AZY AGENT — configuração e execução persistida, sempre escopada por tenant
@@ -221,7 +233,17 @@ export const projects = sqliteTable('projects', {
   plannedHours: real('planned_hours'),
   scope: text('scope'),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
-})
+}, (table) => ({
+  // [TENANT] Habilita FKs compostas de tabelas filhas para projects(tenant_id, id)
+  tenantIdUnique: uniqueIndex('projects_tenant_id_id_unique').on(table.tenantId, table.id),
+  // [TENANT] Gerente pertence ao mesmo tenant do projeto
+  managerFk: foreignKey(() => ({ columns: [table.tenantId, table.managerUserId], foreignColumns: [users.tenantId, users.id] })),
+  // [DB] simple_story_id → items(tenant_id, id): FK declarada na migration 0021
+  // (não declarada aqui para evitar inferência circular de tipos projects↔items)
+  plannedPointsCheck: check('projects_planned_points_check', sql`${table.plannedPoints} IS NULL OR ${table.plannedPoints} >= 0`),
+  plannedHoursCheck: check('projects_planned_hours_check', sql`${table.plannedHours} IS NULL OR ${table.plannedHours} >= 0`),
+  plannedDatesCheck: check('projects_planned_dates_check', sql`${table.startDate} IS NULL OR ${table.plannedEndDate} IS NULL OR ${table.plannedEndDate} >= ${table.startDate}`),
+}))
 
 // ---------------------------------------------------------------------------
 // SQUADS
@@ -230,10 +252,13 @@ export const projects = sqliteTable('projects', {
 export const squads = sqliteTable('squads', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
-  projectId: text('project_id').notNull().references(() => projects.id),
+  projectId: text('project_id').notNull(),
   name: text('name').notNull(),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
-})
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('squads_tenant_id_id_unique').on(table.tenantId, table.id),
+  projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
+}))
 
 // ---------------------------------------------------------------------------
 // PROJECT_COST_CENTERS — centros de custo por projeto
@@ -253,7 +278,11 @@ export const projectCostCenters = sqliteTable('project_cost_centers', {
   description: text('description', { length: 200 }),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
-})
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('project_cost_centers_tenant_id_id_unique').on(table.tenantId, table.id),
+  projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
+  sortOrderCheck: check('project_cost_centers_sort_order_check', sql`${table.sortOrder} >= 0`),
+}))
 
 // ---------------------------------------------------------------------------
 // MEMBERSHIPS — usuários em projetos com perfil RBAC
@@ -261,12 +290,18 @@ export const projectCostCenters = sqliteTable('project_cost_centers', {
 export const memberships = sqliteTable('memberships', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
-  userId: text('user_id').notNull().references(() => users.id),
-  projectId: text('project_id').notNull().references(() => projects.id),
-  squadId: text('squad_id').references(() => squads.id),
+  userId: text('user_id').notNull(),
+  projectId: text('project_id').notNull(),
+  squadId: text('squad_id'),
   role: text('role', { enum: ['ADMIN', 'MEMBER', 'VIEWER'] }).notNull().default('MEMBER'),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
-})
+}, (table) => ({
+  // [TENANT] Um usuário só pode ter um vínculo por projeto dentro do tenant
+  uniqueMember: uniqueIndex('memberships_tenant_project_user_unique').on(table.tenantId, table.projectId, table.userId),
+  userFk: foreignKey(() => ({ columns: [table.tenantId, table.userId], foreignColumns: [users.tenantId, users.id] })),
+  projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
+  squadFk: foreignKey(() => ({ columns: [table.tenantId, table.squadId], foreignColumns: [squads.tenantId, squads.id] })),
+}))
 
 // ---------------------------------------------------------------------------
 // MODULES — segundo nível da hierarquia (Project → Module)
@@ -275,11 +310,15 @@ export const memberships = sqliteTable('memberships', {
 export const modules = sqliteTable('modules', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
-  projectId: text('project_id').notNull().references(() => projects.id),
+  projectId: text('project_id').notNull(),
   name: text('name').notNull(),
   description: text('description'),
   position: integer('position').notNull().default(0),
-})
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('modules_tenant_id_id_unique').on(table.tenantId, table.id),
+  projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
+  positionCheck: check('modules_position_check', sql`${table.position} >= 0`),
+}))
 
 // ---------------------------------------------------------------------------
 // COLUMNS — colunas do Kanban com mapeamento de status base
@@ -288,13 +327,17 @@ export const modules = sqliteTable('modules', {
 export const columns = sqliteTable('columns', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
-  projectId: text('project_id').notNull().references(() => projects.id),
+  projectId: text('project_id').notNull(),
   name: text('name').notNull(),
   baseStatus: text('base_status', {
     enum: ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'],
   }).notNull().default('NOT_STARTED'),
   position: integer('position').notNull().default(0),
-})
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('columns_tenant_id_id_unique').on(table.tenantId, table.id),
+  projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
+  positionCheck: check('columns_position_check', sql`${table.position} >= 0`),
+}))
 
 // ---------------------------------------------------------------------------
 // SPRINTS
@@ -303,13 +346,17 @@ export const columns = sqliteTable('columns', {
 export const sprints = sqliteTable('sprints', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
-  projectId: text('project_id').notNull().references(() => projects.id),
+  projectId: text('project_id').notNull(),
   name: text('name').notNull(),
   status: text('status', { enum: ['PROPOSED', 'OPEN', 'CLOSED'] }).notNull().default('PROPOSED'),
   startDate: text('start_date').notNull(),
   endDate: text('end_date').notNull(),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
-})
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('sprints_tenant_id_id_unique').on(table.tenantId, table.id),
+  projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
+  datesCheck: check('sprints_dates_check', sql`${table.endDate} >= ${table.startDate}`),
+}))
 
 // ---------------------------------------------------------------------------
 // ITEMS — entidade unificada: EPIC, STORY, TASK, BUG (e subtasks via parentId)
@@ -331,7 +378,7 @@ export const sprints = sqliteTable('sprints', {
 export const items = sqliteTable('items', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
-  projectId: text('project_id').notNull().references(() => projects.id),
+  projectId: text('project_id').notNull(),
   // Discriminante de tipo — determina modal, campos exibidos e regras de hierarquia
   type: text('type', {
     enum: ['EPIC', 'STORY', 'TASK', 'BUG'],
@@ -341,9 +388,9 @@ export const items = sqliteTable('items', {
   // Auto-referência para hierarquia (STORY → EPIC, TASK → STORY, subtask → TASK/BUG)
   parentId: text('parent_id'),
   // [TENANT] moduleId obrigatório para EPIC; null para demais tipos
-  moduleId: text('module_id').references(() => modules.id),
+  moduleId: text('module_id'),
   // Campos de coluna — relevantes para TASK e BUG (leaf rule)
-  columnId: text('column_id').references(() => columns.id),
+  columnId: text('column_id'),
   // Caminho desnormalizado de ancestrais [{ id, title, type }] para breadcrumb O(1)
   ancestryPath: text('ancestry_path').notNull().default('[]'),
   title: text('title').notNull(),
@@ -365,24 +412,41 @@ export const items = sqliteTable('items', {
   }),
   // Centro de custo associado ao item — nullable; auto-preenchido server-side na criação
   // [TENANT] tenant_id já cobre isolamento; costCenterId pertence ao mesmo projeto
-  costCenterId: text('cost_center_id').references(() => projectCostCenters.id),
+  costCenterId: text('cost_center_id'),
   priority: text('priority', {
     enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'],
   }).notNull().default('MEDIUM'),
   points: integer('points'),
-  assigneeId: text('assignee_id').references(() => users.id),
-  assigneeApiKeyId: text('assignee_api_key_id').references(() => apiKeys.id),
+  assigneeId: text('assignee_id'),
+  assigneeApiKeyId: text('assignee_api_key_id'),
   blockedReason: text('blocked_reason'),
   position: integer('position').notNull().default(0),
   startDate: text('start_date'),
   dueDate: text('due_date'),
   // Autor original (quem criou) — distinto do assignee (quem executa)
-  authorId: text('author_id').references(() => users.id),
-  // Versão de entrega prevista — opcional, ON DELETE SET NULL
-  versionId: text('version_id').references(() => projectVersions.id),
+  authorId: text('author_id'),
+  // Versão de entrega prevista — opcional
+  versionId: text('version_id'),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
   updatedAt: text('updated_at').notNull().default(new Date().toISOString()),
-})
+}, (table) => ({
+  // [TENANT] Habilita FKs compostas (inclusive a auto-FK de hierarquia)
+  tenantIdUnique: uniqueIndex('items_tenant_id_id_unique').on(table.tenantId, table.id),
+  projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
+  moduleFk: foreignKey(() => ({ columns: [table.tenantId, table.moduleId], foreignColumns: [modules.tenantId, modules.id] })),
+  columnFk: foreignKey(() => ({ columns: [table.tenantId, table.columnId], foreignColumns: [columns.tenantId, columns.id] })),
+  assigneeFk: foreignKey(() => ({ columns: [table.tenantId, table.assigneeId], foreignColumns: [users.tenantId, users.id] })),
+  authorFk: foreignKey(() => ({ columns: [table.tenantId, table.authorId], foreignColumns: [users.tenantId, users.id] })),
+  assigneeApiKeyFk: foreignKey(() => ({ columns: [table.tenantId, table.assigneeApiKeyId], foreignColumns: [apiKeys.tenantId, apiKeys.id] })),
+  costCenterFk: foreignKey(() => ({ columns: [table.tenantId, table.costCenterId], foreignColumns: [projectCostCenters.tenantId, projectCostCenters.id] })),
+  versionFk: foreignKey(() => ({ columns: [table.tenantId, table.versionId], foreignColumns: [projectVersions.tenantId, projectVersions.id] })),
+  // [DB] parent_id → items(tenant_id, id): FK composta auto-referenciada declarada na
+  // migration 0021 (não declarada aqui para evitar inferência circular de tipos)
+  pointsCheck: check('items_points_check', sql`${table.points} IS NULL OR ${table.points} >= 0`),
+  positionCheck: check('items_position_check', sql`${table.position} >= 0`),
+  datesCheck: check('items_dates_check', sql`${table.startDate} IS NULL OR ${table.dueDate} IS NULL OR ${table.dueDate} >= ${table.startDate}`),
+  typeCheck: check('items_type_check', sql`${table.type} IN ('EPIC','STORY','TASK','BUG')`),
+}))
 
 // ---------------------------------------------------------------------------
 // PROJECT_VERSIONS — versões de entrega do projeto
@@ -395,14 +459,18 @@ export const items = sqliteTable('items', {
 export const projectVersions = sqliteTable('project_versions', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
-  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull(),
   name: text('name').notNull(),
   releaseDate: text('release_date'),
   description: text('description'),
   status: text('status', { enum: ['PLANNED', 'IN_DEV', 'RELEASED', 'CANCELLED'] }).notNull().default('PLANNED'),
   position: integer('position').notNull().default(0),
   createdAt: text('created_at').notNull(),
-})
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('project_versions_tenant_id_id_unique').on(table.tenantId, table.id),
+  projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
+  positionCheck: check('project_versions_position_check', sql`${table.position} >= 0`),
+}))
 
 // ---------------------------------------------------------------------------
 // ITEM_LOGS — histórico de atividades de cada item (auto + manual)
@@ -416,8 +484,8 @@ export const projectVersions = sqliteTable('project_versions', {
 export const itemLogs = sqliteTable('item_logs', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
-  itemId: text('item_id').notNull().references(() => items.id, { onDelete: 'cascade' }),
-  authorId: text('author_id').references(() => users.id),
+  itemId: text('item_id').notNull(),
+  authorId: text('author_id'),
   type: text('type', { enum: ['auto', 'manual'] }).notNull(),
   actorType: text('actor_type', { enum: ['HUMAN', 'AGENT', 'SYSTEM', 'UNKNOWN'] }).notNull().default('UNKNOWN'),
   actorLabel: text('actor_label'),
@@ -428,6 +496,9 @@ export const itemLogs = sqliteTable('item_logs', {
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   itemTypeDateIdx: index('item_logs_tenant_item_type_date_idx').on(table.tenantId, table.itemId, table.type, table.createdAt),
+  itemFk: foreignKey(() => ({ columns: [table.tenantId, table.itemId], foreignColumns: [items.tenantId, items.id] })),
+  authorFk: foreignKey(() => ({ columns: [table.tenantId, table.authorId], foreignColumns: [users.tenantId, users.id] })),
+  durationCheck: check('item_logs_duration_check', sql`${table.durationMin} IS NULL OR ${table.durationMin} >= 0`),
 }))
 
 // ---------------------------------------------------------------------------
@@ -437,27 +508,40 @@ export const itemLogs = sqliteTable('item_logs', {
 export const tags = sqliteTable('tags', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
-  projectId: text('project_id').notNull().references(() => projects.id),
+  projectId: text('project_id').notNull(),
   name: text('name').notNull(),
   color: text('color').notNull().default('#6366f1'),
-})
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('tags_tenant_id_id_unique').on(table.tenantId, table.id),
+  projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
+}))
 
 // ---------------------------------------------------------------------------
 // ITEM_TAGS — relação N:N items ↔ tags
+// [TENANT] tenant_id no próprio vínculo impede associações cross-tenant
 // ---------------------------------------------------------------------------
 export const itemTags = sqliteTable('item_tags', {
-  itemId: text('item_id').notNull().references(() => items.id),
-  tagId: text('tag_id').notNull().references(() => tags.id),
-})
+  tenantId: text('tenant_id').notNull().references(() => tenants.id),
+  itemId: text('item_id').notNull(),
+  tagId: text('tag_id').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.itemId, table.tagId] }),
+  itemFk: foreignKey(() => ({ columns: [table.tenantId, table.itemId], foreignColumns: [items.tenantId, items.id] })),
+  tagFk: foreignKey(() => ({ columns: [table.tenantId, table.tagId], foreignColumns: [tags.tenantId, tags.id] })),
+}))
 
 // ---------------------------------------------------------------------------
 // ITEM_SPRINTS — relação N:N items ↔ sprints
 // ---------------------------------------------------------------------------
 export const itemSprints = sqliteTable('item_sprints', {
-  itemId: text('item_id').notNull().references(() => items.id),
-  sprintId: text('sprint_id').notNull().references(() => sprints.id),
+  // [TENANT] tenant_id no próprio vínculo impede associações cross-tenant
+  tenantId: text('tenant_id').notNull().references(() => tenants.id),
+  itemId: text('item_id').notNull(),
+  sprintId: text('sprint_id').notNull(),
 }, (table) => ({
   pairUnique: uniqueIndex('item_sprints_item_sprint_unique').on(table.itemId, table.sprintId),
+  itemFk: foreignKey(() => ({ columns: [table.tenantId, table.itemId], foreignColumns: [items.tenantId, items.id] })),
+  sprintFk: foreignKey(() => ({ columns: [table.tenantId, table.sprintId], foreignColumns: [sprints.tenantId, sprints.id] })),
 }))
 
 // ---------------------------------------------------------------------------
@@ -525,7 +609,7 @@ export const sprintCycleItems = sqliteTable('sprint_cycle_items', {
 export const attachments = sqliteTable('attachments', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
-  itemId: text('item_id').notNull().references(() => items.id),
+  itemId: text('item_id').notNull(),
   filename: text('filename').notNull(),
   originalName: text('original_name').notNull(),
   mimeType: text('mime_type').notNull(),
@@ -533,7 +617,10 @@ export const attachments = sqliteTable('attachments', {
   // [DB-SWAP] Caminho local (/uploads/tenantId/itemId/filename); trocar para S3 key em produção
   storagePath: text('storage_path').notNull(),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
-})
+}, (table) => ({
+  itemFk: foreignKey(() => ({ columns: [table.tenantId, table.itemId], foreignColumns: [items.tenantId, items.id] })),
+  sizeCheck: check('attachments_size_check', sql`${table.size} >= 0`),
+}))
 
 // ---------------------------------------------------------------------------
 // CHECKLISTS — listas de verificação nomeadas dentro de qualquer card
@@ -542,11 +629,15 @@ export const attachments = sqliteTable('attachments', {
 export const checklists = sqliteTable('checklists', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
-  itemId: text('item_id').notNull().references(() => items.id, { onDelete: 'cascade' }),
+  itemId: text('item_id').notNull(),
   name: text('name').notNull(),
   position: integer('position').notNull().default(0),
   createdAt: text('created_at').notNull().default(new Date().toISOString()),
-})
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('checklists_tenant_id_id_unique').on(table.tenantId, table.id),
+  itemFk: foreignKey(() => ({ columns: [table.tenantId, table.itemId], foreignColumns: [items.tenantId, items.id] })),
+  positionCheck: check('checklists_position_check', sql`${table.position} >= 0`),
+}))
 
 // ---------------------------------------------------------------------------
 // CHECKLIST_ITEMS — itens individuais de um checklist
@@ -555,12 +646,15 @@ export const checklists = sqliteTable('checklists', {
 export const checklistItems = sqliteTable('checklist_items', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
-  checklistId: text('checklist_id').notNull().references(() => checklists.id, { onDelete: 'cascade' }),
+  checklistId: text('checklist_id').notNull(),
   text: text('text').notNull(),
   // [DB-SWAP] SQLite usa INTEGER (0/1) para boolean; PostgreSQL usa BOOLEAN nativo
   checked: integer('checked', { mode: 'boolean' }).notNull().default(false),
   position: integer('position').notNull().default(0),
-})
+}, (table) => ({
+  checklistFk: foreignKey(() => ({ columns: [table.tenantId, table.checklistId], foreignColumns: [checklists.tenantId, checklists.id] })),
+  positionCheck: check('checklist_items_position_check', sql`${table.position} >= 0`),
+}))
 
 // ---------------------------------------------------------------------------
 // RELATIONS

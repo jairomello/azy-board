@@ -653,7 +653,7 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
         updatedAt: now,
       })
       await tx.insert(itemLogs).values({ id: generateId(), tenantId: ctx.tenantId, itemId: id, authorId: ctx.userId, type: 'auto', actorType: audit.actorType, actorLabel: audit.actorLabel, source: audit.source, activity: `Card criado: ${normalizeAuditText(body.title)}`, durationMin: null, createdAt: now, updatedAt: now })
-      if (body.sprintId) await tx.insert(itemSprints).values({ itemId: id, sprintId: body.sprintId }).onConflictDoNothing()
+      if (body.sprintId) await tx.insert(itemSprints).values({ tenantId: ctx.tenantId, itemId: id, sprintId: body.sprintId }).onConflictDoNothing()
       const after = await snapshotItem(tx, ctx.tenantId, projectId, id)
       await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: id, eventType: 'ITEM_CREATED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', correlationId: idempotencyKey ?? id, after })
       if (effectiveParentId && parentBefore) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: effectiveParentId, eventType: 'LEAF_CHANGED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before: parentBefore, after: await snapshotItem(tx, ctx.tenantId, projectId, effectiveParentId) })
@@ -942,7 +942,7 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     }
     if (safeBody.sprintId !== undefined) {
       await tx.delete(itemSprints).where(eq(itemSprints.itemId, itemId))
-      if (safeBody.sprintId) await tx.insert(itemSprints).values({ itemId, sprintId: safeBody.sprintId as string }).onConflictDoNothing()
+      if (safeBody.sprintId) await tx.insert(itemSprints).values({ tenantId: ctx.tenantId, itemId, sprintId: safeBody.sprintId as string }).onConflictDoNothing()
     }
     const after = await snapshotItem(tx, ctx.tenantId, projectId, itemId)
     const eventTypes: Array<['status' | 'points' | 'type' | 'sprint' | 'version' | 'parent' | 'module', 'STATUS_CHANGED' | 'POINTS_CHANGED' | 'TYPE_CHANGED' | 'SPRINT_CHANGED' | 'VERSION_CHANGED' | 'ITEM_REPARENTED' | 'MODULE_CHANGED']> = [
@@ -1019,12 +1019,21 @@ itemsRouter.delete('/:itemId', requireRole('MEMBER'), async (c) => {
     for (const id of allIds) snapshots.set(id, await snapshotItem(tx, ctx.tenantId, projectId, id))
     const parentSnapshots = new Map<string, Awaited<ReturnType<typeof snapshotItem>>>()
     for (const snapshot of snapshots.values()) if (snapshot?.parentId && !parentSnapshots.has(snapshot.parentId)) parentSnapshots.set(snapshot.parentId, await snapshotItem(tx, ctx.tenantId, projectId, snapshot.parentId))
-    // itemTags e itemSprints têm FK para items.id sem cascade — excluir antes
+    // [INTEGRIDADE] FKs com NO ACTION (sem cascade) exigem exclusão explícita
+    // dos filhos antes dos pais, na ordem: checklistItems → checklists → demais.
+    const checklistRows = await tx.select({ id: checklists.id }).from(checklists)
+      .where(and(inArray(checklists.itemId, allIds), eq(checklists.tenantId, ctx.tenantId)))
+    const checklistIds = checklistRows.map(row => row.id)
+    if (checklistIds.length > 0) {
+      await tx.delete(checklistItems).where(and(inArray(checklistItems.checklistId, checklistIds), eq(checklistItems.tenantId, ctx.tenantId)))
+      await tx.delete(checklists).where(and(inArray(checklists.id, checklistIds), eq(checklists.tenantId, ctx.tenantId)))
+    }
     await tx.delete(itemTags).where(inArray(itemTags.itemId, allIds))
     await tx.delete(itemSprints).where(inArray(itemSprints.itemId, allIds))
     await tx.delete(attachments).where(inArray(attachments.itemId, allIds))
-    // checklists e checklistItems têm onDelete:'cascade' — serão excluídos automaticamente com items
-    // items.parentId não tem FK constraint no schema, então podemos excluir todos de uma vez
+    await tx.delete(itemLogs).where(and(inArray(itemLogs.itemId, allIds), eq(itemLogs.tenantId, ctx.tenantId)))
+    // A subárvore inteira é excluída em uma única instrução; a checagem de FK
+    // (inclusive a auto-FK parent_id) é satisfeita ao fim do statement.
     await tx.delete(items).where(and(inArray(items.id, allIds), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
     for (const id of allIds) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: id, eventType: 'ITEM_DELETED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before: snapshots.get(id), after: null })
     for (const [parentId, before] of parentSnapshots) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: parentId, eventType: 'LEAF_CHANGED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before, after: { ...(before!), isLeaf: true } })
@@ -1068,7 +1077,7 @@ itemsRouter.post('/:itemId/tags', requireRole('MEMBER'), async (c) => {
     // item_tags não possui tenantId; o item acima já foi validado por tenant + projeto.
     await tx.delete(itemTags).where(eq(itemTags.itemId, itemId))
     if (uniqueTagIds.length > 0) {
-      await tx.insert(itemTags).values(uniqueTagIds.map(tagId => ({ itemId, tagId })))
+      await tx.insert(itemTags).values(uniqueTagIds.map(tagId => ({ tenantId: ctx.tenantId, itemId, tagId })))
     }
   })
 
@@ -1098,7 +1107,7 @@ itemsRouter.post('/:itemId/sprint', requireRole('MEMBER'), async (c) => {
   if (sprint.status === 'CLOSED') return c.json({ error: 'Não é possível associar itens a uma sprint fechada' }, 409)
 
   await db.insert(itemSprints)
-    .values({ itemId, sprintId: body.sprintId })
+    .values({ tenantId: ctx.tenantId, itemId, sprintId: body.sprintId })
     .onConflictDoNothing()
 
   return c.json({ ok: true })

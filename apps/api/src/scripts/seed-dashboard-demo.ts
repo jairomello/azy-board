@@ -101,8 +101,8 @@ await db.transaction(async (tx) => {
   })
   await tx.insert(items).values(created)
 
-  await tx.insert(itemSprints).values(created.flatMap((item, index) => index < 7 ? [{ itemId: item.id, sprintId: sprintRows[1].id }] : index < 10 ? [{ itemId: item.id, sprintId: sprintRows[2].id }] : []))
-  await tx.insert(itemSprints).values(created.slice(0, 4).map(item => ({ itemId: item.id, sprintId: sprintRows[0].id })))
+  await tx.insert(itemSprints).values(created.flatMap((item, index) => index < 7 ? [{ tenantId, itemId: item.id, sprintId: sprintRows[1].id }] : index < 10 ? [{ tenantId, itemId: item.id, sprintId: sprintRows[2].id }] : []))
+  await tx.insert(itemSprints).values(created.slice(0, 4).map(item => ({ tenantId, itemId: item.id, sprintId: sprintRows[0].id })))
 
   const cycleId = generateId()
   await tx.insert(sprintCycles).values({ id: cycleId, tenantId, projectId: project.id, sprintId: sprintRows[1].id, source: 'OPENED', startedAt: iso(-7), endedAt: null, endReason: null })

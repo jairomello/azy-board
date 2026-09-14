@@ -54,6 +54,17 @@ export function normalizeErrorPayload(body: unknown, status: number): ErrorPaylo
   return { error: { code, message, retryable, details } }
 }
 
+// [INTEGRIDADE] Traduz falhas de constraint do banco em erros de domínio,
+// evitando HTTP 500 em conflitos previsíveis (unicidade, FK, CHECK, NOT NULL).
+export function classifyDatabaseError(error: unknown): { status: 409 | 422; code: string } | null {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/UNIQUE constraint failed/i.test(message)) return { status: 409, code: 'CONFLICT' }
+  if (/FOREIGN KEY constraint failed/i.test(message)) return { status: 409, code: 'CONFLICT' }
+  if (/CHECK constraint failed/i.test(message)) return { status: 422, code: 'INVALID_REQUEST' }
+  if (/NOT NULL constraint failed/i.test(message)) return { status: 422, code: 'INVALID_REQUEST' }
+  return null
+}
+
 export async function errorResponseMiddleware(c: Context, next: Next) {
   await next()
   if (c.res.status < 400 || !c.res.headers.get('content-type')?.includes('application/json')) return

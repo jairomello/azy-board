@@ -374,6 +374,12 @@ projectsRouter.delete('/:id', requireRole('ADMIN'), async (c) => {
         .where(and(eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
       const itemIds = projectItems.map(item => item.id)
 
+      // [INTEGRIDADE] projects.simple_story_id tem FK para items (NO ACTION):
+      // anular antes de excluir os itens do projeto.
+      if (itemIds.length > 0) {
+        await tx.update(projects).set({ simpleStoryId: null }).where(and(eq(projects.id, projectId), eq(projects.tenantId, ctx.tenantId)))
+      }
+
       if (itemIds.length > 0) {
         const projectChecklists = await tx.select({ id: checklists.id })
           .from(checklists)

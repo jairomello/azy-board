@@ -7,6 +7,7 @@ import { users } from '../db/schema'
 import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
 import { hasGlobalGroup, hashPassword, isGlobalGroup } from '../services/auth'
 import { generateId } from '../utils/id'
+import { normalizeEmail } from '../utils/email'
 import { createUserSchema, groupSchema, parseJson, preferencesSchema } from '../validation'
 
 const THEMES = new Set<Theme>(['light', 'dark'])
@@ -44,7 +45,7 @@ usersRouter.post('/', requireGlobalGroup('ADMIN'), async (c) => {
   const body = parsed.data
   const group = body.globalGroup ?? 'TEAM_MEMBER'
   if (!body.email?.trim() || !body.name?.trim() || !body.password) return c.json({ error: 'Nome, e-mail e senha são obrigatórios' }, 400)
-  const email = body.email.trim()
+  const email = normalizeEmail(body.email)
   const name = body.name.trim()
   if (!isGlobalGroup(group)) return c.json({ error: 'Grupo inválido' }, 400)
   if (!hasGlobalGroup(ctx.globalGroup, group) || (ctx.globalGroup === 'ADMIN' && group === 'ROOT')) return c.json({ error: 'Grupo não permitido' }, 403)

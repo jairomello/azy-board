@@ -285,7 +285,7 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
         const sprintChange = resolvedChanges.find(change => change.field === 'sprint')
         if (sprintChange) {
           await tx.delete(itemSprints).where(eq(itemSprints.itemId, item.id))
-          if (sprintChange.relationId) await tx.insert(itemSprints).values({ itemId: item.id, sprintId: sprintChange.relationId })
+          if (sprintChange.relationId) await tx.insert(itemSprints).values({ tenantId: ctx.tenantId, itemId: item.id, sprintId: sprintChange.relationId })
         }
         const visibleUpdate = Object.fromEntries(Object.entries(update).filter(([key]) => key !== 'updatedAt'))
         const auditChanges = resolvedChanges.map(change => `${labels[change.field]}: "${change.operation === 'CLEAR' ? '' : String(visibleUpdate[relationFields[change.field] ?? change.field] ?? change.relationId ?? change.value ?? '')}"`)
