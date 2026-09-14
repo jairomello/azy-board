@@ -39,6 +39,22 @@ O SQLite/Drizzle não suporta índice por expressão, então a unicidade é
 (`trim().toLowerCase()`) é feita em `apps/api/src/utils/email.ts`, usada em
 login, criação de usuário e setup, e também no saneamento da migration.
 
+## Defaults temporais
+
+Defaults de `created_at`/`updated_at` são avaliados pelo banco a cada `INSERT`,
+nunca no carregamento do módulo. O schema usa
+`sql\`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))\``, que produz UTC no formato
+`YYYY-MM-DDTHH:MM:SS.SSSZ`, compatível com os dados e consultas existentes.
+
+- Colunas `NOT NULL` **sem** default (ex.: `project_versions.created_at`,
+  `assistant_messages.created_at`) continuam exigindo valor explícito da
+  aplicação.
+- `updated_at` segue a mesma estratégia de default, mas a aplicação continua
+  responsável por atualizá-lo nas mutações.
+- A migration `0022_*` reconstrói as tabelas que haviam materializado literais
+  congelados (herdados da `0021`) e **não** reescreve timestamps históricos.
+- Cobertura: `apps/api/src/db/timestamp.test.ts`.
+
 ## Auditoria de integridade
 
 O módulo `apps/api/src/db/integrity.ts` verifica órfãos, cross-tenant,
@@ -104,7 +120,10 @@ A modelagem é portável. Ao migrar (Item 9):
 - Substituir o índice de e-mail por `UNIQUE (tenant_id, lower(email))`
   (índice por expressão é suportado).
 - `CHECK`s permanecem iguais; `integer` booleano vira `boolean`.
+- Defaults temporais viram `TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP` (substituindo
+  o `strftime` do SQLite).
 - O procedimento de rebuild de tabela não é necessário: usar `ALTER TABLE ...
-  ADD CONSTRAINT` para FKs e checks.
+  ADD CONSTRAINT` para FKs e checks, e `ALTER COLUMN ... SET DEFAULT` para os
+  defaults temporais.
 - Habilitar RLS por `tenant_id` como defesa adicional é o passo seguinte
   (escopo do Item 9).

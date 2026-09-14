@@ -4,6 +4,12 @@ import { relations, sql } from 'drizzle-orm'
 // [DB-SWAP] Ao migrar para PostgreSQL, trocar importações para 'drizzle-orm/pg-core'
 // e substituir 'text' por 'uuid' nos campos de ID, 'integer' por 'serial' onde aplicável
 
+// Default de timestamp avaliado a cada INSERT pelo próprio banco, em UTC ISO
+// (YYYY-MM-DDTHH:MM:SS.SSSZ). Evita congelar o instante em que o módulo/schema
+// foi carregado e cobre também inserts SQL diretos.
+// [DB-SWAP] Em PostgreSQL, trocar por `TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP`.
+const defaultNowIso = () => sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`
+
 // ---------------------------------------------------------------------------
 // TENANTS — raiz do isolamento multi-tenant
 // [TENANT] Toda entidade de negócio tem FK para esta tabela
@@ -12,7 +18,7 @@ export const tenants = sqliteTable('tenants', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
-  createdAt: text('created_at').notNull().default(new Date().toISOString()),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
 })
 
 // ---------------------------------------------------------------------------
@@ -33,7 +39,7 @@ export const users = sqliteTable('users', {
     enum: ['petroleum', 'ocean', 'emerald', 'graphite', 'classic'],
   }).notNull().default('petroleum'),
   language: text('language', { enum: ['pt-BR', 'en', 'es'] }).notNull().default('pt-BR'),
-  createdAt: text('created_at').notNull().default(new Date().toISOString()),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   // [TENANT] Habilita FKs compostas de tabelas filhas para users(tenant_id, id)
   tenantIdUnique: uniqueIndex('users_tenant_id_id_unique').on(table.tenantId, table.id),
@@ -61,7 +67,7 @@ export const apiKeys = sqliteTable('api_keys', {
   permissionScope: text('permission_scope'),
   expiresAt: text('expires_at'),
   revokedAt: text('revoked_at'),
-  createdAt: text('created_at').notNull().default(new Date().toISOString()),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
   lastUsedAt: text('last_used_at'),
 }, (table) => ({
   tenantIdUnique: uniqueIndex('api_keys_tenant_id_id_unique').on(table.tenantId, table.id),
@@ -232,7 +238,7 @@ export const projects = sqliteTable('projects', {
   plannedPoints: integer('planned_points'),
   plannedHours: real('planned_hours'),
   scope: text('scope'),
-  createdAt: text('created_at').notNull().default(new Date().toISOString()),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   // [TENANT] Habilita FKs compostas de tabelas filhas para projects(tenant_id, id)
   tenantIdUnique: uniqueIndex('projects_tenant_id_id_unique').on(table.tenantId, table.id),
@@ -254,7 +260,7 @@ export const squads = sqliteTable('squads', {
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
   projectId: text('project_id').notNull(),
   name: text('name').notNull(),
-  createdAt: text('created_at').notNull().default(new Date().toISOString()),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   tenantIdUnique: uniqueIndex('squads_tenant_id_id_unique').on(table.tenantId, table.id),
   projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
@@ -277,7 +283,7 @@ export const projectCostCenters = sqliteTable('project_cost_centers', {
   code: text('code', { length: 20 }).notNull(),
   description: text('description', { length: 200 }),
   sortOrder: integer('sort_order').notNull().default(0),
-  createdAt: text('created_at').notNull().default(new Date().toISOString()),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   tenantIdUnique: uniqueIndex('project_cost_centers_tenant_id_id_unique').on(table.tenantId, table.id),
   projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
@@ -294,7 +300,7 @@ export const memberships = sqliteTable('memberships', {
   projectId: text('project_id').notNull(),
   squadId: text('squad_id'),
   role: text('role', { enum: ['ADMIN', 'MEMBER', 'VIEWER'] }).notNull().default('MEMBER'),
-  createdAt: text('created_at').notNull().default(new Date().toISOString()),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   // [TENANT] Um usuário só pode ter um vínculo por projeto dentro do tenant
   uniqueMember: uniqueIndex('memberships_tenant_project_user_unique').on(table.tenantId, table.projectId, table.userId),
@@ -351,7 +357,7 @@ export const sprints = sqliteTable('sprints', {
   status: text('status', { enum: ['PROPOSED', 'OPEN', 'CLOSED'] }).notNull().default('PROPOSED'),
   startDate: text('start_date').notNull(),
   endDate: text('end_date').notNull(),
-  createdAt: text('created_at').notNull().default(new Date().toISOString()),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   tenantIdUnique: uniqueIndex('sprints_tenant_id_id_unique').on(table.tenantId, table.id),
   projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
@@ -427,8 +433,8 @@ export const items = sqliteTable('items', {
   authorId: text('author_id'),
   // Versão de entrega prevista — opcional
   versionId: text('version_id'),
-  createdAt: text('created_at').notNull().default(new Date().toISOString()),
-  updatedAt: text('updated_at').notNull().default(new Date().toISOString()),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+  updatedAt: text('updated_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   // [TENANT] Habilita FKs compostas (inclusive a auto-FK de hierarquia)
   tenantIdUnique: uniqueIndex('items_tenant_id_id_unique').on(table.tenantId, table.id),
@@ -616,7 +622,7 @@ export const attachments = sqliteTable('attachments', {
   size: integer('size').notNull(),
   // [DB-SWAP] Caminho local (/uploads/tenantId/itemId/filename); trocar para S3 key em produção
   storagePath: text('storage_path').notNull(),
-  createdAt: text('created_at').notNull().default(new Date().toISOString()),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   itemFk: foreignKey(() => ({ columns: [table.tenantId, table.itemId], foreignColumns: [items.tenantId, items.id] })),
   sizeCheck: check('attachments_size_check', sql`${table.size} >= 0`),
@@ -632,7 +638,7 @@ export const checklists = sqliteTable('checklists', {
   itemId: text('item_id').notNull(),
   name: text('name').notNull(),
   position: integer('position').notNull().default(0),
-  createdAt: text('created_at').notNull().default(new Date().toISOString()),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   tenantIdUnique: uniqueIndex('checklists_tenant_id_id_unique').on(table.tenantId, table.id),
   itemFk: foreignKey(() => ({ columns: [table.tenantId, table.itemId], foreignColumns: [items.tenantId, items.id] })),
