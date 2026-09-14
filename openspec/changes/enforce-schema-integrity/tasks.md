@@ -39,6 +39,6 @@
 ## 6. Entrega
 
 - [x] 6.1 Documentar a política de integridade e o procedimento de saneamento/rollback.
-- [ ] 6.2 Fazer backup do banco do LabApps antes do deploy e registrar como restaurar.
-- [ ] 6.3 Emitir o relatório de saneamento em log JSON e arquivar o stdout da migration em `data/backups/sanitization-<timestamp>.log`.
-- [ ] 6.4 Aplicar a migration no LabApps, validar `foreign_key_check` e confirmar smoke test verde.
+- [x] 6.2 Fazer backup do banco do LabApps antes do deploy e registrar como restaurar.
+- [x] 6.3 Emitir o relatório de saneamento em log JSON e arquivar o stdout da migration em `data/backups/sanitization-<timestamp>.log`.
+- [x] 6.4 Aplicar a migration no LabApps, validar `foreign_key_check` e confirmar smoke test verde.
