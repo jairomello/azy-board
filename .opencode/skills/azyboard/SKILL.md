@@ -16,7 +16,7 @@ Use o Azy Board como fonte compartilhada de planejamento e execução para pesso
 5. Para trabalho atribuível, execute `claim_task` e confirme novamente no board real que o card está em uma coluna cujo `baseStatus` seja `IN_PROGRESS` (normalmente `Fazendo`) e que está atribuído ao agente. Não comece a codificar enquanto essa confirmação não passar.
 6. Ao iniciar a implementação de um card já existente que esteja em `Backlog` ou `A Fazer`, mova-o para `Fazendo` (ou coluna com `baseStatus=IN_PROGRESS`) com `move_task` antes de começar a codar. Se o card já estiver em `Fazendo`, não é necessário movê-lo novamente.
 7. Registre mudanças relevantes com `update_item`, checklists ou `create_item_log`. Prefira operações em lote (`batch`, `batch_move`, `update_items`) a chamadas repetidas.
-8. Ao terminar a implementação, execute `complete_task` e confirme no board real que o card está em uma coluna cujo `baseStatus` seja `DONE` (normalmente `Concluídas`). Se a confirmação falhar, não declare a tarefa concluída.
+8. Ao terminar a implementação, execute `complete_task` e confirme no board real que o card está em uma coluna cujo `baseStatus` seja `DONE` (normalmente `Concluídas`). Isso vale também para mudanças OpenSpec vinculadas a um card: encerrar a change não encerra o card. `create_item_log`, comentários e checklists não substituem o fechamento. Se a confirmação falhar, não declare a tarefa concluída.
 9. O `get_shadow_markdown` é apenas uma visão derivada. Quando houver divergência, trate `get_board` como fonte operacional, corrija a operação que causou a divergência e registre o incidente; não prossiga silenciosamente.
 
 ## Rastreamento de tarefas da codebase
@@ -28,6 +28,7 @@ Use o Azy Board como fonte compartilhada de planejamento e execução para pesso
 - Para trabalho com muitos passos verificáveis ou duração relevante, pergunte também se o usuário deseja um checklist. Com aprovação, use `create_checklist`, `add_checklist_item` e `check_item`; marque cada passo assim que for concluído e acrescente passos descobertos durante a execução.
 - Use checklist para passos da mesma unidade de trabalho. Use subtasks quando houver responsabilidade, estimativa ou ciclo Kanban independente.
 - Uma preferência explícita como "sempre criar cards" ou "não criar cards" vale para a sessão atual. Não transforme essa preferência em configuração persistente sem solicitação explícita.
+- Quando o trabalho for conduzido por uma change OpenSpec ligada a um card, registre `Board ref: <itemId>` nos artefatos da change e, ao concluir a implementação, feche o card com `complete_task`.
 
 ## Regras de segurança
 

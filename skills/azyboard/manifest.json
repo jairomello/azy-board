@@ -1,6 +1,6 @@
 {
   "name": "azyboard",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "entrypoint": "SKILL.md",
   "toolCatalogSource": "apps/mcp/src/registry.ts",
   "policySource": "apps/mcp/src/policies.ts",
