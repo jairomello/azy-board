@@ -11,9 +11,10 @@ Este documento descreve as constraints de integridade introduzidas pela mudança
   aplicação falhar.
 - **Defesa em profundidade.** A validação em runtime continua existindo; as
   constraints são a última linha de defesa.
-- **Cascata na aplicação.** As FKs de hierarquia usam `NO ACTION`. A exclusão
-  de item/projeto remove os filhos explicitamente, na ordem correta, antes de
-  remover o pai. A política declarativa de cascata/outbox fica para o Item 12.
+- **Exclusão centralizada.** As FKs de hierarquia usam `NO ACTION`. Desde o
+  Item 12, a exclusão de item/projeto passa por um único executor
+  (`services/deletion.ts`); os arquivos físicos de anexos saem por outbox
+  pós-commit (ver "Política de exclusão e cascatas").
 - **Erros de constraint são de domínio.** Violações viram `409 CONFLICT`
   (unicidade/FK) ou `422 INVALID_REQUEST` (CHECK/NOT NULL) no contrato único de
   erro, nunca `500`.
@@ -66,6 +67,55 @@ DATABASE_URL=/caminho/azyboard.db bun run apps/api/src/scripts/auditIntegrity.ts
 
 retorna JSON `{ ok, violations: [{ check, table, count }] }` e sai com código 1
 se houver violação.
+
+## Política de exclusão e cascatas (Item 12)
+
+A exclusão é executada por **um único executor** compartilhado
+(`apps/api/src/services/deletion.ts`), chamado pelas rotas de item e de projeto.
+Nenhuma outra rota deve listar tabelas manualmente; ao criar uma tabela filha,
+a política dela entra aqui:
+
+| Relação | Estratégia | Onde é tratada |
+| --- | --- | --- |
+| `items.parent_id` (auto-FK) | Delete explícito — subárvore inteira em lotes | `deleteItemsCascade` |
+| `checklist_items → checklists` | Delete explícito (filho antes do pai) | executor + rota de checklists |
+| `checklists → items` | Delete explícito (período do executor, caminhos de anexos antes) | `deleteItemsCascade` |
+| `item_tags`, `item_sprints` → items/tags/sprints | Delete explícito com filtro de `tenant_id` | `deleteItemsCascade` / `deleteProjectCascade` |
+| `attachments → items` | Metadados na transação; **arquivo físico via outbox pós-commit** | `deleteItemsCascade` + `storageCleanup.ts` |
+| `item_logs → items` | Delete explícito com filtro de tenant | `deleteItemsCascade` |
+| `projects.simple_story_id → items` | `SET NULL` pela aplicação antes de excluir itens | `deleteProjectCascade` |
+| `project_analytics_coverage`, `item_events`, `sprint_cycles`/items → projects | `ON DELETE CASCADE` no banco (herdado da migration 0011) | banco |
+| `assistant_messages/runs/events/tool_calls/approvals → conversations` | `ON DELETE CASCADE` no banco | banco |
+| `storage_cleanup_jobs` | **Sem FK de recurso** — o job sobrevive ao metadado | outbox |
+
+Regras vigentes:
+
+1. FKs puramente dependentes **podem** usar `CASCADE` quando a migration
+   preservar constraints e escopo; associação e referências especiais continuam
+   explícitas no executor. Nenhuma nova cascata foi introduzida no SQLite atual —
+   o executor centralizado é a única fonte de exclusão.
+2. Todo delete/leitura do executor aplica `tenantId`; associações N:N também
+   filtram o `tenant_id` da própria tabela.
+3. Carregamento da subárvore é feito nível a nível (BFS em lotes de consulta),
+   sem `IN` gigantes, dentro de uma transação por operação.
+
+### Outbox de limpeza do storage
+
+Ciclo de vida: a exclusão de metadados enfileira em
+`storage_cleanup_jobs` (id, tenant, `storage_path`, recurso) **na mesma
+transação**; após o commit o endpoint dispara o processador, que também roda
+no startup e a cada 60 s (`startStorageCleanupWorker`).
+
+- **Idempotência**: índice parcial `UNIQUE (tenant_id, storage_path) WHERE
+  status = 'PENDING'` + `ON CONFLICT DO NOTHING`; arquivo inexistente é sucesso.
+- **Retry**: falha do adapter agenda reprocessamento com backoff exponencial
+  (30 s → 30 min) e `available_at`; após 8 tentativas o job vai para `FAILED`
+  com `last_error` e só reintegração manual resolve.
+- **Auditoria**: `stale_storage_cleanup_jobs` (pendentes > 24 h) e
+  `failed_storage_cleanup_jobs` entram no relatório de integridade.
+- [DB-SWAP] Multi-instância em PostgreSQL: mover o consumo para worker com
+  `FOR UPDATE SKIP LOCKED`; em SQLite, o ciclo no processo API é suficiente.
+
 
 ## Migration e saneamento
 

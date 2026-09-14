@@ -137,4 +137,47 @@ describe('integridade do schema', () => {
     expect(auditIntegrity(sqlite)).toEqual([])
     sqlite.close()
   })
+
+  test('auditoria read-only detecta órfãos de checklist, passos e anexos', () => {
+    const { sqlite } = migratedDatabase()
+    seedTenant(sqlite, 'tenant-a')
+    seedProject(sqlite, 'project-a', 'tenant-a')
+    seedItem(sqlite, 'item-a', 'tenant-a', 'project-a')
+    expect(auditIntegrity(sqlite)).toEqual([])
+    // A auditoria é read-only; para "fabricar" violações numa base com FKs ativas,
+    // o teste desliga a checagem apenas para a injeção (como faria uma base legada).
+    sqlite.exec('PRAGMA foreign_keys = OFF;')
+    // Checklist sem item pai — injetado direto no banco
+    sqlite.query("INSERT INTO checklists (id, tenant_id, item_id, name, position, created_at) VALUES ('cl-orfan', 'tenant-a', 'item-missing', 'CL', 0, ?)")
+      .run(now)
+    sqlite.query("INSERT INTO checklist_items (id, tenant_id, checklist_id, text, checked, position) VALUES ('ci-orfan', 'tenant-a', 'cl-missing', 'Passo', 0, 0)")
+      .run()
+    sqlite.query("INSERT INTO attachments (id, tenant_id, item_id, filename, original_name, mime_type, size, storage_path, created_at) VALUES ('at-orfan', 'tenant-a', 'item-missing', 'a.txt', 'a.txt', 'text/plain', 1, '/tmp/a', ?)")
+      .run(now)
+    sqlite.exec('PRAGMA foreign_keys = ON;')
+    const violations = auditIntegrity(sqlite)
+    const checks = violations.map(violation => violation.check).sort()
+    expect(checks).toContain('orphan_checklist_item')
+    expect(checks).toContain('orphan_checklist_step')
+    expect(checks).toContain('orphan_attachment_item')
+    expect(violations.every(violation => violation.count === 1)).toBe(true)
+    // A auditoria é somente leitura: nada foi apagado
+    expect((sqlite.query('SELECT COUNT(*) AS count FROM checklists WHERE id = ?').get('cl-orfan') as { count: number }).count).toBe(1)
+    sqlite.close()
+  })
+
+  test('auditoria reporta jobs de limpeza vencidos e failures sem modificá-los', () => {
+    const { sqlite } = migratedDatabase()
+    seedTenant(sqlite, 'tenant-a')
+    // Job vencido há 3 dias e job marcado como FAILED permanente
+    sqlite.query("INSERT INTO storage_cleanup_jobs (id, tenant_id, storage_path, resource_type, status, attempts, available_at, created_at, updated_at) VALUES ('job-stale', 'tenant-a', '/tmp/old', 'ATTACHMENT', 'PENDING', 0, ?, ?, ?)")
+      .run(new Date(Date.now() - 3 * 24 * 3600_000).toISOString(), now, now)
+    sqlite.query("INSERT INTO storage_cleanup_jobs (id, tenant_id, storage_path, resource_type, status, attempts, available_at, created_at, updated_at) VALUES ('job-failed', 'tenant-a', '/tmp/broken', 'ATTACHMENT', 'FAILED', 8, ?, ?, ?)")
+      .run(now, now, now)
+    const checks = auditIntegrity(sqlite).map(violation => violation.check)
+    expect(checks).toContain('stale_storage_cleanup_jobs')
+    expect(checks).toContain('failed_storage_cleanup_jobs')
+    expect((sqlite.query("SELECT COUNT(*) AS count FROM storage_cleanup_jobs WHERE status != 'DONE'").get() as { count: number }).count).toBe(2)
+    sqlite.close()
+  })
 })

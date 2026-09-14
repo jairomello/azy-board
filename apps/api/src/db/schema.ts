@@ -663,6 +663,36 @@ export const checklistItems = sqliteTable('checklist_items', {
 }))
 
 // ---------------------------------------------------------------------------
+// STORAGE_CLEANUP_JOBS — outbox de limpeza de objetos do storage (Item 12)
+//
+// O delete de metadados de anexos acontece na transação do banco; o arquivo
+// físico é removido DEPOIS do commit por um processador idempotente.
+// [TENANT] tenant_id escopa o job; o path nunca é servido a partir daqui
+// [DB-SWAP] Em PostgreSQL, manter a tabela e o índice parcial; backoff idêntico
+// ---------------------------------------------------------------------------
+export const storageCleanupJobs = sqliteTable('storage_cleanup_jobs', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id),
+  // [DB-SWAP] Caminho local hoje; ao migrar para S3 é a key do objeto
+  storagePath: text('storage_path').notNull(),
+  resourceType: text('resource_type', { enum: ['ATTACHMENT'] }).notNull().default('ATTACHMENT'),
+  status: text('status', { enum: ['PENDING', 'DONE', 'FAILED'] }).notNull().default('PENDING'),
+  attempts: integer('attempts').notNull().default(0),
+  lastError: text('last_error'),
+  // Instante a partir do qual o job pode ser reprocessado (backoff exponencial)
+  availableAt: text('available_at').notNull(),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+  updatedAt: text('updated_at').notNull().default(defaultNowIso()),
+  completedAt: text('completed_at'),
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('storage_cleanup_jobs_tenant_id_id_unique').on(table.tenantId, table.id),
+  // Um único job pendente por objeto — dedupe de enfileiramentos repetidos
+  pendingPathUnique: uniqueIndex('storage_cleanup_pending_path_unique').on(table.tenantId, table.storagePath).where(sql`${table.status} = 'PENDING'`),
+  queueScan: index('storage_cleanup_queue_scan_idx').on(table.status, table.availableAt),
+  attemptsCheck: check('storage_cleanup_jobs_attempts_check', sql`${table.attempts} >= 0`),
+}))
+
+// ---------------------------------------------------------------------------
 // RELATIONS
 // ---------------------------------------------------------------------------
 
@@ -756,4 +786,8 @@ export const itemSprintsRelations = relations(itemSprints, ({ one }) => ({
 
 export const attachmentsRelations = relations(attachments, ({ one }) => ({
   item: one(items, { fields: [attachments.itemId], references: [items.id] }),
+}))
+
+export const storageCleanupJobsRelations = relations(storageCleanupJobs, ({ one }) => ({
+  tenant: one(tenants, { fields: [storageCleanupJobs.tenantId], references: [tenants.id] }),
 }))

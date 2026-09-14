@@ -5,6 +5,7 @@ import { db } from '../db/index'
 import { attachments, items } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { storage } from '../services/storage'
+import { enqueueStorageCleanup, triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
 import { generateId } from '../utils/id'
 import type { RequestContext } from '@azy-board/types'
 
@@ -192,8 +193,15 @@ attachmentsRouter.delete('/:attachmentId', requireRole('MEMBER'), async (c) => {
   })
   if (!attachment) return c.json({ error: 'Anexo não encontrado' }, 404)
 
-  await storage.delete(attachment.storagePath)
-  await db.delete(attachments).where(and(eq(attachments.id, attachmentId), eq(attachments.itemId, itemId), eq(attachments.tenantId, ctx.tenantId)))
+  // Item 12: metadados saem em transação atomica; arquivo físico é removido
+  // pós-commit via outbox de limpeza (idempotente, com retry).
+  await db.transaction(async (tx) => {
+    await tx.delete(attachments)
+      .where(and(eq(attachments.id, attachmentId), eq(attachments.itemId, itemId), eq(attachments.tenantId, ctx.tenantId)))
+    await enqueueStorageCleanup(tx, ctx.tenantId, [{ storagePath: attachment.storagePath }])
+  })
+
+  triggerStorageCleanupAfterCommit()
 
   return c.json({ ok: true })
 })

@@ -135,8 +135,14 @@ checklistsRouter.delete('/:checklistId', requireRole('MEMBER'), async (c) => {
   const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)
   if (!allowed) return c.json({ error: 'Item não encontrado' }, 404)
 
-  await db.delete(checklists)
-    .where(and(eq(checklists.id, checklistId), eq(checklists.itemId, itemId), eq(checklists.tenantId, ctx.tenantId)))
+  // [INTEGRIDADE] checklist_items → checklists (NO ACTION): remover os passos
+  // antes do checklist, na mesma transação (Item 12).
+  await db.transaction(async (tx) => {
+    await tx.delete(checklistItems)
+      .where(and(eq(checklistItems.checklistId, checklistId), eq(checklistItems.tenantId, ctx.tenantId)))
+    await tx.delete(checklists)
+      .where(and(eq(checklists.id, checklistId), eq(checklists.itemId, itemId), eq(checklists.tenantId, ctx.tenantId)))
+  })
 
   const progress = await getChecklistProgress(ctx.tenantId, itemId)
   broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, progress } })

@@ -25,6 +25,7 @@ import { assertAnalyticsCutoverReady } from './services/analytics'
 import { assistantRouter } from './routes/assistant'
 import { openApiDocument } from './validation'
 import { classifyDatabaseError, errorResponseMiddleware, normalizeErrorPayload } from './middleware/errorResponse'
+import { startStorageCleanupWorker } from './services/storageCleanup'
 
 export const app = new Hono()
 
@@ -78,6 +79,10 @@ api.route('/assistant', assistantRouter)
 
 export async function startServer() {
   await assertAnalyticsCutoverReady()
+  // Item 12: drena a fila de limpeza de storage no startup e em ciclo periódico
+  // (backoff e FAILED são persistidos; index de intervalo é com unref, não
+  // impede o processo de encerrar).
+  startStorageCleanupWorker()
   const PORT = parseInt(process.env.PORT ?? '3000')
 
   // WebSocket server nativo do Bun — sem dependências extras

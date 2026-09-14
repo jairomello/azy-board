@@ -13,6 +13,8 @@ import { parseWorkDuration } from '@azy-board/types'
 import { getIdempotent, saveIdempotent } from '../services/idempotency'
 import { appendAnalyticsEvent, snapshotItem } from '../services/analytics'
 import { claimItem, moveItem, releaseItem } from '../services/itemMutations'
+import { collectItemSubtreeIds, deleteItemsCascade } from '../services/deletion'
+import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
 import { confirmationSchema, createItemSchema, itemLogSchema, itemSprintSchema, itemTagsSchema, moveItemSchema, parseJson, parseOptionalJson, reorderItemsSchema, updateItemLogSchema, updateItemSchema, updateWorkLogSchema, workLogSchema } from '../validation'
 
 export const itemsRouter = new Hono<HonoEnv>()
@@ -994,50 +996,28 @@ itemsRouter.delete('/:itemId', requireRole('MEMBER'), async (c) => {
   if (!parsedBody.ok) return parsedBody.response
   const requestBody = parsedBody.data
 
-  // Coletar IDs de todos os descendentes via BFS
-  // [TENANT] filtragem por tenantId em cada nível garante isolamento cross-tenant
-  const allIds: string[] = [itemId]
-  const queue = [itemId]
-  while (queue.length > 0) {
-    const parentId = queue.shift()!
-      const children = await db.select({ id: items.id })
-        .from(items)
-        .where(and(eq(items.parentId, parentId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
-    for (const child of children) {
-      allIds.push(child.id)
-      queue.push(child.id)
-    }
-  }
+  // Subárvore inteira carregada pelo executor compartilhado (nível a nível,
+  // filtrado por tenantId + projectId — Item 12)
+  const allIds = await collectItemSubtreeIds(db, ctx.tenantId, projectId, itemId)
 
   if (requestBody.dryRun) {
     return c.json({ dryRun: true, itemId, projectId, descendantCount: allIds.length - 1, totalCount: allIds.length })
   }
 
-  // [DB-SWAP] no PostgreSQL, usar ON DELETE CASCADE no schema em vez de exclusão manual aqui
+  // [DB-SWAP] no PostgreSQL, os mesmos deletes do executor valem; avaliar
+  // ON DELETE CASCADE no schema em vez de exclusão manual aqui
   await db.transaction(async (tx) => {
-    const snapshots = new Map<string, Awaited<ReturnType<typeof snapshotItem>>>()
-    for (const id of allIds) snapshots.set(id, await snapshotItem(tx, ctx.tenantId, projectId, id))
-    const parentSnapshots = new Map<string, Awaited<ReturnType<typeof snapshotItem>>>()
-    for (const snapshot of snapshots.values()) if (snapshot?.parentId && !parentSnapshots.has(snapshot.parentId)) parentSnapshots.set(snapshot.parentId, await snapshotItem(tx, ctx.tenantId, projectId, snapshot.parentId))
-    // [INTEGRIDADE] FKs com NO ACTION (sem cascade) exigem exclusão explícita
-    // dos filhos antes dos pais, na ordem: checklistItems → checklists → demais.
-    const checklistRows = await tx.select({ id: checklists.id }).from(checklists)
-      .where(and(inArray(checklists.itemId, allIds), eq(checklists.tenantId, ctx.tenantId)))
-    const checklistIds = checklistRows.map(row => row.id)
-    if (checklistIds.length > 0) {
-      await tx.delete(checklistItems).where(and(inArray(checklistItems.checklistId, checklistIds), eq(checklistItems.tenantId, ctx.tenantId)))
-      await tx.delete(checklists).where(and(inArray(checklists.id, checklistIds), eq(checklists.tenantId, ctx.tenantId)))
-    }
-    await tx.delete(itemTags).where(inArray(itemTags.itemId, allIds))
-    await tx.delete(itemSprints).where(inArray(itemSprints.itemId, allIds))
-    await tx.delete(attachments).where(inArray(attachments.itemId, allIds))
-    await tx.delete(itemLogs).where(and(inArray(itemLogs.itemId, allIds), eq(itemLogs.tenantId, ctx.tenantId)))
-    // A subárvore inteira é excluída em uma única instrução; a checagem de FK
-    // (inclusive a auto-FK parent_id) é satisfeita ao fim do statement.
-    await tx.delete(items).where(and(inArray(items.id, allIds), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
-    for (const id of allIds) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: id, eventType: 'ITEM_DELETED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before: snapshots.get(id), after: null })
-    for (const [parentId, before] of parentSnapshots) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: parentId, eventType: 'LEAF_CHANGED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', before, after: { ...(before!), isLeaf: true } })
+    await deleteItemsCascade(tx, {
+      tenantId: ctx.tenantId,
+      projectId,
+      itemIds: allIds,
+      actorId: ctx.userId,
+      origin: c.get('apiKeyId') ? 'MCP' : 'REST',
+    })
   })
+
+  // Pós-commit: limpeza dos objetos físicos de anexos via outbox (Item 12)
+  triggerStorageCleanupAfterCommit()
 
   broadcast(projectId, { type: 'ITEM_DELETED', projectId, payload: { itemId } })
   return c.json({ deleted: allIds.length })

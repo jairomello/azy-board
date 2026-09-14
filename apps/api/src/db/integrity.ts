@@ -34,6 +34,36 @@ const CHECKS: CheckDefinition[] = [
           WHERE parent.tenant_id <> child.tenant_id`,
   },
   {
+    check: 'orphan_checklist',
+    table: 'checklists',
+    sql: `SELECT COUNT(*) AS count FROM checklists
+          WHERE NOT EXISTS (SELECT 1 FROM items WHERE items.id = checklists.item_id)`,
+  },
+  {
+    check: 'orphan_checklist_step',
+    table: 'checklist_items',
+    sql: `SELECT COUNT(*) AS count FROM checklist_items
+          WHERE NOT EXISTS (SELECT 1 FROM checklists WHERE checklists.id = checklist_items.checklist_id)`,
+  },
+  {
+    check: 'cross_tenant_attachment_item',
+    table: 'attachments',
+    sql: `SELECT COUNT(*) AS count FROM attachments
+          JOIN items ON items.id = attachments.item_id
+          WHERE items.tenant_id <> attachments.tenant_id`,
+  },
+  {
+    check: 'stale_storage_cleanup_jobs',
+    table: 'storage_cleanup_jobs',
+    sql: `SELECT COUNT(*) AS count FROM storage_cleanup_jobs
+          WHERE status = 'PENDING' AND available_at < (SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day'))`,
+  },
+  {
+    check: 'failed_storage_cleanup_jobs',
+    table: 'storage_cleanup_jobs',
+    sql: `SELECT COUNT(*) AS count FROM storage_cleanup_jobs WHERE status = 'FAILED'`,
+  },
+  {
     check: 'orphan_project_manager',
     table: 'projects',
     sql: `SELECT COUNT(*) AS count FROM projects

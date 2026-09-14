@@ -77,8 +77,9 @@ tagsRouter.delete('/:tagId', requireRole('ADMIN'), async (c) => {
   if (!tag) return c.json({ error: 'Tag não encontrada' }, 404)
 
   await db.transaction(async (tx) => {
-    // item_tags não possui tenantId; a tag acima já foi validada por tenant + projeto.
-    await tx.delete(itemTags).where(eq(itemTags.tagId, tagId))
+    // [TENANT] item_tags possui tenant_id; o filtro reforça o escopo já
+    // garantido pela validação da tag acima.
+    await tx.delete(itemTags).where(and(eq(itemTags.tagId, tagId), eq(itemTags.tenantId, ctx.tenantId)))
     await tx.delete(tags).where(and(eq(tags.id, tagId), eq(tags.tenantId, ctx.tenantId)))
   })
 

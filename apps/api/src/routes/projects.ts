@@ -10,6 +10,8 @@ import type { RequestContext, BoardMode, AncestorNode } from '@azy-board/types'
 import { hasGlobalGroup } from '../services/auth'
 import { hasKeyPermission } from '../services/authorization'
 import { appendAnalyticsEvent, ensureCoverage, snapshotItem } from '../services/analytics'
+import { deleteProjectCascade } from '../services/deletion'
+import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
 import { confirmationSchema, createProjectSchema, parseJson, parseOptionalJson, updateProjectSchema } from '../validation'
 import { addProjectMemberSchema, costCenterSchema, deleteModuleSchema, moduleSchema, projectMemberSchema, squadMemberSchema, squadSchema, updateCostCenterSchema, updateModuleSchema } from '../validation'
 
@@ -368,62 +370,23 @@ projectsRouter.delete('/:id', requireRole('ADMIN'), async (c) => {
 
   try {
     await db.transaction(async (tx) => {
-      // [TENANT] IDs são obtidos exclusivamente do projeto do tenant autenticado.
-      const projectItems = await tx.select({ id: items.id })
-        .from(items)
-        .where(and(eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
-      const itemIds = projectItems.map(item => item.id)
-
-      // [INTEGRIDADE] projects.simple_story_id tem FK para items (NO ACTION):
-      // anular antes de excluir os itens do projeto.
-      if (itemIds.length > 0) {
-        await tx.update(projects).set({ simpleStoryId: null }).where(and(eq(projects.id, projectId), eq(projects.tenantId, ctx.tenantId)))
-      }
-
-      if (itemIds.length > 0) {
-        const projectChecklists = await tx.select({ id: checklists.id })
-          .from(checklists)
-          .where(and(inArray(checklists.itemId, itemIds), eq(checklists.tenantId, ctx.tenantId)))
-        const checklistIds = projectChecklists.map(checklist => checklist.id)
-
-        await tx.delete(itemTags).where(inArray(itemTags.itemId, itemIds))
-        await tx.delete(itemSprints).where(inArray(itemSprints.itemId, itemIds))
-        await tx.delete(attachments).where(inArray(attachments.itemId, itemIds))
-        if (checklistIds.length > 0) {
-          await tx.delete(checklistItems).where(and(inArray(checklistItems.checklistId, checklistIds), eq(checklistItems.tenantId, ctx.tenantId)))
-          await tx.delete(checklists).where(and(inArray(checklists.id, checklistIds), eq(checklists.tenantId, ctx.tenantId)))
-        }
-        await tx.delete(itemLogs).where(and(inArray(itemLogs.itemId, itemIds), eq(itemLogs.tenantId, ctx.tenantId)))
-        await tx.delete(items).where(and(inArray(items.id, itemIds), eq(items.tenantId, ctx.tenantId)))
-      }
-
-      // [TENANT] Todas as entidades são limitadas ao projeto e tenant antes da exclusão.
-      const projectTags = await tx.select({ id: tags.id }).from(tags)
-        .where(and(eq(tags.projectId, projectId), eq(tags.tenantId, ctx.tenantId)))
-      const tagIds = projectTags.map(tag => tag.id)
-      if (tagIds.length > 0) await tx.delete(itemTags).where(inArray(itemTags.tagId, tagIds))
-
-      const projectSprints = await tx.select({ id: sprints.id }).from(sprints)
-        .where(and(eq(sprints.projectId, projectId), eq(sprints.tenantId, ctx.tenantId)))
-      const sprintIds = projectSprints.map(sprint => sprint.id)
-      if (sprintIds.length > 0) await tx.delete(itemSprints).where(inArray(itemSprints.sprintId, sprintIds))
-      await tx.delete(memberships).where(and(eq(memberships.projectId, projectId), eq(memberships.tenantId, ctx.tenantId)))
-      await tx.delete(tags).where(and(eq(tags.projectId, projectId), eq(tags.tenantId, ctx.tenantId)))
-      await tx.delete(sprints).where(and(eq(sprints.projectId, projectId), eq(sprints.tenantId, ctx.tenantId)))
-      await tx.delete(projectVersions).where(and(eq(projectVersions.projectId, projectId), eq(projectVersions.tenantId, ctx.tenantId)))
-      await tx.delete(projectCostCenters).where(and(eq(projectCostCenters.projectId, projectId), eq(projectCostCenters.tenantId, ctx.tenantId)))
-      await tx.delete(modules).where(and(eq(modules.projectId, projectId), eq(modules.tenantId, ctx.tenantId)))
-      await tx.delete(columns).where(and(eq(columns.projectId, projectId), eq(columns.tenantId, ctx.tenantId)))
-      await tx.delete(squads).where(and(eq(squads.projectId, projectId), eq(squads.tenantId, ctx.tenantId)))
-      // [TENANT] Conversas do agente vinculadas ao projeto são excluídas junto do projeto;
-      // messages/runs/events/toolCalls/approvals são removidos pelas FKs em cascata.
-      await tx.delete(assistantConversations).where(and(eq(assistantConversations.projectId, projectId), eq(assistantConversations.tenantId, ctx.tenantId)))
-      await tx.delete(projects).where(and(eq(projects.id, projectId), eq(projects.tenantId, ctx.tenantId)))
+      // Item 12: executor compartilhado reutiliza a política de exclusão de
+      // itens e cobre todos os recursos de projeto; analytics/coverage são
+      // removidos pela FK em cascata quando a linha do projeto sai.
+      await deleteProjectCascade(tx, {
+        tenantId: ctx.tenantId,
+        projectId,
+        actorId: ctx.userId,
+        origin: c.get('apiKeyId') ? 'MCP' : 'REST',
+      })
     })
   } catch (error) {
     console.error('[projects] falha ao excluir projeto', { projectId, error })
     return c.json({ error: 'Não foi possível excluir o projeto' }, 500)
   }
+
+  // Pós-commit: limpeza dos objetos físicos de anexos via outbox (Item 12)
+  triggerStorageCleanupAfterCommit()
 
   return c.json({ ok: true })
 })

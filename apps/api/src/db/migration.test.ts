@@ -6,6 +6,48 @@ import * as schema from './schema'
 import { eq } from 'drizzle-orm'
 import { mkdir } from 'node:fs/promises'
 
+describe('migration de outbox de limpeza de storage (Item 12)', () => {
+  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+
+  test('aplica em base vazia, é idempotente e mantém foreign_key_check limpo', () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    migrate(database, { migrationsFolder })
+    migrate(database, { migrationsFolder })
+    const tables = sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
+    expect(tables.map(table => table.name)).toContain('storage_cleanup_jobs')
+    // Base vazia, base recém-migrada e associação típica preservadas
+    expect((sqlite.query('SELECT COUNT(*) AS count FROM storage_cleanup_jobs').get() as { count: number }).count).toBe(0)
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    expect((sqlite.query("PRAGMA index_list('storage_cleanup_jobs')").all() as Array<{ name: string; unique: number }>)
+      .some(index => index.name === 'storage_cleanup_pending_path_unique' && index.unique === 1)).toBe(true)
+    sqlite.close()
+  })
+
+  test('migra base com dados legados preservando contagens e constraints', async () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    const pre = `/tmp/azyboard-migrations-${crypto.randomUUID()}`
+    await mkdir(`${pre}/meta`, { recursive: true })
+    const source = new URL('./migrations', import.meta.url).pathname
+    const journal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ tag: string }> }
+    const upTo = journal.entries.filter(entry => !entry.tag.startsWith('0023')).map(entry => entry.tag + '.sql')
+    for (const file of upTo) await Bun.write(`${pre}/${file}`, await Bun.file(`${source}/${file}`).text())
+    await Bun.write(`${pre}/meta/_journal.json`, JSON.stringify({ ...journal, entries: journal.entries.filter(entry => !entry.tag.startsWith('0023')) }))
+    migrate(database, { migrationsFolder: pre })
+
+    const now = new Date().toISOString()
+    // Base legada populada: tenant + resto mínimo exigido pelas FKs
+    await database.insert(schema.tenants).values({ id: 'legacy-tenant', name: 'Legacy', slug: 'legacy', createdAt: now })
+    await database.insert(schema.projects).values({ id: 'legacy-project', tenantId: 'legacy-tenant', name: 'Legacy', createdAt: now })
+
+    migrate(database, { migrationsFolder: source })
+    expect((await database.select().from(schema.projects)).filter(row => row.id === 'legacy-project')).toHaveLength(1)
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+})
+
 describe('migration de analytics', () => {
   test('é idempotente em base vazia e cria índices aditivos', async () => {
     const sqlite = new Database(':memory:')
