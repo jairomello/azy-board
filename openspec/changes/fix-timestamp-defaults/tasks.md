@@ -30,5 +30,5 @@
 
 - [x] 5.1 Atualizar a documentação de integridade/banco com a política de defaults temporais, formato UTC e equivalente PostgreSQL.
 - [x] 5.2 Rodar `bun run typecheck`, `bun test`, `bun run build` e `bun run test:smoke`.
-- [ ] 5.3 Fazer backup do banco do LabApps, aplicar a migration e validar defaults, contagens, `PRAGMA foreign_key_check` e logs.
-- [ ] 5.4 Registrar resultado do deploy e procedimento de rollback/restauração do backup.
+- [x] 5.3 Fazer backup do banco do LabApps, aplicar a migration e validar defaults, contagens, `PRAGMA foreign_key_check` e logs.
+- [x] 5.4 Registrar resultado do deploy e procedimento de rollback/restauração do backup.
