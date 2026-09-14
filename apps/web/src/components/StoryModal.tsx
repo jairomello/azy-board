@@ -31,7 +31,7 @@ interface Props {
 }
 
 export function StoryModal({ epics, story, projectVersions = [], onSave, onClose }: Props) {
-  const { t } = useTranslation()
+  const { t } = useTranslation('board')
   const [title, setTitle] = useState(story?.title ?? '')
   const [epicId, setEpicId] = useState(story?.epicId ?? epics[0]?.id ?? '')
   const [versionId, setVersionId] = useState(story?.versionId ?? '')
@@ -98,7 +98,7 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
           <AccordionSection id="story-fields" title={t('accordion.storyFields')} summary={<NeutralSummary />} isOpen={openSections.has('story-fields')} onToggle={toggleSection}>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Código</label>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('codeLabel')}</label>
               <input
                 value={sequenceCode}
                 onChange={e => setSequenceCode(e.target.value)}

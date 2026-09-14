@@ -32,6 +32,9 @@ i18n
   .init({
     fallbackLng: 'pt-BR',
     defaultNS: 'common',
+    // Chaves de um namespace específico (ex.: board) caem para 'common'
+    // quando ausentes, permitindo que modais usem um único hook.
+    fallbackNS: 'common',
     returnNull: false,
     missingKeyHandler: (_lngs, namespace, key) => {
       console.warn(`[i18n] Missing translation: ${namespace}:${key}`)
