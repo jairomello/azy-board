@@ -32,6 +32,7 @@ describe('contratos do dashboard do projeto', () => {
     contains(page, 'Escape')
     contains(page, 'HorizontalRankingBar')
     contains(page, 'teamLoadMode')
+    contains(page, 'teamLoadHasWip')
     contains(page, 'aria-pressed')
     contains(page, 'hoursByAuthorData')
     expect(page.includes('blockedSubset')).toBe(false)

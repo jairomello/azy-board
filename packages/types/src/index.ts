@@ -369,7 +369,7 @@ export interface DashboardSnapshot {
     wip: { total: number; byStatus: Record<string, number>; byStatusPoints: Record<string, number>; pointsCoverage: number | null; items: DashboardItemDetail[] }
     blocked: { total: number; items: DashboardItemDetail[] }
     overdue: { total: number; items: DashboardItemDetail[]; remainingItems: DashboardItemDetail[] }
-    teamLoad: { members: Array<{ userId: string; userName: string; squadId: string | null; squadName: string | null; wipTotal: number; wipPoints: number | null; pointsCoverage: number | null }>; unassignedWip: number; unassignedWipPoints: number | null; pointsCoverage: number | null }
+    teamLoad: { members: Array<{ userId: string; userName: string; squadId: string | null; squadName: string | null; wipTotal: number; blockedSubset?: number; wipPoints: number | null; blockedPoints?: number | null; pointsCoverage: number | null }>; unassignedWip: number; blockedUnassignedSubset?: number; unassignedWipPoints: number | null; unassignedBlockedPoints?: number | null; pointsCoverage: number | null }
   }
 }
 

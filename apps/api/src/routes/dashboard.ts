@@ -113,9 +113,11 @@ dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
   const { overdue, remaining } = overdueGroups(rows, today)
   const detail = (row: typeof rows[number]) => ({ id: row.id, title: row.title, type: row.type, status: row.status, points: row.points, assigneeId: row.assigneeId, dueDate: row.dueDate })
   const memberRows = await db.select({ userId: memberships.userId, squadId: memberships.squadId, userName: users.name, squadName: squads.name }).from(memberships).innerJoin(users, eq(users.id, memberships.userId)).leftJoin(squads, and(eq(squads.id, memberships.squadId), eq(squads.tenantId, ctx.tenantId), eq(squads.projectId, projectId))).where(and(eq(memberships.tenantId, ctx.tenantId), eq(memberships.projectId, projectId)))
-  const teamRows = wip.filter(row => row.status !== 'BLOCKED')
-  const team = memberRows.map(member => { const mine = teamRows.filter(row => row.assigneeId === member.userId); const estimatedMine = mine.filter(row => row.points !== null); return { userId: member.userId, userName: member.userName, squadId: member.squadId, squadName: member.squadName, wipTotal: mine.length, wipPoints: estimatedMine.length ? estimatedMine.reduce((sum, row) => sum + (row.points ?? 0), 0) : null, pointsCoverage: completionPercent(estimatedMine.length, mine.length) } })
-  const unassignedRows = teamRows.filter(row => !row.assigneeId); const unassignedEstimated = unassignedRows.filter(row => row.points !== null)
+  // WIP inclui bloqueados; blockedSubset é informativo e não aditivo.
+  // O adaptador visual subtrai o subconjunto para manter o gráfico não aditivo.
+  const teamRows = wip
+  const team = memberRows.map(member => { const mine = teamRows.filter(row => row.assigneeId === member.userId); const blocked = mine.filter(row => row.status === 'BLOCKED'); const estimatedMine = mine.filter(row => row.points !== null); const blockedEstimated = blocked.filter(row => row.points !== null); return { userId: member.userId, userName: member.userName, squadId: member.squadId, squadName: member.squadName, wipTotal: mine.length, blockedSubset: blocked.length, wipPoints: estimatedMine.length ? estimatedMine.reduce((sum, row) => sum + (row.points ?? 0), 0) : null, blockedPoints: blockedEstimated.length ? blockedEstimated.reduce((sum, row) => sum + (row.points ?? 0), 0) : null, pointsCoverage: completionPercent(estimatedMine.length, mine.length) } })
+  const unassignedRows = teamRows.filter(row => !row.assigneeId); const unassignedBlocked = unassignedRows.filter(row => row.status === 'BLOCKED'); const unassignedEstimated = unassignedRows.filter(row => row.points !== null); const unassignedBlockedEstimated = unassignedBlocked.filter(row => row.points !== null)
   const unassigned = unassignedRows.length; const teamTotal = teamRows.length; const teamEstimated = teamRows.filter(row => row.points !== null)
   const coverage = await db.query.projectAnalyticsCoverage.findFirst({ where: (row) => and(eq(row.tenantId, ctx.tenantId), eq(row.projectId, projectId)) })
   // Item 13: transições de bloqueio apenas dos itens bloqueados atuais —
@@ -136,7 +138,7 @@ dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
     wip: { total: wip.length, byStatus, byStatusPoints, pointsCoverage: completionPercent(estimated.length, rows.length), items: wip },
     blocked: { total: blocked.length, items: blockedDetails.slice(0, 10) },
     overdue: { total: overdue.length, items: overdue.map(detail), remainingItems: remaining.map(detail) },
-    teamLoad: { members: team, unassignedWip: unassigned, unassignedWipPoints: unassignedEstimated.length ? unassignedEstimated.reduce((sum, row) => sum + (row.points ?? 0), 0) : null, pointsCoverage: completionPercent(teamEstimated.length, teamTotal) },
+    teamLoad: { members: team, unassignedWip: unassigned, blockedUnassignedSubset: unassignedBlocked.length, unassignedWipPoints: unassignedEstimated.length ? unassignedEstimated.reduce((sum, row) => sum + (row.points ?? 0), 0) : null, unassignedBlockedPoints: unassignedBlockedEstimated.length ? unassignedBlockedEstimated.reduce((sum, row) => sum + (row.points ?? 0), 0) : null, pointsCoverage: completionPercent(teamEstimated.length, teamTotal) },
   } })
 })
 

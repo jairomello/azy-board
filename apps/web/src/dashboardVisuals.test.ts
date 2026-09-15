@@ -19,6 +19,7 @@ describe('dashboard chart adapters', () => {
     const empty = snapshot(); const hours: DashboardHours = { semantics: '', totalMinutes: 0, rows: [] }; const aging: DashboardAging = { coverageStartedAt: null, items: [] }
     expect(progressData(empty).donut[1].value).toBe(6); expect(JSON.stringify(distributionData(empty.boxes.blocked.items))).toBe('[]'); expect(overdueAgeData(empty.boxes.overdue.items).every(item => item.value === 0)).toBe(true); expect(agingData(aging).every(item => item.value === 0)).toBe(true); expect(JSON.stringify(hoursByAuthorData(hours))).toBe('[]'); expect(statusData(empty).length).toBe(4)
     const unestimated = teamLoadData(snapshot({ teamLoad: { members: [{ userId: 'u', userName: 'Sem pontos', squadId: null, squadName: null, wipTotal: 1, wipPoints: null, pointsCoverage: 0 }], unassignedWip: 0, unassignedWipPoints: null, pointsCoverage: 0 } }), 'points')[0]; expect(unestimated.name).toBe('Sem pontos'); expect(unestimated.value).toBe(0); expect(unestimated.pointsAvailable).toBe(false)
+    const blockedSubset = teamLoadData(snapshot({ teamLoad: { members: [{ userId: 'u', userName: 'Bloqueada', squadId: null, squadName: null, wipTotal: 2, blockedSubset: 1, wipPoints: 5, blockedPoints: 2, pointsCoverage: 100 }], unassignedWip: 0, unassignedWipPoints: null, pointsCoverage: 100 } }), 'items')[0]; expect(blockedSubset.value).toBe(1)
   })
 })
 
