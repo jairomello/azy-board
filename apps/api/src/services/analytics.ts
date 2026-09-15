@@ -2,6 +2,7 @@ import { and, eq, desc, sql } from 'drizzle-orm'
 import { db } from '../db/index'
 import { itemEvents, items, projectAnalyticsCoverage, sprintCycleItems, sprintCycles, itemSprints, projects } from '../db/schema'
 import { generateId } from '../utils/id'
+import { applyEventToDailyRollup } from './dashboardMetrics'
 
 export type AnalyticsDb = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0]
 export type AnalyticsEventType = 'ANALYTICS_BASELINE' | 'ITEM_CREATED' | 'STATUS_CHANGED' | 'POINTS_CHANGED' | 'TYPE_CHANGED' | 'SPRINT_CHANGED' | 'VERSION_CHANGED' | 'ITEM_REPARENTED' | 'MODULE_CHANGED' | 'LEAF_CHANGED' | 'ITEM_ARCHIVED' | 'ITEM_UNARCHIVED' | 'ITEM_DELETED'
@@ -26,7 +27,8 @@ export async function appendAnalyticsEvent(tx: AnalyticsDb, input: {
   origin: string
   correlationId?: string
   before?: ItemAnalyticsSnapshot | null
-  after?: ItemAnalyticsSnapshot | null
+  // Baseline carrega a população completa; demais eventos usam snapshot único.
+  after?: ItemAnalyticsSnapshot | ItemAnalyticsSnapshot[] | null
 }) {
   const occurredAt = input.occurredAt ?? new Date().toISOString()
   const correlationId = input.correlationId ?? generateId()
@@ -38,6 +40,17 @@ export async function appendAnalyticsEvent(tx: AnalyticsDb, input: {
     await tx.insert(itemEvents).values({
       id: generateId(), tenantId: input.tenantId, projectId: input.projectId, itemId: input.itemId ?? null,
       eventType: input.eventType, occurredAt, sequence, actorId: input.actorId, origin: input.origin, correlationId,
+      beforeSnapshot: input.before ? JSON.stringify(input.before) : null,
+      afterSnapshot: input.after ? JSON.stringify(input.after) : null,
+    })
+    // [DB-SWAP] Em PostgreSQL, o mesmo update incremental vale; em múltiplas
+    // instâncias, garantir ordenação por transaction/lock do projeto.
+    // Rollup diário na MESMA transação do evento (Item 13 — sem worker, sem drift).
+    await applyEventToDailyRollup(tx, {
+      tenantId: input.tenantId,
+      projectId: input.projectId,
+      eventType: input.eventType,
+      occurredAt,
       beforeSnapshot: input.before ? JSON.stringify(input.before) : null,
       afterSnapshot: input.after ? JSON.stringify(input.after) : null,
     })

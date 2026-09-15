@@ -68,6 +68,26 @@ DATABASE_URL=/caminho/azyboard.db bun run apps/api/src/scripts/auditIntegrity.ts
 retorna JSON `{ ok, violations: [{ check, table, count }] }` e sai com código 1
 se houver violação.
 
+## Rollup diário do Dashboard (Item 13)
+
+`project_metrics_daily` (migration 0024) acumula, por tenant/projeto/dia UTC,
+`total`/`done`/`points`/`done_points` de itens folha elegíveis. O update é
+incremental feito por `appendAnalyticsEvent` na MESMA transação do evento
+(deltas por evento, sem worker). invariantes e operação:
+
+- **Paridade**: o caminho deve reproduzir o replay por evento — o gate
+  `rollupMatchesReplay(tenant, project, from, to)` compara o acervo com o
+  replay da baseline e dos eventos; qualquer divergência indica snapshot
+  inconsistente gravado por um fluxo e requer `recomputeProjectRollup`
+  (replay completo, idempotente) por projeto.
+- **Backfill**: no startup (`ensureDashboardRollupsBackfill`) para projetos com
+  cobertura e sem linhas; idempotente por projeto. [DB-SWAP] PostgreSQL múltiplas
+  instâncias: mover para job com `FOR UPDATE SKIP LOCKED` ou materialized view.
+- **Rodapé índices**: `item_events_item_occurrence_idx` (transições por item usadas
+  por `/snapshot` e `/aging`) e `item_logs_tenant_created_idx` (períodos de `/hours`).
+- **Linhas paginadas**: `/hours` aceita `limit` (padrão 500, máximo 2000) com
+  ordenação determinística (`created_at`, `id`); totais sempre por SQL.
+
 ## Política de exclusão e cascatas (Item 12)
 
 A exclusão é executada por **um único executor** compartilhado

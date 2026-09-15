@@ -502,6 +502,7 @@ export const itemLogs = sqliteTable('item_logs', {
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   itemTypeDateIdx: index('item_logs_tenant_item_type_date_idx').on(table.tenantId, table.itemId, table.type, table.createdAt),
+  tenantCreatedIdx: index('item_logs_tenant_created_idx').on(table.tenantId, table.createdAt),
   itemFk: foreignKey(() => ({ columns: [table.tenantId, table.itemId], foreignColumns: [items.tenantId, items.id] })),
   authorFk: foreignKey(() => ({ columns: [table.tenantId, table.authorId], foreignColumns: [users.tenantId, users.id] })),
   durationCheck: check('item_logs_duration_check', sql`${table.durationMin} IS NULL OR ${table.durationMin} >= 0`),
@@ -579,6 +580,7 @@ export const itemEvents = sqliteTable('item_events', {
 }, (table) => ({
   tenantProjectDate: index('item_events_tenant_project_date_idx').on(table.tenantId, table.projectId, table.occurredAt),
   itemDate: index('item_events_item_date_idx').on(table.tenantId, table.projectId, table.itemId, table.occurredAt),
+  itemOccurrence: index('item_events_item_occurrence_idx').on(table.tenantId, table.projectId, table.itemId),
   typeDate: index('item_events_type_date_idx').on(table.tenantId, table.projectId, table.eventType, table.occurredAt),
   correlationUnique: uniqueIndex('item_events_correlation_unique').on(table.tenantId, table.projectId, table.correlationId, table.eventType, table.itemId),
 }))
@@ -690,6 +692,29 @@ export const storageCleanupJobs = sqliteTable('storage_cleanup_jobs', {
   pendingPathUnique: uniqueIndex('storage_cleanup_pending_path_unique').on(table.tenantId, table.storagePath).where(sql`${table.status} = 'PENDING'`),
   queueScan: index('storage_cleanup_queue_scan_idx').on(table.status, table.availableAt),
   attemptsCheck: check('storage_cleanup_jobs_attempts_check', sql`${table.attempts} >= 0`),
+}))
+
+// ---------------------------------------------------------------------------
+// PROJECT_METRICS_DAILY — rollup diário do Dashboard (Item 13)
+//
+// Mantido na MESMA transação de cada evento de analytics (deltas por item).
+// Serve /burnup sem filtros; com filtros o caminho é replay incremental.
+// [TENANT] escopo por tenant_id e project_id em toda leitura
+// [DB-SWAP] Em PostgreSQL poderia ser materialized view com REFRESH;
+// a lógica de deltas permanece válida.
+// ---------------------------------------------------------------------------
+export const projectMetricsDaily = sqliteTable('project_metrics_daily', {
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  metricDate: text('metric_date').notNull(), // AAAA-MM-DD UTC (occurredAt do evento)
+  total: integer('total').notNull().default(0),
+  done: integer('done').notNull().default(0),
+  points: integer('points').notNull().default(0),
+  donePoints: integer('done_points').notNull().default(0),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.tenantId, table.projectId, table.metricDate] }),
+  tenantProjectUnique: uniqueIndex('project_metrics_daily_tenant_project_date_unique').on(table.tenantId, table.projectId, table.metricDate),
+  dateScan: index('project_metrics_daily_date_scan_idx').on(table.tenantId, table.projectId, table.metricDate),
 }))
 
 // ---------------------------------------------------------------------------

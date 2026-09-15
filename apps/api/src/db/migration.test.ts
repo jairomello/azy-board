@@ -48,6 +48,41 @@ describe('migration de outbox de limpeza de storage (Item 12)', () => {
   })
 })
 
+describe('migration de rollup diário do dashboard (Item 13)', () => {
+  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+
+  test('aplica em base vazia e idempotente com foreign_key_check limpo', () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    migrate(database, { migrationsFolder })
+    migrate(database, { migrationsFolder })
+    const tables = sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
+    expect(tables.map(table => table.name)).toContain('project_metrics_daily')
+    expect((sqlite.query('SELECT COUNT(*) AS count FROM project_metrics_daily').get() as { count: number }).count).toBe(0)
+    const indexes = sqlite.query("SELECT name FROM sqlite_master WHERE type = 'index'").all() as Array<{ name: string }>
+    expect(indexes.map(index => index.name)).toContain('item_events_item_occurrence_idx')
+    expect(indexes.map(index => index.name)).toContain('item_logs_tenant_created_idx')
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+
+  test('preserva dados legados e aceita rollup populado', async () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    await migrate(database, { migrationsFolder })
+    // Base "legada" populada: cobertura + eventos existentes devem conviver com o rollup
+    const now = new Date().toISOString()
+    await database.insert(schema.tenants).values({ id: 'roll-tenant', name: 'Roll', slug: 'roll', createdAt: now })
+    await database.insert(schema.projects).values({ id: 'roll-project', tenantId: 'roll-tenant', name: 'Roll', createdAt: now })
+    await database.insert(schema.projectAnalyticsCoverage).values({ projectId: 'roll-project', tenantId: 'roll-tenant', coverageStartedAt: '2026-01-05T00:00:00.000Z', createdAt: now })
+    await database.insert(schema.projectMetricsDaily).values({ tenantId: 'roll-tenant', projectId: 'roll-project', metricDate: '2026-01-05', total: 2, done: 1, points: 8, donePoints: 5 })
+    await migrate(database, { migrationsFolder })
+    expect((await database.select().from(schema.projectMetricsDaily)).map(row => row.metricDate)).toContain('2026-01-05')
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+})
+
 describe('migration de analytics', () => {
   test('é idempotente em base vazia e cria índices aditivos', async () => {
     const sqlite = new Database(':memory:')

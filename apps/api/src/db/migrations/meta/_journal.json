@@ -169,6 +169,13 @@
       "when": 1789480000000,
       "tag": "0023_storage_cleanup_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1789490000000,
+      "tag": "0024_dashboard_metric_rollups",
+      "breakpoints": true
     }
   ]
 }
