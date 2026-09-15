@@ -88,6 +88,21 @@ incremental feito por `appendAnalyticsEvent` na MESMA transação do evento
 - **Linhas paginadas**: `/hours` aceita `limit` (padrão 500, máximo 2000) com
   ordenação determinística (`created_at`, `id`); totais sempre por SQL.
 
+## Escopo de relações em operações em lote (Item 15)
+
+O batch de atualização por filtros (`/batch/items/update`) carrega
+`item_sprints` e `item_tags` POR JOIN com os itens do projeto do tenant
+autenticado (`app/api/src/routes/batch.ts`). Regras:
+
+- A consulta sempre exige `item_sprints.tenant_id`/`item_tags.tenant_id` =
+  tenant da requisição e itens com `tenant_id` + `project_id` iguais ao contexto.
+- Nunca carregar as tabelas globais para filtrar em memória; os pares são
+  deduplicados por `(item, relação)` e usados como conjuntos (`Set`).
+- O vínculo excluído no executor também é recortado por `tenant_id`.
+- Plano validado com `EXPLAIN QUERY PLAN`: os FKs compostos
+  `(tenant_id, item_id)` sustentam o join; nenhuma migration extra foi
+  necessária. [DB-SWAP] Em PostgreSQL, validar `EXPLAIN (ANALYZE, BUFFERS)`.
+
 ## Política de exclusão e cascatas (Item 12)
 
 A exclusão é executada por **um único executor** compartilhado

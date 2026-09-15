@@ -124,8 +124,13 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
   if (!filterValues.some(value => value !== null && value !== undefined) && filters.matchAll !== true) return c.json({ code: 'VALIDATION_ERROR', error: 'Informe filtros ou confirme matchAll' }, 422)
 
   try {
+    // Item 15: relações item_sprints/item_tags carregadas apenas do tenant/projeto
+    // autenticado (join com itens), nunca as tabelas globais.
+    // [TENANT] tenant + projeto nos dois lados do join
+    // [DB-SWAP] Em PostgreSQL, o join vale; validar plano com EXPLAIN (ANALYZE).
+    const activeItemScope = and(eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId))
     const [projectItems, projectModules, projectSprints, versions, projectColumns, costCenters, projectTags, projectMemberships, tenantUsers, sprintLinks, tagLinks] = await Promise.all([
-      db.select().from(items).where(and(eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId))),
+      db.select().from(items).where(activeItemScope),
       db.select().from(modules).where(and(eq(modules.projectId, projectId), eq(modules.tenantId, ctx.tenantId))),
       db.select().from(sprints).where(and(eq(sprints.projectId, projectId), eq(sprints.tenantId, ctx.tenantId))),
       db.select().from(projectVersions).where(and(eq(projectVersions.projectId, projectId), eq(projectVersions.tenantId, ctx.tenantId))),
@@ -134,8 +139,8 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
       db.select().from(tags).where(and(eq(tags.projectId, projectId), eq(tags.tenantId, ctx.tenantId))),
       db.select().from(memberships).where(and(eq(memberships.projectId, projectId), eq(memberships.tenantId, ctx.tenantId))),
       db.select().from(users).where(eq(users.tenantId, ctx.tenantId)),
-      db.select().from(itemSprints),
-      db.select().from(itemTags),
+      db.select({ itemId: itemSprints.itemId, sprintId: itemSprints.sprintId }).from(itemSprints).innerJoin(items, and(eq(items.id, itemSprints.itemId), eq(items.tenantId, itemSprints.tenantId))).where(and(eq(itemSprints.tenantId, ctx.tenantId), activeItemScope)),
+      db.select({ itemId: itemTags.itemId, tagId: itemTags.tagId }).from(itemTags).innerJoin(items, and(eq(items.id, itemTags.itemId), eq(items.tenantId, itemTags.tenantId))).where(and(eq(itemTags.tenantId, ctx.tenantId), activeItemScope)),
     ])
     const activeItems = projectItems.filter(item => item.status !== 'ARCHIVED')
     const itemById = new Map(projectItems.map(item => [item.id, item]))
@@ -162,16 +167,20 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
     const selectedTag = typeof filters.tag === 'string' ? exactResource(projectTags, filters.tag, 'TAG') : null
     const activeParentIds = new Set(activeItems.map(item => item.parentId).filter((id): id is string => Boolean(id)))
     const epicModule = new Map(activeItems.filter(item => item.type === 'EPIC').map(item => [item.id, item.moduleId]))
+    // Item 15: pares deduplicados por (item, relação) — cobre resíduos de vínculos repetidos
+    // sem alterar o resultado dos filtros.
+    const sprintLinkPairs = new Set(sprintLinks.map(link => `${link.itemId}\u0000${link.sprintId}`))
+    const tagLinkPairs = new Set(tagLinks.map(link => `${link.itemId}\u0000${link.tagId}`))
     let matched = activeItems.filter(item => {
       if (Array.isArray(filters.itemIds) && !filters.itemIds.includes(item.id)) return false
       if (Array.isArray(filters.types) && !filters.types.includes(item.type)) return false
       if (Array.isArray(filters.statuses) && !filters.statuses.includes(item.status)) return false
-      if (selectedSprint && !sprintLinks.some(link => link.itemId === item.id && link.sprintId === selectedSprint.id)) return false
+      if (selectedSprint && !sprintLinkPairs.has(`${item.id}\u0000${selectedSprint.id}`)) return false
       if (selectedVersion && item.versionId !== selectedVersion.id) return false
       if (selectedAssignee && item.assigneeId !== selectedAssignee.id) return false
       if (selectedParent && item.parentId !== selectedParent.id) return false
       if (selectedColumn && item.columnId !== selectedColumn.id) return false
-      if (selectedTag && !tagLinks.some(link => link.itemId === item.id && link.tagId === selectedTag.id)) return false
+      if (selectedTag && !tagLinkPairs.has(`${item.id}\u0000${selectedTag.id}`)) return false
       if (typeof filters.titleContains === 'string' && !item.title.toLocaleLowerCase().includes(filters.titleContains.toLocaleLowerCase())) return false
       if (filters.onlyLeaves === true && activeParentIds.has(item.id)) return false
       if (filters.onlyLeaves === false && !activeParentIds.has(item.id)) return false
@@ -284,7 +293,8 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
         await tx.update(items).set(update).where(and(eq(items.id, item.id), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
         const sprintChange = resolvedChanges.find(change => change.field === 'sprint')
         if (sprintChange) {
-          await tx.delete(itemSprints).where(eq(itemSprints.itemId, item.id))
+          // [TENANT] Escopo explícito no delete e no insert do vínculo
+          await tx.delete(itemSprints).where(and(eq(itemSprints.itemId, item.id), eq(itemSprints.tenantId, ctx.tenantId)))
           if (sprintChange.relationId) await tx.insert(itemSprints).values({ tenantId: ctx.tenantId, itemId: item.id, sprintId: sprintChange.relationId })
         }
         const visibleUpdate = Object.fromEntries(Object.entries(update).filter(([key]) => key !== 'updatedAt'))
