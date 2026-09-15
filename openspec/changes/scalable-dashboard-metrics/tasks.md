@@ -25,5 +25,5 @@
 
 - [x] 4.1 Rodar `bun run check` completo.
 - [x] 4.2 Rodar `bun run test:smoke` (smoke de web/API) e suítes de migration/integridade.
-- [ ] 4.3 Backup prévio no LabApps, deploy (`deploy-all.sh azyboard`) e validação dos endpoints públicos do Dashboard sob `/azyboard/`.
-- [ ] 4.4 Atualizar a documentação de analytics/dashboard com o rollup e o gate de drift.
+- [x] 4.3 Backup prévio no LabApps, deploy (`deploy-all.sh azyboard`) e validação dos endpoints públicos do Dashboard sob `/azyboard/`.
+- [x] 4.4 Atualizar a documentação de analytics/dashboard com o rollup e o gate de drift.
