@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Info, Plus, Check, X, Clock, ChevronLeft } from 'lucide-react'
+import { Info, Plus, Check, X, Clock, ChevronLeft, ChevronRight, Bug, CheckSquare, ListChecks, History, CalendarDays, UserRound } from 'lucide-react'
 import type { Priority, TaskStatus, ItemType, Checklist } from '@azy-board/types'
 import { InlineEdit } from './InlineEdit'
 import { TagSelector, type Tag } from './TagSelector'
@@ -11,9 +11,6 @@ import { CardChildrenSection } from './CardChildrenSection'
 import { ActivityLogModal } from './ActivityLogModal'
 import { WorkLogModal } from './WorkLogModal'
 import { RichTextEditor } from './RichTextEditor'
-import { AccordionSection } from './AccordionSection'
-import { AccordionToolbar } from './AccordionToolbar'
-import { ChecklistSummary, NeutralSummary } from './AccordionSummary'
 import { api } from '../lib/api'
 
 interface Epic { id: string; title: string }
@@ -106,6 +103,8 @@ interface ChildModalState {
   loading: boolean
 }
 
+type ItemArea = 'details' | 'subtasks' | 'checklists' | 'activity'
+
 interface Props {
   item: FullItemData
   projectId: string
@@ -180,8 +179,7 @@ export function ItemModal({
   const [activityCount, setActivityCount] = useState(0)
   const [subtaskCount, setSubtaskCount] = useState(0)
   const [subtaskRefreshKey, setSubtaskRefreshKey] = useState(0)
-  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['item-fields']))
-  const sectionIds = ['item-fields', 'item-description', 'item-subtasks', 'item-checklists', 'item-activity', 'item-work-log']
+  const [activeArea, setActiveArea] = useState<ItemArea>('details')
 
   // Resolução do papel do usuário atual no projeto
   const currentUserRole = members.find(m => m.userId === currentUserId)?.role ?? 'MEMBER'
@@ -249,6 +247,7 @@ export function ItemModal({
     setWorkLogCount(0)
     setSubtaskCount(0)
     setSubtaskRefreshKey(0)
+    setActiveArea('details')
   }, [item.id])
 
   // Escape: pop child se houver, senão fecha a modal atual
@@ -323,306 +322,74 @@ export function ItemModal({
   }
 
   const zIndex = 50 + _depth * 10
+  const ancestry = (() => {
+    try { return JSON.parse(item.ancestryPath || '[]') as Array<{ title: string; type: string }> } catch { return [] }
+  })()
+  const areas: Array<{ id: ItemArea; label: string; icon: typeof CheckSquare; count?: number }> = [
+    { id: 'details', label: t('areaDetails'), icon: CheckSquare },
+    { id: 'subtasks', label: t('areaSubtasks'), icon: ListChecks, count: subtaskCount },
+    { id: 'checklists', label: t('areaChecklists'), icon: ListChecks, count: checklists.length },
+    { id: 'activity', label: t('areaActivity'), icon: History, count: activityCount },
+  ]
+  const fieldClass = 'w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/30'
+  const property = (label: string, content: React.ReactNode) => <div><label className="text-xs font-medium text-muted-foreground mb-1 block">{label}</label>{content}</div>
 
   return (
     <>
-      <div className={`fixed inset-0 z-[${zIndex}] flex items-center justify-center p-4`} style={{ zIndex }}>
-        <div
-          className="absolute inset-0 bg-black/50"
-          onClick={() => {
-            if (_onBack) _onBack()
-            else onClose()
-          }}
-        />
-        <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-          {/* Header */}
-          <div className="flex items-start justify-between p-6 pb-4 border-b border-border sticky top-0 bg-card z-10">
-            <div className="flex items-center gap-2 flex-1 mr-4 min-w-0">
-              {/* Tarefa 8.1 — botão Voltar em modais filhas */}
-              {_onBack && (
-                <button onClick={_onBack} className="flex-shrink-0 text-muted-foreground hover:text-foreground transition">
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-              )}
-              <InlineEdit
-                value={title}
-                onSave={setTitle}
-                className="text-base font-semibold"
-                autoEdit={item.id === '__new__'}
-                 placeholder={item.type === 'BUG' ? `${t('newTask')} (${t('typeBug')})` : t('newTask')}
-              />
+      <div className="fixed inset-0 flex items-center justify-center p-2 sm:p-4" style={{ zIndex }}>
+        <div className="absolute inset-0 bg-black/50" onClick={_onBack ?? onClose} />
+        <section role="dialog" aria-modal="true" aria-labelledby="item-modal-title" className="relative flex max-h-[95vh] w-full max-w-[1120px] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+          <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-3 sm:px-6 sm:py-4">
+            <div className="flex min-w-0 items-start gap-2">
+              {_onBack && <button type="button" onClick={_onBack} aria-label={t('back')} className="mt-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary"><ChevronLeft className="h-5 w-5" /></button>}
+              <div className="min-w-0">
+                <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span>{t('boardContext')}</span><ChevronRight className="h-3 w-3" />
+                  {ancestry.slice(-2).map((node, index) => <span key={`${node.title}-${index}`} className="flex items-center gap-2"><span className="max-w-32 truncate">{node.title}</span><ChevronRight className="h-3 w-3" /></span>)}
+                  <span>{item.id === '__new__' ? t('newTask') : (item.sequenceCode || item.title)}</span>
+                </div>
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${type === 'BUG' ? 'bg-red-500/10 text-red-600' : 'bg-primary/10 text-primary'}`}><Bug className="h-4 w-4" /></span>
+                  <div className="min-w-0"><h2 id="item-modal-title" className="truncate text-base font-semibold text-foreground sm:text-lg"><InlineEdit value={title} onSave={setTitle} autoEdit={item.id === '__new__'} placeholder={type === 'BUG' ? `${t('newTask')} (${t('typeBug')})` : t('newTask')} /></h2><div className="mt-1 flex flex-wrap items-center gap-2 text-xs"><span className="rounded bg-primary/10 px-1.5 py-0.5 font-medium text-primary">{t(type === 'BUG' ? 'typeBug' : 'typeTask')}</span><span className="rounded bg-muted px-1.5 py-0.5">{t(`status${status === 'NOT_STARTED' ? 'NotStarted' : status === 'IN_PROGRESS' ? 'InProgress' : status === 'BLOCKED' ? 'Blocked' : status === 'DONE' ? 'Done' : 'Cancelled'}`)}</span>{sequenceCode && <span className="text-muted-foreground">#{sequenceCode}</span>}</div></div>
+                </div>
+              </div>
             </div>
-            <button
-              onClick={_onCloseAll ?? onClose}
-              className="text-muted-foreground hover:text-foreground transition flex-shrink-0"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex shrink-0 items-center gap-1"><button type="button" aria-label={t('cancel')} onClick={_onCloseAll ?? onClose} className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary"><X className="h-5 w-5" /></button></div>
+          </header>
+
+          <nav role="tablist" aria-label={t('itemAreas')} className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-4 sm:px-6">
+            {areas.map(area => { const Icon = area.icon; return <button key={area.id} id={`item-tab-${area.id}`} type="button" role="tab" aria-selected={activeArea === area.id} aria-controls={`item-area-${area.id}`} onClick={() => setActiveArea(area.id)} className={`flex shrink-0 items-center gap-2 border-b-2 px-2 py-3 text-xs font-medium transition focus-visible:ring-2 focus-visible:ring-primary sm:px-3 ${activeArea === area.id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}><Icon className="h-4 w-4" />{area.label}{area.count != null && <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">{area.count}</span>}</button> })}
+          </nav>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+            <div className="grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+              <main id={`item-area-${activeArea}`} role="tabpanel" aria-labelledby={`item-tab-${activeArea}`} className="min-w-0 space-y-4">
+                {activeArea === 'details' && <>
+                  {!item.isLeaf && <div className="flex gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300"><Info className="mt-0.5 h-4 w-4 shrink-0" /><p className="text-xs leading-relaxed">{t('moveBlocked')}</p></div>}
+                  <div className="rounded-lg border border-border bg-card p-4"><h3 className="mb-3 text-sm font-semibold">{t('descriptionLabel')}</h3><RichTextEditor key={item.id} content={description} onChange={setDescription} placeholder={t('richText.itemPlaceholder')} fieldLabel={t('richText.itemField')} minHeight="120px" /></div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    {property(t('itemTypeLabel'), <select value={type} onChange={e => setType(e.target.value as 'TASK' | 'BUG')} className={fieldClass}>{TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}
+                    {epics.length > 0 && property(t('parentStory'), <StorySelector epics={epics} stories={stories} value={parentId} onChange={setParentId} onCreateStory={onCreateStory} />)}
+                    {property(t('tagsLabel'), <TagSelector allTags={projectTags} selected={selectedTags} onSelect={setSelectedTags} onCreate={onCreateTag} onEdit={onEditTag} />)}
+                    {projectCostCenters.length > 0 && property(t('costCenterLabel'), <select value={costCenterId} onChange={e => setCostCenterId(e.target.value)} className={fieldClass}><option value="">{t('none')}</option>{projectCostCenters.map(cc => <option key={cc.id} value={cc.id}>{cc.code}{cc.description ? ` — ${cc.description}` : ''}</option>)}</select>)}
+                  </div>
+                </>}
+                {activeArea === 'subtasks' && <div className="rounded-lg border border-border p-4"><div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-semibold">{t('areaSubtasks')} ({subtaskCount})</h3>{item.isLeaf && <button type="button" onClick={() => setShowSubtaskForm(true)} className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/20"><Plus className="h-3.5 w-3.5" />{t('addSubtask')}</button>}</div>{item.id !== '__new__' && <CardChildrenSection itemId={item.id} projectId={projectId} onOpenChild={handleOpenChild} onCountChange={setSubtaskCount} refreshKey={subtaskRefreshKey} />}{showSubtaskForm && <div className="mt-4"><AddCardForm onAdd={async (subTitle, subType) => { await onAddSubtask(item.id, subTitle, subType); setSubtaskRefreshKey(key => key + 1); setShowSubtaskForm(false) }} onCancel={() => setShowSubtaskForm(false)} /></div>}{item.id === '__new__' && <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
+                {activeArea === 'checklists' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' ? <ChecklistSection itemId={item.id} projectId={projectId} initialChecklists={checklists} onChange={setChecklists} /> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
+                {activeArea === 'activity' && <div className="space-y-4 rounded-lg border border-border p-4">{item.id !== '__new__' ? <><button type="button" onClick={() => setShowActivityLog(true)} className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"><History className="h-4 w-4" />{t('changeHistory')}</button><button type="button" onClick={() => setShowWorkLog(true)} className="ml-2 inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"><Clock className="h-4 w-4" />{t('registerWork')}</button>{totalMinutes != null && <p className="text-xs text-muted-foreground">{formatDuration(totalMinutes, t('worked'))}</p>}</> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
+                {error && <p className="text-sm text-red-500" role="alert">{error}</p>}
+              </main>
+
+              <aside className="min-w-0 space-y-5 rounded-lg border border-border bg-muted/20 p-4">
+                <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><CheckSquare className="h-4 w-4 text-primary" />{t('properties')}</h3><div className="space-y-3">{property(t('statusLabel'), <select value={status} onChange={e => setStatus(e.target.value as TaskStatus)} className={fieldClass}>{STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}{property(t('filterAssignee'), <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)} className={fieldClass}><option value="">{t('unassigned')}</option>{members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}</select>)}{property(t('priorityLabel'), <select value={priority} onChange={e => setPriority(e.target.value as Priority)} className={fieldClass}>{PRIORITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}</div></div>
+                <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><CalendarDays className="h-4 w-4 text-primary" />{t('planning')}</h3><div className="space-y-3">{property(t('filterSprint'), <select value={sprintId} onChange={e => setSprintId(e.target.value)} className={fieldClass}><option value="">{t('noSprint')}</option>{projectSprints.length === 0 && <option disabled>{t('noSprints')}</option>}{projectSprints.filter(sprint => sprint.status !== 'CLOSED').map(sprint => <option key={sprint.id} value={sprint.id}>{sprint.name}</option>)}</select>)}{property(t('filterVersion'), <select value={versionId} onChange={e => setVersionId(e.target.value)} className={fieldClass}><option value="">{t('noVersion')}</option>{projectVersions.length === 0 && <option disabled>{t('noVersions')}</option>}{projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select>)}{property(t('pointsLabel'), <input type="number" min="0" value={points} onChange={e => setPoints(e.target.value)} className={fieldClass} placeholder="0" />)}<div className="grid grid-cols-2 gap-2">{property(t('startDate'), <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={fieldClass} />)}{property(t('dueDate'), <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={fieldClass} />)}</div></div></div>
+                <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><UserRound className="h-4 w-4 text-primary" />{t('information')}</h3><div className="space-y-3">{property(t('codeLabel'), <input value={sequenceCode} onChange={e => setSequenceCode(e.target.value)} placeholder={t('autoGenerated')} className={fieldClass} />)}{property(t('authorLabel'), <div className={`${fieldClass} flex items-center gap-2 text-muted-foreground`}>{item.author?.avatarUrl ? <img src={item.author.avatarUrl} alt={item.author.name} className="h-5 w-5 rounded-full" /> : <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary">{item.author?.name?.charAt(0).toUpperCase() ?? '?'}</span>}<span className="truncate">{item.author?.name ?? '—'}</span></div>)}</div></div>
+              </aside>
+            </div>
           </div>
 
-           <div className="p-6 space-y-4">
-             <AccordionToolbar sectionIds={sectionIds} openIds={openSections} onChange={setOpenSections} />
-             {/* Box informativa para cards bloqueados (com subtasks) */}
-              <AccordionSection id="item-fields" title={t('accordion.itemFields')} summary={t('accordion.itemType', { type: t(type === 'BUG' ? 'accordion.bug' : 'accordion.taskType') })} isOpen={openSections.has('item-fields')} onToggle={id => setOpenSections(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}>
-               {!item.isLeaf && (
-               <div className="flex gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300">
-                <Info className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                <p className="text-xs leading-relaxed">
-                   {t('moveBlocked')}
-                </p>
-              </div>
-               )}
-
-             <div className="space-y-4">
-             <div>
-                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('codeLabel')}</label>
-                <input value={sequenceCode} onChange={e => setSequenceCode(e.target.value)}
-                  placeholder={t('autoGenerated') || 'Gerado automaticamente'}
-                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary" />
-              </div>
-             <div className="grid grid-cols-2 gap-4">
-             <div>
-                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('itemTypeLabel')}</label>
-                <select value={type} onChange={e => setType(e.target.value as 'TASK' | 'BUG')}
-                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                  {TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-              <div>
-                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('statusLabel')}</label>
-                <select value={status} onChange={e => setStatus(e.target.value as TaskStatus)}
-                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                  {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-              <div>
-                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('priorityLabel')}</label>
-                <select value={priority} onChange={e => setPriority(e.target.value as Priority)}
-                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                  {PRIORITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-              <div>
-                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('filterAssignee')}</label>
-                <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                   <option value="">{t('unassigned')}</option>
-                  {members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
-                </select>
-              </div>
-              <div>
-                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('filterSprint')}</label>
-                <select aria-label="Sprint" value={sprintId} onChange={e => setSprintId(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                   <option value="">{t('noSprint')}</option>
-                   {projectSprints.length === 0 && <option disabled>{t('noSprints')}</option>}
-                  {projectSprints.filter(sprint => sprint.status !== 'CLOSED').map(sprint => (
-                    <option key={sprint.id} value={sprint.id}>{sprint.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('filterVersion')}</label>
-                <select value={versionId} onChange={e => setVersionId(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                   <option value="">{t('noVersion')}</option>
-                   {projectVersions.length === 0 && <option disabled>{t('noVersions')}</option>}
-                  {projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                </select>
-              </div>
-              {/* Campo Centro de Custo — exibido apenas quando o projeto possui centros cadastrados */}
-              {projectCostCenters.length > 0 && (
-                <div>
-                   <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('costCenterLabel')}</label>
-                  <select value={costCenterId} onChange={e => setCostCenterId(e.target.value)}
-                    className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                     <option value="">{t('none')}</option>
-                    {projectCostCenters.map(cc => (
-                      <option key={cc.id} value={cc.id}>{cc.code}{cc.description ? ` — ${cc.description}` : ''}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {/* Tarefa 9.1 — campo Autor somente leitura */}
-              <div>
-                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('authorLabel')}</label>
-                <div className="flex items-center gap-2 px-3 py-2 text-sm bg-background border border-border rounded-lg">
-                  {item.author ? (
-                    <>
-                      {item.author.avatarUrl ? (
-                        <img src={item.author.avatarUrl} alt={item.author.name}
-                          className="w-5 h-5 rounded-full object-cover flex-shrink-0" />
-                      ) : (
-                        <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                          <span className="text-[10px] font-bold text-primary">
-                            {item.author.name.charAt(0).toUpperCase()}
-                          </span>
-                        </div>
-                      )}
-                      <span className="truncate text-foreground">{item.author.name}</span>
-                    </>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </div>
-              </div>
-              <div>
-                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('pointsLabel')}</label>
-                <input type="number" min="0" value={points} onChange={e => setPoints(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
-                  placeholder="0" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                   <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('startDate')}</label>
-                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-                    className="w-full px-2 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary" />
-                </div>
-                <div>
-                   <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('dueDate')}</label>
-                  <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
-                    className="w-full px-2 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary" />
-                </div>
-              </div>
-             </div>
-
-             {epics.length > 0 && (
-              <div>
-                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('parentStory')}</label>
-                <StorySelector
-                  epics={epics}
-                  stories={stories}
-                  value={parentId}
-                  onChange={setParentId}
-                  onCreateStory={onCreateStory}
-                />
-              </div>
-            )}
-
-             <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('tagsLabel')}</label>
-              <TagSelector
-                allTags={projectTags}
-                selected={selectedTags}
-                onSelect={setSelectedTags}
-                onCreate={onCreateTag}
-                onEdit={onEditTag}
-               />
-              </div>
-             </div>
-             </AccordionSection>
-
-             <AccordionSection id="item-description" title={t('accordion.description')} summary={description ? t('accordion.contentPresent') : <NeutralSummary />} isOpen={openSections.has('item-description')} onToggle={id => setOpenSections(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}>
-             <div>
-               <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('descriptionLabel')}</label>
-              <RichTextEditor
-                key={item.id}
-                content={description}
-                onChange={setDescription}
-                placeholder={t('richText.itemPlaceholder')}
-                fieldLabel={t('richText.itemField')}
-                minHeight="80px"
-              />
-             </div>
-             </AccordionSection>
-
-              <AccordionSection id="item-subtasks" title={t('accordion.subtasks')} summary={subtaskCount > 0 ? t(subtaskCount === 1 ? 'accordion.subtaskCountOne' : 'accordion.subtaskCountMany', { count: subtaskCount }) : <NeutralSummary />} isOpen={openSections.has('item-subtasks')} onToggle={id => setOpenSections(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}>
-              {item.id !== '__new__' && (
-                <CardChildrenSection
-                  itemId={item.id}
-                  projectId={projectId}
-                  onOpenChild={handleOpenChild}
-                  onCountChange={setSubtaskCount}
-                  refreshKey={subtaskRefreshKey}
-                />
-              )}
-              {item.isLeaf && (
-               <div>
-                 <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('showSubtasks')}</label>
-                {showSubtaskForm ? (
-                  <AddCardForm
-                    onAdd={async (subTitle, subType) => {
-                      await onAddSubtask(item.id, subTitle, subType)
-                      setSubtaskRefreshKey(key => key + 1)
-                      setShowSubtaskForm(false)
-                    }}
-                    onCancel={() => setShowSubtaskForm(false)}
-                  />
-                ) : (
-                  <button onClick={() => setShowSubtaskForm(true)}
-                    className="flex items-center gap-1 text-sm text-primary hover:underline">
-                    <Plus className="w-3.5 h-3.5" />
-                     {t('addSubtask')}
-                  </button>
-                )}
-              </div>
-             )}
-             {item.id === '__new__' && <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}
-             </AccordionSection>
-
-             <AccordionSection id="item-checklists" title={t('accordion.checklists')} summary={checklists.length > 0 ? <ChecklistSummary checked={checklists.reduce((sum, list) => sum + list.items.filter(i => i.checked).length, 0)} total={checklists.reduce((sum, list) => sum + list.items.length, 0)} /> : <NeutralSummary />} isOpen={openSections.has('item-checklists')} onToggle={id => setOpenSections(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}>
-             {item.id !== '__new__' ? (
-               <div>
-                 <ChecklistSection
-                  itemId={item.id}
-                  projectId={projectId}
-                   initialChecklists={checklists}
-                   onChange={setChecklists}
-                 />
-               </div>
-             ) : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}
-             </AccordionSection>
-
-            {error && <p className="text-sm text-red-500">{error}</p>}
-
-             {/* Histórico e atividades ficam separados da seção de Subtasks acima. */}
-               <AccordionSection id="item-activity" title={t('accordion.activity')} summary={activityCount > 0 ? t(activityCount === 1 ? 'accordion.activityCountOne' : 'accordion.activityCountMany', { count: activityCount }) : <NeutralSummary />} isOpen={openSections.has('item-activity')} onToggle={id => setOpenSections(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}>
-             {item.id !== '__new__' && (
-               <div className="flex items-center gap-3">
-                 <button
-                   onClick={() => setShowActivityLog(true)}
-                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition"
-                >
-                  <Clock className="w-4 h-4" />
-                   {t('changeHistory')}
-                </button>
-                {totalMinutes != null && (
-                  <span className="text-xs text-muted-foreground">
-                     ⏱ {formatDuration(totalMinutes, t('worked'))}
-                  </span>
-                )}
-              </div>
-            )}
-
-              {item.id === '__new__' && <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}
-              </AccordionSection>
-
-              <AccordionSection id="item-work-log" title={t('accordion.workLog')} summary={workLogCount > 0 ? t(workLogCount === 1 ? 'accordion.workLogCountOne' : 'accordion.workLogCountMany', { count: workLogCount }) : <NeutralSummary />} isOpen={openSections.has('item-work-log')} onToggle={id => setOpenSections(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })}>
-              {item.id !== '__new__' ? (
-                <div className="flex items-center gap-3">
-                  <button onClick={() => setShowWorkLog(true)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition">
-                    <Clock className="h-4 w-4" />
-                     {t('registerWork')}
-                  </button>
-                   {totalMinutes != null && <span className="text-xs font-medium text-primary">{formatDuration(totalMinutes, t('worked'))}</span>}
-                </div>
-              ) : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}
-              </AccordionSection>
-          </div>
-
-          <div className="flex gap-2 px-6 py-4 border-t border-border sticky bottom-0 bg-card">
-            <button onClick={handleSave} disabled={saving}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition">
-              <Check className="w-4 h-4" />
-               {saving ? t('saving') : t('save')}
-            </button>
-            <button onClick={_onBack ?? onClose}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 text-sm bg-muted text-muted-foreground rounded-lg hover:bg-muted/80 transition">
-              <X className="w-4 h-4" />
-               {_onBack ? t('back') : t('cancel')}
-            </button>
-          </div>
-        </div>
+          <footer className="flex shrink-0 flex-col-reverse gap-2 border-t border-border bg-card px-4 py-3 sm:flex-row sm:justify-end sm:px-6"><button type="button" onClick={_onBack ?? onClose} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-muted px-4 py-2 text-sm text-muted-foreground hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-primary"><X className="h-4 w-4" />{_onBack ? t('back') : t('cancel')}</button><button type="button" onClick={handleSave} disabled={saving || !title.trim()} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary"><Check className="h-4 w-4" />{saving ? t('saving') : t('saveChanges')}</button></footer>
+        </section>
       </div>
 
       {/* Tarefa 10.3 — ActivityLogModal sobre a modal */}
