@@ -1,9 +1,7 @@
 ## Purpose
 
-Definir os requisitos da capacidade card edit ui.
-
+Definir a edição de cards pela modal e pelo board, incluindo título inline, áreas da modal, checklists, histórico e autor.
 ## Requirements
-
 ### Requirement: Edição inline do título do card por duplo clique
 O sistema SHALL permitir editar o título do card diretamente no board ao dar duplo clique sobre o texto do título.
 
@@ -22,37 +20,35 @@ O sistema SHALL permitir editar o título do card diretamente no board ao dar du
 ---
 
 ### Requirement: Modal de edição de card organizada em accordions
-O sistema SHALL apresentar campos do card, descrição, subtasks, checklists, Histórico de alterações e Diário de trabalho em accordions independentes, preservando edição, criação, abertura de filhos e salvamento. A modal SHALL iniciar com a primeira seção aberta e as demais fechadas, sem remover título, descrição rich text (Tiptap), prioridade, responsável, story pai, tags, pontos, data de início ou data de fim.
+O sistema SHALL apresentar campos do card, descrição, subtasks, checklists e Histórico em áreas independentes, preservando edição, criação, abertura de filhos e salvamento. A área Histórico SHALL exibir dois painéis independentes: Auditoria de alterações (eventos automáticos) e Diário de trabalho (registros manuais, com total de duração e formulário inline). A modal SHALL manter título, descrição rich text (Tiptap), prioridade, responsável, story pai, tags, pontos e datas de início e fim.
 
 #### Scenario: Seções independentes
-- **WHEN** usuário abre a modal de Task, Bug ou Subtask
-- **THEN** Histórico de alterações e Diário de trabalho aparecem como seções distintas, cada uma com conteúdo, contagem e ação próprios
+- **WHEN** usuário abre a área Histórico de uma Task, Bug ou Subtask
+- **THEN** Auditoria de alterações e Diário de trabalho aparecem simultaneamente em painéis distintos, sem misturar logs, horas ou ações
 
-#### Scenario: Estado inicial
-- **WHEN** modal é aberta
-- **THEN** primeira seção permanece aberta e as demais fechadas conforme o padrão atual
+#### Scenario: Estado inicial com listas vazias
+- **WHEN** card não possui eventos automáticos nem registros manuais
+- **THEN** a área Histórico mostra estados vazios explicativos nos dois painéis e uma ação visível para registrar trabalho, sem abrir outra modal
 
-#### Scenario: Contagens dos accordions
+#### Scenario: Contagens e totalização
 - **WHEN** card possui eventos automáticos ou registros manuais
-- **THEN** cada accordion mostra somente sua própria contagem no resumo, sem usar `Sem conteúdo adicional` quando houver dados
+- **THEN** cada painel mostra somente sua própria contagem, e o Diário mostra o total de duração sem incluir auditoria automática
 
 #### Scenario: Salvar edições pela modal
-- **WHEN** usuário altera campos e clica em "Salvar"
+- **WHEN** usuário altera campos e clica em Salvar
 - **THEN** todas as alterações são enviadas via API e o card no board atualiza em tempo real
 
 #### Scenario: Fechar modal sem salvar
-- **WHEN** usuário clica em "Cancelar" ou pressiona Escape
-- **THEN** modal fecha sem persistir alterações, inclusive alterações feitas em seções recolhidas
+- **WHEN** usuário clica em Cancelar ou pressiona Escape fora de um editor de diário ativo
+- **THEN** modal fecha sem persistir alterações, inclusive alterações feitas em outras áreas
 
 #### Scenario: Criar subtask pela modal
-- **WHEN** usuário clica em "Adicionar subtask" dentro da modal
+- **WHEN** usuário clica em Adicionar subtask dentro da modal
 - **THEN** formulário de criação de subtask é exibido vinculado ao card atual como pai
 
 #### Scenario: Selecionar tags na modal
 - **WHEN** usuário clica no seletor de tags dentro da modal
 - **THEN** dropdown exibe todas as tags do projeto com chips coloridos; usuário pode selecionar e desselecionar múltiplas tags
-
----
 
 ### Requirement: Campo tipo na modal de edição de card
 
@@ -122,19 +118,19 @@ O sistema SHALL exibir o campo "Autor" na `CardModal` como informação somente 
 ---
 
 ### Requirement: Botão "Histórico" na modal do card
-O sistema SHALL exibir um botão "Histórico" (com ícone de relógio) no rodapé da `CardModal`, acima da seção de filhos, para acesso ao log de atividades.
+O sistema SHALL exibir a área Histórico na navegação da `ItemModal`, com ícone, contagem de eventos automáticos e acesso direto ao conteúdo integrado. A área NÃO SHALL abrir `ActivityLogModal` ou `WorkLogModal` para exibir listas ou cadastrar trabalho.
 
-#### Scenario: Botão Histórico visível na modal
-- **WHEN** `CardModal` é aberta para qualquer task
-- **THEN** botão "Histórico" é exibido no rodapé da modal, abaixo dos campos de edição e acima da seção de filhos
+#### Scenario: Abrir Histórico integrado
+- **WHEN** usuário seleciona a guia Histórico da modal
+- **THEN** Auditoria e Diário de trabalho são renderizados dentro da própria modal, com seus cabeçalhos e ações
 
-#### Scenario: Soma de horas exibida próximo ao botão
+#### Scenario: Soma de horas exibida no Diário
 - **WHEN** task possui horas registradas em logs manuais
-- **THEN** soma no formato "Xh Ym trabalhadas" é exibida ao lado ou abaixo do botão "Histórico"
+- **THEN** soma no formato de horas e minutos trabalhados é exibida no painel Diário de trabalho
 
-#### Scenario: Clicar em Histórico abre ActivityLogModal
-- **WHEN** usuário clica no botão "Histórico"
-- **THEN** `ActivityLogModal` abre sobre a `CardModal` com z-index superior
+#### Scenario: Registrar trabalho sem submodal
+- **WHEN** usuário aciona Registrar trabalho no painel Diário
+- **THEN** formulário inline aparece no próprio painel e a modal principal permanece aberta
 
 ### Requirement: Seção de filhos diretos no rodapé da modal
 O sistema SHALL exibir, após o botão "Histórico", uma seção "Subtasks" listando os filhos diretos do card em grid de até 2 colunas. A seção SHALL estar em accordion próprio, separado do accordion de Histórico/Atividades, com ações e resumo de filhos independentes.
@@ -185,3 +181,4 @@ O sistema SHALL exibir um campo "Versão" opcional na `ItemModal` de TASK e BUG,
 #### Scenario: Campo Versão oculto quando projeto não tem versões
 - **WHEN** projeto não possui versões cadastradas
 - **THEN** campo "Versão" não é renderizado na ItemModal
+

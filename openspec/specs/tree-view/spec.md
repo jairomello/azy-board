@@ -1,6 +1,6 @@
 ## Purpose
 
-Definir os requisitos da capacidade tree view.
+Definir a Tree View do board, com leitura recursiva dos itens, colunas, filtros, edição inline e criação contextual.
 
 ## Requirements
 

@@ -1,6 +1,6 @@
 ## Purpose
 
-Definir os requisitos da capacidade card author.
+Definir a persistência e a exibição do autor dos cards, incluindo os endpoints que retornam o campo.
 
 ## Requirements
 

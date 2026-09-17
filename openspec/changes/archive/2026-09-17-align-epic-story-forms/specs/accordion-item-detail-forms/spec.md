@@ -1,7 +1,5 @@
-## Purpose
+## MODIFIED Requirements
 
-Definir a interação, o estado e os resumos dos accordions nas modais de detalhe.
-## Requirements
 ### Requirement: Acessibilidade e modais empilhadas
 As áreas das modais de detalhe SHALL ser acessíveis por teclado e não SHALL quebrar a pilha de modais ou a edição rich text expandida.
 
@@ -23,6 +21,8 @@ Os títulos, controles, resumos e estados das áreas SHALL respeitar PT-BR, EN e
 #### Scenario: Tela pequena
 - **WHEN** a modal é aberta em viewport móvel
 - **THEN** a navegação de áreas continua acionável, os resumos não quebram o formulário e o conteúdo usa o scroll interno existente
+
+## ADDED Requirements
 
 ### Requirement: Organização por áreas nas modais de detalhe
 As modais de detalhe e criação de Épico, História, Task, Bug e Subtask SHALL organizar seus grupos de campos em áreas navegáveis, com uma área inicial, em vez de accordions recolhíveis.
@@ -46,3 +46,16 @@ Cada área SHALL exibir contagem ou resumo curto quando houver informação úti
 - **WHEN** uma área não possui dados
 - **THEN** a área permanece disponível e mostra um estado vazio explícito
 
+## REMOVED Requirements
+
+### Requirement: Seções em accordion
+**Reason**: As modais de Task, Bug e Subtask já foram migradas para navegação por áreas e as de Épico e História passam a usar o mesmo padrão; accordions recolhíveis deixam de ser o modelo de organização desses formulários.
+**Migration**: Usar a navegação por áreas definida em "Organização por áreas nas modais de detalhe" e os resumos definidos em "Resumo e contagem por área". Os componentes `AccordionSection`/`AccordionToolbar` deixam de ser obrigatórios nas modais de item.
+
+### Requirement: Controle global de accordions
+**Reason**: A navegação por áreas não possui seções recolhíveis, portanto as ações "Expandir tudo" e "Recolher tudo" não se aplicam aos formulários de item.
+**Migration**: Nenhuma ação equivalente é necessária; cada área é acessada diretamente pela navegação.
+
+### Requirement: Resumo de seção
+**Reason**: Substituído pelo resumo e contagem por área.
+**Migration**: Usar "Resumo e contagem por área" para exibir contagens e progresso na navegação.

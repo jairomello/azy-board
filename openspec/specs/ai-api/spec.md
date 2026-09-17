@@ -1,6 +1,6 @@
 ## Purpose
 
-Definir os requisitos da capacidade ai api.
+Definir os endpoints REST e o Shadow Markdown usados por agentes de IA para ler e escrever no board com escopo relacional.
 
 ## Requirements
 

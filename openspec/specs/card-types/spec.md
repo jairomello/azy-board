@@ -1,6 +1,6 @@
 ## Purpose
 
-Definir os requisitos da capacidade card types.
+Definir os quatro tipos de item (EPIC, STORY, TASK e BUG), sua persistência e a modal diferenciada por tipo.
 
 ## Requirements
 

@@ -1,7 +1,5 @@
-## Purpose
+## MODIFIED Requirements
 
-Definir a hierarquia e o espaçamento visual consistente nos formulários de itens.
-## Requirements
 ### Requirement: Espaçamento consistente entre campos
 As modais de Task, Bug, Subtask, Épico e História SHALL usar espaçamento vertical consistente entre grupos de label e controle, incluindo o painel de propriedades e os campos de relacionamento (Datas, História Pai, Tags, Módulo, Épico pai e Versão).
 
@@ -20,22 +18,3 @@ As modais de Task, Bug, Subtask, Épico e História SHALL usar espaçamento vert
 #### Scenario: Áreas e conteúdo rico
 - **WHEN** usuário alterna entre Detalhes, Subtasks, Checklists e Histórico de um Épico ou História
 - **THEN** os blocos de conteúdo mantêm separação uniforme e nenhum valor ou modal é perdido
-
-### Requirement: Preservar comportamento do formulário
-O ajuste visual SHALL preservar ordem, edição, validação, accordions, rich text, salvamento e cancelamento existentes.
-
-#### Scenario: Salvamento sem regressão
-- **WHEN** usuário edita campos após o ajuste de espaçamento e salva
-- **THEN** o mesmo payload existente é enviado e os valores persistem normalmente
-
-#### Scenario: Accordion e modal expandida
-- **WHEN** usuário recolhe/expande a seção ou abre o editor rich text expandido
-- **THEN** o espaçamento permanece correto e nenhum valor ou modal é perdido
-
-### Requirement: Responsividade
-O espaçamento SHALL permanecer legível sem criar overflow horizontal ou sobreposição em viewport móvel.
-
-#### Scenario: Modal em tela estreita
-- **WHEN** usuário abre uma Task em viewport móvel
-- **THEN** labels e controles mantêm separação, a modal usa seu scroll interno e nenhum campo fica cortado horizontalmente
-

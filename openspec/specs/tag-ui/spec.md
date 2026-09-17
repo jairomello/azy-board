@@ -1,6 +1,6 @@
 ## Purpose
 
-Definir os requisitos da capacidade tag ui.
+Definir a criação, atribuição, edição e exibição de tags de projeto pela interface, sem sobreposição de campos.
 
 ## Requirements
 

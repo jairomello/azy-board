@@ -1,6 +1,6 @@
 ## Purpose
 
-Definir os requisitos da capacidade auth.
+Definir o login de humanos, a proteção de rotas, o RBAC server-side e a autenticação por API Key de agentes.
 
 ## Requirements
 

@@ -1,6 +1,6 @@
 ## Purpose
 
-Definir os requisitos da capacidade card archive.
+Definir o status ARCHIVED, o arquivamento em cascata pela hierarquia e a restauração de itens arquivados.
 
 ## Requirements
 

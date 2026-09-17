@@ -1,6 +1,6 @@
 ## Purpose
 
-Definir os requisitos da capacidade i18n.
+Definir o suporte a múltiplos idiomas (PT-BR, EN e ES), a arquitetura expansível e a formatação por locale.
 
 ## Requirements
 

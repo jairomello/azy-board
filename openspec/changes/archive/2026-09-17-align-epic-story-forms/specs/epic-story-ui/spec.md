@@ -1,56 +1,4 @@
-## Purpose
-
-Definir os requisitos da capacidade epic story ui.
-## Requirements
-### Requirement: Cinco botões de criação no toolbar do board
-O sistema SHALL exibir cinco botões de criação no toolbar do board, na seguinte ordem da esquerda para a direita: `+ Módulo`, `+ Novo Épico`, `+ Nova História`, `+ Nova Task`, `+ Novo Bug`. Cada botão abre a modal correspondente ao tipo de item. O botão "+ Módulo" abre uma modal de criação de módulo com campos Nome (obrigatório) e Descrição (opcional).
-
-#### Scenario: Botões exibidos no toolbar
-- **WHEN** usuário acessa o board de um projeto
-- **THEN** toolbar exibe os quatro botões de criação na ordem: `+ Novo Épico`, `+ Nova História`, `+ Nova Task`, `+ Novo Bug`
-
-#### Scenario: Criar novo épico
-- **WHEN** usuário clica em `+ Novo Épico`
-- **THEN** `EpicModal` abre em modo de criação com campos: Título (obrigatório), Módulo (select obrigatório), Descrição (opcional)
-- **AND** ao confirmar, item é criado via `POST /projects/:id/items` com `type = EPIC` e nova swimlane aparece no board
-
-#### Scenario: Criar nova história
-- **WHEN** usuário clica em `+ Nova História`
-- **THEN** `StoryModal` abre em modo de criação com campos: Título, Épico pai (select de items com `type = EPIC`), Como/Eu quero/Para que, Critérios de Aceitação (rich text), Notas (rich text)
-- **AND** ao confirmar, item é criado via `POST /projects/:id/items` com `type = STORY`
-
-#### Scenario: Criar nova task
-- **WHEN** usuário clica em `+ Nova Task`
-- **THEN** `ItemModal` abre em modo de criação com campos: Título, Coluna (select), História pai (select de items com `type = STORY`), Responsável, Prioridade, Pontos, Sprint, Tags
-- **AND** ao confirmar, item é criado via `POST /projects/:id/items` com `type = TASK`
-
-#### Scenario: Criar novo bug
-- **WHEN** usuário clica em `+ Novo Bug`
-- **THEN** `ItemModal` abre em modo de criação com `type = BUG` pré-selecionado e os mesmos campos de TASK
-- **AND** ao confirmar, item é criado via `POST /projects/:id/items` com `type = BUG`
-
----
-
-### Requirement: Renderização do board com nível de Módulo
-O sistema SHALL renderizar o board com a hierarquia visual Módulo >> Épico >> História >> Cards no modo `Hierarquia` e Módulo (aba ativa) >> Épico >> História >> Cards no modo `Abas`, mantendo a mesma estrutura interna de swimlanes. As swimlanes de Épico SHALL ser aninhadas dentro das ModuleSwimlanes correspondentes.
-
-#### Scenario: Board com múltiplos módulos
-- **WHEN** projeto possui 3 módulos com épicos
-- **THEN** board exibe 3 ModuleSwimlanes, cada uma contendo as swimlanes de Épico do respectivo módulo
-
-#### Scenario: Épico movido para outro módulo
-- **WHEN** épico tem seu `moduleId` alterado via EpicModal
-- **THEN** a swimlane do épico é movida para a ModuleSwimlane do novo módulo no board em tempo real
-
-#### Scenario: Renderização por aba
-- **WHEN** o modo selecionado é `Abas` e uma aba de módulo está ativa
-- **THEN** somente o grupo do módulo ativo é renderizado com seus épicos, histórias e colunas
-
-#### Scenario: Criação disponível nos modos
-- **WHEN** o usuário está em qualquer um dos modos de apresentação
-- **THEN** os controles de criação de módulo, épico, história, task e bug continuam disponíveis e funcionais
-
----
+## MODIFIED Requirements
 
 ### Requirement: EpicModal — criação e edição de épicos
 O sistema SHALL fornecer `EpicModal` em diálogo amplo e responsivo, com cabeçalho contextual, navegação por áreas, painel de propriedades e ações fixas de Cancelar e Salvar. As áreas SHALL ser Detalhes, Histórias e Histórico, iniciando em Detalhes. Campos: Título, Módulo (select de módulos do projeto), Versão (opcional) e Descrição rica; Código do item permanece editável na área de informações do painel de propriedades. Checklists e diário de trabalho NÃO SHALL ser exibidos nesta modal.
@@ -98,19 +46,6 @@ O sistema SHALL fornecer `StoryModal` em diálogo amplo e responsivo, com cabeç
 
 ---
 
-### Requirement: ItemModal — criação e edição de TASK e BUG
-O sistema SHALL fornecer `ItemModal` (substitui `CardModal`) com campos: Título, Tipo (TASK/BUG), Coluna (select), História pai (select de STORYs do projeto), Responsável, Prioridade, Pontos, Sprint (select), Tags, Subtasks (lista), Data início, Data fim, Descrição, Bloqueio.
-
-#### Scenario: Alterar tipo entre TASK e BUG na ItemModal
-- **WHEN** usuário altera o campo Tipo na ItemModal de TASK para BUG
-- **THEN** badge do item é atualizado visualmente no preview e salvo via `PATCH /projects/:id/items/:id`
-
-#### Scenario: Selecionar história pai na ItemModal
-- **WHEN** usuário clica no campo "História"
-- **THEN** dropdown exibe items do projeto onde `type = STORY`, agrupados pelo EPIC pai
-
----
-
 ### Requirement: Campo Versão opcional na EpicModal e StoryModal
 O sistema SHALL exibir um campo "Versão" opcional no painel de propriedades da `EpicModal` e da `StoryModal`, permitindo associar épicos e histórias a versões do projeto.
 
@@ -129,6 +64,8 @@ O sistema SHALL exibir um campo "Versão" opcional no painel de propriedades da 
 #### Scenario: Campo Versão oculto quando projeto não tem versões
 - **WHEN** projeto não possui versões cadastradas
 - **THEN** campo "Versão" não é renderizado nas modais de Épico e História
+
+## ADDED Requirements
 
 ### Requirement: Áreas relacionadas nas modais de épico e história
 As modais de Épico e História SHALL oferecer as áreas de lista de filhos e Histórico, reutilizando os recursos existentes por `itemId` e mantendo contagens independentes por área. A área de filhos SHALL variar conforme o tipo: épico lista Histórias e história lista Tasks. Checklists NÃO SHALL ser exibidos e o diário de trabalho NÃO SHALL ser exibido, pois permanece exclusivo de task, subtask e bug.
@@ -183,4 +120,3 @@ Os títulos de áreas, contagens, resumos, estados vazios, erros e labels das mo
 #### Scenario: Cores não são a única indicação
 - **WHEN** tipo, status ou prioridade são apresentados
 - **THEN** a indicação é textual e acessível, sem depender apenas de cor
-

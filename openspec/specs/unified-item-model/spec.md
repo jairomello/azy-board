@@ -1,9 +1,7 @@
 ## Purpose
 
 Definir os requisitos da capacidade unified item model.
-
 ## Requirements
-
 ### Requirement: Tabela `items` como entidade unificada
 O sistema SHALL manter todos os itens de trabalho (Épicos, Histórias, Tasks e Bugs) em uma única tabela `items` com `type` discriminante e `parentId` auto-referenciado. As tabelas `epics` e `stories` SHALL ser removidas.
 
@@ -39,17 +37,19 @@ O sistema SHALL validar que a hierarquia formada por `parentId` respeita as segu
 ---
 
 ### Requirement: Interface `Card` como contrato Adapter
-O sistema SHALL expor uma interface TypeScript `Card` em `packages/types/src/card.ts`. Toda lógica de renderização de card no frontend SHALL consumir `Card`, nunca o tipo raw do banco.
+O sistema SHALL expor uma interface TypeScript `Card` em `packages/types/src/card.ts`. Toda lógica de renderização de card no frontend SHALL consumir `Card`, nunca o tipo raw do banco. A interface SHALL incluir o campo `sequenceCode: string | null`.
 
 #### Scenario: Item de qualquer tipo convertido para Card
 - **WHEN** frontend recebe um item da API
-- **THEN** a função `toCard(item)` converte o item para a interface `Card` com campos: `id`, `type`, `title`, `columnId`, `priority`, `points`, `assigneeId`, `tags`, `isLeaf`, `ancestryPath`, `parentId`
+- **THEN** a função `toCard(item)` converte o item para a interface `Card` com campos: `id`, `type`, `title`, `columnId`, `priority`, `points`, `assigneeId`, `tags`, `isLeaf`, `ancestryPath`, `parentId`, `sequenceCode`
 
 #### Scenario: KanbanCard renderizado a partir de Card
 - **WHEN** `KanbanCard` recebe uma prop do tipo `Card`
 - **THEN** renderiza badge, badge de tipo, prioridade e demais campos sem precisar conhecer o tipo específico da entidade de origem
 
----
+#### Scenario: Card sem sequenceCode
+- **WHEN** item não possui `sequenceCode` (null)
+- **THEN** `toCard()` mapeia `sequenceCode: null` e o card renderiza normalmente sem o código visual
 
 ### Requirement: Rotas CRUD unificadas em `/projects/:id/items`
 O sistema SHALL expor as rotas `GET`, `POST`, `PATCH` e `DELETE` em `/projects/:id/items` para gerenciar todos os tipos de item. Filtros por `type`, `parentId` e `columnId` cobrem todos os casos de uso anteriores das rotas `/epics`, `/stories` e `/tasks`.
@@ -82,3 +82,19 @@ O sistema SHALL incluir script de seed que dropa e recria o banco populando a ta
 #### Scenario: ancestryPath correto no seed
 - **WHEN** seed é executado
 - **THEN** cada item tem `ancestryPath` como JSON array com `{ id, title, type }` de todos os ancestrais até a raiz
+
+### Requirement: Hierarquia de items reforçada no banco
+Além da validação na camada de serviço, `items.parent_id` SHALL possuir auto-chave estrangeira composta `(tenant_id, parent_id) → items(tenant_id, id)`, garantindo que o pai exista e pertença ao mesmo tenant. `projects.manager_user_id` e `projects.simple_story_id` SHALL possuir chaves estrangeiras compostas equivalentes.
+
+#### Scenario: Hierarquia inválida barrada pelo banco
+- **WHEN** uma gravação tenta definir pai fora do tenant, pai inexistente, gerente de outro tenant ou story fixa de outro tenant
+- **THEN** o banco rejeita a operação e mantém a árvore consistente
+
+#### Scenario: Regras de tipo continuam na aplicação
+- **WHEN** um item é criado respeitando a hierarquia de tipos (STORY filha de EPIC, TASK/BUG filha de STORY/TASK/BUG)
+- **THEN** a operação é aceita e persiste com o vínculo correto
+
+#### Scenario: Exclusão de ancestral preserva integridade
+- **WHEN** um item com filhos é excluído pelo fluxo de exclusão em cascata
+- **THEN** os descendentes são removidos na mesma operação e nenhuma violação de chave estrangeira permanece
+
