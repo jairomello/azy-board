@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Info, Plus, Check, X, ChevronLeft, ChevronRight, Bug, CheckSquare, ListChecks, History, CalendarDays, UserRound } from 'lucide-react'
+import { Info, Plus, Check, X, ChevronLeft, ChevronRight, CheckSquare, ListChecks, History, CalendarDays, UserRound } from 'lucide-react'
 import type { Priority, TaskStatus, ItemType, Checklist } from '@azy-board/types'
 import { InlineEdit } from './InlineEdit'
 import { TagSelector, type Tag } from './TagSelector'
@@ -11,6 +11,7 @@ import { CardChildrenSection } from './CardChildrenSection'
 import { ActivityLogPanel } from './ActivityLogPanel'
 import { WorkLogPanel } from './WorkLogPanel'
 import { RichTextEditor } from './RichTextEditor'
+import { itemTypeMeta } from '../lib/itemTypeMeta'
 import { api } from '../lib/api'
 
 interface Epic { id: string; title: string }
@@ -332,6 +333,8 @@ export function ItemModal({
   ]
   const fieldClass = 'w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/30'
   const property = (label: string, content: React.ReactNode) => <div><label className="text-xs font-medium text-muted-foreground mb-1 block">{label}</label>{content}</div>
+  const typeMeta = itemTypeMeta(type)
+  const TypeIcon = typeMeta.icon
 
   return (
     <>
@@ -348,8 +351,8 @@ export function ItemModal({
                   <span>{item.id === '__new__' ? t('newTask') : (item.sequenceCode || item.title)}</span>
                 </div>
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${type === 'BUG' ? 'bg-red-500/10 text-red-600' : 'bg-primary/10 text-primary'}`}><Bug className="h-4 w-4" /></span>
-                  <div className="min-w-0"><h2 id="item-modal-title" className="truncate text-base font-semibold text-foreground sm:text-lg"><InlineEdit value={title} onSave={setTitle} autoEdit={item.id === '__new__'} placeholder={type === 'BUG' ? `${t('newTask')} (${t('typeBug')})` : t('newTask')} /></h2><div className="mt-1 flex flex-wrap items-center gap-2 text-xs"><span className="rounded bg-primary/10 px-1.5 py-0.5 font-medium text-primary">{t(type === 'BUG' ? 'typeBug' : 'typeTask')}</span><span className="rounded bg-muted px-1.5 py-0.5">{t(`status${status === 'NOT_STARTED' ? 'NotStarted' : status === 'IN_PROGRESS' ? 'InProgress' : status === 'BLOCKED' ? 'Blocked' : status === 'DONE' ? 'Done' : 'Cancelled'}`)}</span>{sequenceCode && <span className="text-muted-foreground">#{sequenceCode}</span>}</div></div>
+                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${typeMeta.iconClass}`}><TypeIcon className="h-4 w-4" /></span>
+                  <div className="min-w-0"><h2 id="item-modal-title" className="truncate text-base font-semibold text-foreground sm:text-lg"><InlineEdit value={title} onSave={setTitle} autoEdit={item.id === '__new__'} placeholder={type === 'TASK' ? t('newTask') : `${t('newTask')} (${t(typeMeta.labelKey)})`} /></h2><div className="mt-1 flex flex-wrap items-center gap-2 text-xs"><span className={`rounded px-1.5 py-0.5 font-medium ${typeMeta.chipClass}`}>{t(typeMeta.labelKey)}</span><span className="rounded bg-muted px-1.5 py-0.5">{t(`status${status === 'NOT_STARTED' ? 'NotStarted' : status === 'IN_PROGRESS' ? 'InProgress' : status === 'BLOCKED' ? 'Blocked' : status === 'DONE' ? 'Done' : 'Cancelled'}`)}</span>{sequenceCode && <span className="text-muted-foreground">#{sequenceCode}</span>}</div></div>
                 </div>
               </div>
             </div>

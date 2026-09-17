@@ -56,7 +56,10 @@ describe('contratos das seções accordion das modais', () => {
     contains(children, 'STATUS_LABELS')
     contains(children, 'line-clamp-2')
     contains(children, 'focus-visible:ring-2')
-    contains(item, "t(type === 'BUG' ? 'typeBug' : 'typeTask')")
+    contains(item, 'itemTypeMeta(type)')
+    contains(item, 'typeMeta.icon')
+    contains(item, 't(typeMeta.labelKey)')
+    expect(item.includes('<Bug className="h-4 w-4" />')).toBe(false)
     expect(item.includes("item.parentId ? 'accordion.subtaskType'")).toBe(false)
     contains(story, 'story-narrative')
     contains(story, 'acceptanceCriteria')
@@ -76,5 +79,16 @@ describe('contratos das seções accordion das modais', () => {
       contains(locale, '"checklistProgress"')
       contains(locale, '"noAdditionalContent"')
     }
+  })
+
+  test('cada tipo de item tem ícone e rótulo próprios', async () => {
+    const { ITEM_TYPE_META, itemTypeMeta } = await import('./lib/itemTypeMeta')
+    const types = ['EPIC', 'STORY', 'TASK', 'BUG'] as const
+    const icons = new Set(types.map(type => ITEM_TYPE_META[type].icon))
+    expect(icons.size).toBe(types.length)
+    for (const type of types) {
+      expect(ITEM_TYPE_META[type].labelKey).toBe(`type${type[0]}${type.slice(1).toLowerCase()}`)
+    }
+    expect(itemTypeMeta(undefined)).toBe(ITEM_TYPE_META.TASK)
   })
 })
