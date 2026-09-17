@@ -340,7 +340,7 @@ export function ItemModal({
     <>
       <div className="fixed inset-0 flex items-center justify-center p-2 sm:p-4" style={{ zIndex }}>
         <div className="absolute inset-0 bg-black/50" onClick={_onBack ?? onClose} />
-        <section role="dialog" aria-modal="true" aria-labelledby="item-modal-title" className="relative flex max-h-[95vh] w-full max-w-[1120px] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
+        <section role="dialog" aria-modal="true" aria-labelledby="item-modal-title" className="item-modal-frame relative flex w-full max-w-[1120px] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
           <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-3 sm:px-6 sm:py-4">
             <div className="flex min-w-0 items-start gap-2">
               {_onBack && <button type="button" onClick={_onBack} aria-label={t('back')} className="mt-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary"><ChevronLeft className="h-5 w-5" /></button>}

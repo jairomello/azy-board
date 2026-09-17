@@ -954,6 +954,8 @@ export default function BoardPage() {
         acceptanceCriteria: data.acceptanceCriteria,
         notes: data.notes,
         description: data.description,
+        versionId: data.versionId,
+        sequenceCode: data.sequenceCode,
       })
        setAllItems(prev => prev.map(i => i.id === data.id ? { ...i, title: data.title } : i))
        setTreeRefreshToken(value => value + 1)
@@ -968,6 +970,8 @@ export default function BoardPage() {
         acceptanceCriteria: data.acceptanceCriteria,
         notes: data.notes,
         description: data.description,
+        versionId: data.versionId,
+        sequenceCode: data.sequenceCode,
       })
        setAllItems(prev => upsertItem(prev, item))
        setTreeRefreshToken(value => value + 1)
@@ -994,6 +998,8 @@ export default function BoardPage() {
         title: data.title,
         moduleId: data.moduleId,
         description: data.description,
+        versionId: data.versionId,
+        sequenceCode: data.sequenceCode,
       })
       setAllItems(prev => prev.map(i => i.id === data.id ? { ...i, ...data } : i))
     } else {
@@ -1002,6 +1008,8 @@ export default function BoardPage() {
         moduleId: data.moduleId,
         title: data.title,
         description: data.description,
+        versionId: data.versionId,
+        sequenceCode: data.sequenceCode,
       })
       setAllItems(prev => upsertItem(prev, item))
     }
@@ -1079,6 +1087,14 @@ export default function BoardPage() {
         setItemModalId(id)
       }
     }
+  }
+
+  // Abertura de filho a partir das modais de Épico/História: substitui a modal
+  // atual pela modal correta do filho (STORY → StoryModal; TASK/BUG → ItemModal).
+  function handleOpenChildFromHierarchy(childId: string) {
+    setEpicModalData(null)
+    setStoryModalData(null)
+    handleOpenDetail(childId)
   }
 
   // Mapa stories para o StorySelector: parentId → epicId
@@ -1407,22 +1423,26 @@ export default function BoardPage() {
       )}
 
       {/* Modal de épico */}
-      {epicModalData && (
+      {epicModalData && projectId && (
         <EpicModal
+          projectId={projectId}
           modules={modules}
           epic={epicModalData.epic}
           projectVersions={projectVersions}
+          onOpenChild={handleOpenChildFromHierarchy}
           onSave={handleEpicSave}
           onClose={() => setEpicModalData(null)}
         />
       )}
 
       {/* Modal de história */}
-      {storyModalData !== null && (
+      {storyModalData !== null && projectId && (
         <StoryModal
+          projectId={projectId}
           epics={epicsForModal}
           story={storyModalData.story}
           projectVersions={projectVersions}
+          onOpenChild={handleOpenChildFromHierarchy}
           onSave={handleStorySave}
           onClose={() => setStoryModalData(null)}
         />

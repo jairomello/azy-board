@@ -1,10 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { RichTextEditor } from './RichTextEditor'
+import { BookOpen, Check, CheckSquare, History, Info, ListChecks, X } from 'lucide-react'
+import type { ItemType } from '@azy-board/types'
 import type { ProjectVersion } from './ItemModal'
-import { AccordionSection } from './AccordionSection'
-import { AccordionToolbar } from './AccordionToolbar'
-import { NeutralSummary } from './AccordionSummary'
+import { RichTextEditor } from './RichTextEditor'
+import { CardChildrenSection } from './CardChildrenSection'
+import { ActivityLogPanel } from './ActivityLogPanel'
+import { ItemDetailModalShell } from './ItemDetailModalShell'
+import { ItemDetailHeader } from './ItemDetailHeader'
+import { ItemAreaTabs, type ItemAreaTab } from './ItemAreaTabs'
+import { ItemPropertiesPanel, PropertyField, itemFieldClass } from './ItemPropertiesPanel'
+import { api } from '../lib/api'
 
 interface Epic { id: string; title: string }
 
@@ -23,14 +29,26 @@ export interface StoryData {
 }
 
 interface Props {
+  projectId: string
   epics: Epic[]
   story?: StoryData | null
   projectVersions?: ProjectVersion[]
+  onOpenChild?: (childId: string, childType: ItemType) => void
   onSave: (data: StoryData) => Promise<void>
   onClose: () => void
 }
 
-export function StoryModal({ epics, story, projectVersions = [], onSave, onClose }: Props) {
+type StoryArea = 'details' | 'children' | 'activity'
+
+export function StoryModal({
+  projectId,
+  epics,
+  story,
+  projectVersions = [],
+  onOpenChild,
+  onSave,
+  onClose,
+}: Props) {
   const { t } = useTranslation('board')
   const [title, setTitle] = useState(story?.title ?? '')
   const [epicId, setEpicId] = useState(story?.epicId ?? epics[0]?.id ?? '')
@@ -40,18 +58,51 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
   const [benefit, setBenefit] = useState(story?.benefit ?? '')
   const [acceptanceCriteria, setAcceptanceCriteria] = useState(story?.acceptanceCriteria ?? '')
   const [notes, setNotes] = useState(story?.notes ?? '')
+  const [description, setDescription] = useState(story?.description ?? '')
   const [sequenceCode, setSequenceCode] = useState(story?.sequenceCode ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const sectionIds = ['story-fields', 'story-narrative', 'story-criteria', 'story-notes']
-  const [openSections, setOpenSections] = useState<Set<string>>(() => new Set(['story-fields']))
-  const toggleSection = (id: string) => setOpenSections(previous => {
-    const next = new Set(previous)
-    next.has(id) ? next.delete(id) : next.add(id)
-    return next
-  })
+  const [activeArea, setActiveArea] = useState<StoryArea>('details')
+  const [activityCount, setActivityCount] = useState(0)
+
+  const itemId = story?.id ?? '__new__'
+  const isNew = itemId === '__new__'
+  const selectedEpic = epics.find(e => e.id === epicId)
+
+  useEffect(() => {
+    setActiveArea('details')
+    setError('')
+  }, [itemId])
+
+  useEffect(() => {
+    if (isNew) { setActivityCount(0); return }
+    let cancelled = false
+    api.get<{ total: number }>(`/projects/${projectId}/items/${itemId}/audit?limit=1`)
+      .then(res => { if (!cancelled) setActivityCount(res.total) })
+      .catch(() => { if (!cancelled) setActivityCount(0) })
+    return () => { cancelled = true }
+  }, [itemId, projectId, isNew])
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const areas: ItemAreaTab[] = [
+    { id: 'details', label: t('areaDetails'), icon: CheckSquare },
+    { id: 'children', label: t('areaTasks'), icon: ListChecks },
+    { id: 'activity', label: t('areaActivity'), icon: History, count: activityCount },
+  ]
+
+  const handleOpenChild = useCallback((childId: string, childType: ItemType) => {
+    onOpenChild?.(childId, childType)
+  }, [onOpenChild])
 
   async function handleSave() {
+    if (saving) return
     if (!title.trim() || !epicId) return
     setSaving(true)
     setError('')
@@ -65,163 +116,196 @@ export function StoryModal({ epics, story, projectVersions = [], onSave, onClose
         benefit: benefit || null,
         acceptanceCriteria: acceptanceCriteria || null,
         notes: notes || null,
+        description: description || null,
         versionId: versionId || null,
         sequenceCode: sequenceCode || null,
       })
       onClose()
     } catch {
-      setError('Erro ao salvar história.')
+      setError(t('errorSave'))
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 pb-4 border-b border-border sticky top-0 bg-card z-10">
-          <h2 className="font-semibold text-foreground text-lg">
-            {story?.id ? t('editStory') : t('newStoryForm')}
-          </h2>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="p-6 space-y-4">
-          <AccordionToolbar sectionIds={sectionIds} openIds={openSections} onChange={setOpenSections} />
-          {/* Título e Épico */}
-          <AccordionSection id="story-fields" title={t('accordion.storyFields')} summary={<NeutralSummary />} isOpen={openSections.has('story-fields')} onToggle={toggleSection}>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('codeLabel')}</label>
-              <input
-                value={sequenceCode}
-                onChange={e => setSequenceCode(e.target.value)}
-                placeholder={t('autoGenerated') || 'Gerado automaticamente'}
-                className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('storyTitle')}</label>
-              <input
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                autoFocus
-                placeholder={t('storyTitleExample')}
-                className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
-              />
-            </div>
-            <div className="col-span-2">
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('epicRequired')}</label>
-              <select
-                value={epicId}
-                onChange={e => setEpicId(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
-              >
-                {epics.map(e => <option key={e.id} value={e.id}>{e.title}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* Campo Versão — exibido apenas quando há versões no projeto */}
-          {projectVersions.length > 0 && (
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('filterVersion')}</label>
-              <select value={versionId} onChange={e => setVersionId(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary">
-                <option value="">{t('noVersion')}</option>
-                {projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
-            </div>
-          )}
-          </AccordionSection>
-
-          {/* Campos ágeis padrão */}
-          <AccordionSection id="story-narrative" title={t('accordion.narrative')} summary={persona || goal || benefit ? t('accordion.contentPresent') : <NeutralSummary />} isOpen={openSections.has('story-narrative')} onToggle={toggleSection}>
-          <div className="bg-muted/20 border border-border rounded-lg p-4 space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('agileNarrative')}</p>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('as')}</label>
-              <input
-                value={persona}
-                onChange={e => setPersona(e.target.value)}
-                placeholder={t('storyPersonaPlaceholder')}
-                className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('iWant')}</label>
-              <input
-                value={goal}
-                onChange={e => setGoal(e.target.value)}
-                placeholder={t('storyGoalPlaceholder')}
-                className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('soThat')}</label>
-              <input
-                value={benefit}
-                onChange={e => setBenefit(e.target.value)}
-                placeholder={t('storyBenefitPlaceholder')}
-                className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary"
-              />
-            </div>
-          </div>
-          </AccordionSection>
-
-          {/* Critérios de Aceitação */}
-          <AccordionSection id="story-criteria" title={t('accordion.acceptanceCriteria')} summary={acceptanceCriteria ? t('accordion.contentPresent') : <NeutralSummary />} isOpen={openSections.has('story-criteria')} onToggle={toggleSection}>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('acceptanceCriteriaLabel')}</label>
-            <RichTextEditor
-              content={acceptanceCriteria}
-               onChange={setAcceptanceCriteria}
-               placeholder={t('richText.acceptancePlaceholder')}
-               fieldLabel={t('richText.acceptanceField')}
-              minHeight="100px"
-            />
-          </div>
-          </AccordionSection>
-
-          {/* Notas */}
-          <AccordionSection id="story-notes" title={t('accordion.notes')} summary={notes ? t('accordion.contentPresent') : <NeutralSummary />} isOpen={openSections.has('story-notes')} onToggle={toggleSection}>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('notesLabel')}</label>
-            <RichTextEditor
-              content={notes}
-               onChange={setNotes}
-               placeholder={t('richText.notesPlaceholder')}
-               fieldLabel={t('richText.notesField')}
-              minHeight="80px"
-            />
-          </div>
-          </AccordionSection>
-
-          {error && <p className="text-sm text-red-500">{error}</p>}
-        </div>
-
-        <div className="flex gap-2 px-6 py-4 border-t border-border sticky bottom-0 bg-card">
+    <ItemDetailModalShell
+      titleId="item-modal-title"
+      onClose={onClose}
+      header={
+        <ItemDetailHeader
+          titleId="item-modal-title"
+          type="STORY"
+          title={title}
+          onTitleChange={setTitle}
+          placeholder={t('storyTitle')}
+          breadcrumb={selectedEpic ? [{ title: selectedEpic.title }] : []}
+          sequenceCode={sequenceCode}
+          autoEdit={isNew}
+        />
+      }
+      tabs={<ItemAreaTabs areas={areas} activeId={activeArea} onChange={id => setActiveArea(id as StoryArea)} />}
+      footer={
+        <>
           <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-muted px-4 py-2 text-sm text-muted-foreground hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <X className="h-4 w-4" />{t('cancel')}
+          </button>
+          <button
+            type="button"
             onClick={handleSave}
             disabled={saving || !title.trim() || !epicId}
-            className="flex-1 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition"
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary"
           >
-            {saving ? t('saving') : t('saveStory')}
+            <Check className="h-4 w-4" />{saving ? t('saving') : t('saveChanges')}
           </button>
-          <button
-            onClick={onClose}
-            className="flex-1 py-2 text-sm border border-border rounded-lg hover:bg-muted text-muted-foreground transition"
-          >
-            {t('cancel')}
-          </button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <main
+        id={`item-area-${activeArea}`}
+        role="tabpanel"
+        aria-labelledby={`item-tab-${activeArea}`}
+        className="min-w-0 space-y-4"
+      >
+        {activeArea === 'details' && (
+          <>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                <BookOpen className="h-4 w-4 text-primary" />{t('agileNarrative')}
+              </h3>
+              <div className="space-y-3">
+                <PropertyField label={t('as')}>
+                  <input
+                    value={persona}
+                    onChange={e => setPersona(e.target.value)}
+                    placeholder={t('storyPersonaPlaceholder')}
+                    className={itemFieldClass}
+                  />
+                </PropertyField>
+                <PropertyField label={t('iWant')}>
+                  <input
+                    value={goal}
+                    onChange={e => setGoal(e.target.value)}
+                    placeholder={t('storyGoalPlaceholder')}
+                    className={itemFieldClass}
+                  />
+                </PropertyField>
+                <PropertyField label={t('soThat')}>
+                  <input
+                    value={benefit}
+                    onChange={e => setBenefit(e.target.value)}
+                    placeholder={t('storyBenefitPlaceholder')}
+                    className={itemFieldClass}
+                  />
+                </PropertyField>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-card p-4">
+              <h3 className="mb-3 text-sm font-semibold">{t('descriptionLabel')}</h3>
+              <RichTextEditor
+                content={description}
+                onChange={setDescription}
+                placeholder={t('richText.itemPlaceholder')}
+                fieldLabel={t('richText.itemField')}
+                minHeight="100px"
+              />
+            </div>
+
+            <div className="rounded-lg border border-border bg-card p-4">
+              <h3 className="mb-3 text-sm font-semibold">{t('acceptanceCriteriaLabel')}</h3>
+              <RichTextEditor
+                content={acceptanceCriteria}
+                onChange={setAcceptanceCriteria}
+                placeholder={t('richText.acceptancePlaceholder')}
+                fieldLabel={t('richText.acceptanceField')}
+                minHeight="100px"
+              />
+            </div>
+
+            <div className="rounded-lg border border-border bg-card p-4">
+              <h3 className="mb-3 text-sm font-semibold">{t('notesLabel')}</h3>
+              <RichTextEditor
+                content={notes}
+                onChange={setNotes}
+                placeholder={t('richText.notesPlaceholder')}
+                fieldLabel={t('richText.notesField')}
+                minHeight="80px"
+              />
+            </div>
+          </>
+        )}
+
+        {activeArea === 'children' && (
+          <div className="rounded-lg border border-border p-4">
+            {isNew
+              ? <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>
+              : <CardChildrenSection
+                  itemId={itemId}
+                  projectId={projectId}
+                  onOpenChild={handleOpenChild}
+                  titleLabel={t('areaTasks')}
+                  emptyLabel={t('childrenEmptyTasks')}
+                />}
+          </div>
+        )}
+
+        {activeArea === 'activity' && (
+          <div className="min-h-[360px] min-w-0">
+            {isNew
+              ? <p className="rounded-lg border border-border p-6 text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>
+              : <ActivityLogPanel itemId={itemId} projectId={projectId} onCountChange={setActivityCount} />}
+          </div>
+        )}
+
+        {error && <p className="text-sm text-red-500" role="alert">{error}</p>}
+      </main>
+
+      <ItemPropertiesPanel
+        groups={[
+          {
+            id: 'properties',
+            title: t('properties'),
+            icon: Info,
+            content: (
+              <>
+                <PropertyField label={t('epicRequired')}>
+                  <select value={epicId} onChange={e => setEpicId(e.target.value)} className={itemFieldClass}>
+                    {epics.map(epic => <option key={epic.id} value={epic.id}>{epic.title}</option>)}
+                  </select>
+                </PropertyField>
+                {projectVersions.length > 0 && (
+                  <PropertyField label={t('filterVersion')}>
+                    <select value={versionId} onChange={e => setVersionId(e.target.value)} className={itemFieldClass}>
+                      <option value="">{t('noVersion')}</option>
+                      {projectVersions.map(version => <option key={version.id} value={version.id}>{version.name}</option>)}
+                    </select>
+                  </PropertyField>
+                )}
+              </>
+            ),
+          },
+          {
+            id: 'information',
+            title: t('information'),
+            icon: BookOpen,
+            content: (
+              <PropertyField label={t('codeLabel')}>
+                <input
+                  value={sequenceCode}
+                  onChange={e => setSequenceCode(e.target.value)}
+                  placeholder={t('autoGenerated')}
+                  className={itemFieldClass}
+                />
+              </PropertyField>
+            ),
+          },
+        ]}
+      />
+    </ItemDetailModalShell>
   )
 }

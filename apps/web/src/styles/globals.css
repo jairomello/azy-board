@@ -157,6 +157,13 @@
   --border: 0 0% 100% / 0.18;
 }
 
+/* Altura fixa das modais de item: estável entre abas, com fallback para
+   navegadores sem viewport dinâmica. Somente o conteúdo interno rola. */
+.item-modal-frame {
+  height: 80vh;
+  height: 80dvh;
+}
+
 .density-compact .kanban-card-content {
   padding-top: 0.55rem;
   padding-bottom: 0.55rem;
