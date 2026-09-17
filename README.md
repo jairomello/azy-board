@@ -351,15 +351,15 @@ bun run evals --dry-run            # list cases without calling the provider
 
 ---
 
-## Construído com IA
+## Built with AI
 
-Este projeto foi construído inteiramente por IA, da arquitetura ao código. Os
-protótipos iniciais foram desenvolvidos com **Claude Sonnet** (Anthropic). Todo
-o restante do sistema — backend, frontend, MCP, testes, documentação e
-refactors — foi codificado com os seguintes modelos:
+This project was built entirely with AI, from architecture to code. The initial
+prototypes were developed with **Claude Sonnet** (Anthropic). The rest of the
+system — backend, frontend, MCP, tests, documentation and refactors — was
+created with the following models:
 
-| Modelo | Provedor |
-|--------|----------|
+| Model | Provider |
+|-------|----------|
 | **GPT-5.6 Luna** | OpenAI |
 | **GLM-5.3** | Zhipu AI |
 | **GLM-5.3-Flash** | Zhipu AI |
@@ -368,9 +368,8 @@ refactors — foi codificado com os seguintes modelos:
 | **MiniMax-M3** | MiniMax |
 | **Qwen3.8-Max** | Alibaba Cloud |
 
-O workflow de desenvolvimento utilizou **OpenSpec** para especificações
-dirigidas por mudanças e o **OpenCode** como harness de codificação
-agentic.
+The development workflow used **OpenSpec** for change-driven specifications and
+**OpenCode** as the agentic coding harness.
 
 ---
 
