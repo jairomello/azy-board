@@ -351,6 +351,29 @@ bun run evals --dry-run            # list cases without calling the provider
 
 ---
 
+## Construído com IA
+
+Este projeto foi construído inteiramente por IA, da arquitetura ao código. Os
+protótipos iniciais foram desenvolvidos com **Claude Sonnet** (Anthropic). Todo
+o restante do sistema — backend, frontend, MCP, testes, documentação e
+refactors — foi codificado com os seguintes modelos:
+
+| Modelo | Provedor |
+|--------|----------|
+| **GPT-5.6 Luna** | OpenAI |
+| **GLM-5.3** | Zhipu AI |
+| **GLM-5.3-Flash** | Zhipu AI |
+| **MiMo-V2.5-Pro** | Xiaomi |
+| **DeepSeek-V4.1-Flash** | DeepSeek |
+| **MiniMax-M3** | MiniMax |
+| **Qwen3.8-Max** | Alibaba Cloud |
+
+O workflow de desenvolvimento utilizou **OpenSpec** para especificações
+dirigidas por mudanças e o **OpenCode** como harness de codificação
+agentic.
+
+---
+
 ## License
 
 Licensed under the [Business Source License 1.1](LICENSE). Free for
