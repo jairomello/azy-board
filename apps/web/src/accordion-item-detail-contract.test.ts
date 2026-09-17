@@ -26,8 +26,8 @@ describe('contratos das seções accordion das modais', () => {
   test('modais de narrativa usam primeira seção aberta e toolbar global', async () => {
     const item = await source('./components/ItemModal.tsx')
     const children = await source('./components/CardChildrenSection.tsx')
-    const activity = await source('./components/ActivityLogModal.tsx')
-    const workLog = await source('./components/WorkLogModal.tsx')
+    const activity = await source('./components/ActivityLogPanel.tsx')
+    const workLog = await source('./components/WorkLogPanel.tsx')
     const story = await source('./components/StoryModal.tsx')
     const epic = await source('./components/EpicModal.tsx')
     for (const text of [story, epic]) {
@@ -47,8 +47,8 @@ describe('contratos das seções accordion das modais', () => {
     contains(item, 'onCountChange={setSubtaskCount}')
     contains(item, 'count: activityCount')
     contains(item, 'setActivityCount(res.total)')
-    contains(item, '<WorkLogModal')
-    contains(item, "t('registerWork')")
+    contains(item, '<WorkLogPanel')
+    contains(item, "t('areaActivity')")
     contains(activity, '/audit?page=')
     expect(activity.includes('Registrar atividade')).toBe(false)
     contains(workLog, '/work-log?limit=100')

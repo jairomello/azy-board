@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Info, Plus, Check, X, Clock, ChevronLeft, ChevronRight, Bug, CheckSquare, ListChecks, History, CalendarDays, UserRound } from 'lucide-react'
+import { Info, Plus, Check, X, ChevronLeft, ChevronRight, Bug, CheckSquare, ListChecks, History, CalendarDays, UserRound } from 'lucide-react'
 import type { Priority, TaskStatus, ItemType, Checklist } from '@azy-board/types'
 import { InlineEdit } from './InlineEdit'
 import { TagSelector, type Tag } from './TagSelector'
@@ -8,8 +8,8 @@ import { StorySelector } from './StorySelector'
 import { AddCardForm } from './AddCardForm'
 import { ChecklistSection } from './ChecklistSection'
 import { CardChildrenSection } from './CardChildrenSection'
-import { ActivityLogModal } from './ActivityLogModal'
-import { WorkLogModal } from './WorkLogModal'
+import { ActivityLogPanel } from './ActivityLogPanel'
+import { WorkLogPanel } from './WorkLogPanel'
 import { RichTextEditor } from './RichTextEditor'
 import { api } from '../lib/api'
 
@@ -171,8 +171,6 @@ export function ItemModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [checklists, setChecklists] = useState<Checklist[]>([])
-  const [showActivityLog, setShowActivityLog] = useState(false)
-  const [showWorkLog, setShowWorkLog] = useState(false)
   const [childStack, setChildStack] = useState<ChildModalState[]>([])
   const [totalMinutes, setTotalMinutes] = useState<number | null>(null)
   const [workLogCount, setWorkLogCount] = useState(0)
@@ -245,6 +243,7 @@ export function ItemModal({
     setSequenceCode(item.sequenceCode ?? '')
     setActivityCount(0)
     setWorkLogCount(0)
+    setTotalMinutes(null)
     setSubtaskCount(0)
     setSubtaskRefreshKey(0)
     setActiveArea('details')
@@ -325,11 +324,11 @@ export function ItemModal({
   const ancestry = (() => {
     try { return JSON.parse(item.ancestryPath || '[]') as Array<{ title: string; type: string }> } catch { return [] }
   })()
-  const areas: Array<{ id: ItemArea; label: string; icon: typeof CheckSquare; count?: number }> = [
+  const areas: Array<{ id: ItemArea; label: string; icon: typeof CheckSquare; count?: number; summary?: string }> = [
     { id: 'details', label: t('areaDetails'), icon: CheckSquare },
     { id: 'subtasks', label: t('areaSubtasks'), icon: ListChecks, count: subtaskCount },
     { id: 'checklists', label: t('areaChecklists'), icon: ListChecks, count: checklists.length },
-    { id: 'activity', label: t('areaActivity'), icon: History, count: activityCount },
+    { id: 'activity', label: t('areaActivity'), icon: History, count: activityCount, summary: totalMinutes != null ? formatDuration(totalMinutes, t('worked')) : undefined },
   ]
   const fieldClass = 'w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/30'
   const property = (label: string, content: React.ReactNode) => <div><label className="text-xs font-medium text-muted-foreground mb-1 block">{label}</label>{content}</div>
@@ -358,7 +357,7 @@ export function ItemModal({
           </header>
 
           <nav role="tablist" aria-label={t('itemAreas')} className="flex shrink-0 gap-1 overflow-x-auto border-b border-border px-4 sm:px-6">
-            {areas.map(area => { const Icon = area.icon; return <button key={area.id} id={`item-tab-${area.id}`} type="button" role="tab" aria-selected={activeArea === area.id} aria-controls={`item-area-${area.id}`} onClick={() => setActiveArea(area.id)} className={`flex shrink-0 items-center gap-2 border-b-2 px-2 py-3 text-xs font-medium transition focus-visible:ring-2 focus-visible:ring-primary sm:px-3 ${activeArea === area.id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}><Icon className="h-4 w-4" />{area.label}{area.count != null && <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">{area.count}</span>}</button> })}
+            {areas.map(area => { const Icon = area.icon; return <button key={area.id} id={`item-tab-${area.id}`} type="button" role="tab" aria-selected={activeArea === area.id} aria-controls={`item-area-${area.id}`} onClick={() => setActiveArea(area.id)} className={`flex shrink-0 items-center gap-2 border-b-2 px-2 py-3 text-xs font-medium transition focus-visible:ring-2 focus-visible:ring-primary sm:px-3 ${activeArea === area.id ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}><Icon className="h-4 w-4" />{area.label}{area.count != null && <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">{area.count}</span>}{area.summary && <span className="hidden text-[10px] text-muted-foreground sm:inline">{area.summary}</span>}</button> })}
           </nav>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
@@ -376,7 +375,7 @@ export function ItemModal({
                 </>}
                 {activeArea === 'subtasks' && <div className="rounded-lg border border-border p-4"><div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-semibold">{t('areaSubtasks')} ({subtaskCount})</h3>{item.isLeaf && <button type="button" onClick={() => setShowSubtaskForm(true)} className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/20"><Plus className="h-3.5 w-3.5" />{t('addSubtask')}</button>}</div>{item.id !== '__new__' && <CardChildrenSection itemId={item.id} projectId={projectId} onOpenChild={handleOpenChild} onCountChange={setSubtaskCount} refreshKey={subtaskRefreshKey} />}{showSubtaskForm && <div className="mt-4"><AddCardForm onAdd={async (subTitle, subType) => { await onAddSubtask(item.id, subTitle, subType); setSubtaskRefreshKey(key => key + 1); setShowSubtaskForm(false) }} onCancel={() => setShowSubtaskForm(false)} /></div>}{item.id === '__new__' && <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {activeArea === 'checklists' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' ? <ChecklistSection itemId={item.id} projectId={projectId} initialChecklists={checklists} onChange={setChecklists} /> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
-                {activeArea === 'activity' && <div className="space-y-4 rounded-lg border border-border p-4">{item.id !== '__new__' ? <><button type="button" onClick={() => setShowActivityLog(true)} className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"><History className="h-4 w-4" />{t('changeHistory')}</button><button type="button" onClick={() => setShowWorkLog(true)} className="ml-2 inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"><Clock className="h-4 w-4" />{t('registerWork')}</button>{totalMinutes != null && <p className="text-xs text-muted-foreground">{formatDuration(totalMinutes, t('worked'))}</p>}</> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
+                {activeArea === 'activity' && <div id="item-area-activity" className="grid min-h-[360px] min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">{item.id !== '__new__' ? <><ActivityLogPanel itemId={item.id} projectId={projectId} onCountChange={setActivityCount} /><WorkLogPanel itemId={item.id} projectId={projectId} currentUserId={currentUserId ?? ''} currentUserRole={currentUserRole} onCountChange={setWorkLogCount} onTotalChange={setTotalMinutes} /></> : <p className="col-span-full rounded-lg border border-border p-6 text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {error && <p className="text-sm text-red-500" role="alert">{error}</p>}
               </main>
 
@@ -391,28 +390,6 @@ export function ItemModal({
           <footer className="flex shrink-0 flex-col-reverse gap-2 border-t border-border bg-card px-4 py-3 sm:flex-row sm:justify-end sm:px-6"><button type="button" onClick={_onBack ?? onClose} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-muted px-4 py-2 text-sm text-muted-foreground hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-primary"><X className="h-4 w-4" />{_onBack ? t('back') : t('cancel')}</button><button type="button" onClick={handleSave} disabled={saving || !title.trim()} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary"><Check className="h-4 w-4" />{saving ? t('saving') : t('saveChanges')}</button></footer>
         </section>
       </div>
-
-      {/* Tarefa 10.3 — ActivityLogModal sobre a modal */}
-      {showActivityLog && currentUserId && (
-        <ActivityLogModal
-          itemId={item.id}
-          itemTitle={item.title}
-          projectId={projectId}
-          onClose={() => setShowActivityLog(false)}
-        />
-      )}
-      {showWorkLog && currentUserId && (
-        <WorkLogModal
-          itemId={item.id}
-          itemTitle={item.title}
-          projectId={projectId}
-          currentUserId={currentUserId}
-          currentUserRole={currentUserRole}
-          onCountChange={setWorkLogCount}
-          onTotalChange={setTotalMinutes}
-          onClose={() => setShowWorkLog(false)}
-        />
-      )}
 
       {/* Tarefas 8.1, 8.3 — modais de filhos empilhadas com z-index incremental */}
       {childStack.map((child, idx) => {
