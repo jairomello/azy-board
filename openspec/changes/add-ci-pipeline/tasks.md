@@ -26,5 +26,5 @@
 - [x] 4.1 Rodar `bun run check` localmente e confirmar typecheck + lint real + testes + build
 - [x] 4.2 Reproduzir localmente os gates de contrato (`check:i18n`, `test:mcp-catalog`, `test:agent-skill`, `test:migrations`)
 - [x] 4.3 Rodar `bun run test:smoke` com API e Web no ar
-- [ ] 4.4 Validar o CI no push da branch e confirmar os jobs `check`, `contracts` e `smoke` verdes no GitHub Actions
+- [x] 4.4 Validar o CI no push da branch e confirmar os jobs `check`, `contracts` e `smoke` verdes no GitHub Actions
 - [ ] 4.5 Validar `openspec validate` da change e registrar o vínculo e o fechamento no card do board
