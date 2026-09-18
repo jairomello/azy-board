@@ -19,12 +19,12 @@
 
 - [x] 3.1 Criar `docs/ci.md` com visão dos jobs, como reproduzir cada gate localmente e como interpretar falhas
 - [x] 3.2 Referenciar o fluxo de CI no `README.md` e/ou `DEPLOY.md`
-- [ ] 3.3 Documentar e configurar os required checks da branch principal (nomes exatos dos jobs)
+- [x] 3.3 Documentar a decisão para trabalho solo: o CI roda no push como sinal de qualidade e os required checks obrigatórios ficam opcionais (sem proteção de branch nesta iteração)
 
 ## 4. Verificação
 
 - [x] 4.1 Rodar `bun run check` localmente e confirmar typecheck + lint real + testes + build
 - [x] 4.2 Reproduzir localmente os gates de contrato (`check:i18n`, `test:mcp-catalog`, `test:agent-skill`, `test:migrations`)
 - [x] 4.3 Rodar `bun run test:smoke` com API e Web no ar
-- [ ] 4.4 Abrir ou atualizar um pull request de teste e confirmar os jobs verdes
+- [ ] 4.4 Validar o CI no push da branch e confirmar os jobs `check`, `contracts` e `smoke` verdes no GitHub Actions
 - [ ] 4.5 Validar `openspec validate` da change e registrar o vínculo e o fechamento no card do board

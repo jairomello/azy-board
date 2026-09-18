@@ -10,7 +10,7 @@ const { db } = await import('./db/index')
 const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys, assistantConversations, assistantMessages, assistantRuns, assistantEvents } = await import('./db/schema')
 const { signJwt, generateApiKey } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
-const { appendAnalyticsEvent, assertAnalyticsCutoverReady } = await import('./services/analytics')
+const { appendAnalyticsEvent, assertAnalyticsCutoverReady, ensureCoverage } = await import('./services/analytics')
 
 await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
 
@@ -638,6 +638,11 @@ describe('batch e idempotencia', () => {
   })
 
   test('cria cobertura, eventos e ciclo vazio no mesmo fluxo', async () => {
+    // A suíte compartilha o mesmo banco :memory: entre arquivos de teste, então
+    // outros projetos podem existir sem cobertura. Garante o estado global
+    // determinístico antes de validar o bloqueio do cutover.
+    const allProjects = await db.select({ id: projects.id, tenantId: projects.tenantId }).from(projects)
+    for (const row of allProjects) await ensureCoverage(db, row.tenantId, row.id)
     await assertAnalyticsCutoverReady()
     const coverage = (await db.select().from(projectAnalyticsCoverage)).find(row => row.projectId === projectId)!
     await db.delete(projectAnalyticsCoverage).where(eq(projectAnalyticsCoverage.projectId, projectId))

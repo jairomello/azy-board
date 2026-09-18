@@ -102,5 +102,12 @@ principal, marque como obrigatórios os jobs:
 - `contracts`
 - `smoke`
 
-Enquanto os required checks não estiverem configurados, o CI roda mas não
-bloqueia merge.
+### Trabalho solo
+
+Quando uma única pessoa mantém o repositório, a recomendação é **não** exigir
+required checks nem PR obrigatório: o CI roda a cada push e serve de sinal,
+sem adicionar fricção. Nesse caso, rode `bun run check` localmente antes de
+subir e acompanhe o resultado no GitHub Actions.
+
+Ao passar a trabalhar com mais pessoas, ative os required checks acima para
+bloquear merge com gate reprovado.
