@@ -8,7 +8,7 @@ describe('contratos do dashboard do projeto', () => {
     const app = await source('./App.tsx')
     const shell = await source('./components/AppShell.tsx')
     const page = await source('./pages/ProjectDashboardPage.tsx')
-    const board = await source('./pages/BoardPage.tsx')
+    const board = await source('./features/board/BoardScreen.tsx')
     contains(app, '/projects/:projectId/dashboard')
     contains(shell, 'navDashboard')
     expect(page.match(/<Box title=/g)?.length).toBe(8)

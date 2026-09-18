@@ -21,21 +21,23 @@ describe('contratos de UI dos modos de board', () => {
   })
 
   test('configurações confirmam ou cancelam a conversão antes do PATCH', async () => {
-    const text = await source('./pages/SettingsPage.tsx')
+    const text = await source('./features/project-settings/components/GeneralSettingsSections.tsx')
     contains(text, 'pendingBoardMode === \'SIMPLE\'')
      contains(text, "t('settings:simpleBoardConversionDescription')")
-    contains(text, 'onClick={() => setPendingBoardMode(null)}')
-    contains(text, "onClick={() => saveBoardMode('SIMPLE')}")
+    contains(text, 'onClick={onCancelBoardMode}')
+    contains(text, 'onClick={onConfirmBoardMode}')
   })
 
   test('board simples usa uma lane única, mantém filtros úteis e remove controles hierárquicos', async () => {
-    const board = await source('./pages/BoardPage.tsx')
+    const board = await source('./features/board/BoardScreen.tsx')
+    const lanes = await source('./features/board/components/BoardLanes.tsx')
+    const preferences = await source('./features/board/hooks/useBoardPreferences.ts')
     const commandBar = await source('./components/BoardCommandBar.tsx')
     const filters = await source('./components/BoardFilters.tsx')
     const itemModal = await source('./components/ItemModal.tsx')
-    contains(board, '{isSimpleBoard && simpleStory && (')
-    contains(board, 'swimlaneId={simpleStory.id}')
-    contains(board, '{!isSimpleBoard && visibleModuleGroups.map(renderModuleGroup)}')
+    contains(board, 'simpleBoard={isSimpleBoard}')
+    contains(lanes, '{simpleBoard && simpleStory && <Swimlane')
+    contains(lanes, '{!simpleBoard && visibleModuleGroups.map')
     contains(commandBar, 'showExpandCollapse={view === \'kanban\' && boardMode === \'HIERARCHICAL\'}')
     contains(commandBar, 'showModuleViewMode={view === \'kanban\' && boardMode === \'HIERARCHICAL\'}')
      contains(filters, "t('filterSprint')")
@@ -52,14 +54,16 @@ describe('contratos de UI dos modos de board', () => {
   })
 
   test('board persiste filtros novos e invalida versão removida', async () => {
-    const board = await source('./pages/BoardPage.tsx')
+    const board = await source('./features/board/BoardScreen.tsx')
+    const preferences = await source('./features/board/hooks/useBoardPreferences.ts')
     contains(board, 'filters.versionId')
     contains(board, 'projectVersions.some(version => version.id === filters.versionId)')
-    contains(board, 'localStorage.setItem(`board-filters:${projectId}`')
+     contains(preferences, 'localStorage.setItem(`board-filters:${projectId}`')
   })
 
   test('board oferece filtro de centro de custo e invalida seleções removidas', async () => {
-    const board = await source('./pages/BoardPage.tsx')
+    const board = await source('./features/board/BoardScreen.tsx')
+    const preferences = await source('./features/board/hooks/useBoardPreferences.ts')
     const commandBar = await source('./components/BoardCommandBar.tsx')
     const filters = await source('./components/BoardFilters.tsx')
     contains(filters, 'costCenterId: string')
@@ -70,21 +74,23 @@ describe('contratos de UI dos modos de board', () => {
     contains(board, 'i.costCenterId === filters.costCenterId')
     contains(board, 'center.id === filters.costCenterId')
     contains(board, 'costCenterId: \'\'')
-    contains(board, 'localStorage.setItem(`board-filters:${projectId}`')
+     contains(preferences, 'localStorage.setItem(`board-filters:${projectId}`')
   })
 
   test('filtro de centro combina com outros filtros nos dois modos do board', async () => {
-    const board = await source('./pages/BoardPage.tsx')
+    const board = await source('./features/board/BoardScreen.tsx')
+    const lanes = await source('./features/board/components/BoardLanes.tsx')
     contains(board, 'if (filters.costCenterId) result = result.filter')
     contains(board, 'if (filters.costCenterId) leafStories = leafStories.filter')
     contains(board, 'filters.sprintId')
     contains(board, 'filters.tagIds')
-    contains(board, 'isSimpleBoard && simpleStory')
+    contains(board, 'simpleBoard={isSimpleBoard}')
+    contains(lanes, 'simpleBoard && simpleStory')
     contains(board, "const isSimpleBoard = boardMode === 'SIMPLE'")
   })
 
   test('regressão hierárquica conserva árvore, breadcrumbs e drag-and-drop', async () => {
-    const board = await source('./pages/BoardPage.tsx')
+    const board = await source('./features/board/BoardScreen.tsx')
     contains(board, '<TreeViewPage')
     contains(board, '<DndContext')
     contains(board, 'handleDragEnd(e, effectiveOver)')
@@ -104,14 +110,14 @@ describe('contratos de UI dos modos de board', () => {
 
   test('Tree View oferece criação contextual e edição por linha', async () => {
     const tree = await source('./pages/TreeViewPage.tsx')
-    const board = await source('./pages/BoardPage.tsx')
+    const board = await source('./features/board/BoardScreen.tsx')
     contains(tree, "['MODULE', 'EPIC', 'STORY', 'TASK', 'BUG']")
      contains(tree, "t('tree.edit'")
     contains(tree, 'stopPropagation()')
     contains(tree, 'refreshToken')
     contains(board, 'onCreate={openCreation}')
     contains(board, 'onEdit={handleOpenDetail}')
-    contains(board, 'parentId: newItemCreation.parentId ?? null')
+    contains(board, 'newItem={newItemCreation}')
     contains(board, 'refreshToken={treeRefreshToken}')
   })
 

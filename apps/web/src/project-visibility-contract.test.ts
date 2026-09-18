@@ -44,14 +44,13 @@ describe('contrato de UI da visibilidade de projetos', () => {
   })
 
   test('configurações do projeto têm a seção de visibilidade com PATCH', async () => {
-    const text = await source('./pages/SettingsPage.tsx')
+    const text = await source('./features/project-settings/components/GeneralSettingsSections.tsx')
     contains(text, 't(\'settings:projectVisibility\')')
     contains(text, '<VisibilityToggles')
     contains(text, "restrictedId=\"project-restricted\"")
     contains(text, "hiddenId=\"project-hidden\"")
-    contains(text, "saveVisibility('isRestricted', valor)")
-    contains(text, "saveVisibility('isHidden', valor)")
-    contains(text, 'await api.patch(`/projects/${projectId}`, { [campo]: valor })')
+    contains(text, "onVisibilityChange('isRestricted', value)")
+    contains(text, "onVisibilityChange('isHidden', value)")
   })
 
   test('dropdown do avatar e página de conta compartilham o mesmo controle', async () => {

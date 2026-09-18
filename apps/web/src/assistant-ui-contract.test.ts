@@ -46,7 +46,7 @@ describe('contratos de interação do Azy Agent', () => {
     const drawer = await source('./components/AzyAgentDrawer.tsx')
     const context = await source('./contexts/AssistantContext.tsx')
     const shell = await source('./components/AppShell.tsx')
-    const board = await source('./pages/BoardPage.tsx')
+    const board = await source('./features/board/BoardScreen.tsx')
     expect(context.includes('pageContext')).toBe(true)
     expect(context.includes('screen')).toBe(true)
     expect(shell.includes('assistantSelectedItem')).toBe(true)
