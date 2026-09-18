@@ -1,14 +1,14 @@
 {
   "newTask": "Nova task",
   "newEpic": "Novo épico",
-  "newStory": "Nova história",
+  "newStory": "+ Nova história",
   "newModule": "Novo módulo",
   "moduleNamePlaceholder": "Nome do módulo",
   "moduleDescriptionPlaceholder": "Descrição do módulo",
   "moduleLabel": "Módulo",
   "noModule": "Sem módulo",
   "moduleViewHierarchy": "Hierarquia",
-  "moduleViewTabs": "Abas",
+  "moduleViewTabs": "como abas",
   "moduleTabLabel": "Módulo",
   "generalProgress": "Progresso Geral",
   "filtersMenu": "Filtros",
@@ -27,11 +27,32 @@
   "filterTags": "Tags",
   "showSubtasks": "Mostrar subtasks",
   "activeFilters": "Filtros ativos",
-  "filterVersion": "Versão", "filterSquad": "Squad", "filterAuthor": "Autor", "filterCostCenter": "Centro de custo", "filterPriority": "Prioridade", "filterStatus": "Status", "filterType": "Tipo", "filterTag": "Tag",
-  "hideEmptyEpics": "Ocultar épicos vazios", "hideEmptyStories": "Ocultar histórias vazias", "storyDisplay": "Histórias", "moduleViewMode": "Módulos",
-  "typeTask": "Tarefa", "typeBug": "Bug", "priorityLow": "Baixa", "priorityMedium": "Média", "priorityHigh": "Alta", "priorityCritical": "Crítica",
-  "statusNotStarted": "Não iniciada", "statusInProgress": "Em andamento", "statusBlocked": "Bloqueada", "statusDone": "Concluída", "statusCancelled": "Cancelada",
-  "storyDisplayCards": "como cards", "moduleViewTabs": "como abas", "enabled": "ativado", "removeFilter": "Remover filtro",
+  "filterVersion": "Versão",
+  "filterSquad": "Squad",
+  "filterAuthor": "Autor",
+  "filterCostCenter": "Centro de custo",
+  "filterPriority": "Prioridade",
+  "filterStatus": "Status",
+  "filterType": "Tipo",
+  "filterTag": "Tag",
+  "hideEmptyEpics": "Ocultar épicos vazios",
+  "hideEmptyStories": "Ocultar histórias vazias",
+  "storyDisplay": "Histórias",
+  "moduleViewMode": "Módulos",
+  "typeTask": "Tarefa",
+  "typeBug": "Bug",
+  "priorityLow": "Baixa",
+  "priorityMedium": "Média",
+  "priorityHigh": "Alta",
+  "priorityCritical": "Crítica",
+  "statusNotStarted": "Não iniciada",
+  "statusInProgress": "Em andamento",
+  "statusBlocked": "Bloqueada",
+  "statusDone": "Concluída",
+  "statusCancelled": "Cancelada",
+  "storyDisplayCards": "como cards",
+  "enabled": "ativado",
+  "removeFilter": "Remover filtro",
   "allModules": "Todos os módulos",
   "activeSprint": "Sprint ativa",
   "allSprints": "Todas",
@@ -55,7 +76,6 @@
   },
   "display": "Exibição",
   "moduleModeLabel": "Modo de módulos",
-  "showSubtasks": "Mostrar subtasks",
   "hideSubtasks": "Ocultar subtasks",
   "showStoriesAsLanes": "Exibir histórias como lanes",
   "showStoriesAsCards": "Exibir histórias como cards",
@@ -106,7 +126,6 @@
   "createEpicFirst": "Crie um épico primeiro para poder adicionar histórias.",
   "selectStory": "Selecionar história...",
   "noStory": "Sem história",
-  "newStory": "+ Nova história",
   "searchOrCreateTag": "Buscar ou criar tag...",
   "createTag": "Criar tag \"{{name}}\"",
   "noTags": "Nenhuma tag encontrada",
@@ -161,26 +180,24 @@
   "offline": "Offline",
   "realtimeUpdates": "Atualizações em tempo real",
   "visibleItemOne": "{{count}} item visível",
-  "visibleItemMany": "{{count}} itens visíveis"
-  ,"archiveCascadeConfirmation": "Este item possui {{count}} descendente(s) que também serão arquivados em cascata. Deseja continuar?"
-  ,"title": "Título"
-  ,"editEpic": "Editar épico"
-  ,"noStoriesInEpic": "Nenhuma história neste épico."
-   ,"editStory": "Editar história"
-   ,"boardContext": "Board"
-   ,"itemAreas": "Áreas da task"
-   ,"itemAreasLabel": "Áreas do item"
-   ,"areaDetails": "Detalhes"
-   ,"areaSubtasks": "Subtasks"
-   ,"areaStories": "Histórias"
-   ,"areaTasks": "Tasks"
-   ,"childrenEmptyStories": "Nenhuma história criada"
-   ,"childrenEmptyTasks": "Nenhuma task criada"
-   ,"childrenEmptySubtasks": "Nenhuma subtask criada"
-   ,"areaChecklists": "Checklists"
-   ,"areaActivity": "Histórico"
-   ,"properties": "Propriedades"
-   ,"planning": "Planejamento"
-   ,"information": "Informações"
-   ,"saveChanges": "Salvar alterações"
+  "visibleItemMany": "{{count}} itens visíveis",
+  "archiveCascadeConfirmation": "Este item possui {{count}} descendente(s) que também serão arquivados em cascata. Deseja continuar?",
+  "title": "Título",
+  "noStoriesInEpic": "Nenhuma história neste épico.",
+  "boardContext": "Board",
+  "itemAreas": "Áreas da task",
+  "itemAreasLabel": "Áreas do item",
+  "areaDetails": "Detalhes",
+  "areaSubtasks": "Subtasks",
+  "areaStories": "Histórias",
+  "areaTasks": "Tasks",
+  "childrenEmptyStories": "Nenhuma história criada",
+  "childrenEmptyTasks": "Nenhuma task criada",
+  "childrenEmptySubtasks": "Nenhuma subtask criada",
+  "areaChecklists": "Checklists",
+  "areaActivity": "Histórico",
+  "properties": "Propriedades",
+  "planning": "Planejamento",
+  "information": "Informações",
+  "saveChanges": "Salvar alterações"
 }

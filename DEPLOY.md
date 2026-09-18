@@ -59,3 +59,11 @@ Os valores de domínio, host, caminhos privados e credenciais devem ser
 configurados somente na infraestrutura do ambiente, nunca neste repositório.
 O código da aplicação permanece portável entre raiz (`/`), subpaths e outros
 domínios.
+
+## CI antes do deploy
+
+Todo push de branch e pull request passa pelo CI
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) com os jobs `check`,
+`contracts` e `smoke`. Não publique uma versão com gate reprovado. Para
+reproduzir localmente e para configurar os required checks, veja
+[`docs/ci.md`](docs/ci.md).

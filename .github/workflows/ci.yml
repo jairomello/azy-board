@@ -1,0 +1,137 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUN_INSTALL_CACHE: ~/.bun/install/cache
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Cache de dependências do Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - name: Instalar dependências
+        run: bun install --frozen-lockfile
+      - name: Check (typecheck + lint + testes + build)
+        run: bun run check
+      - name: Publicar diagnóstico do check
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-diagnostics
+          if-no-files-found: ignore
+          path: |
+            **/dist/**
+            apps/api/dev.db
+
+  contracts:
+    name: contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Cache de dependências do Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - name: Instalar dependências
+        run: bun install --frozen-lockfile
+      - name: i18n
+        run: bun run check:i18n
+      - name: Catálogo MCP
+        run: bun run test:mcp-catalog
+      - name: Skill de agente
+        run: bun run test:agent-skill
+      - name: Migrations
+        run: bun run test:migrations
+
+  smoke:
+    name: smoke
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: /tmp/azy-ci-smoke.db
+      JWT_SECRET: ci-smoke-secret-not-for-production
+      NODE_ENV: test
+      PORT: "3001"
+      FRONTEND_URL: http://localhost:5173
+      AZYBOARD_API_TARGET: http://localhost:3001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Cache de dependências do Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - name: Instalar dependências
+        run: bun install --frozen-lockfile
+      - name: Aplicar migrations
+        run: bun run db:migrate
+      - name: Subir API
+        run: |
+          mkdir -p tmp/ci
+          bun run --cwd apps/api src/index.ts > tmp/ci/azy-api.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -s -o /dev/null http://localhost:3001/api/auth/me; then
+              echo "API respondeu na tentativa $i"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API não respondeu em 60s"
+          cat tmp/ci/azy-api.log
+          exit 1
+      - name: Subir Web
+        run: |
+          bun run dev:web > tmp/ci/azy-web.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -s -o /dev/null http://localhost:5173; then
+              echo "Web respondeu na tentativa $i"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Web não respondeu em 60s"
+          cat tmp/ci/azy-web.log
+          exit 1
+      - name: Smoke test
+        run: bun run test:smoke
+      - name: Publicar logs
+        if: failure()
+        run: |
+          echo "=== API ==="
+          cat tmp/ci/azy-api.log || true
+          echo "=== WEB ==="
+          cat tmp/ci/azy-web.log || true
+      - name: Publicar artefatos de diagnóstico
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs
+          if-no-files-found: ignore
+          path: |
+            tmp/ci/azy-api.log
+            tmp/ci/azy-web.log

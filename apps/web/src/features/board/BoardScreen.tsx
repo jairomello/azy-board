@@ -19,7 +19,7 @@ import {
 } from '@dnd-kit/sortable'
 import { api } from '../../lib/api'
 import { KanbanCard } from '../../components/KanbanCard'
-import { type FullItemData } from '../../components/ItemModal'
+import type { FullItemData } from '../../components/ItemModal'
 import type { EpicData } from '../../components/EpicModal'
 import type { StoryData } from '../../components/StoryModal'
 import { ActiveFilterChips, removeActiveBoardFilter, type ActiveFilterKey } from '../../components/ActiveFilterChips'

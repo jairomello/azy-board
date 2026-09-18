@@ -175,8 +175,6 @@
   "simpleBoardConversionDescription": "Modules and epics will be removed. All task and bug cards will be preserved and moved to one fixed story.",
   "converting": "Converting...",
   "confirmConversion": "Confirm conversion",
-  "roleMember": "Member",
-  "roleViewer": "Viewer",
   "name": "Name",
   "editVersion": "Edit version",
   "versionDetails": "Version details"

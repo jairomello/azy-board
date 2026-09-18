@@ -175,8 +175,6 @@
   "simpleBoardConversionDescription": "Módulos e épicos serão removidos. Todos os cards de tarefas e bugs serão preservados e movidos para uma única história fixa.",
   "converting": "Convertendo...",
   "confirmConversion": "Confirmar conversão",
-  "roleMember": "Membro",
-  "roleViewer": "Visualizador",
   "name": "Nome",
   "editVersion": "Editar versão",
   "versionDetails": "Detalhes da versão"

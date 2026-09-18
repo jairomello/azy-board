@@ -312,14 +312,23 @@ web app. Never commit `.env` files.
 
 ```bash
 bun run typecheck   # tsc --noEmit across all workspaces
+bun run lint        # real lint via Biome
 bun test            # Bun test runner
 bun run test:integration  # API integration tests in an isolated SQLite database
+bun run test:migrations   # migration, integrity and timestamp tests
 bun run test:mcp          # MCP tools without external services or credentials
 bun run test:mcp-catalog  # MCP catalog and authorization policies
 bun run test:agent-skill   # skill, commands and references
 bun run test:smoke        # HTTP smoke test; use SMOKE_URL for a published app
 bun run check:i18n        # translation key parity and hardcoded-text inventory
+bun run check             # typecheck + lint + tests + build (the CI gate)
 ```
+
+**Continuous integration:** every branch push and pull request runs three
+required jobs — `check`, `contracts` and `smoke` — defined in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml). See
+[`docs/ci.md`](docs/ci.md) for how to reproduce each gate locally, the pinned
+Bun version and the lint debt tracked in `biome.json`.
 
 ### Evals (AI quality tests)
 

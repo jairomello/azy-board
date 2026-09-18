@@ -22,6 +22,7 @@
     "test:error-contract": "bun test apps/api/src/middleware/errorResponse.test.ts apps/mcp/src/handlers.test.ts",
     "test:agent-skill": "bun run scripts/check-agent-skill.ts",
     "check:i18n": "bun run scripts/check-i18n.ts",
+    "test:migrations": "bun test apps/api/src/db/migration.test.ts apps/api/src/db/integrity.test.ts apps/api/src/db/timestamp.test.ts",
     "test:mcp": "bun run --cwd apps/mcp test",
     "evals": "bun run scripts/evals.ts",
     "evals:gate": "bun run scripts/evalGate.ts",
@@ -29,5 +30,8 @@
     "lint": "bun run scripts/lint.ts",
     "typecheck": "bun run --cwd packages/types typecheck && bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck && bun run --cwd apps/mcp typecheck",
     "check": "bun run typecheck && bun run lint && bun test && bun run build"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.14"
   }
 }

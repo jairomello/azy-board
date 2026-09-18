@@ -21,7 +21,8 @@ describe('OpenRouterProvider', () => {
       userId: 'user-1',
     })
     expect(requestBody?.model).toBe('openai/gpt-4o-mini')
-    expect((requestBody?.tools as Array<{ function: { name: string } }>)[0]?.function.name).toBe('list_tasks')
+    const tools = requestBody?.tools as Array<{ function: { name: string } }> | undefined
+    expect(tools?.[0]?.function.name).toBe('list_tasks')
     expect(response).toMatchObject({ id: 'chatcmpl-1', usage: { inputTokens: 12, outputTokens: 7 }, output: [{ type: 'function_call', name: 'list_tasks', callId: 'call-1', arguments: '{"projectId":"p1"}' }] })
   })
 

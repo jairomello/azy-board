@@ -11,8 +11,8 @@ function contains(text: string, expected: string) {
 
 function badgesEsperados(flags: { isRestricted?: boolean; isHidden?: boolean }): string {
   const esperados: string[] = []
-  if (Boolean(flags.isRestricted)) esperados.push('restrito')
-  if (Boolean(flags.isHidden)) esperados.push('oculto')
+  if (flags.isRestricted) esperados.push('restrito')
+  if (flags.isHidden) esperados.push('oculto')
   return esperados.join(',')
 }
 

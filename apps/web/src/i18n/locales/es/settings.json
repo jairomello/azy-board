@@ -175,8 +175,6 @@
   "simpleBoardConversionDescription": "Se eliminarán módulos y épicas. Todas las tarjetas de tareas y errores se conservarán y moverán a una historia fija.",
   "converting": " convirtiendo...",
   "confirmConversion": "Confirmar conversión",
-  "roleMember": "Miembro",
-  "roleViewer": "Visualizador",
   "name": "Nombre",
   "editVersion": "Editar versión",
   "versionDetails": "Detalles de la versión"

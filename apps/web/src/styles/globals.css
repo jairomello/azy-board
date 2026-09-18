@@ -161,6 +161,7 @@
    navegadores sem viewport dinâmica. Somente o conteúdo interno rola. */
 .item-modal-frame {
   height: 80vh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: fallback para navegadores sem viewport dinâmica (dvh) */
   height: 80dvh;
 }
 
