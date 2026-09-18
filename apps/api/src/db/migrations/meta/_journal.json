@@ -176,6 +176,13 @@
       "when": 1789490000000,
       "tag": "0024_dashboard_metric_rollups",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1789576000000,
+      "tag": "0025_auto_theme_by_time",
+      "breakpoints": true
     }
-  ]
+]
 }

@@ -19,7 +19,7 @@ const LIGHT_SHELL_THEMES = new Set<LightShellTheme>([
   'graphite',
   'classic',
 ])
-const ALLOWED_FIELDS = new Set(['theme', 'lightShellTheme', 'language'])
+const ALLOWED_FIELDS = new Set(['theme', 'lightShellTheme', 'language', 'autoThemeByTime'])
 
 export const usersRouter = new Hono<HonoEnv>()
 usersRouter.use('*', authMiddleware)
@@ -97,10 +97,12 @@ usersRouter.patch('/me', async (c) => {
     theme: Theme
     lightShellTheme: LightShellTheme
     language: Language
+    autoThemeByTime: boolean
   }> = {}
   if (body.theme !== undefined) updates.theme = body.theme as Theme
   if (body.lightShellTheme !== undefined) updates.lightShellTheme = body.lightShellTheme as LightShellTheme
   if (body.language !== undefined) updates.language = body.language as Language
+  if (body.autoThemeByTime !== undefined) updates.autoThemeByTime = body.autoThemeByTime
 
   // [TENANT] O alvo é derivado exclusivamente da sessão e filtrado por usuário + tenant.
   await db.update(users)
@@ -117,6 +119,7 @@ usersRouter.patch('/me', async (c) => {
       theme: true,
       lightShellTheme: true,
       language: true,
+      autoThemeByTime: true,
     },
   })
 

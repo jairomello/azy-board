@@ -65,6 +65,7 @@ authRouter.post('/login', async (c) => {
       theme: user.theme,
       lightShellTheme: user.lightShellTheme,
       language: user.language,
+      autoThemeByTime: user.autoThemeByTime,
       globalGroup: user.globalGroup,
     },
   })
@@ -84,6 +85,7 @@ authRouter.get('/me', authMiddleware, async (c) => {
       theme: true,
       lightShellTheme: true,
       language: true,
+      autoThemeByTime: true,
       globalGroup: true,
     },
   })

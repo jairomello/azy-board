@@ -4,6 +4,8 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import './i18n/index'
 import './styles/globals.css'
+import { getEffectiveTheme, readAutoThemeByTime } from './lib/theme'
+import type { Theme } from '@azy-board/types'
 
 // Suporte a deploy path-based (ex.: /app/ atrás de um proxy reverso).
 // Quando publicado atrás de um proxy reverso que injeta window.__BASE_PATH__
@@ -33,16 +35,22 @@ if (BASE_PATH) {
 
 // Aplicar tema antes do primeiro render para evitar flash de tema errado
 // Se não houver preferência salva, detecta o SO e já persiste — o tema só muda via toggle
+// Card T4: com o tema automático por horário ligado, o tema efetivo vem da hora local;
+// o valor manual em `theme` é preservado para quando o modo automático for desligado.
 const validShellThemes = new Set(['petroleum', 'ocean', 'emerald', 'graphite', 'classic'])
-let savedTheme = localStorage.getItem('theme')
-if (savedTheme !== 'light' && savedTheme !== 'dark') {
-  savedTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
+const storedTheme = localStorage.getItem('theme')
+let savedTheme: Theme =
+  storedTheme === 'light' || storedTheme === 'dark'
+    ? storedTheme
+    : window.matchMedia('(prefers-color-scheme: dark)').matches
+      ? 'dark'
+      : 'light'
 let savedShellTheme = localStorage.getItem('light-shell-theme')
 if (!savedShellTheme || !validShellThemes.has(savedShellTheme)) savedShellTheme = 'petroleum'
 localStorage.setItem('theme', savedTheme)
 localStorage.setItem('light-shell-theme', savedShellTheme)
-document.documentElement.classList.toggle('dark', savedTheme === 'dark')
+const effectiveTheme = getEffectiveTheme({ auto: readAutoThemeByTime(), manual: savedTheme })
+document.documentElement.classList.toggle('dark', effectiveTheme === 'dark')
 document.documentElement.dataset.lightShellTheme = savedShellTheme
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

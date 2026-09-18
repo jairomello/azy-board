@@ -39,6 +39,8 @@ export const users = sqliteTable('users', {
     enum: ['petroleum', 'ocean', 'emerald', 'graphite', 'classic'],
   }).notNull().default('petroleum'),
   language: text('language', { enum: ['pt-BR', 'en', 'es'] }).notNull().default('pt-BR'),
+  // Card T4: quando verdadeiro, o tema claro/escuro segue o horário local do dispositivo.
+  autoThemeByTime: integer('auto_theme_by_time', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   // [TENANT] Habilita FKs compostas de tabelas filhas para users(tenant_id, id)

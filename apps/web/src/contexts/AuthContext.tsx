@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, type ReactNode }
 import { api } from '../lib/api'
 import i18n from '../i18n'
 import { gravarMostrarProjetosOcultos, lerMostrarProjetosOcultos } from '../lib/sessionPreferences'
+import { applyTheme, getEffectiveTheme, persistAutoThemeByTime, readAutoThemeByTime, readManualTheme } from '../lib/theme'
 import type { GlobalGroup, Theme, Language, LightShellTheme } from '@azy-board/types'
 
 export interface User {
@@ -12,16 +13,18 @@ export interface User {
   theme: Theme
   lightShellTheme: LightShellTheme
   language: Language
+  autoThemeByTime: boolean
   globalGroup: GlobalGroup
 }
 
-type PreferenceUpdate = Partial<Pick<User, 'theme' | 'lightShellTheme' | 'language'>>
+type PreferenceUpdate = Partial<Pick<User, 'theme' | 'lightShellTheme' | 'language' | 'autoThemeByTime'>>
 const LIGHT_SHELL_THEMES = new Set<LightShellTheme>(['petroleum', 'ocean', 'emerald', 'graphite', 'classic'])
 
 function normalizeUser(user: User): User {
   return {
     ...user,
     lightShellTheme: LIGHT_SHELL_THEMES.has(user.lightShellTheme) ? user.lightShellTheme : 'petroleum',
+    autoThemeByTime: user.autoThemeByTime === true,
   }
 }
 
@@ -55,8 +58,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function applyPreferences(preferences: PreferenceUpdate) {
     if (preferences.theme) {
-      document.documentElement.classList.toggle('dark', preferences.theme === 'dark')
       localStorage.setItem('theme', preferences.theme)
+    }
+    if (preferences.autoThemeByTime !== undefined) {
+      persistAutoThemeByTime(preferences.autoThemeByTime)
     }
     if (preferences.lightShellTheme) {
       document.documentElement.dataset.lightShellTheme = preferences.lightShellTheme
@@ -66,7 +71,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('language', preferences.language)
       void i18n.changeLanguage(preferences.language)
     }
+    // Card T4: aplica o tema efetivo considerando o modo automático por horário.
+    applyTheme(getEffectiveTheme({ auto: readAutoThemeByTime(), manual: readManualTheme() }))
   }
+
+  // Card T4: com o modo automático ligado, reavalia o tema ao carregar, quando a
+  // aba volta a ficar visível/recebe foco e periodicamente para cobrir a virada de faixa.
+  useEffect(() => {
+    if (!user?.autoThemeByTime) return
+    function refreshTheme() {
+      applyTheme(getEffectiveTheme({ auto: true, manual: readManualTheme() }))
+    }
+    refreshTheme()
+    const interval = window.setInterval(refreshTheme, 60_000)
+    window.addEventListener('focus', refreshTheme)
+    document.addEventListener('visibilitychange', refreshTheme)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refreshTheme)
+      document.removeEventListener('visibilitychange', refreshTheme)
+    }
+  }, [user?.autoThemeByTime])
 
   useEffect(() => {
     // Verificar sessão existente ao carregar

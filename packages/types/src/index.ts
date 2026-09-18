@@ -72,6 +72,7 @@ export interface UserPreferences {
   theme: Theme
   lightShellTheme: LightShellTheme
   language: Language
+  autoThemeByTime: boolean
 }
 
 export interface AncestorNode {

@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { Check, Palette, User, EyeOff } from 'lucide-react'
+import { Check, Palette, User, EyeOff, Clock } from 'lucide-react'
 import type { LightShellTheme, Theme } from '@azy-board/types'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiKeysSection } from '../components/ApiKeysSection'
@@ -26,7 +26,7 @@ export default function AccountPage() {
   const { toast } = useToast()
   const selectedTheme = user?.lightShellTheme ?? 'petroleum'
 
-  async function savePreference(preference: { theme?: Theme; lightShellTheme?: LightShellTheme }) {
+  async function savePreference(preference: { theme?: Theme; lightShellTheme?: LightShellTheme; autoThemeByTime?: boolean }) {
     try {
       await updatePreferences(preference)
       toast(t('appearanceSaved'))
@@ -87,7 +87,8 @@ export default function AccountPage() {
                   key={mode}
                   onClick={() => savePreference({ theme: mode })}
                   aria-pressed={user?.theme === mode}
-                  className={`px-4 py-2 rounded-md text-xs font-semibold transition ${
+                  disabled={user?.autoThemeByTime === true}
+                  className={`px-4 py-2 rounded-md text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed ${
                     user?.theme === mode ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
@@ -95,7 +96,38 @@ export default function AccountPage() {
                 </button>
               ))}
             </div>
+            {user?.autoThemeByTime === true && (
+              <p className="text-[11px] text-muted-foreground mt-2">{t('autoThemeByTimeManualDisabled')}</p>
+            )}
           </div>
+
+          <button
+            type="button"
+            role="switch"
+            aria-checked={user?.autoThemeByTime === true}
+            onClick={() => savePreference({ autoThemeByTime: !(user?.autoThemeByTime === true) })}
+            className="flex items-center justify-between gap-3 w-full px-3 py-2 mb-5 text-sm text-foreground border border-border hover:bg-muted transition-colors rounded-lg text-left"
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <Clock className="w-4 h-4 text-muted-foreground shrink-0" aria-hidden="true" />
+              <span className="flex flex-col">
+                <span>{t('autoThemeByTime')}</span>
+                <span className="text-[11px] font-normal text-muted-foreground">{t('autoThemeByTimeHint')}</span>
+              </span>
+            </span>
+            <span
+              aria-hidden="true"
+              className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
+                user?.autoThemeByTime === true ? 'bg-primary' : 'bg-muted-foreground/30'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 h-4 w-4 rounded-full bg-background shadow transition-all ${
+                  user?.autoThemeByTime === true ? 'left-[1.125rem]' : 'left-0.5'
+                }`}
+              />
+            </span>
+          </button>
 
           <div>
             <div className="flex items-center justify-between gap-3 mb-2">
