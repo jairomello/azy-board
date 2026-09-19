@@ -180,5 +180,17 @@
   "confirmConversion": "Confirmar conversión",
   "name": "Nombre",
   "editVersion": "Editar versión",
-  "versionDetails": "Detalles de la versión"
+  "versionDetails": "Detalles de la versión",
+  "profilePhotoChange": "Cambiar foto",
+  "profilePhotoRemove": "Eliminar foto",
+  "profilePhotoHint": "Formatos aceptados: PNG, JPG, WebP, GIF, AVIF o BMP. La imagen se recorta y comprime antes de guardar.",
+  "profilePhotoInvalidType": "Elige un archivo de imagen válido (PNG, JPG, WebP, GIF, AVIF o BMP).",
+  "profilePhotoUpdated": "Foto de perfil actualizada.",
+  "profilePhotoRemoved": "Foto de perfil eliminada.",
+  "profilePhotoError": "No se pudo actualizar la foto de perfil.",
+  "photoEditorTitle": "Ajustar foto",
+  "photoEditorHint": "Arrastra para reposicionar y usa el control para hacer zoom.",
+  "photoEditorZoom": "Zoom",
+  "photoEditorApply": "Guardar foto",
+  "photoEditorCancel": "Cancelar"
 }

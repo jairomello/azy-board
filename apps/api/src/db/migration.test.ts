@@ -141,3 +141,22 @@ describe('migration de analytics', () => {
     sqlite.close()
   })
 })
+
+describe('migration de foto de perfil (Card T2)', () => {
+  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+
+  test('cria user_avatars com FKs compostas e foreign_key_check limpo', () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    migrate(database, { migrationsFolder })
+    migrate(database, { migrationsFolder })
+
+    const tables = sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
+    expect(tables.map(table => table.name)).toContain('user_avatars')
+
+    const fks = sqlite.query("PRAGMA foreign_key_list('user_avatars')").all() as Array<{ table: string; from: string }>
+    expect(fks.some(fk => fk.table === 'users' && fk.from === 'user_id')).toBe(true)
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+})

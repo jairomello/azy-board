@@ -1,9 +1,7 @@
 ## Purpose
 
 Definir as preferências de aparência e idioma disponíveis na área de conta do usuário.
-
 ## Requirements
-
 ### Requirement: Preferência de sessão para mostrar projetos ocultos
 O sistema SHALL disponibilizar, no dropdown do avatar e na página `/account`, um controle "Mostrar projetos ocultos" que alterna a exibição de projetos ocultos na listagem de projetos. O controle SHALL iniciar desligado em cada sessão, SHALL ser reiniciado para desligado em todo login e logout e SHALL NÃO ser persistido em banco de dados nem em `localStorage`.
 
@@ -51,11 +49,11 @@ O sistema SHALL exibir um menu dropdown ao clicar no `UserAvatar` em qualquer he
 - **THEN** o estado do controle é alternado e a listagem de projetos é recarregada considerando o novo valor
 
 ### Requirement: Página de configurações de conta
-O sistema SHALL disponibilizar a rota `/account` como uma página protegida por autenticação que centraliza as configurações pessoais do usuário. A página SHALL exibir o nome e e-mail do usuário no topo, conter a seção de preferências de visibilidade de projetos e a seção de API Keys.
+O sistema SHALL disponibilizar a rota `/account` como uma página protegida por autenticação que centraliza as configurações pessoais do usuário. A página SHALL exibir o nome e e-mail do usuário no topo, conter a seção de foto de perfil, a seção de preferências de visibilidade de projetos e a seção de API Keys.
 
 #### Scenario: Acesso autenticado à página de conta
 - **WHEN** um usuário autenticado navega para `/account`
-- **THEN** a página é exibida com nome, e-mail do usuário, a preferência "Mostrar projetos ocultos" e a seção de API Keys
+- **THEN** a página é exibida com nome, e-mail, a seção de foto de perfil, a preferência "Mostrar projetos ocultos" e a seção de API Keys
 
 #### Scenario: Acesso não autenticado redireciona para login
 - **WHEN** um usuário não autenticado acessa `/account`
@@ -87,3 +85,27 @@ A página `/account` SHALL apresentar uma seção **Aparência** antes da seçã
 - **WHEN** a atualização remota falha
 - **THEN** o sistema mantém a aplicação utilizável
 - **AND** comunica a falha e oferece nova tentativa
+
+### Requirement: Edição da foto de perfil na página de conta
+A página `/account` SHALL exibir a foto atual do usuário (ou o avatar por iniciais) acompanhada de controles para alterar e remover a foto. O fluxo de alteração SHALL usar o editor de recorte antes do envio. Os textos novos SHALL estar disponíveis nos três idiomas (pt-BR, en, es) no namespace `settings`, e os controles SHALL ser acessíveis por teclado.
+
+#### Scenario: Alterar a foto
+- **WHEN** usuário aciona o controle de alterar foto na seção de perfil
+- **THEN** o sistema abre o editor de recorte e, após a confirmação, atualiza a foto exibida sem recarregar a página
+
+#### Scenario: Remover a foto
+- **WHEN** usuário aciona o controle de remover foto
+- **THEN** a foto é descartada e o avatar por iniciais volta a ser exibido
+
+#### Scenario: Estado sem foto
+- **WHEN** usuário não possui foto cadastrada
+- **THEN** a seção de perfil exibe o avatar por iniciais com a opção de adicionar foto
+
+#### Scenario: Falha no upload
+- **WHEN** o upload ou a normalização falha
+- **THEN** o sistema mantém a aplicação utilizável, exibe mensagem de erro e preserva a foto anterior
+
+#### Scenario: Controles acessíveis
+- **WHEN** usuário navega por teclado pela seção de perfil
+- **THEN** consegue acionar os controles de alterar e remover foto e recebe retorno de foco/estado
+

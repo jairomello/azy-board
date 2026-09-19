@@ -180,4 +180,24 @@ describe('integridade do schema', () => {
     expect((sqlite.query("SELECT COUNT(*) AS count FROM storage_cleanup_jobs WHERE status != 'DONE'").get() as { count: number }).count).toBe(2)
     sqlite.close()
   })
+
+  test('cascade remove avatar com o usuário e auditoria detecta avatar órfão', () => {
+    const { sqlite } = migratedDatabase()
+    seedTenant(sqlite, 'tenant-a')
+    seedUser(sqlite, 'user-1', 'tenant-a', 'user@example.com')
+    const insertAvatar = sqlite.query('INSERT INTO user_avatars (tenant_id, user_id, mime_type, size_bytes, width, height, content_hash, data, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    insertAvatar.run('tenant-a', 'user-1', 'image/webp', 10, 256, 256, 'hash-1', new Uint8Array([1, 2, 3]), now)
+    expect(auditIntegrity(sqlite)).toEqual([])
+
+    // Cascade: remover o usuário remove o avatar.
+    sqlite.query('DELETE FROM users WHERE id = ?').run('user-1')
+    expect((sqlite.query('SELECT COUNT(*) AS count FROM user_avatars').get() as { count: number }).count).toBe(0)
+
+    // Órfão fabricado (base legada, FKs desligadas só na injeção) é detectado.
+    sqlite.exec('PRAGMA foreign_keys = OFF;')
+    insertAvatar.run('tenant-a', 'user-missing', 'image/webp', 10, 256, 256, 'hash-2', new Uint8Array([1]), now)
+    sqlite.exec('PRAGMA foreign_keys = ON;')
+    expect(auditIntegrity(sqlite).map(violation => violation.check)).toContain('orphan_user_avatar')
+    sqlite.close()
+  })
 })

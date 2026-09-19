@@ -39,6 +39,17 @@ Use o Azy Board como fonte compartilhada de planejamento e execução para pesso
 - Use `dryRun` antes de arquivar ou excluir em cascata e peça confirmação antes da ação destrutiva.
 - Nunca exponha API Keys ou copie credenciais para arquivos versionados.
 
+## Payload, limites e erros comuns
+
+- Não despeje o board inteiro em projetos grandes: prefira `list_tasks` com filtros e paginação (`limit`/`cursor`) ou `get_tree` com `onlyLeaves`. `get_board`/`get_tree` já resumem descrições longas por padrão; use `includeDescriptions: true` apenas quando precisar do texto completo.
+- Filtros e campos opcionais podem ser **omitidos**. Clientes que exigem todos os campos podem enviar `null`; ambos equivalem a "não informado" e os defaults se aplicam. Nunca invente valores só para preencher o schema.
+- Limites de texto das ferramentas (em caracteres): `title` 500, `activity` 20000, `text` de checklist 2000, `description` 20000, `name` 200, `ref` 100 e `columnName` 128.
+- Erros comuns e ação:
+  - `... excede o limite de N caracteres (recebido: X)` → reduza o texto ou divida a operação.
+  - `limit, quando informado, deve ser um inteiro entre 1 e 100` → omita o campo para usar o padrão.
+  - `... deve ser uma lista de até N strings não vazias` → envie uma lista válida ou omita o filtro.
+  - `Campo obrigatório ausente: X` → o campo é realmente obrigatório; informe-o.
+
 ## Referências
 
 - [Operação MCP](../../../skills/azyboard/references/mcp-operations.md)

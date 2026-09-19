@@ -14,10 +14,15 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  // FormData não pode receber Content-Type manual: o browser define o boundary.
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     credentials: 'include', // Envia cookie de sessão automaticamente
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: {
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+      ...options.headers,
+    },
   })
 
   if (res.status === 401 && path !== '/auth/me') {
@@ -51,6 +56,8 @@ export const api = {
   post: <T>(path: string, body: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
   patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  // Upload multipart (o endpoint de avatar usa PUT).
+  upload: <T>(path: string, formData: FormData) => request<T>(path, { method: 'PUT', body: formData }),
 }
 
 export function cn(...classes: (string | undefined | false | null)[]) {

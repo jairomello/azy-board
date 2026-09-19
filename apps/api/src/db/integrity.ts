@@ -166,6 +166,15 @@ const CHECKS: CheckDefinition[] = [
           WHERE NOT EXISTS (SELECT 1 FROM items WHERE items.id = checklists.item_id)`,
   },
   {
+    check: 'orphan_user_avatar',
+    table: 'user_avatars',
+    sql: `SELECT COUNT(*) AS count FROM user_avatars
+          WHERE NOT EXISTS (
+            SELECT 1 FROM users
+            WHERE users.id = user_avatars.user_id AND users.tenant_id = user_avatars.tenant_id
+          )`,
+  },
+  {
     check: 'duplicate_email_per_tenant',
     table: 'users',
     sql: `SELECT COUNT(*) AS count FROM (

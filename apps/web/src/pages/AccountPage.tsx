@@ -1,8 +1,9 @@
 import { useTranslation } from 'react-i18next'
-import { Check, Palette, User, EyeOff, Clock } from 'lucide-react'
+import { Check, Palette, EyeOff, Clock } from 'lucide-react'
 import type { LightShellTheme, Theme } from '@azy-board/types'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiKeysSection } from '../components/ApiKeysSection'
+import { ProfilePhotoSection } from '../components/ProfilePhotoSection'
 import { ShowHiddenProjectsSwitch } from '../components/ShowHiddenProjectsSwitch'
 import { useToast } from '../components/Toast'
 import { AppShell } from '../components/AppShell'
@@ -53,20 +54,8 @@ export default function AccountPage() {
           <p className="text-sm text-muted-foreground mt-1">{t('accountPreferencesDescription')}</p>
         </div>
 
-        {/* Perfil do usuário */}
-        <section className="flex items-center gap-4 bg-card border border-border rounded-xl px-5 py-4 mb-5 shadow-sm">
-          <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-            {user?.avatarUrl ? (
-              <img src={user.avatarUrl} alt={user.name} className="w-12 h-12 rounded-full object-cover" />
-            ) : (
-              <User className="w-6 h-6 text-primary" />
-            )}
-          </div>
-          <div className="min-w-0">
-            <p className="font-semibold text-foreground truncate">{user?.name}</p>
-            <p className="text-sm text-muted-foreground truncate">{user?.email}</p>
-          </div>
-        </section>
+        {/* Perfil do usuário e foto de perfil */}
+        <ProfilePhotoSection />
 
         <section className="bg-card border border-border rounded-xl px-5 py-5 mb-5 shadow-sm">
           <div className="flex items-start gap-3 mb-5">

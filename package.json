@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": ["apps/*", "packages/*"],
   "scripts": {
+    "predev:api": "bun run db:migrate",
     "dev:api": "bun run --cwd apps/api dev",
     "dev:web": "bun run --cwd apps/web dev",
     "dev:mcp": "bun run --cwd apps/mcp dev",

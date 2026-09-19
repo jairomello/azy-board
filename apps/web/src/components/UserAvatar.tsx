@@ -1,3 +1,5 @@
+import { resolveAppUrl } from '../lib/appUrl'
+
 interface AvatarUser {
   name: string
   avatarUrl?: string | null
@@ -21,11 +23,11 @@ function getInitials(name: string) {
 
 interface Props {
   user: AvatarUser
-  size?: 'xs' | 'sm' | 'md'
+  size?: 'xs' | 'sm' | 'md' | 'lg'
   showAiBadge?: boolean
 }
 
-const sizes = { xs: 'w-6 h-6 text-xs', sm: 'w-8 h-8 text-sm', md: 'w-10 h-10 text-base' }
+const sizes = { xs: 'w-6 h-6 text-xs', sm: 'w-8 h-8 text-sm', md: 'w-10 h-10 text-base', lg: 'w-12 h-12 text-lg' }
 
 export function UserAvatar({ user, size = 'md', showAiBadge }: Props) {
   const sizeClass = sizes[size]
@@ -34,7 +36,7 @@ export function UserAvatar({ user, size = 'md', showAiBadge }: Props) {
     <div className="relative inline-flex">
       {user.avatarUrl ? (
         <img
-          src={user.avatarUrl}
+          src={resolveAppUrl(user.avatarUrl)}
           alt={user.name}
           className={`${sizeClass} rounded-full object-cover ring-2 ring-background`}
         />

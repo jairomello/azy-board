@@ -22,7 +22,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import type { ApiCall } from './tools.js'
 import { hasMcpPolicy } from './policies.js'
-import { executeSharedTool, getSharedToolDefinitions, sanitizeToolOutput, type ToolDefinition } from './registry.js'
+import { executeSharedTool, getSharedToolDefinitions, requiredFieldsFor, sanitizeToolOutput, type ToolDefinition } from './registry.js'
 
 // [TENANT] API Key autentica o agente como o Owner humano vinculado — resolvido pelo middleware da API
 export async function makeApiCall(apiUrl: string, apiKey: string, options: { timeoutMs?: number } = {}) {
@@ -81,6 +81,16 @@ export type McpServerOptions = {
   defaultProjectId?: string
 }
 
+// O schema interno (getSharedToolDefinitions) mantém todos os campos em `required`
+// porque o OpenAI strict exige. Para clientes MCP, expõe apenas os campos realmente
+// obrigatórios: os opcionais podem ser omitidos (e null também é aceito).
+function withOptionalFields(tool: ToolDefinition): ToolDefinition {
+  const mandatory = new Set(requiredFieldsFor(tool.name))
+  const required = tool.inputSchema.required.filter(field => mandatory.has(field))
+  if (required.length === tool.inputSchema.required.length) return tool
+  return { ...tool, inputSchema: { ...tool.inputSchema, required } }
+}
+
 // [DEFAULT PROJECT] Com projeto padrão configurado, `projectId` vira opcional no schema.
 function withOptionalProjectId(tool: ToolDefinition, defaultProjectId: string): ToolDefinition {
   if (!tool.inputSchema.required.includes('projectId')) return tool
@@ -107,6 +117,7 @@ export function createMcpServer(apiCall: ApiCall, options: McpServerOptions = {}
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: getSharedToolDefinitions()
+      .map(withOptionalFields)
       .map(tool => defaultProjectId ? withOptionalProjectId(tool, defaultProjectId) : tool)
       .map(({ policy: _policy, namespace: _namespace, ...tool }) => tool),
   }))

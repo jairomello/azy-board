@@ -5,6 +5,27 @@
 
 export type ApiCall = (path: string, method?: string, body?: unknown) => Promise<unknown>
 
+// Campos de texto longo que inflam a saída de descoberta (board/tree).
+const HEAVY_TEXT_FIELDS = new Set(['description', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'scope'])
+const TEXT_PREVIEW_LENGTH = 160
+
+function summarizeLongText(value: string): string {
+  const plain = value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+  return plain.length > TEXT_PREVIEW_LENGTH ? `${plain.slice(0, TEXT_PREVIEW_LENGTH)}…` : plain
+}
+
+// Reduz descrições longas recursivamente quando o cliente não pede o texto completo.
+function compactLongText(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(compactLongText)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      HEAVY_TEXT_FIELDS.has(key) && typeof item === 'string' ? summarizeLongText(item) : compactLongText(item),
+    ]),
+  )
+}
+
 export type BatchOperation = { tool: 'create_task' | 'create_item'; args: Record<string, unknown> }
 export type ProjectStructureOperation = BatchOperation
 
@@ -83,17 +104,19 @@ export async function toolGetProject(api: ApiCall, projectId: string): Promise<P
   return api(`/projects/${projectId}`) as Promise<ProjectSummary>
 }
 
-export async function toolGetBoard(api: ApiCall, projectId: string): Promise<unknown> {
-  return api(`/projects/${projectId}/board`)
+export async function toolGetBoard(api: ApiCall, projectId: string, includeDescriptions = false): Promise<unknown> {
+  const board = await api(`/projects/${projectId}/board`)
+  return includeDescriptions ? board : compactLongText(board)
 }
 
-export async function toolGetTree(api: ApiCall, projectId: string, filters?: { moduleId?: string; assigneeId?: string; sprintId?: string }): Promise<unknown> {
+export async function toolGetTree(api: ApiCall, projectId: string, options?: { moduleId?: string; assigneeId?: string; sprintId?: string; includeDescriptions?: boolean }): Promise<unknown> {
   const params = new URLSearchParams()
-  if (filters?.moduleId) params.set('moduleId', filters.moduleId)
-  if (filters?.assigneeId) params.set('assigneeId', filters.assigneeId)
-  if (filters?.sprintId) params.set('sprintId', filters.sprintId)
+  if (options?.moduleId) params.set('moduleId', options.moduleId)
+  if (options?.assigneeId) params.set('assigneeId', options.assigneeId)
+  if (options?.sprintId) params.set('sprintId', options.sprintId)
   const query = params.toString()
-  return api(`/projects/${projectId}/items/tree${query ? `?${query}` : ''}`)
+  const tree = await api(`/projects/${projectId}/items/tree${query ? `?${query}` : ''}`)
+  return options?.includeDescriptions ? tree : compactLongText(tree)
 }
 
 export async function toolGetShadowMarkdown(api: ApiCall, projectId: string): Promise<unknown> {

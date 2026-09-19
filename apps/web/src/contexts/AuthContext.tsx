@@ -34,6 +34,8 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   updatePreferences: (preferences: PreferenceUpdate) => Promise<void>
+  updateAvatar: (file: Blob) => Promise<void>
+  removeAvatar: () => Promise<void>
   showHiddenProjects: boolean
   setShowHiddenProjects: (valor: boolean) => void
 }
@@ -120,6 +122,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
+  // Foto de perfil: sobe o recorte comprimido e reflete o usuário atualizado.
+  async function updateAvatar(file: Blob) {
+    const form = new FormData()
+    form.append('file', file, 'avatar.webp')
+    const data = await api.upload<{ user: User }>('/users/me/avatar', form)
+    setUser(normalizeUser(data.user))
+  }
+
+  async function removeAvatar() {
+    const data = await api.delete<{ user: User }>('/users/me/avatar')
+    setUser(normalizeUser(data.user))
+  }
+
   async function updatePreferences(preferences: PreferenceUpdate) {
     applyPreferences(preferences)
     setUser(current => current ? { ...current, ...preferences } : current)
@@ -132,7 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, updatePreferences, showHiddenProjects, setShowHiddenProjects }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, updatePreferences, updateAvatar, removeAvatar, showHiddenProjects, setShowHiddenProjects }}>
       {children}
     </AuthContext.Provider>
   )

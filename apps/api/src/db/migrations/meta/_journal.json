@@ -183,6 +183,13 @@
       "when": 1789576000000,
       "tag": "0025_auto_theme_by_time",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1789823122674,
+      "tag": "0026_far_oracle",
+      "breakpoints": true
     }
-]
+  ]
 }

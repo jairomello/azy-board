@@ -1,9 +1,11 @@
+import { TOOL_TEXT_LIMITS } from './limits.js'
+
 export function assertNonEmptyString(value: unknown, field: string, maxLength = 200): asserts value is string {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new Error(`${field} deve ser uma string não vazia`)
   }
   if (value.trim().length > maxLength) {
-    throw new Error(`${field} excede o limite de ${maxLength} caracteres`)
+    throw new Error(`${field} excede o limite de ${maxLength} caracteres (recebido: ${value.trim().length})`)
   }
 }
 
@@ -46,12 +48,20 @@ export function validateToolArguments(name: string, args: Record<string, unknown
   }
   const input = args ?? {}
   for (const field of ['projectId', 'itemId', 'taskId', 'sprintId', 'tagId', 'versionId', 'userId', 'columnId', 'moduleId', 'checklistId', 'checklistItemId']) if (field in input && input[field] != null) assertNonEmptyString(input[field], field, 128)
-  for (const field of ['name', 'title', 'activity', 'text']) if (field in input && input[field] != null) assertNonEmptyString(input[field], field)
-  if ('description' in input && input.description != null) assertNonEmptyString(input.description, 'description', 4000)
-  if ('tagIds' in input) assertStringArray(input.tagIds, 'tagIds')
-  if ('order' in input) assertStringArray(input.order, 'order')
+  // null é tratado como "não informado" (clients strict enviam todos os campos).
+  if (input.name != null) assertNonEmptyString(input.name, 'name', TOOL_TEXT_LIMITS.name)
+  if (input.title != null) assertNonEmptyString(input.title, 'title', TOOL_TEXT_LIMITS.title)
+  if (input.activity != null) assertNonEmptyString(input.activity, 'activity', TOOL_TEXT_LIMITS.activity)
+  if (input.text != null) assertNonEmptyString(input.text, 'text', TOOL_TEXT_LIMITS.text)
+  if (input.description != null) assertNonEmptyString(input.description, 'description', TOOL_TEXT_LIMITS.description)
+  if (input.ref != null) assertNonEmptyString(input.ref, 'ref', TOOL_TEXT_LIMITS.ref)
+  if (input.columnName != null) assertNonEmptyString(input.columnName, 'columnName', TOOL_TEXT_LIMITS.columnName)
+  if (input.tagIds != null) assertStringArray(input.tagIds, 'tagIds')
+  if (input.order != null) assertStringArray(input.order, 'order')
   if ('durationMin' in input && input.durationMin !== undefined && input.durationMin !== null) assertNonNegativeNumber(input.durationMin, 'durationMin')
-  if ('limit' in input && input.limit !== undefined && (typeof input.limit !== 'number' || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)) throw new Error('limit deve ser um inteiro entre 1 e 100')
+  if (input.limit != null && (typeof input.limit !== 'number' || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)) {
+    throw new Error('limit, quando informado, deve ser um inteiro entre 1 e 100 (omita ou envie null para o padrão)')
+  }
   if ((name === 'update_item' || name === 'update_items')) {
     if (!Array.isArray(input.changes) || input.changes.length < 1 || input.changes.length > 20) throw new Error('changes deve conter entre 1 e 20 alterações')
     const fields = new Set<string>()
@@ -92,7 +102,7 @@ export function validateToolArguments(name: string, args: Record<string, unknown
   if (name === 'batch_move') {
     assertStringArray(input.itemIds, 'itemIds', 500)
     if ((input.itemIds as string[]).length < 1) throw new Error('itemIds deve conter entre 1 e 500 IDs')
-    assertNonEmptyString(input.columnName, 'columnName', 128)
+    assertNonEmptyString(input.columnName, 'columnName', TOOL_TEXT_LIMITS.columnName)
   }
   if (name === 'batch' || name === 'create_project_structure') {
     if (!Array.isArray(input.operations) || input.operations.length < 1 || input.operations.length > 50) throw new Error('operations deve conter entre 1 e 50 entradas')
@@ -100,8 +110,8 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     const typesByRef = new Map<string, string>()
     for (const operation of input.operations as Array<{ tool?: unknown; args?: Record<string, unknown> }>) {
       if (operation.tool !== 'create_task' || !operation.args) throw new Error('Operação de lote inválida')
-      assertNonEmptyString(operation.args.ref, 'ref', 100)
-      assertNonEmptyString(operation.args.title, 'title')
+      assertNonEmptyString(operation.args.ref, 'ref', TOOL_TEXT_LIMITS.ref)
+      assertNonEmptyString(operation.args.title, 'title', TOOL_TEXT_LIMITS.title)
       assertEnum(operation.args.type, 'type', ['EPIC', 'STORY', 'TASK', 'BUG'])
       if (typeof operation.args.assignToCurrentUser !== 'boolean') throw new Error('assignToCurrentUser deve ser booleano')
       const type = operation.args.type as string

@@ -9,6 +9,8 @@ import { hasGlobalGroup, hashPassword, isGlobalGroup } from '../services/auth'
 import { generateId } from '../utils/id'
 import { normalizeEmail } from '../utils/email'
 import { createUserSchema, groupSchema, parseJson, preferencesSchema } from '../validation'
+import { avatarStore } from '../services/avatarStore'
+import { AvatarValidationError, MAX_AVATAR_SIZE, normalizeAvatar } from '../services/avatarImage'
 
 const THEMES = new Set<Theme>(['light', 'dark'])
 const LANGUAGES = new Set<Language>(['pt-BR', 'en', 'es'])
@@ -27,6 +29,27 @@ usersRouter.use('*', authMiddleware)
 const PUBLIC_USER_COLUMNS = {
   id: true, email: true, name: true, avatarUrl: true, globalGroup: true,
 } as const
+
+// Projeção do próprio usuário (nunca inclui o BLOB de avatar, que vive em user_avatars).
+const SELF_USER_COLUMNS = {
+  id: true,
+  email: true,
+  name: true,
+  avatarUrl: true,
+  theme: true,
+  lightShellTheme: true,
+  language: true,
+  autoThemeByTime: true,
+  globalGroup: true,
+} as const
+
+function loadSelfUser(tenantId: string, userId: string) {
+  // [TENANT] Alvo sempre derivado da sessão e filtrado por usuário + tenant.
+  return db.query.users.findFirst({
+    where: (u) => and(eq(u.id, userId), eq(u.tenantId, tenantId)),
+    columns: SELF_USER_COLUMNS,
+  })
+}
 
 usersRouter.get('/', requireGlobalGroup('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
@@ -125,4 +148,100 @@ usersRouter.patch('/me', async (c) => {
 
   if (!user) return c.json({ error: 'Usuário não encontrado' }, 404)
   return c.json({ user })
+})
+
+// PUT /users/me/avatar — upload multipart da foto de perfil
+// Fluxo: valida assinatura/tamanho → normaliza 256x256 sem metadados → grava no
+// AvatarStore dedicado (separado dos anexos) → atualiza users.avatar_url versionado.
+usersRouter.put('/me/avatar', async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+
+  let form: FormData
+  try {
+    form = await c.req.formData()
+  } catch {
+    return c.json({ error: 'Envio inválido: esperado multipart/form-data', code: 'INVALID_REQUEST', retryable: false }, 400)
+  }
+
+  const file = form.get('file')
+  if (!file || typeof file === 'string') {
+    return c.json({ error: 'Arquivo de imagem não informado', code: 'INVALID_REQUEST', retryable: false }, 400)
+  }
+  if (file.size > MAX_AVATAR_SIZE) {
+    return c.json({ error: 'Imagem acima do tamanho máximo permitido', code: 'PAYLOAD_TOO_LARGE', retryable: false }, 413)
+  }
+
+  try {
+    const input = Buffer.from(await file.arrayBuffer())
+    const normalized = await normalizeAvatar(input)
+    const { url } = await avatarStore.save({
+      // [TENANT] Gravação restrita ao tenant e usuário da sessão.
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      mimeType: normalized.mimeType,
+      width: normalized.width,
+      height: normalized.height,
+      contentHash: normalized.contentHash,
+      data: normalized.data,
+    })
+    // [TENANT] Atualiza o ponteiro público apenas no próprio usuário do tenant.
+    await db.update(users).set({ avatarUrl: url }).where(and(eq(users.id, ctx.userId), eq(users.tenantId, ctx.tenantId)))
+  } catch (error) {
+    if (error instanceof AvatarValidationError) {
+      const status = error.code === 'IMAGE_TOO_LARGE' ? 413 : 415
+      return c.json({ error: error.message, code: error.code, retryable: false }, status)
+    }
+    throw error
+  }
+
+  const user = await loadSelfUser(ctx.tenantId, ctx.userId)
+  if (!user) return c.json({ error: 'Usuário não encontrado' }, 404)
+  return c.json({ user })
+})
+
+// DELETE /users/me/avatar — remove a foto e volta ao avatar por iniciais
+usersRouter.delete('/me/avatar', async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  // [TENANT] Remoção escopada ao tenant/usuário da sessão.
+  await avatarStore.remove(ctx.tenantId, ctx.userId)
+  await db.update(users).set({ avatarUrl: null }).where(and(eq(users.id, ctx.userId), eq(users.tenantId, ctx.tenantId)))
+
+  const user = await loadSelfUser(ctx.tenantId, ctx.userId)
+  if (!user) return c.json({ error: 'Usuário não encontrado' }, 404)
+  return c.json({ user })
+})
+
+// GET /users/:userId/avatar — serving autenticado, cacheável e sem rota estática
+usersRouter.get('/:userId/avatar', async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const userId = c.req.param('userId')
+  if (!userId) return c.json({ error: 'Usuário não especificado' }, 400)
+
+  // [TENANT] Só membros do mesmo tenant enxergam o usuário alvo (Anti-IDOR).
+  const target = await db.query.users.findFirst({
+    where: (u) => and(eq(u.id, userId), eq(u.tenantId, ctx.tenantId)),
+    columns: { id: true },
+  })
+  if (!target) return c.json({ error: 'Foto de perfil não encontrada' }, 404)
+
+  const avatar = await avatarStore.get(ctx.tenantId, userId)
+  if (!avatar) return c.json({ error: 'Foto de perfil não encontrada' }, 404)
+
+  const etag = `"${avatar.contentHash}"`
+  const baseHeaders: Record<string, string> = {
+    'Content-Type': avatar.mimeType,
+    'Content-Disposition': 'inline; filename="avatar"',
+    'X-Content-Type-Options': 'nosniff',
+    'ETag': etag,
+    'Cache-Control': 'private, max-age=86400, immutable',
+  }
+
+  if (c.req.header('if-none-match') === etag) {
+    return new Response(null, { status: 304, headers: baseHeaders })
+  }
+
+  return new Response(new Uint8Array(avatar.data), {
+    status: 200,
+    headers: { ...baseHeaders, 'Content-Length': String(avatar.sizeBytes) },
+  })
 })

@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, foreignKey, check } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, blob, index, uniqueIndex, primaryKey, foreignKey, check } from 'drizzle-orm/sqlite-core'
 import { relations, sql } from 'drizzle-orm'
 
 // [DB-SWAP] Ao migrar para PostgreSQL, trocar importações para 'drizzle-orm/pg-core'
@@ -51,6 +51,28 @@ export const users = sqliteTable('users', {
   emailUnique: uniqueIndex('users_tenant_email_unique').on(table.tenantId, table.email),
   // [TENANT] Valores permitidos para o grupo global
   groupCheck: check('users_global_group_check', sql`${table.globalGroup} IN ('TEAM_MEMBER','MANAGER','ADMIN','ROOT')`),
+}))
+
+// ---------------------------------------------------------------------------
+// USER AVATARS — foto de perfil normalizada (256x256), separada dos anexos
+// [TENANT] O BLOB fica em tabela própria para não inflar as consultas de usuário.
+// [DB-SWAP] Em PostgreSQL, trocar `blob(..., { mode: 'buffer' })` por `bytea`.
+// ---------------------------------------------------------------------------
+export const userAvatars = sqliteTable('user_avatars', {
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  mimeType: text('mime_type').notNull(),
+  sizeBytes: integer('size_bytes').notNull(),
+  width: integer('width').notNull(),
+  height: integer('height').notNull(),
+  contentHash: text('content_hash').notNull(),
+  data: blob('data', { mode: 'buffer' }).notNull(),
+  updatedAt: text('updated_at').notNull().default(defaultNowIso()),
+}, (table) => ({
+  // [TENANT] Um avatar por usuário, sempre escopado pelo tenant.
+  pk: primaryKey({ columns: [table.tenantId, table.userId] }),
+  // [TENANT] Remove o avatar junto com o usuário/tenant (cascade).
+  userFk: foreignKey(() => ({ columns: [table.tenantId, table.userId], foreignColumns: [users.tenantId, users.id] })).onDelete('cascade'),
 }))
 
 // ---------------------------------------------------------------------------

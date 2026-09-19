@@ -15,6 +15,7 @@ import {
 } from './tools.js'
 import { MCP_TOOL_POLICIES, type McpPolicy } from './policies.js'
 import { validateToolArguments } from './validation.js'
+import { TOOL_TEXT_LIMITS } from './limits.js'
 import type { AssistantScreen } from '@azy-board/types'
 
 export type ToolSource = 'mcp' | 'azy-agent'
@@ -61,6 +62,13 @@ const required: Record<string, string[]> = {
   create_project: ['name'], create_project_structure: ['name', 'operations'], update_project: ['projectId'], create_module: ['projectId', 'name'], create_column: ['projectId', 'name', 'baseStatus'], reorder_columns: ['projectId', 'order'], create_sprint: ['projectId', 'name'], activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'], create_tag: ['projectId', 'name'], create_version: ['projectId', 'name'], add_member: ['projectId', 'email', 'role'], update_member: ['projectId', 'userId', 'role'], remove_member: ['projectId', 'userId'], create_squad: ['projectId', 'name'], create_cost_center: ['projectId', 'code'],
 }
 
+// Campos realmente obrigatórios por ferramenta. O schema exposto pelo servidor MCP
+// usa esta lista em `required`; o schema interno (OpenAI strict) mantém todos os
+// campos em `required` com tipo anulável, como exige o modo estrito.
+export function requiredFieldsFor(name: string): string[] {
+  return required[name] ?? []
+}
+
 const discovery = new Set(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_shadow_markdown', 'list_tasks', 'list_modules', 'get_current_sprint', 'list_columns', 'list_sprints', 'list_tags', 'list_versions', 'list_members', 'list_squads', 'list_item_logs', 'list_cost_centers', 'list_attachments', 'list_checklists'])
 const planning = new Set(['claim_task', 'list_tasks', 'list_checklists', 'create_checklist', 'add_checklist_item', 'add_checklist_item_to_task', 'check_item', 'get_shadow_markdown'])
 const projectTools = new Set(['list_projects', 'get_project', 'create_project', 'create_project_structure', 'update_project', 'delete_project'])
@@ -81,7 +89,7 @@ function routingFor(name: string): ToolRoutingMetadata {
   return { domain, scope, operation, risk, dependencyTools, targetKinds: scope === 'global' ? ['tenant', 'project'] : scope === 'project' ? ['project'] : ['project', 'item'], supportedScreens }
 }
 const fieldsByTool: Record<string, string[]> = {
-  list_projects: ['limit', 'cursor'], get_project: ['projectId'], get_board: ['projectId'], get_tree: ['projectId', 'onlyLeaves'], get_current_sprint: ['projectId'],
+  list_projects: ['limit', 'cursor'], get_project: ['projectId'], get_board: ['projectId', 'includeDescriptions'], get_tree: ['projectId', 'onlyLeaves', 'includeDescriptions'], get_current_sprint: ['projectId'],
   list_tasks: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'onlyLeaves', 'limit', 'cursor'], list_checklists: ['projectId', 'itemId'],
   create_project: ['name', 'description', 'boardMode', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], create_project_structure: ['name', 'description', 'boardMode', 'managerUserId', 'operations', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], update_project: ['projectId', 'name', 'description', 'boardMode', 'managerUserId', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], delete_project: ['projectId'],
   create_task: ['projectId', 'title', 'description', 'type', 'priority', 'points', 'parentId', 'moduleId', 'assigneeId', 'status'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], complete_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], move_task: ['projectId', 'taskId', 'columnName'], batch_move: ['projectId', 'itemIds', 'columnName'], claim_task: ['projectId', 'taskId'], release_task: ['projectId', 'taskId'],
@@ -156,6 +164,7 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
     : { type: ['string', 'null'], enum: ['HIERARCHICAL', 'SIMPLE', null], description: 'Optional. Use null when the user did not specify a board mode; never ask for it.' }
   if (field === 'tagIds' || field === 'order') return nullable({ type: 'array', items: { type: 'string' } })
   if (field === 'itemIds') return { ...nullable({ type: 'array', items: { type: 'string' } }), maxItems: 500, description: 'Item IDs to move (1 to 500).' }
+  if (field === 'includeDescriptions') return { ...nullable({ type: 'boolean' }), description: 'Inclui description/scope/notes completos. Padrão false (texto resumido) para reduzir o payload.' }
   if (field === 'onlyLeaves' || field === 'atomic' || field === 'confirm' || field === 'dryRun' || field === 'checked') return nullable({ type: 'boolean' })
   if (field === 'plannedPoints') return { ...nullable({ type: 'number' }), description: 'Estimated total story points for the project.' }
   if (field === 'plannedHours') return { ...nullable({ type: 'number' }), description: 'Estimated total hours for the project.' }
@@ -170,7 +179,13 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
   if (field === 'checklistId') return nullable({ type: 'string', description: 'Checklist ID belonging to the board item identified by itemId.' })
   if (field === 'checklistItemId') return nullable({ type: 'string', description: 'Checklist step ID belonging to checklistId.' })
   if (field === 'checklistName') return nullable({ type: 'string', description: 'Checklist name to find or create on the board item identified by itemId.' })
-  if (field === 'text') return nullable({ type: 'string', description: 'Checklist step text.' })
+  if (field === 'text') return nullable({ type: 'string', description: `Checklist step text (até ${TOOL_TEXT_LIMITS.text} caracteres).` })
+  if (field === 'title') return nullable({ type: 'string', description: `Título do item (até ${TOOL_TEXT_LIMITS.title} caracteres).` })
+  if (field === 'activity') return nullable({ type: 'string', description: `Texto do log de trabalho (até ${TOOL_TEXT_LIMITS.activity} caracteres; prefira textos curtos).` })
+  if (field === 'name') return nullable({ type: 'string', description: `Nome (até ${TOOL_TEXT_LIMITS.name} caracteres).` })
+  if (field === 'description') return nullable({ type: 'string', description: `Descrição em texto/HTML (até ${TOOL_TEXT_LIMITS.description} caracteres).` })
+  if (field === 'ref') return nullable({ type: 'string', description: `Referência curta usada por parentRef (até ${TOOL_TEXT_LIMITS.ref} caracteres).` })
+  if (field === 'columnName') return nullable({ type: 'string', description: `Nome exato da coluna de destino (até ${TOOL_TEXT_LIMITS.columnName} caracteres).` })
   return nullable({ type: 'string' })
 }
 
@@ -191,35 +206,80 @@ export const SKILL_COMMAND_INTENTS = Object.freeze({
   status: 'status', plan: 'plan', start: 'start', update: 'update', complete: 'complete', review: 'review',
 } as const)
 
+// Descrições específicas por ferramenta. Ferramentas sem entrada caem no fallback
+// genérico; ao adicionar uma ferramenta, descreva quando usá-la e seus limites.
+const toolDescriptions: Record<string, string> = {
+  create_project: 'Create an Azy Board project. Only name is required. Use null for an unspecified description or boardMode and never ask for optional values. The authenticated user is assigned as manager by the server.',
+  create_project_structure: 'Create a project and an ordered hierarchy of up to 50 items in one approved operation. Use refs and parentRefs instead of database IDs; moduleName resolves an existing module by name.',
+  create_task: 'Create a single EPIC, STORY, TASK or BUG. SIMPLE projects: TASK/BUG auto-assign to the project story; parentId and moduleId are optional. HIERARCHICAL projects: parentId required for TASK/BUG (a STORY, TASK or BUG) and for STORY (an EPIC); EPIC is a root with moduleId.',
+  batch: 'Create an ordered hierarchy of up to 50 EPIC, STORY, TASK, or BUG items in one atomic approval. Use refs and parentRefs instead of database IDs. Use moduleName for EPIC items; a module referenced by name that does not exist yet is created automatically.',
+  update_items: 'Atomically update one or many active items selected by filters. For bulk moves, set filters.column to the source column, preserve every other requested criterion, and add a column SET change with the destination. Generic tasks or cards in a bulk move covers leaf TASK and BUG items unless the user explicitly restricts the type. Also supports fixed values, clearing fields, relative dates, today, and copying each item creation date. Use itemIds for one item and matchAll only for every item without narrower filters.',
+  add_checklist_item_to_task: 'Add a checklist step to a board card. itemId is the parent card ID, checklistName is the checklist name, and the tool creates the checklist when it does not exist. Use this when you do not already have a checklistId; it returns both checklist and checklist item IDs.',
+  add_checklist_item: 'Add a step to an existing checklist. itemId is the parent board card ID; checklistId must belong to that card; text is the step text. Do not use checklistId or checklistItemId as itemId.',
+  check_item: 'Set a checklist step state. itemId is the parent board card ID, checklistId belongs to that card, and checklistItemId belongs to that checklist.',
+  create_checklist: 'Create a named checklist on a board card. itemId is the parent card ID, not a checklist or checklist item ID.',
+  list_checklists: 'List checklists and their steps for a board card. itemId is the parent card ID.',
+  batch_move: 'Move up to 500 leaf items to a column in one atomic operation. Requires itemIds and the exact destination column name (or column ID). Prefer this over multiple move_task calls when moving several cards at once. For filter-based bulk moves without explicit IDs, use update_items.',
+  list_projects: 'Lista os projetos acessíveis à credencial. Use para descobrir projectId; aceita paginação com limit/cursor.',
+  get_project: 'Consulta os dados de um projeto por projectId (ID ou nome exato).',
+  get_board: 'Retorna colunas, módulos e itens do board do projeto. As descrições longas vêm resumidas por padrão; use includeDescriptions=true para o texto completo. Em projetos grandes, prefira list_tasks com filtros.',
+  get_tree: 'Retorna a hierarquia de itens (EPIC > STORY > TASK/BUG), filtrável por moduleId, assigneeId e sprintId. Descrições resumidas por padrão; use includeDescriptions=true para o texto completo.',
+  get_shadow_markdown: 'Retorna o board do projeto em Markdown (board.md) para leitura rápida.',
+  list_tasks: 'Lista itens do projeto; onlyLeaves é true por padrão. Filtros opcionais: type, status, assigneeId, sprintId, tagIds, parentId, columnId, moduleId, com paginação por limit/cursor. Omitir um filtro equivale a não filtrar.',
+  list_modules: 'Lista os módulos do projeto.',
+  get_current_sprint: 'Retorna a sprint ativa (CURRENT) do projeto, se houver.',
+  list_columns: 'Lista as colunas do board com seus status base.',
+  list_sprints: 'Lista as sprints do projeto.',
+  list_tags: 'Lista as tags do projeto.',
+  list_versions: 'Lista as versões do projeto.',
+  list_members: 'Lista os membros do projeto.',
+  list_squads: 'Lista os squads do projeto.',
+  list_item_logs: 'Lista os logs de trabalho de um item do board.',
+  list_cost_centers: 'Lista os centros de custo do projeto.',
+  list_attachments: 'Lista os anexos de um item. Requer projectId e itemId.',
+  claim_task: 'Atribui o item ao usuário atual (claim). Use apenas quando o item estiver disponível.',
+  move_task: 'Move um item para a coluna informada pelo nome exato (ou ID).',
+  complete_task: 'Conclui um item. Para card folha, move-o para a coluna com baseStatus DONE.',
+  update_item: 'Atualiza um item específico. changes aceita a lista {field, operation, value}; as operações CLEAR, TODAY, OFFSET_DAYS e COPY_CREATED_DATE dependem do campo.',
+  release_task: 'Libera a atribuição do item, removendo o responsável atual.',
+  delete_item: 'Exclui um item. Ação destrutiva; suporta dryRun.',
+  delete_project: 'Exclui um projeto e os registros dependentes. Ação destrutiva; suporta dryRun.',
+  archive_item: 'Arquiva um item. confirm é true por padrão; suporta dryRun.',
+  unarchive_item: 'Desarquiva um item.',
+  set_item_tags: 'Substitui as tags do item pela lista tagIds informada.',
+  create_item_log: 'Registra um log de trabalho no item. activity é texto curto (até 20000 caracteres); durationMin é opcional, em minutos.',
+  reorder_items: 'Reordena os itens de uma coluna conforme a lista order de IDs.',
+  update_checklist: 'Atualiza nome/posição de uma checklist do item.',
+  delete_checklist: 'Exclui uma checklist do item.',
+  update_checklist_item: 'Atualiza o texto/estado de um passo da checklist.',
+  delete_checklist_item: 'Exclui um passo da checklist.',
+  update_item_log: 'Atualiza o texto e/ou a duração de um log de trabalho.',
+  update_project: 'Atualiza campos do projeto (nome, descrição, boardMode, planejamento). Omita os campos que não devem mudar.',
+  create_module: 'Cria um módulo no projeto.',
+  create_column: 'Cria uma coluna no board com name e baseStatus (NOT_STARTED, IN_PROGRESS ou DONE).',
+  reorder_columns: 'Reordena as colunas do board conforme a lista order.',
+  create_sprint: 'Cria uma sprint com name, startDate e endDate (YYYY-MM-DD).',
+  activate_sprint: 'Ativa a sprint informada.',
+  close_sprint: 'Encerra a sprint informada.',
+  create_tag: 'Cria uma tag no projeto; color é opcional.',
+  create_version: 'Cria uma versão do projeto.',
+  add_member: 'Adiciona um membro ao projeto por e-mail com role ADMIN, MEMBER ou VIEWER.',
+  update_member: 'Atualiza o papel (e o squad opcional) de um membro do projeto.',
+  remove_member: 'Remove um membro do projeto.',
+  create_squad: 'Cria um squad no projeto.',
+  create_cost_center: 'Cria um centro de custo no projeto com code e description opcional.',
+}
+
 export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinition[] {
   return names.filter(name => required[name]).map(name => ({
     name,
-    description: name === 'create_project'
-       ? 'Create an Azy Board project. Only name is required. Use null for an unspecified description or boardMode and never ask for optional values. The authenticated user is assigned as manager by the server.'
-       : name === 'create_project_structure'
-         ? 'Create a project and an ordered hierarchy of up to 50 items in one approved operation. Use refs and parentRefs instead of database IDs; moduleName resolves an existing module by name.'
-      : name === 'create_task'
-        ? 'Create a single EPIC, STORY, TASK or BUG. SIMPLE projects: TASK/BUG auto-assign to the project story; parentId and moduleId are optional. HIERARCHICAL projects: parentId required for TASK/BUG (a STORY, TASK or BUG) and for STORY (an EPIC); EPIC is a root with moduleId.'
-        : name === 'batch'
-        ? 'Create an ordered hierarchy of up to 50 EPIC, STORY, TASK, or BUG items in one atomic approval. Use refs and parentRefs instead of database IDs. Use moduleName for EPIC items; a module referenced by name that does not exist yet is created automatically.'
-      : name === 'update_items'
-         ? 'Atomically update one or many active items selected by filters. For bulk moves, set filters.column to the source column, preserve every other requested criterion, and add a column SET change with the destination. Generic tasks or cards in a bulk move covers leaf TASK and BUG items unless the user explicitly restricts the type. Also supports fixed values, clearing fields, relative dates, today, and copying each item creation date. Use itemIds for one item and matchAll only for every item without narrower filters.'
-       : name === 'add_checklist_item_to_task'
-         ? 'Add a checklist step to a board card. itemId is the parent card ID, checklistName is the checklist name, and the tool creates the checklist when it does not exist. Use this when you do not already have a checklistId; it returns both checklist and checklist item IDs.'
-       : name === 'add_checklist_item'
-         ? 'Add a step to an existing checklist. itemId is the parent board card ID; checklistId must belong to that card; text is the step text. Do not use checklistId or checklistItemId as itemId.'
-       : name === 'check_item'
-         ? 'Set a checklist step state. itemId is the parent board card ID, checklistId belongs to that card, and checklistItemId belongs to that checklist.'
-       : name === 'create_checklist'
-         ? 'Create a named checklist on a board card. itemId is the parent card ID, not a checklist or checklist item ID.'
-       : name === 'list_checklists'
-         ? 'List checklists and their steps for a board card. itemId is the parent card ID.'
-       : name === 'batch_move'
-        ? 'Move up to 500 leaf items to a column in one atomic operation. Requires itemIds and the exact destination column name (or column ID). Prefer this over multiple move_task calls when moving several cards at once. For filter-based bulk moves without explicit IDs, use update_items.'
-      : `Azy Board: ${name}`,
+    description: toolDescriptions[name] ?? `Azy Board: ${name}`,
     inputSchema: (() => {
-       const fields = [...(fieldsByTool[name] ?? required[name]!)]
+      const fields = [...(fieldsByTool[name] ?? required[name]!)]
       const mandatory = new Set(required[name]!)
+      // OpenAI strict exige que todo campo esteja em `required`; a optionalidade é
+      // expressa pelo tipo anulável. O servidor MCP reescreve `required` para os
+      // campos realmente obrigatórios em index.ts.
       return { type: 'object' as const, properties: Object.fromEntries(fields.map(field => [field, schemaFor(field, mandatory.has(field))])), required: fields, additionalProperties: false }
     })(),
     policy: MCP_TOOL_POLICIES[name]!,
@@ -272,10 +332,17 @@ export async function resolveProjectId(api: ApiCall, selector: string): Promise<
   throw new Error(`PROJECT_NOT_FOUND: projeto "${value}" não encontrado; use list_projects para ver os projetos acessíveis`)
 }
 
+// Campos opcionais podem chegar como null (clients strict, que exigem todos os
+// campos). Tratar null como omitido faz os defaults da API/aplicação valerem.
+export function pruneNullArguments(args: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(args).filter(([, value]) => value !== null))
+}
+
 export async function executeSharedTool(name: string, args: Record<string, unknown>, execution: ToolExecution): Promise<unknown> {
   const definition = getSharedToolDefinitions().find(tool => tool.name === name)
   if (!definition) throw new Error('TOOL_NOT_REGISTERED')
   assertHumanContext(execution.context)
+  args = pruneNullArguments(args)
   validateToolArguments(name, args)
   // [PROJECT RESOLUTION] projectId aceita ID ou nome exato; resolução só chama a API para nomes.
   if (typeof args.projectId === 'string' && args.projectId.trim()) {
@@ -288,8 +355,8 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
   switch (name) {
     case 'list_projects': return toolListProjects(api)
     case 'get_project': return toolGetProject(api, args.projectId as string)
-    case 'get_board': return toolGetBoard(api, args.projectId as string)
-    case 'get_tree': return toolGetTree(api, args.projectId as string, args)
+    case 'get_board': return toolGetBoard(api, args.projectId as string, args.includeDescriptions === true)
+    case 'get_tree': return toolGetTree(api, args.projectId as string, args as Parameters<typeof toolGetTree>[2])
     case 'get_shadow_markdown': return toolGetShadowMarkdown(api, args.projectId as string)
     case 'list_tasks': return toolListTasks(api, args as Parameters<typeof toolListTasks>[1])
     case 'list_modules': return toolListModules(api, args.projectId as string)
