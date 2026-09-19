@@ -36,7 +36,7 @@ export function ItemDetailHeader({
   const TypeIcon = typeMeta.icon
 
   return (
-    <div className="flex min-w-0 items-start gap-2">
+    <div className="flex min-w-0 flex-1 items-start gap-2">
       {onBack && (
         <button
           type="button"
@@ -47,7 +47,7 @@ export function ItemDetailHeader({
           <ChevronLeft className="h-5 w-5" />
         </button>
       )}
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span>{t('boardContext')}</span>
           <ChevronRight className="h-3 w-3" />
@@ -63,8 +63,8 @@ export function ItemDetailHeader({
           <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${typeMeta.iconClass}`}>
             <TypeIcon className="h-4 w-4" />
           </span>
-          <div className="min-w-0">
-            <h2 id={titleId} className="truncate text-base font-semibold text-foreground sm:text-lg">
+          <div className="min-w-0 flex-1">
+            <h2 id={titleId} className="text-base font-semibold text-foreground sm:text-lg">
               <InlineEdit value={title} onSave={onTitleChange} autoEdit={autoEdit} placeholder={placeholder} />
             </h2>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">

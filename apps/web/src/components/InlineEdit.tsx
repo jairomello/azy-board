@@ -48,7 +48,7 @@ export function InlineEdit({ value, onSave, onEditStart, className = '', autoEdi
         }}
         onClick={e => e.stopPropagation()}
         placeholder={placeholder}
-        className={`w-full bg-transparent border-b border-primary outline-none text-sm font-medium ${className}`}
+        className={`w-full bg-transparent border-b border-primary outline-none font-medium ${className}`}
       />
     )
   }
@@ -57,7 +57,7 @@ export function InlineEdit({ value, onSave, onEditStart, className = '', autoEdi
     <p
       onDoubleClick={e => { e.stopPropagation(); onEditStart?.(); setEditing(true) }}
       onClick={e => { e.stopPropagation(); onEditStart?.(); setEditing(true) }}
-      className={`cursor-text select-none text-sm font-medium leading-snug line-clamp-2 ${className} ${!value ? 'text-muted-foreground italic' : ''}`}
+      className={`cursor-text select-none font-medium leading-snug line-clamp-2 ${className} ${!value ? 'text-muted-foreground italic' : ''}`}
     >
       {value || placeholder || 'Clique para editar'}
     </p>

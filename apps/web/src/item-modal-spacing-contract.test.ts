@@ -20,6 +20,22 @@ describe('contrato estrutural do layout da ItemModal', () => {
     expect(text.includes('overflow-x-auto')).toBe(true)
   })
 
+  test('título editável ocupa a largura disponível e herda o tamanho do cabeçalho', async () => {
+    const item = await source('./components/ItemModal.tsx')
+    const header = await source('./components/ItemDetailHeader.tsx')
+    const inline = await source('./components/InlineEdit.tsx')
+    const card = await source('./components/KanbanCard.tsx')
+
+    // A coluna do título cresce (flex-1) em vez de encolher para o conteúdo.
+    expect(item.includes('min-w-0 flex-1 items-start gap-2')).toBe(true)
+    expect(item.includes('min-w-0 flex-1"><h2 id="item-modal-title"')).toBe(true)
+    expect(header.includes('min-w-0 flex-1 items-start gap-2')).toBe(true)
+    // O InlineEdit não fixa mais o tamanho da fonte: herda o h2 (text-base sm:text-lg).
+    expect(inline.includes('text-sm')).toBe(false)
+    // O card do Kanban mantém o tamanho compacto explicitamente.
+    expect(card.includes('className="text-sm"')).toBe(true)
+  })
+
   test('preserva controles, payload e edição rica do item', async () => {
     const text = await source('./components/ItemModal.tsx')
     expect(text.includes('value={parentId}')).toBe(true)

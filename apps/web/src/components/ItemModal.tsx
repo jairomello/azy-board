@@ -343,9 +343,9 @@ export function ItemModal({
         <div className="absolute inset-0 bg-black/50" onClick={_onBack ?? onClose} />
         <section role="dialog" aria-modal="true" aria-labelledby="item-modal-title" className="item-modal-frame relative flex w-full max-w-[1120px] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
           <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-3 sm:px-6 sm:py-4">
-            <div className="flex min-w-0 items-start gap-2">
+            <div className="flex min-w-0 flex-1 items-start gap-2">
               {_onBack && <button type="button" onClick={_onBack} aria-label={t('back')} className="mt-1 shrink-0 rounded p-1 text-muted-foreground hover:bg-muted focus-visible:ring-2 focus-visible:ring-primary"><ChevronLeft className="h-5 w-5" /></button>}
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <span>{t('boardContext')}</span><ChevronRight className="h-3 w-3" />
                   {ancestry.slice(-2).map((node, index) => <span key={`${node.title}-${index}`} className="flex items-center gap-2"><span className="max-w-32 truncate">{node.title}</span><ChevronRight className="h-3 w-3" /></span>)}
@@ -353,7 +353,7 @@ export function ItemModal({
                 </div>
                 <div className="flex min-w-0 items-center gap-2">
                   <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${typeMeta.iconClass}`}><TypeIcon className="h-4 w-4" /></span>
-                  <div className="min-w-0"><h2 id="item-modal-title" className="truncate text-base font-semibold text-foreground sm:text-lg"><InlineEdit value={title} onSave={setTitle} autoEdit={item.id === '__new__'} placeholder={type === 'TASK' ? t('newTask') : `${t('newTask')} (${t(typeMeta.labelKey)})`} /></h2><div className="mt-1 flex flex-wrap items-center gap-2 text-xs"><span className={`rounded px-1.5 py-0.5 font-medium ${typeMeta.chipClass}`}>{t(typeMeta.labelKey)}</span><span className="rounded bg-muted px-1.5 py-0.5">{t(`status${status === 'NOT_STARTED' ? 'NotStarted' : status === 'IN_PROGRESS' ? 'InProgress' : status === 'BLOCKED' ? 'Blocked' : status === 'DONE' ? 'Done' : 'Cancelled'}`)}</span>{sequenceCode && <span className="text-muted-foreground">#{sequenceCode}</span>}</div></div>
+                  <div className="min-w-0 flex-1"><h2 id="item-modal-title" className="text-base font-semibold text-foreground sm:text-lg"><InlineEdit value={title} onSave={setTitle} autoEdit={item.id === '__new__'} placeholder={type === 'TASK' ? t('newTask') : `${t('newTask')} (${t(typeMeta.labelKey)})`} /></h2><div className="mt-1 flex flex-wrap items-center gap-2 text-xs"><span className={`rounded px-1.5 py-0.5 font-medium ${typeMeta.chipClass}`}>{t(typeMeta.labelKey)}</span><span className="rounded bg-muted px-1.5 py-0.5">{t(`status${status === 'NOT_STARTED' ? 'NotStarted' : status === 'IN_PROGRESS' ? 'InProgress' : status === 'BLOCKED' ? 'Blocked' : status === 'DONE' ? 'Done' : 'Cancelled'}`)}</span>{sequenceCode && <span className="text-muted-foreground">#{sequenceCode}</span>}</div></div>
                 </div>
               </div>
             </div>

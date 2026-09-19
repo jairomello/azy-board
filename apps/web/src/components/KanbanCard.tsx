@@ -229,6 +229,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
                 value={card.title}
                 onSave={title => onTitleSave(card.id, title)}
                 onEditStart={cancelScheduledOpen}
+                className="text-sm"
               />
             </div>
           ) : (
