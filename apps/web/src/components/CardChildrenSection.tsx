@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { BookOpen, Bug, CheckSquare, Layers, AlertCircle, AlertTriangle, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../lib/api'
+import { resolveAppUrl } from '../lib/appUrl'
 import type { Priority, ItemType } from '@azy-board/types'
 import { itemTypeMeta } from '../lib/itemTypeMeta'
 
@@ -142,7 +143,7 @@ export function CardChildrenSection({ itemId, projectId, onOpenChild, onCountCha
               </div>
               <div className="flex flex-shrink-0 flex-col items-end justify-between self-stretch gap-2">
                 {child.assignee?.avatarUrl ? (
-                  <img src={child.assignee.avatarUrl} alt={child.assignee.name}
+                  <img src={resolveAppUrl(child.assignee.avatarUrl)} alt={child.assignee.name}
                     className="h-6 w-6 rounded-full object-cover ring-2 ring-background" />
                 ) : child.assignee ? (
                   <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 ring-2 ring-background">

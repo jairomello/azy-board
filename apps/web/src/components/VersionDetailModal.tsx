@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { X, Bug, CheckSquare, BookOpen, Layers } from 'lucide-react'
 import { api } from '../lib/api'
+import { resolveAppUrl } from '../lib/appUrl'
 import type { ProjectVersion } from '../pages/SettingsPage'
 import type { ItemType } from '@azy-board/types'
 import { formatDate } from '../lib/formatters'
@@ -180,7 +181,7 @@ export function VersionDetailModal({ version, projectId, mode, onClose, onSave }
                   <span className="text-[10px] text-muted-foreground flex-shrink-0">{item.status}</span>
                   {item.assignee && (
                     item.assignee.avatarUrl ? (
-                      <img src={item.assignee.avatarUrl} alt={item.assignee.name} className="w-5 h-5 rounded-full flex-shrink-0" />
+                      <img src={resolveAppUrl(item.assignee.avatarUrl)} alt={item.assignee.name} className="w-5 h-5 rounded-full flex-shrink-0" />
                     ) : (
                       <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
                         <span className="text-[9px] font-bold text-primary">{item.assignee.name.charAt(0)}</span>
