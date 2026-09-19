@@ -53,7 +53,7 @@ Diferente de arquivar/excluir, copiar não muta nada. O botão SHALL ser renderi
 
 ### D6. i18n
 
-Novas chaves no namespace `board` nos três idiomas: `copyItemReference` (tooltip/aria-label) e `copiedReference` (rótulo/estado de confirmação). Paridade garantida pelo `check:i18n`.
+Novas chaves no namespace `board` nos três idiomas: `copyItemReference` (tooltip/aria-label) e `copiedReference` (rótulo/estado de confirmação). Os textos MUST mencionar explicitamente a **área de transferência**, para não sugerir duplicação do card. Paridade garantida pelo `check:i18n`.
 
 ## Risks / Trade-offs
 

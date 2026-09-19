@@ -21,6 +21,15 @@ describe('contrato do botão copiar referência do card', () => {
     }
   })
 
+  test('o tooltip deixa claro que copia para a área de transferência', async () => {
+    for (const locale of ['pt-BR', 'en', 'es']) {
+      const json = JSON.parse(await source(`./i18n/locales/${locale}/board.json`)) as Record<string, string>
+      const label = (json.copyItemReference ?? '').toLowerCase()
+      const mentionsClipboard = label.includes('clipboard') || label.includes('transferência') || label.includes('portapapeles')
+      expect(`${locale}: ${mentionsClipboard}`).toBe(`${locale}: true`)
+    }
+  })
+
   test('o helper de clipboard usa navigator.clipboard e fallback', async () => {
     const clipboard = await source('./lib/clipboard.ts')
     expect(clipboard.includes('navigator.clipboard.writeText')).toBe(true)
