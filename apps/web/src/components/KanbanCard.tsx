@@ -2,9 +2,12 @@ import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Trash2, GitBranch, Archive } from 'lucide-react'
+import { Trash2, GitBranch, Archive, Copy, Check } from 'lucide-react'
 import { UserAvatar } from './UserAvatar'
 import { InlineEdit } from './InlineEdit'
+import { useToast } from './Toast'
+import { formatCardReference } from '../lib/cardReference'
+import { copyTextToClipboard } from '../lib/clipboard'
 import type { AncestorNode, Priority, TaskStatus, ItemType, ChecklistProgress } from '@azy-board/types'
 import { useTranslation } from 'react-i18next'
 
@@ -64,14 +67,30 @@ interface Props {
 
 export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchive }: Props) {
   const { t } = useTranslation('board')
+  const { toast } = useToast()
   const [breadcrumbOpen, setBreadcrumbOpen] = useState(false)
   const [tooltipPos, setTooltipPos] = useState({ top: 0, left: 0 })
+  const [copied, setCopied] = useState(false)
   const breadcrumbRef = useRef<HTMLDivElement>(null)
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => () => {
     if (openTimerRef.current) clearTimeout(openTimerRef.current)
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
   }, [])
+
+  async function handleCopyReference(event: React.MouseEvent) {
+    event.stopPropagation()
+    const ok = await copyTextToClipboard(formatCardReference(card))
+    if (!ok) {
+      toast(t('copyReferenceFailed'), 'error')
+      return
+    }
+    setCopied(true)
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    copyTimerRef.current = setTimeout(() => setCopied(false), 1500)
+  }
 
   function handleBreadcrumbEnter() {
     if (breadcrumbRef.current) {
@@ -130,6 +149,16 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
     >
       {/* Botões de ação — visíveis só no hover */}
       <div className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5">
+        {/* Copiar é somente-leitura: disponível para todos os papéis do board */}
+        <button
+          type="button"
+          className="p-1 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 dark:hover:bg-primary/20"
+          title={copied ? t('copiedReference') : t('copyItemReference')}
+          aria-label={copied ? t('copiedReference') : t('copyItemReference')}
+          onClick={e => { void handleCopyReference(e) }}
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+        </button>
         {onArchive && (
           <button
             className="p-1 rounded text-muted-foreground hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/50"
