@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss'
+import typography from '@tailwindcss/typography'
 
 export default {
   // [DB-SWAP] darkMode via classe permite persistir tema no banco e aplicar server-side no futuro
@@ -64,5 +65,5 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [typography],
 } satisfies Config
