@@ -576,7 +576,7 @@ Além disso, `check:i18n` informa problemas, mas não falha o build.
 
 ### 23. Bundle ainda é pesado
 
-Build atual:
+Build baseline (antes da correção):
 
 | Chunk | Tamanho |
 |---|---:|
@@ -585,13 +585,24 @@ Build atual:
 | Editor/Accordion | 339,53 KB |
 | `BoardPage` | 192,75 KB |
 
-O roteamento usa lazy loading, o que é positivo, mas Dashboard, gráficos e editor continuam pesados.
+O roteamento usa lazy loading, o que é positivo, mas Dashboard, gráficos e editor continuavam pesados.
 
-**Correção:**
-- Lazy load de Recharts e Tiptap dentro das páginas.
-- Importar apenas extensões utilizadas.
-- Medir bundle com visualizer.
-- Estabelecer orçamento de bundle no CI.
+**Correção aplicada:**
+- Recharts passou a ser carregado sob demanda (`DashboardCharts`) via `React.lazy` dentro de `DashboardVisuals`, com `Suspense` e placeholder.
+- Tiptap foi isolado em `RichTextEditorImpl`, carregado sob demanda por `RichTextEditor`, com estado de carregamento e fallback de erro traduzido.
+- `manualChunks` no Vite separa `vendor-react`, `vendor-charts` e `vendor-editor`, dando nomes estáveis aos vendors.
+- Medição com `rollup-plugin-visualizer` (`bun run build:analyze`, gera `apps/web/dist/stats.html`).
+- Orçamento versionado em `apps/web/bundle-budget.json` verificado por `scripts/check-bundle.ts` (`bun run check:bundle`) e pelo job `contracts` do CI.
+
+**Impacto medido** (gzip):
+
+| Chunk | Antes | Depois |
+|---|---:|---:|
+| `ProjectDashboardPage` | 128,23 KB | 6,22 KB |
+| `RichTextEditor` (wrapper) | 107,48 KB | 1,60 KB |
+| `index` (principal) | 125,02 KB | 72,28 KB |
+
+Recharts (~121 KB gzip) e Tiptap (~105 KB gzip) saem do caminho crítico e só baixam quando o Dashboard ou o editor são usados.
 
 ### 24. Error Boundary expõe stack na UI
 

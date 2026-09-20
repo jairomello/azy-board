@@ -64,6 +64,10 @@ jobs:
         run: bun run test:agent-skill
       - name: Migrations
         run: bun run test:migrations
+      - name: Build do web (orçamento de bundle)
+        run: bun run build:web
+      - name: Orçamento de bundle
+        run: bun run check:bundle
 
   smoke:
     name: smoke

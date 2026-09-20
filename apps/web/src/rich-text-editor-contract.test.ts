@@ -18,7 +18,7 @@ describe('contrato do editor rich text', () => {
   })
 
   test('editor usa prose e comandos de bloco do StarterKit', async () => {
-    const editor = await source('./components/RichTextEditor.tsx')
+    const editor = await source('./components/RichTextEditorImpl.tsx')
     contains(editor, 'prose prose-sm dark:prose-invert')
     for (const command of ['toggleHeading', 'toggleBulletList', 'toggleOrderedList', 'toggleBlockquote']) {
       contains(editor, command)

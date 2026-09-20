@@ -122,7 +122,7 @@ describe('contratos de UI dos modos de board', () => {
   })
 
   test('editores ricos cobrem épico, história, task e subtask com expansão transacional', async () => {
-    const richText = await source('./components/RichTextEditor.tsx')
+    const richText = await source('./components/RichTextEditorImpl.tsx')
     const epic = await source('./components/EpicModal.tsx')
     const story = await source('./components/StoryModal.tsx')
     const item = await source('./components/ItemModal.tsx')

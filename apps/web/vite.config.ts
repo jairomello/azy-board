@@ -1,5 +1,6 @@
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, type PluginOption } from 'vite'
 import react from '@vitejs/plugin-react'
+import { visualizer } from 'rollup-plugin-visualizer'
 import path from 'path'
 
 // `base: './'` gera paths relativos nos assets do build, o que permite
@@ -10,10 +11,13 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', 'AZYBOARD_')
    const apiTarget = env.AZYBOARD_API_TARGET || 'http://localhost:3001'
   const basePath = env.AZYBOARD_BASE_PATH || './'
+  // O relatório de bundle só é gerado com AZYBOARD_ANALYZE=1 (bun run build:analyze).
+  // O build padrão permanece sem o plugin e sem artefatos extras.
+  const analyze = env.AZYBOARD_ANALYZE === '1'
 
   return {
   base: basePath,
-  plugins: [react()],
+  plugins: [react(), ...(analyze ? [visualizer({ filename: 'dist/stats.html', gzipSize: true, template: 'treemap' }) as PluginOption] : [])],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -25,6 +29,22 @@ export default defineConfig(({ mode }) => {
       '/api': { target: apiTarget, changeOrigin: true },
       '/uploads': { target: apiTarget, changeOrigin: true },
       '/ws': { target: apiTarget, changeOrigin: true, ws: true },
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // Nomes estáveis para os vendors pesados: o orçamento de bundle
+        // (scripts/check-bundle.ts) casa por nome de chunk e precisa que eles
+        // não migrem de arquivo a cada mudança.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor')) return 'vendor-charts'
+          if (id.includes('@tiptap') || id.includes('prosemirror-')) return 'vendor-editor'
+          if (id.includes('react-router') || id.includes('/react-dom/') || id.includes('/react/') || id.includes('scheduler')) return 'vendor-react'
+          return
+        },
+      },
     },
   },
   }

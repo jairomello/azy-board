@@ -91,7 +91,10 @@
     "epicPlaceholder": "Descreva o objetivo e o contexto do épico...",
     "acceptancePlaceholder": "Liste os critérios que definem quando esta história está concluída...",
     "notesPlaceholder": "Observações, contexto adicional, referências...",
-    "itemPlaceholder": "Adicionar descrição..."
+    "itemPlaceholder": "Adicionar descrição...",
+    "loading": "Carregando editor...",
+    "loadError": "Não foi possível carregar o editor.",
+    "retry": "Tentar novamente"
   },
   "priority": {
     "LOW": "Baixa",

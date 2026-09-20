@@ -1,0 +1,13 @@
+{
+  "description": "Orçamento de bundle do web (limites em bytes gzip). Ver scripts/check-bundle.ts.",
+  "chunks": [
+    { "name": "index", "maxGzipBytes": 90000 },
+    { "name": "vendor-react", "maxGzipBytes": 65000 },
+    { "name": "vendor-charts", "maxGzipBytes": 130000 },
+    { "name": "vendor-editor", "maxGzipBytes": 115000 },
+    { "name": "BoardPage", "maxGzipBytes": 60000 },
+    { "name": "ProjectDashboardPage", "maxGzipBytes": 15000 },
+    { "name": "SettingsPage", "maxGzipBytes": 15000 },
+    { "name": "AccountPage", "maxGzipBytes": 16000 }
+  ]
+}

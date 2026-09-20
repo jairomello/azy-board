@@ -91,7 +91,10 @@
     "epicPlaceholder": "Describe the epic's objective and context...",
     "acceptancePlaceholder": "List the criteria that define when this story is complete...",
     "notesPlaceholder": "Notes, additional context, references...",
-    "itemPlaceholder": "Add a description..."
+    "itemPlaceholder": "Add a description...",
+    "loading": "Loading editor...",
+    "loadError": "Could not load the editor.",
+    "retry": "Try again"
   },
   "priority": {
     "LOW": "Low",

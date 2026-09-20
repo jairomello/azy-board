@@ -24,6 +24,8 @@ Gates que detectam divergência de contratos antes do merge:
 - `bun run test:mcp-catalog` — catálogo MCP versus registry de ferramentas.
 - `bun run test:agent-skill` — skill oficial do agente, comandos e referências.
 - `bun run test:migrations` — testes de migration, integridade e timestamps.
+- `bun run build:web` + `bun run check:bundle` — build do Web e verificação do
+  orçamento de bundle (ver abaixo).
 
 ### `smoke`
 
@@ -43,6 +45,8 @@ bun run check:i18n
 bun run test:mcp-catalog
 bun run test:agent-skill
 bun run test:migrations
+bun run build:web
+bun run check:bundle
 
 # smoke: API em 3001 e Web em 5173
 DATABASE_URL=/tmp/azy-smoke.db bun run db:migrate
@@ -51,6 +55,24 @@ DATABASE_URL=/tmp/azy-smoke.db JWT_SECRET=local-smoke PORT=3001 \
 AZYBOARD_API_TARGET=http://localhost:3001 bun run dev:web &
 bun run test:smoke
 ```
+
+## Orçamento de bundle do Web
+
+Dependências pesadas (Recharts, Tiptap) são carregadas sob demanda, e o build
+separa vendors em chunks nomeados (`vendor-react`, `vendor-charts`,
+`vendor-editor`) para que o orçamento seja estável.
+
+- `bun run build:analyze` — build do Web com relatório visual em
+  `apps/web/dist/stats.html` (ativa o `rollup-plugin-visualizer` só nesse
+  comando; o build padrão não gera o relatório).
+- `bun run check:bundle` — mede o gzip de cada asset em `apps/web/dist/assets`
+  e compara com `apps/web/bundle-budget.json`. Falha quando um chunk ultrapassa
+  o limite, quando uma regra não casa com nenhum chunk, ou quando o orçamento
+  está ausente/malformado.
+
+O CI roda `build:web` antes de `check:bundle`. Para ajustar um limite após uma
+mudança intencional, edite `apps/web/bundle-budget.json` no mesmo pull request e
+justifique; a tendência é que os limites só diminuam.
 
 ## Versão do Bun
 
