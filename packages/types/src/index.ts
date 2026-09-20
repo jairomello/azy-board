@@ -155,11 +155,18 @@ export function toCard(item: {
 }
 
 // Checklist e seus itens — anotações de progresso dentro de qualquer card
+// Os campos avançados (dueDate, assigneeId, assignee, description) só são
+// expostos quando o projeto tem advancedChecklists = true; no modo simples
+// eles ficam ausentes/nulos.
 export interface ChecklistItem {
   id: string
   text: string
   checked: boolean
   position: number
+  dueDate?: string | null
+  assigneeId?: string | null
+  assignee?: { id: string; name: string; avatarUrl: string | null } | null
+  description?: string | null
 }
 
 export interface Checklist {

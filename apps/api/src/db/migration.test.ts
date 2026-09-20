@@ -160,3 +160,52 @@ describe('migration de foto de perfil (Card T2)', () => {
     sqlite.close()
   })
 })
+
+describe('migration de checklists detalhados (Card T5)', () => {
+  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+
+  test('cria advanced_checklists e os campos avançados com foreign_key_check limpo', () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    migrate(database, { migrationsFolder })
+    migrate(database, { migrationsFolder })
+
+    const projectColumns = sqlite.query("PRAGMA table_info('projects')").all() as Array<{ name: string }>
+    expect(projectColumns.map(column => column.name)).toContain('advanced_checklists')
+    const itemColumns = sqlite.query("PRAGMA table_info('checklist_items')").all() as Array<{ name: string }>
+    for (const name of ['due_date', 'assignee_id', 'description']) expect(itemColumns.map(column => column.name)).toContain(name)
+    const fks = sqlite.query("PRAGMA foreign_key_list('checklist_items')").all() as Array<{ from: string; table: string }>
+    expect(fks.some(fk => fk.table === 'users' && fk.from === 'assignee_id')).toBe(true)
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+
+  test('preserva itens de checklist existentes no rebuild', async () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    const source = new URL('./migrations', import.meta.url).pathname
+    const pre = `/tmp/azyboard-t5-${crypto.randomUUID()}`
+    await mkdir(`${pre}/meta`, { recursive: true })
+    const journal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ tag: string }> }
+    const upTo = journal.entries.filter(entry => !entry.tag.startsWith('0027')).map(entry => entry.tag + '.sql')
+    for (const file of upTo) await Bun.write(`${pre}/${file}`, await Bun.file(`${source}/${file}`).text())
+    await Bun.write(`${pre}/meta/_journal.json`, JSON.stringify({ ...journal, entries: journal.entries.filter(entry => !entry.tag.startsWith('0027')) }))
+    migrate(database, { migrationsFolder: pre })
+
+    const now = new Date().toISOString()
+    await database.insert(schema.tenants).values({ id: 't5-tenant', name: 'T5', slug: 't5', createdAt: now })
+    // Base legada (antes da 0027): projects ainda não possui advanced_checklists e
+    // checklist_items ainda não possui due_date/assignee_id/description — SQL puro.
+    sqlite.query("INSERT INTO projects (id, tenant_id, name, board_mode, is_restricted, is_hidden, created_at) VALUES ('t5-project', 't5-tenant', 'T5', 'HIERARCHICAL', 0, 0, ?)").run(now)
+    await database.insert(schema.items).values({ id: 't5-item', tenantId: 't5-tenant', projectId: 't5-project', type: 'TASK', ancestryPath: '[]', title: 'Card', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now })
+    await database.insert(schema.checklists).values({ id: 't5-cl', tenantId: 't5-tenant', itemId: 't5-item', name: 'CL', position: 0, createdAt: now })
+    sqlite.query("INSERT INTO checklist_items (id, tenant_id, checklist_id, text, checked, position) VALUES ('t5-ci', 't5-tenant', 't5-cl', 'Passo legado', 1, 0)").run()
+
+    migrate(database, { migrationsFolder: source })
+    const preserved = await database.select().from(schema.checklistItems)
+    expect(preserved).toHaveLength(1)
+    expect(preserved[0]).toMatchObject({ id: 't5-ci', text: 'Passo legado', checked: true, dueDate: null, assigneeId: null, description: null })
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+})

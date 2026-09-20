@@ -31,6 +31,7 @@ export function useBoardData(projectId: string | undefined) {
   const [projectName, setProjectName] = useState('')
   const [boardMode, setBoardMode] = useState<BoardMode>('HIERARCHICAL')
   const [simpleStoryId, setSimpleStoryId] = useState<string | null>(null)
+  const [advancedChecklists, setAdvancedChecklists] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => onAssistantMutation(({ result }) => {
@@ -58,7 +59,7 @@ export function useBoardData(projectId: string | undefined) {
       api.get<ProjectVersion[]>(`/projects/${projectId}/versions`).catch(() => [] as ProjectVersion[]),
       api.get<CostCenter[]>(`/projects/${projectId}/cost-centers`).catch(() => [] as CostCenter[]),
       api.get<{ id: string; name: string }[]>(`/projects/${projectId}/squads`).catch(() => []),
-      api.get<ProjectContext>(`/projects/${projectId}`).catch(() => ({ name: '', boardMode: 'HIERARCHICAL' as const, simpleStoryId: null })),
+      api.get<ProjectContext>(`/projects/${projectId}`).catch(() => ({ name: '', boardMode: 'HIERARCHICAL' as const, simpleStoryId: null, advancedChecklists: false })),
     ]).then(([cols, its, mods, tags, sprs, mbrs, vers, ccs, sqs, proj]) => {
       setColumns(cols)
       setAllItems(computeIsLeaf(its))
@@ -74,6 +75,7 @@ export function useBoardData(projectId: string | undefined) {
       setProjectName(proj.name)
       setBoardMode(proj.boardMode ?? 'HIERARCHICAL')
       setSimpleStoryId(proj.simpleStoryId ?? null)
+      setAdvancedChecklists(Boolean(proj.advancedChecklists))
     }).finally(() => setLoading(false))
   }, [assistantRefresh, projectId])
 
@@ -140,6 +142,7 @@ export function useBoardData(projectId: string | undefined) {
     projectName, setProjectName,
     boardMode, setBoardMode,
     simpleStoryId, setSimpleStoryId,
+    advancedChecklists, setAdvancedChecklists,
     loading, setLoading,
     syncState,
   }

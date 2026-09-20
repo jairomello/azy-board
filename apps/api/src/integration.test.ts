@@ -1605,3 +1605,113 @@ describe('reparenting transacional', () => {
     expect(path[2]?.title).toBe('Task A renomeada')
   })
 })
+
+describe('campos avançados de checklist (card T5)', () => {
+  let tenantId: string
+  let adminId: string
+  let adminToken: string
+  let memberId: string
+  let outsiderId: string
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Tenant checklist T5', slug: `t5-${tenantId}`, createdAt: new Date().toISOString() })
+    const admin = await createUser(tenantId, 'admin-t5@test.local', 'Admin T5')
+    adminId = admin.id
+    adminToken = await token(admin.id, tenantId, admin.email)
+    memberId = (await createUser(tenantId, 'member-t5@test.local', 'Membro T5', 'TEAM_MEMBER')).id
+    outsiderId = (await createUser(tenantId, 'outsider-t5@test.local', 'Fora T5', 'TEAM_MEMBER')).id
+  })
+
+  async function createProjectAndChecklist(name: string) {
+    const projectResponse = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, boardMode: 'SIMPLE' }),
+    })
+    const project = await projectResponse.json() as { id: string; advancedChecklists: boolean }
+    const cardResponse = await request(`/projects/${project.id}/items`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Card T5', type: 'TASK' }),
+    })
+    const card = await cardResponse.json() as { id: string }
+    const checklistResponse = await request(`/projects/${project.id}/items/${card.id}/checklists`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Validação' }),
+    })
+    const checklist = await checklistResponse.json() as { id: string }
+    return { project, card, checklist }
+  }
+
+  test('projeto novo começa com advancedChecklists=false e ADMIN pode habilitar', async () => {
+    const { project } = await createProjectAndChecklist('T5 gate default')
+    expect(project.advancedChecklists).toBe(false)
+
+    const enable = await request(`/projects/${project.id}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ advancedChecklists: true }),
+    })
+    expect(enable.status).toBe(200)
+    expect((await enable.json() as { advancedChecklists: boolean }).advancedChecklists).toBe(true)
+
+    const fetched = await request(`/projects/${project.id}`, adminToken)
+    expect((await fetched.json() as { advancedChecklists: boolean }).advancedChecklists).toBe(true)
+  })
+
+  test('modo simples rejeita campos avançados e os omite na leitura', async () => {
+    const { project, card, checklist } = await createProjectAndChecklist('T5 gate desligado')
+    const create = await request(`/projects/${project.id}/items/${card.id}/checklists/${checklist.id}/items`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Passo', dueDate: '2026-10-01' }),
+    })
+    expect(create.status).toBe(422)
+    expect(await create.json()).toMatchObject({ error: { code: 'CHECKLIST_ADVANCED_DISABLED', retryable: false } })
+
+    const simple = await request(`/projects/${project.id}/items/${card.id}/checklists/${checklist.id}/items`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Passo simples' }),
+    })
+    expect(simple.status).toBe(201)
+    const created = await simple.json() as Record<string, unknown>
+    expect(created.dueDate).toBeUndefined()
+    expect(created.description).toBeUndefined()
+    expect(created.assignee).toBeUndefined()
+  })
+
+  test('modo detalhado persiste e devolve data, responsável e descrição', async () => {
+    const { project, card, checklist } = await createProjectAndChecklist('T5 gate ligado')
+    await request(`/projects/${project.id}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ advancedChecklists: true }),
+    })
+    await request(`/projects/${project.id}/members`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'member-t5@test.local', role: 'MEMBER' }),
+    })
+
+    const create = await request(`/projects/${project.id}/items/${card.id}/checklists/${checklist.id}/items`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Passo detalhado', dueDate: '2026-10-01', assigneeId: memberId, description: '<p>Detalhes</p>' }),
+    })
+    expect(create.status).toBe(201)
+    const item = await create.json() as { id: string; dueDate: string; assigneeId: string; assignee: { id: string; name: string } | null; description: string }
+    expect(item).toMatchObject({ dueDate: '2026-10-01', assigneeId: memberId, description: '<p>Detalhes</p>' })
+    expect(item.assignee?.id).toBe(memberId)
+
+    const detail = await request(`/projects/${project.id}/items/${card.id}`, adminToken)
+    const detailBody = await detail.json() as { checklists: Array<{ items: Array<{ id: string; dueDate: string; assignee: { id: string } | null; description: string }> }> }
+    const listed = detailBody.checklists[0]!.items.find(candidate => candidate.id === item.id)!
+    expect(listed).toMatchObject({ dueDate: '2026-10-01', description: '<p>Detalhes</p>' })
+    expect(listed.assignee?.id).toBe(memberId)
+
+    const update = await request(`/projects/${project.id}/items/${card.id}/checklists/${checklist.id}/items/${item.id}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: '<p>Atualizado</p>', dueDate: null }),
+    })
+    expect(update.status).toBe(200)
+    expect(await update.json()).toMatchObject({ description: '<p>Atualizado</p>', dueDate: null })
+  })
+
+  test('rejeita responsável que não é membro do projeto', async () => {
+    const { project, card, checklist } = await createProjectAndChecklist('T5 responsável inválido')
+    await request(`/projects/${project.id}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ advancedChecklists: true }),
+    })
+    const create = await request(`/projects/${project.id}/items/${card.id}/checklists/${checklist.id}/items`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'Passo', assigneeId: outsiderId }),
+    })
+    expect(create.status).toBe(422)
+    expect(await create.json()).toMatchObject({ error: { code: 'INVALID_ASSIGNEE', retryable: false } })
+  })
+})

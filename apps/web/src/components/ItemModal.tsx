@@ -118,6 +118,7 @@ interface Props {
   projectVersions?: ProjectVersion[]
   projectSprints?: ProjectSprint[]
   projectCostCenters?: CostCenter[]
+  advancedChecklists?: boolean
   onClose: () => void
   onSave: (itemId: string, changes: Partial<FullItemData>, tagIds: string[]) => Promise<void>
   onAddSubtask: (parentId: string, title: string, type: ItemType) => Promise<void>
@@ -141,6 +142,7 @@ export function ItemModal({
   projectVersions = [],
   projectSprints = [],
   projectCostCenters = [],
+  advancedChecklists = false,
   onClose,
   onSave,
   onAddSubtask,
@@ -378,7 +380,7 @@ export function ItemModal({
                   </div>
                 </>}
                 {activeArea === 'subtasks' && <div className="rounded-lg border border-border p-4"><div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-semibold">{t('areaSubtasks')} ({subtaskCount})</h3>{item.isLeaf && <button type="button" onClick={() => setShowSubtaskForm(true)} className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/20"><Plus className="h-3.5 w-3.5" />{t('addSubtask')}</button>}</div>{item.id !== '__new__' && <CardChildrenSection itemId={item.id} projectId={projectId} onOpenChild={handleOpenChild} onCountChange={setSubtaskCount} refreshKey={subtaskRefreshKey} />}{showSubtaskForm && <div className="mt-4"><AddCardForm onAdd={async (subTitle, subType) => { await onAddSubtask(item.id, subTitle, subType); setSubtaskRefreshKey(key => key + 1); setShowSubtaskForm(false) }} onCancel={() => setShowSubtaskForm(false)} /></div>}{item.id === '__new__' && <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
-                {activeArea === 'checklists' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' ? <ChecklistSection itemId={item.id} projectId={projectId} initialChecklists={checklists} onChange={setChecklists} /> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
+                {activeArea === 'checklists' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' ? <ChecklistSection itemId={item.id} projectId={projectId} initialChecklists={checklists} onChange={setChecklists} advancedChecklists={advancedChecklists} members={members} /> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {activeArea === 'activity' && <div id="item-area-activity" className="grid min-h-[360px] min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">{item.id !== '__new__' ? <><ActivityLogPanel itemId={item.id} projectId={projectId} onCountChange={setActivityCount} /><WorkLogPanel itemId={item.id} projectId={projectId} currentUserId={currentUserId ?? ''} currentUserRole={currentUserRole} onCountChange={setWorkLogCount} onTotalChange={setTotalMinutes} /></> : <p className="col-span-full rounded-lg border border-border p-6 text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {error && <p className="text-sm text-red-500" role="alert">{error}</p>}
               </main>

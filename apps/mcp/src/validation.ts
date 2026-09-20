@@ -47,13 +47,15 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) throw new Error(`Campo obrigatório ausente: ${field}`)
   }
   const input = args ?? {}
-  for (const field of ['projectId', 'itemId', 'taskId', 'sprintId', 'tagId', 'versionId', 'userId', 'columnId', 'moduleId', 'checklistId', 'checklistItemId']) if (field in input && input[field] != null) assertNonEmptyString(input[field], field, 128)
+  for (const field of ['projectId', 'itemId', 'taskId', 'sprintId', 'tagId', 'versionId', 'userId', 'columnId', 'moduleId', 'checklistId', 'checklistItemId', 'assigneeId']) if (field in input && input[field] != null) assertNonEmptyString(input[field], field, 128)
   // null é tratado como "não informado" (clients strict enviam todos os campos).
   if (input.name != null) assertNonEmptyString(input.name, 'name', TOOL_TEXT_LIMITS.name)
   if (input.title != null) assertNonEmptyString(input.title, 'title', TOOL_TEXT_LIMITS.title)
   if (input.activity != null) assertNonEmptyString(input.activity, 'activity', TOOL_TEXT_LIMITS.activity)
   if (input.text != null) assertNonEmptyString(input.text, 'text', TOOL_TEXT_LIMITS.text)
   if (input.description != null) assertNonEmptyString(input.description, 'description', TOOL_TEXT_LIMITS.description)
+  if (input.dueDate != null) assertIsoDate(input.dueDate, 'dueDate')
+  if (input.advancedChecklists != null && typeof input.advancedChecklists !== 'boolean') throw new Error('advancedChecklists deve ser booleano')
   if (input.ref != null) assertNonEmptyString(input.ref, 'ref', TOOL_TEXT_LIMITS.ref)
   if (input.columnName != null) assertNonEmptyString(input.columnName, 'columnName', TOOL_TEXT_LIMITS.columnName)
   if (input.tagIds != null) assertStringArray(input.tagIds, 'tagIds')
@@ -82,6 +84,18 @@ export function validateToolArguments(name: string, args: Record<string, unknown
       if (raw.field === 'status' && raw.operation === 'SET') assertEnum(raw.value, 'status', ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'])
       if (raw.field === 'points' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^\d+$/.test(raw.value))) throw new Error('points deve ser um inteiro não negativo')
     }
+  } else if (name === 'update_checklist_item') {
+    const changes = input.changes
+    if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new Error('changes deve ser um objeto')
+    const value = changes as Record<string, unknown>
+    const allowed = new Set(['text', 'checked', 'dueDate', 'assigneeId', 'description'])
+    for (const key of Object.keys(value)) if (!allowed.has(key)) throw new Error(`Campo de alteração inválido: ${key}`)
+    if (value.text !== undefined && value.text !== null) assertNonEmptyString(value.text, 'text', TOOL_TEXT_LIMITS.text)
+    if (value.checked !== undefined && value.checked !== null && typeof value.checked !== 'boolean') throw new Error('checked deve ser booleano')
+    if (value.dueDate !== undefined && value.dueDate !== null) assertIsoDate(value.dueDate, 'dueDate')
+    if (value.assigneeId !== undefined && value.assigneeId !== null) assertNonEmptyString(value.assigneeId, 'assigneeId', 128)
+    if (value.description !== undefined && value.description !== null && typeof value.description !== 'string') throw new Error('description deve ser uma string')
+    if (typeof value.description === 'string' && value.description.length > TOOL_TEXT_LIMITS.description) throw new Error(`description excede o limite de ${TOOL_TEXT_LIMITS.description} caracteres`)
   } else if ('changes' in input && (typeof input.changes !== 'object' || input.changes === null || Array.isArray(input.changes))) throw new Error('changes deve ser um objeto')
   if (name === 'update_items') {
     const filters = input.filters

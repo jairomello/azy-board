@@ -11,6 +11,7 @@ interface GeneralSettingsProps {
   boardMode: BoardMode
   isRestricted: boolean
   isHidden: boolean
+  advancedChecklists: boolean
   startDate: string
   plannedEndDate: string
   plannedPoints: string
@@ -24,6 +25,7 @@ interface GeneralSettingsProps {
   onToggleSection: (id: string) => void
   onBoardModeChange: (mode: BoardMode) => void
   onVisibilityChange: (field: 'isRestricted' | 'isHidden', value: boolean) => void
+  onAdvancedChecklistsChange: (value: boolean) => void
   onPlanningChange: (field: string, value: string | number | null) => void
   onPlanningFieldChange: (field: 'startDate' | 'plannedEndDate' | 'plannedPoints' | 'plannedHours', value: string) => void
   onManagerChange: (value: string) => void
@@ -33,6 +35,8 @@ interface GeneralSettingsProps {
   boardModeError: string
   savingVisibility: boolean
   visibilityError: string
+  savingAdvancedChecklists: boolean
+  advancedChecklistsError: string
   savingPlanning: boolean
   planningError: string
   savingManager: boolean
@@ -42,11 +46,11 @@ interface GeneralSettingsProps {
 }
 
 export function GeneralSettingsSections({
-  boardMode, isRestricted, isHidden, startDate, plannedEndDate, plannedPoints, plannedHours,
+  boardMode, isRestricted, isHidden, advancedChecklists, startDate, plannedEndDate, plannedPoints, plannedHours,
   scope, manager, managerUserId, members, isAdmin, openSections, onToggleSection,
-  onBoardModeChange, onVisibilityChange, onPlanningChange, onPlanningFieldChange, onManagerChange, onScopeChange,
+  onBoardModeChange, onVisibilityChange, onAdvancedChecklistsChange, onPlanningChange, onPlanningFieldChange, onManagerChange, onScopeChange,
   pendingBoardMode, savingBoardMode, boardModeError, savingVisibility, visibilityError,
-  savingPlanning, planningError, savingManager, onConfirmBoardMode, onCancelBoardMode, onSaveManager,
+  savingAdvancedChecklists, advancedChecklistsError, savingPlanning, planningError, savingManager, onConfirmBoardMode, onCancelBoardMode, onSaveManager,
 }: GeneralSettingsProps) {
   const { t } = useTranslation(['settings', 'common'])
   const scopeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -80,6 +84,27 @@ export function GeneralSettingsSections({
         restrictedId="project-restricted" hiddenId="project-hidden" disabled={!isAdmin || savingVisibility} />
       {!isAdmin && <p className="text-xs text-muted-foreground mt-3">{t('settings:adminOnly')}</p>}
       {visibilityError && <p className="text-sm text-destructive mt-3">{visibilityError}</p>}
+    </SettingsSection>
+
+    <SettingsSection id="checklists" title={t('settings:advancedChecklists')} {...section('checklists')}>
+      <p className="text-sm text-muted-foreground mb-4">{t('settings:advancedChecklistsDescription')}</p>
+      <label className="flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          role="switch"
+          aria-checked={advancedChecklists}
+          checked={advancedChecklists}
+          disabled={!isAdmin || savingAdvancedChecklists}
+          onChange={event => onAdvancedChecklistsChange(event.target.checked)}
+          className="mt-0.5 h-4 w-4 accent-primary"
+        />
+        <span>
+          <span className="block text-sm font-medium text-foreground">{t('settings:advancedChecklistsToggle')}</span>
+          <span className="block text-xs text-muted-foreground mt-1">{t('settings:advancedChecklistsHint')}</span>
+        </span>
+      </label>
+      {!isAdmin && <p className="text-xs text-muted-foreground mt-3">{t('settings:adminOnly')}</p>}
+      {advancedChecklistsError && <p className="text-sm text-destructive mt-3">{advancedChecklistsError}</p>}
     </SettingsSection>
 
     <SettingsSection id="planning" title={t('settings:planning')} {...section('planning')}>

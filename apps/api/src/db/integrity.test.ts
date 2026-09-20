@@ -201,3 +201,23 @@ describe('integridade do schema', () => {
     sqlite.close()
   })
 })
+
+describe('integridade dos campos avançados de checklist (Card T5)', () => {
+  test('auditoria detecta responsável de passo que não é membro do projeto', () => {
+    const { sqlite } = migratedDatabase()
+    seedTenant(sqlite, 'tenant-a')
+    seedUser(sqlite, 'user-member', 'tenant-a', 'member@a.local')
+    seedUser(sqlite, 'user-outsider', 'tenant-a', 'outsider@a.local')
+    seedProject(sqlite, 'project-a', 'tenant-a')
+    sqlite.query("INSERT INTO memberships (id, tenant_id, user_id, project_id, role, created_at) VALUES ('m1', 'tenant-a', 'user-member', 'project-a', 'MEMBER', ?)").run(now)
+    seedItem(sqlite, 'item-a', 'tenant-a', 'project-a')
+    sqlite.query("INSERT INTO checklists (id, tenant_id, item_id, name, position, created_at) VALUES ('cl-a', 'tenant-a', 'item-a', 'CL', 0, ?)").run(now)
+    sqlite.query("INSERT INTO checklist_items (id, tenant_id, checklist_id, text, checked, position, assignee_id) VALUES ('ci-ok', 'tenant-a', 'cl-a', 'Passo', 0, 0, 'user-member')").run()
+    expect(auditIntegrity(sqlite)).toEqual([])
+
+    sqlite.query("INSERT INTO checklist_items (id, tenant_id, checklist_id, text, checked, position, assignee_id) VALUES ('ci-bad', 'tenant-a', 'cl-a', 'Passo', 0, 1, 'user-outsider')").run()
+    const violations = auditIntegrity(sqlite)
+    expect(violations.find(violation => violation.check === 'checklist_step_assignee_not_member')?.count).toBe(1)
+    sqlite.close()
+  })
+})

@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
+import type { Context } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { eq, and, max, asc, sql } from 'drizzle-orm'
 import { db } from '../db/index'
-import { checklists, checklistItems, items } from '../db/schema'
+import { checklists, checklistItems, items, projects, memberships, users } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
 import { broadcast } from '../services/websocket'
@@ -34,6 +35,63 @@ async function assertItemAccess(tenantId: string, itemId: string, projectId: str
   return !!item
 }
 
+// [TENANT] Resolve o gate de checklists detalhados dentro do tenant autenticado.
+async function projectAdvancedChecklists(tenantId: string, projectId: string): Promise<boolean> {
+  const project = await db.query.projects.findFirst({
+    where: (p) => and(eq(p.id, projectId), eq(p.tenantId, tenantId)),
+    columns: { advancedChecklists: true },
+  })
+  return Boolean(project?.advancedChecklists)
+}
+
+// Campos avançados só podem ser gravados quando o projeto os habilita.
+function hasAdvancedChecklistFields(body: Record<string, unknown>): boolean {
+  return body.dueDate !== undefined || body.assigneeId !== undefined || body.description !== undefined
+}
+
+function advancedFieldsDisabledResponse(c: Context) {
+  return c.json({
+    error: 'Checklists detalhados estão desabilitados neste projeto',
+    code: 'CHECKLIST_ADVANCED_DISABLED',
+    retryable: false,
+  }, 422)
+}
+
+// [TENANT] Responsável precisa ser membro do projeto e do tenant.
+async function isProjectMember(tenantId: string, projectId: string, userId: string): Promise<boolean> {
+  const membership = await db.query.memberships.findFirst({
+    where: (m) => and(eq(m.projectId, projectId), eq(m.userId, userId), eq(m.tenantId, tenantId)),
+    columns: { id: true },
+  })
+  return !!membership
+}
+
+// [TENANT] Resolve o responsável para devolver o objeto no payload de resposta.
+async function resolveChecklistAssignee(tenantId: string, assigneeId: string | null | undefined) {
+  if (!assigneeId) return null
+  const user = await db.query.users.findFirst({
+    where: (u) => and(eq(u.id, assigneeId), eq(u.tenantId, tenantId)),
+    columns: { id: true, name: true, avatarUrl: true },
+  })
+  return user ?? null
+}
+
+// Mapeia o item de checklist expondo os campos avançados apenas no modo detalhado.
+function mapChecklistItem(
+  ci: { id: string; text: string; checked: boolean; position: number; dueDate?: string | null; assigneeId?: string | null; description?: string | null; assignee?: { id: string; name: string; avatarUrl: string | null } | null },
+  advanced: boolean,
+) {
+  const base = { id: ci.id, text: ci.text, checked: Boolean(ci.checked), position: ci.position }
+  if (!advanced) return base
+  return {
+    ...base,
+    dueDate: ci.dueDate ?? null,
+    assigneeId: ci.assigneeId ?? null,
+    assignee: ci.assignee ?? null,
+    description: ci.description ?? null,
+  }
+}
+
 // GET /projects/:projectId/items/:itemId/checklists
 checklistsRouter.get('/', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
@@ -43,9 +101,17 @@ checklistsRouter.get('/', requireRole('VIEWER'), async (c) => {
   const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)
   if (!allowed) return c.json({ error: 'Item não encontrado' }, 404)
 
+  // [TENANT] gate do modo detalhado resolvido no projeto do tenant
+  const advanced = await projectAdvancedChecklists(ctx.tenantId, projectId)
+
   const rows = await db.query.checklists.findMany({
     where: (cl) => and(eq(cl.itemId, itemId), eq(cl.tenantId, ctx.tenantId)),
-    with: { checklistItems: { orderBy: (ci) => [asc(ci.position)] } },
+    with: {
+      checklistItems: {
+        orderBy: (ci) => [asc(ci.position)],
+        with: { assignee: { columns: { id: true, name: true, avatarUrl: true } } },
+      },
+    },
     orderBy: (cl) => [asc(cl.position)],
   })
 
@@ -53,12 +119,7 @@ checklistsRouter.get('/', requireRole('VIEWER'), async (c) => {
     id: cl.id,
     name: cl.name,
     position: cl.position,
-    items: cl.checklistItems.map(ci => ({
-      id: ci.id,
-      text: ci.text,
-      checked: Boolean(ci.checked),
-      position: ci.position,
-    })),
+    items: cl.checklistItems.map(ci => mapChecklistItem(ci, advanced)),
   })))
 })
 
@@ -164,6 +225,15 @@ checklistsRouter.post('/:checklistId/items', requireRole('MEMBER'), async (c) =>
   const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)
   if (!allowed) return c.json({ error: 'Item não encontrado' }, 404)
 
+  // Gate: campos avançados só existem quando o projeto habilita checklists detalhados.
+  const advanced = await projectAdvancedChecklists(ctx.tenantId, projectId)
+  if (!advanced && hasAdvancedChecklistFields(body as Record<string, unknown>)) return advancedFieldsDisabledResponse(c)
+  if (advanced && body.assigneeId) {
+    // [TENANT] responsável precisa ser membro do projeto do tenant autenticado
+    const member = await isProjectMember(ctx.tenantId, projectId, body.assigneeId)
+    if (!member) return c.json({ error: 'O responsável deve ser membro do projeto', code: 'INVALID_ASSIGNEE', retryable: false }, 422)
+  }
+
   const cl = await db.query.checklists.findFirst({
     where: (cl) => and(eq(cl.id, checklistId), eq(cl.itemId, itemId), eq(cl.tenantId, ctx.tenantId)),
     columns: { id: true },
@@ -183,11 +253,23 @@ checklistsRouter.post('/:checklistId/items', requireRole('MEMBER'), async (c) =>
       text: body.text.trim(),
       checked: false,
       position: nextPosition,
+      dueDate: advanced ? body.dueDate ?? null : null,
+      assigneeId: advanced ? body.assigneeId ?? null : null,
+      description: advanced ? body.description ?? null : null,
     })
     return nextPosition
   })
 
-  const newItem = { id, text: body.text.trim(), checked: false, position }
+  const newItem = mapChecklistItem({
+    id,
+    text: body.text.trim(),
+    checked: false,
+    position,
+    dueDate: advanced ? body.dueDate ?? null : null,
+    assigneeId: advanced ? body.assigneeId ?? null : null,
+    assignee: advanced ? await resolveChecklistAssignee(ctx.tenantId, body.assigneeId) : null,
+    description: advanced ? body.description ?? null : null,
+  }, advanced)
   const progress = await getChecklistProgress(ctx.tenantId, itemId)
   broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, checklistId, progress } })
 
@@ -206,6 +288,15 @@ checklistsRouter.patch('/:checklistId/items/:checklistItemId', requireRole('MEMB
   const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)
   if (!allowed) return c.json({ error: 'Item não encontrado' }, 404)
 
+  // Gate: campos avançados só existem quando o projeto habilita checklists detalhados.
+  const advanced = await projectAdvancedChecklists(ctx.tenantId, projectId)
+  if (!advanced && hasAdvancedChecklistFields(body as Record<string, unknown>)) return advancedFieldsDisabledResponse(c)
+  if (advanced && body.assigneeId) {
+    // [TENANT] responsável precisa ser membro do projeto do tenant autenticado
+    const member = await isProjectMember(ctx.tenantId, projectId, body.assigneeId)
+    if (!member) return c.json({ error: 'O responsável deve ser membro do projeto', code: 'INVALID_ASSIGNEE', retryable: false }, 422)
+  }
+
   const ci = await db.query.checklistItems.findFirst({
     where: (ci) => and(eq(ci.id, checklistItemId), eq(ci.checklistId, checklistId), eq(ci.tenantId, ctx.tenantId)),
   })
@@ -221,6 +312,11 @@ checklistsRouter.patch('/:checklistId/items/:checklistItemId', requireRole('MEMB
   if (body.text !== undefined) updates.text = body.text.trim()
   if (body.checked !== undefined) updates.checked = body.checked
   if (body.position !== undefined) updates.position = body.position
+  if (advanced) {
+    if (body.dueDate !== undefined) updates.dueDate = body.dueDate
+    if (body.assigneeId !== undefined) updates.assigneeId = body.assigneeId
+    if (body.description !== undefined) updates.description = body.description
+  }
 
   await db.update(checklistItems).set(updates)
     .where(and(eq(checklistItems.id, checklistItemId), eq(checklistItems.tenantId, ctx.tenantId)))
@@ -228,7 +324,13 @@ checklistsRouter.patch('/:checklistId/items/:checklistItemId', requireRole('MEMB
   const progress = await getChecklistProgress(ctx.tenantId, itemId)
   broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, checklistId, progress } })
 
-  return c.json({ ...ci, ...updates, checked: Boolean(body.checked ?? ci.checked) })
+  const effectiveAssigneeId = updates.assigneeId !== undefined ? updates.assigneeId : ci.assigneeId
+  return c.json(mapChecklistItem({
+    ...ci,
+    ...updates,
+    checked: Boolean(body.checked ?? ci.checked),
+    assignee: advanced ? await resolveChecklistAssignee(ctx.tenantId, effectiveAssigneeId) : null,
+  }, advanced))
 })
 
 // DELETE /projects/:projectId/items/:itemId/checklists/:checklistId/items/:checklistItemId

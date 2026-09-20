@@ -228,6 +228,7 @@ projectsRouter.post('/', async (c) => {
       managerUserId: body.managerUserId ?? ctx.userId,
      isRestricted,
      isHidden,
+     advancedChecklists: body.advancedChecklists ?? false,
      startDate: body.startDate ?? null,
      plannedEndDate: body.plannedEndDate ?? null,
      plannedPoints: body.plannedPoints ?? null,
@@ -279,7 +280,7 @@ projectsRouter.post('/', async (c) => {
   })
   simpleStoryId = projectResult.simpleStoryId
 
-  return c.json({ id: projectId, name: normalizedName, description: body.description ?? null, boardMode, simpleStoryId, managerUserId: body.managerUserId ?? ctx.userId, isRestricted, isHidden, startDate: body.startDate ?? null, plannedEndDate: body.plannedEndDate ?? null, plannedPoints: body.plannedPoints ?? null, plannedHours: body.plannedHours ?? null, scope: body.scope ?? null, role: 'ADMIN' as const }, 201)
+  return c.json({ id: projectId, name: normalizedName, description: body.description ?? null, boardMode, simpleStoryId, managerUserId: body.managerUserId ?? ctx.userId, isRestricted, isHidden, advancedChecklists: body.advancedChecklists ?? false, startDate: body.startDate ?? null, plannedEndDate: body.plannedEndDate ?? null, plannedPoints: body.plannedPoints ?? null, plannedHours: body.plannedHours ?? null, scope: body.scope ?? null, role: 'ADMIN' as const }, 201)
 })
 
 // GET /projects — listar projetos visíveis para o usuário (membros veem os que participam)
@@ -325,7 +326,7 @@ projectsRouter.get('/:id/board', requireRole('VIEWER'), async (c) => {
   // [TENANT] Todos os dados do contexto são limitados ao projeto do tenant autenticado.
   const project = await db.query.projects.findFirst({
     where: (p) => and(eq(p.id, projectId), eq(p.tenantId, ctx.tenantId)),
-    columns: { id: true, name: true, description: true, boardMode: true, simpleStoryId: true, startDate: true, plannedEndDate: true, plannedPoints: true, plannedHours: true, scope: true },
+    columns: { id: true, name: true, description: true, boardMode: true, simpleStoryId: true, advancedChecklists: true, startDate: true, plannedEndDate: true, plannedPoints: true, plannedHours: true, scope: true },
   })
   if (!project) return c.json({ error: 'Projeto não encontrado' }, 404)
 
@@ -483,6 +484,7 @@ projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
   if (body.boardMode !== undefined && !boardModeChanged) updates.boardMode = body.boardMode
   if (body.isRestricted !== undefined) updates.isRestricted = body.isRestricted
   if (body.isHidden !== undefined) updates.isHidden = body.isHidden
+  if (body.advancedChecklists !== undefined) updates.advancedChecklists = body.advancedChecklists
 
   if (boardModeChanged && body.dryRun) {
     const projectItems = await db.select({ type: items.type }).from(items)

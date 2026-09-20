@@ -79,7 +79,7 @@ interface Module   { id: string; name: string; position: number }
 interface Item     { id: string; type: string; title: string; isLeaf: boolean; parentId?: string | null; columnId?: string | null; status?: string }
 export interface Page<T> { data: T[]; page?: number; limit?: number; total?: number; hasMore?: boolean; nextCursor?: string | null }
 interface Checklist { id: string; name: string; position: number; items: ChecklistItem[] }
-interface ChecklistItem { id: string; text: string; checked: boolean; position: number }
+interface ChecklistItem { id: string; text: string; checked: boolean; position: number; dueDate?: string | null; assigneeId?: string | null; description?: string | null }
 interface Resource { id: string; name: string; [key: string]: unknown }
 
 export interface ProjectSummary {
@@ -464,12 +464,17 @@ export async function toolAddChecklistItem(
   projectId: string,
   itemId: string,
   checklistId: string,
-  text: string
+  text: string,
+  advanced?: { dueDate?: string | null; assigneeId?: string | null; description?: string | null }
 ): Promise<ChecklistItem> {
+  const body: Record<string, unknown> = { text }
+  if (advanced?.dueDate !== undefined && advanced.dueDate !== null) body.dueDate = advanced.dueDate
+  if (advanced?.assigneeId !== undefined && advanced.assigneeId !== null) body.assigneeId = advanced.assigneeId
+  if (advanced?.description !== undefined && advanced.description !== null) body.description = advanced.description
   return api(
     `/projects/${projectId}/items/${itemId}/checklists/${checklistId}/items`,
     'POST',
-    { text }
+    body
   ) as Promise<ChecklistItem>
 }
 
@@ -479,6 +484,7 @@ export async function toolAddChecklistItemToTask(
   itemId: string,
   checklistName: string,
   text: string,
+  advanced?: { dueDate?: string | null; assigneeId?: string | null; description?: string | null }
 ): Promise<{ checklist: Checklist; item: ChecklistItem }> {
   if (!itemId?.trim()) throw new Error('itemId é obrigatório e deve ser o ID do card pai do checklist')
   if (!checklistName?.trim()) throw new Error('checklistName é obrigatório')
@@ -487,7 +493,7 @@ export async function toolAddChecklistItemToTask(
   const checklists = await toolListChecklists(api, projectId, itemId)
   let checklist = checklists.find(candidate => candidate.name === checklistName.trim())
   if (!checklist) checklist = await toolCreateChecklist(api, projectId, itemId, checklistName.trim())
-  const item = await toolAddChecklistItem(api, projectId, itemId, checklist.id, text.trim())
+  const item = await toolAddChecklistItem(api, projectId, itemId, checklist.id, text.trim(), advanced)
   return { checklist, item }
 }
 

@@ -3,6 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createMcpServer } from './index.js'
 import { dependencyToolsFor, executeSharedTool, getSharedToolDefinitions, sanitizeToolOutput, searchSharedTools, selectSharedTools, SHARED_TOOL_NAMES, SKILL_COMMAND_INTENTS } from './registry.js'
+import { validateToolArguments } from './validation.js'
 
 describe('shared MCP/Azy Agent registry', () => {
   test('mantém paridade de nomes com o catálogo exposto pelo servidor MCP', async () => {
@@ -37,7 +38,7 @@ describe('shared MCP/Azy Agent registry', () => {
   test('create_project não pede manager nem campos opcionais desconhecidos', () => {
     const tool = getSharedToolDefinitions(['create_project'])[0]!
     expect(tool.inputSchema.properties).not.toHaveProperty('managerUserId')
-    expect(tool.inputSchema.required).toEqual(['name', 'description', 'boardMode', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'])
+    expect(tool.inputSchema.required).toEqual(['name', 'description', 'boardMode', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'])
     expect(tool.inputSchema.properties.boardMode).toMatchObject({ enum: ['HIERARCHICAL', 'SIMPLE', null] })
     expect(tool.inputSchema.properties.startDate).toMatchObject({ description: expect.stringContaining('YYYY-MM-DD') })
     expect(tool.inputSchema.properties.plannedPoints).toMatchObject({ type: expect.arrayContaining(['number', 'null']) })
@@ -51,6 +52,35 @@ describe('shared MCP/Azy Agent registry', () => {
       if (tool.inputSchema.properties.checklistId) expect(tool.inputSchema.properties.checklistId).toMatchObject({ description: expect.stringContaining('itemId') })
     }
     expect(getSharedToolDefinitions(['add_checklist_item_to_task'])[0]?.description).toContain('creates the checklist')
+  })
+
+  test('expõe campos avançados opcionais nos passos de checklist', () => {
+    const add = getSharedToolDefinitions(['add_checklist_item'])[0]!
+    expect(add.inputSchema.properties).toHaveProperty('dueDate')
+    expect(add.inputSchema.properties).toHaveProperty('assigneeId')
+    expect(add.inputSchema.properties).toHaveProperty('description')
+    expect(getSharedToolDefinitions(['add_checklist_item_to_task'])[0]?.inputSchema.properties).toHaveProperty('dueDate')
+
+    const update = getSharedToolDefinitions(['update_checklist_item'])[0]!
+    const changes = update.inputSchema.properties.changes as { properties: Record<string, unknown> }
+    expect(Object.keys(changes.properties).sort()).toEqual(['assigneeId', 'checked', 'description', 'dueDate', 'text'])
+    expect(update.description).toContain('dueDate')
+  })
+
+  test('valida os campos avançados das ferramentas de checklist', () => {
+    expect(() => validateToolArguments('update_checklist_item', {
+      projectId: 'p', itemId: 'i', checklistId: 'c', checklistItemId: 'ci',
+      changes: { text: null, checked: null, dueDate: '2026-10-01', assigneeId: 'u', description: '<p>x</p>' },
+    })).not.toThrow()
+    expect(() => validateToolArguments('add_checklist_item', {
+      projectId: 'p', itemId: 'i', checklistId: 'c', text: 'Passo', dueDate: '2026-10-01', assigneeId: 'u', description: '<p>x</p>',
+    })).not.toThrow()
+    expect(() => validateToolArguments('update_checklist_item', {
+      projectId: 'p', itemId: 'i', checklistId: 'c', checklistItemId: 'ci', changes: { dueDate: 'data-invalida' },
+    })).toThrow(/dueDate/)
+    expect(() => validateToolArguments('update_checklist_item', {
+      projectId: 'p', itemId: 'i', checklistId: 'c', checklistItemId: 'ci', changes: { campoDesconhecido: 'x' },
+    })).toThrow(/inválido/)
   })
 
   test('sanitiza segredos e limita strings de saída', () => {

@@ -26,7 +26,7 @@ export function useProjectSettingsData(projectId: string | undefined) {
   const [sprints, setSprints] = useState<Sprint[]>([])
   const [data, setData] = useState<ProjectSettingsData>({
     projectName: '', manager: null, managerUserId: '', boardMode: 'HIERARCHICAL',
-    isRestricted: false, isHidden: false, startDate: '', plannedEndDate: '',
+    isRestricted: false, isHidden: false, advancedChecklists: false, startDate: '', plannedEndDate: '',
     plannedPoints: '', plannedHours: '', scope: '',
   })
 
@@ -46,6 +46,7 @@ export function useProjectSettingsData(projectId: string | undefined) {
         boardMode?: BoardMode
         isRestricted?: boolean
         isHidden?: boolean
+        advancedChecklists?: boolean
         startDate?: string | null
         plannedEndDate?: string | null
         plannedPoints?: number | null
@@ -67,6 +68,7 @@ export function useProjectSettingsData(projectId: string | undefined) {
         boardMode: project.boardMode ?? 'HIERARCHICAL',
         isRestricted: Boolean(project.isRestricted),
         isHidden: Boolean(project.isHidden),
+        advancedChecklists: Boolean(project.advancedChecklists),
         startDate: project.startDate ?? '',
         plannedEndDate: project.plannedEndDate ?? '',
         plannedPoints: project.plannedPoints != null ? String(project.plannedPoints) : '',
@@ -88,6 +90,7 @@ export function useProjectSettingsData(projectId: string | undefined) {
      setBoardMode: (value: BoardMode) => setData(previous => updateSettingsField(previous, 'boardMode', value)),
      setIsRestricted: (value: boolean) => setData(previous => updateSettingsField(previous, 'isRestricted', value)),
      setIsHidden: (value: boolean) => setData(previous => updateSettingsField(previous, 'isHidden', value)),
+     setAdvancedChecklists: (value: boolean) => setData(previous => updateSettingsField(previous, 'advancedChecklists', value)),
      setStartDate: (value: string) => setData(previous => updateSettingsField(previous, 'startDate', value)),
      setPlannedEndDate: (value: string) => setData(previous => updateSettingsField(previous, 'plannedEndDate', value)),
      setPlannedPoints: (value: string) => setData(previous => updateSettingsField(previous, 'plannedPoints', value)),

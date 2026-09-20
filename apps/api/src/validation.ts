@@ -23,6 +23,7 @@ const projectFields = {
   boardMode: boardModeSchema.optional(),
   isRestricted: z.boolean().optional(),
   isHidden: z.boolean().optional(),
+  advancedChecklists: z.boolean().optional(),
   startDate: optionalDate,
   plannedEndDate: optionalDate,
   plannedPoints: z.number().finite().nullable().optional(),
@@ -138,8 +139,15 @@ export const batchSchema = z.object({
 
 export const checklistSchema = z.object({ name: z.string().trim().min(1).max(200) }).strict()
 export const updateChecklistSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), position: z.number().int().min(0).optional() }).strict()
-export const checklistItemSchema = z.object({ text: z.string().trim().min(1).max(2_000) }).strict()
-export const updateChecklistItemSchema = z.object({ text: z.string().trim().min(1).max(2_000).optional(), checked: z.boolean().optional(), position: z.number().int().min(0).optional() }).strict()
+// Campos avançados opcionais de item de checklist — aceitos apenas quando o projeto
+// tem advancedChecklists = true; o gate é aplicado na rota.
+const advancedChecklistItemFields = {
+  dueDate: optionalDate,
+  assigneeId: optionalId,
+  description: optionalText().nullable().optional(),
+}
+export const checklistItemSchema = z.object({ text: z.string().trim().min(1).max(2_000), ...advancedChecklistItemFields }).strict()
+export const updateChecklistItemSchema = z.object({ text: z.string().trim().min(1).max(2_000).optional(), checked: z.boolean().optional(), position: z.number().int().min(0).optional(), ...advancedChecklistItemFields }).strict()
 export const columnSchema = z.object({ name: z.string().trim().min(1).max(200), baseStatus: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'DONE']) }).strict()
 export const updateColumnSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), baseStatus: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'DONE']).optional() }).strict()
 export const reorderSchema = z.object({ order: z.array(z.string().min(1)).max(500) }).strict()

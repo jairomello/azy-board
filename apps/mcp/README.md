@@ -92,6 +92,16 @@ Nunca use `checklistId` ou `checklistItemId` como `itemId`. Para adicionar um pa
 
 O fluxo manual é `list_tasks` → `list_checklists` → `add_checklist_item` → `check_item`, sempre reutilizando os IDs retornados pela etapa anterior.
 
+### Campos avançados de checklist
+
+Quando o projeto tem `advancedChecklists = true` (configuração do projeto em Settings), os passos aceitam três campos opcionais:
+
+- `dueDate` — data prevista no formato `YYYY-MM-DD`;
+- `assigneeId` — ID de um membro do projeto;
+- `description` — descrição em HTML (até 20000 caracteres).
+
+Eles podem ser informados em `add_checklist_item` e `add_checklist_item_to_task`, e alterados em `update_checklist_item` via `changes` (ex.: `{ "dueDate": "2026-10-01", "assigneeId": "user-1" }`). `list_checklists` retorna os campos quando habilitados. Em projetos sem a opção, enviar esses campos retorna erro de validação e os passos permanecem simples (apenas `text` e `checked`).
+
 ## Projeto padrão da codebase (`AZYBOARD_PROJECT_ID`)
 
 Quando um agente trabalha sempre no mesmo projeto (caso típico: um repositório

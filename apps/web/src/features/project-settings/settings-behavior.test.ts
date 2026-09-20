@@ -4,7 +4,7 @@ import type { ProjectSettingsData } from './model/types'
 
 const data: ProjectSettingsData = {
   projectName: 'Projeto', manager: null, managerUserId: '', boardMode: 'HIERARCHICAL',
-  isRestricted: false, isHidden: false, startDate: '', plannedEndDate: '', plannedPoints: '', plannedHours: '', scope: '',
+  isRestricted: false, isHidden: false, advancedChecklists: false, startDate: '', plannedEndDate: '', plannedPoints: '', plannedHours: '', scope: '',
 }
 
 describe('comportamentos observáveis das seções de Settings', () => {

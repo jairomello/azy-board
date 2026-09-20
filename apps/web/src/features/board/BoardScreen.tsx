@@ -70,6 +70,7 @@ export default function BoardPage() {
     projectName, setProjectName,
     boardMode, setBoardMode,
     simpleStoryId, setSimpleStoryId,
+    advancedChecklists,
     loading, setLoading,
     syncState,
   } = useBoardData(projectId)
@@ -1036,6 +1037,7 @@ export default function BoardPage() {
         versions={projectVersions}
         sprints={sprints}
         costCenters={projectCostCenters}
+        advancedChecklists={advancedChecklists}
         onCloseItem={() => { setItemModalId(null); setNewItemCreation(null) }}
         onCloseStory={() => setStoryModalData(null)}
         onCloseEpic={() => setEpicModalData(null)}

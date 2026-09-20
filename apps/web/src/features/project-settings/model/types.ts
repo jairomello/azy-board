@@ -23,6 +23,7 @@ export interface ProjectSettingsData {
   boardMode: BoardMode
   isRestricted: boolean
   isHidden: boolean
+  advancedChecklists: boolean
   startDate: string
   plannedEndDate: string
   plannedPoints: string

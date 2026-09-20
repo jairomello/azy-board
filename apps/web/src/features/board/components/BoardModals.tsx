@@ -28,6 +28,7 @@ interface BoardModalsProps {
   versions: ProjectVersion[]
   sprints: Sprint[]
   costCenters: CostCenter[]
+  advancedChecklists: boolean
   onCloseItem: () => void
   onCloseStory: () => void
   onCloseEpic: () => void
@@ -59,7 +60,7 @@ export function BoardModals(props: BoardModalsProps) {
     columnId: props.newItem.columnId ?? null, costCenterId: props.newItem.costCenterId ?? null,
   })
   return <>
-    {item && <ItemModal item={item as FullItemData} projectId={props.projectId} epics={props.epics} stories={props.stories} projectTags={props.tags} members={props.members} currentUserId={props.userId} projectVersions={props.versions} projectSprints={props.sprints} projectCostCenters={props.costCenters} onClose={props.onCloseItem} onSave={props.newItem ? props.onCreate : props.onSaveItem} onAddSubtask={props.onAddSubtask} onCreateTag={props.onCreateTag} onEditTag={props.onEditTag} onCreateStory={props.onCreateStory} />}
+    {item && <ItemModal item={item as FullItemData} projectId={props.projectId} epics={props.epics} stories={props.stories} projectTags={props.tags} members={props.members} currentUserId={props.userId} projectVersions={props.versions} projectSprints={props.sprints} projectCostCenters={props.costCenters} advancedChecklists={props.advancedChecklists} onClose={props.onCloseItem} onSave={props.newItem ? props.onCreate : props.onSaveItem} onAddSubtask={props.onAddSubtask} onCreateTag={props.onCreateTag} onEditTag={props.onEditTag} onCreateStory={props.onCreateStory} />}
     {props.epic && <EpicModal projectId={props.projectId} modules={props.modules} epic={props.epic} projectVersions={props.versions} onOpenChild={props.onOpenChild} onSave={props.onSaveEpic} onClose={props.onCloseEpic} />}
     {props.story !== undefined && <StoryModal projectId={props.projectId} epics={props.epics} story={props.story} projectVersions={props.versions} onOpenChild={props.onOpenChild} onSave={props.onSaveStory} onClose={props.onCloseStory} />}
     {props.moduleOpen && <Dialog title={props.t('newModule')} onClose={props.onCloseModule}><label className="text-xs font-medium text-muted-foreground" htmlFor="module-name">{props.t('moduleLabel')}</label><input id="module-name" autoFocus value={props.moduleName} onChange={event => props.onModuleNameChange(event.target.value)} className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg" placeholder={props.t('moduleNamePlaceholder')} /><label className="text-xs font-medium text-muted-foreground" htmlFor="module-description">{props.t('descriptionLabel')}</label><textarea id="module-description" value={props.moduleDescription} onChange={event => props.onModuleDescriptionChange(event.target.value)} rows={3} className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg" placeholder={props.t('moduleDescriptionPlaceholder')} /><div className="flex gap-2"><button onClick={props.onModuleCreate} disabled={!props.moduleName.trim()} className="flex-1 py-2 text-sm bg-primary text-primary-foreground rounded-lg disabled:opacity-50">{props.t('create')}</button><button onClick={props.onCloseModule} className="flex-1 py-2 text-sm border border-border rounded-lg">{props.t('cancel')}</button></div></Dialog>}

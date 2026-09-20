@@ -257,6 +257,9 @@ export const projects = sqliteTable('projects', {
   // [TENANT] Oculto: o projeto sai das listagens por padrão e só volta com includeHidden=true,
   // também resolvido dentro do tenant do chamador.
   isHidden: integer('is_hidden', { mode: 'boolean' }).notNull().default(false),
+  // [TENANT] Habilita data, responsável e descrição nos itens de checklist do projeto.
+  // Padrão false (checklist simples); desligar preserva os valores já gravados.
+  advancedChecklists: integer('advanced_checklists', { mode: 'boolean' }).notNull().default(false),
   startDate: text('start_date'),
   plannedEndDate: text('planned_end_date'),
   plannedPoints: integer('planned_points'),
@@ -683,8 +686,14 @@ export const checklistItems = sqliteTable('checklist_items', {
   // [DB-SWAP] SQLite usa INTEGER (0/1) para boolean; PostgreSQL usa BOOLEAN nativo
   checked: integer('checked', { mode: 'boolean' }).notNull().default(false),
   position: integer('position').notNull().default(0),
+  // Campos avançados opcionais — só expostos/gravados quando projects.advanced_checklists = true
+  dueDate: text('due_date'),
+  assigneeId: text('assignee_id'),
+  description: text('description'),
 }, (table) => ({
   checklistFk: foreignKey(() => ({ columns: [table.tenantId, table.checklistId], foreignColumns: [checklists.tenantId, checklists.id] })),
+  // [TENANT] Responsável do item pertence ao mesmo tenant; validação de membership do projeto na API.
+  assigneeFk: foreignKey(() => ({ columns: [table.tenantId, table.assigneeId], foreignColumns: [users.tenantId, users.id] })),
   positionCheck: check('checklist_items_position_check', sql`${table.position} >= 0`),
 }))
 
@@ -816,6 +825,7 @@ export const checklistsRelations = relations(checklists, ({ one, many }) => ({
 
 export const checklistItemsRelations = relations(checklistItems, ({ one }) => ({
   checklist: one(checklists, { fields: [checklistItems.checklistId], references: [checklists.id] }),
+  assignee: one(users, { fields: [checklistItems.assigneeId], references: [users.id] }),
 }))
 
 export const tagsRelations = relations(tags, ({ one, many }) => ({

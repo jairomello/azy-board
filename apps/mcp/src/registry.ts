@@ -91,10 +91,10 @@ function routingFor(name: string): ToolRoutingMetadata {
 const fieldsByTool: Record<string, string[]> = {
   list_projects: ['limit', 'cursor'], get_project: ['projectId'], get_board: ['projectId', 'includeDescriptions'], get_tree: ['projectId', 'onlyLeaves', 'includeDescriptions'], get_current_sprint: ['projectId'],
   list_tasks: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'onlyLeaves', 'limit', 'cursor'], list_checklists: ['projectId', 'itemId'],
-  create_project: ['name', 'description', 'boardMode', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], create_project_structure: ['name', 'description', 'boardMode', 'managerUserId', 'operations', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], update_project: ['projectId', 'name', 'description', 'boardMode', 'managerUserId', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], delete_project: ['projectId'],
+  create_project: ['name', 'description', 'boardMode', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], create_project_structure: ['name', 'description', 'boardMode', 'managerUserId', 'operations', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], update_project: ['projectId', 'name', 'description', 'boardMode', 'managerUserId', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], delete_project: ['projectId'],
   create_task: ['projectId', 'title', 'description', 'type', 'priority', 'points', 'parentId', 'moduleId', 'assigneeId', 'status'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], complete_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], move_task: ['projectId', 'taskId', 'columnName'], batch_move: ['projectId', 'itemIds', 'columnName'], claim_task: ['projectId', 'taskId'], release_task: ['projectId', 'taskId'],
   create_sprint: ['projectId', 'name', 'startDate', 'endDate'], activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'],
-  create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'], add_checklist_item_to_task: ['projectId', 'itemId', 'checklistName', 'text'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'],
+  create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text', 'dueDate', 'assigneeId', 'description'], add_checklist_item_to_task: ['projectId', 'itemId', 'checklistName', 'text', 'dueDate', 'assigneeId', 'description'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'],
   create_tag: ['projectId', 'name', 'color'], set_item_tags: ['projectId', 'itemId', 'tagIds'],
 }
 
@@ -107,6 +107,18 @@ const itemChangeSchema = {
       operation: { type: 'string', enum: ['SET', 'CLEAR', 'TODAY', 'OFFSET_DAYS', 'COPY_CREATED_DATE'] },
       value: { type: ['string', 'null'], description: 'Value for SET, or signed day count for OFFSET_DAYS. Use null for operations that need no value.' },
     },
+  },
+}
+
+const checklistItemChangeSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['text', 'checked', 'dueDate', 'assigneeId', 'description'],
+  properties: {
+    text: { type: ['string', 'null'], description: 'Novo texto do passo (até 2000 caracteres).' },
+    checked: { type: ['boolean', 'null'], description: 'Marca o passo como concluído ou não.' },
+    dueDate: { type: ['string', 'null'], description: 'Data prevista YYYY-MM-DD; requer advancedChecklists no projeto.' },
+    assigneeId: { type: ['string', 'null'], description: 'ID de membro do projeto; requer advancedChecklists no projeto.' },
+    description: { type: ['string', 'null'], description: 'Descrição em HTML (até 20000 caracteres); requer advancedChecklists no projeto.' },
   },
 }
 
@@ -166,10 +178,13 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
   if (field === 'itemIds') return { ...nullable({ type: 'array', items: { type: 'string' } }), maxItems: 500, description: 'Item IDs to move (1 to 500).' }
   if (field === 'includeDescriptions') return { ...nullable({ type: 'boolean' }), description: 'Inclui description/scope/notes completos. Padrão false (texto resumido) para reduzir o payload.' }
   if (field === 'onlyLeaves' || field === 'atomic' || field === 'confirm' || field === 'dryRun' || field === 'checked') return nullable({ type: 'boolean' })
+  if (field === 'advancedChecklists') return { ...nullable({ type: 'boolean' }), description: 'Habilita data, responsável e descrição nos itens de checklist do projeto (padrão false).' }
   if (field === 'plannedPoints') return { ...nullable({ type: 'number' }), description: 'Estimated total story points for the project.' }
   if (field === 'plannedHours') return { ...nullable({ type: 'number' }), description: 'Estimated total hours for the project.' }
   if (field === 'startDate') return { ...nullable({ type: 'string' }), description: 'Planned start date in YYYY-MM-DD format.' }
   if (field === 'plannedEndDate') return { ...nullable({ type: 'string' }), description: 'Planned end date in YYYY-MM-DD format.' }
+  if (field === 'dueDate') return { ...nullable({ type: 'string' }), description: 'Data prevista YYYY-MM-DD (requer checklists detalhados no projeto).' }
+  if (field === 'assigneeId') return { ...nullable({ type: 'string' }), description: 'ID de um membro do projeto (requer checklists detalhados no projeto).' }
   if (field === 'scope') return { ...nullable({ type: 'string' }), description: 'Project scope as HTML rich text.' }
   if (field === 'projectId') return { ...nullable({ type: 'string' }), description: 'Project ID (UUID) or the exact project name; names are resolved against the projects accessible to the API key.' }
   if (field === 'limit' || field === 'durationMin' || field === 'points') return nullable({ type: 'number' })
@@ -214,11 +229,11 @@ const toolDescriptions: Record<string, string> = {
   create_task: 'Create a single EPIC, STORY, TASK or BUG. SIMPLE projects: TASK/BUG auto-assign to the project story; parentId and moduleId are optional. HIERARCHICAL projects: parentId required for TASK/BUG (a STORY, TASK or BUG) and for STORY (an EPIC); EPIC is a root with moduleId.',
   batch: 'Create an ordered hierarchy of up to 50 EPIC, STORY, TASK, or BUG items in one atomic approval. Use refs and parentRefs instead of database IDs. Use moduleName for EPIC items; a module referenced by name that does not exist yet is created automatically.',
   update_items: 'Atomically update one or many active items selected by filters. For bulk moves, set filters.column to the source column, preserve every other requested criterion, and add a column SET change with the destination. Generic tasks or cards in a bulk move covers leaf TASK and BUG items unless the user explicitly restricts the type. Also supports fixed values, clearing fields, relative dates, today, and copying each item creation date. Use itemIds for one item and matchAll only for every item without narrower filters.',
-  add_checklist_item_to_task: 'Add a checklist step to a board card. itemId is the parent card ID, checklistName is the checklist name, and the tool creates the checklist when it does not exist. Use this when you do not already have a checklistId; it returns both checklist and checklist item IDs.',
-  add_checklist_item: 'Add a step to an existing checklist. itemId is the parent board card ID; checklistId must belong to that card; text is the step text. Do not use checklistId or checklistItemId as itemId.',
+  add_checklist_item_to_task: 'Add a checklist step to a board card. itemId is the parent card ID, checklistName is the checklist name, and the tool creates the checklist when it does not exist. Use this when you do not already have a checklistId; it returns both checklist and checklist item IDs. Accepts optional dueDate, assigneeId and description when the project enables advancedChecklists.',
+  add_checklist_item: 'Add a step to an existing checklist. itemId is the parent board card ID; checklistId must belong to that card; text is the step text. Do not use checklistId or checklistItemId as itemId. Accepts optional dueDate, assigneeId and description when the project enables advancedChecklists.',
   check_item: 'Set a checklist step state. itemId is the parent board card ID, checklistId belongs to that card, and checklistItemId belongs to that checklist.',
   create_checklist: 'Create a named checklist on a board card. itemId is the parent card ID, not a checklist or checklist item ID.',
-  list_checklists: 'List checklists and their steps for a board card. itemId is the parent card ID.',
+  list_checklists: 'List checklists and their steps for a board card. itemId is the parent card ID. Returns dueDate, assigneeId and description on steps when the project enables advancedChecklists.',
   batch_move: 'Move up to 500 leaf items to a column in one atomic operation. Requires itemIds and the exact destination column name (or column ID). Prefer this over multiple move_task calls when moving several cards at once. For filter-based bulk moves without explicit IDs, use update_items.',
   list_projects: 'Lista os projetos acessíveis à credencial. Use para descobrir projectId; aceita paginação com limit/cursor.',
   get_project: 'Consulta os dados de um projeto por projectId (ID ou nome exato).',
@@ -251,7 +266,7 @@ const toolDescriptions: Record<string, string> = {
   reorder_items: 'Reordena os itens de uma coluna conforme a lista order de IDs.',
   update_checklist: 'Atualiza nome/posição de uma checklist do item.',
   delete_checklist: 'Exclui uma checklist do item.',
-  update_checklist_item: 'Atualiza o texto/estado de um passo da checklist.',
+  update_checklist_item: 'Atualiza o texto/estado de um passo da checklist. changes aceita text, checked, dueDate, assigneeId e description (os três últimos exigem checklists detalhados no projeto).',
   delete_checklist_item: 'Exclui um passo da checklist.',
   update_item_log: 'Atualiza o texto e/ou a duração de um log de trabalho.',
   update_project: 'Atualiza campos do projeto (nome, descrição, boardMode, planejamento). Omita os campos que não devem mudar.',
@@ -280,7 +295,9 @@ export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinit
       // OpenAI strict exige que todo campo esteja em `required`; a optionalidade é
       // expressa pelo tipo anulável. O servidor MCP reescreve `required` para os
       // campos realmente obrigatórios em index.ts.
-      return { type: 'object' as const, properties: Object.fromEntries(fields.map(field => [field, schemaFor(field, mandatory.has(field))])), required: fields, additionalProperties: false }
+      // `update_checklist_item` usa um schema de alteração próprio do passo, e não o
+      // schema genérico de item.
+      return { type: 'object' as const, properties: Object.fromEntries(fields.map(field => [field, name === 'update_checklist_item' && field === 'changes' ? checklistItemChangeSchema : schemaFor(field, mandatory.has(field))])), required: fields, additionalProperties: false }
     })(),
     policy: MCP_TOOL_POLICIES[name]!,
      namespace: discovery.has(name) ? 'discovery' : planning.has(name) ? 'planning' : 'mutation',
@@ -338,6 +355,12 @@ export function pruneNullArguments(args: Record<string, unknown>): Record<string
   return Object.fromEntries(Object.entries(args).filter(([, value]) => value !== null))
 }
 
+// Remove valores null/undefined aninhados (clients strict enviam todos os campos
+// de `changes`; null equivale a "não informado").
+export function pruneNullValues(args: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(args).filter(([, value]) => value !== null && value !== undefined))
+}
+
 export async function executeSharedTool(name: string, args: Record<string, unknown>, execution: ToolExecution): Promise<unknown> {
   const definition = getSharedToolDefinitions().find(tool => tool.name === name)
   if (!definition) throw new Error('TOOL_NOT_REGISTERED')
@@ -377,8 +400,8 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'complete_task': return toolCompleteTask(api, args.projectId as string, args.taskId as string)
     case 'create_task': return toolCreateTask(api, args as Parameters<typeof toolCreateTask>[1])
     case 'create_checklist': return toolCreateChecklist(api, args.projectId as string, args.itemId as string, args.name as string)
-     case 'add_checklist_item': return toolAddChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.text as string)
-     case 'add_checklist_item_to_task': return toolAddChecklistItemToTask(api, args.projectId as string, args.itemId as string, args.checklistName as string, args.text as string)
+     case 'add_checklist_item': return toolAddChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.text as string, { dueDate: args.dueDate as string | null | undefined, assigneeId: args.assigneeId as string | null | undefined, description: args.description as string | null | undefined })
+     case 'add_checklist_item_to_task': return toolAddChecklistItemToTask(api, args.projectId as string, args.itemId as string, args.checklistName as string, args.text as string, { dueDate: args.dueDate as string | null | undefined, assigneeId: args.assigneeId as string | null | undefined, description: args.description as string | null | undefined })
     case 'check_item': return toolCheckItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string, args.checked as boolean)
     case 'update_item': return toolUpdateItem(api, args.projectId as string, args.itemId as string, args.changes as Parameters<typeof toolUpdateItem>[3], execution.context.runId)
     case 'release_task': return toolReleaseTask(api, args.projectId as string, args.taskId as string)
@@ -391,7 +414,7 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'reorder_items': return toolReorderItems(api, args.projectId as string, args.columnId as string, args.order as string[])
     case 'update_checklist': return toolUpdateChecklist(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.changes as Record<string, unknown>)
     case 'delete_checklist': return toolDeleteChecklist(api, args.projectId as string, args.itemId as string, args.checklistId as string)
-    case 'update_checklist_item': return toolUpdateChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string, args.changes as Record<string, unknown>)
+    case 'update_checklist_item': return toolUpdateChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string, pruneNullValues(args.changes as Record<string, unknown>))
     case 'delete_checklist_item': return toolDeleteChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string)
     case 'update_item_log': return toolUpdateItemLog(api, args.projectId as string, args.itemId as string, args.logId as string, args.changes as Record<string, unknown>)
     case 'batch': return toolBatch(api, args as Parameters<typeof toolBatch>[1])

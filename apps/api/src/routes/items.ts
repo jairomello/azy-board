@@ -477,7 +477,12 @@ itemsRouter.get('/:itemId', requireRole('VIEWER'), async (c) => {
       version: { columns: { id: true, name: true, status: true } },
       children: { columns: { id: true, title: true, type: true, status: true, priority: true, points: true } },
       checklists: {
-        with: { checklistItems: { orderBy: (ci) => [asc(ci.position)] } },
+        with: {
+          checklistItems: {
+            orderBy: (ci) => [asc(ci.position)],
+            with: { assignee: { columns: { id: true, name: true, avatarUrl: true } } },
+          },
+        },
         orderBy: (cl) => [asc(cl.position)],
       },
     },
@@ -485,17 +490,29 @@ itemsRouter.get('/:itemId', requireRole('VIEWER'), async (c) => {
 
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
+  // [TENANT] gate do modo detalhado resolvido no projeto do tenant autenticado
+  const projectRow = await db.query.projects.findFirst({
+    where: (p) => and(eq(p.id, projectId), eq(p.tenantId, ctx.tenantId)),
+    columns: { advancedChecklists: true },
+  })
+  const advanced = Boolean(projectRow?.advancedChecklists)
+
   const leaf = item.children.length === 0
   const mappedChecklists = item.checklists.map(cl => ({
     id: cl.id,
     name: cl.name,
     position: cl.position,
-    items: cl.checklistItems.map(ci => ({
-      id: ci.id,
-      text: ci.text,
-      checked: Boolean(ci.checked),
-      position: ci.position,
-    })),
+    items: cl.checklistItems.map(ci => {
+      const base = { id: ci.id, text: ci.text, checked: Boolean(ci.checked), position: ci.position }
+      if (!advanced) return base
+      return {
+        ...base,
+        dueDate: ci.dueDate ?? null,
+        assigneeId: ci.assigneeId ?? null,
+        assignee: ci.assignee ?? null,
+        description: ci.description ?? null,
+      }
+    }),
   }))
 
   return c.json({ ...item, isLeaf: leaf, childrenCount: item.children.length, checklists: mappedChecklists })

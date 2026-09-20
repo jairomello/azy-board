@@ -46,6 +46,37 @@ const CHECKS: CheckDefinition[] = [
           WHERE NOT EXISTS (SELECT 1 FROM checklists WHERE checklists.id = checklist_items.checklist_id)`,
   },
   {
+    check: 'orphan_checklist_step_assignee',
+    table: 'checklist_items',
+    sql: `SELECT COUNT(*) AS count FROM checklist_items
+          WHERE assignee_id IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM users
+              WHERE users.id = checklist_items.assignee_id AND users.tenant_id = checklist_items.tenant_id
+            )`,
+  },
+  {
+    check: 'cross_tenant_checklist_step_assignee',
+    table: 'checklist_items',
+    sql: `SELECT COUNT(*) AS count FROM checklist_items
+          JOIN users ON users.id = checklist_items.assignee_id
+          WHERE users.tenant_id <> checklist_items.tenant_id`,
+  },
+  {
+    check: 'checklist_step_assignee_not_member',
+    table: 'checklist_items',
+    sql: `SELECT COUNT(*) AS count FROM checklist_items
+          WHERE assignee_id IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM checklists
+              JOIN items ON items.id = checklists.item_id
+              JOIN memberships ON memberships.project_id = items.project_id
+                AND memberships.user_id = checklist_items.assignee_id
+                AND memberships.tenant_id = checklist_items.tenant_id
+              WHERE checklists.id = checklist_items.checklist_id
+            )`,
+  },
+  {
     check: 'cross_tenant_attachment_item',
     table: 'attachments',
     sql: `SELECT COUNT(*) AS count FROM attachments
