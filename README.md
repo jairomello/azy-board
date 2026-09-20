@@ -171,6 +171,17 @@ commands equivalent to the skill are: `/azyboard-status`, `/azyboard-plan`,
 `/azyboard-review`. See the [Azy Agent wiki page](docs/azyboard-wiki/09%20-%20Agentes%20e%20Integracoes/Azy%20Agent%20humano.md)
 and `docs/AI_AGENT_DATA_POLICY.md` before enabling the feature.
 
+**How the harness runs a message:** the drawer posts to the assistant router,
+which assembles a trusted prompt and hands it to the harness. The harness loops
+through the LLM provider using the shared tool registry: reads run directly,
+while every mutation is risk-classified, paused in `WAITING_APPROVAL` for human
+sign-off, persisted with its events and cost, and streamed back to the UI over
+SSE.
+
+<p align="center">
+  <img src="docs/architecture/azy-agent-harness.visual-check.1440x900.light.png" alt="Azy Agent harness architecture" width="820" />
+</p>
+
 ---
 
 ## Tech Stack

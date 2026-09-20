@@ -1,0 +1,444 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Azy Agent — Arquitetura do Harness",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1120,
+      640
+    ],
+    "repository": {
+      "url": "git@github-personal:jairomello/azy-board.git",
+      "link_mode": "local-only",
+      "revision": "c4e3c55ec1d6c4fa8f0f8ece2c96479f3f53727e"
+    },
+    "views": [
+      {
+        "id": "message-path",
+        "label": "Caminho da mensagem",
+        "focus": [
+          "human",
+          "web",
+          "api",
+          "prompt",
+          "harness"
+        ],
+        "note": "A mensagem do drawer vira input do modelo com contexto confiável resolvido no servidor."
+      },
+      {
+        "id": "tool-loop",
+        "label": "Loop de ferramentas",
+        "focus": [
+          "harness",
+          "registry",
+          "apiRoutes",
+          "persistence"
+        ],
+        "note": "O harness recebe tool calls, executa ferramentas compartilhadas e devolve resultados ao modelo."
+      },
+      {
+        "id": "approval-gate",
+        "label": "Aprovação e políticas",
+        "focus": [
+          "harness",
+          "policy",
+          "api",
+          "persistence"
+        ],
+        "note": "RBAC, risco e aprovação humana controlam cada mutação antes da execução."
+      },
+      {
+        "id": "provider-and-stream",
+        "label": "Provedor e streaming",
+        "focus": [
+          "provider",
+          "llm",
+          "persistence",
+          "web"
+        ],
+        "note": "Chamadas ao provedor de IA e eventos persistidos fluem por SSE até o drawer."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "human",
+      "type": "external",
+      "label": "Pessoa",
+      "sublabel": "mensagem no chat",
+      "pos": [
+        20,
+        340
+      ],
+      "size": [
+        100,
+        60
+      ]
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "AzyAgentDrawer",
+      "sublabel": "React · SSE",
+      "pos": [
+        170,
+        340
+      ],
+      "size": [
+        110,
+        60
+      ],
+      "sources": [
+        {
+          "path": "apps/web/src/components/AzyAgentDrawer.tsx"
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Assistant Router",
+      "sublabel": "Hono · /api/assistant",
+      "pos": [
+        380,
+        330
+      ],
+      "size": [
+        150,
+        80
+      ],
+      "tag": "rate · budget · governança",
+      "sources": [
+        {
+          "path": "apps/api/src/routes/assistant.ts",
+          "line": 457
+        }
+      ]
+    },
+    {
+      "id": "prompt",
+      "type": "backend",
+      "label": "Prompt Assembly",
+      "sublabel": "system + contexto + histórico",
+      "pos": [
+        380,
+        150
+      ],
+      "size": [
+        150,
+        80
+      ]
+    },
+    {
+      "id": "registry",
+      "type": "backend",
+      "label": "Tool Registry",
+      "sublabel": "50+ ferramentas",
+      "pos": [
+        660,
+        140
+      ],
+      "size": [
+        190,
+        80
+      ],
+      "tag": "schema · política · roteamento",
+      "sources": [
+        {
+          "path": "apps/mcp/src/registry.ts"
+        }
+      ]
+    },
+    {
+      "id": "harness",
+      "type": "backend",
+      "label": "Azy Agent Harness",
+      "sublabel": "loop de iteração + limites",
+      "pos": [
+        660,
+        310
+      ],
+      "size": [
+        190,
+        110
+      ],
+      "tag": "até 16 passos · 40 tool calls",
+      "sources": [
+        {
+          "path": "apps/api/src/services/assistantHarness.ts",
+          "line": 105
+        }
+      ]
+    },
+    {
+      "id": "provider",
+      "type": "backend",
+      "label": "Provider Adapter",
+      "sublabel": "OpenAI / OpenRouter",
+      "pos": [
+        920,
+        340
+      ],
+      "size": [
+        140,
+        70
+      ],
+      "sources": [
+        {
+          "path": "apps/api/src/services/openaiProvider.ts",
+          "line": 79
+        }
+      ]
+    },
+    {
+      "id": "llm",
+      "type": "external",
+      "label": "Provedor de IA",
+      "sublabel": "Responses / Chat Completions",
+      "pos": [
+        920,
+        140
+      ],
+      "size": [
+        140,
+        70
+      ]
+    },
+    {
+      "id": "apiRoutes",
+      "type": "backend",
+      "label": "Execução de Ferramentas",
+      "sublabel": "rotas de domínio /api",
+      "pos": [
+        380,
+        490
+      ],
+      "size": [
+        150,
+        90
+      ]
+    },
+    {
+      "id": "policy",
+      "type": "security",
+      "label": "Policy & Approval Gate",
+      "sublabel": "RBAC · risco · aprovação",
+      "pos": [
+        660,
+        490
+      ],
+      "size": [
+        190,
+        90
+      ],
+      "sources": [
+        {
+          "path": "apps/mcp/src/policies.ts"
+        }
+      ]
+    },
+    {
+      "id": "persistence",
+      "type": "database",
+      "label": "Persistência",
+      "sublabel": "runs · eventos · custos",
+      "pos": [
+        880,
+        490
+      ],
+      "size": [
+        150,
+        90
+      ],
+      "tag": "SQLite / PostgreSQL · Drizzle"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "Fronteira de confiança do servidor",
+      "wraps": [
+        "api",
+        "prompt",
+        "registry",
+        "harness",
+        "provider",
+        "apiRoutes",
+        "policy",
+        "persistence"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "human-web",
+      "from": "human",
+      "to": "web",
+      "label": "mensagem",
+      "variant": "emphasis"
+    },
+    {
+      "id": "web-api",
+      "from": "web",
+      "to": "api",
+      "label": "POST /messages",
+      "variant": "emphasis"
+    },
+    {
+      "id": "api-prompt",
+      "from": "api",
+      "to": "prompt",
+      "label": "system prompt + contexto confiável"
+    },
+    {
+      "id": "prompt-harness",
+      "from": "prompt",
+      "to": "harness",
+      "label": "input do modelo",
+      "fromSide": "right",
+      "toSide": "left",
+      "via": [
+        [
+          580,
+          190
+        ],
+        [
+          580,
+          365
+        ]
+      ]
+    },
+    {
+      "id": "registry-harness",
+      "from": "registry",
+      "to": "harness",
+      "label": "definições + allowlist",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 34
+    },
+    {
+      "id": "harness-provider",
+      "from": "harness",
+      "to": "provider",
+      "label": "createRun",
+      "variant": "emphasis"
+    },
+    {
+      "id": "provider-llm",
+      "from": "provider",
+      "to": "llm",
+      "label": "chat + tools",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "llm-harness",
+      "from": "llm",
+      "to": "harness",
+      "label": "tool_calls / texto",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "top",
+      "via": [
+        [
+          870,
+          175
+        ],
+        [
+          870,
+          290
+        ],
+        [
+          755,
+          290
+        ]
+      ],
+      "labelDy": 20
+    },
+    {
+      "id": "harness-policy",
+      "from": "harness",
+      "to": "policy",
+      "label": "autoriza · risco · aprovação",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 34
+    },
+    {
+      "id": "harness-tools",
+      "from": "harness",
+      "to": "apiRoutes",
+      "label": "executeSharedTool",
+      "fromSide": "left",
+      "toSide": "right",
+      "via": [
+        [
+          600,
+          365
+        ],
+        [
+          600,
+          535
+        ]
+      ]
+    },
+    {
+      "id": "harness-persistence",
+      "from": "harness",
+      "to": "persistence",
+      "label": "runs · eventos · custos",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          900,
+          365
+        ],
+        [
+          900,
+          455
+        ],
+        [
+          955,
+          455
+        ]
+      ],
+      "labelAt": [
+        880,
+        432
+      ]
+    },
+    {
+      "id": "api-web",
+      "from": "api",
+      "to": "web",
+      "label": "SSE de eventos",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Loop de iteração",
+      "items": [
+        "Até 16 passos e 40 chamadas de ferramenta por run",
+        "Teto de tokens, payload, custo e timeout"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Guardrails e aprovação",
+      "items": [
+        "System prompt autoritativo + contexto resolvido no servidor",
+        "Mutações pausam em WAITING_APPROVAL com operationHash imutável",
+        "Credencial do provedor cifrada com AES-GCM"
+      ]
+    }
+  ]
+}
