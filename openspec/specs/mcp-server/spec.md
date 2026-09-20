@@ -3,7 +3,7 @@
 Definir o servidor MCP e o catálogo de ferramentas que agentes de IA usam para operar o board, com transporte e autenticação.
 ## Requirements
 ### Requirement: Servidor MCP nativo com ferramentas de board
-O sistema SHALL disponibilizar um servidor MCP (Model Context Protocol) com ferramentas para agentes de IA operarem o board sem código adicional. O catálogo de definições, schemas, políticas e executores SHALL ser reutilizável pelo harness do Azy Agent sem duplicar regras de domínio. As ferramentas de projeto SHALL aceitar e retornar os campos opcionais de planejamento `startDate`, `plannedEndDate`, `plannedPoints`, `plannedHours` e `scope`.
+O sistema SHALL disponibilizar um servidor MCP (Model Context Protocol) com ferramentas para agentes de IA operarem o board sem código adicional. O catálogo de definições, schemas, políticas e executores SHALL ser reutilizável pelo harness do Azy Agent sem duplicar regras de domínio. O catálogo SHALL derivar schema, obrigatoriedade, routing, limites e validação de uma definição única por ferramenta. As ferramentas de projeto SHALL aceitar e retornar os campos opcionais de planejamento `startDate`, `plannedEndDate`, `plannedPoints`, `plannedHours` e `scope`.
 
 #### Scenario: Listar tasks disponíveis
 - **WHEN** agente invoca ferramenta `list_tasks` com `{ projectId, sprintId?, type?, onlyLeaves? }`
@@ -28,6 +28,10 @@ O sistema SHALL disponibilizar um servidor MCP (Model Context Protocol) com ferr
 #### Scenario: Obter projeto com planejamento via MCP
 - **WHEN** agente invoca `get_project` com `{ projectId }`
 - **THEN** servidor retorna o projeto incluindo `startDate`, `plannedEndDate`, `plannedPoints`, `plannedHours` e `scope` (null quando não preenchidos)
+
+#### Scenario: Definição única sustenta a exposição
+- **WHEN** o servidor monta a listagem de ferramentas para o cliente MCP
+- **THEN** schema, obrigatoriedade e descrições vêm da mesma definição única por ferramenta usada pela validação e pelo harness, sem tabelas paralelas
 
 ### Requirement: Harness reutiliza catálogo
 O sistema SHALL permitir que o harness interno do Azy Agent reutilize as definições, schemas, políticas e executores do catálogo MCP sem duplicar regras de domínio.

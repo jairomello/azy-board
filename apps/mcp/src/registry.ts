@@ -55,49 +55,172 @@ export type ToolDefinition = {
   routing: ToolRoutingMetadata
 }
 
-const required: Record<string, string[]> = {
-  list_projects: [], get_project: ['projectId'], get_board: ['projectId'], get_tree: ['projectId'], get_shadow_markdown: ['projectId'],
-  list_tasks: ['projectId'], list_modules: ['projectId'], get_current_sprint: ['projectId'], list_columns: ['projectId'], list_sprints: ['projectId'], list_tags: ['projectId'], list_versions: ['projectId'], list_members: ['projectId'], list_squads: ['projectId'], list_item_logs: ['projectId', 'itemId'], list_cost_centers: ['projectId'], list_attachments: ['projectId', 'itemId'], list_checklists: ['projectId', 'itemId'],
-  claim_task: ['projectId', 'taskId'], move_task: ['projectId', 'taskId', 'columnName'], batch_move: ['projectId', 'itemIds', 'columnName'], complete_task: ['projectId', 'taskId'], create_task: ['projectId', 'title'], create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'], add_checklist_item_to_task: ['projectId', 'itemId', 'checklistName', 'text'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], release_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], delete_project: ['projectId'], archive_item: ['projectId', 'itemId'], unarchive_item: ['projectId', 'itemId'], set_item_tags: ['projectId', 'itemId', 'tagIds'], create_item_log: ['projectId', 'itemId', 'activity'], reorder_items: ['projectId', 'columnId', 'order'], update_checklist: ['projectId', 'itemId', 'checklistId', 'changes'], delete_checklist: ['projectId', 'itemId', 'checklistId'], update_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'changes'], delete_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId'], update_item_log: ['projectId', 'itemId', 'logId', 'changes'], batch: ['projectId', 'operations'],
-  create_project: ['name'], create_project_structure: ['name', 'operations'], update_project: ['projectId'], create_module: ['projectId', 'name'], create_column: ['projectId', 'name', 'baseStatus'], reorder_columns: ['projectId', 'order'], create_sprint: ['projectId', 'name'], activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'], create_tag: ['projectId', 'name'], create_version: ['projectId', 'name'], add_member: ['projectId', 'email', 'role'], update_member: ['projectId', 'userId', 'role'], remove_member: ['projectId', 'userId'], create_squad: ['projectId', 'name'], create_cost_center: ['projectId', 'code'],
+// Fonte única de campos por ferramenta: `fields` são todos os campos aceitos e
+// `required` os realmente obrigatórios. Schema exposto (strict e MCP), validação
+// e listagem derivam daqui — não manter tabelas paralelas.
+type ToolFields = { fields: string[]; required: string[] }
+const toolFields: Record<string, ToolFields> = {
+  list_projects: { fields: ['limit', 'cursor'], required: [] },
+  get_project: { fields: ['projectId'], required: ['projectId'] },
+  get_board: { fields: ['projectId', 'includeDescriptions'], required: ['projectId'] },
+  get_tree: { fields: ['projectId', 'onlyLeaves', 'includeDescriptions'], required: ['projectId'] },
+  get_shadow_markdown: { fields: ['projectId'], required: ['projectId'] },
+  get_current_sprint: { fields: ['projectId'], required: ['projectId'] },
+  list_tasks: { fields: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'onlyLeaves', 'limit', 'cursor'], required: ['projectId'] },
+  list_modules: { fields: ['projectId'], required: ['projectId'] },
+  list_columns: { fields: ['projectId'], required: ['projectId'] },
+  list_sprints: { fields: ['projectId'], required: ['projectId'] },
+  list_tags: { fields: ['projectId'], required: ['projectId'] },
+  list_versions: { fields: ['projectId'], required: ['projectId'] },
+  list_members: { fields: ['projectId'], required: ['projectId'] },
+  list_squads: { fields: ['projectId'], required: ['projectId'] },
+  list_item_logs: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
+  list_cost_centers: { fields: ['projectId'], required: ['projectId'] },
+  list_attachments: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
+  list_checklists: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
+  claim_task: { fields: ['projectId', 'taskId'], required: ['projectId', 'taskId'] },
+  move_task: { fields: ['projectId', 'taskId', 'columnName'], required: ['projectId', 'taskId', 'columnName'] },
+  batch_move: { fields: ['projectId', 'itemIds', 'columnName'], required: ['projectId', 'itemIds', 'columnName'] },
+  complete_task: { fields: ['projectId', 'taskId'], required: ['projectId', 'taskId'] },
+  release_task: { fields: ['projectId', 'taskId'], required: ['projectId', 'taskId'] },
+  create_task: { fields: ['projectId', 'title', 'description', 'type', 'priority', 'points', 'parentId', 'moduleId', 'assigneeId', 'status'], required: ['projectId', 'title'] },
+  create_checklist: { fields: ['projectId', 'itemId', 'name'], required: ['projectId', 'itemId', 'name'] },
+  add_checklist_item: { fields: ['projectId', 'itemId', 'checklistId', 'text', 'dueDate', 'assigneeId', 'description'], required: ['projectId', 'itemId', 'checklistId', 'text'] },
+  add_checklist_item_to_task: { fields: ['projectId', 'itemId', 'checklistName', 'text', 'dueDate', 'assigneeId', 'description'], required: ['projectId', 'itemId', 'checklistName', 'text'] },
+  check_item: { fields: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'], required: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'] },
+  update_item: { fields: ['projectId', 'itemId', 'changes'], required: ['projectId', 'itemId', 'changes'] },
+  update_items: { fields: ['projectId', 'filters', 'changes'], required: ['projectId', 'filters', 'changes'] },
+  delete_item: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
+  delete_project: { fields: ['projectId'], required: ['projectId'] },
+  archive_item: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
+  unarchive_item: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
+  set_item_tags: { fields: ['projectId', 'itemId', 'tagIds'], required: ['projectId', 'itemId', 'tagIds'] },
+  create_item_log: { fields: ['projectId', 'itemId', 'activity'], required: ['projectId', 'itemId', 'activity'] },
+  reorder_items: { fields: ['projectId', 'columnId', 'order'], required: ['projectId', 'columnId', 'order'] },
+  update_checklist: { fields: ['projectId', 'itemId', 'checklistId', 'changes'], required: ['projectId', 'itemId', 'checklistId', 'changes'] },
+  delete_checklist: { fields: ['projectId', 'itemId', 'checklistId'], required: ['projectId', 'itemId', 'checklistId'] },
+  update_checklist_item: { fields: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'changes'], required: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'changes'] },
+  delete_checklist_item: { fields: ['projectId', 'itemId', 'checklistId', 'checklistItemId'], required: ['projectId', 'itemId', 'checklistId', 'checklistItemId'] },
+  update_item_log: { fields: ['projectId', 'itemId', 'logId', 'changes'], required: ['projectId', 'itemId', 'logId', 'changes'] },
+  batch: { fields: ['projectId', 'operations'], required: ['projectId', 'operations'] },
+  create_project: { fields: ['name', 'description', 'boardMode', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], required: ['name'] },
+  create_project_structure: { fields: ['name', 'description', 'boardMode', 'managerUserId', 'operations', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], required: ['name', 'operations'] },
+  update_project: { fields: ['projectId', 'name', 'description', 'boardMode', 'managerUserId', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], required: ['projectId'] },
+  create_module: { fields: ['projectId', 'name'], required: ['projectId', 'name'] },
+  create_column: { fields: ['projectId', 'name', 'baseStatus'], required: ['projectId', 'name', 'baseStatus'] },
+  reorder_columns: { fields: ['projectId', 'order'], required: ['projectId', 'order'] },
+  create_sprint: { fields: ['projectId', 'name', 'startDate', 'endDate'], required: ['projectId', 'name', 'startDate', 'endDate'] },
+  activate_sprint: { fields: ['projectId', 'sprintId'], required: ['projectId', 'sprintId'] },
+  close_sprint: { fields: ['projectId', 'sprintId'], required: ['projectId', 'sprintId'] },
+  create_tag: { fields: ['projectId', 'name', 'color'], required: ['projectId', 'name'] },
+  create_version: { fields: ['projectId', 'name'], required: ['projectId', 'name'] },
+  add_member: { fields: ['projectId', 'email', 'role'], required: ['projectId', 'email', 'role'] },
+  update_member: { fields: ['projectId', 'userId', 'role'], required: ['projectId', 'userId', 'role'] },
+  remove_member: { fields: ['projectId', 'userId'], required: ['projectId', 'userId'] },
+  create_squad: { fields: ['projectId', 'name'], required: ['projectId', 'name'] },
+  create_cost_center: { fields: ['projectId', 'code'], required: ['projectId', 'code'] },
 }
 
 // Campos realmente obrigatórios por ferramenta. O schema exposto pelo servidor MCP
 // usa esta lista em `required`; o schema interno (OpenAI strict) mantém todos os
 // campos em `required` com tipo anulável, como exige o modo estrito.
 export function requiredFieldsFor(name: string): string[] {
-  return required[name] ?? []
+  return toolFields[name]?.required ?? []
+}
+
+export function isRegisteredTool(name: string): boolean {
+  return Object.hasOwn(toolFields, name)
 }
 
 const discovery = new Set(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_shadow_markdown', 'list_tasks', 'list_modules', 'get_current_sprint', 'list_columns', 'list_sprints', 'list_tags', 'list_versions', 'list_members', 'list_squads', 'list_item_logs', 'list_cost_centers', 'list_attachments', 'list_checklists'])
 const planning = new Set(['claim_task', 'list_tasks', 'list_checklists', 'create_checklist', 'add_checklist_item', 'add_checklist_item_to_task', 'check_item', 'get_shadow_markdown'])
-const projectTools = new Set(['list_projects', 'get_project', 'create_project', 'create_project_structure', 'update_project', 'delete_project'])
-const boardTools = new Set(['get_board', 'get_tree', 'get_shadow_markdown', 'list_columns', 'reorder_columns', 'reorder_items'])
-const planningTools = new Set(['get_current_sprint', 'list_sprints', 'create_sprint', 'activate_sprint', 'close_sprint', 'list_modules', 'create_module', 'list_tags', 'create_tag', 'set_item_tags', 'list_versions', 'create_version', 'list_cost_centers', 'create_cost_center'])
-const collaborationTools = new Set(['list_members', 'add_member', 'update_member', 'remove_member', 'list_squads', 'create_squad'])
-const evidenceTools = new Set(['list_item_logs', 'create_item_log', 'update_item_log', 'list_attachments', 'list_checklists', 'create_checklist', 'update_checklist', 'delete_checklist', 'add_checklist_item', 'check_item', 'update_checklist_item', 'delete_checklist_item'])
-const destructiveTools = new Set(['delete_item', 'delete_project', 'archive_item', 'delete_checklist', 'delete_checklist_item', 'remove_member'])
-const createTools = new Set(['create_project', 'create_project_structure', 'create_task', 'create_module', 'create_column', 'create_sprint', 'create_tag', 'create_version', 'create_item_log', 'create_checklist', 'add_checklist_item', 'add_checklist_item_to_task', 'create_squad', 'create_cost_center', 'add_member'])
-const updateTools = new Set(['update_project', 'update_item', 'update_items', 'move_task', 'batch_move', 'complete_task', 'claim_task', 'release_task', 'unarchive_item', 'set_item_tags', 'reorder_items', 'reorder_columns', 'activate_sprint', 'close_sprint', 'update_checklist', 'check_item', 'update_checklist_item', 'update_item_log', 'update_member'])
-function routingFor(name: string): ToolRoutingMetadata {
-  const domain: ToolDomain = projectTools.has(name) ? 'projects' : boardTools.has(name) ? 'board' : collaborationTools.has(name) ? 'collaboration' : evidenceTools.has(name) ? 'evidence' : planningTools.has(name) ? 'planning' : 'items'
-  const operation: ToolOperation = destructiveTools.has(name) ? 'delete' : createTools.has(name) ? 'create' : updateTools.has(name) ? 'update' : 'read'
-  const scope: ToolScope = name === 'list_projects' || name === 'create_project' || name === 'create_project_structure' ? 'global' : evidenceTools.has(name) || ['update_item', 'update_items', 'create_task', 'claim_task', 'release_task', 'move_task', 'batch_move', 'complete_task', 'delete_item', 'archive_item', 'unarchive_item', 'set_item_tags', 'reorder_items'].includes(name) ? 'item' : 'project'
-  const risk: ToolRisk = destructiveTools.has(name) ? 'DESTRUCTIVE' : operation === 'read' ? 'READ' : operation === 'create' || operation === 'update' ? 'MEDIUM' : 'LOW'
-  const supportedScreens: AssistantScreen[] = scope === 'global' ? ['projects-index', 'global-other', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'account', 'admin-users', 'admin-assistant'] : scope === 'item' ? ['project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'item-detail'] : ['projects-index', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'global-other']
-  const dependencyTools = name === 'create_task' || name === 'batch' ? ['list_tasks', 'list_modules', 'list_columns'] : name === 'move_task' || name === 'batch_move' ? ['list_columns'] : name === 'update_project' || name === 'delete_project' ? ['list_projects'] : []
-  return { domain, scope, operation, risk, dependencyTools, targetKinds: scope === 'global' ? ['tenant', 'project'] : scope === 'project' ? ['project'] : ['project', 'item'], supportedScreens }
-}
-const fieldsByTool: Record<string, string[]> = {
-  list_projects: ['limit', 'cursor'], get_project: ['projectId'], get_board: ['projectId', 'includeDescriptions'], get_tree: ['projectId', 'onlyLeaves', 'includeDescriptions'], get_current_sprint: ['projectId'],
-  list_tasks: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'onlyLeaves', 'limit', 'cursor'], list_checklists: ['projectId', 'itemId'],
-  create_project: ['name', 'description', 'boardMode', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], create_project_structure: ['name', 'description', 'boardMode', 'managerUserId', 'operations', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], update_project: ['projectId', 'name', 'description', 'boardMode', 'managerUserId', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], delete_project: ['projectId'],
-  create_task: ['projectId', 'title', 'description', 'type', 'priority', 'points', 'parentId', 'moduleId', 'assigneeId', 'status'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], complete_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], move_task: ['projectId', 'taskId', 'columnName'], batch_move: ['projectId', 'itemIds', 'columnName'], claim_task: ['projectId', 'taskId'], release_task: ['projectId', 'taskId'],
-  create_sprint: ['projectId', 'name', 'startDate', 'endDate'], activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'],
-  create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text', 'dueDate', 'assigneeId', 'description'], add_checklist_item_to_task: ['projectId', 'itemId', 'checklistName', 'text', 'dueDate', 'assigneeId', 'description'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'],
-  create_tag: ['projectId', 'name', 'color'], set_item_tags: ['projectId', 'itemId', 'tagIds'],
+
+// Classificação por ferramenta: única fonte para domain/scope/operation/risk.
+// Os conjuntos antigos (projectTools, boardTools, createTools, ...) foram
+// substituídos por estes mapas explícitos, evitando tabelas paralelas.
+type ToolClassification = {
+  domain: ToolDomain
+  scope: ToolScope
+  operation: ToolOperation
+  risk?: ToolRisk
+  dependencyTools?: string[]
 }
 
+const classifications: Record<string, ToolClassification> = {  list_projects: { domain: 'projects', scope: 'global', operation: 'read' },
+  get_project: { domain: 'projects', scope: 'project', operation: 'read' },
+  create_project: { domain: 'projects', scope: 'global', operation: 'create' },
+  create_project_structure: { domain: 'projects', scope: 'global', operation: 'create' },
+  update_project: { domain: 'projects', scope: 'project', operation: 'update', dependencyTools: ['list_projects'] },
+  delete_project: { domain: 'projects', scope: 'project', operation: 'delete', dependencyTools: ['list_projects'] },
+
+  get_board: { domain: 'board', scope: 'project', operation: 'read' },
+  get_tree: { domain: 'board', scope: 'project', operation: 'read' },
+  get_shadow_markdown: { domain: 'board', scope: 'project', operation: 'read' },
+  list_columns: { domain: 'board', scope: 'project', operation: 'read' },
+  create_column: { domain: 'board', scope: 'project', operation: 'create' },
+  reorder_columns: { domain: 'board', scope: 'project', operation: 'update' },
+  reorder_items: { domain: 'board', scope: 'item', operation: 'update' },
+
+  list_sprints: { domain: 'planning', scope: 'project', operation: 'read' },
+  create_sprint: { domain: 'planning', scope: 'project', operation: 'create' },
+  activate_sprint: { domain: 'planning', scope: 'project', operation: 'update' },
+  close_sprint: { domain: 'planning', scope: 'project', operation: 'update' },
+  get_current_sprint: { domain: 'planning', scope: 'project', operation: 'read' },
+  list_modules: { domain: 'planning', scope: 'project', operation: 'read' },
+  create_module: { domain: 'planning', scope: 'project', operation: 'create' },
+  list_tags: { domain: 'planning', scope: 'project', operation: 'read' },
+  create_tag: { domain: 'planning', scope: 'project', operation: 'create' },
+  set_item_tags: { domain: 'planning', scope: 'item', operation: 'update' },
+  list_versions: { domain: 'planning', scope: 'project', operation: 'read' },
+  create_version: { domain: 'planning', scope: 'project', operation: 'create' },
+  list_cost_centers: { domain: 'planning', scope: 'project', operation: 'read' },
+  create_cost_center: { domain: 'planning', scope: 'project', operation: 'create' },
+
+  list_members: { domain: 'collaboration', scope: 'project', operation: 'read' },
+  add_member: { domain: 'collaboration', scope: 'project', operation: 'create' },
+  update_member: { domain: 'collaboration', scope: 'project', operation: 'update' },
+  remove_member: { domain: 'collaboration', scope: 'project', operation: 'delete' },
+  list_squads: { domain: 'collaboration', scope: 'project', operation: 'read' },
+  create_squad: { domain: 'collaboration', scope: 'project', operation: 'create' },
+
+  list_item_logs: { domain: 'evidence', scope: 'item', operation: 'read' },
+  create_item_log: { domain: 'evidence', scope: 'item', operation: 'create' },
+  update_item_log: { domain: 'evidence', scope: 'item', operation: 'update' },
+  list_attachments: { domain: 'evidence', scope: 'item', operation: 'read' },
+  list_checklists: { domain: 'evidence', scope: 'item', operation: 'read' },
+  create_checklist: { domain: 'evidence', scope: 'item', operation: 'create' },
+  update_checklist: { domain: 'evidence', scope: 'item', operation: 'update' },
+  delete_checklist: { domain: 'evidence', scope: 'item', operation: 'delete' },
+  add_checklist_item: { domain: 'evidence', scope: 'item', operation: 'create' },
+  add_checklist_item_to_task: { domain: 'evidence', scope: 'item', operation: 'create' },
+  check_item: { domain: 'evidence', scope: 'item', operation: 'update' },
+  update_checklist_item: { domain: 'evidence', scope: 'item', operation: 'update' },
+  delete_checklist_item: { domain: 'evidence', scope: 'item', operation: 'delete' },
+
+  list_tasks: { domain: 'items', scope: 'project', operation: 'read' },
+  create_task: { domain: 'items', scope: 'item', operation: 'create', dependencyTools: ['list_tasks', 'list_modules', 'list_columns'] },
+  update_item: { domain: 'items', scope: 'item', operation: 'update' },
+  update_items: { domain: 'items', scope: 'item', operation: 'update' },
+  move_task: { domain: 'items', scope: 'item', operation: 'update', dependencyTools: ['list_columns'] },
+  batch_move: { domain: 'items', scope: 'item', operation: 'update', dependencyTools: ['list_columns'] },
+  claim_task: { domain: 'items', scope: 'item', operation: 'update' },
+  release_task: { domain: 'items', scope: 'item', operation: 'update' },
+  complete_task: { domain: 'items', scope: 'item', operation: 'update' },
+  delete_item: { domain: 'items', scope: 'item', operation: 'delete' },
+  archive_item: { domain: 'items', scope: 'item', operation: 'delete' },
+  unarchive_item: { domain: 'items', scope: 'item', operation: 'update' },
+  batch: { domain: 'items', scope: 'item', operation: 'create', dependencyTools: ['list_tasks', 'list_modules', 'list_columns'] },
+}
+
+function routingFor(name: string): ToolRoutingMetadata {
+  const classification = classifications[name]
+  if (!classification) throw new Error(`CLASSIFICATION_NOT_REGISTERED: ${name}`)
+  const { domain, scope, operation } = classification
+  const risk: ToolRisk = classification.risk ?? (operation === 'delete' ? 'DESTRUCTIVE' : operation === 'read' ? 'READ' : operation === 'create' || operation === 'update' ? 'MEDIUM' : 'LOW')
+  const supportedScreens: AssistantScreen[] = scope === 'global' ? ['projects-index', 'global-other', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'account', 'admin-users', 'admin-assistant'] : scope === 'item' ? ['project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'item-detail'] : ['projects-index', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'global-other']
+  const dependencyTools = classification.dependencyTools ?? []
+  return { domain, scope, operation, risk, dependencyTools, targetKinds: scope === 'global' ? ['tenant', 'project'] : scope === 'project' ? ['project'] : ['project', 'item'], supportedScreens }
+}
 const itemChangeSchema = {
   type: 'array', minItems: 1, maxItems: 20,
   items: {
@@ -204,7 +327,7 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
   return nullable({ type: 'string' })
 }
 
-export const SHARED_TOOL_NAMES = Object.freeze(Object.keys(required))
+export const SHARED_TOOL_NAMES = Object.freeze(Object.keys(toolFields))
 const friendlyNames: Record<string, string> = {
   update_items: 'Atualizar itens', update_item: 'Atualizar item', batch: 'Cadastrar estrutura', batch_move: 'Mover itens em lote',
   list_projects: 'Listar projetos', get_project: 'Consultar projeto', get_board: 'Consultar board', get_tree: 'Consultar hierarquia', list_tasks: 'Listar itens',
@@ -286,12 +409,12 @@ const toolDescriptions: Record<string, string> = {
 }
 
 export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinition[] {
-  return names.filter(name => required[name]).map(name => ({
+  return names.filter(name => toolFields[name]).map(name => ({
     name,
     description: toolDescriptions[name] ?? `Azy Board: ${name}`,
     inputSchema: (() => {
-      const fields = [...(fieldsByTool[name] ?? required[name]!)]
-      const mandatory = new Set(required[name]!)
+      const { fields, required: mandatoryFields } = toolFields[name]!
+      const mandatory = new Set(mandatoryFields)
       // OpenAI strict exige que todo campo esteja em `required`; a optionalidade é
       // expressa pelo tipo anulável. O servidor MCP reescreve `required` para os
       // campos realmente obrigatórios em index.ts.
@@ -300,8 +423,8 @@ export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinit
       return { type: 'object' as const, properties: Object.fromEntries(fields.map(field => [field, name === 'update_checklist_item' && field === 'changes' ? checklistItemChangeSchema : schemaFor(field, mandatory.has(field))])), required: fields, additionalProperties: false }
     })(),
     policy: MCP_TOOL_POLICIES[name]!,
-     namespace: discovery.has(name) ? 'discovery' : planning.has(name) ? 'planning' : 'mutation',
-     routing: routingFor(name),
+    namespace: discovery.has(name) ? 'discovery' : planning.has(name) ? 'planning' : 'mutation',
+    routing: routingFor(name),
   }))
 }
 

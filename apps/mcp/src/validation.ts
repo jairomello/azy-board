@@ -1,3 +1,4 @@
+import { isRegisteredTool, requiredFieldsFor } from './registry.js'
 import { TOOL_TEXT_LIMITS } from './limits.js'
 
 export function assertNonEmptyString(value: unknown, field: string, maxLength = 200): asserts value is string {
@@ -34,14 +35,10 @@ export function assertIsoDate(value: unknown, field: string): void {
 }
 
 export function validateToolArguments(name: string, args: Record<string, unknown> | undefined): void {
-  const requiredByTool: Record<string, string[]> = {
-    list_projects: [], get_project: ['projectId'], get_board: ['projectId'], get_tree: ['projectId'], get_shadow_markdown: ['projectId'],
-    list_tasks: ['projectId'], list_modules: ['projectId'], get_current_sprint: ['projectId'], list_columns: ['projectId'], list_sprints: ['projectId'], list_tags: ['projectId'], list_versions: ['projectId'], list_members: ['projectId'], list_squads: ['projectId'], list_item_logs: ['projectId', 'itemId'], list_cost_centers: ['projectId'], list_attachments: ['projectId', 'itemId'], list_checklists: ['projectId', 'itemId'],
-    claim_task: ['projectId', 'taskId'], move_task: ['projectId', 'taskId', 'columnName'], batch_move: ['projectId', 'itemIds', 'columnName'], complete_task: ['projectId', 'taskId'], create_task: ['projectId', 'title'], create_checklist: ['projectId', 'itemId', 'name'], add_checklist_item: ['projectId', 'itemId', 'checklistId', 'text'], check_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'], update_item: ['projectId', 'itemId', 'changes'], update_items: ['projectId', 'filters', 'changes'], release_task: ['projectId', 'taskId'], delete_item: ['projectId', 'itemId'], delete_project: ['projectId'], archive_item: ['projectId', 'itemId'], unarchive_item: ['projectId', 'itemId'], set_item_tags: ['projectId', 'itemId', 'tagIds'], create_item_log: ['projectId', 'itemId', 'activity'], reorder_items: ['projectId', 'columnId', 'order'], update_checklist: ['projectId', 'itemId', 'checklistId', 'changes'], delete_checklist: ['projectId', 'itemId', 'checklistId'], update_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'changes'], delete_checklist_item: ['projectId', 'itemId', 'checklistId', 'checklistItemId'], update_item_log: ['projectId', 'itemId', 'logId', 'changes'], batch: ['projectId', 'operations'],
-    create_project: ['name'], create_project_structure: ['name', 'operations'], update_project: ['projectId'], create_module: ['projectId', 'name'], create_column: ['projectId', 'name', 'baseStatus'], reorder_columns: ['projectId', 'order'], create_sprint: ['projectId', 'name', 'startDate', 'endDate'], activate_sprint: ['projectId', 'sprintId'], close_sprint: ['projectId', 'sprintId'], create_tag: ['projectId', 'name'], create_version: ['projectId', 'name'], add_member: ['projectId', 'email', 'role'], update_member: ['projectId', 'userId', 'role'], remove_member: ['projectId', 'userId'], create_squad: ['projectId', 'name'], create_cost_center: ['projectId', 'code'],
-  }
-  const required = requiredByTool[name]
-  if (!required) throw new Error(`Ferramenta desconhecida: ${name}`)
+  // Fonte única: os obrigatórios vêm do registry (mesma definição que gera o
+  // schema exposto), eliminando a tabela paralela que já divergiu no passado.
+  if (!isRegisteredTool(name)) throw new Error(`Ferramenta desconhecida: ${name}`)
+  const required = requiredFieldsFor(name)
   for (const field of required) {
     const value = args?.[field]
     if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) throw new Error(`Campo obrigatório ausente: ${field}`)
