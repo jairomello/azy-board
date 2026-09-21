@@ -45,10 +45,11 @@ export const users = sqliteTable('users', {
 }, (table) => ({
   // [TENANT] Habilita FKs compostas de tabelas filhas para users(tenant_id, id)
   tenantIdUnique: uniqueIndex('users_tenant_id_id_unique').on(table.tenantId, table.id),
-  // [TENANT] E-mail único por tenant. A canonicalização (lower + trim) é feita
-  // na aplicação e no saneamento da migration; o SQLite/Drizzle não suporta
-  // índice por expressão aqui, então o índice é simples sobre o valor canônico.
-  emailUnique: uniqueIndex('users_tenant_email_unique').on(table.tenantId, table.email),
+  // Identidade global: e-mail único em todo o sistema, independente do tenant.
+  // Índice por expressão sobre lower(email) garante a canonicalização no banco
+  // (case-insensitive), além da normalização feita na aplicação.
+  // [DB-SWAP] Em PostgreSQL: CREATE UNIQUE INDEX users_email_unique ON users (lower(email));
+  emailUnique: uniqueIndex('users_email_unique').on(sql`lower(${table.email})`),
   // [TENANT] Valores permitidos para o grupo global
   groupCheck: check('users_global_group_check', sql`${table.globalGroup} IN ('TEAM_MEMBER','MANAGER','ADMIN','ROOT')`),
 }))

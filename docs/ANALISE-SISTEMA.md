@@ -720,7 +720,12 @@ Também não há política mínima de senha ao criar usuário:
 - Auditoria de tentativas.
 - Opcionalmente MFA para Root/Admin.
 
-### 29. Identidade multi-tenant é ambígua
+### 29. Identidade multi-tenant é ambígua — RESOLVIDO
+
+> **Resolvido pela change `global-email-identity` (card Item 29).** A identidade
+> passou a ser global: `UNIQUE (lower(email))` em `users`, login resolvido pelo
+> e-mail canônico (derivando o `tenant_id`) e migration `0028` saneando e-mails
+> repetidos entre tenants. Texto original mantido abaixo como registro.
 
 O cadastro permite o mesmo e-mail em tenants diferentes:
 

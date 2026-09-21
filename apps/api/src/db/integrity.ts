@@ -206,11 +206,11 @@ const CHECKS: CheckDefinition[] = [
           )`,
   },
   {
-    check: 'duplicate_email_per_tenant',
+    check: 'duplicate_email',
     table: 'users',
     sql: `SELECT COUNT(*) AS count FROM (
-            SELECT tenant_id, lower(trim(email)) AS canonical FROM users
-            GROUP BY tenant_id, canonical HAVING COUNT(*) > 1
+            SELECT lower(trim(email)) AS canonical FROM users
+            GROUP BY canonical HAVING COUNT(*) > 1
           )`,
   },
   {

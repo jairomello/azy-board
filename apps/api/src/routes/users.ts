@@ -72,8 +72,11 @@ usersRouter.post('/', requireGlobalGroup('ADMIN'), async (c) => {
   const name = body.name.trim()
   if (!isGlobalGroup(group)) return c.json({ error: 'Grupo inválido' }, 400)
   if (!hasGlobalGroup(ctx.globalGroup, group) || (ctx.globalGroup === 'ADMIN' && group === 'ROOT')) return c.json({ error: 'Grupo não permitido' }, 403)
-  const existing = await db.query.users.findFirst({ where: (u) => and(eq(u.email, email), eq(u.tenantId, ctx.tenantId)), columns: { id: true } })
-  if (existing) return c.json({ error: 'E-mail já cadastrado neste tenant' }, 409)
+  const existing = await db.query.users.findFirst({ where: (u) => eq(u.email, email), columns: { id: true, tenantId: true } })
+  if (existing) {
+    // Identidade global: o e-mail pertence a um único usuário, em qualquer tenant.
+    return c.json({ error: existing.tenantId === ctx.tenantId ? 'E-mail já cadastrado neste tenant' : 'E-mail já cadastrado em outro tenant' }, 409)
+  }
   const id = generateId()
   await db.insert(users).values({ id, tenantId: ctx.tenantId, email, name, passwordHash: await hashPassword(body.password), globalGroup: group, createdAt: new Date().toISOString() })
   const created = await db.query.users.findFirst({ where: (u) => and(eq(u.id, id), eq(u.tenantId, ctx.tenantId)), columns: PUBLIC_USER_COLUMNS })

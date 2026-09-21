@@ -8,7 +8,7 @@ process.env.DATABASE_URL = ':memory:'
 const { app } = await import('./index')
 const { db } = await import('./db/index')
 const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys, assistantConversations, assistantMessages, assistantRuns, assistantEvents } = await import('./db/schema')
-const { signJwt, generateApiKey } = await import('./services/auth')
+const { signJwt, generateApiKey, hashPassword } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 const { appendAnalyticsEvent, assertAnalyticsCutoverReady, ensureCoverage } = await import('./services/analytics')
 
@@ -761,7 +761,7 @@ describe('criação hierárquica em lote', () => {
   test('resolve referências locais e persiste o lote atomicamente', async () => {
     const tenantId = generateId(), projectId = generateId(), moduleId = generateId(), columnId = generateId()
     await db.insert(tenants).values({ id: tenantId, name: 'Batch', slug: `batch-${tenantId}`, createdAt: new Date().toISOString() })
-    const user = await createUser(tenantId, 'batch@test.local', 'Batch User')
+    const user = await createUser(tenantId, 'batch-user@test.local', 'Batch User')
     const session = await token(user.id, tenantId, user.email)
     await db.insert(projects).values({ id: projectId, tenantId, name: 'Batch project', description: null, boardMode: 'HIERARCHICAL', simpleStoryId: null, managerUserId: user.id, createdAt: new Date().toISOString() })
     await db.insert(memberships).values({ id: generateId(), tenantId, userId: user.id, projectId, role: 'ADMIN', createdAt: new Date().toISOString() })
@@ -1713,5 +1713,63 @@ describe('campos avançados de checklist (card T5)', () => {
     })
     expect(create.status).toBe(422)
     expect(await create.json()).toMatchObject({ error: { code: 'INVALID_ASSIGNEE', retryable: false } })
+  })
+})
+
+describe('identidade global de e-mail e login', () => {
+  test('login autentica credenciais válidas e emite cookie de sessão', async () => {
+    const tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Login', slug: `login-${tenantId}`, createdAt: new Date().toISOString() })
+    const userId = generateId()
+    const email = `login-${userId}@test.local`
+    const password = 'SenhaForte!123'
+    await db.insert(users).values({ id: userId, tenantId, email, passwordHash: await hashPassword(password), name: 'Login User', theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR', globalGroup: 'ADMIN', createdAt: new Date().toISOString() })
+
+    const response = await app.fetch(new Request('http://test.local/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.toUpperCase(), password }),
+    }))
+    expect(response.status).toBe(200)
+    expect(response.headers.get('set-cookie')).toContain('session=')
+    const body = await response.json() as { user: { id: string; email: string } }
+    expect(body.user.id).toBe(userId)
+    expect(body.user.email).toBe(email)
+  })
+
+  test('login com senha incorreta retorna 401 com mensagem genérica', async () => {
+    const tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Login inválido', slug: `login-bad-${tenantId}`, createdAt: new Date().toISOString() })
+    const userId = generateId()
+    const email = `login-bad-${userId}@test.local`
+    await db.insert(users).values({ id: userId, tenantId, email, passwordHash: await hashPassword('SenhaCorreta!123'), name: 'Login Bad', theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR', globalGroup: 'ADMIN', createdAt: new Date().toISOString() })
+
+    const response = await app.fetch(new Request('http://test.local/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: 'SenhaErrada!123' }),
+    }))
+    expect(response.status).toBe(401)
+    expect(await response.json()).toMatchObject({ error: { message: 'Credenciais inválidas' } })
+  })
+
+  test('cadastro rejeita e-mail já existente em outro tenant com 409', async () => {
+    const tenantA = generateId()
+    const tenantB = generateId()
+    await db.insert(tenants).values([
+      { id: tenantA, name: 'Tenant A', slug: `gid-a-${tenantA}`, createdAt: new Date().toISOString() },
+      { id: tenantB, name: 'Tenant B', slug: `gid-b-${tenantB}`, createdAt: new Date().toISOString() },
+    ])
+    const original = await createUser(tenantA, `dup-${tenantA}@test.local`, 'Original')
+    const admin = await createUser(tenantB, `gid-admin-${tenantB}@test.local`, 'Admin B')
+    const adminToken = await token(admin.id, tenantB, admin.email)
+
+    const response = await request('/users', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: original.email, name: 'Duplicado', password: 'SenhaForte!123' }),
+    })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ error: { code: 'CONFLICT', message: 'E-mail já cadastrado em outro tenant' } })
   })
 })

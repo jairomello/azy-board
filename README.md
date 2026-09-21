@@ -255,7 +255,9 @@ authorized operation to the executed one (TOCTOU-safe).
 
 **Multi-tenancy**: every table carries `tenant_id`. All queries go through a
 `withTenant(tenantId)` helper. Tenants are provisioned via CLI only — no
-self-signup surface.
+self-signup surface. User identity is **global by canonical email**
+(`UNIQUE (lower(email))`); login resolves the identity by email and derives the
+`tenant_id` from it, so the same email cannot belong to two tenants.
 
 **Leaf Rule**: only items without children (`isLeaf: true`) are movable Kanban
 cards. Parent items aggregate status and points from descendants. Cascade

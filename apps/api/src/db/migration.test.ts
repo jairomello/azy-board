@@ -187,9 +187,10 @@ describe('migration de checklists detalhados (Card T5)', () => {
     const pre = `/tmp/azyboard-t5-${crypto.randomUUID()}`
     await mkdir(`${pre}/meta`, { recursive: true })
     const journal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ tag: string }> }
-    const upTo = journal.entries.filter(entry => !entry.tag.startsWith('0027')).map(entry => entry.tag + '.sql')
+    const beforeT5 = journal.entries.filter(entry => !entry.tag.startsWith('0027') && !entry.tag.startsWith('0028'))
+    const upTo = beforeT5.map(entry => entry.tag + '.sql')
     for (const file of upTo) await Bun.write(`${pre}/${file}`, await Bun.file(`${source}/${file}`).text())
-    await Bun.write(`${pre}/meta/_journal.json`, JSON.stringify({ ...journal, entries: journal.entries.filter(entry => !entry.tag.startsWith('0027')) }))
+    await Bun.write(`${pre}/meta/_journal.json`, JSON.stringify({ ...journal, entries: beforeT5 }))
     migrate(database, { migrationsFolder: pre })
 
     const now = new Date().toISOString()
@@ -205,6 +206,55 @@ describe('migration de checklists detalhados (Card T5)', () => {
     const preserved = await database.select().from(schema.checklistItems)
     expect(preserved).toHaveLength(1)
     expect(preserved[0]).toMatchObject({ id: 't5-ci', text: 'Passo legado', checked: true, dueDate: null, assigneeId: null, description: null })
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+})
+
+describe('migration de identidade global de e-mail (Item 29)', () => {
+  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+
+  test('aplica em base vazia, é idempotente e cria o índice global', () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    migrate(database, { migrationsFolder })
+    migrate(database, { migrationsFolder })
+    const indexes = sqlite.query("PRAGMA index_list('users')").all() as Array<{ name: string; unique: number }>
+    expect(indexes.some(index => index.name === 'users_email_unique' && index.unique === 1)).toBe(true)
+    expect(indexes.some(index => index.name === 'users_tenant_email_unique')).toBe(false)
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+
+  test('saneia e-mails duplicados entre tenants antes de criar a unicidade global', async () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    const source = new URL('./migrations', import.meta.url).pathname
+    const pre = `/tmp/azyboard-item29-${crypto.randomUUID()}`
+    await mkdir(`${pre}/meta`, { recursive: true })
+    const journal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ tag: string }> }
+    const upTo = journal.entries.filter(entry => !entry.tag.startsWith('0028')).map(entry => entry.tag + '.sql')
+    for (const file of upTo) await Bun.write(`${pre}/${file}`, await Bun.file(`${source}/${file}`).text())
+    await Bun.write(`${pre}/meta/_journal.json`, JSON.stringify({ ...journal, entries: journal.entries.filter(entry => !entry.tag.startsWith('0028')) }))
+    migrate(database, { migrationsFolder: pre })
+
+    const now = new Date().toISOString()
+    await database.insert(schema.tenants).values([
+      { id: 'gid-a', name: 'A', slug: 'gid-a', createdAt: now },
+      { id: 'gid-b', name: 'B', slug: 'gid-b', createdAt: now },
+    ])
+    // Base legada (antes da 0028): o mesmo e-mail em tenants diferentes era aceito.
+    const base = { passwordHash: 'h', name: 'U', theme: 'light' as const, lightShellTheme: 'petroleum' as const, language: 'pt-BR' as const, globalGroup: 'TEAM_MEMBER' as const, createdAt: now }
+    await database.insert(schema.users).values([
+      { id: 'gid-u1', tenantId: 'gid-a', email: 'Dup@Example.com', ...base },
+      { id: 'gid-u2', tenantId: 'gid-b', email: 'dup@example.com', ...base },
+    ])
+
+    migrate(database, { migrationsFolder: source })
+    const persisted = await database.select().from(schema.users)
+    expect(persisted).toHaveLength(2)
+    expect(persisted.filter(user => user.email === 'dup@example.com')).toHaveLength(1)
+    expect(persisted.some(user => user.email.startsWith('dup@example.com+dup'))).toBe(true)
     expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
     sqlite.close()
   })

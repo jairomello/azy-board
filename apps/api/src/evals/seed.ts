@@ -12,6 +12,8 @@ export type EvalWorld = {
   api: ToolApi
   tenantId: string
   userId: string
+  /** E-mail global do usuário eval (único por tenant) */
+  email: string
   conversationId: string
 }
 
@@ -25,7 +27,7 @@ export async function createEvalWorld(): Promise<EvalWorld> {
   const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
   const { app } = await import('../index')
   await migrate(db, { migrationsFolder: new URL('../db/migrations', import.meta.url).pathname })
-  const tenantId = generateId(), userId = generateId(), email = 'agent-eval@test.local'
+  const tenantId = generateId(), userId = generateId(), email = `agent-eval+${tenantId}@test.local`
   const now = new Date().toISOString()
   await db.insert(tenants).values({ id: tenantId, name: 'Tenant Agent Eval', slug: `agent-eval-${tenantId}`, createdAt: now })
   await db.insert(users).values({ id: userId, tenantId, email, passwordHash: 'test-hash', name: 'Usuário Eval', theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR', globalGroup: 'ADMIN', createdAt: now })
@@ -46,7 +48,7 @@ export async function createEvalWorld(): Promise<EvalWorld> {
     }
     return (payload?.data ?? payload) as T
   }
-  worldCache = { db, api, tenantId, userId, conversationId }
+  worldCache = { db, api, tenantId, userId, email, conversationId }
   return worldCache
 }
 

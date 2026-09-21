@@ -50,7 +50,7 @@ describe('integridade do schema', () => {
 
     expect((sqlite.query("PRAGMA table_info('item_tags')").all() as Array<{ name: string }>).some(column => column.name === 'tenant_id')).toBe(true)
     const emailIndexes = (sqlite.query("PRAGMA index_list('users')").all() as Array<{ name: string; unique: number }>)
-    expect(emailIndexes.some(index => index.name === 'users_tenant_email_unique' && index.unique === 1)).toBe(true)
+    expect(emailIndexes.some(index => index.name === 'users_email_unique' && index.unique === 1)).toBe(true)
     sqlite.close()
   })
 
@@ -66,13 +66,17 @@ describe('integridade do schema', () => {
     sqlite.close()
   })
 
-  test('rejeita e-mail duplicado no mesmo tenant e aceita em tenants diferentes', () => {
+  test('rejeita e-mail duplicado globalmente, inclusive entre tenants', () => {
     const { sqlite } = migratedDatabase()
     seedTenant(sqlite, 'tenant-a')
     seedTenant(sqlite, 'tenant-b')
     seedUser(sqlite, 'user-1', 'tenant-a', 'user@example.com')
     expect(() => seedUser(sqlite, 'user-2', 'tenant-a', 'user@example.com')).toThrow()
-    seedUser(sqlite, 'user-3', 'tenant-b', 'user@example.com')
+    // Identidade global: o mesmo e-mail não pode existir em outro tenant
+    expect(() => seedUser(sqlite, 'user-3', 'tenant-b', 'user@example.com')).toThrow()
+    // Diferenças de caixa também são a mesma identidade canônica
+    expect(() => seedUser(sqlite, 'user-4', 'tenant-b', 'USER@example.com')).toThrow()
+    seedUser(sqlite, 'user-5', 'tenant-b', 'outro@example.com')
     sqlite.close()
   })
 

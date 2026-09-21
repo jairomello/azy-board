@@ -86,7 +86,7 @@ describe('defaults temporais', () => {
     const itemsFks = sqlite.query('PRAGMA foreign_key_list(items)').all() as Array<{ from: string }>
     expect(itemsFks.some(fk => fk.from === 'parent_id')).toBe(true)
     const usersIndexes = sqlite.query("PRAGMA index_list('users')").all() as Array<{ name: string }>
-    expect(usersIndexes.some(index => index.name === 'users_tenant_email_unique')).toBe(true)
+    expect(usersIndexes.some(index => index.name === 'users_email_unique')).toBe(true)
 
     // Reexecutar o fluxo completo é idempotente e não altera o histórico.
     migrate(database, { migrationsFolder: source })

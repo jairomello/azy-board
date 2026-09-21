@@ -23,7 +23,7 @@ Este documento descreve as constraints de integridade introduzidas pela mudança
 
 | Tabela | Invariante |
 | --- | --- |
-| `users` | `UNIQUE (tenant_id, email)` (email canônico), `CHECK` de grupo global |
+| `users` | `UNIQUE (lower(email))` global (email canônico), `CHECK` de grupo global |
 | `memberships` | `UNIQUE (tenant_id, project_id, user_id)`, FKs compostas |
 | `item_tags` | `PRIMARY KEY (item_id, tag_id)`, `tenant_id`, FKs compostas |
 | `item_sprints` | `tenant_id`, FKs compostas, unicidade item/sprint |
@@ -33,12 +33,17 @@ Este documento descreve as constraints de integridade introduzidas pela mudança
 | `item_logs`, `attachments`, `checklist_items`, `project_cost_centers`, `tags`, `squads` | FKs compostas e `CHECK` de não-negatividade |
 | Todas as tabelas pai | `UNIQUE (tenant_id, id)` |
 
-## Email canônico
+## Email canônico e identidade global
 
-O SQLite/Drizzle não suporta índice por expressão, então a unicidade é
-`UNIQUE (tenant_id, email)` sobre o valor canônico. A canonicalização
-(`trim().toLowerCase()`) é feita em `apps/api/src/utils/email.ts`, usada em
-login, criação de usuário e setup, e também no saneamento da migration.
+Desde a change `global-email-identity` (item 29), o e-mail é a **identidade
+global** do usuário: `UNIQUE (lower(email))` no banco, sem escopo de tenant.
+A canonicalização (`trim().toLowerCase()`) é feita em
+`apps/api/src/utils/email.ts`, usada em login, criação de usuário e setup, e
+também no saneamento da migration `0028_global_email_identity`. A migration
+canonicaliza os e-mails existentes, preserva o registro mais antigo de cada
+endereço repetido e renomeia os demais com sufixo determinístico `+dup<rowid>`
+antes de criar o índice global. O login resolve o usuário por esse e-mail
+canônico e deriva o `tenant_id` da identidade encontrada.
 
 ## Defaults temporais
 

@@ -12,6 +12,7 @@ import { tenants, users } from '../db/schema'
 import { hashPassword } from '../services/auth'
 import { generateId } from '../utils/id'
 import { normalizeEmail } from '../utils/email'
+import { eq } from 'drizzle-orm'
 
 const args = Bun.argv.slice(2)
 
@@ -23,6 +24,12 @@ const adminName = args[4] ?? 'Administrador'
 
 if (!adminPassword) {
   throw new Error('Informe a senha do administrador como quarto argumento ou em ADMIN_PASSWORD.')
+}
+
+// Identidade global: o e-mail do administrador não pode reutilizar uma conta existente.
+const existingAdmin = await db.query.users.findFirst({ where: (u) => eq(u.email, adminEmail), columns: { id: true } })
+if (existingAdmin) {
+  throw new Error(`E-mail ${adminEmail} já cadastrado. A identidade é global; use outro e-mail ou faça login na conta existente.`)
 }
 
 console.log('\n🚀 Azy Board — Setup Inicial\n')

@@ -24,8 +24,9 @@ authRouter.post('/login', async (c) => {
   }
 
   const user = await db.query.users.findFirst({
-    // [TENANT] A identidade persistida, incluindo o grupo, é a autoridade server-side.
-    // E-mail canônico (lower + trim) preserva paridade com a unicidade do banco.
+    // [TENANT] A identidade é global: o e-mail canônico identifica um único
+    // usuário em todo o sistema, e o tenant_id é derivado dessa identidade.
+    // O e-mail canônico (lower + trim) preserva paridade com a unicidade global.
     where: (u) => eq(u.email, normalizeEmail(body.email)),
   })
 

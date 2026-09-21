@@ -15,15 +15,19 @@ O banco SHALL impedir que qualquer tabela filha referencie uma entidade de outro
 - **THEN** o banco rejeita a operação por violação de chave estrangeira
 
 ### Requirement: Unicidade de identidade e associação
-O banco SHALL garantir unicidade de e-mail por tenant, de membership por projeto/usuário e de associação item-tag.
+O banco SHALL garantir unicidade global de e-mail e unicidade de membership por projeto/usuário e de associação item-tag. A unicidade de e-mail SHALL incidir sobre o e-mail canônico (lower + trim), independentemente do tenant.
 
 #### Scenario: E-mail duplicado no mesmo tenant
 - **WHEN** uma operação tenta cadastrar usuário com e-mail já existente no mesmo tenant, ignorando diferenças de caixa
 - **THEN** o banco rejeita a operação por violação de unicidade
 
-#### Scenario: Mesmo e-mail em tenants diferentes
-- **WHEN** dois tenants cadastram o mesmo endereço de e-mail
-- **THEN** ambos os cadastros são aceitos e permanecem isolados por `tenant_id`
+#### Scenario: Mesmo e-mail em tenants diferentes é rejeitado
+- **WHEN** dois tenants tentam cadastrar o mesmo endereço de e-mail
+- **THEN** o banco rejeita o segundo cadastro por violação da unicidade global de e-mail, preservando a primeira identidade
+
+#### Scenario: Saneamento de e-mails duplicados legados
+- **WHEN** a migration encontra o mesmo e-mail em tenants diferentes
+- **THEN** mantém o registro mais antigo no endereço canônico e preserva os demais com sufixo determinístico antes de criar o índice único global
 
 #### Scenario: Membership duplicado
 - **WHEN** uma operação tenta inserir o mesmo usuário no mesmo projeto do mesmo tenant mais de uma vez
