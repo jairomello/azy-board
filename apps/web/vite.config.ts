@@ -39,6 +39,7 @@ export default defineConfig(({ mode }) => {
         // não migrem de arquivo a cada mudança.
         manualChunks(id) {
           if (!id.includes('node_modules')) return
+          if (id.includes('@tanstack/react-query') || id.includes('@tanstack/query-core')) return 'vendor-query'
           if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor')) return 'vendor-charts'
           if (id.includes('@tiptap') || id.includes('prosemirror-')) return 'vendor-editor'
           if (id.includes('react-router') || id.includes('/react-dom/') || id.includes('/react/') || id.includes('scheduler')) return 'vendor-react'

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import { api } from '../lib/api'
+import { queryClient } from '../lib/queryClient'
 import i18n from '../i18n'
 import { gravarMostrarProjetosOcultos, lerMostrarProjetosOcultos } from '../lib/sessionPreferences'
 import { applyTheme, getEffectiveTheme, persistAutoThemeByTime, readAutoThemeByTime, readManualTheme } from '../lib/theme'
@@ -120,6 +121,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await api.post('/auth/logout', {})
     resetarProjetosOcultos()
     setUser(null)
+    // Isolamento entre identidades: descarta o cache da conta anterior.
+    queryClient.clear()
   }
 
   // Foto de perfil: sobe o recorte comprimido e reflete o usuário atualizado.

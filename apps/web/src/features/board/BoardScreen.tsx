@@ -73,6 +73,7 @@ export default function BoardPage() {
     advancedChecklists,
     loading, setLoading,
     syncState,
+    invalidateBoard,
   } = useBoardData(projectId)
   const [activeId, setActiveId] = useState<string | null>(null)
   const {
@@ -526,16 +527,15 @@ export default function BoardPage() {
     try {
       await api.patch(`/projects/${projectId}/items/${itemId}`, changes)
       await api.post(`/projects/${projectId}/items/${itemId}/tags`, { tagIds })
-      // Recarregar todos os itens quando parentId mudou (ancestryPath muda no servidor)
-      // ou sempre para garantir consistência após salvar pela modal
-      const its = await api.get<ItemData[]>(`/projects/${projectId}/items`)
-      setAllItems(computeIsLeaf(its))
+      // Invalidação da query do board garante consistência após salvar pela modal
+      // (ancestryPath pode mudar no servidor).
+      invalidateBoard()
       setTreeRefreshToken(value => value + 1)
     } catch {
       toast('Erro ao salvar item', 'error')
       throw new Error('failed')
     }
-  }, [projectId, toast])
+  }, [projectId, toast, invalidateBoard])
 
   const handleAddSubtask = useCallback(async (parentId: string, title: string, type: ItemType) => {
     if (!projectId) return
@@ -554,14 +554,13 @@ export default function BoardPage() {
     try {
       await api.delete(`/projects/${projectId}/items/${itemId}`)
       setAllItems(prev => computeIsLeaf(prev.filter(i => i.id !== itemId && i.parentId !== itemId)))
-      // Recarrega para garantir consistência após cascata profunda
-      const its = await api.get<ItemData[]>(`/projects/${projectId}/items`)
-      setAllItems(computeIsLeaf(its))
+      // Invalidação garante consistência após cascata profunda.
+      invalidateBoard()
       toast('Item excluído', 'success')
     } catch {
       toast('Erro ao excluir item', 'error')
     }
-  }, [projectId, toast])
+  }, [projectId, toast, invalidateBoard])
 
   // Tarefa 10.1 — arquivamento de cards
   const handleArchiveRequest = useCallback((itemId: string) => {
@@ -621,9 +620,8 @@ export default function BoardPage() {
     try {
       await api.post(`/projects/${projectId}/items/${itemId}/unarchive`, {})
       setArchivedItems(prev => prev.filter(i => i.id !== itemId))
-      // Re-fetch de todos os itens para garantir que o restaurado apareça no board
-      const its = await api.get<ItemData[]>(`/projects/${projectId}/items`)
-      setAllItems(computeIsLeaf(its))
+      // Invalidação garante que o restaurado apareça no board.
+      invalidateBoard()
       toast('Item restaurado', 'success')
     } catch {
       toast('Erro ao restaurar item', 'error')

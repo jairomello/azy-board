@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Activity, AlertCircle, BarChart3, Clock3, Cloud, CloudOff, Filter, ListTodo, RefreshCw, Users } from 'lucide-react'
-import type { DashboardAging, DashboardBurnup, DashboardFilters, DashboardHours, DashboardItemDetail, DashboardSnapshot, DashboardState } from '@azy-board/types'
+import type { DashboardAging, DashboardBurnup, DashboardFilters, DashboardHours, DashboardItemDetail, DashboardSnapshot, DashboardState, WsEvent, WsEventType } from '@azy-board/types'
 import { AppShell } from '../components/AppShell'
 import { formatDate } from '../lib/formatters'
 import { api } from '../lib/api'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '../contexts/AuthContext'
+import { queryKeys } from '../lib/queryKeys'
+import { buildDashboardHandlers } from '../lib/realtimeEvents'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { burnupData, hoursByAuthorData, progressData, rankingData, statusData, teamLoadData } from '../dashboardAdapters'
 import { ChartEmptyState, ChartLegend, DashboardCard, Donut, DonutComparison, Gauge, HorizontalRankingBar, MetricValue, SimpleBars, TimeArea } from '../components/dashboard/DashboardVisuals'
@@ -22,18 +26,66 @@ function OverdueModal({ selection, projectId, t, onClose }: { selection: { metri
 export default function ProjectDashboardPage() {
   const { projectId } = useParams<{ projectId: string }>(); const { t } = useTranslation('dashboard')
   const [filters, setFilters] = useState<DashboardFilters>(() => { try { return { ...initialFilters, ...JSON.parse(localStorage.getItem(`dashboard-filters:${projectId}`) ?? '{}') } } catch { return initialFilters } })
-  const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null); const [burnup, setBurnup] = useState<DashboardBurnup | null>(null); const [aging, setAging] = useState<DashboardAging | null>(null); const [hours, setHours] = useState<DashboardHours | null>(null)
-  const [catalogs, setCatalogs] = useState<Catalogs>({ modules: [], sprints: [], versions: [], squads: [], members: [] }); const [states, setStates] = useState<Record<string, DashboardState>>({ snapshot: 'loading', burnup: 'loading', aging: 'loading', hours: 'loading' }); const [projectName, setProjectName] = useState(''); const [refreshToken, setRefreshToken] = useState(0); const [burnupMode, setBurnupMode] = useState<'items' | 'points'>('items'); const [teamLoadMode, setTeamLoadMode] = useState<'items' | 'points'>('items'); const [selectedItem, setSelectedItem] = useState<DashboardItemDetail | null>(null); const [overdueModal, setOverdueModal] = useState<{ metric: 'items' | 'points'; items: DashboardItemDetail[] } | null>(null)
+  const [burnupMode, setBurnupMode] = useState<'items' | 'points'>('items'); const [teamLoadMode, setTeamLoadMode] = useState<'items' | 'points'>('items'); const [selectedItem, setSelectedItem] = useState<DashboardItemDetail | null>(null); const [overdueModal, setOverdueModal] = useState<{ metric: 'items' | 'points'; items: DashboardItemDetail[] } | null>(null)
   const qs = queryString(filters)
-  const load = useCallback(async () => {
-    if (!projectId) return; setStates({ snapshot: 'loading', burnup: 'loading', aging: 'loading', hours: 'loading' }); const suffix = qs ? `?${qs}` : ''
-    const results = await Promise.allSettled([api.get<DashboardSnapshot>(`/projects/${projectId}/dashboard/snapshot${suffix}`), api.get<DashboardBurnup>(`/projects/${projectId}/dashboard/burnup${suffix}`), api.get<DashboardAging>(`/projects/${projectId}/dashboard/aging${suffix}`), api.get<DashboardHours>(`/projects/${projectId}/dashboard/hours${suffix}`), api.get<{ name: string }>(`/projects/${projectId}`), api.get<Option[]>(`/projects/${projectId}/modules`), api.get<Option[]>(`/projects/${projectId}/sprints`), api.get<Option[]>(`/projects/${projectId}/versions`), api.get<Option[]>(`/projects/${projectId}/squads`), api.get<Option[]>(`/projects/${projectId}/members`)]); const next: Record<string, DashboardState> = {}
-    const assign = <T,>(index: number, key: string, setter: (value: T) => void) => { const result = results[index]; if (result?.status === 'fulfilled') { setter(result.value as T); next[key] = 'ready' } else next[key] = 'error' }; assign(0, 'snapshot', setSnapshot); assign(1, 'burnup', setBurnup); assign(2, 'aging', setAging); assign(3, 'hours', setHours)
-    if (results[4]?.status === 'fulfilled') setProjectName((results[4].value as { name: string }).name); setCatalogs({ modules: results[5]?.status === 'fulfilled' ? results[5].value as Option[] : [], sprints: results[6]?.status === 'fulfilled' ? results[6].value as Option[] : [], versions: results[7]?.status === 'fulfilled' ? results[7].value as Option[] : [], squads: results[8]?.status === 'fulfilled' ? results[8].value as Option[] : [], members: results[9]?.status === 'fulfilled' ? results[9].value as Option[] : [] })
-    setStates(next)
-  }, [projectId, qs])
-  useEffect(() => { void load() }, [load, refreshToken]); useEffect(() => { try { localStorage.setItem(`dashboard-filters:${projectId}`, JSON.stringify(filters)) } catch {} }, [filters, projectId]); useEffect(() => { const onFocus = () => void load(); window.addEventListener('focus', onFocus); window.addEventListener('online', onFocus); return () => { window.removeEventListener('focus', onFocus); window.removeEventListener('online', onFocus) } }, [load])
-   const sync = useWebSocket(projectId ?? null, { ITEM_CREATED: () => setRefreshToken(value => value + 1), ITEM_UPDATED: () => setRefreshToken(value => value + 1), ITEM_DELETED: () => setRefreshToken(value => value + 1), SPRINT_CHANGED: () => setRefreshToken(value => value + 1), PROGRESS_UPDATED: () => setRefreshToken(value => value + 1) }); useEffect(() => { if (sync === 'synced') void load() }, [sync, load])
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const key = useMemo(() => queryKeys.dashboard(user?.id, projectId, qs), [user?.id, projectId, qs])
+  const query = useQuery({
+    queryKey: key,
+    enabled: Boolean(projectId),
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    queryFn: async ({ signal }) => {
+      const pid = projectId as string
+      const suffix = qs ? `?${qs}` : ''
+      const results = await Promise.allSettled([
+        api.get<DashboardSnapshot>(`/projects/${pid}/dashboard/snapshot${suffix}`, { signal }),
+        api.get<DashboardBurnup>(`/projects/${pid}/dashboard/burnup${suffix}`, { signal }),
+        api.get<DashboardAging>(`/projects/${pid}/dashboard/aging${suffix}`, { signal }),
+        api.get<DashboardHours>(`/projects/${pid}/dashboard/hours${suffix}`, { signal }),
+        api.get<{ name: string }>(`/projects/${pid}`, { signal }),
+        api.get<Option[]>(`/projects/${pid}/modules`, { signal }),
+        api.get<Option[]>(`/projects/${pid}/sprints`, { signal }),
+        api.get<Option[]>(`/projects/${pid}/versions`, { signal }),
+        api.get<Option[]>(`/projects/${pid}/squads`, { signal }),
+        api.get<Option[]>(`/projects/${pid}/members`, { signal }),
+      ])
+      const states: Record<string, DashboardState> = {}
+      const pick = <T,>(index: number, box: string): T | null => { const result = results[index]; if (result?.status === 'fulfilled') { states[box] = 'ready'; return result.value as T } states[box] = 'error'; return null }
+      return {
+        snapshot: pick<DashboardSnapshot>(0, 'snapshot'),
+        burnup: pick<DashboardBurnup>(1, 'burnup'),
+        aging: pick<DashboardAging>(2, 'aging'),
+        hours: pick<DashboardHours>(3, 'hours'),
+        projectName: results[4]?.status === 'fulfilled' ? (results[4].value as { name: string }).name : '',
+        catalogs: {
+          modules: results[5]?.status === 'fulfilled' ? results[5].value as Option[] : [],
+          sprints: results[6]?.status === 'fulfilled' ? results[6].value as Option[] : [],
+          versions: results[7]?.status === 'fulfilled' ? results[7].value as Option[] : [],
+          squads: results[8]?.status === 'fulfilled' ? results[8].value as Option[] : [],
+          members: results[9]?.status === 'fulfilled' ? results[9].value as Option[] : [],
+        },
+        states,
+      }
+    },
+  })
+  const invalidateDashboard = () => { void queryClient.invalidateQueries({ queryKey: key }) }
+  const snapshot = query.data?.snapshot ?? null
+  const burnup = query.data?.burnup ?? null
+  const aging = query.data?.aging ?? null
+  const hours = query.data?.hours ?? null
+  const projectName = query.data?.projectName ?? ''
+  const catalogs = query.data?.catalogs ?? { modules: [], sprints: [], versions: [], squads: [], members: [] }
+  const states = query.data?.states ?? { snapshot: query.isPending ? 'loading' : 'error', burnup: query.isPending ? 'loading' : 'error', aging: query.isPending ? 'loading' : 'error', hours: query.isPending ? 'loading' : 'error' }
+  useEffect(() => { try { localStorage.setItem(`dashboard-filters:${projectId}`, JSON.stringify(filters)) } catch {} }, [filters, projectId])
+  const sync = useWebSocket(projectId ?? null, buildDashboardHandlers(invalidateDashboard))
+  const wasOfflineRef = useRef(false)
+  useEffect(() => {
+    if (sync === 'offline') wasOfflineRef.current = true
+    else if (sync === 'synced' && wasOfflineRef.current) { wasOfflineRef.current = false; invalidateDashboard() }
+  }, [sync]) // eslint-disable-line react-hooks/exhaustive-deps
   const update = (key: keyof DashboardFilters, value: string) => setFilters(previous => ({ ...previous, [key]: value })); const filterFields = useMemo(() => [['from', 'date'], ['to', 'date'], ['moduleId', 'module'], ['sprintId', 'sprint'], ['versionId', 'version'], ['squadId', 'squad'], ['assigneeId', 'assignee'], ['type', 'type']] as const, []); const state = (key: string) => states[key] ?? 'error'; const coverage = snapshot?.coverage
   if (!projectId) return null
   const progress = snapshot ? progressData(snapshot) : null
@@ -50,5 +102,5 @@ export default function ProjectDashboardPage() {
         <Box title={t('aging')} icon={Clock3} description={t('descriptionAging')} state={state('aging')} partial={Boolean(aging?.coverageStartedAt)} t={t}>{aging && <>{aging.items.length ? <HorizontalRankingBar data={rankingData(aging.items, 'aging')} unit={t('days')} onSelect={id => setSelectedItem(aging.items.find(item => item.id === id) ?? null)} /> : <ChartEmptyState>{t('noData')}</ChartEmptyState>}<p className="text-xs text-muted-foreground">{t('topTenOldest')}</p></>}</Box>
         <Box title={t('teamLoad')} icon={Users} description={t('descriptionTeamLoad')} state={state('snapshot')} t={t}>{snapshot && <>{teamLoadHasWip ? <><div className="mb-2 flex gap-2" role="group" aria-label={t('teamLoad')}><button type="button" aria-pressed={teamLoadMode === 'items'} className={`rounded-md px-2 py-1 text-xs ${teamLoadMode === 'items' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} onClick={() => setTeamLoadMode('items')}>{t('items')}</button><button type="button" aria-pressed={teamLoadMode === 'points'} className={`rounded-md px-2 py-1 text-xs ${teamLoadMode === 'points' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} onClick={() => setTeamLoadMode('points')}>{t('points')}</button></div><SimpleBars data={teamLoad} /><p className="text-xs text-muted-foreground">{teamLoadMode === 'points' ? `${t('pointsCoverage')}: ${snapshot.boxes.teamLoad.pointsCoverage == null ? '—' : `${Math.round(snapshot.boxes.teamLoad.pointsCoverage)}%`}` : t('items')}</p></> : <ChartEmptyState>{t('noData')}</ChartEmptyState>}</>}</Box>
         <Box title={t('hours')} icon={BarChart3} description={t('descriptionHours')} state={state('hours')} t={t}>{hours && <><MetricValue label={t('total')} value={`${Math.round(hours.totalMinutes / 60 * 10) / 10}${t('hoursUnit')}`} />{hoursByAuthorData(hours).length ? <Donut data={hoursByAuthorData(hours).map(item => ({ ...item, unit: t('hoursUnit'), value: Math.round(Number(item.value) / 60 * 100) / 100 }))} /> : <ChartEmptyState>{t('noData')}</ChartEmptyState>}<p className="text-xs text-muted-foreground">{hours.semantics || t('manualHours')}</p></>}</Box>
-      </div><div className="mt-5 flex justify-end"><button type="button" onClick={() => setRefreshToken(value => value + 1)} className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold hover:bg-muted"><RefreshCw className="h-4 w-4" />{t('refresh')}</button></div></div><ItemModal item={selectedItem} projectId={projectId} t={t} onClose={() => setSelectedItem(null)} /><OverdueModal selection={overdueModal} projectId={projectId} t={t} onClose={() => setOverdueModal(null)} /></AppShell>
+      </div><div className="mt-5 flex justify-end"><button type="button" onClick={invalidateDashboard} className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold hover:bg-muted"><RefreshCw className="h-4 w-4" />{t('refresh')}</button></div></div><ItemModal item={selectedItem} projectId={projectId} t={t} onClose={() => setSelectedItem(null)} /><OverdueModal selection={overdueModal} projectId={projectId} t={t} onClose={() => setOverdueModal(null)} /></AppShell>
 }

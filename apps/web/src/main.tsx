@@ -1,10 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
+import { QueryClientProvider } from '@tanstack/react-query'
 import App from './App'
 import './i18n/index'
 import './styles/globals.css'
 import { getEffectiveTheme, readAutoThemeByTime } from './lib/theme'
+import { queryClient } from './lib/queryClient'
 import type { Theme } from '@azy-board/types'
 
 // Suporte a deploy path-based (ex.: /app/ atrás de um proxy reverso).
@@ -55,8 +57,10 @@ document.documentElement.dataset.lightShellTheme = savedShellTheme
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter basename={((window as any).__BASE_PATH__ || '')}>
-      <App />
-    </BrowserRouter>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter basename={((window as any).__BASE_PATH__ || '')}>
+        <App />
+      </BrowserRouter>
+    </QueryClientProvider>
   </React.StrictMode>
 )

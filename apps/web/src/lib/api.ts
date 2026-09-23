@@ -1,5 +1,11 @@
 const BASE = '/api'
 
+// Cancelamento por AbortController é esperado e não deve virar erro de domínio
+// (nem toast). O TanStack Query usa isto para não reexecutar consultas canceladas.
+export function isAbortError(error: unknown): boolean {
+  return Boolean(error) && typeof error === 'object' && (error as { name?: string }).name === 'AbortError'
+}
+
 export class ApiError extends Error {
   readonly status: number
   readonly code: string | undefined
@@ -16,6 +22,8 @@ export class ApiError extends Error {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   // FormData não pode receber Content-Type manual: o browser define o boundary.
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData
+  // `options.signal` (quando presente) cancela a requisição; o AbortError sobe
+  // intacto para a camada de cache tratar como cancelamento.
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     credentials: 'include', // Envia cookie de sessão automaticamente
@@ -52,12 +60,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body: unknown) => request<T>(path, { method: 'POST', body: JSON.stringify(body) }),
-  patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
-  delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  get: <T>(path: string, options?: RequestInit) => request<T>(path, options),
+  post: <T>(path: string, body: unknown, options?: RequestInit) => request<T>(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
+  patch: <T>(path: string, body: unknown, options?: RequestInit) => request<T>(path, { ...options, method: 'PATCH', body: JSON.stringify(body) }),
+  delete: <T>(path: string, options?: RequestInit) => request<T>(path, { ...options, method: 'DELETE' }),
   // Upload multipart (o endpoint de avatar usa PUT).
-  upload: <T>(path: string, formData: FormData) => request<T>(path, { method: 'PUT', body: formData }),
+  upload: <T>(path: string, formData: FormData, options?: RequestInit) => request<T>(path, { ...options, method: 'PUT', body: formData }),
 }
 
 export function cn(...classes: (string | undefined | false | null)[]) {

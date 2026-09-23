@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type SetStateAction } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../../lib/api'
 import { onAssistantMutation } from '../../../lib/dataEvents'
 import { useWebSocket } from '../../../hooks/useWebSocket'
+import { useAuth } from '../../../contexts/AuthContext'
+import { queryKeys } from '../../../lib/queryKeys'
 import type { ProjectMember, ProjectVersion, CostCenter } from '../../../components/ItemModal'
 import type { Tag } from '../../../components/TagSelector'
-import type { WsEvent, BoardMode } from '@azy-board/types'
+import type { WsEvent, WsEventType, BoardMode } from '@azy-board/types'
+import { BOARD_INCREMENTAL_EVENT_TYPES } from '../../../lib/realtimeEvents'
 import {
   computeIsLeaf,
   upsertItem,
@@ -15,25 +19,162 @@ import {
   type Sprint,
 } from '../model/types'
 
-export function useBoardData(projectId: string | undefined) {
-  const [columns, setColumns] = useState<Column[]>([])
-  const [allItems, setAllItems] = useState<ItemData[]>([])
-  const [assistantRefresh, setAssistantRefresh] = useState(0)
-  const [modules, setModules] = useState<Module[]>([])
-  const [sprints, setSprints] = useState<Sprint[]>([])
-  const [members, setMembers] = useState<ProjectMember[]>([])
-  const [projectTags, setProjectTags] = useState<Tag[]>([])
-  const [projectVersions, setProjectVersions] = useState<ProjectVersion[]>([])
-  const [versionsLoaded, setVersionsLoaded] = useState(false)
-  const [costCentersLoaded, setCostCentersLoaded] = useState(false)
-  const [projectCostCenters, setProjectCostCenters] = useState<CostCenter[]>([])
-  const [projectSquads, setProjectSquads] = useState<{ id: string; name: string }[]>([])
-  const [projectName, setProjectName] = useState('')
-  const [boardMode, setBoardMode] = useState<BoardMode>('HIERARCHICAL')
-  const [simpleStoryId, setSimpleStoryId] = useState<string | null>(null)
-  const [advancedChecklists, setAdvancedChecklists] = useState(false)
-  const [loading, setLoading] = useState(true)
+// Estado remoto do board mantido na camada de cache (TanStack Query).
+export interface BoardData {
+  columns: Column[]
+  allItems: ItemData[]
+  modules: Module[]
+  sprints: Sprint[]
+  members: ProjectMember[]
+  projectTags: Tag[]
+  projectVersions: ProjectVersion[]
+  projectCostCenters: CostCenter[]
+  projectSquads: Array<{ id: string; name: string }>
+  projectName: string
+  boardMode: BoardMode
+  simpleStoryId: string | null
+  advancedChecklists: boolean
+}
 
+const EMPTY_BOARD: BoardData = {
+  columns: [],
+  allItems: [],
+  modules: [],
+  sprints: [],
+  members: [],
+  projectTags: [],
+  projectVersions: [],
+  projectCostCenters: [],
+  projectSquads: [],
+  projectName: '',
+  boardMode: 'HIERARCHICAL',
+  simpleStoryId: null,
+  advancedChecklists: false,
+}
+
+function resolveValue<T>(previous: T, value: SetStateAction<T>): T {
+  return typeof value === 'function' ? (value as (prev: T) => T)(previous) : value
+}
+
+// Reducer puro de eventos WebSocket sobre o cache do board (testável isoladamente).
+export function applyBoardEvent(previous: BoardData, event: WsEvent): BoardData {
+  switch (event.type) {
+    case 'CARD_MOVED': {
+      const { itemId, columnId, status } = event.payload as { itemId: string; columnId: string; status: string }
+      return { ...previous, allItems: previous.allItems.map(item => item.id === itemId ? { ...item, columnId, status: status as ItemData['status'] } : item) }
+    }
+    case 'ITEM_CREATED':
+      return { ...previous, allItems: upsertItem(previous.allItems, event.payload as ItemData) }
+    case 'CARD_CREATED':
+      return { ...previous, allItems: upsertItem(previous.allItems, event.payload as ItemData) }
+    case 'MODULE_CREATED': {
+      const module = event.payload as Module
+      return { ...previous, modules: previous.modules.some(item => item.id === module.id) ? previous.modules : [...previous.modules, module] }
+    }
+    case 'ITEM_UPDATED': {
+      const { itemId, ...updates } = event.payload as { itemId: string; [key: string]: unknown }
+      return { ...previous, allItems: computeIsLeaf(previous.allItems.map(item => item.id === itemId ? { ...item, ...updates } : item)) }
+    }
+    case 'ITEM_DELETED': {
+      const { itemId } = event.payload as { itemId: string }
+      return { ...previous, allItems: computeIsLeaf(previous.allItems.filter(item => item.id !== itemId)) }
+    }
+    case 'CARD_UPDATED': {
+      const { taskId, itemId, ...updates } = event.payload as { taskId?: string; itemId?: string; [key: string]: unknown }
+      const id = itemId ?? taskId
+      return id ? { ...previous, allItems: previous.allItems.map(item => item.id === id ? { ...item, ...updates } : item) } : previous
+    }
+    case 'CARD_DELETED': {
+      const { itemId, taskId } = event.payload as { itemId?: string; taskId?: string }
+      const id = itemId ?? taskId
+      return id ? { ...previous, allItems: computeIsLeaf(previous.allItems.filter(item => item.id !== id)) } : previous
+    }
+    case 'TASK_CLAIMED': {
+      const { itemId, taskId, assigneeId } = event.payload as { itemId?: string; taskId?: string; assigneeId: string }
+      const id = itemId ?? taskId
+      return id ? { ...previous, allItems: previous.allItems.map(item => item.id === id ? { ...item, assigneeId, status: 'IN_PROGRESS' } : item) } : previous
+    }
+    case 'SUBTASK_CREATED': {
+      const { parentId: newParentId, item, task } = event.payload as { parentId: string; item?: ItemData; task?: ItemData }
+      const newItem = item ?? task
+      return newItem ? { ...previous, allItems: upsertItem(previous.allItems, { ...newItem, parentId: newParentId }) } : previous
+    }
+    case 'CHECKLIST_UPDATED': {
+      const { itemId, progress } = event.payload as { itemId: string; progress: { checked: number; total: number } }
+      return { ...previous, allItems: previous.allItems.map(item => item.id === itemId ? { ...item, checklistProgress: progress.total > 0 ? progress : null } : item) }
+    }
+    default:
+      return previous
+  }
+}
+
+export function useBoardData(projectId: string | undefined) {
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const key = useMemo(() => queryKeys.board(user?.id, projectId), [user?.id, projectId])
+
+  const query = useQuery({
+    queryKey: key,
+    enabled: Boolean(projectId),
+    queryFn: async ({ signal }) => {
+      const pid = projectId as string
+      const [cols, its, mods, tags, sprs, mbrs, vers, ccs, sqs, proj] = await Promise.all([
+        api.get<Column[]>(`/projects/${pid}/columns`, { signal }),
+        api.get<ItemData[]>(`/projects/${pid}/items`, { signal }),
+        api.get<Module[]>(`/projects/${pid}/modules`, { signal }),
+        api.get<Tag[]>(`/projects/${pid}/tags`, { signal }),
+        api.get<Sprint[]>(`/projects/${pid}/sprints`, { signal }).catch(() => [] as Sprint[]),
+        api.get<ProjectMember[]>(`/projects/${pid}/members`, { signal }).catch(() => [] as ProjectMember[]),
+        api.get<ProjectVersion[]>(`/projects/${pid}/versions`, { signal }).catch(() => [] as ProjectVersion[]),
+        api.get<CostCenter[]>(`/projects/${pid}/cost-centers`, { signal }).catch(() => [] as CostCenter[]),
+        api.get<{ id: string; name: string }[]>(`/projects/${pid}/squads`, { signal }).catch(() => []),
+        api.get<ProjectContext>(`/projects/${pid}`, { signal }).catch(() => ({ name: '', boardMode: 'HIERARCHICAL' as const, simpleStoryId: null, advancedChecklists: false })),
+      ])
+      return {
+        columns: cols,
+        allItems: computeIsLeaf(its),
+        modules: mods,
+        sprints: sprs,
+        members: mbrs,
+        projectTags: tags,
+        projectVersions: vers,
+        projectCostCenters: ccs,
+        projectSquads: sqs,
+        projectName: proj.name,
+        boardMode: proj.boardMode ?? 'HIERARCHICAL',
+        simpleStoryId: proj.simpleStoryId ?? null,
+        advancedChecklists: Boolean(proj.advancedChecklists),
+      } satisfies BoardData
+    },
+  })
+
+  const data = query.data ?? EMPTY_BOARD
+
+  const patch = useCallback((updater: (previous: BoardData) => BoardData) => {
+    queryClient.setQueryData<BoardData>(key, (previous) => previous ? updater(previous) : previous)
+  }, [queryClient, key])
+
+  const invalidateBoard = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: key })
+  }, [queryClient, key])
+
+  const setColumns = useCallback((value: SetStateAction<Column[]>) => patch(prev => ({ ...prev, columns: resolveValue(prev.columns, value) })), [patch])
+  const setAllItems = useCallback((value: SetStateAction<ItemData[]>) => patch(prev => ({ ...prev, allItems: resolveValue(prev.allItems, value) })), [patch])
+  const setModules = useCallback((value: SetStateAction<Module[]>) => patch(prev => ({ ...prev, modules: resolveValue(prev.modules, value) })), [patch])
+  const setSprints = useCallback((value: SetStateAction<Sprint[]>) => patch(prev => ({ ...prev, sprints: resolveValue(prev.sprints, value) })), [patch])
+  const setMembers = useCallback((value: SetStateAction<ProjectMember[]>) => patch(prev => ({ ...prev, members: resolveValue(prev.members, value) })), [patch])
+  const setProjectTags = useCallback((value: SetStateAction<Tag[]>) => patch(prev => ({ ...prev, projectTags: resolveValue(prev.projectTags, value) })), [patch])
+  const setProjectVersions = useCallback((value: SetStateAction<ProjectVersion[]>) => patch(prev => ({ ...prev, projectVersions: resolveValue(prev.projectVersions, value) })), [patch])
+  const setProjectCostCenters = useCallback((value: SetStateAction<CostCenter[]>) => patch(prev => ({ ...prev, projectCostCenters: resolveValue(prev.projectCostCenters, value) })), [patch])
+  const setProjectSquads = useCallback((value: SetStateAction<Array<{ id: string; name: string }>>) => patch(prev => ({ ...prev, projectSquads: resolveValue(prev.projectSquads, value) })), [patch])
+  const setProjectName = useCallback((value: SetStateAction<string>) => patch(prev => ({ ...prev, projectName: resolveValue(prev.projectName, value) })), [patch])
+  const setBoardMode = useCallback((value: SetStateAction<BoardMode>) => patch(prev => ({ ...prev, boardMode: resolveValue(prev.boardMode, value) })), [patch])
+  const setSimpleStoryId = useCallback((value: SetStateAction<string | null>) => patch(prev => ({ ...prev, simpleStoryId: resolveValue(prev.simpleStoryId, value) })), [patch])
+  const setAdvancedChecklists = useCallback((value: SetStateAction<boolean>) => patch(prev => ({ ...prev, advancedChecklists: resolveValue(prev.advancedChecklists, value) })), [patch])
+  // Compatibilidade de assinatura: o carregamento é derivado do estado da query.
+  const setLoading = useCallback(() => {}, [])
+
+  // Mutação feita pelo assistente invalida o board do projeto afetado.
   useEffect(() => onAssistantMutation(({ result }) => {
     const payload = result && typeof result === 'object' ? result as Record<string, unknown> : null
     const resultProjectId = typeof payload?.projectId === 'string'
@@ -41,109 +182,48 @@ export function useBoardData(projectId: string | undefined) {
       : payload?.project && typeof payload.project === 'object' && typeof (payload.project as Record<string, unknown>).id === 'string'
         ? (payload.project as Record<string, unknown>).id as string
         : null
-    if (!resultProjectId || resultProjectId === projectId) setAssistantRefresh(value => value + 1)
-  }), [projectId])
+    if (!resultProjectId || resultProjectId === projectId) invalidateBoard()
+  }), [projectId, invalidateBoard])
 
+  const boardHandlers = useMemo(() => {
+    const handlers: Partial<Record<WsEventType, (event: WsEvent) => void>> = {}
+    for (const type of BOARD_INCREMENTAL_EVENT_TYPES) {
+      handlers[type] = (event) => patch(previous => applyBoardEvent(previous, event))
+    }
+    return handlers
+  }, [patch])
+
+  const syncState = useWebSocket(projectId ?? null, boardHandlers)
+
+  // Reconciliação no reconnect: após uma queda, refaz a consulta ativa do projeto.
+  const wasOfflineRef = useRef(false)
   useEffect(() => {
-    if (!projectId) return
-    setLoading(true)
-    setVersionsLoaded(false)
-    setCostCentersLoaded(false)
-    Promise.all([
-      api.get<Column[]>(`/projects/${projectId}/columns`),
-      api.get<ItemData[]>(`/projects/${projectId}/items`),
-      api.get<Module[]>(`/projects/${projectId}/modules`),
-      api.get<Tag[]>(`/projects/${projectId}/tags`),
-      api.get<Sprint[]>(`/projects/${projectId}/sprints`).catch(() => [] as Sprint[]),
-      api.get<ProjectMember[]>(`/projects/${projectId}/members`).catch(() => [] as ProjectMember[]),
-      api.get<ProjectVersion[]>(`/projects/${projectId}/versions`).catch(() => [] as ProjectVersion[]),
-      api.get<CostCenter[]>(`/projects/${projectId}/cost-centers`).catch(() => [] as CostCenter[]),
-      api.get<{ id: string; name: string }[]>(`/projects/${projectId}/squads`).catch(() => []),
-      api.get<ProjectContext>(`/projects/${projectId}`).catch(() => ({ name: '', boardMode: 'HIERARCHICAL' as const, simpleStoryId: null, advancedChecklists: false })),
-    ]).then(([cols, its, mods, tags, sprs, mbrs, vers, ccs, sqs, proj]) => {
-      setColumns(cols)
-      setAllItems(computeIsLeaf(its))
-      setModules(mods)
-      setProjectTags(tags)
-      setSprints(sprs)
-      setMembers(mbrs)
-      setProjectVersions(vers)
-      setVersionsLoaded(true)
-      setProjectCostCenters(ccs)
-      setCostCentersLoaded(true)
-      setProjectSquads(sqs)
-      setProjectName(proj.name)
-      setBoardMode(proj.boardMode ?? 'HIERARCHICAL')
-      setSimpleStoryId(proj.simpleStoryId ?? null)
-      setAdvancedChecklists(Boolean(proj.advancedChecklists))
-    }).finally(() => setLoading(false))
-  }, [assistantRefresh, projectId])
-
-  const syncState = useWebSocket(projectId ?? null, {
-    CARD_MOVED: (event: WsEvent) => {
-      const { itemId, columnId, status } = event.payload as { itemId: string; columnId: string; status: string }
-      setAllItems(previous => previous.map(item => item.id === itemId ? { ...item, columnId, status: status as ItemData['status'] } : item))
-    },
-    ITEM_CREATED: (event: WsEvent) => setAllItems(previous => upsertItem(previous, event.payload as ItemData)),
-    MODULE_CREATED: (event: WsEvent) => {
-      const module = event.payload as Module
-      setModules(previous => previous.some(item => item.id === module.id) ? previous : [...previous, module])
-    },
-    ITEM_UPDATED: (event: WsEvent) => {
-      const { itemId, ...updates } = event.payload as { itemId: string; [key: string]: unknown }
-      setAllItems(previous => computeIsLeaf(previous.map(item => item.id === itemId ? { ...item, ...updates } : item)))
-    },
-    ITEM_DELETED: (event: WsEvent) => {
-      const { itemId } = event.payload as { itemId: string }
-      setAllItems(previous => computeIsLeaf(previous.filter(item => item.id !== itemId)))
-    },
-    CARD_CREATED: (event: WsEvent) => setAllItems(previous => upsertItem(previous, event.payload as ItemData)),
-    CARD_UPDATED: (event: WsEvent) => {
-      const { taskId, itemId, ...updates } = event.payload as { taskId?: string; itemId?: string; [key: string]: unknown }
-      const id = itemId ?? taskId
-      if (id) setAllItems(previous => previous.map(item => item.id === id ? { ...item, ...updates } : item))
-    },
-    CARD_DELETED: (event: WsEvent) => {
-      const { itemId, taskId } = event.payload as { itemId?: string; taskId?: string }
-      const id = itemId ?? taskId
-      if (id) setAllItems(previous => computeIsLeaf(previous.filter(item => item.id !== id)))
-    },
-    TASK_CLAIMED: (event: WsEvent) => {
-      const { itemId, taskId, assigneeId } = event.payload as { itemId?: string; taskId?: string; assigneeId: string }
-      const id = itemId ?? taskId
-      if (id) setAllItems(previous => previous.map(item => item.id === id ? { ...item, assigneeId, status: 'IN_PROGRESS' } : item))
-    },
-    SUBTASK_CREATED: (event: WsEvent) => {
-      const { parentId: newParentId, item, task } = event.payload as { parentId: string; item?: ItemData; task?: ItemData }
-      const newItem = item ?? task
-      if (newItem) setAllItems(previous => upsertItem(previous, { ...newItem, parentId: newParentId }))
-    },
-    CHECKLIST_UPDATED: (event: WsEvent) => {
-      const { itemId, progress } = event.payload as { itemId: string; progress: { checked: number; total: number } }
-      setAllItems(previous => previous.map(item => item.id === itemId
-        ? { ...item, checklistProgress: progress.total > 0 ? progress : null }
-        : item
-      ))
-    },
-  })
+    if (syncState === 'offline') {
+      wasOfflineRef.current = true
+    } else if (syncState === 'synced' && wasOfflineRef.current) {
+      wasOfflineRef.current = false
+      invalidateBoard()
+    }
+  }, [syncState, invalidateBoard])
 
   return {
-    columns, setColumns,
-    allItems, setAllItems,
-    modules, setModules,
-    sprints, setSprints,
-    members, setMembers,
-    projectTags, setProjectTags,
-    projectVersions, setProjectVersions,
-    versionsLoaded,
-    projectCostCenters, setProjectCostCenters,
-    costCentersLoaded,
-    projectSquads, setProjectSquads,
-    projectName, setProjectName,
-    boardMode, setBoardMode,
-    simpleStoryId, setSimpleStoryId,
-    advancedChecklists, setAdvancedChecklists,
-    loading, setLoading,
+    columns: data.columns, setColumns,
+    allItems: data.allItems, setAllItems,
+    modules: data.modules, setModules,
+    sprints: data.sprints, setSprints,
+    members: data.members, setMembers,
+    projectTags: data.projectTags, setProjectTags,
+    projectVersions: data.projectVersions, setProjectVersions,
+    versionsLoaded: Boolean(query.data),
+    projectCostCenters: data.projectCostCenters, setProjectCostCenters,
+    costCentersLoaded: Boolean(query.data),
+    projectSquads: data.projectSquads, setProjectSquads,
+    projectName: data.projectName, setProjectName,
+    boardMode: data.boardMode, setBoardMode,
+    simpleStoryId: data.simpleStoryId, setSimpleStoryId,
+    advancedChecklists: data.advancedChecklists, setAdvancedChecklists,
+    loading: query.isPending, setLoading,
     syncState,
+    invalidateBoard,
   }
 }
