@@ -1,3 +1,5 @@
+// [CONTRATO-ESTRUTURAL] tokens visuais dos badges; cores não são observáveis no happy-dom.
+// A cobertura comportamental equivalente deve migrar para testes de componente/E2E.
 import { describe, expect, test } from 'bun:test'
 
 // O workspace não possui DOM, jsdom ou React Testing Library. Estes testes de

@@ -29,23 +29,13 @@ faltantes, mostrar prévia, aguardar aprovação, cancelar e transmitir eventos 
 SSE usando `runId` e cursor.
 
 Limites padrão por tenant (o Root pode ajustá-los na governança, sempre dentro
-de faixas seguras):
+de faixas seguras). A tabela vigente, com defaults e faixas, é gerada a partir
+do código em
+[[../../generated/assistant-limits|Limites do Azy Agent (gerado)]].
 
-| Limite | Valor padrão |
-|---|---|
-| Mensagens por minuto por usuário | 10 |
-| Runs ativas por usuário | 1 |
-| Runs ativas por tenant | 3 |
-| Tamanho máximo da mensagem | 30.000 bytes |
-| Passos por run | 4 |
-| Tool calls por run | 8 |
-| Tempo limite da run | 90 segundos |
-| Tokens de entrada / saída | 65.000 / 4.000 |
-| Orçamento diário | 100.000 micros por usuário; 1.000.000 por tenant |
-
-Cada mensagem pode solicitar no máximo 40 ações estimadas; pedidos maiores são
-recusados com orientação para dividir em lotes. Uma aprovação pendente expira
-após 15 minutos.
+Cada mensagem respeita um limite de ações estimadas (ver a tabela gerada);
+pedidos maiores são recusados com orientação para dividir em lotes. Uma
+aprovação pendente expira após 15 minutos.
 
 Mutações sempre passam por prévia e aprovação; exclusões e cascatas exigem
 confirmação explícita. A autorização é revalidada como o usuário humano atual

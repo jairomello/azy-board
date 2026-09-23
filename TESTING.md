@@ -5,6 +5,9 @@
 O projeto usa vários níveis de verificação:
 
 - Testes de integração Bun para o backend, com banco SQLite em memória.
+- Testes de comportamento (hooks, adapters e `model/`) e de componente (DOM) para o frontend.
+- Testes de contrato estrutural apenas para invariantes não comportamentais, com justificativa.
+- E2E de navegador (Playwright) e regressão visual para as telas críticas.
 - Testes unitários e de contrato para regras de domínio, UI e integrações MCP.
 - Smoke test HTTP para validar uma aplicação local ou publicada.
 
@@ -40,6 +43,87 @@ Esses comandos cobrem o catálogo de ferramentas, validação de argumentos,
 fluxos de board, idempotência, erros estruturados e a obrigatoriedade de
 política de autorização por ferramenta. As API Keys usadas nos testes são
 simuladas e não são credenciais reais.
+
+## Testes de frontend
+
+O frontend segue três níveis:
+
+1. **Comportamento sem DOM** — regras de negócio, hooks e adapters devem viver em
+   módulos sem dependência direta de React (por exemplo, `features/*/model/` e
+   `lib/`) e ser exercitados com entradas e dependências injetadas. É o nível
+   preferido: rápido e estável.
+2. **Componente com DOM** — renderização, interação e acessibilidade usam
+   `happy-dom` + Testing Library. O setup fica em
+   `apps/web/src/test/setup.ts` e é importado **explicitamente** no topo de cada
+   teste de componente (`import '../test/setup'`); não há preload global, para
+   não injetar `window`/`document` nos testes de API e MCP. O `screen` exportado
+   pelo setup resolve as consultas em `document.body` no momento do uso.
+3. **E2E de navegador** — jornadas críticas no navegador real.
+
+Os testes de componente dependem de estado global de DOM e, por isso, os
+arquivos de teste são executados isolados (`bun test --isolate`, já embutido em
+`bun run test`, `bun run check` e `bun run test:web`). Sem o isolamento, arquivos
+distintos competem pelo mesmo `document`.
+
+```bash
+bun run test:web          # suíte do web (isolada)
+bun run check             # typecheck + lint + testes (isolados) + build
+```
+
+### Política de testes de contrato estrutural
+
+Testes que apenas leem o código-fonte (por exemplo,
+`fetch(new URL('./Componente.tsx', import.meta.url))`) só são aceitos para
+invariantes **não comportamentais** (cobertura de chaves i18n, fronteiras de
+módulo, layout CSS que o `happy-dom` não calcula, tokens visuais) e precisam do
+marcador `[CONTRATO-ESTRUTURAL] <motivo>` no arquivo. Um teste de comportamento
+equivalente é sempre preferível. A verificação abaixo falha quando um teste lê o
+fonte sem o marcador:
+
+```bash
+bun run check:frontend-tests
+```
+
+### E2E de navegador (Playwright)
+
+A suíte sobe um stack descartável (SQLite temporário + API + web), semeia um
+membro e o Azy Agent determinístico e cobre login, criação de projeto, board
+(criar/mover/reordenar cards por arrastar), Settings (coluna, módulo e squad),
+permissões e a jornada do agente sem provider de LLM real.
+
+```bash
+bun run test:e2e
+```
+
+Pré-requisitos e variáveis:
+
+- Chromium do sistema em `/usr/bin/chromium`, ou o Chromium empacotado do
+  Playwright (`bunx playwright install chromium`) com
+  `PLAYWRIGHT_CHROMIUM_EXECUTABLE=""`.
+- `E2E_API_PORT` (padrão `3001`) e `E2E_WEB_PORT` (padrão `5173`).
+
+O agente usa `AZY_AGENT_PROVIDER=stub`; o provider determinístico é proibido
+quando `NODE_ENV=production`. Em falha, screenshots são gravados em
+`tmp/e2e-failures/`.
+
+### Regressão visual
+
+Compara screenshots de login, projetos, board, Settings e dashboard com
+baselines versionados em `e2e/__screenshots__/` (viewport e tema fixos,
+tolerância de 2%). Para regenerar de forma intencional, no mesmo ambiente do CI:
+
+```bash
+E2E_UPDATE_SNAPSHOTS=1 bun run test:visual
+```
+
+Diferenças são gravadas em `tmp/visual-diffs/`. A regressão visual roda em modo
+de observação no CI até as baselines estabilizarem em todos os ambientes.
+
+### Bateria completa
+
+```bash
+bun run test:regression --with-e2e   # inclui E2E de navegador e regressão visual
+```
 
 Para a validação completa do monorepo:
 

@@ -1,3 +1,5 @@
+// [CONTRATO-ESTRUTURAL] wiring de UI do agente (foco, ARIA, SSE, aprovação) acoplado a providers.
+// A cobertura comportamental equivalente deve migrar para testes de componente/E2E.
 import { describe, expect, test } from 'bun:test'
 
 async function source(path: string) { return fetch(new URL(path, import.meta.url)).then(response => response.text()) }
@@ -27,8 +29,8 @@ describe('contratos de interação do Azy Agent', () => {
   })
   test('mensagens longas são bloqueadas antes de criar uma run', async () => {
     const text = await source('./components/AzyAgentDrawer.tsx')
-    expect(text.includes('MAX_MESSAGE_CHARS = 30_000')).toBe(true)
-    expect(text.includes('MAX_MESSAGE_BYTES = 30_000')).toBe(true)
+    expect(text.includes('import { MAX_MESSAGE_BYTES } from "@azy-board/types"')).toBe(true)
+    expect(text.includes('MAX_MESSAGE_CHARS = MAX_MESSAGE_BYTES')).toBe(true)
     expect(text.includes('messageTooLong')).toBe(true)
     expect(text.includes('maxLength={MAX_MESSAGE_CHARS}')).toBe(true)
     expect(text.includes('ACTION_LIMIT: t("actionLimit")')).toBe(true)
@@ -75,5 +77,12 @@ describe('contratos de interação do Azy Agent', () => {
     expect(settings.includes('/assistant/root/provider/rotate')).toBe(true)
     expect(settings.includes('OAUTH')).toBe(false)
     expect(settings.includes('oauthUnsupported')).toBe(false)
+  })
+  test('governança do Root usa a fonte única de limites', async () => {
+    const settings = await source('./components/RootAssistantSettings.tsx')
+    expect(settings.includes('import { DEFAULT_GOVERNANCE } from "@azy-board/types"')).toBe(true)
+    expect(settings.includes('useState({ ...DEFAULT_GOVERNANCE })')).toBe(true)
+    expect(settings.includes('maxSteps: 4')).toBe(false)
+    expect(settings.includes('maxPayloadBytes: 50_000')).toBe(false)
   })
 })

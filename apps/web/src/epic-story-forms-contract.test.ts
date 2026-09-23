@@ -1,3 +1,5 @@
+// [CONTRATO-ESTRUTURAL] estrutura dos formulários de épico e história.
+// A cobertura comportamental equivalente deve migrar para testes de componente/E2E.
 import { describe, expect, test } from 'bun:test'
 
 async function source(path: string) {

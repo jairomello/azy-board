@@ -24,6 +24,8 @@ Gates que detectam divergência de contratos antes do merge:
 - `bun run test:mcp-catalog` — catálogo MCP versus registry de ferramentas.
 - `bun run test:agent-skill` — skill oficial do agente, comandos e referências.
 - `bun run test:migrations` — testes de migration, integridade e timestamps.
+- `bun run check:docs` — integridade da documentação (artefatos gerados em dia,
+  links internos válidos e ausência de afirmações proibidas).
 - `bun run build:web` + `bun run check:bundle` — build do Web e verificação do
   orçamento de bundle (ver abaixo).
 
@@ -114,6 +116,18 @@ O lint ainda reporta avisos (por exemplo `noUnusedImports`,
 burn-down deve ser feita incrementalmente. Quando o número chegar a zero,
 habilitar `--error-on-warnings` no `scripts/lint.ts` para tornar o gate estrito.
 
+## Integridade da documentação
+
+`bun run check:docs` garante que a documentação não divirja do runtime:
+
+- regenera em memória o catálogo MCP, o OpenAPI e a tabela de limites e compara
+  com os artefatos versionados em `docs/generated/` e em `apps/mcp/README.md`;
+- valida links internos relativos de Markdown;
+- rejeita afirmações proibidas (mantidas em um ponto único no script).
+
+Para atualizar os artefatos depois de mudar um contrato volátil, rode
+`bun run generate:docs`. Os papéis de cada fonte estão em `docs/README.md`.
+
 ## Required checks
 
 A proteção de branch é configuração externa ao repositório. No GitHub, em
@@ -123,6 +137,7 @@ principal, marque como obrigatórios os jobs:
 - `check`
 - `contracts`
 - `smoke`
+- `e2e`
 
 ### Trabalho solo
 

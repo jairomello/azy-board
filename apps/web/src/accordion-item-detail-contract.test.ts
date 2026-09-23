@@ -1,3 +1,5 @@
+// [CONTRATO-ESTRUTURAL] estrutura de composição das modais (áreas/painéis) e cobertura de i18n.
+// A cobertura comportamental equivalente deve migrar para testes de componente/E2E.
 import { describe, expect, test } from 'bun:test'
 
 async function source(path: string) {

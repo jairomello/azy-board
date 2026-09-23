@@ -1,3 +1,5 @@
+// [CONTRATO-ESTRUTURAL] wiring de mutação otimista e conflito 409 na tela do board.
+// A cobertura comportamental equivalente deve migrar para testes de componente/E2E.
 import { describe, expect, test } from 'bun:test'
 
 async function read(relativePath: string) {

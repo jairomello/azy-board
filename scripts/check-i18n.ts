@@ -48,6 +48,8 @@ async function scan(directory: string) {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) await scan(path)
     if (!entry.isFile() || !/\.(tsx|ts)$/.test(entry.name)) continue
+    // Testes contêm textos próprios de asserção; o gate cobre apenas o produto.
+    if (/\.test\.(tsx|ts)$/.test(entry.name)) continue
     const content = (await Bun.file(path).text())
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/\/\/.*$/gm, '')

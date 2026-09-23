@@ -1,3 +1,5 @@
+// [CONTRATO-ESTRUTURAL] fronteiras de módulo (rotas delegam às features).
+// A cobertura comportamental equivalente deve migrar para testes de componente/E2E.
 import { describe, expect, test } from 'bun:test'
 async function read(relativePath: string) {
   return fetch(new URL(relativePath, import.meta.url)).then(response => response.text())

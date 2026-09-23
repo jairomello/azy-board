@@ -4,10 +4,12 @@ import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantRuns, assistantSettings, assistantToolCalls, items, memberships, projects, users } from '../db/schema'
 import { db } from '../db/index'
 import type { AssistantScreen } from '@azy-board/types'
+import { DEFAULT_GOVERNANCE, GOVERNANCE_BOUNDS, MAX_ASSISTANT_ACTIONS, MAX_MESSAGE_BYTES, type Governance } from '@azy-board/types'
 import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
 import { AssistantEncryptionError, decryptAssistantSecret, encryptAssistantSecret } from '../services/assistantEncryption'
-import { OpenAIProvider, probeOpenAICredential } from '../services/openaiProvider'
-import { OpenRouterProvider, probeOpenRouterCredential } from '../services/openrouterProvider'
+import { probeOpenAICredential } from '../services/openaiProvider'
+import { probeOpenRouterCredential } from '../services/openrouterProvider'
+import { createAssistantProvider } from '../services/assistantProvider'
 import { AssistantHarness, operationHash } from '../services/assistantHarness'
 import { dependencyToolsFor, executeSharedTool, friendlyToolName, getSharedToolDefinitions, sanitizeToolOutput, selectSharedTools, type HumanToolContext } from '../services/assistantTools'
 import { generateId } from '../utils/id'
@@ -21,10 +23,6 @@ export const assistantRouter = new Hono<HonoEnv>()
 assistantRouter.use('*', authMiddleware)
 
 type ProviderName = 'OPENAI' | 'OPENROUTER'
-type Governance = {
-  requestsPerMinute: number; maxActivePerUser: number; maxActivePerTenant: number; dailyBudgetMicros: number; tenantDailyBudgetMicros: number;
-  maxSteps: number; maxToolCalls: number; maxInputTokens: number; maxOutputTokens: number; maxPayloadBytes: number; timeoutMs: number
-}
 
 const globalGroupRank: Record<HumanToolContext['globalGroup'], number> = { TEAM_MEMBER: 0, MANAGER: 1, ADMIN: 2, ROOT: 3 }
 const localRoleRank: Record<'VIEWER' | 'MEMBER' | 'ADMIN', number> = { VIEWER: 0, MEMBER: 1, ADMIN: 2 }
@@ -63,8 +61,8 @@ async function filterToolsByPolicy(ctx: RequestContext, names: string[], project
 type Body = Partial<Governance> & { enabled?: unknown; provider?: unknown; model?: unknown; secret?: unknown }
 const safeError = (code: string, status: 400 | 422 | 500 = 400) => ({ error: 'Não foi possível concluir a operação', code, retryable: status === 500 })
 
-export const MAX_MESSAGE_BYTES = 30_000
-export const MAX_ASSISTANT_ACTIONS = 40
+// Reexportado para compatibilidade; a fonte única é @azy-board/types.
+export { MAX_ASSISTANT_ACTIONS, MAX_MESSAGE_BYTES }
 
 export function estimateRequestedActions(content: string): number {
   const explicitTypes = content.match(/^\s*tipo\s*:\s*(?:epic|épico|story|história|historia|task|tarefa|bug)\b/gim)?.length ?? 0
@@ -73,11 +71,6 @@ export function estimateRequestedActions(content: string): number {
 }
 const exposeAssistantErrors = process.env.NODE_ENV !== 'production' && process.env.ASSISTANT_EXPOSE_ERRORS !== 'false'
 const requestTimes = new Map<string, number[]>()
-const governanceBounds: { [K in keyof Governance]: readonly [number, number] } = {
-  requestsPerMinute: [1, 1_000], maxActivePerUser: [1, 20], maxActivePerTenant: [1, 100], dailyBudgetMicros: [1_000, 100_000_000], tenantDailyBudgetMicros: [1_000, 1_000_000_000],
-  maxSteps: [1, 32], maxToolCalls: [1, 100], maxInputTokens: [1_000, 128_000], maxOutputTokens: [256, 32_000], maxPayloadBytes: [1_000, 1_000_000], timeoutMs: [5_000, 300_000],
-}
-const defaultGovernance: Governance = { requestsPerMinute: 10, maxActivePerUser: 1, maxActivePerTenant: 3, dailyBudgetMicros: 100_000, tenantDailyBudgetMicros: 1_000_000, maxSteps: 32, maxToolCalls: 40, maxInputTokens: 65_000, maxOutputTokens: 4_000, maxPayloadBytes: 100_000, timeoutMs: 90_000 }
 
 function context(c: Context<HonoEnv>): RequestContext { return c.get('ctx') as RequestContext }
 function operationalError(c: Context<HonoEnv>, code: string, status: 400 | 404 | 409 | 413 | 422 | 429 | 500) { return c.json({ error: 'Não foi possível processar a solicitação', code, retryable: status >= 500 || status === 429 }, status) }
@@ -140,15 +133,15 @@ async function resolveSelectedItem(tenantId: string, projectId: string, itemId: 
 }
 
 function governance(row?: typeof assistantSettings.$inferSelect): Governance {
-  return row ? { requestsPerMinute: row.requestsPerMinute, maxActivePerUser: row.maxActivePerUser, maxActivePerTenant: row.maxActivePerTenant, dailyBudgetMicros: row.dailyBudgetMicros, tenantDailyBudgetMicros: row.tenantDailyBudgetMicros, maxSteps: row.maxSteps, maxToolCalls: row.maxToolCalls, maxInputTokens: row.maxInputTokens, maxOutputTokens: row.maxOutputTokens, maxPayloadBytes: row.maxPayloadBytes, timeoutMs: row.timeoutMs } : defaultGovernance
+  return row ? { requestsPerMinute: row.requestsPerMinute, maxActivePerUser: row.maxActivePerUser, maxActivePerTenant: row.maxActivePerTenant, dailyBudgetMicros: row.dailyBudgetMicros, tenantDailyBudgetMicros: row.tenantDailyBudgetMicros, maxSteps: row.maxSteps, maxToolCalls: row.maxToolCalls, maxInputTokens: row.maxInputTokens, maxOutputTokens: row.maxOutputTokens, maxPayloadBytes: row.maxPayloadBytes, timeoutMs: row.timeoutMs } : DEFAULT_GOVERNANCE
 }
 
 function governancePatch(body: Body): Partial<Governance> | null {
   const patch: Partial<Governance> = {}
-  for (const key of Object.keys(governanceBounds) as (keyof Governance)[]) {
+  for (const key of Object.keys(GOVERNANCE_BOUNDS) as (keyof Governance)[]) {
     if (body[key] === undefined) continue
     if (typeof body[key] !== 'number' || !Number.isSafeInteger(body[key])) return null
-    const [min, max] = governanceBounds[key]
+    const [min, max] = GOVERNANCE_BOUNDS[key]
     if (body[key] < min || body[key] > max) return null
     patch[key] = body[key] as never
   }
@@ -312,7 +305,7 @@ function projection(row: NonNullable<Awaited<ReturnType<typeof setting>>>) {
 
 assistantRouter.get('/root', requireGlobalGroup('ROOT'), async (c) => {
   const row = await setting(c.get('ctx').tenantId)
-  if (!row) return c.json({ enabled: false, configured: false, provider: null, governance: defaultGovernance, status: 'DISABLED' as const })
+  if (!row) return c.json({ enabled: false, configured: false, provider: null, governance: DEFAULT_GOVERNANCE, status: 'DISABLED' as const })
   return c.json(projection(row))
 })
 
@@ -346,14 +339,14 @@ assistantRouter.patch('/root/governance', requireGlobalGroup('ROOT'), async (c) 
   if (!patch) return c.json(safeError('INVALID_GOVERNANCE'), 400)
   const tenantId = c.get('ctx').tenantId
   const now = new Date().toISOString()
-  await db.insert(assistantSettings).values({ tenantId, enabled: false, validationStatus: 'UNVALIDATED', updatedAt: now, ...defaultGovernance, ...patch }).onConflictDoUpdate({ target: assistantSettings.tenantId, set: { ...patch, updatedAt: now } })
+  await db.insert(assistantSettings).values({ tenantId, enabled: false, validationStatus: 'UNVALIDATED', updatedAt: now, ...DEFAULT_GOVERNANCE, ...patch }).onConflictDoUpdate({ target: assistantSettings.tenantId, set: { ...patch, updatedAt: now } })
   const row = await setting(tenantId)
   return c.json({ governance: governance(row) })
 })
 
 assistantRouter.get('/root/governance/usage', requireGlobalGroup('ROOT'), async (c) => {
   const tenantId = c.get('ctx').tenantId, row = await setting(tenantId)
-  if (!row) return c.json({ activeRuns: 0, dailyCostMicros: 0, limits: defaultGovernance })
+  if (!row) return c.json({ activeRuns: 0, dailyCostMicros: 0, limits: DEFAULT_GOVERNANCE })
   const start = new Date(); start.setUTCHours(0, 0, 0, 0)
   const [active, runs] = await Promise.all([
     activeRuns(tenantId),
@@ -493,7 +486,7 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
   if (modelContext && modelInput.length) modelInput[modelInput.length - 1]!.content = `${modelInput[modelInput.length - 1]!.content}\n\nContexto confiável da operação anterior:\n${modelContext}`
   const secret = await decryptAssistantSecret(config.credential.ciphertext, config.credential.ciphertextVersion)
     const providerOptions = { timeoutMs: limits.timeoutMs, maxRetries: 0, maxOutputTokens: limits.maxOutputTokens }
-   const provider = config.row.provider === 'OPENROUTER' ? new OpenRouterProvider(secret, providerOptions) : new OpenAIProvider(secret, providerOptions)
+    const provider = createAssistantProvider({ providerName: config.row.provider, secret, options: providerOptions })
   const harness = new AssistantHarness({ provider, limits: { steps: limits.maxSteps, toolCalls: limits.maxToolCalls, inputTokens: limits.maxInputTokens, outputTokens: limits.maxOutputTokens, payloadBytes: limits.maxPayloadBytes, timeoutMs: limits.timeoutMs, costMicros: limits.dailyBudgetMicros }, executeTool: async (name, args, toolContext) => executeSharedTool(name, args, { api: toolApi(c), context: toolContext, authorize: authorizeAssistantTool }), authorize: authorizeAssistantTool, assertAvailable: async () => { if (!await available(ctx.tenantId)) throw new Error('ASSISTANT_UNAVAILABLE') } })
   const itemTypeScope = itemTypeScopeForMessage(content)
   const runContext = { source: 'azy-agent' as const, userId: ctx.userId, tenantId: ctx.tenantId, globalGroup: ctx.globalGroup, projectId: conversation.projectId ?? undefined, targetProjectId: effectiveProjectId ?? undefined, itemId: explicitProjectId ? undefined : expectedItemId ?? undefined, screen, conversationId, itemTypeScope }

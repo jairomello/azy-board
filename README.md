@@ -19,10 +19,11 @@ both reading and mutating board state.
 Azy Board is AI by design: intelligence is not an add-on, it flows naturally
 through the product. The same board that humans see is exposed to agents
 through the [Model Context Protocol (MCP)](https://modelcontextprotocol.io) and
-the Shadow Markdown projection, so agents read real state, act with typed
-tools, and every mutation goes through human approval, RBAC and tenant
-isolation. People and agents share a single source of truth — without
-friction.
+the Shadow Markdown projection, so agents read real state and act with typed
+tools under RBAC and tenant isolation. The built-in Azy Agent additionally
+gates each mutation behind human approval, while external MCP agents mutate
+directly under the API key's scoped permissions. People and agents share a
+single source of truth — without friction.
 
 <p align="center">
   <img src="docs/screenshots/agent-approval.png" alt="Azy Agent asking for approval to create a project" width="600" />
@@ -155,17 +156,17 @@ official API keys for model
 API calls. ChatGPT login credentials, Codex access tokens, and other product
 tokens are not part of the assistant's credential contract.
 
-Initial economic limits: 10 messages per minute per user, 1 active run per
-user, 3 per tenant, 50 KB per message/payload, 4 steps, 8 tool calls, 45
-seconds, and a daily budget of 100,000 micros per user (1,000,000 per tenant).
-The Root user can monitor usage and active runs and adjust these parameters in
-the tenant governance section, always within safe ranges. Runs interrupted by a
-limit are recorded with an operational code; mutations require preview and
-human approval. Cards, pasted text, and CSV files are untrusted data and cannot
+The default economic limits (rate, concurrency, steps, tool calls, payload and
+daily budget) come from a single source in code and are published in
+[`docs/generated/assistant-limits.md`](docs/generated/assistant-limits.md). The
+Root user can monitor usage and active runs and adjust these parameters in the
+tenant governance section, always within safe ranges. Runs interrupted by a
+limit are recorded with an operational code; Azy Agent mutations require
+preview and human approval. Cards and pasted text are untrusted data and cannot
 override system rules.
 
 The chat provides user history, clarification questions, approval,
-cancellation, CSV import with preview, and a reconnectable SSE stream. Semantic
+cancellation, and a reconnectable SSE stream. Semantic
 commands equivalent to the skill are: `/azyboard-status`, `/azyboard-plan`,
 `/azyboard-start`, `/azyboard-update`, `/azyboard-complete`, and
 `/azyboard-review`. See the [Azy Agent wiki page](docs/azyboard-wiki/09%20-%20Agentes%20e%20Integracoes/Azy%20Agent%20humano.md)
@@ -174,7 +175,7 @@ and `docs/AI_AGENT_DATA_POLICY.md` before enabling the feature.
 **How the harness runs a message:** the drawer posts to the assistant router,
 which assembles a trusted prompt and hands it to the harness. The harness loops
 through the LLM provider using the shared tool registry: reads run directly,
-while every mutation is risk-classified, paused in `WAITING_APPROVAL` for human
+while each mutation is risk-classified, paused in `WAITING_APPROVAL` for human
 sign-off, persisted with its events and cost, and streamed back to the UI over
 SSE.
 
@@ -191,7 +192,7 @@ SSE.
 | **Frontend** | React 18, Vite 5, TypeScript 5, Tailwind CSS 3, Radix UI |
 | **UI Primitives** | Lucide React, dnd-kit, Tiptap (rich text), i18next |
 | **Backend** | Bun, Hono 4, TypeScript 5 |
-| **Data** | Drizzle ORM — SQLite (dev) → PostgreSQL (prod) |
+| **Data** | Drizzle ORM — SQLite (runtime atual; migração para PostgreSQL planejada) |
 | **AI Protocol** | MCP SDK (`@modelcontextprotocol/sdk`), Shadow Markdown |
 | **Shared Types** | `@azy-board/types` (monorepo workspace package) |
 | **Realtime** | WebSocket (Bun native) |
@@ -227,9 +228,9 @@ Agent lives inside the API as an assistant harness: it calls LLM providers
 (OpenAI/OpenRouter) with encrypted tenant credentials and executes tools
 through the same shared registry, with guardrails, budgets and a human
 approval gate for every non-read operation. All paths converge on the
-multi-tenant database (SQLite in dev, PostgreSQL in production) accessed via
-Drizzle ORM, inside a tenant isolation boundary — every server-side component
-scopes every query by `tenant_id`.
+multi-tenant database (SQLite at runtime; PostgreSQL is a planned migration)
+accessed via Drizzle ORM, inside a tenant isolation boundary — every
+server-side component scopes every query by `tenant_id`.
 
 ### Intelligence tooling pipeline
 
@@ -249,7 +250,7 @@ validation → policy check (global group + local project role) → tool dispatc
 The Azy Agent adds an extra safety layer on top: intent routing and policy
 filtering before the model even sees the tools, server-side injection of the
 current project id (the model cannot target arbitrary projects), and a human
-approval workflow — every write operation pauses in `WAITING_APPROVAL` and
+approval workflow — each write operation pauses in `WAITING_APPROVAL` and
 only executes after explicit approval, with a SHA-256 hash binding the
 authorized operation to the executed one (TOCTOU-safe).
 

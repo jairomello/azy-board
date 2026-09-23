@@ -27,16 +27,21 @@ interface Stage {
 const stages: Stage[] = [
   { name: 'typecheck (4 workspaces)', cmd: ['bun', 'run', 'typecheck'] },
   { name: 'lint (Biome)', cmd: ['bun', 'run', 'lint'] },
-  { name: 'testes (bun test)', cmd: ['bun', 'test'] },
+  { name: 'testes (bun test)', cmd: ['bun', 'test', '--isolate'] },
   { name: 'build (api + web + mcp)', cmd: ['bun', 'run', 'build'] },
   { name: 'migrations e integridade do schema', cmd: ['bun', 'run', 'test:migrations'] },
   { name: 'contrato do catálogo MCP', cmd: ['bun', 'run', 'test:mcp-catalog'] },
   { name: 'paridade i18n (pt-BR, en, es)', cmd: ['bun', 'run', 'check:i18n'] },
   { name: 'skill oficial do agente', cmd: ['bun', 'run', 'test:agent-skill'] },
+  { name: 'política de testes de frontend', cmd: ['bun', 'run', 'check:frontend-tests'] },
+  { name: 'integridade da documentação', cmd: ['bun', 'run', 'check:docs'] },
   { name: 'orçamento de bundle', cmd: ['bun', 'run', 'check:bundle'] },
 ]
 
-if (withE2e) stages.push({ name: 'E2E de navegador (Playwright)', cmd: ['bun', 'run', 'test:e2e'] })
+if (withE2e) {
+  stages.push({ name: 'E2E de navegador (Playwright)', cmd: ['bun', 'run', 'test:e2e'] })
+  stages.push({ name: 'regressão visual', cmd: ['bun', 'run', 'test:visual'] })
+}
 if (withSmoke) stages.push({ name: 'smoke (stack de pé)', cmd: ['bun', 'run', 'test:smoke'] })
 
 interface Result {

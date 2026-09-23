@@ -45,21 +45,3 @@ describe('filtros ativos do Board', () => {
     expect(removeActiveBoardFilter(filters, 'storyDisplay').storyDisplay).toBe('lanes')
   })
 })
-
-describe('contrato de renderização e acessibilidade dos chips', () => {
-  test('integra linha, persistência e controles acessíveis sem infraestrutura DOM', async () => {
-    const component = await fetch(new URL('./components/ActiveFilterChips.tsx', import.meta.url)).then(response => response.text())
-    const page = await fetch(new URL('./features/board/BoardScreen.tsx', import.meta.url)).then(response => response.text())
-    const preferences = await fetch(new URL('./features/board/hooks/useBoardPreferences.ts', import.meta.url)).then(response => response.text())
-    expect(component.includes('return null')).toBe(true)
-    expect(component.includes('role="list"')).toBe(true)
-    expect(component.includes('role="listitem"')).toBe(true)
-    expect(component.includes('aria-label={accessibleLabel}')).toBe(true)
-    expect(component.includes('focus-visible:ring-2')).toBe(true)
-    expect(page.includes('<ActiveFilterChips')).toBe(true)
-    expect(page.includes('removeActiveBoardFilter')).toBe(true)
-    expect(preferences.includes('localStorage.setItem(`board-filters:${projectId}`')).toBe(true)
-    expect(preferences.includes('filtersProjectIdRef.current !== projectId')).toBe(true)
-    expect(preferences.includes('localStorage.getItem(`board-filters:${projectId}`)')).toBe(true)
-  })
-})

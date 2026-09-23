@@ -12,6 +12,7 @@ import { AppShell } from "./AppShell";
 import { useAuth } from "../contexts/AuthContext";
 import { useAssistant } from "../contexts/AssistantContext";
 import { api } from "../lib/api";
+import { DEFAULT_GOVERNANCE } from "@azy-board/types";
 
 export default function RootAssistantSettings() {
   const { t } = useTranslation("assistant");
@@ -24,19 +25,7 @@ export default function RootAssistantSettings() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [governance, setGovernance] = useState({
-    requestsPerMinute: 10,
-    maxActivePerUser: 1,
-    maxActivePerTenant: 3,
-    dailyBudgetMicros: 100_000,
-    tenantDailyBudgetMicros: 1_000_000,
-    maxSteps: 4,
-    maxToolCalls: 8,
-    maxInputTokens: 8_000,
-    maxOutputTokens: 2_000,
-    maxPayloadBytes: 50_000,
-    timeoutMs: 45_000,
-  });
+  const [governance, setGovernance] = useState({ ...DEFAULT_GOVERNANCE });
   const [usage, setUsage] = useState<{ activeRuns: number; dailyCostMicros: number } | null>(null);
 
   useEffect(() => {

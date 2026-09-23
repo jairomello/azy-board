@@ -21,6 +21,9 @@ export default defineConfig(({ mode }) => {
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Espelha o paths do tsconfig para que imports de valor (não só `import type`)
+      // resolvam no build; antes só existiam imports de tipo, apagados na compilação.
+      '@azy-board/types': path.resolve(__dirname, '../../packages/types/src/index.ts'),
     },
   },
   server: {

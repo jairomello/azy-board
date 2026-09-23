@@ -385,3 +385,5 @@ export interface DashboardBurnupPoint { date: string; total: number; done: numbe
 export interface DashboardBurnup { partial: boolean; coverageStartedAt?: string | null; series: DashboardBurnupPoint[] }
 export interface DashboardAging { coverageStartedAt: string | null; items: DashboardItemDetail[] }
 export interface DashboardHours { semantics: string; totalMinutes: number; rows: Array<{ authorId: string; authorName: string | null; squadName: string | null; itemId: string; versionId: string | null; moduleId: string | null; durationMin: number | null; createdAt?: string }> }
+
+export * from './assistantLimits'

@@ -13,6 +13,7 @@ import { api, ApiError } from "../lib/api";
 import { useAssistant } from "../contexts/AssistantContext";
 import { MarkdownText } from "./MarkdownText";
 import { notifyAssistantMutation } from "../lib/dataEvents";
+import { MAX_MESSAGE_BYTES } from "@azy-board/types";
 
 interface Conversation {
   id: string;
@@ -43,8 +44,7 @@ interface Run {
 }
 
 const CLIENT_RUN_TIMEOUT_MS = 180_000;
-const MAX_MESSAGE_CHARS = 30_000;
-const MAX_MESSAGE_BYTES = 30_000;
+const MAX_MESSAGE_CHARS = MAX_MESSAGE_BYTES;
 
 function friendlyRunError(error: string | null | undefined, t: (key: string) => string): string {
   if (!error) return t("runFailed");

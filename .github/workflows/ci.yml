@@ -64,6 +64,8 @@ jobs:
         run: bun run test:agent-skill
       - name: Migrations
         run: bun run test:migrations
+      - name: Integridade da documentação
+        run: bun run check:docs
       - name: Build do web (orçamento de bundle)
         run: bun run build:web
       - name: Orçamento de bundle
@@ -139,3 +141,41 @@ jobs:
           path: |
             tmp/ci/azy-api.log
             tmp/ci/azy-web.log
+
+  e2e:
+    name: e2e
+    runs-on: ubuntu-latest
+    env:
+      # Força o Chromium empacotado do Playwright (instalado no job).
+      PLAYWRIGHT_CHROMIUM_EXECUTABLE: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Cache de dependências do Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - name: Instalar dependências
+        run: bun install --frozen-lockfile
+      - name: Instalar Chromium do Playwright
+        run: bunx playwright install --with-deps chromium
+      - name: Política de testes de frontend
+        run: bun run check:frontend-tests
+      - name: E2E de navegador
+        run: bun run test:e2e
+      - name: Regressão visual (observação inicial)
+        continue-on-error: true
+        run: bun run test:visual
+      - name: Publicar artefatos de diagnóstico
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-diagnostics
+          if-no-files-found: ignore
+          path: |
+            tmp/e2e-failures/**
+            tmp/visual-diffs/**

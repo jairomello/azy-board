@@ -72,6 +72,15 @@ Small refactors that do not change any observable contract may skip a formal
 spec, but the pull request description must state explicitly that no product
 contract changed and why.
 
+### Documentation roles
+
+Each fact has a single home — see [`docs/README.md`](docs/README.md). In short:
+code/schema/runtime for contracts, OpenSpec for decisions and behavior, the wiki
+for product usage, the README for architecture and quick start, and the
+CHANGELOG for history. Volatile facts (MCP catalog, OpenAPI, limits) are
+generated with `bun run generate:docs` and verified by `bun run check:docs`; do
+not duplicate them in prose.
+
 ---
 
 ## AI Compatibility
@@ -177,6 +186,8 @@ footer explaining the impact on agents and API consumers.
 - [ ] Shadow Markdown output remains structurally compatible, or a documented
       migration plan is included.
 - [ ] MCP tool signatures are unchanged, or the change is versioned.
+- [ ] Documentação: contratos voláteis regenerados com `bun run generate:docs` e
+      `bun run check:docs` verde (ver papéis das fontes em `docs/README.md`).
 - [ ] Impacto sobre `skills/azyboard/` foi avaliado e a skill foi atualizada ou
       a ausência de impacto foi justificada.
 - [ ] Security checklist reviewed — see `SECURITY_CHECKLIST.md`.
