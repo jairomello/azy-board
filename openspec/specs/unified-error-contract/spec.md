@@ -20,7 +20,7 @@ Toda resposta de erro da API SHALL usar o envelope `{ "error": { "code": string,
 - **THEN** a API retorna HTTP 500 com código `INTERNAL_ERROR`, mensagem genérica, `retryable: false` e sem stack trace ou detalhes internos
 
 ### Requirement: Semântica estável de retry
-Cada erro SHALL indicar explicitamente se repetir a operação pode ter sucesso usando `retryable`, e o valor SHALL ser determinado pelo código de erro, não por cada handler individualmente.
+Cada erro SHALL indicar explicitamente se repetir a operação pode ter sucesso usando `retryable`, e o valor SHALL ser determinado pelo código de erro, não por cada handler individualmente. Respostas HTTP 429 SHALL incluir o header `Retry-After` com o tempo, em segundos, após o qual a operação pode ser repetida.
 
 #### Scenario: Falha transitória
 - **WHEN** uma dependência temporariamente indisponível produz erro conhecido
@@ -29,6 +29,10 @@ Cada erro SHALL indicar explicitamente se repetir a operação pode ter sucesso 
 #### Scenario: Falha permanente de domínio
 - **WHEN** a operação é recusada por autorização, validação ou conflito de domínio
 - **THEN** a resposta usa `retryable: false`
+
+#### Scenario: Rate limit informa quando repetir
+- **WHEN** uma requisição é recusada por rate limit (HTTP 429)
+- **THEN** a resposta inclui o header `Retry-After` com o tempo até a nova tentativa, e `retryable: true`
 
 ### Requirement: Segurança dos detalhes de erro
 O servidor SHALL remover stack trace, SQL, tokens, segredos e dados de infraestrutura de mensagens e `details` retornados ao cliente, mantendo diagnóstico completo somente nos logs protegidos.

@@ -448,7 +448,15 @@ features/project-settings/
 
 Cada seção de Settings deveria ter seu próprio componente, hook e estado.
 
-### 17. Não há camada consistente de cache e sincronização
+### 17. Não há camada consistente de cache e sincronização — RESOLVIDO (piloto Board + Dashboard)
+
+> **Resolvido pela change `add-client-cache-sync` (card Item 17).** Foi introduzida
+> a camada de cache TanStack Query (`lib/queryClient.ts`, `lib/queryKeys.ts`),
+> `AbortSignal` no cliente `api`, chaves por identidade/projeto, cancelamento com
+> descarte de respostas obsoletas e invalidação/refetch por eventos WebSocket
+> (inclusive no reconnect). O piloto migrou **Board** e **Dashboard**; as demais
+> telas (Settings, Projects, TreeView, AdminUsers, ApiKeys) ficam para um card de
+> continuação (`Item 17 (continuação)`). Texto original mantido abaixo como registro.
 
 Cada tela executa `api.get`, mantém seu próprio array e decide manualmente quando recarregar.
 
@@ -701,7 +709,14 @@ Também existem tipos duplicados localmente no frontend, como `ItemData`, `Proje
 
 ## Segurança e Operação
 
-### 28. Login não tem rate limiting
+### 28. Login não tem rate limiting — RESOLVIDO
+
+> **Resolvido pela change `harden-login-security` (card Item 28).** `POST /auth/login`
+> passou a ter rate limiting por IP e por identidade (e-mail canônico), atraso
+> progressivo, bloqueio temporário com `429 RATE_LIMITED` + `Retry-After` e
+> auditoria append-only em `login_attempts` (sem senha/hash). Também foi adicionada
+> política mínima de senha no cadastro. MFA segue fora de escopo. Texto original
+> mantido abaixo como registro.
 
 A rota pública de login não possui limitação:
 
