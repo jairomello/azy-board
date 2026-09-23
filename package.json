@@ -20,6 +20,8 @@
     "test": "bun test",
     "test:integration": "bun run --cwd apps/api test:integration",
     "test:smoke": "bun run scripts/smoke.ts",
+    "test:e2e": "bun run e2e/regression.ts",
+    "test:regression": "bun run scripts/regression.ts",
     "test:mcp-catalog": "bun run scripts/check-mcp-catalog.ts",
     "test:error-contract": "bun test apps/api/src/middleware/errorResponse.test.ts apps/mcp/src/handlers.test.ts",
     "test:agent-skill": "bun run scripts/check-agent-skill.ts",
@@ -35,6 +37,7 @@
     "check": "bun run typecheck && bun run lint && bun test && bun run build"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.14"
+    "@biomejs/biome": "^2.5.14",
+    "playwright": "^1.63.0"
   }
 }
