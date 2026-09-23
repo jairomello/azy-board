@@ -44,6 +44,7 @@ export interface ItemData extends CardData {
   benefit?: string | null
   acceptanceCriteria?: string | null
   notes?: string | null
+  updatedAt?: string
 }
 
 export interface StoryLaneGroup {

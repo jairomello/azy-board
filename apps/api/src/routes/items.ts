@@ -94,6 +94,33 @@ async function isLeaf(tenantId: string, projectId: string, itemId: string): Prom
   return children.length === 0
 }
 
+// [TENANT] Valida que todas as tags pertencem ao projeto do tenant. Retorna os
+// ids únicos ou null quando alguma tag é inválida (rollback total no chamador).
+async function resolveProjectTagIds(tenantId: string, projectId: string, tagIds: string[] | undefined): Promise<string[] | null> {
+  const unique = [...new Set(tagIds ?? [])]
+  if (unique.length === 0) return []
+  const valid = await db.select({ id: tags.id })
+    .from(tags)
+    .where(and(inArray(tags.id, unique), eq(tags.projectId, projectId), eq(tags.tenantId, tenantId)))
+  return valid.length === unique.length ? unique : null
+}
+
+// Carrega o item com as relações que o board consome (tags, sprint, responsável),
+// garantindo que a resposta e o broadcast reconciliem o cache sem refetch.
+async function loadItemWithRelations(tenantId: string, projectId: string, itemId: string) {
+  return db.query.items.findFirst({
+    where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, tenantId)),
+    with: {
+      itemTags: { with: { tag: true } },
+      itemSprints: { columns: { sprintId: true } },
+      assignee: { columns: { id: true, name: true, avatarUrl: true } },
+      assigneeApiKey: { columns: { id: true, name: true, aiModelName: true } },
+      author: { columns: { id: true, name: true, avatarUrl: true } },
+      version: { columns: { id: true, name: true, status: true } },
+    },
+  })
+}
+
 // Valida que a hierarquia de tipos é coerente
 // EPIC → parentId null; STORY → pai é EPIC; TASK/BUG → pai é STORY, TASK ou BUG
 async function validateHierarchy(
@@ -558,6 +585,10 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   const validationError = await validateHierarchy(ctx.tenantId, projectId, type, effectiveParentId, project.boardMode === 'SIMPLE' ? null : body.moduleId)
   if (validationError) return c.json({ error: validationError }, 400)
 
+  // [TENANT] Tags precisam pertencer ao projeto; inválidas abortam a criação inteira.
+  const tagIds = await resolveProjectTagIds(ctx.tenantId, projectId, body.tagIds)
+  if (tagIds === null) return c.json({ error: 'Uma ou mais tags não existem neste projeto' }, 400)
+
   const [module, column, version, costCenter, assignee] = await Promise.all([
     body.moduleId
       ? db.query.modules.findFirst({ where: (m) => and(eq(m.id, body.moduleId!), eq(m.projectId, projectId), eq(m.tenantId, ctx.tenantId)), columns: { id: true } })
@@ -672,6 +703,7 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
         updatedAt: now,
       })
       await tx.insert(itemLogs).values({ id: generateId(), tenantId: ctx.tenantId, itemId: id, authorId: ctx.userId, type: 'auto', actorType: audit.actorType, actorLabel: audit.actorLabel, source: audit.source, activity: `Card criado: ${normalizeAuditText(body.title)}`, durationMin: null, createdAt: now, updatedAt: now })
+      if (tagIds.length > 0) await tx.insert(itemTags).values(tagIds.map(tagId => ({ tenantId: ctx.tenantId, itemId: id, tagId })))
       if (body.sprintId) await tx.insert(itemSprints).values({ tenantId: ctx.tenantId, itemId: id, sprintId: body.sprintId }).onConflictDoNothing()
       const after = await snapshotItem(tx, ctx.tenantId, projectId, id)
       await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: id, eventType: 'ITEM_CREATED', actorId: ctx.userId, origin: c.get('apiKeyId') ? 'MCP' : 'REST', correlationId: idempotencyKey ?? id, after })
@@ -682,32 +714,9 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     throw error
   }
 
-  const payload = {
-    id,
-    projectId,
-    parentId: effectiveParentId,
-    ancestryPath: JSON.stringify(ancestryPath),
-    title: body.title,
-    description: body.description ?? null,
-    type,
-    sequenceCode,
-    columnId,
-    status: 'NOT_STARTED' as const,
-    priority: body.priority ?? 'MEDIUM',
-    points: body.points ?? null,
-    assigneeId: body.assigneeId ?? null,
-    authorId: ctx.userId,
-    versionId: body.versionId ?? null,
-    costCenterId,
-    moduleId: project.boardMode === 'SIMPLE' ? null : (body.moduleId ?? null),
-    sprintId: body.sprintId ?? null,
-    isLeaf: true,
-    startDate: body.startDate ?? null,
-    dueDate: body.dueDate ?? null,
-    position: 0,
-    createdAt: now,
-    updatedAt: now,
-  }
+  const created = await loadItemWithRelations(ctx.tenantId, projectId, id)
+  if (!created) return c.json({ error: 'Item não encontrado após criação' }, 500)
+  const payload = { ...created, isLeaf: true, childrenCount: 0, checklistProgress: null }
 
   if (effectiveParentId) {
     broadcast(projectId, { type: 'SUBTASK_CREATED', projectId, payload: { parentId: effectiveParentId, item: payload } })
@@ -829,6 +838,12 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
   if (!parsed.ok) return parsed.response
   const body = parsed.data
 
+  // Concorrência otimista: a versão lida pelo cliente é comparada no update.
+  const expectedUpdatedAt = body.expectedUpdatedAt
+  // [TENANT] Tags precisam pertencer ao projeto; inválidas abortam a edição inteira.
+  const tagIds = await resolveProjectTagIds(ctx.tenantId, projectId, body.tagIds)
+  if (tagIds === null) return c.json({ error: 'Uma ou mais tags não existem neste projeto' }, 400)
+
   // Identidade, tenant e relações de autorização são sempre derivados do
   // contexto/rota; nunca aceitamos esses campos do agente.
   const writableFields = new Set([
@@ -851,7 +866,7 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
   type LoggableField = typeof LOGGABLE_FIELDS[number]
   const prevItem = await db.query.items.findFirst({
     where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
-    columns: { title: true, description: true, priority: true, assigneeId: true, points: true, startDate: true, dueDate: true, status: true, type: true, parentId: true, moduleId: true, sequenceCode: true },
+    columns: { title: true, description: true, priority: true, assigneeId: true, points: true, startDate: true, dueDate: true, status: true, type: true, parentId: true, moduleId: true, sequenceCode: true, updatedAt: true },
   })
   if (!prevItem) return c.json({ error: 'Item não encontrado' }, 404)
   const analyticsBefore = await snapshotItem(db, ctx.tenantId, projectId, itemId)
@@ -946,14 +961,27 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
   }
   const newParentBefore = requestedParent && requestedParent !== analyticsBefore?.parentId ? await snapshotItem(db, ctx.tenantId, projectId, requestedParent) : null
 
+  let conflicted = false
   await db.transaction(async (tx) => {
     if (reparenting) {
       const newParentId = (updates.parentId as string | null | undefined) ?? safeBody.parentId
       updates.ancestryPath = JSON.stringify(newParentId ? await buildAncestryPath(tx, ctx.tenantId, newParentId) : [])
     }
-    await tx.update(items).set(updates)
+    const matched = await tx.update(items).set(updates)
       // [TENANT] Anti-IDOR: filtra por tenantId + projectId + itemId.
-      .where(and(eq(items.id, itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+      // Concorrência otimista: com `expectedUpdatedAt`, exige a mesma versão lida
+      // pelo cliente para não sobrescrever uma alteração concorrente.
+      .where(and(
+        eq(items.id, itemId),
+        eq(items.projectId, projectId),
+        eq(items.tenantId, ctx.tenantId),
+        expectedUpdatedAt ? eq(items.updatedAt, expectedUpdatedAt) : undefined,
+      ))
+      .returning({ id: items.id })
+    if (expectedUpdatedAt && matched.length === 0) {
+      conflicted = true
+      return
+    }
     // [HIERARQUIA] Cascata de descendentes na mesma transação, DEPOIS do update do
     // item: cobre reparenting e mudança de título sem janela de caminho antigo.
     if (reparenting || safeBody.title) {
@@ -962,6 +990,11 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     if (safeBody.sprintId !== undefined) {
       await tx.delete(itemSprints).where(eq(itemSprints.itemId, itemId))
       if (safeBody.sprintId) await tx.insert(itemSprints).values({ tenantId: ctx.tenantId, itemId, sprintId: safeBody.sprintId as string }).onConflictDoNothing()
+    }
+    // Tags entram na mesma transação dos campos: falha em qualquer parte desfaz tudo.
+    if (tagIds !== undefined) {
+      await tx.delete(itemTags).where(eq(itemTags.itemId, itemId))
+      if (tagIds.length > 0) await tx.insert(itemTags).values(tagIds.map(tagId => ({ tenantId: ctx.tenantId, itemId, tagId })))
     }
     const after = await snapshotItem(tx, ctx.tenantId, projectId, itemId)
     const eventTypes: Array<['status' | 'points' | 'type' | 'sprint' | 'version' | 'parent' | 'module', 'STATUS_CHANGED' | 'POINTS_CHANGED' | 'TYPE_CHANGED' | 'SPRINT_CHANGED' | 'VERSION_CHANGED' | 'ITEM_REPARENTED' | 'MODULE_CHANGED']> = [
@@ -973,6 +1006,10 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     if (oldParentBefore && analyticsBefore?.parentId !== (after?.parentId ?? null)) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: analyticsBefore!.parentId!, eventType: 'LEAF_CHANGED', actorId: ctx.userId, origin: 'REST', before: oldParentBefore, after: await snapshotItem(tx, ctx.tenantId, projectId, analyticsBefore!.parentId!) })
     if (newParentBefore && requestedParent) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: requestedParent, eventType: 'LEAF_CHANGED', actorId: ctx.userId, origin: 'REST', before: newParentBefore, after: await snapshotItem(tx, ctx.tenantId, projectId, requestedParent) })
   })
+
+  if (conflicted) {
+    return c.json({ error: 'O item foi alterado por outra pessoa desde que você o abriu. Recarregue e tente novamente.', code: 'CONFLICT', retryable: false }, 409)
+  }
 
   // Tarefa 5.1 — gerar log automático apenas se algum campo loggável mudou
   if (prevItem) {
@@ -992,8 +1029,12 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     }
   }
 
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemId, ...safeBody } })
-  const updated = await db.query.items.findFirst({ where: (i) => and(eq(i.id, itemId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)) })
+  const updated = await loadItemWithRelations(ctx.tenantId, projectId, itemId)
+  broadcast(projectId, {
+    type: 'ITEM_UPDATED',
+    projectId,
+    payload: { itemId, ...safeBody, updatedAt: updates.updatedAt, ...(tagIds !== undefined ? { itemTags: updated?.itemTags ?? [] } : {}) },
+  })
   return c.json({ item: updated })
 })
 

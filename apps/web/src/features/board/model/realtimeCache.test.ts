@@ -45,6 +45,14 @@ describe('reducer de eventos do board no cache', () => {
     expect(cleared.allItems[0]!.checklistProgress).toBeNull()
   })
 
+  test('ITEM_UPDATED mescla campos e tags quando presentes', () => {
+    const next = applyBoardEvent(board([item('a')]), event('ITEM_UPDATED', {
+      itemId: 'a', title: 'novo título', itemTags: [{ tag: { id: 't1', name: 'tag', color: '#000000' } }],
+    }))
+    expect(next.allItems[0]!.title).toBe('novo título')
+    expect(next.allItems[0]!.itemTags?.[0]?.tag.id).toBe('t1')
+  })
+
   test('evento desconhecido mantém a referência do estado', () => {
     const previous = board([item('a')])
     expect(applyBoardEvent(previous, event('PROGRESS_UPDATED', {}))).toBe(previous)

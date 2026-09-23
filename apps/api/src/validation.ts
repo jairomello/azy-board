@@ -65,6 +65,7 @@ export const createItemSchema = z.object({
   versionId: optionalId,
   costCenterId: optionalId,
   sprintId: optionalId,
+  tagIds: z.array(z.string().min(1)).max(500).optional(),
   idempotencyKey: z.string().min(1).max(200).optional(),
 }).strict()
 
@@ -86,6 +87,8 @@ export const updateItemSchema = z.object({
   versionId: optionalId,
   costCenterId: optionalId,
   sprintId: optionalId,
+  tagIds: z.array(z.string().min(1)).max(500).optional(),
+  expectedUpdatedAt: z.string().min(1).max(40).optional(),
 }).strict()
 
 export const reorderItemsSchema = z.object({

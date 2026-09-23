@@ -17,7 +17,7 @@ import {
 import {
   arrayMove,
 } from '@dnd-kit/sortable'
-import { api } from '../../lib/api'
+import { ApiError, api } from '../../lib/api'
 import { KanbanCard } from '../../components/KanbanCard'
 import type { FullItemData } from '../../components/ItemModal'
 import type { EpicData } from '../../components/EpicModal'
@@ -37,6 +37,7 @@ import { BoardLanes } from './components/BoardLanes'
 import { BoardModals } from './components/BoardModals'
 import { useBoardInteraction } from './hooks/useBoardInteraction'
 import { buildBoardItemCreatePayload, resolveBoardModalTarget } from './model/interaction'
+import { runOptimisticMutation } from './model/mutation'
 import {
   computeIsLeaf,
   getEpicIdFromPath,
@@ -480,17 +481,21 @@ export default function BoardPage() {
   // Cria novo item TASK/BUG via modal (botões da toolbar)
   const handleModalCreate = useCallback(async (_itemId: string, changes: Partial<FullItemData>, tagIds: string[]) => {
     if (!projectId || !newItemCreation) return
-    const created = await api.post<ItemData>(`/projects/${projectId}/items`, {
-      ...changes,
-      type: newItemCreation.type,
-      columnId: newItemCreation.columnId ?? columns[0]?.id,
-    })
-    setAllItems(prev => upsertItem(prev, created))
-    setTreeRefreshToken(value => value + 1)
-    if (tagIds.length > 0) {
-      await api.post(`/projects/${projectId}/items/${created.id}/tags`, { tagIds })
+    try {
+      // Campos e tags vão numa única requisição (transação no servidor).
+      const created = await api.post<ItemData>(`/projects/${projectId}/items`, {
+        ...changes,
+        type: newItemCreation.type,
+        columnId: newItemCreation.columnId ?? columns[0]?.id,
+        tagIds,
+      })
+      setAllItems(prev => upsertItem(prev, created))
+      setTreeRefreshToken(value => value + 1)
+    } catch (error) {
+      toast(tBoard('errorSave'), 'error')
+      throw error instanceof Error ? error : new Error('failed')
     }
-  }, [projectId, newItemCreation, columns])
+  }, [projectId, newItemCreation, columns, toast, tBoard])
 
   const handleCardCreate = useCallback(async (
     columnId: string,
@@ -514,28 +519,43 @@ export default function BoardPage() {
 
   const handleTitleSave = useCallback(async (itemId: string, title: string) => {
     if (!projectId) return
-    setAllItems(prev => prev.map(i => i.id === itemId ? { ...i, title } : i))
-    try {
-      await api.patch(`/projects/${projectId}/items/${itemId}`, { title })
-    } catch {
-      toast('Erro ao salvar título', 'error')
-    }
-  }, [projectId, toast])
+    await runOptimisticMutation({
+      capture: () => allItems.find(i => i.id === itemId)?.title ?? null,
+      apply: () => setAllItems(prev => prev.map(i => i.id === itemId ? { ...i, title } : i)),
+      restore: previousTitle => {
+        if (previousTitle === null) return
+        setAllItems(prev => prev.map(i => i.id === itemId ? { ...i, title: previousTitle } : i))
+      },
+      request: () => api.patch(`/projects/${projectId}/items/${itemId}`, { title }),
+      onError: () => toast(tBoard('errorSaveTitle'), 'error'),
+    })
+  }, [projectId, toast, allItems, tBoard])
 
   const handleModalSave = useCallback(async (itemId: string, changes: Partial<FullItemData>, tagIds: string[]) => {
     if (!projectId) return
+    const current = allItems.find(i => i.id === itemId)
     try {
-      await api.patch(`/projects/${projectId}/items/${itemId}`, changes)
-      await api.post(`/projects/${projectId}/items/${itemId}/tags`, { tagIds })
-      // Invalidação da query do board garante consistência após salvar pela modal
-      // (ancestryPath pode mudar no servidor).
+      // Uma única requisição salva campos e tags; a resposta reconcilia o cache.
+      const result = await api.patch<{ item: ItemData }>(`/projects/${projectId}/items/${itemId}`, {
+        ...changes,
+        tagIds,
+        ...(current?.updatedAt ? { expectedUpdatedAt: current.updatedAt } : {}),
+      })
+      if (result?.item) setAllItems(prev => upsertItem(prev, result.item))
+      // Invalidação cobre mudanças em cascata de ancestryPath no servidor.
       invalidateBoard()
       setTreeRefreshToken(value => value + 1)
-    } catch {
-      toast('Erro ao salvar item', 'error')
-      throw new Error('failed')
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        // Conflito de edição: reconcilia com o servidor em vez de sobrescrever.
+        invalidateBoard()
+        toast(tBoard('saveConflict'), 'error')
+      } else {
+        toast(tBoard('errorSave'), 'error')
+      }
+      throw error instanceof Error ? error : new Error('failed')
     }
-  }, [projectId, toast, invalidateBoard])
+  }, [projectId, allItems, toast, invalidateBoard, tBoard])
 
   const handleAddSubtask = useCallback(async (parentId: string, title: string, type: ItemType) => {
     if (!projectId) return
@@ -630,90 +650,115 @@ export default function BoardPage() {
 
   const handleCreateTag = useCallback(async (name: string, color: string): Promise<Tag> => {
     if (!projectId) throw new Error('no project')
-    const tag = await api.post<Tag>(`/projects/${projectId}/tags`, { name, color })
-    setProjectTags(prev => [...prev, tag])
-    return tag
-  }, [projectId])
+    try {
+      const tag = await api.post<Tag>(`/projects/${projectId}/tags`, { name, color })
+      setProjectTags(prev => [...prev, tag])
+      return tag
+    } catch (error) {
+      toast(tBoard('errorSave'), 'error')
+      throw error instanceof Error ? error : new Error('failed')
+    }
+  }, [projectId, toast, tBoard])
 
   const handleEditTag = useCallback(async (tagId: string, name: string, color: string) => {
     if (!projectId) return
-    await api.patch(`/projects/${projectId}/tags/${tagId}`, { name, color })
-    setProjectTags(prev => prev.map(t => t.id === tagId ? { ...t, name, color } : t))
-  }, [projectId])
+    try {
+      await api.patch(`/projects/${projectId}/tags/${tagId}`, { name, color })
+      setProjectTags(prev => prev.map(t => t.id === tagId ? { ...t, name, color } : t))
+    } catch (error) {
+      toast(tBoard('errorSave'), 'error')
+      throw error instanceof Error ? error : new Error('failed')
+    }
+  }, [projectId, toast, tBoard])
 
   // Salvar história via /items
   const handleStorySave = useCallback(async (data: StoryData) => {
     if (!projectId) return
-    if (data.id) {
-      await api.patch(`/projects/${projectId}/items/${data.id}`, {
-        title: data.title,
-        parentId: data.epicId,
-        persona: data.persona,
-        goal: data.goal,
-        benefit: data.benefit,
-        acceptanceCriteria: data.acceptanceCriteria,
-        notes: data.notes,
-        description: data.description,
-        versionId: data.versionId,
-        sequenceCode: data.sequenceCode,
-      })
-       setAllItems(prev => prev.map(i => i.id === data.id ? { ...i, title: data.title } : i))
-       setTreeRefreshToken(value => value + 1)
-    } else {
-      const item = await api.post<ItemData>(`/projects/${projectId}/items`, {
-        type: 'STORY',
-        parentId: data.epicId,
-        title: data.title,
-        persona: data.persona,
-        goal: data.goal,
-        benefit: data.benefit,
-        acceptanceCriteria: data.acceptanceCriteria,
-        notes: data.notes,
-        description: data.description,
-        versionId: data.versionId,
-        sequenceCode: data.sequenceCode,
-      })
-       setAllItems(prev => upsertItem(prev, item))
-       setTreeRefreshToken(value => value + 1)
+    try {
+      if (data.id) {
+        await api.patch(`/projects/${projectId}/items/${data.id}`, {
+          title: data.title,
+          parentId: data.epicId,
+          persona: data.persona,
+          goal: data.goal,
+          benefit: data.benefit,
+          acceptanceCriteria: data.acceptanceCriteria,
+          notes: data.notes,
+          description: data.description,
+          versionId: data.versionId,
+          sequenceCode: data.sequenceCode,
+        })
+        setAllItems(prev => prev.map(i => i.id === data.id ? { ...i, title: data.title } : i))
+        setTreeRefreshToken(value => value + 1)
+      } else {
+        const item = await api.post<ItemData>(`/projects/${projectId}/items`, {
+          type: 'STORY',
+          parentId: data.epicId,
+          title: data.title,
+          persona: data.persona,
+          goal: data.goal,
+          benefit: data.benefit,
+          acceptanceCriteria: data.acceptanceCriteria,
+          notes: data.notes,
+          description: data.description,
+          versionId: data.versionId,
+          sequenceCode: data.sequenceCode,
+        })
+        setAllItems(prev => upsertItem(prev, item))
+        setTreeRefreshToken(value => value + 1)
+      }
+    } catch (error) {
+      toast(tBoard('errorSaveStory'), 'error')
+      throw error instanceof Error ? error : new Error('failed')
     }
-  }, [projectId])
+  }, [projectId, toast, tBoard])
 
   // Criar história inline (para StorySelector no ItemModal)
   const handleCreateStory = useCallback(async (title: string, epicId: string) => {
     if (!projectId) throw new Error('no project')
-    const item = await api.post<ItemData>(`/projects/${projectId}/items`, {
-      type: 'STORY',
-      parentId: epicId,
-      title,
-    })
-    setAllItems(prev => upsertItem(prev, item))
-    return { id: item.id, title: item.title, epicId }
-  }, [projectId])
+    try {
+      const item = await api.post<ItemData>(`/projects/${projectId}/items`, {
+        type: 'STORY',
+        parentId: epicId,
+        title,
+      })
+      setAllItems(prev => upsertItem(prev, item))
+      return { id: item.id, title: item.title, epicId }
+    } catch (error) {
+      toast(tBoard('errorSaveStory'), 'error')
+      throw error instanceof Error ? error : new Error('failed')
+    }
+  }, [projectId, toast, tBoard])
 
   // Salvar épico via /items
   const handleEpicSave = useCallback(async (data: EpicData) => {
     if (!projectId) return
-    if (data.id) {
-      await api.patch(`/projects/${projectId}/items/${data.id}`, {
-        title: data.title,
-        moduleId: data.moduleId,
-        description: data.description,
-        versionId: data.versionId,
-        sequenceCode: data.sequenceCode,
-      })
-      setAllItems(prev => prev.map(i => i.id === data.id ? { ...i, ...data } : i))
-    } else {
-      const item = await api.post<ItemData>(`/projects/${projectId}/items`, {
-        type: 'EPIC',
-        moduleId: data.moduleId,
-        title: data.title,
-        description: data.description,
-        versionId: data.versionId,
-        sequenceCode: data.sequenceCode,
-      })
-      setAllItems(prev => upsertItem(prev, item))
+    try {
+      if (data.id) {
+        await api.patch(`/projects/${projectId}/items/${data.id}`, {
+          title: data.title,
+          moduleId: data.moduleId,
+          description: data.description,
+          versionId: data.versionId,
+          sequenceCode: data.sequenceCode,
+        })
+        setAllItems(prev => prev.map(i => i.id === data.id ? { ...i, ...data } : i))
+      } else {
+        const item = await api.post<ItemData>(`/projects/${projectId}/items`, {
+          type: 'EPIC',
+          moduleId: data.moduleId,
+          title: data.title,
+          description: data.description,
+          versionId: data.versionId,
+          sequenceCode: data.sequenceCode,
+        })
+        setAllItems(prev => upsertItem(prev, item))
+      }
+    } catch (error) {
+      toast(tBoard('errorSave'), 'error')
+      throw error instanceof Error ? error : new Error('failed')
     }
-  }, [projectId])
+  }, [projectId, toast, tBoard])
 
   async function handleModuleCreate() {
     if (!projectId || !newModuleName.trim()) return

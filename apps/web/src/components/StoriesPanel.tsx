@@ -33,6 +33,7 @@ export function StoriesPanel({ projectId, epics, stories, onClose, onStoriesChan
   const [editing, setEditing] = useState<EditState | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [error, setError] = useState('')
 
   async function handleCreate() {
     if (!newTitle.trim() || !newEpicId) return
@@ -67,12 +68,13 @@ export function StoriesPanel({ projectId, epics, stories, onClose, onStoriesChan
   }
 
   async function handleDelete(storyId: string) {
+    setError('')
     try {
       await api.delete(`/projects/${projectId}/stories/${storyId}`)
       onStoriesChange(stories.filter(s => s.id !== storyId))
       setConfirmDelete(null)
-    } catch {
-      // silently ignore for now
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('errorDeleteStory'))
     }
   }
 
@@ -127,6 +129,7 @@ export function StoriesPanel({ projectId, epics, stories, onClose, onStoriesChan
         </div>
 
         {/* Lista agrupada por épico */}
+        {error && <p role="alert" className="px-5 pt-3 text-xs text-destructive">{error}</p>}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
           {storiesByEpic.filter(g => g.stories.length > 0).map(({ epic, stories: epicStories }) => (
             <div key={epic.id}>

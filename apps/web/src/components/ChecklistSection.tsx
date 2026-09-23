@@ -57,46 +57,67 @@ export function ChecklistSection({ itemId, projectId, initialChecklists, onChang
 
   async function handleCreateList() {
     if (!newListName.trim()) return
-    const created = await api.post<Checklist>(`${baseUrl}`, { name: newListName.trim() })
-    setLists(prev => [...prev, { ...created, items: [] }])
-    setNewListName('')
-    setShowNewForm(false)
+    setMutationError('')
+    try {
+      const created = await api.post<Checklist>(`${baseUrl}`, { name: newListName.trim() })
+      setLists(prev => [...prev, { ...created, items: [] }])
+      setNewListName('')
+      setShowNewForm(false)
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : t('checklistSaveError'))
+    }
   }
 
   async function handleDeleteList(checklistId: string) {
-    await api.delete(`${baseUrl}/${checklistId}`)
-    setLists(prev => prev.filter(l => l.id !== checklistId))
+    setMutationError('')
+    try {
+      await api.delete(`${baseUrl}/${checklistId}`)
+      setLists(prev => prev.filter(l => l.id !== checklistId))
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : t('checklistSaveError'))
+    }
   }
 
   async function handleAddItem(checklistId: string) {
     if (!newItemText.trim()) return
-    const created = await api.post<ChecklistItem>(`${baseUrl}/${checklistId}/items`, { text: newItemText.trim() })
-    setLists(prev => prev.map(l => l.id === checklistId
-      ? { ...l, items: [...l.items, created] }
-      : l
-    ))
-    setNewItemText('')
-    newItemRef.current?.focus()
+    setMutationError('')
+    try {
+      const created = await api.post<ChecklistItem>(`${baseUrl}/${checklistId}/items`, { text: newItemText.trim() })
+      setLists(prev => prev.map(l => l.id === checklistId
+        ? { ...l, items: [...l.items, created] }
+        : l
+      ))
+      setNewItemText('')
+      newItemRef.current?.focus()
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : t('checklistSaveError'))
+    }
   }
 
   async function handleToggleItem(checklistId: string, item: ChecklistItem) {
-    // Update otimista
+    // Update otimista com rollback em caso de erro
     const newChecked = !item.checked
+    setMutationError('')
     replaceItem(checklistId, item.id, { checked: newChecked })
     try {
       await api.patch(`${baseUrl}/${checklistId}/items/${item.id}`, { checked: newChecked })
-    } catch {
-      // Rollback em caso de erro
+    } catch (error) {
       replaceItem(checklistId, item.id, { checked: item.checked })
+      setMutationError(error instanceof Error ? error.message : t('checklistSaveError'))
     }
   }
 
   async function handleDeleteItem(checklistId: string, itemId: string) {
-    await api.delete(`${baseUrl}/${checklistId}/items/${itemId}`)
-    setLists(prev => prev.map(l => l.id === checklistId
-      ? { ...l, items: l.items.filter(i => i.id !== itemId) }
-      : l
-    ))
+    setMutationError('')
+    try {
+      await api.delete(`${baseUrl}/${checklistId}/items/${itemId}`)
+      setLists(prev => prev.map(l => l.id === checklistId
+        ? { ...l, items: l.items.filter(i => i.id !== itemId) }
+        : l
+      ))
+    } catch (error) {
+      setMutationError(error instanceof Error ? error.message : t('checklistSaveError'))
+    }
   }
 
   // Atualiza um campo avançado com rollback em caso de erro

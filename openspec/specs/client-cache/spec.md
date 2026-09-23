@@ -1,9 +1,7 @@
 ## Purpose
 
 Definir a camada de cache e sincronização do estado remoto no web, cobrindo chaves de cache, cancelamento, invalidação por eventos WebSocket e política de validade.
-
 ## Requirements
-
 ### Requirement: Camada única de cache de estado remoto
 O web SHALL manter o estado remoto em uma camada de cache única, com chaves escopadas por identidade autenticada e por projeto, de modo que telas que consomem os mesmos dados compartilhem a mesma entrada de cache e não busquem dados duplicados.
 
@@ -50,7 +48,7 @@ O sistema SHALL reconciliar o cache com eventos WebSocket do projeto ativo, apli
 - **THEN** as consultas ativas do projeto são refeitas para reconciliar mudanças ocorridas durante a desconexão
 
 ### Requirement: Estado remoto separado e mutações otimistas com rollback
-O sistema SHALL manter o estado de servidor na camada de cache, separado do estado de UI, e SHALL aplicar mutações otimistas com rollback quando a operação falhar, sem deixar o cache divergente.
+O sistema SHALL manter o estado de servidor na camada de cache, separado do estado de UI, e SHALL aplicar mutações otimistas com rollback quando a operação falhar, sem deixar o cache divergente. Toda mutação SHALL seguir a política única de mutação (otimista com rollback ou reconciliada) definida em `optimistic-mutations`, e mutações otimistas SHALL restaurar o snapshot capturado antes da alteração.
 
 #### Scenario: Atualização otimista revertida em falha
 - **WHEN** uma mutação otimista do board falha na API
@@ -59,6 +57,18 @@ O sistema SHALL manter o estado de servidor na camada de cache, separado do esta
 #### Scenario: Estado de UI não é persistido como dado de servidor
 - **WHEN** o usuário altera um filtro ou abre um modal
 - **THEN** esse estado permanece local e não é tratado como dado remoto
+
+#### Scenario: Título revertido em falha
+- **WHEN** a alteração otimista de título de um item falha
+- **THEN** o título anterior é restaurado no cache e o usuário é informado
+
+#### Scenario: Salvamento atômico de item e tags não diverge
+- **WHEN** o usuário salva campos do item e tags em uma única operação
+- **THEN** o cache é atualizado a partir da resposta e uma falha não deixa item e tags divergentes
+
+#### Scenario: Conflito de edição reconcilia o cache
+- **WHEN** uma mutação retorna 409 `CONFLICT` por o registro ter mudado no servidor
+- **THEN** o cache é reconciliado com o estado atual do servidor, sem sobrescrever a versão mais recente
 
 ### Requirement: Política de validade e revalidação explícita
 O sistema SHALL definir de forma explícita, em um ponto único, a política de validade (`staleTime`/`gcTime`), retentativas e revalidação no foco para as consultas migradas, evitando requisições repetidas desnecessárias.
@@ -70,3 +80,4 @@ O sistema SHALL definir de forma explícita, em um ponto único, a política de 
 #### Scenario: Revalidação no foco apenas onde configurada
 - **WHEN** a janela recebe foco
 - **THEN** somente as consultas configuradas para revalidar no foco são refeitas
+
