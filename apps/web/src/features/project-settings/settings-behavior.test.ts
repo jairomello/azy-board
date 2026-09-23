@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { canAccessProjectSettings, runSettingsMutation, updateSettingsField } from './model/behavior'
+import { canAccessProjectSettings, runDeleteMutation, runSettingsMutation, updateSettingsField } from './model/behavior'
 import type { ProjectSettingsData } from './model/types'
 
 const data: ProjectSettingsData = {
@@ -40,5 +40,27 @@ describe('comportamentos observáveis das seções de Settings', () => {
     expect(canAccessProjectSettings('TEAM_MEMBER')).toBe(false)
     expect(canAccessProjectSettings('MEMBER')).toBe(true)
     expect(canAccessProjectSettings('ADMIN')).toBe(true)
+  })
+
+  test('não aplica o estado local quando a exclusão falha', async () => {
+    const events: string[] = []
+    const result = await runDeleteMutation({
+      execute: async () => { throw new Error('falha ao excluir') },
+      onSuccess: () => events.push('success'),
+      onError: error => events.push(`error:${(error as Error).message}`),
+    })
+    expect(result).toBe(false)
+    expect(JSON.stringify(events)).toBe(JSON.stringify(['error:falha ao excluir']))
+  })
+
+  test('aplica o estado local quando a exclusão é confirmada', async () => {
+    const events: string[] = []
+    const result = await runDeleteMutation({
+      execute: async () => undefined,
+      onSuccess: () => events.push('success'),
+      onError: () => events.push('error'),
+    })
+    expect(result).toBe(true)
+    expect(JSON.stringify(events)).toBe(JSON.stringify(['success']))
   })
 })

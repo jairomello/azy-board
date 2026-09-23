@@ -8,6 +8,23 @@ export function updateSettingsField<K extends keyof ProjectSettingsData>(data: P
   return { ...data, [field]: value }
 }
 
+// Executa uma exclusão e só aplica o estado local em caso de sucesso.
+// Em falha, comunica o erro e preserva o estado (a UI não remove o item indevidamente).
+export async function runDeleteMutation(options: {
+  execute: () => Promise<unknown>
+  onSuccess: () => void
+  onError: (error: unknown) => void
+}): Promise<boolean> {
+  try {
+    await options.execute()
+    options.onSuccess()
+    return true
+  } catch (error) {
+    options.onError(error)
+    return false
+  }
+}
+
 export async function runSettingsMutation<T>(options: {
   execute: () => Promise<T>
   onStart: () => void

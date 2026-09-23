@@ -7,7 +7,7 @@ async function read(relativePath: string) {
 describe('camada de cache do web', () => {
   test('o cliente api repassa options com signal', async () => {
     const source = await read('./lib/api.ts')
-    expect(source.includes('options?: RequestInit')).toBe(true)
+    expect(source.includes('ApiRequestOptions extends RequestInit')).toBe(true)
     expect(source.includes('signal')).toBe(true)
   })
 
