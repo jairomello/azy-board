@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { normalizeErrorPayload } from './errorResponse'
+import { Hono } from 'hono'
+import { errorResponseMiddleware, normalizeErrorPayload } from './errorResponse'
 
 describe('contrato único de erro', () => {
   test('normaliza resposta legada dentro do envelope', () => {
@@ -17,5 +18,22 @@ describe('contrato único de erro', () => {
 
   test('preserva detalhes de validação serializáveis', () => {
     expect(normalizeErrorPayload({ error: 'Dados inválidos', code: 'INVALID_REQUEST', details: { field: 'title', token: 'remove' } }, 422).error.details).toEqual({ field: 'title' })
+  })
+
+  test('adiciona Retry-After padrão em 429 e preserva o informado pela rota', async () => {
+    const app = new Hono()
+    app.use('*', errorResponseMiddleware)
+    app.get('/default', (c) => c.json({ error: 'rate', code: 'RATE_LIMITED', retryable: true }, 429))
+    app.get('/custom', (c) => {
+      c.header('Retry-After', '7')
+      return c.json({ error: 'rate', code: 'RATE_LIMITED', retryable: true }, 429)
+    })
+
+    const fallback = await app.request('/default')
+    expect(fallback.status).toBe(429)
+    expect(fallback.headers.get('Retry-After')).toBe('60')
+
+    const custom = await app.request('/custom')
+    expect(custom.headers.get('Retry-After')).toBe('7')
   })
 })

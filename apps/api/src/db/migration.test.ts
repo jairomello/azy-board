@@ -31,6 +31,8 @@ describe('migration de outbox de limpeza de storage (Item 12)', () => {
     await mkdir(`${pre}/meta`, { recursive: true })
     const source = new URL('./migrations', import.meta.url).pathname
     const journal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ tag: string }> }
+    // Mantém as migrations posteriores (0024+) aplicadas para que o schema do
+    // Drizzle atual case com a base; apenas a 0023 é reaplicada no migrate final.
     const upTo = journal.entries.filter(entry => !entry.tag.startsWith('0023')).map(entry => entry.tag + '.sql')
     for (const file of upTo) await Bun.write(`${pre}/${file}`, await Bun.file(`${source}/${file}`).text())
     await Bun.write(`${pre}/meta/_journal.json`, JSON.stringify({ ...journal, entries: journal.entries.filter(entry => !entry.tag.startsWith('0023')) }))
@@ -186,8 +188,8 @@ describe('migration de checklists detalhados (Card T5)', () => {
     const source = new URL('./migrations', import.meta.url).pathname
     const pre = `/tmp/azyboard-t5-${crypto.randomUUID()}`
     await mkdir(`${pre}/meta`, { recursive: true })
-    const journal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ tag: string }> }
-    const beforeT5 = journal.entries.filter(entry => !entry.tag.startsWith('0027') && !entry.tag.startsWith('0028'))
+    const journal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ tag: string; idx: number }> }
+    const beforeT5 = journal.entries.filter(entry => entry.idx < 27)
     const upTo = beforeT5.map(entry => entry.tag + '.sql')
     for (const file of upTo) await Bun.write(`${pre}/${file}`, await Bun.file(`${source}/${file}`).text())
     await Bun.write(`${pre}/meta/_journal.json`, JSON.stringify({ ...journal, entries: beforeT5 }))
@@ -232,10 +234,11 @@ describe('migration de identidade global de e-mail (Item 29)', () => {
     const source = new URL('./migrations', import.meta.url).pathname
     const pre = `/tmp/azyboard-item29-${crypto.randomUUID()}`
     await mkdir(`${pre}/meta`, { recursive: true })
-    const journal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ tag: string }> }
-    const upTo = journal.entries.filter(entry => !entry.tag.startsWith('0028')).map(entry => entry.tag + '.sql')
+    const journal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ tag: string; idx: number }> }
+    const before0028 = journal.entries.filter(entry => entry.idx < 28)
+    const upTo = before0028.map(entry => entry.tag + '.sql')
     for (const file of upTo) await Bun.write(`${pre}/${file}`, await Bun.file(`${source}/${file}`).text())
-    await Bun.write(`${pre}/meta/_journal.json`, JSON.stringify({ ...journal, entries: journal.entries.filter(entry => !entry.tag.startsWith('0028')) }))
+    await Bun.write(`${pre}/meta/_journal.json`, JSON.stringify({ ...journal, entries: before0028 }))
     migrate(database, { migrationsFolder: pre })
 
     const now = new Date().toISOString()
@@ -255,6 +258,37 @@ describe('migration de identidade global de e-mail (Item 29)', () => {
     expect(persisted).toHaveLength(2)
     expect(persisted.filter(user => user.email === 'dup@example.com')).toHaveLength(1)
     expect(persisted.some(user => user.email.startsWith('dup@example.com+dup'))).toBe(true)
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+})
+
+describe('migration de tentativas de login (Item 28)', () => {
+  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+
+  test('cria login_attempts com índices, check de outcome e sem colunas sensíveis', () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    migrate(database, { migrationsFolder })
+    migrate(database, { migrationsFolder })
+
+    const tables = sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
+    expect(tables.map(table => table.name)).toContain('login_attempts')
+
+    const indexes = sqlite.query("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'login_attempts'").all() as Array<{ name: string }>
+    for (const name of ['login_attempts_created_idx', 'login_attempts_ip_created_idx', 'login_attempts_email_created_idx']) {
+      expect(indexes.map(index => index.name)).toContain(name)
+    }
+
+    const columns = (sqlite.query("PRAGMA table_info('login_attempts')").all() as Array<{ name: string }>).map(column => column.name)
+    expect(columns).toEqual(['id', 'ip', 'email_canonical', 'outcome', 'created_at'])
+    expect(columns.some(column => /password|hash|token/i.test(column))).toBe(false)
+
+    const now = new Date().toISOString()
+    const insert = sqlite.query('INSERT INTO login_attempts (id, ip, email_canonical, outcome, created_at) VALUES (?, ?, ?, ?, ?)')
+    expect(() => insert.run('bad', '1.2.3.4', 'a@b.com', 'INVALID', now)).toThrow()
+    insert.run('ok', '1.2.3.4', 'a@b.com', 'FAILURE', now)
+
     expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
     sqlite.close()
   })

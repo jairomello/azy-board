@@ -9,8 +9,11 @@ import { authMiddleware } from '../middleware/auth'
 import type { RequestContext } from '@azy-board/types'
 import { loginSchema, parseJson } from '../validation'
 import { normalizeEmail } from '../utils/email'
+import { evaluateLoginThrottle, recordLoginAttempt, resetIdentityFailures } from '../services/loginThrottle'
 
 export const authRouter = new Hono<HonoEnv>()
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // POST /auth/login
 // [TENANT] tenant_id é incluído no JWT — a partir daqui toda requisição carrega o contexto de tenant
@@ -23,22 +26,39 @@ authRouter.post('/login', async (c) => {
     return c.json({ error: 'E-mail e senha são obrigatórios' }, 400)
   }
 
+  const emailCanonical = normalizeEmail(body.email)
+  const ip = c.get('clientIp')
+
+  // [SECURITY] Rate limiting por IP e por identidade antes de verificar a senha.
+  const throttle = await evaluateLoginThrottle({ ip, emailCanonical })
+  if (throttle.blocked) {
+    await recordLoginAttempt(ip, emailCanonical, 'THROTTLED')
+    c.header('Retry-After', String(throttle.retryAfterSeconds))
+    return c.json({ error: 'Muitas tentativas de login. Tente novamente mais tarde.', code: 'RATE_LIMITED', retryable: true }, 429)
+  }
+  if (throttle.delayMs > 0) await sleep(throttle.delayMs)
+
   const user = await db.query.users.findFirst({
     // [TENANT] A identidade é global: o e-mail canônico identifica um único
     // usuário em todo o sistema, e o tenant_id é derivado dessa identidade.
     // O e-mail canônico (lower + trim) preserva paridade com a unicidade global.
-    where: (u) => eq(u.email, normalizeEmail(body.email)),
+    where: (u) => eq(u.email, emailCanonical),
   })
 
   // Mensagem genérica — não revela qual campo está errado (segurança)
   if (!user) {
+    await recordLoginAttempt(ip, emailCanonical, 'FAILURE')
     return c.json({ error: 'Credenciais inválidas' }, 401)
   }
 
   const valid = await verifyPassword(body.password, user.passwordHash)
   if (!valid) {
+    await recordLoginAttempt(ip, emailCanonical, 'FAILURE')
     return c.json({ error: 'Credenciais inválidas' }, 401)
   }
+
+  await recordLoginAttempt(ip, emailCanonical, 'SUCCESS')
+  await resetIdentityFailures(emailCanonical)
 
   // [TENANT] JWT inclui tenantId — extraído pelo authMiddleware em todas as requisições
   const token = await signJwt({

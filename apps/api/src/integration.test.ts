@@ -4,10 +4,14 @@ import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
 import { toolCreateTask, toolListTasks } from '../../mcp/src/tools'
 
 process.env.DATABASE_URL = ':memory:'
+// [SECURITY] Habilita a leitura de X-Forwarded-For nos testes e remove o atraso
+// progressivo para manter os cenários de rate limit determinísticos.
+process.env.TRUST_PROXY = 'true'
+process.env.LOGIN_PROGRESSIVE_DELAY_MS = '0'
 
 const { app } = await import('./index')
 const { db } = await import('./db/index')
-const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys, assistantConversations, assistantMessages, assistantRuns, assistantEvents } = await import('./db/schema')
+const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys, assistantConversations, assistantMessages, assistantRuns, assistantEvents, loginAttempts } = await import('./db/schema')
 const { signJwt, generateApiKey, hashPassword } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 const { appendAnalyticsEvent, assertAnalyticsCutoverReady, ensureCoverage } = await import('./services/analytics')
@@ -1771,5 +1775,142 @@ describe('identidade global de e-mail e login', () => {
     })
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ error: { code: 'CONFLICT', message: 'E-mail já cadastrado em outro tenant' } })
+  })
+})
+
+describe('rate limiting de login', () => {
+  const loginRequest = (email: string, password: string, ip: string) => app.fetch(new Request('http://test.local/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-forwarded-for': ip },
+    body: JSON.stringify({ email, password }),
+  }))
+
+  function setEnv(name: string, value: string | undefined) {
+    if (value === undefined) delete process.env[name]
+    else process.env[name] = value
+  }
+
+  test('limita tentativas por IP e responde 429 com Retry-After', async () => {
+    const previous = process.env.LOGIN_MAX_ATTEMPTS_PER_IP
+    process.env.LOGIN_MAX_ATTEMPTS_PER_IP = '3'
+    try {
+      const ip = `ip-${generateId()}`
+      for (let i = 0; i < 3; i++) {
+        const response = await loginRequest(`ip-${i}-${generateId()}@test.local`, 'QualquerSenha!1', ip)
+        expect(response.status).toBe(401)
+      }
+      const blocked = await loginRequest(`ip-extra-${generateId()}@test.local`, 'QualquerSenha!1', ip)
+      expect(blocked.status).toBe(429)
+      expect(Number(blocked.headers.get('Retry-After'))).toBeGreaterThan(0)
+      const body = await blocked.json() as { error: { code: string; retryable: boolean } }
+      expect(body.error.code).toBe('RATE_LIMITED')
+      expect(body.error.retryable).toBe(true)
+    } finally {
+      setEnv('LOGIN_MAX_ATTEMPTS_PER_IP', previous)
+    }
+  })
+
+  test('bloqueia identidade após falhas, recusa senha correta e registra auditoria', async () => {
+    const previous = process.env.LOGIN_MAX_FAILURES_PER_IDENTITY
+    process.env.LOGIN_MAX_FAILURES_PER_IDENTITY = '2'
+    try {
+      const tenantId = generateId()
+      await db.insert(tenants).values({ id: tenantId, name: 'Lock', slug: `lock-${tenantId}`, createdAt: new Date().toISOString() })
+      const userId = generateId()
+      const email = `lock-${userId}@test.local`
+      const password = 'SenhaCorreta!123'
+      await db.insert(users).values({ id: userId, tenantId, email, passwordHash: await hashPassword(password), name: 'Lock User', theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR', globalGroup: 'ADMIN', createdAt: new Date().toISOString() })
+      const ip = `ip-${generateId()}`
+
+      expect((await loginRequest(email, 'Errada!123456', ip)).status).toBe(401)
+      expect((await loginRequest(email, 'Errada!123456', ip)).status).toBe(401)
+      const blocked = await loginRequest(email, password, ip)
+      expect(blocked.status).toBe(429)
+
+      const rows = await db.select().from(loginAttempts).where(eq(loginAttempts.emailCanonical, email))
+      expect(rows.filter(row => row.outcome === 'FAILURE')).toHaveLength(2)
+      expect(rows.filter(row => row.outcome === 'THROTTLED')).toHaveLength(1)
+      expect(JSON.stringify(rows)).not.toMatch(/password|hash|token/i)
+    } finally {
+      setEnv('LOGIN_MAX_FAILURES_PER_IDENTITY', previous)
+    }
+  })
+
+  test('sucesso zera as falhas da identidade e registra SUCCESS', async () => {
+    const previous = process.env.LOGIN_MAX_FAILURES_PER_IDENTITY
+    process.env.LOGIN_MAX_FAILURES_PER_IDENTITY = '2'
+    try {
+      const tenantId = generateId()
+      await db.insert(tenants).values({ id: tenantId, name: 'Reset', slug: `reset-${tenantId}`, createdAt: new Date().toISOString() })
+      const userId = generateId()
+      const email = `reset-${userId}@test.local`
+      const password = 'SenhaCorreta!123'
+      await db.insert(users).values({ id: userId, tenantId, email, passwordHash: await hashPassword(password), name: 'Reset User', theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR', globalGroup: 'ADMIN', createdAt: new Date().toISOString() })
+      const ip = `ip-${generateId()}`
+
+      expect((await loginRequest(email, 'Errada!123456', ip)).status).toBe(401)
+      expect((await loginRequest(email, password, ip)).status).toBe(200)
+
+      const failures = await db.select().from(loginAttempts).where(and(eq(loginAttempts.emailCanonical, email), eq(loginAttempts.outcome, 'FAILURE')))
+      expect(failures).toHaveLength(0)
+      const successes = await db.select().from(loginAttempts).where(and(eq(loginAttempts.emailCanonical, email), eq(loginAttempts.outcome, 'SUCCESS')))
+      expect(successes).toHaveLength(1)
+
+      // Sem falhas acumuladas, uma nova tentativa errada volta a ser 401 (não 429).
+      expect((await loginRequest(email, 'Errada!123456', ip)).status).toBe(401)
+    } finally {
+      setEnv('LOGIN_MAX_FAILURES_PER_IDENTITY', previous)
+    }
+  })
+
+  test('bloqueio por identidade expira com a janela', async () => {
+    const previousWindow = process.env.LOGIN_WINDOW_MS
+    const previousFailures = process.env.LOGIN_MAX_FAILURES_PER_IDENTITY
+    process.env.LOGIN_WINDOW_MS = '60'
+    process.env.LOGIN_MAX_FAILURES_PER_IDENTITY = '1'
+    try {
+      const email = `expire-${generateId()}@test.local`
+      const ip = `ip-${generateId()}`
+      expect((await loginRequest(email, 'Errada!123456', ip)).status).toBe(401)
+      expect((await loginRequest(email, 'Errada!123456', ip)).status).toBe(429)
+      await new Promise(resolve => setTimeout(resolve, 90))
+      expect((await loginRequest(email, 'Errada!123456', ip)).status).toBe(401)
+    } finally {
+      setEnv('LOGIN_WINDOW_MS', previousWindow)
+      setEnv('LOGIN_MAX_FAILURES_PER_IDENTITY', previousFailures)
+    }
+  })
+})
+
+describe('política mínima de senha no cadastro', () => {
+  test('rejeita senha fraca com mensagem clara e aceita senha válida', async () => {
+    const tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Senha', slug: `senha-${tenantId}`, createdAt: new Date().toISOString() })
+    const admin = await createUser(tenantId, `senha-admin-${tenantId}@test.local`, 'Admin Senha')
+    const adminToken = await token(admin.id, tenantId, admin.email)
+
+    const weak = await request('/users', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: `weak-${tenantId}@test.local`, name: 'Fraco', password: '123' }),
+    })
+    expect(weak.status).toBe(400)
+    const weakBody = await weak.json() as { error: { code: string; message: string } }
+    expect(weakBody.error.code).toBe('INVALID_REQUEST')
+    expect(weakBody.error.message).toContain('Mínimo')
+
+    const equalToEmail = await request('/users', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'repetido@test.local', name: 'Repetido', password: 'repetido' }),
+    })
+    expect(equalToEmail.status).toBe(400)
+
+    const strong = await request('/users', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: `strong-${tenantId}@test.local`, name: 'Forte', password: 'SenhaForte!123' }),
+    })
+    expect(strong.status).toBe(201)
   })
 })

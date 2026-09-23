@@ -70,8 +70,12 @@ export async function errorResponseMiddleware(c: Context, next: Next) {
   if (c.res.status < 400 || !c.res.headers.get('content-type')?.includes('application/json')) return
   const body = await c.res.json().catch(() => null)
   const normalized = normalizeErrorPayload(body, c.res.status)
+  // Preserva Retry-After informado pela rota ou aplica o padrão de 60s em 429.
+  const retryAfter = c.res.headers.get('Retry-After')
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (c.res.status === 429) headers['Retry-After'] = retryAfter ?? '60'
   c.res = new Response(JSON.stringify(normalized), {
     status: c.res.status,
-    headers: { 'Content-Type': 'application/json' },
+    headers,
   })
 }

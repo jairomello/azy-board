@@ -1,5 +1,6 @@
 import type { Context } from 'hono'
 import { z } from 'zod'
+import { passwordPolicyIssues } from './services/passwordPolicy'
 
 type Schema = z.ZodType
 
@@ -157,7 +158,11 @@ export const tagSchema = z.object({ name: z.string().trim().min(1).max(100), col
 export const updateTagSchema = z.object({ name: z.string().trim().min(1).max(100).optional(), color: z.string().trim().max(30).optional() }).strict()
 export const versionSchema = z.object({ name: z.string().trim().min(1).max(200), releaseDate: z.string().nullable().optional(), description: optionalText().nullable().optional(), status: z.enum(['PLANNED', 'IN_DEV', 'RELEASED', 'CANCELLED']).optional() }).strict()
 export const updateVersionSchema = versionSchema.partial().extend({ position: z.number().int().min(0).optional() }).strict()
-export const createUserSchema = z.object({ email: z.string().trim().email().max(320).optional(), name: z.string().trim().min(1).max(200).optional(), password: z.string().min(1).max(200).optional(), globalGroup: z.enum(['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT']).optional() }).strict()
+export const createUserSchema = z.object({ email: z.string().trim().email().max(320).optional(), name: z.string().trim().min(1).max(200).optional(), password: z.string().max(200).optional(), globalGroup: z.enum(['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT']).optional() }).strict().superRefine((value, ctx) => {
+  if (value.password === undefined || value.password === '') return
+  const issues = passwordPolicyIssues(value.password, value.email)
+  if (issues.length > 0) ctx.addIssue({ code: 'custom', path: ['password'], message: issues.join('; ') })
+})
 export const groupSchema = z.object({ globalGroup: z.enum(['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT']) }).strict()
 export const preferencesSchema = z.object({ theme: z.enum(['light', 'dark']).optional(), lightShellTheme: z.enum(['petroleum', 'ocean', 'emerald', 'graphite', 'classic']).optional(), language: z.enum(['pt-BR', 'en', 'es']).optional(), autoThemeByTime: z.boolean().optional() }).strict()
 export const projectApiKeySchema = z.object({ name: z.string().trim().min(1).max(200), aiModelName: z.string().max(200).optional(), permissionScope: z.array(z.string().min(1)).optional(), expiresAt: z.string().nullable().optional() }).strict()
@@ -221,6 +226,14 @@ export function openApiDocument() {
   }
 }
 
+// Expõe a primeira mensagem de validação (ex.: política de senha) sem vazar
+// detalhes internos e mantendo o envelope único de erro.
+function validationErrorBody(error: z.ZodError) {
+  const issues = error.issues.map((issue) => ({ path: issue.path.join('.'), message: issue.message }))
+  const message = issues[0]?.message ?? 'Corpo da requisição inválido'
+  return { error: message, code: 'INVALID_REQUEST', retryable: false, details: { issues } }
+}
+
 export async function parseJson<T extends Schema>(c: Context, schema: T): Promise<{ ok: true; data: z.output<T> } | { ok: false; response: Response }> {
   let body: unknown
   try {
@@ -229,7 +242,7 @@ export async function parseJson<T extends Schema>(c: Context, schema: T): Promis
     return { ok: false, response: c.json({ error: 'JSON inválido', code: 'INVALID_REQUEST', retryable: false }, 400) }
   }
   const result = schema.safeParse(body)
-  if (!result.success) return { ok: false, response: c.json({ error: 'Corpo da requisição inválido', code: 'INVALID_REQUEST', retryable: false }, 400) }
+  if (!result.success) return { ok: false, response: c.json(validationErrorBody(result.error), 400) }
   return { ok: true, data: result.data }
 }
 
@@ -242,6 +255,6 @@ export async function parseOptionalJson<T extends Schema>(c: Context, schema: T)
     return { ok: false, response: c.json({ error: 'JSON inválido', code: 'INVALID_REQUEST', retryable: false }, 400) }
   }
   const result = schema.safeParse(body)
-  if (!result.success) return { ok: false, response: c.json({ error: 'Corpo da requisição inválido', code: 'INVALID_REQUEST', retryable: false }, 400) }
+  if (!result.success) return { ok: false, response: c.json(validationErrorBody(result.error), 400) }
   return { ok: true, data: result.data }
 }

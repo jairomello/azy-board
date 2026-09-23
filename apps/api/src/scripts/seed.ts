@@ -2,6 +2,7 @@ import { db } from '../db/index'
 import { tenants, users, projects, memberships, modules, columns, items } from '../db/schema'
 import { hashPassword } from '../services/auth'
 import { generateId } from '../utils/id'
+import { assertPasswordPolicy } from '../services/passwordPolicy'
 
 console.log('\n🌱 Azy Board — Seed\n')
 
@@ -9,6 +10,7 @@ const seedPassword = process.env.SEED_ADMIN_PASSWORD
 if (!seedPassword) {
   throw new Error('SEED_ADMIN_PASSWORD é obrigatório para executar o seed.')
 }
+assertPasswordPolicy(seedPassword, 'jairo.silva@ntconsult.com.br')
 
 function ancestry(...nodes: { id: string; title: string; type: string }[]) {
   return JSON.stringify(nodes)

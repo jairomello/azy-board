@@ -25,10 +25,12 @@ import { assertAnalyticsCutoverReady } from './services/analytics'
 import { assistantRouter } from './routes/assistant'
 import { openApiDocument } from './validation'
 import { classifyDatabaseError, errorResponseMiddleware, normalizeErrorPayload } from './middleware/errorResponse'
+import { clientIpMiddleware } from './middleware/clientIp'
+import type { HonoEnv } from './types/hono'
 import { startStorageCleanupWorker } from './services/storageCleanup'
 import { ensureDashboardRollupsBackfill } from './services/dashboardMetrics'
 
-export const app = new Hono()
+export const app = new Hono<HonoEnv>()
 
 app.onError((error, c) => {
   // [INTEGRIDADE] Conflitos de constraint são erros de domínio, não erro interno.
@@ -46,6 +48,7 @@ app.use('*', cors({
   credentials: true,
 }))
 app.use('*', errorResponseMiddleware)
+app.use('*', clientIpMiddleware)
 
 // Rotas públicas
 app.route('/api/auth', authRouter)

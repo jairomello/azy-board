@@ -48,6 +48,10 @@ Items marked ★ are critical — a failed check must block the push.
 - [ ] **Authentication enforced**: the `/board.md` endpoint (and any equivalent
       Shadow Markdown route) rejects unauthenticated requests with `401`.
       API-key validation uses constant-time comparison.
+- [x] **Login rate limiting and attempt audit**: `POST /auth/login` is limited per
+      IP and per canonical email, with progressive delay and temporary lockout
+      (`429 RATE_LIMITED` + `Retry-After`). Attempts are persisted append-only in
+      `login_attempts` (canonical email, IP, outcome) without password or hash.
 - [ ] **Rate limiting applied**: Shadow Markdown endpoints have request-rate
       limits per API key to prevent board-state exfiltration at volume.
 - [ ] **Deterministic output**: given the same board state, the Markdown

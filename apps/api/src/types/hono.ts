@@ -17,5 +17,7 @@ export type HonoEnv = {
     apiKeyProjectScope: string[] | null
     apiKeyPermissionScope: string[] | null
     apiKeyName: string | null
+    // IP de origem resolvido pelo clientIpMiddleware (rate limiting de login).
+    clientIp: string
   }
 }

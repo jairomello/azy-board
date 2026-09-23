@@ -77,6 +77,24 @@ export const userAvatars = sqliteTable('user_avatars', {
 }))
 
 // ---------------------------------------------------------------------------
+// LOGIN ATTEMPTS — auditoria de autenticação e base do rate limiting de login
+// Não é escopada por tenant: o login é público e ocorre antes da resolução do
+// tenant. Guarda apenas e-mail canônico, IP e resultado — nunca senha ou hash.
+// ---------------------------------------------------------------------------
+export const loginAttempts = sqliteTable('login_attempts', {
+  id: text('id').primaryKey(),
+  ip: text('ip').notNull(),
+  emailCanonical: text('email_canonical').notNull(),
+  outcome: text('outcome', { enum: ['SUCCESS', 'FAILURE', 'THROTTLED'] }).notNull(),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+}, (table) => ({
+  createdAtIdx: index('login_attempts_created_idx').on(table.createdAt),
+  ipCreatedIdx: index('login_attempts_ip_created_idx').on(table.ip, table.createdAt),
+  emailCreatedIdx: index('login_attempts_email_created_idx').on(table.emailCanonical, table.createdAt),
+  outcomeCheck: check('login_attempts_outcome_check', sql`${table.outcome} IN ('SUCCESS','FAILURE','THROTTLED')`),
+}))
+
+// ---------------------------------------------------------------------------
 // API KEYS — para agentes de IA
 // [TENANT] API Key sempre vinculada a um tenant e a um owner humano
 // ---------------------------------------------------------------------------
