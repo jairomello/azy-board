@@ -1,7 +1,34 @@
 import { storage, type StorageAdapter } from './storage'
 import { persistence } from '../persistence/runtime'
+import { logger } from './logger'
+import { isOtelInitialized, getOtelMeter } from './telemetry'
 
 // [DB-SWAP] Em PostgreSQL os mesmos inserts/updates valem; trocar apenas o driver.
+
+// Métricas OTel para a fila de storage cleanup
+let pendingGauge: import('@opentelemetry/api').Gauge | null = null
+let oldestAgeGauge: import('@opentelemetry/api').Gauge | null = null
+let processedCounter: import('@opentelemetry/api').Counter | null = null
+let failedCounter: import('@opentelemetry/api').Counter | null = null
+
+async function initMetrics() {
+  if (pendingGauge || !isOtelInitialized()) return
+  const meter = await getOtelMeter('azyboard-storage-cleanup')
+  if (!meter) return
+
+  pendingGauge = meter.createGauge('storage.cleanup.pending', {
+    description: 'Itens pendentes na fila de limpeza de storage',
+  })
+  oldestAgeGauge = meter.createGauge('storage.cleanup.oldest_age_ms', {
+    description: 'Idade do item mais antigo na fila em milissegundos',
+  })
+  processedCounter = meter.createCounter('storage.cleanup.processed', {
+    description: 'Itens processados com sucesso',
+  })
+  failedCounter = meter.createCounter('storage.cleanup.failed', {
+    description: 'Itens que falharam após esgotar tentativas',
+  })
+}
 
 // Orçamento de tentativas: após esgotar, o job fica FAILED e só a auditoria/
 // reintegração manual resolve. Backoff exponencial limitado a ~30 min.
@@ -39,6 +66,8 @@ export async function processPendingStorageCleanup(options: {
   adapter?: StorageAdapter
   now?: Date
 } = {}): Promise<CleanupProcessResult> {
+  await initMetrics()
+
   const limit = options.limit ?? 50
   const adapter = options.adapter ?? storage
   const now = options.now ?? new Date()
@@ -46,12 +75,24 @@ export async function processPendingStorageCleanup(options: {
 
   const due = await persistence.storageCleanup.listDue(nowIso, limit)
 
+  // Registrar métricas da fila
+  if (pendingGauge) {
+    pendingGauge.record(due.length)
+  }
+  if (oldestAgeGauge && due.length > 0) {
+    const oldestCreatedAt = due[0]?.createdAt
+    if (oldestCreatedAt) {
+      oldestAgeGauge.record(now.getTime() - new Date(oldestCreatedAt).getTime())
+    }
+  }
+
   const result: CleanupProcessResult = { processed: due.length, done: 0, retried: 0, failed: 0 }
   for (const job of due) {
     try {
       await adapter.delete(job.storagePath)
       await persistence.storageCleanup.markDone(job.id, job.tenantId, new Date().toISOString())
       result.done += 1
+      processedCounter?.add(1)
     } catch (error) {
       const attempts = job.attempts + 1
       const message = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500)
@@ -61,11 +102,12 @@ export async function processPendingStorageCleanup(options: {
       if (exhausted) {
         await persistence.storageCleanup.markFailed(job.id, job.tenantId, attempts, message, updatedAt)
         result.failed += 1
-        console.error('[storage-cleanup] job marcado como FAILED', { jobId: job.id, attempts, error: message })
+        failedCounter?.add(1)
+        logger.error('storage-cleanup job marcado como FAILED', { jobId: job.id, attempts, error: message })
       } else {
         await persistence.storageCleanup.markRetry(job.id, job.tenantId, attempts, message, nextAttemptAt, updatedAt)
         result.retried += 1
-        console.error('[storage-cleanup] falha ao remover objeto, agendando retry', { jobId: job.id, attempts, nextAttemptAt, error: message })
+        logger.warn('storage-cleanup falha ao remover objeto, agendando retry', { jobId: job.id, attempts, nextAttemptAt, error: message })
       }
     }
   }
@@ -76,7 +118,7 @@ export async function processPendingStorageCleanup(options: {
 // afetam a resposta HTTP. Usado após exclusões que enfileiram limpeza.
 export function triggerStorageCleanupAfterCommit(): void {
   void processPendingStorageCleanup({ limit: 200 }).catch((error) => {
-    console.error('[storage-cleanup] processamento pós-commit falhou', error instanceof Error ? error.message : error)
+    logger.error('storage-cleanup processamento pós-commit falhou', { error: error instanceof Error ? error.message : String(error) })
   })
 }
 

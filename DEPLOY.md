@@ -110,3 +110,37 @@ Todo push de branch e pull request passa pelo CI
 `contracts` e `smoke`. Não publique uma versão com gate reprovado. Para
 reproduzir localmente e para configurar os required checks, veja
 [`docs/ci.md`](docs/ci.md).
+
+## Health endpoints
+
+A API expõe dois endpoints públicos de health (sem autenticação):
+
+- `GET /health/live` — retorna 200 enquanto o processo está ativo. Use para
+  liveness probes.
+- `GET /health/ready` — retorna 200 quando banco, storage e (no ADVANCED)
+  coordenação estão disponíveis; 503 com lista de dependências falhas caso
+  contrário. Use para readiness probes.
+
+### Healthchecks de deploy
+
+No `docker-compose.advanced.yml`, configure healthchecks apontando para
+`/health/ready`:
+
+```yaml
+healthcheck:
+  test: ["CMD", "wget", "-qO-", "http://localhost:3000/health/ready"]
+  interval: 30s
+  timeout: 5s
+  retries: 3
+```
+
+### Headers de segurança (nginx)
+
+Para o web servido por nginx em produção, adicione os seguintes headers:
+
+```nginx
+add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; frame-ancestors 'none';" always;
+add_header X-Frame-Options "DENY" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header Referrer-Policy "no-referrer" always;
+```

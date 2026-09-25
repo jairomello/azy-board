@@ -12,6 +12,7 @@ import { addProjectMemberSchema, costCenterSchema, deleteModuleSchema, moduleSch
 import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
 import type { ProjectPatch } from '../persistence/ports'
+import { logger } from '../services/logger'
 
 export const projectsRouter = new Hono<HonoEnv>()
 projectsRouter.use('*', authMiddleware)
@@ -173,7 +174,7 @@ projectsRouter.delete('/:id', requireRole('ADMIN'), async (c) => {
       userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST'), projectId,
     )
   } catch (error) {
-    console.error('[projects] falha ao excluir projeto', { projectId, error })
+    logger.error('falha ao excluir projeto', { projectId, error: error instanceof Error ? error.message : 'erro desconhecido' })
     return c.json({ error: 'Não foi possível excluir o projeto' }, 500)
   }
 

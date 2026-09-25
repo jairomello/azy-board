@@ -18,6 +18,19 @@ import { assistantAdjustSchema, assistantAnswerSchema, assistantApprovalSchema, 
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
 import type { AssistantSettingsRecord, PersistenceContext } from '../persistence/models'
+import { isOtelInitialized, getOtelMeter } from '../services/telemetry'
+
+// Métricas OTel para rejeições de quota
+let quotaRejectionCounter: import('@opentelemetry/api').Counter | null = null
+
+async function initQuotaMetrics() {
+  if (quotaRejectionCounter || !isOtelInitialized()) return
+  const meter = await getOtelMeter('azyboard-agent')
+  if (!meter) return
+  quotaRejectionCounter = meter.createCounter('agent.quota.rejections', {
+    description: 'Rejeições por quota/orçamento',
+  })
+}
 
 export const assistantRouter = new Hono<HonoEnv>()
 assistantRouter.use('*', authMiddleware)
@@ -466,7 +479,11 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
   if (estimateRequestedActions(content) > MAX_ASSISTANT_ACTIONS) return c.json({ error: `Este pedido exige ações demais para uma única execução. Divida-o em lotes de no máximo ${MAX_ASSISTANT_ACTIONS} ações.`, code: 'ACTION_LIMIT', retryable: false }, 413)
   const limits = governance(config.row)
   if (!checkRate(ctx.userId, limits.requestsPerMinute)) return operationalError(c, 'RATE_LIMITED', 429)
-  if (!await enforceBudget(ctx.tenantId, ctx.userId, limits)) return operationalError(c, 'QUOTA_EXCEEDED', 429)
+  if (!await enforceBudget(ctx.tenantId, ctx.userId, limits)) {
+    await initQuotaMetrics()
+    quotaRejectionCounter?.add(1)
+    return operationalError(c, 'QUOTA_EXCEEDED', 429)
+  }
   const conversation = await ownedConversation(ctx.tenantId, ctx.userId, conversationId)
   if (!conversation) return operationalError(c, 'CONVERSATION_NOT_FOUND', 404)
   if (expectedProjectId !== undefined && conversation.projectId !== expectedProjectId) return c.json({ error: 'A conversa não pertence ao projeto selecionado. Inicie uma nova conversa neste projeto.', code: 'CONVERSATION_PROJECT_MISMATCH', retryable: false }, 409)

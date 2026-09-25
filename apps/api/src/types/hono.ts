@@ -19,5 +19,7 @@ export type HonoEnv = {
     apiKeyName: string | null
     // IP de origem resolvido pelo clientIpMiddleware (rate limiting de login).
     clientIp: string
+    // ID de requisição gerado ou propagado pelo requestObservabilityMiddleware.
+    requestId: string
   }
 }

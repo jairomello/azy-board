@@ -26,11 +26,26 @@ import { assistantRouter } from './routes/assistant'
 import { openApiDocument } from './validation'
 import { classifyDatabaseError, errorResponseMiddleware, normalizeErrorPayload } from './middleware/errorResponse'
 import { clientIpMiddleware } from './middleware/clientIp'
+import { requestObservabilityMiddleware } from './middleware/requestObservability'
+import { securityHeadersMiddleware } from './middleware/securityHeaders'
+import { otelMiddleware } from './middleware/otel'
+import { healthRouter } from './routes/health'
 import type { HonoEnv } from './types/hono'
 import { startStorageCleanupWorker } from './services/storageCleanup'
 import { persistence } from './persistence/runtime'
+import { resolveObservabilityConfig } from './config/observability'
+import { configureLogger, logger } from './services/logger'
+import { initOpenTelemetry } from './services/telemetry'
+import { createErrorTracker, type ErrorTracker } from './services/errorTracker'
 
 export const app = new Hono<HonoEnv>()
+
+// Configurar logger com variáveis de ambiente
+const obsConfig = resolveObservabilityConfig()
+configureLogger(obsConfig)
+
+// Error tracker — inicializado em startServer
+export let errorTracker: ErrorTracker = createErrorTracker(obsConfig)
 
 app.onError((error, c) => {
   // [INTEGRIDADE] Conflitos de constraint são erros de domínio, não erro interno.
@@ -39,10 +54,25 @@ app.onError((error, c) => {
     return c.json(normalizeErrorPayload({ code: classified.code, error: 'A operação conflita com o estado atual dos dados.' }, classified.status), classified.status)
   }
   // Não expor stack trace, SQL ou identificadores internos para clientes/agentes.
-  console.error('Erro interno da API:', error instanceof Error ? error.message : 'erro desconhecido')
+  const requestId = c.get('requestId')
+  logger.error('Erro interno da API', {
+    requestId,
+    error: error instanceof Error ? error.message : 'erro desconhecido',
+    ...(error instanceof Error && error.stack ? { stack: error.stack } : {}),
+  })
+
+  // Capturar exceção no error tracker
+  if (error instanceof Error) {
+    errorTracker.captureException(error, { requestId })
+  }
+
   return c.json(normalizeErrorPayload(null, 500), 500)
 })
 
+// Ordem de middlewares: security headers → observabilidade → CORS → errorResponse → clientIp
+app.use('*', securityHeadersMiddleware)
+app.use('*', requestObservabilityMiddleware)
+app.use('*', otelMiddleware)
 app.use('*', cors({
   origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
   credentials: true,
@@ -51,6 +81,7 @@ app.use('*', errorResponseMiddleware)
 app.use('*', clientIpMiddleware)
 
 // Rotas públicas
+app.route('/health', healthRouter)
 app.route('/api/auth', authRouter)
 
 // Rotas protegidas
@@ -82,6 +113,14 @@ api.route('/assistant', assistantRouter)
 // que valida membership, item, projeto e tenant e aplica Content-Disposition.
 
 export async function startServer() {
+  // Inicializar OpenTelemetry se configurado
+  const obsConfig = resolveObservabilityConfig()
+  await initOpenTelemetry(obsConfig)
+
+  // Inicializar error tracker
+  errorTracker = createErrorTracker(obsConfig)
+  await errorTracker.init()
+
   await ensureInstallationMarkers(installProfile, sqliteInstallationMarkerStore(sqlite))
   await persistence.analytics.assertCutoverReady()
   // [TENANT] Backfill determinístico do rollup por projeto (idempotente: só
@@ -144,7 +183,7 @@ export async function startServer() {
     websocket: wsHandler(),
   })
 
-  console.log(`🚀 Azy Board API rodando em http://localhost:${PORT}`)
+  logger.info(`Azy Board API rodando em http://localhost:${PORT}`)
   return server
 }
 

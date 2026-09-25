@@ -48,10 +48,67 @@ export interface ReportRenderErrorInput {
   componentStack?: string | null
 }
 
+// Sentry é carregado dinamicamente apenas se AZYBOARD_SENTRY_DSN estiver configurado.
+// O módulo @sentry/react é opcional e carregado sob demanda.
+let sentryModule: Record<string, unknown> | null = null
+let sentryInitialized = false
+
+// Inicializa Sentry no frontend se AZYBOARD_SENTRY_DSN estiver configurado.
+// Chamado uma vez na inicialização do app.
+export async function initSentryFrontend(dsn?: string): Promise<void> {
+  if (sentryInitialized || !dsn) return
+
+  try {
+    // Carregar Sentry dinamicamente - usar eval para evitar que Vite tente pré-bundlar
+    const Sentry = await (new Function('return import("@sentry/react")')() as Promise<Record<string, unknown>>)
+    const init = Sentry.init as ((options: Record<string, unknown>) => void) | undefined
+    if (init) {
+      init({
+        dsn,
+        beforeSend(event: Record<string, unknown>) {
+          // Redact sensitive data before sending
+          const req = event.request as Record<string, unknown> | undefined
+          if (req) {
+            delete req.cookies
+            delete req.headers
+          }
+          return event
+        },
+      })
+      sentryModule = Sentry
+      sentryInitialized = true
+    }
+  } catch {
+    // Sentry não disponível — continuar sem error tracking
+  }
+}
+
 // Registra o erro completo apenas para observabilidade/console. Ponto único de
 // extensão para um provedor de observabilidade no futuro.
 export function reportRenderError({ reference, error, componentStack }: ReportRenderErrorInput): void {
   const normalized = error instanceof Error ? error : new Error(String(error))
+
+  // Enviar para Sentry se configurado
+  if (sentryModule && sentryInitialized) {
+    const withScope = sentryModule.withScope as ((callback: (scope: Record<string, unknown>) => void) => void) | undefined
+    const captureException = sentryModule.captureException as ((error: Error) => void) | undefined
+
+    if (withScope && captureException) {
+      withScope((scope) => {
+        const setTag = scope.setTag as ((key: string, value: string) => void) | undefined
+        const setExtra = scope.setExtra as ((key: string, value: unknown) => void) | undefined
+
+        if (reference && setTag) {
+          setTag('error_reference', reference)
+        }
+        if (componentStack && setExtra) {
+          setExtra('componentStack', componentStack)
+        }
+        captureException(normalized)
+      })
+    }
+  }
+
   console.error('[ErrorBoundary]', {
     reference,
     message: normalized.message,

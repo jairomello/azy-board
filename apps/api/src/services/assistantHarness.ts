@@ -6,6 +6,36 @@ import { executeSharedTool, friendlyToolName, getSharedToolDefinitions, sanitize
 import type { ModelInput, ModelProvider, ModelResponse, ModelTool } from './openaiProvider'
 import { validateToolArguments } from '../../../mcp/src/validation.js'
 import { HARNESS_LIMITS } from '@azy-board/types'
+import { isOtelInitialized, getOtelMeter } from './telemetry'
+
+// Métricas OTel para runs do agente
+let runStepsHistogram: import('@opentelemetry/api').Histogram | null = null
+let runInputTokensHistogram: import('@opentelemetry/api').Histogram | null = null
+let runOutputTokensHistogram: import('@opentelemetry/api').Histogram | null = null
+let runCostHistogram: import('@opentelemetry/api').Histogram | null = null
+let quotaRejectionCounter: import('@opentelemetry/api').Counter | null = null
+
+async function initAgentMetrics() {
+  if (runStepsHistogram || !isOtelInitialized()) return
+  const meter = await getOtelMeter('azyboard-agent')
+  if (!meter) return
+
+  runStepsHistogram = meter.createHistogram('agent.run.steps', {
+    description: 'Steps por run do agente',
+  })
+  runInputTokensHistogram = meter.createHistogram('agent.run.input_tokens', {
+    description: 'Tokens de entrada por run',
+  })
+  runOutputTokensHistogram = meter.createHistogram('agent.run.output_tokens', {
+    description: 'Tokens de saída por run',
+  })
+  runCostHistogram = meter.createHistogram('agent.run.cost_micros', {
+    description: 'Custo acumulado por run em micros',
+  })
+  quotaRejectionCounter = meter.createCounter('agent.quota.rejections', {
+    description: 'Rejeições por quota/orçamento',
+  })
+}
 
 export const AZY_AGENT_SYSTEM_PROMPT = `You are Azy Agent, an assistant exclusively for Azy Board.
 Only discuss Azy Board and use only registered Azy Board tools. Never execute code, shell, browser, HTTP, or arbitrary tools.
@@ -127,7 +157,7 @@ export class AssistantHarness {
       let text = ''
       const seen = new Map<string, unknown>(), counts = { steps: 0, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 }
       while (true) {
-        if (this.cancelled.has(runId)) return this.finish(runId, context.tenantId, 'CANCELLED', text)
+        if (this.cancelled.has(runId)) return this.finish(runId, context.tenantId, 'CANCELLED', text, counts)
         if (++counts.steps > this.limits.steps) throw new Error('STEP_LIMIT')
         counts.outputTokens += current.usage?.outputTokens ?? 0
         counts.inputTokens += current.usage?.inputTokens ?? 0
@@ -138,7 +168,7 @@ export class AssistantHarness {
         if (counts.costMicros > this.limits.costMicros) throw new Error('COST_LIMIT')
         const calls = current.output.filter(item => item.type === 'function_call')
         for (const item of current.output) if (item.type === 'message' && item.text) text += item.text
-        if (!calls.length) return this.finish(runId, context.tenantId, 'COMPLETED', text)
+        if (!calls.length) return this.finish(runId, context.tenantId, 'COMPLETED', text, counts)
         if ((counts.calls += calls.length) > this.limits.toolCalls) throw new Error('TOOL_CALL_LIMIT')
         const outputs: Record<string, unknown>[] = []
         for (const call of calls) {
@@ -265,7 +295,22 @@ export class AssistantHarness {
       return operation()
     }
   }
-  private async finish(runId: string, tenantId: string, status: 'COMPLETED' | 'CANCELLED', text: string) { await this.agent.updateRun(runId, tenantId, { status, finishedAt: new Date().toISOString() }); if (text) await this.event(runId, tenantId, 'TEXT_DELTA', { text }); await this.event(runId, tenantId, status === 'COMPLETED' ? 'RUN_COMPLETED' : 'RUN_CANCELLED', {}); return { runId, status, ...(text ? { text } : {}) } }
+  private async finish(runId: string, tenantId: string, status: 'COMPLETED' | 'CANCELLED', text: string, counts?: { steps: number; inputTokens: number; outputTokens: number; costMicros: number }) {
+    await initAgentMetrics()
+
+    // Registrar métricas do run
+    if (counts) {
+      runStepsHistogram?.record(counts.steps)
+      runInputTokensHistogram?.record(counts.inputTokens)
+      runOutputTokensHistogram?.record(counts.outputTokens)
+      runCostHistogram?.record(counts.costMicros)
+    }
+
+    await this.agent.updateRun(runId, tenantId, { status, finishedAt: new Date().toISOString() })
+    if (text) await this.event(runId, tenantId, 'TEXT_DELTA', { text })
+    await this.event(runId, tenantId, status === 'COMPLETED' ? 'RUN_COMPLETED' : 'RUN_CANCELLED', {})
+    return { runId, status, ...(text ? { text } : {}) }
+  }
   private async event(runId: string, tenantId: string, eventType: AssistantEventTypeName, payload: Record<string, unknown>) { await this.agent.insertEvent(this.scope(tenantId, null), runId, eventType, JSON.stringify(redact(payload)), new Date().toISOString()) }
 }
 

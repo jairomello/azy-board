@@ -9,5 +9,6 @@ async function assertStatus(path: string, expected: number) {
 }
 
 await assertStatus('/', 200)
+await assertStatus('/health/live', 200)
 await assertStatus('/api/auth/me', 401)
 console.log(`Smoke test concluído: ${baseUrl}`)
