@@ -36,6 +36,26 @@ describe('contrato de fonte única do catálogo MCP', () => {
     }
   })
 
+  test('modo estrito cobre todo campo de todo objeto em required (inclusive aninhados)', () => {
+    // Providers que validam strict (OpenAI/Meta via OpenRouter) rejeitam a
+    // requisição inteira se algum objeto tiver campo fora de `required`.
+    const walk = (path: string, schema: unknown): void => {
+      if (!schema || typeof schema !== 'object') return
+      const node = schema as { type?: string | string[]; properties?: Record<string, unknown>; required?: string[]; items?: unknown; additionalProperties?: boolean }
+      const types = Array.isArray(node.type) ? node.type : [node.type]
+      if (node.properties && types.includes('object')) {
+        const required = new Set(node.required ?? [])
+        expect(node.additionalProperties, `${path} deve ter additionalProperties: false`).toBe(false)
+        for (const [key, child] of Object.entries(node.properties)) {
+          expect(required.has(key), `${path}.${key} fora de required (modo estrito)`).toBe(true)
+          walk(`${path}.${key}`, child)
+        }
+      }
+      if (node.items && types.includes('array')) walk(`${path}[]`, node.items)
+    }
+    for (const definition of definitions) walk(definition.name, definition.inputSchema)
+  })
+
   test('validador aceita os campos obrigatórios declarados e rejeita a omissão', () => {
     for (const definition of definitions) {
       const fields = requiredFieldsFor(definition.name)

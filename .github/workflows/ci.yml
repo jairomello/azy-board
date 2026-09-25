@@ -76,6 +76,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: /tmp/azy-ci-smoke.db
+      AZYBOARD_INSTALL_PROFILE: SIMPLE
+      AZYBOARD_INSTANCE_DIR: /tmp/azy-ci-smoke-state
       JWT_SECRET: ci-smoke-secret-not-for-production
       NODE_ENV: test
       PORT: "3001"
@@ -179,3 +181,71 @@ jobs:
           path: |
             tmp/e2e-failures/**
             tmp/visual-diffs/**
+
+  advanced:
+    name: advanced (PostgreSQL + Valkey)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: azyboard
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: azyboard
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U azyboard"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+      valkey:
+        image: valkey/valkey:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping | grep PONG"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      AZYBOARD_INSTALL_PROFILE: ADVANCED
+      DATABASE_URL: postgresql://azyboard:ci-password@localhost:5432/azyboard
+      REDIS_URL: redis://localhost:6379
+      AZYBOARD_INSTANCE_DIR: /tmp/azy-ci-advanced-state
+      JWT_SECRET: ci-advanced-secret-not-for-production
+      NODE_ENV: test
+      TEST_PG_URL: postgresql://azyboard:ci-password@localhost:5432/azyboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Cache de dependências do Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - name: Instalar dependências
+        run: bun install --frozen-lockfile
+      - name: Migrations PostgreSQL
+        run: |
+          bun run --cwd apps/api -e "
+            const { readFileSync } = require('fs')
+            const { join } = require('path')
+            const { Pool } = require('pg')
+            const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+            const dir = join('apps/api/src/db/postgres/migrations')
+            for (const f of ['0000_pale_warlock.sql', '0001_composite_fks.sql']) {
+              await pool.query(readFileSync(join(dir, f), 'utf8'))
+            }
+            await pool.end()
+            console.log('Migrations PostgreSQL aplicadas.')
+          "
+      - name: Testes de migrations PostgreSQL
+        run: bun test apps/api/src/db/postgres/migrations.test.ts
+      - name: Testes de paridade SIMPLE ↔ ADVANCED
+        run: bun test apps/api/src/db/postgres/parity.test.ts
+      - name: Testes de coordenação (local)
+        run: bun test apps/api/src/coordination/local.test.ts

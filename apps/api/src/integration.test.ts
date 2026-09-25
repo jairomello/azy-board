@@ -116,6 +116,41 @@ describe('modos de board de projetos', () => {
     expect((await db.select().from(items)).find(item => item.id === createdItem.id)?.parentId).toBe(created.simpleStoryId)
   })
 
+  test('reordena cards pela porta transacional e recusa IDs fora da coluna', async () => {
+    const projectResponse = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Reorder via ports', boardMode: 'SIMPLE' }),
+    })
+    const project = await projectResponse.json() as { id: string; simpleStoryId: string }
+    const projectColumns = await db.select().from(columns).where(eq(columns.projectId, project.id))
+    const destination = projectColumns.find(column => column.name === 'A Fazer')!
+    const otherColumn = projectColumns.find(column => column.id !== destination.id)!
+    const now = new Date().toISOString()
+    const firstId = generateId()
+    const secondId = generateId()
+    const foreignId = generateId()
+    await db.insert(items).values([
+      { id: firstId, tenantId, projectId: project.id, type: 'TASK', parentId: project.simpleStoryId, columnId: destination.id, moduleId: null, title: 'Primeiro', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, authorId: adminId, createdAt: now, updatedAt: now },
+      { id: secondId, tenantId, projectId: project.id, type: 'TASK', parentId: project.simpleStoryId, columnId: destination.id, moduleId: null, title: 'Segundo', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 1, authorId: adminId, createdAt: now, updatedAt: now },
+      { id: foreignId, tenantId, projectId: project.id, type: 'TASK', parentId: project.simpleStoryId, columnId: otherColumn.id, moduleId: null, title: 'Outra coluna', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, authorId: adminId, createdAt: now, updatedAt: now },
+    ])
+
+    const reordered = await request(`/projects/${project.id}/items/reorder`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ columnId: destination.id, order: [secondId, firstId] }),
+    })
+    expect(reordered.status).toBe(200)
+    const destinationItems = await db.select().from(items).where(eq(items.columnId, destination.id)).orderBy(items.position)
+    expect(destinationItems.map(item => item.id)).toEqual([secondId, firstId])
+
+    const crossColumn = await request(`/projects/${project.id}/items/reorder`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ columnId: destination.id, order: [firstId, foreignId] }),
+    })
+    expect(crossColumn.status).toBe(400)
+    expect((await db.select().from(items).where(eq(items.id, foreignId)))[0]?.position).toBe(0)
+  })
+
   test('rejeita IDs cruzados entre card, checklist e passo', async () => {
     const projectResponse = await request('/projects', adminToken, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Checklist ownership', boardMode: 'SIMPLE' }),

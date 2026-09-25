@@ -128,6 +128,11 @@ export function requiredFieldsFor(name: string): string[] {
   return toolFields[name]?.required ?? []
 }
 
+// Obrigatórios reais de `operations[].args` (batch e create_project_structure),
+// coerentes com a validação em validation.ts. O schema interno mantém todos os
+// campos em `required` para o modo estrito; a exposição MCP usa esta lista.
+export const OPERATION_ARGS_REQUIRED = ['ref', 'title', 'type', 'assignToCurrentUser'] as const
+
 export function isRegisteredTool(name: string): boolean {
   return Object.hasOwn(toolFields, name)
 }
@@ -278,7 +283,10 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
         tool: { type: 'string', enum: ['create_task'] },
         args: {
           type: 'object', additionalProperties: false,
-          required: ['ref', 'title', 'type', 'assignToCurrentUser'],
+          // Modo estrito exige todo campo em `required` (a optionalidade é o tipo
+          // anulável), inclusive em objetos aninhados. A exposição MCP relaxa o
+          // `required` para OPERATION_ARGS_REQUIRED.
+          required: ['ref', 'title', 'type', 'parentRef', 'moduleName', 'description', 'priority', 'points', 'assignToCurrentUser'],
           properties: {
             ref: { type: 'string', description: 'Unique short reference used by later parentRef values.' },
             title: { type: 'string' },

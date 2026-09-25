@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { Hono } from 'hono'
-import { errorResponseMiddleware, normalizeErrorPayload } from './errorResponse'
+import { classifyDatabaseError, errorResponseMiddleware, normalizeErrorPayload } from './errorResponse'
 
 describe('contrato único de erro', () => {
   test('normaliza resposta legada dentro do envelope', () => {
@@ -18,6 +18,14 @@ describe('contrato único de erro', () => {
 
   test('preserva detalhes de validação serializáveis', () => {
     expect(normalizeErrorPayload({ error: 'Dados inválidos', code: 'INVALID_REQUEST', details: { field: 'title', token: 'remove' } }, 422).error.details).toEqual({ field: 'title' })
+  })
+
+  test('classifica SQLSTATE PostgreSQL sem expor detalhes do driver', () => {
+    expect(classifyDatabaseError({ code: '23505', message: 'duplicate key' })).toEqual({ status: 409, code: 'CONFLICT' })
+    expect(classifyDatabaseError({ code: '23503', message: 'foreign key' })).toEqual({ status: 409, code: 'CONFLICT' })
+    expect(classifyDatabaseError({ code: '23514', message: 'check constraint' })).toEqual({ status: 422, code: 'INVALID_REQUEST' })
+    expect(classifyDatabaseError({ code: '23502', message: 'not null' })).toEqual({ status: 422, code: 'INVALID_REQUEST' })
+    expect(classifyDatabaseError({ cause: { code: '23505', message: 'wrapped' } })).toEqual({ status: 409, code: 'CONFLICT' })
   })
 
   test('adiciona Retry-After padrão em 429 e preserva o informado pela rota', async () => {

@@ -1,8 +1,5 @@
-import { and, asc, eq, lte } from 'drizzle-orm'
-import { db } from '../db/index'
-import { storageCleanupJobs } from '../db/schema'
 import { storage, type StorageAdapter } from './storage'
-import { generateId } from '../utils/id'
+import { persistence } from '../persistence/runtime'
 
 // [DB-SWAP] Em PostgreSQL os mesmos inserts/updates valem; trocar apenas o driver.
 
@@ -11,8 +8,6 @@ import { generateId } from '../utils/id'
 const MAX_ATTEMPTS = 8
 const BASE_BACKOFF_MS = 30_000
 const MAX_BACKOFF_MS = 30 * 60_000
-
-export type StorageCleanupTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 function backoffFor(attempt: number): number {
   return Math.min(BASE_BACKOFF_MS * 2 ** Math.max(0, attempt - 1), MAX_BACKOFF_MS)
@@ -23,24 +18,10 @@ function backoffFor(attempt: number): number {
 // Idempotente: o índice parcial UNIQUE (tenant_id, storage_path) WHERE
 // status='PENDING' deduplica enfileiramentos repetidos.
 export async function enqueueStorageCleanup(
-  tx: StorageCleanupTx,
   tenantId: string,
   entries: Array<{ storagePath: string; resourceType?: 'ATTACHMENT' }>,
 ): Promise<number> {
-  if (entries.length === 0) return 0
-  const now = new Date().toISOString()
-  // [TENANT] job sempre vinculado ao tenant do anexo excluído
-  const ORIGIN = 'ATTACHMENT' as const
-  await tx.insert(storageCleanupJobs).values(entries.map(entry => ({
-    id: generateId(),
-    tenantId,
-    storagePath: entry.storagePath,
-    resourceType: entry.resourceType ?? ORIGIN,
-    status: 'PENDING' as const,
-    attempts: 0,
-    availableAt: now,
-  }))).onConflictDoNothing()
-  return entries.length
+  return persistence.storageCleanup.enqueue(tenantId, entries)
 }
 
 export interface CleanupProcessResult {
@@ -63,40 +44,26 @@ export async function processPendingStorageCleanup(options: {
   const now = options.now ?? new Date()
   const nowIso = now.toISOString()
 
-  const due = await db.select()
-    .from(storageCleanupJobs)
-    .where(and(eq(storageCleanupJobs.status, 'PENDING'), lte(storageCleanupJobs.availableAt, nowIso)))
-    .orderBy(asc(storageCleanupJobs.availableAt))
-    .limit(limit)
+  const due = await persistence.storageCleanup.listDue(nowIso, limit)
 
   const result: CleanupProcessResult = { processed: due.length, done: 0, retried: 0, failed: 0 }
   for (const job of due) {
     try {
       await adapter.delete(job.storagePath)
-      await db.update(storageCleanupJobs).set({
-        status: 'DONE',
-        completedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        lastError: null,
-      }).where(and(eq(storageCleanupJobs.id, job.id), eq(storageCleanupJobs.tenantId, job.tenantId)))
+      await persistence.storageCleanup.markDone(job.id, job.tenantId, new Date().toISOString())
       result.done += 1
     } catch (error) {
       const attempts = job.attempts + 1
       const message = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500)
       const exhausted = attempts >= MAX_ATTEMPTS
       const nextAttemptAt = new Date(now.getTime() + backoffFor(attempts)).toISOString()
-      // [TENANT] update escopado por (id, tenant_id)
-      await db.update(storageCleanupJobs).set({
-        status: exhausted ? 'FAILED' : 'PENDING',
-        attempts,
-        lastError: message,
-        availableAt: exhausted ? job.availableAt : nextAttemptAt,
-        updatedAt: new Date().toISOString(),
-      }).where(and(eq(storageCleanupJobs.id, job.id), eq(storageCleanupJobs.tenantId, job.tenantId)))
+      const updatedAt = new Date().toISOString()
       if (exhausted) {
+        await persistence.storageCleanup.markFailed(job.id, job.tenantId, attempts, message, updatedAt)
         result.failed += 1
         console.error('[storage-cleanup] job marcado como FAILED', { jobId: job.id, attempts, error: message })
       } else {
+        await persistence.storageCleanup.markRetry(job.id, job.tenantId, attempts, message, nextAttemptAt, updatedAt)
         result.retried += 1
         console.error('[storage-cleanup] falha ao remover objeto, agendando retry', { jobId: job.id, attempts, nextAttemptAt, error: message })
       }

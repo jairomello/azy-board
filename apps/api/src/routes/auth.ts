@@ -1,15 +1,14 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { setCookie, deleteCookie } from 'hono/cookie'
-import { eq, and } from 'drizzle-orm'
-import { db } from '../db/index'
-import { users } from '../db/schema'
 import { verifyPassword, signJwt } from '../services/auth'
 import { authMiddleware } from '../middleware/auth'
 import type { RequestContext } from '@azy-board/types'
 import { loginSchema, parseJson } from '../validation'
 import { normalizeEmail } from '../utils/email'
 import { evaluateLoginThrottle, recordLoginAttempt, resetIdentityFailures } from '../services/loginThrottle'
+import { persistence } from '../persistence/runtime'
+import { userPersistenceContext } from '../persistence/context'
 
 export const authRouter = new Hono<HonoEnv>()
 
@@ -38,12 +37,8 @@ authRouter.post('/login', async (c) => {
   }
   if (throttle.delayMs > 0) await sleep(throttle.delayMs)
 
-  const user = await db.query.users.findFirst({
-    // [TENANT] A identidade é global: o e-mail canônico identifica um único
-    // usuário em todo o sistema, e o tenant_id é derivado dessa identidade.
-    // O e-mail canônico (lower + trim) preserva paridade com a unicidade global.
-    where: (u) => eq(u.email, emailCanonical),
-  })
+  // A identidade global é resolvida por e-mail canônico; o tenant vem do usuário encontrado.
+  const user = await persistence.identity.findUserByCanonicalEmail(emailCanonical)
 
   // Mensagem genérica — não revela qual campo está errado (segurança)
   if (!user) {
@@ -95,23 +90,10 @@ authRouter.post('/login', async (c) => {
 // GET /auth/me — restaura a sessão e as preferências do usuário.
 authRouter.get('/me', authMiddleware, async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const user = await db.query.users.findFirst({
-    // [TENANT] A sessão nunca pode resolver um usuário fora do tenant do JWT.
-    where: (u) => and(eq(u.id, ctx.userId), eq(u.tenantId, ctx.tenantId)),
-    columns: {
-      id: true,
-      email: true,
-      name: true,
-      avatarUrl: true,
-      theme: true,
-      lightShellTheme: true,
-      language: true,
-      autoThemeByTime: true,
-      globalGroup: true,
-    },
-  })
+  const persisted = await persistence.identity.findUser(userPersistenceContext(ctx), ctx.userId)
 
-  if (!user) return c.json({ error: 'Usuário não encontrado' }, 404)
+  if (!persisted) return c.json({ error: 'Usuário não encontrado' }, 404)
+  const { passwordHash: _passwordHash, ...user } = persisted
   return c.json({ user })
 })
 

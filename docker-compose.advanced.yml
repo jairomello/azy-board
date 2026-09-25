@@ -1,0 +1,71 @@
+# Perfil ADVANCED — Azy Board com PostgreSQL + Valkey
+# Uso: docker compose -f docker-compose.advanced.yml up -d
+#
+# IMPORTANTE: ADVANCED exige instalação NOVA com banco NOVO e volume NOVO.
+# Não aponte para um banco SQLite existente. Dados não são migrados entre perfis.
+#
+# Valkey (BSD) é a referência comunitária Redis-compatível: https://valkey.io
+services:
+  postgres:
+    image: postgres:16
+    container_name: azyboard-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-azyboard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-azyboard}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-azyboard}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:8
+    container_name: azyboard-valkey
+    restart: unless-stopped
+    command: valkey-server --requirepass ${VALKEY_PASSWORD:-change-me}
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -a ${VALKEY_PASSWORD:-change-me} ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  azyboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: azyboard-advanced
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - AZYBOARD_INSTALL_PROFILE=ADVANCED
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-azyboard}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-azyboard}
+      - REDIS_URL=redis://:${VALKEY_PASSWORD:-change-me}@valkey:6379
+      - AZYBOARD_INSTANCE_DIR=/data
+      - JWT_SECRET=${JWT_SECRET:-change-me-use-a-long-random-secret}
+      - NODE_ENV=production
+    volumes:
+      # Volume persistente: marcador de instalação (não contém dados do banco)
+      - azyboard-instance:/data
+      - azyboard-uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  valkey-data:
+  azyboard-instance:
+  azyboard-uploads:

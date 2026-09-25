@@ -211,6 +211,13 @@
       "when": 1790124665115,
       "tag": "0029_login_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1790196480427,
+      "tag": "0030_jittery_gambit",
+      "breakpoints": true
     }
   ]
 }

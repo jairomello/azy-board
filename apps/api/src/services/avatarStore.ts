@@ -1,6 +1,4 @@
-import { and, eq } from 'drizzle-orm'
-import { db } from '../db'
-import { userAvatars } from '../db/schema'
+import { persistence } from '../persistence/runtime'
 
 // Avatar já normalizado (256x256) persistido fora da tabela de usuários.
 export interface StoredAvatar {
@@ -38,57 +36,27 @@ export function avatarUrlFor(userId: string, contentHash: string): string {
 
 class DatabaseAvatarStore implements AvatarStore {
   async save(input: SaveAvatarInput): Promise<{ url: string }> {
-    const updatedAt = new Date().toISOString()
     // [TENANT] Upsert sempre escopado pela PK composta (tenant_id, user_id).
-    await db
-      .insert(userAvatars)
-      .values({
-        tenantId: input.tenantId,
-        userId: input.userId,
-        mimeType: input.mimeType,
-        sizeBytes: input.data.byteLength,
-        width: input.width,
-        height: input.height,
-        contentHash: input.contentHash,
-        data: input.data,
-        updatedAt,
-      })
-      .onConflictDoUpdate({
-        target: [userAvatars.tenantId, userAvatars.userId],
-        set: {
-          mimeType: input.mimeType,
-          sizeBytes: input.data.byteLength,
-          width: input.width,
-          height: input.height,
-          contentHash: input.contentHash,
-          data: input.data,
-          updatedAt,
-        },
-      })
+    await persistence.avatars.save({
+      tenantId: input.tenantId,
+      userId: input.userId,
+      mimeType: input.mimeType,
+      width: input.width,
+      height: input.height,
+      contentHash: input.contentHash,
+      data: input.data,
+    })
     return { url: avatarUrlFor(input.userId, input.contentHash) }
   }
 
   async remove(tenantId: string, userId: string): Promise<void> {
     // [TENANT] Remoção restrita ao tenant e usuário da sessão.
-    await db.delete(userAvatars).where(and(eq(userAvatars.tenantId, tenantId), eq(userAvatars.userId, userId)))
+    await persistence.avatars.remove(tenantId, userId)
   }
 
   async get(tenantId: string, userId: string): Promise<StoredAvatar | null> {
     // [TENANT] Leitura sempre filtrada por tenant + usuário (Anti-IDOR).
-    const row = await db.query.userAvatars.findFirst({
-      where: (a) => and(eq(a.tenantId, tenantId), eq(a.userId, userId)),
-      columns: {
-        mimeType: true,
-        sizeBytes: true,
-        width: true,
-        height: true,
-        contentHash: true,
-        data: true,
-        updatedAt: true,
-      },
-    })
-    if (!row) return null
-    return { ...row, data: Buffer.from(row.data) }
+    return persistence.avatars.get(tenantId, userId)
   }
 }
 

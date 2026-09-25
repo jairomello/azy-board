@@ -1,7 +1,7 @@
-import { and, desc, eq } from 'drizzle-orm'
 import { createHash, randomUUID } from 'node:crypto'
-import { db, type DrizzleDb } from '../db/index'
-import { assistantApprovals, assistantEvents, assistantRuns, assistantSettings, assistantToolCalls, modules } from '../db/schema'
+import { persistence } from '../persistence/runtime'
+import type { AgentPort } from '../persistence/ports'
+import type { AssistantEventTypeName, PersistenceContext } from '../persistence/models'
 import { executeSharedTool, friendlyToolName, getSharedToolDefinitions, sanitizeToolOutput, type HumanToolContext } from './assistantTools'
 import type { ModelInput, ModelProvider, ModelResponse, ModelTool } from './openaiProvider'
 import { validateToolArguments } from '../../../mcp/src/validation.js'
@@ -18,7 +18,7 @@ export { HARNESS_LIMITS }
 export type RiskLevel = 'READ' | 'LOW' | 'MEDIUM' | 'HIGH' | 'DESTRUCTIVE'
 export type HarnessContext = HumanToolContext & { conversationId: string; runId: string; itemTypeScope?: Array<'EPIC' | 'STORY' | 'TASK' | 'BUG'> }
 type HarnessLimits = { [Key in keyof typeof HARNESS_LIMITS]: number }
-export type HarnessOptions = { db?: DrizzleDb; provider: ModelProvider; executeTool: (name: string, args: Record<string, unknown>, context: HarnessContext) => Promise<unknown>; authorize?: (context: HarnessContext, name: string, args: Record<string, unknown>) => Promise<void>; assertAvailable?: (context: HarnessContext) => Promise<void>; limits?: Partial<HarnessLimits> }
+export type HarnessOptions = { agent?: AgentPort; provider: ModelProvider; executeTool: (name: string, args: Record<string, unknown>, context: HarnessContext) => Promise<unknown>; authorize?: (context: HarnessContext, name: string, args: Record<string, unknown>) => Promise<void>; assertAvailable?: (context: HarnessContext) => Promise<void>; limits?: Partial<HarnessLimits> }
 
 const mutationNames = new Set(getSharedToolDefinitions().filter(tool => tool.routing.operation !== 'read').map(tool => tool.name))
 const destructiveNames = new Set(['delete_item', 'delete_project', 'archive_item', 'delete_checklist', 'delete_checklist_item', 'remove_member'])
@@ -43,8 +43,13 @@ export function safeError(error: unknown): string {
   const message = error instanceof Error ? error.message : 'Erro de execução'
   if (/^(PAYLOAD_LIMIT|ACTION_LIMIT|STEP_LIMIT|TOKEN_LIMIT|COST_LIMIT|TOOL_CALL_LIMIT|TIMEOUT|INVALID_TOOL_CALL|TOOL_NOT_REGISTERED|TOOL_NOT_ALLOWED_FOR_RUN|REPEATED_TOOL_CALL)$/.test(message)) return message
   if (/insufficient[_ ]quota|billing[_ ]hard[_ ]limit|no credits remaining|add credits|credit balance|saldo insuficiente/i.test(message)) return 'Saldo insuficiente no provedor de IA. Adicione créditos à conta do provedor para continuar.'
+  if (transientModelError.test(message)) return 'O provedor de IA está temporariamente indisponível. Tente novamente em instantes.'
   return /secret|token|password|api.?key|ciphertext|prompt|pii/i.test(message) ? 'Falha segura na execução' : message.slice(0, 300)
 }
+
+// Falhas transitórias de provider (ex.: pool compartilhado do OpenRouter devolve
+// 401/429 embrulhados como "Provider returned error") podem ser repetidas.
+const transientModelError = /provider returned error|rate.?limit|temporar|overloaded|bad gateway|service unavailable|fetch failed|ECONNRESET|ETIMEDOUT|socket hang up|timed? ?out/i
 
 const terminalToolErrors = /^(?:USER_CONTEXT_REQUIRED|AUTHORIZATION_REVALIDATION_REQUIRED|PROJECT_CONTEXT_MISMATCH|TOOL_NOT_REGISTERED|TOOL_NOT_ALLOWED_FOR_RUN|REPEATED_TOOL_CALL|PAYLOAD_LIMIT|ACTION_LIMIT|STEP_LIMIT|TOKEN_LIMIT|COST_LIMIT|TOOL_CALL_LIMIT|TIMEOUT|ASSISTANT_UNAVAILABLE|APPROVAL_[A-Z_]+|HTTP (?:401|403)\b)/
 
@@ -84,22 +89,29 @@ function withoutProjectId(schema: Record<string, unknown>): Record<string, unkno
 }
 
 export class AssistantHarness {
-  private readonly database: DrizzleDb
+  private readonly agent: AgentPort
   private readonly options: HarnessOptions
   private readonly limits: HarnessLimits
   private cancelled = new Set<string>()
 
   constructor(options: HarnessOptions) {
     this.options = options
-    this.database = options.db ?? db
+    this.agent = options.agent ?? persistence.agent
     this.limits = { ...HARNESS_LIMITS, ...options.limits }
   }
 
+  private scope(tenantId: string, userId?: string | null): PersistenceContext {
+    return { tenantId, actorUserId: userId ?? null, actorKind: 'USER' }
+  }
+
   async createRun(context: Omit<HarnessContext, 'runId'>, model: string, idempotencyKey: string): Promise<string> {
-    const existing = await this.database.query.assistantRuns.findFirst({ where: (r) => and(eq(r.tenantId, context.tenantId), eq(r.userId, context.userId), eq(r.idempotencyKey, idempotencyKey)) })
+    const existing = await this.agent.findRunByIdempotencyKey(this.scope(context.tenantId, context.userId), context.userId, idempotencyKey)
     if (existing) return existing.id
     const id = randomUUID(), now = new Date().toISOString()
-    await this.database.insert(assistantRuns).values({ id, tenantId: context.tenantId, conversationId: context.conversationId, userId: context.userId, model, idempotencyKey, status: 'QUEUED', createdAt: now, expiresAt: new Date(Date.now() + this.limits.timeoutMs).toISOString() })
+    await this.agent.insertRun(this.scope(context.tenantId, context.userId), {
+      id, conversationId: context.conversationId, userId: context.userId, model, idempotencyKey,
+      createdAt: now, expiresAt: new Date(Date.now() + this.limits.timeoutMs).toISOString(),
+    })
     await this.event(id, context.tenantId, 'RUN_CREATED', {})
     return id
   }
@@ -108,10 +120,10 @@ export class AssistantHarness {
     if (JSON.stringify(input).length > this.limits.payloadBytes) throw new Error('PAYLOAD_LIMIT')
     const runId = await this.createRun(context, model, idempotencyKey)
     const fullContext = { ...context, runId }
-    await this.database.update(assistantRuns).set({ status: 'RUNNING', startedAt: new Date().toISOString() }).where(and(eq(assistantRuns.id, runId), eq(assistantRuns.tenantId, context.tenantId)))
+    await this.agent.updateRun(runId, context.tenantId, { status: 'RUNNING', startedAt: new Date().toISOString() })
     await this.event(runId, context.tenantId, 'RUN_STARTED', {})
     try {
-      let current: ModelResponse = await this.withTimeout(this.provider().createRun({ model, input: [{ role: 'system', content: AZY_AGENT_SYSTEM_PROMPT }, ...(typeof input === 'string' ? [{ role: 'user', content: input }] : input)], tools: toolsForModel(fullContext, allowlist), userId: context.userId }), runId)
+      let current: ModelResponse = await this.callModel({ model, input: [{ role: 'system', content: AZY_AGENT_SYSTEM_PROMPT }, ...(typeof input === 'string' ? [{ role: 'user', content: input }] : input)], tools: toolsForModel(fullContext, allowlist), userId: context.userId }, runId)
       let text = ''
       const seen = new Map<string, unknown>(), counts = { steps: 0, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 }
       while (true) {
@@ -120,7 +132,7 @@ export class AssistantHarness {
         counts.outputTokens += current.usage?.outputTokens ?? 0
         counts.inputTokens += current.usage?.inputTokens ?? 0
         counts.costMicros += current.usage?.costMicros ?? 0
-        await this.database.update(assistantRuns).set({ inputTokens: counts.inputTokens, outputTokens: counts.outputTokens, costMicros: counts.costMicros }).where(and(eq(assistantRuns.id, runId), eq(assistantRuns.tenantId, context.tenantId)))
+        await this.agent.updateRun(runId, context.tenantId, { inputTokens: counts.inputTokens, outputTokens: counts.outputTokens, costMicros: counts.costMicros })
         if (counts.inputTokens > this.limits.inputTokens) throw new Error('TOKEN_LIMIT')
         if (counts.outputTokens > this.limits.outputTokens) throw new Error('TOKEN_LIMIT')
         if (counts.costMicros > this.limits.costMicros) throw new Error('COST_LIMIT')
@@ -146,20 +158,20 @@ export class AssistantHarness {
             }
             await this.options.assertAvailable?.(fullContext)
             await this.options.authorize?.(fullContext, name, args)
-            await this.database.insert(assistantToolCalls).values({ id: callId, tenantId: context.tenantId, runId, toolName: name, riskLevel: risk, status: risk === 'READ' ? 'RUNNING' : 'WAITING_APPROVAL', argumentsJson: JSON.stringify(redact(args)), operationHash: hash, idempotencyKey: `${runId}:${hash}`, createdAt: new Date().toISOString() })
+            await this.agent.insertToolCall(this.scope(context.tenantId, context.userId), { id: callId, runId, toolName: name, riskLevel: risk, status: risk === 'READ' ? 'RUNNING' : 'WAITING_APPROVAL', argumentsJson: JSON.stringify(redact(args)), operationHash: hash, idempotencyKey: `${runId}:${hash}`, createdAt: new Date().toISOString() })
             if (risk !== 'READ') {
               const existingModules = name === 'batch' && typeof args.projectId === 'string'
-                ? (await this.database.select({ name: modules.name }).from(modules).where(and(eq(modules.projectId, args.projectId as string), eq(modules.tenantId, context.tenantId)))).map(row => row.name)
+                ? await this.agent.listModuleNames(this.scope(context.tenantId, context.userId), args.projectId as string)
                 : undefined
-              await this.database.insert(assistantApprovals).values({ id: randomUUID(), tenantId: context.tenantId, runId, toolCallId: callId, previewJson: JSON.stringify(approvalPreview(name, args, fullContext, existingModules)), operationHash: hash, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), createdAt: new Date().toISOString() })
+              await this.agent.insertApproval(this.scope(context.tenantId, context.userId), { id: randomUUID(), runId, toolCallId: callId, previewJson: JSON.stringify(approvalPreview(name, args, fullContext, existingModules)), operationHash: hash, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), createdAt: new Date().toISOString() })
               await this.event(runId, context.tenantId, 'APPROVAL_REQUIRED', { tool: name, operationHash: hash, domain: tool.routing.domain, expanded: Boolean(allowlist && !allowlist.includes(name)), catalogCount: allowlist?.length ?? null })
-              await this.database.update(assistantRuns).set({ status: 'WAITING_APPROVAL' }).where(eq(assistantRuns.id, runId))
+              await this.agent.updateRun(runId, context.tenantId, { status: 'WAITING_APPROVAL' })
               return { runId, status: 'WAITING_APPROVAL' }
             }
             await this.event(runId, context.tenantId, 'TOOL_STARTED', { tool: name, domain: tool.routing.domain, expanded: Boolean(allowlist && !allowlist.includes(name)), catalogCount: allowlist?.length ?? null })
             const result = sanitizeToolOutput(await this.retrySafe(() => this.options.executeTool(name, args, fullContext), risk === 'READ'))
             seen.set(signature, result)
-            await this.database.update(assistantToolCalls).set({ status: 'COMPLETED', resultSummary: JSON.stringify(summary(result)), finishedAt: new Date().toISOString() }).where(eq(assistantToolCalls.id, callId))
+            await this.agent.updateToolCall(callId, context.tenantId, { status: 'COMPLETED', resultSummary: JSON.stringify(summary(result)), finishedAt: new Date().toISOString() })
             await this.event(runId, context.tenantId, 'TOOL_COMPLETED', { tool: name, result: summary(result) })
             outputs.push({ type: 'function_call_output', call_id: call.callId, output: JSON.stringify(result) })
           } catch (error) {
@@ -168,63 +180,75 @@ export class AssistantHarness {
             outputs.push({ type: 'function_call_output', call_id: call.callId ?? randomUUID(), output: JSON.stringify({ ok: false, recoverable: true, code: recoverable.code, error: recoverable.message }) })
           }
         }
-         current = await this.withTimeout(this.provider().createRun({ model, input: outputs, previousResponse: current, tools: toolsForModel(fullContext, allowlist), userId: context.userId }), runId)
+         current = await this.callModel({ model, input: outputs, previousResponse: current, tools: toolsForModel(fullContext, allowlist), userId: context.userId }, runId)
       }
     } catch (error) {
-      await this.database.update(assistantRuns).set({ status: 'FAILED', errorCode: safeError(error), finishedAt: new Date().toISOString() }).where(eq(assistantRuns.id, runId))
+      await this.agent.updateRun(runId, context.tenantId, { status: 'FAILED', errorCode: safeError(error), finishedAt: new Date().toISOString() })
       await this.event(runId, context.tenantId, 'RUN_FAILED', { error: safeError(error) })
       return { runId, status: 'FAILED' }
     }
   }
 
   async approve(runId: string, tenantId: string, userId: string, operation: string): Promise<void> {
-    const approval = await this.database.query.assistantApprovals.findFirst({ where: (a) => and(eq(a.runId, runId), eq(a.tenantId, tenantId), eq(a.operationHash, operation), eq(a.status, 'PENDING')) })
+    const scope = this.scope(tenantId, userId)
+    const approval = await this.agent.findApproval(scope, runId, operation, 'PENDING')
     if (!approval || approval.expiresAt <= new Date().toISOString()) throw new Error('APPROVAL_EXPIRED')
-    const decided = await this.database.update(assistantApprovals).set({ status: 'APPROVED', decidedBy: userId, decidedAt: new Date().toISOString() })
-      .where(and(eq(assistantApprovals.id, approval.id), eq(assistantApprovals.status, 'PENDING'))).returning({ id: assistantApprovals.id })
-    if (!decided.length) throw new Error('APPROVAL_INVALID')
-    await this.database.update(assistantRuns).set({ status: 'QUEUED' }).where(and(eq(assistantRuns.id, runId), eq(assistantRuns.tenantId, tenantId), eq(assistantRuns.status, 'WAITING_APPROVAL')))
+    const decided = await this.agent.updateApprovalInStatuses(runId, tenantId, operation, ['PENDING'], { status: 'APPROVED', decidedBy: userId, decidedAt: new Date().toISOString() })
+    if (!decided) throw new Error('APPROVAL_INVALID')
+    await this.agent.updateRun(runId, tenantId, { status: 'QUEUED' })
     await this.event(runId, tenantId, 'APPROVAL_DECIDED', { approved: true })
   }
 
   async reject(runId: string, tenantId: string, userId: string, operation: string): Promise<void> {
-    const approval = await this.database.query.assistantApprovals.findFirst({ where: (a) => and(eq(a.runId, runId), eq(a.tenantId, tenantId), eq(a.operationHash, operation), eq(a.status, 'PENDING')) })
+    const scope = this.scope(tenantId, userId)
+    const approval = await this.agent.findApproval(scope, runId, operation, 'PENDING')
     if (!approval || approval.expiresAt <= new Date().toISOString()) throw new Error('APPROVAL_EXPIRED')
-    const decided = await this.database.update(assistantApprovals).set({ status: 'REJECTED', decidedBy: userId, decidedAt: new Date().toISOString() })
-      .where(and(eq(assistantApprovals.id, approval.id), eq(assistantApprovals.status, 'PENDING'))).returning({ id: assistantApprovals.id })
-    if (!decided.length) throw new Error('APPROVAL_INVALID')
-    await this.database.update(assistantRuns).set({ status: 'COMPLETED', finishedAt: new Date().toISOString() }).where(and(eq(assistantRuns.id, runId), eq(assistantRuns.tenantId, tenantId), eq(assistantRuns.status, 'WAITING_APPROVAL')))
+    const decided = await this.agent.updateApprovalInStatuses(runId, tenantId, operation, ['PENDING'], { status: 'REJECTED', decidedBy: userId, decidedAt: new Date().toISOString() })
+    if (!decided) throw new Error('APPROVAL_INVALID')
+    await this.agent.updateRun(runId, tenantId, { status: 'COMPLETED', finishedAt: new Date().toISOString() })
     await this.event(runId, tenantId, 'APPROVAL_DECIDED', { approved: false })
   }
 
   async waitForUser(runId: string, tenantId: string, question: string): Promise<void> {
-    await this.database.update(assistantRuns).set({ status: 'WAITING_USER' }).where(and(eq(assistantRuns.id, runId), eq(assistantRuns.tenantId, tenantId)))
+    await this.agent.updateRun(runId, tenantId, { status: 'WAITING_USER' })
     await this.event(runId, tenantId, 'QUESTION', { question: question.slice(0, 500) })
   }
 
   async expire(runId: string, tenantId: string): Promise<void> {
-    await this.database.update(assistantRuns).set({ status: 'EXPIRED', finishedAt: new Date().toISOString(), errorCode: 'RUN_EXPIRED' }).where(and(eq(assistantRuns.id, runId), eq(assistantRuns.tenantId, tenantId)))
+    await this.agent.updateRun(runId, tenantId, { status: 'EXPIRED', finishedAt: new Date().toISOString(), errorCode: 'RUN_EXPIRED' })
   }
 
   async executeApproved(context: HarnessContext): Promise<unknown> {
-    const approval = await this.database.query.assistantApprovals.findFirst({ where: (a) => and(eq(a.runId, context.runId), eq(a.tenantId, context.tenantId), eq(a.status, 'APPROVED')) })
+    const scope = this.scope(context.tenantId, context.userId)
+    const approval = await this.agent.getApprovalByStatus(scope, context.runId, 'APPROVED')
     if (!approval || approval.expiresAt <= new Date().toISOString()) throw new Error('APPROVAL_EXPIRED')
-    const call = approval.toolCallId ? await this.database.query.assistantToolCalls.findFirst({ where: (t) => and(eq(t.id, approval.toolCallId!), eq(t.tenantId, context.tenantId), eq(t.runId, context.runId)) }) : undefined
+    const call = approval.toolCallId ? await this.agent.getToolCall(scope, context.runId, approval.toolCallId) : null
     if (!call || call.operationHash !== approval.operationHash || call.status === 'COMPLETED') return call?.resultSummary ?? null
     const args = parseArguments(call.argumentsJson)
     if (operationHash(call.toolName, args) !== approval.operationHash) throw new Error('APPROVAL_OPERATION_CHANGED')
     await this.options.assertAvailable?.(context)
     await this.options.authorize?.(context, call.toolName, args)
-    await this.database.update(assistantToolCalls).set({ status: 'RUNNING', startedAt: new Date().toISOString() }).where(eq(assistantToolCalls.id, call.id))
+    await this.agent.updateToolCall(call.id, context.tenantId, { status: 'RUNNING', startedAt: new Date().toISOString() })
     const result = sanitizeToolOutput(await this.options.executeTool(call.toolName, args, context))
-    await this.database.update(assistantToolCalls).set({ status: 'COMPLETED', resultSummary: JSON.stringify(summary(result)), finishedAt: new Date().toISOString() }).where(and(eq(assistantToolCalls.id, call.id), eq(assistantToolCalls.status, 'RUNNING')))
-    await this.database.update(assistantApprovals).set({ status: 'APPROVED' }).where(eq(assistantApprovals.id, approval.id))
-    await this.database.update(assistantRuns).set({ status: 'RUNNING' }).where(and(eq(assistantRuns.id, context.runId), eq(assistantRuns.tenantId, context.tenantId)))
+    await this.agent.updateToolCallInStatuses(call.id, context.tenantId, ['RUNNING'], { status: 'COMPLETED', resultSummary: JSON.stringify(summary(result)), finishedAt: new Date().toISOString() })
+    await this.agent.updateApproval(approval.id, { status: 'APPROVED' })
+    await this.agent.updateRun(context.runId, context.tenantId, { status: 'RUNNING' })
     return result
   }
 
   cancel(runId: string): void { this.cancelled.add(runId) }
   private provider(): ModelProvider { return this.options.provider }
+  private async callModel(request: Parameters<ModelProvider['createRun']>[0], runId: string): Promise<ModelResponse> {
+    return this.withTimeout(this.retryTransient(() => this.provider().createRun(request), runId), runId)
+  }
+  private async retryTransient<T>(operation: () => Promise<T>, runId: string): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try { return await operation() } catch (error) {
+        if (attempt >= 2 || this.cancelled.has(runId) || !transientModelError.test(error instanceof Error ? error.message : '')) throw error
+        await new Promise(resolve => { setTimeout(resolve, 400 * 2 ** attempt) })
+      }
+    }
+  }
   private async withTimeout<T>(promise: Promise<T>, runId: string): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined
     return Promise.race([promise, new Promise<T>((_, reject) => { timer = setTimeout(() => { this.cancelled.add(runId); reject(new Error('TIMEOUT')) }, this.limits.timeoutMs) })]).finally(() => { if (timer) clearTimeout(timer) })
@@ -235,8 +259,8 @@ export class AssistantHarness {
       return operation()
     }
   }
-  private async finish(runId: string, tenantId: string, status: 'COMPLETED' | 'CANCELLED', text: string) { await this.database.update(assistantRuns).set({ status, finishedAt: new Date().toISOString() }).where(and(eq(assistantRuns.id, runId), eq(assistantRuns.tenantId, tenantId))); if (text) await this.event(runId, tenantId, 'TEXT_DELTA', { text }); await this.event(runId, tenantId, status === 'COMPLETED' ? 'RUN_COMPLETED' : 'RUN_CANCELLED', {}); return { runId, status, ...(text ? { text } : {}) } }
-  private async event(runId: string, tenantId: string, eventType: typeof assistantEvents.$inferInsert.eventType, payload: Record<string, unknown>) { const previous = await this.database.query.assistantEvents.findFirst({ where: (e) => and(eq(e.runId, runId), eq(e.tenantId, tenantId)), orderBy: [desc(assistantEvents.sequence)] }); await this.database.insert(assistantEvents).values({ id: randomUUID(), tenantId, runId, sequence: (previous?.sequence ?? 0) + 1, eventType, payloadJson: JSON.stringify(redact(payload)), createdAt: new Date().toISOString() }) }
+  private async finish(runId: string, tenantId: string, status: 'COMPLETED' | 'CANCELLED', text: string) { await this.agent.updateRun(runId, tenantId, { status, finishedAt: new Date().toISOString() }); if (text) await this.event(runId, tenantId, 'TEXT_DELTA', { text }); await this.event(runId, tenantId, status === 'COMPLETED' ? 'RUN_COMPLETED' : 'RUN_CANCELLED', {}); return { runId, status, ...(text ? { text } : {}) } }
+  private async event(runId: string, tenantId: string, eventType: AssistantEventTypeName, payload: Record<string, unknown>) { await this.agent.insertEvent(this.scope(tenantId, null), runId, eventType, JSON.stringify(redact(payload)), new Date().toISOString()) }
 }
 
 function parseArguments(value?: string): Record<string, unknown> { if (!value) throw new Error('INVALID_TOOL_ARGUMENTS'); try { const parsed = JSON.parse(value); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(); return Object.fromEntries(Object.entries(parsed as Record<string, unknown>).filter(([, item]) => item !== null && item !== 'null' && item !== '')) } catch { throw new Error('INVALID_TOOL_ARGUMENTS') } }

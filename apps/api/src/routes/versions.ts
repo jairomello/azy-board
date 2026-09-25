@@ -1,28 +1,20 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { eq, and, asc, desc, sql } from 'drizzle-orm'
-import { db } from '../db/index'
-import { projectVersions, items } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
-import { generateId } from '../utils/id'
 import type { RequestContext } from '@azy-board/types'
 import { parseJson, updateVersionSchema, versionSchema } from '../validation'
+import { persistence } from '../persistence/runtime'
+import { userPersistenceContext } from '../persistence/context'
 
 export const versionsRouter = new Hono<HonoEnv>()
 versionsRouter.use('*', authMiddleware)
-
-type VersionStatus = 'PLANNED' | 'IN_DEV' | 'RELEASED' | 'CANCELLED'
 
 // GET /projects/:projectId/versions
 versionsRouter.get('/', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
 
-  // [TENANT] filtro por tenantId + projectId
-  const result = await db.select()
-    .from(projectVersions)
-    .where(and(eq(projectVersions.projectId, projectId), eq(projectVersions.tenantId, ctx.tenantId)))
-    .orderBy(asc(projectVersions.position))
+  const result = await persistence.planning.listVersions(userPersistenceContext(ctx), projectId)
 
   return c.json(result)
 })
@@ -37,27 +29,14 @@ versionsRouter.post('/', requireRole('ADMIN'), async (c) => {
 
   if (!body.name?.trim()) return c.json({ error: 'name é obrigatório' }, 400)
 
-  const existing = await db.select({ id: projectVersions.id })
-    .from(projectVersions)
-    .where(and(eq(projectVersions.projectId, projectId), eq(projectVersions.tenantId, ctx.tenantId)))
-
-  const id = generateId()
-  const now = new Date().toISOString()
-
-  // [TENANT] tenantId vem do middleware
-  await db.insert(projectVersions).values({
-    id,
-    tenantId: ctx.tenantId,
-    projectId,
+  const created = await persistence.planning.createVersion(userPersistenceContext(ctx), projectId, {
     name: body.name.trim(),
     releaseDate: body.releaseDate ?? null,
     description: body.description ?? null,
     status: body.status ?? 'PLANNED',
-    position: existing.length,
-    createdAt: now,
   })
 
-  return c.json({ id, name: body.name.trim(), status: body.status ?? 'PLANNED' }, 201)
+  return c.json({ id: created.id, name: created.name, status: created.status }, 201)
 })
 
 // PATCH /projects/:projectId/versions/:versionId
@@ -68,25 +47,16 @@ versionsRouter.patch('/:versionId', requireRole('ADMIN'), async (c) => {
   if (!parsed.ok) return parsed.response
   const body = parsed.data
 
-  // [TENANT] Anti-IDOR
-  const version = await db.query.projectVersions.findFirst({
-    where: (v) => and(eq(v.id, versionId), eq(v.projectId, projectId), eq(v.tenantId, ctx.tenantId)),
-    columns: { id: true },
+  const existing = await persistence.planning.getVersion(userPersistenceContext(ctx), projectId, versionId)
+  if (!existing) return c.json({ error: 'Versão não encontrada' }, 404)
+
+  const updated = await persistence.planning.updateVersion(userPersistenceContext(ctx), projectId, versionId, {
+    ...(body.name !== undefined ? { name: body.name.trim() } : {}),
+    ...(body.releaseDate !== undefined ? { releaseDate: body.releaseDate } : {}),
+    ...(body.description !== undefined ? { description: body.description } : {}),
+    ...(body.status !== undefined ? { status: body.status } : {}),
+    ...(body.position !== undefined ? { position: body.position } : {}),
   })
-  if (!version) return c.json({ error: 'Versão não encontrada' }, 404)
-
-  const updates: Record<string, unknown> = {}
-  if (body.name !== undefined) updates.name = body.name.trim()
-  if (body.releaseDate !== undefined) updates.releaseDate = body.releaseDate
-  if (body.description !== undefined) updates.description = body.description
-  if (body.status !== undefined) updates.status = body.status
-  if (body.position !== undefined) updates.position = body.position
-
-  await db.update(projectVersions)
-    .set(updates)
-    .where(and(eq(projectVersions.id, versionId), eq(projectVersions.projectId, projectId), eq(projectVersions.tenantId, ctx.tenantId)))
-
-  const updated = await db.query.projectVersions.findFirst({ where: (version) => and(eq(version.id, versionId), eq(version.projectId, projectId), eq(version.tenantId, ctx.tenantId)) })
   return c.json({ version: updated })
 })
 
@@ -95,20 +65,8 @@ versionsRouter.delete('/:versionId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, versionId } = c.req.param()
 
-  // [TENANT] Anti-IDOR
-  const version = await db.query.projectVersions.findFirst({
-    where: (v) => and(eq(v.id, versionId), eq(v.projectId, projectId), eq(v.tenantId, ctx.tenantId)),
-    columns: { id: true },
-  })
-  if (!version) return c.json({ error: 'Versão não encontrada' }, 404)
-
-  // Desassociar itens (ON DELETE SET NULL garante isso no DB, mas fazemos explicitamente)
-  await db.update(items)
-    .set({ versionId: null })
-    .where(and(eq(items.versionId, versionId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
-
-  await db.delete(projectVersions)
-    .where(and(eq(projectVersions.id, versionId), eq(projectVersions.projectId, projectId), eq(projectVersions.tenantId, ctx.tenantId)))
+  const deleted = await persistence.planning.deleteVersion(userPersistenceContext(ctx), projectId, versionId)
+  if (!deleted) return c.json({ error: 'Versão não encontrada' }, 404)
 
   return c.json({ ok: true })
 })
@@ -117,33 +75,14 @@ versionsRouter.delete('/:versionId', requireRole('ADMIN'), async (c) => {
 versionsRouter.get('/:versionId/items', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, versionId } = c.req.param()
-  const page = parseInt(c.req.query('page') ?? '1')
-  const limit = parseInt(c.req.query('limit') ?? '20')
-  const offset = (page - 1) * limit
+  const page = Number.parseInt(c.req.query('page') ?? '1', 10) || 1
+  const limit = Number.parseInt(c.req.query('limit') ?? '20', 10) || 20
 
-  // [TENANT] Anti-IDOR na versão
-  const version = await db.query.projectVersions.findFirst({
-    where: (v) => and(eq(v.id, versionId), eq(v.projectId, projectId), eq(v.tenantId, ctx.tenantId)),
-    columns: { id: true },
-  })
+  const projectContext = userPersistenceContext(ctx)
+  const version = await persistence.planning.getVersion(projectContext, projectId, versionId)
   if (!version) return c.json({ error: 'Versão não encontrada' }, 404)
 
-  // [TENANT] itens da versão filtrados por tenant
-  const result = await db.query.items.findMany({
-    where: (i) => and(eq(i.versionId, versionId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
-    with: {
-      assignee: { columns: { id: true, name: true, avatarUrl: true } },
-    },
-    columns: { id: true, title: true, type: true, status: true, priority: true, assigneeId: true },
-    orderBy: (i, { asc }) => [asc(i.type), asc(i.title)],
-    limit,
-    offset,
-  })
+  const result = await persistence.planning.listVersionItems(projectContext, projectId, versionId, { page, limit })
 
-  const totalRow = await db.select({ count: sql<number>`COUNT(*)` })
-    .from(items)
-    .where(and(eq(items.versionId, versionId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
-  const total = totalRow[0]?.count ?? 0
-
-  return c.json({ data: result, total, page, limit })
+  return c.json({ data: result.data, total: result.total, page, limit })
 })

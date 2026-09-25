@@ -68,7 +68,7 @@ export class OpenRouterProvider implements ModelProvider {
     this.timeoutMs = options.timeoutMs ?? 10_000
     this.maxOutputTokens = options.maxOutputTokens ?? 2_048
     this.fetcher = options.fetch ?? fetch
-    this.client = new OpenAI({ apiKey, baseURL: OPENROUTER_BASE_URL, timeout: this.timeoutMs, fetch: this.fetcher })
+    this.client = new OpenAI({ apiKey, baseURL: OPENROUTER_BASE_URL, timeout: this.timeoutMs, maxRetries: options.maxRetries ?? 2, fetch: this.fetcher })
   }
 
   async probe(model: string): Promise<CapabilityProbeResult> {

@@ -7,15 +7,18 @@
  * Para novos tenants adicionais (clientes futuros), rodar este script novamente.
  */
 
-import { db } from '../db/index'
-import { tenants, users } from '../db/schema'
+import { installProfile, sqlite } from '../db/index'
+import { ensureInstallationMarkers, sqliteInstallationMarkerStore } from '../db/installationMarkers'
 import { hashPassword } from '../services/auth'
-import { generateId } from '../utils/id'
 import { normalizeEmail } from '../utils/email'
 import { assertPasswordPolicy } from '../services/passwordPolicy'
-import { eq } from 'drizzle-orm'
+import { persistence } from '../persistence/runtime'
 
 const args = Bun.argv.slice(2)
+
+// [DB-SWAP] Setup só provisiona dados depois que o perfil SIMPLE foi validado
+// e o banco/volume foram vinculados por marcadores persistentes.
+await ensureInstallationMarkers(installProfile, sqliteInstallationMarkerStore(sqlite))
 
 const tenantName = args[0] ?? 'Minha Empresa'
 const tenantSlug = args[1] ?? 'minha-empresa'
@@ -31,7 +34,7 @@ if (!adminPassword) {
 assertPasswordPolicy(adminPassword, adminEmail)
 
 // Identidade global: o e-mail do administrador não pode reutilizar uma conta existente.
-const existingAdmin = await db.query.users.findFirst({ where: (u) => eq(u.email, adminEmail), columns: { id: true } })
+const existingAdmin = await persistence.identity.findUserByCanonicalEmail(adminEmail)
 if (existingAdmin) {
   throw new Error(`E-mail ${adminEmail} já cadastrado. A identidade é global; use outro e-mail ou faça login na conta existente.`)
 }
@@ -41,32 +44,19 @@ console.log(`Tenant: ${tenantName} (${tenantSlug})`)
 console.log(`Admin:  ${adminEmail}\n`)
 
 // [TENANT] Criar tenant — raiz de todo o isolamento de dados
-const tenantId = generateId()
-await db.insert(tenants).values({
-  id: tenantId,
-  name: tenantName,
-  slug: tenantSlug,
-  createdAt: new Date().toISOString(),
-})
+const tenant = await persistence.tenants.createTenant({ name: tenantName, slug: tenantSlug })
 
 // [TENANT] Criar usuário admin vinculado ao tenant
-const userId = generateId()
 const passwordHash = await hashPassword(adminPassword)
-await db.insert(users).values({
-  id: userId,
-  tenantId,
+await persistence.identity.createUser({ tenantId: tenant.id, actorUserId: null, actorKind: 'SYSTEM' }, {
   email: adminEmail,
   passwordHash,
   name: adminName,
-  theme: 'light',
-  lightShellTheme: 'petroleum',
-  language: 'pt-BR',
   globalGroup: adminEmail === 'jairo.silva@ntconsult.com.br' ? 'ROOT' : 'ADMIN',
-  createdAt: new Date().toISOString(),
 })
 
 console.log('✅ Tenant criado com sucesso!')
-console.log(`   ID do tenant: ${tenantId}`)
+console.log(`   ID do tenant: ${tenant.id}`)
 console.log(`\n✅ Usuário administrador criado!`)
 console.log(`   E-mail:  ${adminEmail}`)
 console.log(`   Senha:   ${adminPassword}`)

@@ -57,11 +57,32 @@ export function normalizeErrorPayload(body: unknown, status: number): ErrorPaylo
 // [INTEGRIDADE] Traduz falhas de constraint do banco em erros de domínio,
 // evitando HTTP 500 em conflitos previsíveis (unicidade, FK, CHECK, NOT NULL).
 export function classifyDatabaseError(error: unknown): { status: 409 | 422; code: string } | null {
+  const code = databaseErrorCode(error)
+  // SQLSTATE PostgreSQL. O adapter SQLite continua classificado pela mensagem/código nativo abaixo.
+  if (code === '23505' || code === '23503' || code === '23P01' || code === '40001' || code === '40P01') {
+    return { status: 409, code: 'CONFLICT' }
+  }
+  if (code === '23514' || code === '23502' || code === '22001' || code === '22P02') {
+    return { status: 422, code: 'INVALID_REQUEST' }
+  }
+
   const message = error instanceof Error ? error.message : String(error)
   if (/UNIQUE constraint failed/i.test(message)) return { status: 409, code: 'CONFLICT' }
   if (/FOREIGN KEY constraint failed/i.test(message)) return { status: 409, code: 'CONFLICT' }
   if (/CHECK constraint failed/i.test(message)) return { status: 422, code: 'INVALID_REQUEST' }
   if (/NOT NULL constraint failed/i.test(message)) return { status: 422, code: 'INVALID_REQUEST' }
+  return null
+}
+
+function databaseErrorCode(error: unknown): string | null {
+  let current: unknown = error
+  const visited = new Set<object>()
+  for (let depth = 0; depth < 4 && current && typeof current === 'object' && !visited.has(current); depth += 1) {
+    visited.add(current)
+    const candidate = current as { code?: unknown; cause?: unknown }
+    if (typeof candidate.code === 'string') return candidate.code
+    current = candidate.cause
+  }
   return null
 }
 

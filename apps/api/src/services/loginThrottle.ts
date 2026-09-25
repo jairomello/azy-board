@@ -1,7 +1,4 @@
-import { and, eq, gte, lt, sql } from 'drizzle-orm'
-import { db } from '../db'
-import { loginAttempts } from '../db/schema'
-import { generateId } from '../utils/id'
+import { persistence } from '../persistence/runtime'
 
 export type LoginAttemptOutcome = 'SUCCESS' | 'FAILURE' | 'THROTTLED'
 
@@ -32,7 +29,7 @@ function earlierThanWindow(now: number): string {
 async function pruneOldAttempts(now: number): Promise<void> {
   if (now - lastPruneAt < PRUNE_INTERVAL_MS) return
   lastPruneAt = now
-  await db.delete(loginAttempts).where(lt(loginAttempts.createdAt, new Date(now - retentionMs()).toISOString()))
+  await persistence.loginAttempts.pruneBefore(new Date(now - retentionMs()).toISOString())
 }
 
 function retryAfterSeconds(oldestIso: string, now: number): number {
@@ -55,27 +52,15 @@ export async function evaluateLoginThrottle(params: { ip: string; emailCanonical
   await pruneOldAttempts(now)
   const since = earlierThanWindow(now)
 
-  const [ipRows, identityRows] = await Promise.all([
-    db.select({ count: sql<number>`count(*)`, oldest: sql<string | null>`min(${loginAttempts.createdAt})` })
-      .from(loginAttempts)
-      .where(and(eq(loginAttempts.ip, params.ip), gte(loginAttempts.createdAt, since))),
-    db.select({ count: sql<number>`count(*)`, oldest: sql<string | null>`min(${loginAttempts.createdAt})` })
-      .from(loginAttempts)
-      .where(and(
-        eq(loginAttempts.emailCanonical, params.emailCanonical),
-        eq(loginAttempts.outcome, 'FAILURE'),
-        gte(loginAttempts.createdAt, since),
-      )),
-  ])
-
-  const ipCount = Number(ipRows[0]?.count ?? 0)
-  const ipOldest = ipRows[0]?.oldest ?? null
+  const counts = await persistence.loginAttempts.getCounts({ ip: params.ip, emailCanonical: params.emailCanonical, since })
+  const ipCount = counts.ipCount
+  const ipOldest = counts.ipOldest
   if (ipCount >= maxAttemptsPerIp() && ipOldest) {
     return { blocked: true, retryAfterSeconds: retryAfterSeconds(ipOldest, now), delayMs: 0 }
   }
 
-  const failureCount = Number(identityRows[0]?.count ?? 0)
-  const failureOldest = identityRows[0]?.oldest ?? null
+  const failureCount = counts.identityFailureCount
+  const failureOldest = counts.identityFailureOldest
   if (failureCount >= maxFailuresPerIdentity() && failureOldest) {
     return { blocked: true, retryAfterSeconds: retryAfterSeconds(failureOldest, now), delayMs: 0 }
   }
@@ -85,19 +70,10 @@ export async function evaluateLoginThrottle(params: { ip: string; emailCanonical
 }
 
 export async function recordLoginAttempt(ip: string, emailCanonical: string, outcome: LoginAttemptOutcome): Promise<void> {
-  await db.insert(loginAttempts).values({
-    id: generateId(),
-    ip,
-    emailCanonical,
-    outcome,
-    createdAt: new Date().toISOString(),
-  })
+  await persistence.loginAttempts.record({ ip, emailCanonical, outcome, createdAt: new Date().toISOString() })
 }
 
 /** Login bem-sucedido zera as falhas da identidade. */
 export async function resetIdentityFailures(emailCanonical: string): Promise<void> {
-  await db.delete(loginAttempts).where(and(
-    eq(loginAttempts.emailCanonical, emailCanonical),
-    eq(loginAttempts.outcome, 'FAILURE'),
-  ))
+  await persistence.loginAttempts.resetIdentityFailures(emailCanonical)
 }

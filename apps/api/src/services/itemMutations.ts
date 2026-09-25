@@ -1,14 +1,25 @@
-import { and, eq, isNull } from 'drizzle-orm'
-import { db } from '../db/index'
-import { itemLogs, items } from '../db/schema'
-import { appendAnalyticsEvent, snapshotItem } from './analytics'
-import { generateId } from '../utils/id'
 import type { ActivityActorType, ActivitySource } from '@azy-board/types'
+import type { MutationContext } from '../persistence/models'
+import { persistence } from '../persistence/runtime'
 
 type MutationActor = {
   actorType: ActivityActorType
   source: ActivitySource
   actorLabel: string | null
+}
+
+function persistenceMutationContext(input: ItemMutationInput): MutationContext {
+  return {
+    tenantId: input.tenantId,
+    actorUserId: input.userId,
+    actorKind: 'USER',
+    mutation: {
+      origin: input.apiKeyId ? 'MCP' : 'REST',
+      actorType: input.actor.actorType,
+      actorSource: input.actor.source,
+      actorLabel: input.actor.actorLabel,
+    },
+  }
 }
 
 type ItemMutationInput = {
@@ -22,77 +33,19 @@ type ItemMutationInput = {
 }
 
 export async function claimItem(input: ItemMutationInput): Promise<boolean> {
-  return db.transaction(async (tx) => {
-    const before = await snapshotItem(tx, input.tenantId, input.projectId, input.itemId)
-    const updated = await tx.update(items).set({
-      assigneeId: input.userId,
-      assigneeApiKeyId: input.apiKeyId ?? null,
-      columnId: input.columnId ?? null,
-      status: 'IN_PROGRESS',
-      updatedAt: new Date().toISOString(),
-    }).where(and(
-      eq(items.id, input.itemId),
-      eq(items.projectId, input.projectId),
-      eq(items.tenantId, input.tenantId),
-      isNull(items.assigneeId),
-    )).returning({ id: items.id })
-    if (!updated.length) return false
-
-    await tx.insert(itemLogs).values({
-      id: generateId(), tenantId: input.tenantId, itemId: input.itemId,
-      authorId: input.userId, type: 'auto', actorType: input.actor.actorType,
-      actorLabel: input.actor.actorLabel, source: input.actor.source,
-      activity: 'Card assumido para trabalho', durationMin: null,
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    })
-    await appendAnalyticsEvent(tx, {
-      tenantId: input.tenantId, projectId: input.projectId, itemId: input.itemId,
-      eventType: 'STATUS_CHANGED', actorId: input.userId,
-      origin: input.apiKeyId ? 'MCP' : 'REST', before,
-      after: await snapshotItem(tx, input.tenantId, input.projectId, input.itemId),
-    })
-    return true
-  })
+  return persistence.unitOfWork.claimItem(
+    persistenceMutationContext(input), input.projectId, input.itemId, input.userId, input.apiKeyId, input.columnId,
+  )
 }
 
 export async function releaseItem(input: ItemMutationInput): Promise<void> {
-  await db.transaction(async (tx) => {
-    const before = await snapshotItem(tx, input.tenantId, input.projectId, input.itemId)
-    await tx.update(items).set({ assigneeId: null, assigneeApiKeyId: null, status: 'NOT_STARTED', updatedAt: new Date().toISOString() })
-      .where(and(eq(items.id, input.itemId), eq(items.projectId, input.projectId), eq(items.tenantId, input.tenantId)))
-    await tx.insert(itemLogs).values({
-      id: generateId(), tenantId: input.tenantId, itemId: input.itemId,
-      authorId: input.userId, type: 'auto', actorType: input.actor.actorType,
-      actorLabel: input.actor.actorLabel, source: input.actor.source,
-      activity: 'Trabalho liberado', durationMin: null,
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    })
-    await appendAnalyticsEvent(tx, {
-      tenantId: input.tenantId, projectId: input.projectId, itemId: input.itemId,
-      eventType: 'STATUS_CHANGED', actorId: input.userId,
-      origin: input.apiKeyId ? 'MCP' : 'REST', before,
-      after: await snapshotItem(tx, input.tenantId, input.projectId, input.itemId),
-    })
-  })
+  await persistence.unitOfWork.releaseItem(persistenceMutationContext(input), input.projectId, input.itemId)
 }
 
 export async function moveItem(input: ItemMutationInput & { columnId: string; columnName: string; baseStatus: string; fromColumnName: string }): Promise<void> {
-  await db.transaction(async (tx) => {
-    const before = await snapshotItem(tx, input.tenantId, input.projectId, input.itemId)
-    await tx.update(items).set({ columnId: input.columnId, status: input.baseStatus as 'NOT_STARTED' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' | 'CANCELLED' | 'ARCHIVED', updatedAt: new Date().toISOString() })
-      .where(and(eq(items.id, input.itemId), eq(items.projectId, input.projectId), eq(items.tenantId, input.tenantId)))
-    await tx.insert(itemLogs).values({
-      id: generateId(), tenantId: input.tenantId, itemId: input.itemId,
-      authorId: input.userId, type: 'auto', actorType: input.actor.actorType,
-      actorLabel: input.actor.actorLabel, source: input.actor.source,
-      activity: `Movido de '${input.fromColumnName}' para '${input.columnName}'`, durationMin: null,
-      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    })
-    await appendAnalyticsEvent(tx, {
-      tenantId: input.tenantId, projectId: input.projectId, itemId: input.itemId,
-      eventType: 'STATUS_CHANGED', actorId: input.userId,
-      origin: input.apiKeyId ? 'MCP' : 'REST', before,
-      after: await snapshotItem(tx, input.tenantId, input.projectId, input.itemId),
-    })
-  })
+  await persistence.unitOfWork.moveItem(persistenceMutationContext(input), input.projectId, input.itemId, {
+    id: input.columnId,
+    name: input.columnName,
+    baseStatus: input.baseStatus as 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE',
+  }, input.fromColumnName)
 }

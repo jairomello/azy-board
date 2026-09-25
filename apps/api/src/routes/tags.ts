@@ -1,12 +1,10 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { eq, and } from 'drizzle-orm'
-import { db } from '../db/index'
-import { tags, itemTags } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
-import { generateId } from '../utils/id'
 import type { RequestContext } from '@azy-board/types'
 import { parseJson, tagSchema, updateTagSchema } from '../validation'
+import { persistence } from '../persistence/runtime'
+import { userPersistenceContext } from '../persistence/context'
 
 export const tagsRouter = new Hono<HonoEnv>()
 tagsRouter.use('*', authMiddleware)
@@ -19,16 +17,11 @@ tagsRouter.post('/', requireRole('MEMBER'), async (c) => {
   if (!parsed.ok) return parsed.response
   const body = parsed.data
 
-  const id = generateId()
-  await db.insert(tags).values({
-    id,
-    tenantId: ctx.tenantId,
-    projectId,
-    name: body.name,
-    color: body.color ?? '#6366f1',
+  const tag = await persistence.planning.createTag(userPersistenceContext(ctx), projectId, {
+    name: body.name, color: body.color ?? '#6366f1',
   })
 
-  return c.json({ id, name: body.name, color: body.color ?? '#6366f1' }, 201)
+  return c.json({ id: tag.id, name: tag.name, color: tag.color }, 201)
 })
 
 // GET /projects/:projectId/tags
@@ -36,9 +29,7 @@ tagsRouter.get('/', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
 
-  // [TENANT] Filtra por tenantId + projectId
-  const result = await db.select().from(tags)
-    .where(and(eq(tags.projectId, projectId), eq(tags.tenantId, ctx.tenantId)))
+  const result = await persistence.planning.listTags(userPersistenceContext(ctx), projectId)
 
   return c.json(result)
 })
@@ -51,17 +42,13 @@ tagsRouter.patch('/:tagId', requireRole('MEMBER'), async (c) => {
   if (!parsed.ok) return parsed.response
   const body = parsed.data
 
-  const existing = await db.query.tags.findFirst({
-    where: (tag) => and(eq(tag.id, tagId), eq(tag.projectId, projectId), eq(tag.tenantId, ctx.tenantId)),
-    columns: { id: true },
-  })
+  const existing = (await persistence.planning.listTags(userPersistenceContext(ctx), projectId)).find(tag => tag.id === tagId)
   if (!existing) return c.json({ error: 'Tag não encontrada' }, 404)
 
-  await db.update(tags)
-    .set({ ...(body.name && { name: body.name }), ...(body.color && { color: body.color }) })
-    .where(and(eq(tags.id, tagId), eq(tags.projectId, projectId), eq(tags.tenantId, ctx.tenantId)))
-
-  const updated = await db.query.tags.findFirst({ where: (tag) => and(eq(tag.id, tagId), eq(tag.projectId, projectId), eq(tag.tenantId, ctx.tenantId)) })
+  const updated = await persistence.planning.updateTag(userPersistenceContext(ctx), projectId, tagId, {
+    ...(body.name !== undefined ? { name: body.name } : {}),
+    ...(body.color !== undefined ? { color: body.color } : {}),
+  })
   return c.json({ tag: updated })
 })
 
@@ -70,18 +57,8 @@ tagsRouter.delete('/:tagId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, tagId } = c.req.param()
 
-  const tag = await db.query.tags.findFirst({
-    where: (t) => and(eq(t.id, tagId), eq(t.projectId, projectId), eq(t.tenantId, ctx.tenantId)),
-    columns: { id: true },
-  })
-  if (!tag) return c.json({ error: 'Tag não encontrada' }, 404)
-
-  await db.transaction(async (tx) => {
-    // [TENANT] item_tags possui tenant_id; o filtro reforça o escopo já
-    // garantido pela validação da tag acima.
-    await tx.delete(itemTags).where(and(eq(itemTags.tagId, tagId), eq(itemTags.tenantId, ctx.tenantId)))
-    await tx.delete(tags).where(and(eq(tags.id, tagId), eq(tags.tenantId, ctx.tenantId)))
-  })
+  const deleted = await persistence.planning.deleteTag(userPersistenceContext(ctx), projectId, tagId)
+  if (!deleted) return c.json({ error: 'Tag não encontrada' }, 404)
 
   return c.json({ ok: true })
 })

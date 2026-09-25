@@ -7,12 +7,15 @@ async function source(path: string) {
 describe('contrato de auditoria e diário', () => {
   test('API expõe recursos separados e grava origem do executor', async () => {
     const items = await source('../routes/items.ts')
+    const adapter = await source('../db/sqlite/adapter.ts')
     expect(items.includes("itemsRouter.get('/:itemId/audit'")).toBe(true)
     expect(items.includes("itemsRouter.get('/:itemId/work-log'")).toBe(true)
     expect(items.includes("itemsRouter.post('/:itemId/work-log'")).toBe(true)
-    expect(items.includes("eq(l.type, type)")).toBe(true)
-    expect(items.includes('actorType: audit.actorType')).toBe(true)
-    expect(items.includes('source: audit.source')).toBe(true)
+    // A separação auditoria/diário agora é resolvida pelo port de logs por `type`.
+    expect(items.includes('persistence.workLogs.listItemLogs')).toBe(true)
+    // A origem do executor é preservada no adapter SIMPLE a partir do MutationContext.
+    expect(adapter.includes('actorType: context.mutation.actorType')).toBe(true)
+    expect(adapter.includes('source: context.mutation.actorSource')).toBe(true)
   })
 
   test('auditoria normaliza texto e diário valida duração', async () => {

@@ -1,46 +1,20 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { eq, and, max, asc, sql } from 'drizzle-orm'
-import { db } from '../db/index'
-import { checklists, checklistItems, items, projects, memberships, users } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
-import { generateId } from '../utils/id'
 import { broadcast } from '../services/websocket'
 import type { RequestContext } from '@azy-board/types'
 import { checklistItemSchema, checklistSchema, parseJson, updateChecklistItemSchema, updateChecklistSchema } from '../validation'
-
-// Calcula progresso agregado dos checklists de um item para enviar no broadcast
-async function getChecklistProgress(tenantId: string, itemId: string) {
-  const rows = await db.select({
-    total: sql<number>`COUNT(${checklistItems.id})`,
-    checked: sql<number>`SUM(CASE WHEN ${checklistItems.checked} = 1 THEN 1 ELSE 0 END)`,
-  })
-    .from(checklists)
-    .leftJoin(checklistItems, eq(checklistItems.checklistId, checklists.id))
-    .where(and(eq(checklists.itemId, itemId), eq(checklists.tenantId, tenantId)))
-  return { checked: Number(rows[0]?.checked ?? 0), total: Number(rows[0]?.total ?? 0) }
-}
+import { persistence } from '../persistence/runtime'
+import { userPersistenceContext } from '../persistence/context'
+import type { ChecklistItemRecord, ChecklistRecord } from '../persistence/models'
 
 export const checklistsRouter = new Hono<HonoEnv>()
 checklistsRouter.use('*', authMiddleware)
 
-// Valida que o item existe e pertence ao tenant — anti-IDOR
-// [TENANT] join via items.tenantId antes de qualquer operação de checklist
-async function assertItemAccess(tenantId: string, itemId: string, projectId: string): Promise<boolean> {
-  const item = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, tenantId), eq(i.projectId, projectId)),
-    columns: { id: true },
-  })
-  return !!item
-}
-
 // [TENANT] Resolve o gate de checklists detalhados dentro do tenant autenticado.
 async function projectAdvancedChecklists(tenantId: string, projectId: string): Promise<boolean> {
-  const project = await db.query.projects.findFirst({
-    where: (p) => and(eq(p.id, projectId), eq(p.tenantId, tenantId)),
-    columns: { advancedChecklists: true },
-  })
+  const project = await persistence.projects.getProject({ tenantId, actorUserId: null, actorKind: 'SYSTEM' }, projectId)
   return Boolean(project?.advancedChecklists)
 }
 
@@ -57,39 +31,31 @@ function advancedFieldsDisabledResponse(c: Context) {
   }, 422)
 }
 
-// [TENANT] Responsável precisa ser membro do projeto e do tenant.
-async function isProjectMember(tenantId: string, projectId: string, userId: string): Promise<boolean> {
-  const membership = await db.query.memberships.findFirst({
-    where: (m) => and(eq(m.projectId, projectId), eq(m.userId, userId), eq(m.tenantId, tenantId)),
-    columns: { id: true },
-  })
-  return !!membership
-}
-
 // [TENANT] Resolve o responsável para devolver o objeto no payload de resposta.
 async function resolveChecklistAssignee(tenantId: string, assigneeId: string | null | undefined) {
   if (!assigneeId) return null
-  const user = await db.query.users.findFirst({
-    where: (u) => and(eq(u.id, assigneeId), eq(u.tenantId, tenantId)),
-    columns: { id: true, name: true, avatarUrl: true },
-  })
-  return user ?? null
+  const user = await persistence.identity.findUser({ tenantId, actorUserId: null, actorKind: 'SYSTEM' }, assigneeId)
+  return user ? { id: user.id, name: user.name, avatarUrl: user.avatarUrl } : null
 }
 
 // Mapeia o item de checklist expondo os campos avançados apenas no modo detalhado.
-function mapChecklistItem(
-  ci: { id: string; text: string; checked: boolean; position: number; dueDate?: string | null; assigneeId?: string | null; description?: string | null; assignee?: { id: string; name: string; avatarUrl: string | null } | null },
-  advanced: boolean,
-) {
+function mapChecklistItem(ci: ChecklistItemRecord, advanced: boolean, assignee: { id: string; name: string; avatarUrl: string | null } | null = null) {
   const base = { id: ci.id, text: ci.text, checked: Boolean(ci.checked), position: ci.position }
   if (!advanced) return base
   return {
     ...base,
     dueDate: ci.dueDate ?? null,
     assigneeId: ci.assigneeId ?? null,
-    assignee: ci.assignee ?? null,
+    assignee,
     description: ci.description ?? null,
   }
+}
+
+async function checklistResponse(tenantId: string, checklist: ChecklistRecord, advanced: boolean) {
+  const items = await Promise.all(checklist.items.map(async item => (
+    mapChecklistItem(item, advanced, advanced ? await resolveChecklistAssignee(tenantId, item.assigneeId) : null)
+  )))
+  return { id: checklist.id, name: checklist.name, position: checklist.position, items }
 }
 
 // GET /projects/:projectId/items/:itemId/checklists
@@ -97,30 +63,14 @@ checklistsRouter.get('/', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId } = c.req.param()
 
-  // [TENANT] verifica acesso antes de retornar dados
-  const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)
-  if (!allowed) return c.json({ error: 'Item não encontrado' }, 404)
+  const projectContext = userPersistenceContext(ctx)
+  const item = await persistence.items.getItem(projectContext, projectId, itemId)
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
-  // [TENANT] gate do modo detalhado resolvido no projeto do tenant
   const advanced = await projectAdvancedChecklists(ctx.tenantId, projectId)
+  const rows = await persistence.checklists.listChecklists(projectContext, projectId, itemId)
 
-  const rows = await db.query.checklists.findMany({
-    where: (cl) => and(eq(cl.itemId, itemId), eq(cl.tenantId, ctx.tenantId)),
-    with: {
-      checklistItems: {
-        orderBy: (ci) => [asc(ci.position)],
-        with: { assignee: { columns: { id: true, name: true, avatarUrl: true } } },
-      },
-    },
-    orderBy: (cl) => [asc(cl.position)],
-  })
-
-  return c.json(rows.map(cl => ({
-    id: cl.id,
-    name: cl.name,
-    position: cl.position,
-    items: cl.checklistItems.map(ci => mapChecklistItem(ci, advanced)),
-  })))
+  return c.json(await Promise.all(rows.map(row => checklistResponse(ctx.tenantId, row, advanced))))
 })
 
 // POST /projects/:projectId/items/:itemId/checklists
@@ -133,31 +83,16 @@ checklistsRouter.post('/', requireRole('MEMBER'), async (c) => {
 
   if (!body.name?.trim()) return c.json({ error: 'name é obrigatório' }, 400)
 
-  // [TENANT] verifica acesso ao item
-  const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)
-  if (!allowed) return c.json({ error: 'Item não encontrado' }, 404)
+  const projectContext = userPersistenceContext(ctx)
+  const item = await persistence.items.getItem(projectContext, projectId, itemId)
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
-  const id = generateId()
-  const position = await db.transaction(async (tx) => {
-    const maxPos = await tx.select({ pos: max(checklists.position) })
-      .from(checklists)
-      .where(and(eq(checklists.itemId, itemId), eq(checklists.tenantId, ctx.tenantId)))
-    const nextPosition = (maxPos[0]?.pos ?? -1) + 1
-    await tx.insert(checklists).values({
-      id,
-      tenantId: ctx.tenantId, // [TENANT]
-      itemId,
-      name: body.name.trim(),
-      position: nextPosition,
-      createdAt: new Date().toISOString(),
-    })
-    return nextPosition
-  })
+  const created = await persistence.checklists.createChecklist(projectContext, projectId, itemId, body.name.trim())
 
-  const progress = await getChecklistProgress(ctx.tenantId, itemId)
+  const progress = await persistence.checklists.getChecklistProgress(projectContext, itemId)
   broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, progress } })
 
-  return c.json({ id, name: body.name.trim(), position, items: [] }, 201)
+  return c.json({ id: created.id, name: created.name, position: created.position, items: [] }, 201)
 })
 
 // PATCH /projects/:projectId/items/:itemId/checklists/:checklistId
@@ -168,23 +103,20 @@ checklistsRouter.patch('/:checklistId', requireRole('MEMBER'), async (c) => {
   if (!parsed.ok) return parsed.response
   const body = parsed.data
 
-  // [TENANT] verifica acesso via item
-  const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)
-  if (!allowed) return c.json({ error: 'Item não encontrado' }, 404)
+  const projectContext = userPersistenceContext(ctx)
+  const item = await persistence.items.getItem(projectContext, projectId, itemId)
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
-  const cl = await db.query.checklists.findFirst({
-    where: (cl) => and(eq(cl.id, checklistId), eq(cl.itemId, itemId), eq(cl.tenantId, ctx.tenantId)),
+  const existing = await persistence.checklists.getChecklist(projectContext, projectId, itemId, checklistId)
+  if (!existing) return c.json({ error: 'Checklist não encontrado' }, 404)
+
+  const updated = await persistence.checklists.updateChecklist(projectContext, projectId, itemId, checklistId, {
+    ...(body.name !== undefined ? { name: body.name.trim() } : {}),
+    ...(body.position !== undefined ? { position: body.position } : {}),
   })
-  if (!cl) return c.json({ error: 'Checklist não encontrado' }, 404)
+  if (!updated) return c.json({ error: 'Checklist não encontrado' }, 404)
 
-  const updates: Partial<typeof checklists.$inferInsert> = {}
-  if (body.name !== undefined) updates.name = body.name.trim()
-  if (body.position !== undefined) updates.position = body.position
-
-  await db.update(checklists).set(updates)
-    .where(and(eq(checklists.id, checklistId), eq(checklists.tenantId, ctx.tenantId)))
-
-  return c.json({ ...cl, ...updates })
+  return c.json({ ...updated, items: undefined })
 })
 
 // DELETE /projects/:projectId/items/:itemId/checklists/:checklistId
@@ -192,20 +124,13 @@ checklistsRouter.delete('/:checklistId', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId, checklistId } = c.req.param()
 
-  // [TENANT] verifica acesso via item
-  const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)
-  if (!allowed) return c.json({ error: 'Item não encontrado' }, 404)
+  const projectContext = userPersistenceContext(ctx)
+  const item = await persistence.items.getItem(projectContext, projectId, itemId)
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
-  // [INTEGRIDADE] checklist_items → checklists (NO ACTION): remover os passos
-  // antes do checklist, na mesma transação (Item 12).
-  await db.transaction(async (tx) => {
-    await tx.delete(checklistItems)
-      .where(and(eq(checklistItems.checklistId, checklistId), eq(checklistItems.tenantId, ctx.tenantId)))
-    await tx.delete(checklists)
-      .where(and(eq(checklists.id, checklistId), eq(checklists.itemId, itemId), eq(checklists.tenantId, ctx.tenantId)))
-  })
+  await persistence.checklists.deleteChecklist(projectContext, projectId, itemId, checklistId)
 
-  const progress = await getChecklistProgress(ctx.tenantId, itemId)
+  const progress = await persistence.checklists.getChecklistProgress(projectContext, itemId)
   broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, progress } })
 
   return c.body(null, 204)
@@ -221,56 +146,42 @@ checklistsRouter.post('/:checklistId/items', requireRole('MEMBER'), async (c) =>
 
   if (!body.text?.trim()) return c.json({ error: 'text é obrigatório' }, 400)
 
-  // [TENANT] verifica acesso via item
-  const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)
-  if (!allowed) return c.json({ error: 'Item não encontrado' }, 404)
+  const projectContext = userPersistenceContext(ctx)
+  const item = await persistence.items.getItem(projectContext, projectId, itemId)
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
   // Gate: campos avançados só existem quando o projeto habilita checklists detalhados.
   const advanced = await projectAdvancedChecklists(ctx.tenantId, projectId)
   if (!advanced && hasAdvancedChecklistFields(body as Record<string, unknown>)) return advancedFieldsDisabledResponse(c)
   if (advanced && body.assigneeId) {
     // [TENANT] responsável precisa ser membro do projeto do tenant autenticado
-    const member = await isProjectMember(ctx.tenantId, projectId, body.assigneeId)
+    const member = await persistence.projects.getMembership(projectContext, projectId, body.assigneeId)
     if (!member) return c.json({ error: 'O responsável deve ser membro do projeto', code: 'INVALID_ASSIGNEE', retryable: false }, 422)
   }
 
-  const cl = await db.query.checklists.findFirst({
-    where: (cl) => and(eq(cl.id, checklistId), eq(cl.itemId, itemId), eq(cl.tenantId, ctx.tenantId)),
-    columns: { id: true },
-  })
-  if (!cl) return c.json({ error: 'Checklist não encontrado' }, 404)
+  const checklist = await persistence.checklists.getChecklist(projectContext, projectId, itemId, checklistId)
+  if (!checklist) return c.json({ error: 'Checklist não encontrado' }, 404)
 
-  const id = generateId()
-  const position = await db.transaction(async (tx) => {
-    const maxPos = await tx.select({ pos: max(checklistItems.position) })
-      .from(checklistItems)
-      .where(and(eq(checklistItems.checklistId, checklistId), eq(checklistItems.tenantId, ctx.tenantId)))
-    const nextPosition = (maxPos[0]?.pos ?? -1) + 1
-    await tx.insert(checklistItems).values({
-      id,
-      tenantId: ctx.tenantId, // [TENANT]
-      checklistId,
+  let created: ChecklistItemRecord
+  try {
+    created = await persistence.checklists.createChecklistItem(projectContext, projectId, itemId, checklistId, {
       text: body.text.trim(),
       checked: false,
-      position: nextPosition,
       dueDate: advanced ? body.dueDate ?? null : null,
       assigneeId: advanced ? body.assigneeId ?? null : null,
       description: advanced ? body.description ?? null : null,
     })
-    return nextPosition
-  })
+  } catch (error) {
+    if (error instanceof Error && error.message === 'CHECKLIST_NOT_FOUND') return c.json({ error: 'Checklist não encontrado' }, 404)
+    throw error
+  }
 
-  const newItem = mapChecklistItem({
-    id,
-    text: body.text.trim(),
-    checked: false,
-    position,
-    dueDate: advanced ? body.dueDate ?? null : null,
-    assigneeId: advanced ? body.assigneeId ?? null : null,
-    assignee: advanced ? await resolveChecklistAssignee(ctx.tenantId, body.assigneeId) : null,
-    description: advanced ? body.description ?? null : null,
-  }, advanced)
-  const progress = await getChecklistProgress(ctx.tenantId, itemId)
+  const newItem = mapChecklistItem(
+    created,
+    advanced,
+    advanced ? await resolveChecklistAssignee(ctx.tenantId, created.assigneeId) : null,
+  )
+  const progress = await persistence.checklists.getChecklistProgress(projectContext, itemId)
   broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, checklistId, progress } })
 
   return c.json(newItem, 201)
@@ -284,53 +195,42 @@ checklistsRouter.patch('/:checklistId/items/:checklistItemId', requireRole('MEMB
   if (!parsed.ok) return parsed.response
   const body = parsed.data
 
-  // [TENANT] verifica acesso via item
-  const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)
-  if (!allowed) return c.json({ error: 'Item não encontrado' }, 404)
+  const projectContext = userPersistenceContext(ctx)
+  const item = await persistence.items.getItem(projectContext, projectId, itemId)
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
   // Gate: campos avançados só existem quando o projeto habilita checklists detalhados.
   const advanced = await projectAdvancedChecklists(ctx.tenantId, projectId)
   if (!advanced && hasAdvancedChecklistFields(body as Record<string, unknown>)) return advancedFieldsDisabledResponse(c)
   if (advanced && body.assigneeId) {
     // [TENANT] responsável precisa ser membro do projeto do tenant autenticado
-    const member = await isProjectMember(ctx.tenantId, projectId, body.assigneeId)
+    const member = await persistence.projects.getMembership(projectContext, projectId, body.assigneeId)
     if (!member) return c.json({ error: 'O responsável deve ser membro do projeto', code: 'INVALID_ASSIGNEE', retryable: false }, 422)
   }
 
-  const ci = await db.query.checklistItems.findFirst({
-    where: (ci) => and(eq(ci.id, checklistItemId), eq(ci.checklistId, checklistId), eq(ci.tenantId, ctx.tenantId)),
-  })
+  const checklist = await persistence.checklists.getChecklist(projectContext, projectId, itemId, checklistId)
+  if (!checklist) return c.json({ error: 'Checklist não pertence ao item informado', code: 'CHECKLIST_ITEM_MISMATCH', retryable: false }, 404)
+  const ci = checklist.items.find(candidate => candidate.id === checklistItemId)
   if (!ci) return c.json({ error: 'Item de checklist não encontrado' }, 404)
 
-  const checklist = await db.query.checklists.findFirst({
-    where: (cl) => and(eq(cl.id, checklistId), eq(cl.itemId, itemId), eq(cl.tenantId, ctx.tenantId)),
-    columns: { id: true },
+  const updated = await persistence.checklists.updateChecklistItem(projectContext, projectId, itemId, checklistId, checklistItemId, {
+    ...(body.text !== undefined ? { text: body.text.trim() } : {}),
+    ...(body.checked !== undefined ? { checked: body.checked } : {}),
+    ...(body.position !== undefined ? { position: body.position } : {}),
+    ...(advanced && body.dueDate !== undefined ? { dueDate: body.dueDate } : {}),
+    ...(advanced && body.assigneeId !== undefined ? { assigneeId: body.assigneeId } : {}),
+    ...(advanced && body.description !== undefined ? { description: body.description } : {}),
   })
-  if (!checklist) return c.json({ error: 'Checklist não pertence ao item informado', code: 'CHECKLIST_ITEM_MISMATCH', retryable: false }, 404)
+  if (!updated) return c.json({ error: 'Item de checklist não encontrado' }, 404)
 
-  const updates: Partial<typeof checklistItems.$inferInsert> = {}
-  if (body.text !== undefined) updates.text = body.text.trim()
-  if (body.checked !== undefined) updates.checked = body.checked
-  if (body.position !== undefined) updates.position = body.position
-  if (advanced) {
-    if (body.dueDate !== undefined) updates.dueDate = body.dueDate
-    if (body.assigneeId !== undefined) updates.assigneeId = body.assigneeId
-    if (body.description !== undefined) updates.description = body.description
-  }
-
-  await db.update(checklistItems).set(updates)
-    .where(and(eq(checklistItems.id, checklistItemId), eq(checklistItems.tenantId, ctx.tenantId)))
-
-  const progress = await getChecklistProgress(ctx.tenantId, itemId)
+  const progress = await persistence.checklists.getChecklistProgress(projectContext, itemId)
   broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, checklistId, progress } })
 
-  const effectiveAssigneeId = updates.assigneeId !== undefined ? updates.assigneeId : ci.assigneeId
-  return c.json(mapChecklistItem({
-    ...ci,
-    ...updates,
-    checked: Boolean(body.checked ?? ci.checked),
-    assignee: advanced ? await resolveChecklistAssignee(ctx.tenantId, effectiveAssigneeId) : null,
-  }, advanced))
+  return c.json(mapChecklistItem(
+    updated,
+    advanced,
+    advanced ? await resolveChecklistAssignee(ctx.tenantId, updated.assigneeId) : null,
+  ))
 })
 
 // DELETE /projects/:projectId/items/:itemId/checklists/:checklistId/items/:checklistItemId
@@ -338,24 +238,16 @@ checklistsRouter.delete('/:checklistId/items/:checklistItemId', requireRole('MEM
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId, checklistId, checklistItemId } = c.req.param()
 
-  // [TENANT] verifica acesso via item
-  const allowed = await assertItemAccess(ctx.tenantId, itemId, projectId)
-  if (!allowed) return c.json({ error: 'Item não encontrado' }, 404)
+  const projectContext = userPersistenceContext(ctx)
+  const item = await persistence.items.getItem(projectContext, projectId, itemId)
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
-  const checklist = await db.query.checklists.findFirst({
-    where: (cl) => and(eq(cl.id, checklistId), eq(cl.itemId, itemId), eq(cl.tenantId, ctx.tenantId)),
-    columns: { id: true },
-  })
+  const checklist = await persistence.checklists.getChecklist(projectContext, projectId, itemId, checklistId)
   if (!checklist) return c.json({ error: 'Checklist não pertence ao item informado', code: 'CHECKLIST_ITEM_MISMATCH', retryable: false }, 404)
 
-  await db.delete(checklistItems)
-    .where(and(
-      eq(checklistItems.id, checklistItemId),
-      eq(checklistItems.checklistId, checklistId),
-      eq(checklistItems.tenantId, ctx.tenantId),
-    ))
+  await persistence.checklists.deleteChecklistItem(projectContext, projectId, itemId, checklistId, checklistItemId)
 
-  const progress = await getChecklistProgress(ctx.tenantId, itemId)
+  const progress = await persistence.checklists.getChecklistProgress(projectContext, itemId)
   broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, checklistId, progress } })
 
   return c.body(null, 204)

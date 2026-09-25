@@ -10,6 +10,22 @@ import { relations, sql } from 'drizzle-orm'
 // [DB-SWAP] Em PostgreSQL, trocar por `TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP`.
 const defaultNowIso = () => sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`
 
+// Metadados da instalação, não dados de negócio: guardam o perfil imutável e
+// ligam o banco ao marcador no volume persistente (SIMPLE/ADVANCED).
+// [DB-SWAP] Recriar esta tabela na migration PostgreSQL; não importar o DDL SQLite.
+export const installationMetadata = sqliteTable('installation_metadata', {
+  id: integer('id').primaryKey(),
+  instanceId: text('instance_id').notNull(),
+  profile: text('profile', { enum: ['SIMPLE', 'ADVANCED'] }).notNull(),
+  databaseFingerprint: text('database_fingerprint').notNull(),
+  schemaRevision: integer('schema_revision').notNull(),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+}, (table) => ({
+  singleton: check('installation_metadata_singleton_check', sql`${table.id} = 1`),
+  profileCheck: check('installation_metadata_profile_check', sql`${table.profile} IN ('SIMPLE','ADVANCED')`),
+  schemaRevisionCheck: check('installation_metadata_revision_check', sql`${table.schemaRevision} >= 1`),
+}))
+
 // ---------------------------------------------------------------------------
 // TENANTS — raiz do isolamento multi-tenant
 // [TENANT] Toda entidade de negócio tem FK para esta tabela

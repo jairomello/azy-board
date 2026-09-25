@@ -1,16 +1,14 @@
 import { Hono } from 'hono'
-import { and, eq } from 'drizzle-orm'
 import type { HonoEnv } from '../types/hono'
 import type { GlobalGroup, Language, LightShellTheme, RequestContext, Theme } from '@azy-board/types'
-import { db } from '../db'
-import { users } from '../db/schema'
 import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
 import { hasGlobalGroup, hashPassword, isGlobalGroup } from '../services/auth'
-import { generateId } from '../utils/id'
 import { normalizeEmail } from '../utils/email'
 import { createUserSchema, groupSchema, parseJson, preferencesSchema } from '../validation'
 import { avatarStore } from '../services/avatarStore'
 import { AvatarValidationError, MAX_AVATAR_SIZE, normalizeAvatar } from '../services/avatarImage'
+import { persistence } from '../persistence/runtime'
+import { userPersistenceContext } from '../persistence/context'
 
 const THEMES = new Set<Theme>(['light', 'dark'])
 const LANGUAGES = new Set<Language>(['pt-BR', 'en', 'es'])
@@ -26,38 +24,21 @@ const ALLOWED_FIELDS = new Set(['theme', 'lightShellTheme', 'language', 'autoThe
 export const usersRouter = new Hono<HonoEnv>()
 usersRouter.use('*', authMiddleware)
 
-const PUBLIC_USER_COLUMNS = {
-  id: true, email: true, name: true, avatarUrl: true, globalGroup: true,
-} as const
-
-// Projeção do próprio usuário (nunca inclui o BLOB de avatar, que vive em user_avatars).
-const SELF_USER_COLUMNS = {
-  id: true,
-  email: true,
-  name: true,
-  avatarUrl: true,
-  theme: true,
-  lightShellTheme: true,
-  language: true,
-  autoThemeByTime: true,
-  globalGroup: true,
-} as const
-
 function loadSelfUser(tenantId: string, userId: string) {
   // [TENANT] Alvo sempre derivado da sessão e filtrado por usuário + tenant.
-  return db.query.users.findFirst({
-    where: (u) => and(eq(u.id, userId), eq(u.tenantId, tenantId)),
-    columns: SELF_USER_COLUMNS,
-  })
+  return persistence.identity.findUser({ tenantId, actorUserId: userId, actorKind: 'SYSTEM' }, userId)
+    .then(user => user ? {
+      id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl,
+      theme: user.theme, lightShellTheme: user.lightShellTheme, language: user.language,
+      autoThemeByTime: user.autoThemeByTime, globalGroup: user.globalGroup,
+    } : null)
 }
 
 usersRouter.get('/', requireGlobalGroup('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const result = await db.query.users.findMany({
-    // [TENANT] Administração só lista usuários do tenant ativo.
-    where: (u) => eq(u.tenantId, ctx.tenantId),
-    columns: PUBLIC_USER_COLUMNS,
-  })
+  const result = (await persistence.identity.listUsers(userPersistenceContext(ctx))).map(user => ({
+    id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, globalGroup: user.globalGroup,
+  }))
   return c.json(result)
 })
 
@@ -72,15 +53,17 @@ usersRouter.post('/', requireGlobalGroup('ADMIN'), async (c) => {
   const name = body.name.trim()
   if (!isGlobalGroup(group)) return c.json({ error: 'Grupo inválido' }, 400)
   if (!hasGlobalGroup(ctx.globalGroup, group) || (ctx.globalGroup === 'ADMIN' && group === 'ROOT')) return c.json({ error: 'Grupo não permitido' }, 403)
-  const existing = await db.query.users.findFirst({ where: (u) => eq(u.email, email), columns: { id: true, tenantId: true } })
+  const existing = await persistence.identity.findUserByCanonicalEmail(email)
   if (existing) {
     // Identidade global: o e-mail pertence a um único usuário, em qualquer tenant.
     return c.json({ error: existing.tenantId === ctx.tenantId ? 'E-mail já cadastrado neste tenant' : 'E-mail já cadastrado em outro tenant' }, 409)
   }
-  const id = generateId()
-  await db.insert(users).values({ id, tenantId: ctx.tenantId, email, name, passwordHash: await hashPassword(body.password), globalGroup: group, createdAt: new Date().toISOString() })
-  const created = await db.query.users.findFirst({ where: (u) => and(eq(u.id, id), eq(u.tenantId, ctx.tenantId)), columns: PUBLIC_USER_COLUMNS })
-  return c.json(created, 201)
+  const created = await persistence.identity.createUser(userPersistenceContext(ctx), {
+    email, name, passwordHash: await hashPassword(body.password), globalGroup: group,
+  })
+  const { passwordHash: _passwordHash, ...publicCreated } = created
+  const publicUser = { id: publicCreated.id, email: publicCreated.email, name: publicCreated.name, avatarUrl: publicCreated.avatarUrl, globalGroup: publicCreated.globalGroup }
+  return c.json(publicUser, 201)
 })
 
 usersRouter.patch('/:userId/group', requireGlobalGroup('ADMIN'), async (c) => {
@@ -93,9 +76,9 @@ usersRouter.patch('/:userId/group', requireGlobalGroup('ADMIN'), async (c) => {
   if (!isGlobalGroup(body.globalGroup)) return c.json({ error: 'Grupo inválido' }, 400)
   if (userId === ctx.userId) return c.json({ error: 'Não é permitido alterar o próprio grupo' }, 403)
   if (!hasGlobalGroup(ctx.globalGroup, body.globalGroup) || (ctx.globalGroup === 'ADMIN' && body.globalGroup === 'ROOT')) return c.json({ error: 'Grupo não permitido' }, 403)
-  const target = await db.query.users.findFirst({ where: (u) => and(eq(u.id, userId), eq(u.tenantId, ctx.tenantId)), columns: { id: true } })
+  const target = await persistence.identity.findUser(userPersistenceContext(ctx), userId)
   if (!target) return c.json({ error: 'Usuário não encontrado' }, 404)
-  await db.update(users).set({ globalGroup: body.globalGroup }).where(and(eq(users.id, userId), eq(users.tenantId, ctx.tenantId)))
+  await persistence.identity.updateUserGroup(userPersistenceContext(ctx), userId, body.globalGroup)
   return c.json({ ok: true, globalGroup: body.globalGroup })
 })
 
@@ -131,26 +114,13 @@ usersRouter.patch('/me', async (c) => {
   if (body.autoThemeByTime !== undefined) updates.autoThemeByTime = body.autoThemeByTime
 
   // [TENANT] O alvo é derivado exclusivamente da sessão e filtrado por usuário + tenant.
-  await db.update(users)
-    .set(updates)
-    .where(and(eq(users.id, ctx.userId), eq(users.tenantId, ctx.tenantId)))
-
-  const user = await db.query.users.findFirst({
-    where: (u) => and(eq(u.id, ctx.userId), eq(u.tenantId, ctx.tenantId)),
-    columns: {
-      id: true,
-      email: true,
-      name: true,
-      avatarUrl: true,
-      theme: true,
-      lightShellTheme: true,
-      language: true,
-      autoThemeByTime: true,
-    },
-  })
+  const user = await persistence.identity.updateUserPreferences(userPersistenceContext(ctx), ctx.userId, updates)
 
   if (!user) return c.json({ error: 'Usuário não encontrado' }, 404)
-  return c.json({ user })
+  return c.json({ user: {
+    id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl,
+    theme: user.theme, lightShellTheme: user.lightShellTheme, language: user.language, autoThemeByTime: user.autoThemeByTime,
+  } })
 })
 
 // PUT /users/me/avatar — upload multipart da foto de perfil
@@ -188,7 +158,7 @@ usersRouter.put('/me/avatar', async (c) => {
       data: normalized.data,
     })
     // [TENANT] Atualiza o ponteiro público apenas no próprio usuário do tenant.
-    await db.update(users).set({ avatarUrl: url }).where(and(eq(users.id, ctx.userId), eq(users.tenantId, ctx.tenantId)))
+    await persistence.identity.updateAvatarUrl(userPersistenceContext(ctx), ctx.userId, url)
   } catch (error) {
     if (error instanceof AvatarValidationError) {
       const status = error.code === 'IMAGE_TOO_LARGE' ? 413 : 415
@@ -207,7 +177,7 @@ usersRouter.delete('/me/avatar', async (c) => {
   const ctx = c.get('ctx') as RequestContext
   // [TENANT] Remoção escopada ao tenant/usuário da sessão.
   await avatarStore.remove(ctx.tenantId, ctx.userId)
-  await db.update(users).set({ avatarUrl: null }).where(and(eq(users.id, ctx.userId), eq(users.tenantId, ctx.tenantId)))
+  await persistence.identity.updateAvatarUrl(userPersistenceContext(ctx), ctx.userId, null)
 
   const user = await loadSelfUser(ctx.tenantId, ctx.userId)
   if (!user) return c.json({ error: 'Usuário não encontrado' }, 404)
@@ -221,10 +191,7 @@ usersRouter.get('/:userId/avatar', async (c) => {
   if (!userId) return c.json({ error: 'Usuário não especificado' }, 400)
 
   // [TENANT] Só membros do mesmo tenant enxergam o usuário alvo (Anti-IDOR).
-  const target = await db.query.users.findFirst({
-    where: (u) => and(eq(u.id, userId), eq(u.tenantId, ctx.tenantId)),
-    columns: { id: true },
-  })
+  const target = await persistence.identity.findUser(userPersistenceContext(ctx), userId)
   if (!target) return c.json({ error: 'Foto de perfil não encontrada' }, 404)
 
   const avatar = await avatarStore.get(ctx.tenantId, userId)

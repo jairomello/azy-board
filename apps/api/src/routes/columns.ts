@@ -1,13 +1,10 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { eq, and, asc, gt } from 'drizzle-orm'
-import { db } from '../db/index'
-import { columns, items } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
-import { generateId } from '../utils/id'
-import { broadcast } from '../services/websocket'
-import type { RequestContext, ColumnBaseStatus } from '@azy-board/types'
+import type { RequestContext } from '@azy-board/types'
 import { columnSchema, deleteColumnSchema, parseJson, reorderSchema, updateColumnSchema } from '../validation'
+import { persistence } from '../persistence/runtime'
+import { userPersistenceContext } from '../persistence/context'
 
 export const columnsRouter = new Hono<HonoEnv>()
 columnsRouter.use('*', authMiddleware)
@@ -17,10 +14,7 @@ columnsRouter.get('/', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
 
-  // [TENANT] Duplo filtro: tenantId + projectId
-  const result = await db.select().from(columns)
-    .where(and(eq(columns.projectId, projectId), eq(columns.tenantId, ctx.tenantId)))
-    .orderBy(asc(columns.position))
+  const result = await persistence.projects.listColumns(userPersistenceContext(ctx), projectId)
 
   return c.json(result)
 })
@@ -33,21 +27,11 @@ columnsRouter.post('/', requireRole('ADMIN'), async (c) => {
   if (!parsed.ok) return parsed.response
   const body = parsed.data
 
-  const existing = await db.select().from(columns)
-    .where(and(eq(columns.projectId, projectId), eq(columns.tenantId, ctx.tenantId)))
-  const position = existing.length
-
-  const id = generateId()
-  await db.insert(columns).values({
-    id,
-    tenantId: ctx.tenantId,
-    projectId,
-    name: body.name,
-    baseStatus: body.baseStatus,
-    position,
+  const created = await persistence.projects.createColumn(userPersistenceContext(ctx), projectId, {
+    name: body.name, baseStatus: body.baseStatus,
   })
 
-  return c.json({ id, name: body.name, baseStatus: body.baseStatus }, 201)
+  return c.json({ id: created.id, name: created.name, baseStatus: created.baseStatus }, 201)
 })
 
 // PATCH /projects/:projectId/columns/reorder — antes de /:colId para não colidir
@@ -58,15 +42,7 @@ columnsRouter.patch('/reorder', requireRole('MEMBER'), async (c) => {
   if (!parsed.ok) return parsed.response
   const body = parsed.data
 
-  await db.transaction(async (tx) => {
-    for (let i = 0; i < body.order.length; i++) {
-      const colId = body.order[i]!
-      await tx.update(columns)
-        .set({ position: i })
-        // [TENANT] Garante que só colunas do tenant correto são reordenadas
-        .where(and(eq(columns.id, colId), eq(columns.tenantId, ctx.tenantId), eq(columns.projectId, projectId)))
-    }
-  })
+  await persistence.projects.reorderColumns(userPersistenceContext(ctx), projectId, body.order)
 
   return c.json({ ok: true })
 })
@@ -80,17 +56,13 @@ columnsRouter.patch('/:colId', requireRole('ADMIN'), async (c) => {
   if (!parsed.ok) return parsed.response
   const body = parsed.data
 
-  const existing = await db.query.columns.findFirst({
-    where: (col) => and(eq(col.id, colId), eq(col.projectId, projectId), eq(col.tenantId, ctx.tenantId)),
-    columns: { id: true },
-  })
+  const existing = await persistence.projects.getColumn(userPersistenceContext(ctx), projectId, colId)
   if (!existing) return c.json({ error: 'Coluna não encontrada' }, 404)
 
-  await db.update(columns)
-    .set({ ...(body.name && { name: body.name }), ...(body.baseStatus && { baseStatus: body.baseStatus }) })
-    .where(and(eq(columns.id, colId), eq(columns.projectId, projectId), eq(columns.tenantId, ctx.tenantId)))
-
-  const updated = await db.query.columns.findFirst({ where: (col) => and(eq(col.id, colId), eq(col.projectId, projectId), eq(col.tenantId, ctx.tenantId)) })
+  const updated = await persistence.projects.updateColumn(userPersistenceContext(ctx), projectId, colId, {
+    ...(body.name !== undefined ? { name: body.name } : {}),
+    ...(body.baseStatus !== undefined ? { baseStatus: body.baseStatus } : {}),
+  })
   return c.json({ column: updated })
 })
 
@@ -103,29 +75,14 @@ columnsRouter.delete('/:colId', requireRole('ADMIN'), async (c) => {
   if (!parsed.ok) return parsed.response
   const body = parsed.data
 
-  const existing = await db.query.columns.findFirst({
-    where: (col) => and(eq(col.id, colId), eq(col.projectId, projectId), eq(col.tenantId, ctx.tenantId)),
-    columns: { id: true },
-  })
+  const existing = await persistence.projects.getColumn(userPersistenceContext(ctx), projectId, colId)
   if (!existing) return c.json({ error: 'Coluna não encontrada' }, 404)
   if (body.moveToColumnId) {
-    const target = await db.query.columns.findFirst({
-      where: (col) => and(eq(col.id, body.moveToColumnId!), eq(col.projectId, projectId), eq(col.tenantId, ctx.tenantId)),
-      columns: { id: true },
-    })
+    const target = await persistence.projects.getColumn(userPersistenceContext(ctx), projectId, body.moveToColumnId)
     if (!target) return c.json({ error: 'Coluna destino não encontrada' }, 400)
   }
 
-  await db.transaction(async (tx) => {
-    if (body.moveToColumnId) {
-      await tx.update(items)
-        .set({ columnId: body.moveToColumnId })
-        .where(and(eq(items.columnId, colId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
-    }
-
-    await tx.delete(columns)
-      .where(and(eq(columns.id, colId), eq(columns.projectId, projectId), eq(columns.tenantId, ctx.tenantId)))
-  })
+  await persistence.projects.deleteColumn(userPersistenceContext(ctx), projectId, colId, body.moveToColumnId ?? undefined)
 
   return c.json({ ok: true })
 })

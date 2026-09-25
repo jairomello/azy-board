@@ -32,6 +32,7 @@
     "check:i18n": "bun run scripts/check-i18n.ts",
     "check:frontend-tests": "bun run scripts/check-frontend-tests.ts",
     "check:bundle": "bun run scripts/check-bundle.ts",
+    "check:persistence": "bun run scripts/check-persistence-boundaries.ts",
     "test:migrations": "bun test apps/api/src/db/migration.test.ts apps/api/src/db/integrity.test.ts apps/api/src/db/timestamp.test.ts",
     "test:mcp": "bun run --cwd apps/mcp test",
     "evals": "bun run scripts/evals.ts",
@@ -39,7 +40,7 @@
     "evals:env": "bun run scripts/buildEvalEnv.ts",
     "lint": "bun run scripts/lint.ts",
     "typecheck": "bun run --cwd packages/types typecheck && bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck && bun run --cwd apps/mcp typecheck",
-    "check": "bun run typecheck && bun run lint && bun test --isolate && bun run build"
+    "check": "bun run typecheck && bun run lint && bun run check:persistence && bun test --isolate && bun run build"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",

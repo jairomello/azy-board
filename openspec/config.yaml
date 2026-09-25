@@ -13,6 +13,13 @@ context: |
     - i18n: i18next + react-i18next (PT-BR padrão, EN, ES)
     - Lightbox: yet-another-react-lightbox (MIT)
     - MCP: @modelcontextprotocol/sdk (MIT)
+    - Redis: ioredis (MIT) para coordenação no perfil ADVANCED; Valkey (BSD) como referência
+
+  Perfis de instalação (AZYBOARD_INSTALL_PROFILE):
+    - SIMPLE (padrão): SQLite local, sem serviços externos. Suporta produção pequena.
+    - ADVANCED: PostgreSQL + Valkey/Redis. Exige instalação nova com banco/volume novos.
+    - A escolha é permanente por instalação; dados não são migrados entre perfis.
+    - Marcadores vinculados no banco e volume impedem troca acidental de perfil.
 
   Arquitetura multi-tenant:
     - Shared schema com tenant_id em TODAS as tabelas de negócio

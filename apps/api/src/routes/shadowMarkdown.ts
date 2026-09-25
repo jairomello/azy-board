@@ -1,12 +1,10 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { eq, and } from 'drizzle-orm'
-import { db } from '../db/index'
-import { items, columns } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { broadcast } from '../services/websocket'
 import type { RequestContext } from '@azy-board/types'
-import { appendAnalyticsEvent, snapshotItem } from '../services/analytics'
+import { persistence } from '../persistence/runtime'
+import { userMutationContext, userPersistenceContext } from '../persistence/context'
 
 export const shadowMarkdownRouter = new Hono<HonoEnv>()
 shadowMarkdownRouter.use('*', authMiddleware)
@@ -16,23 +14,13 @@ shadowMarkdownRouter.get('/', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
 
-  // [TENANT] Filtra por tenantId + projectId
-  const [allColumns, activeSprint, allItems] = await Promise.all([
-    db.query.columns.findMany({
-      where: (col) => and(eq(col.projectId, projectId), eq(col.tenantId, ctx.tenantId)),
-      orderBy: (col, { asc }) => [asc(col.position)],
-    }),
-    db.query.sprints.findFirst({
-      where: (s) => and(eq(s.projectId, projectId), eq(s.tenantId, ctx.tenantId), eq(s.status, 'OPEN')),
-    }),
-    db.query.items.findMany({
-      where: (i) => and(eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
-      with: {
-        itemTags: { with: { tag: true } },
-        assignee: { columns: { name: true } },
-      },
-    }),
+  const projectContext = userPersistenceContext(ctx)
+  const [allColumns, projectSprints, allItems] = await Promise.all([
+    persistence.projects.listColumns(projectContext, projectId),
+    persistence.planning.listSprints(projectContext, projectId),
+    persistence.items.listItemsWithRelations(projectContext, projectId),
   ])
+  const activeSprint = projectSprints.find(sprint => sprint.status === 'OPEN')
 
   // Apenas TASK e BUG com coluna aparecem no board markdown
   const boardItems = allItems.filter(i => ['TASK', 'BUG'].includes(i.type) && i.columnId)
@@ -74,9 +62,11 @@ shadowMarkdownRouter.patch('/', requireRole('MEMBER'), async (c) => {
   const projectId = c.req.param('projectId')!
   const body = await c.req.text()
 
-  const allColumns = await db.query.columns.findMany({
-    where: (col) => and(eq(col.projectId, projectId), eq(col.tenantId, ctx.tenantId)),
-  })
+  const projectContext = userPersistenceContext(ctx)
+  const [allColumns, allItems] = await Promise.all([
+    persistence.projects.listColumns(projectContext, projectId),
+    persistence.items.listItems(projectContext, projectId),
+  ])
 
   const errors: string[] = []
   const moves: Array<{ itemId: string; columnId: string }> = []
@@ -92,10 +82,7 @@ shadowMarkdownRouter.patch('/', requireRole('MEMBER'), async (c) => {
       if (!match) continue
       const shortId = match[1]!
 
-      const all = await db.query.items.findMany({
-        where: (i) => and(eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)),
-      })
-      const item = all.find(i => i.id.startsWith(shortId))
+      const item = allItems.find(i => i.id.startsWith(shortId))
 
       if (!item) {
         errors.push(`Item #${shortId} não encontrado`)
@@ -118,13 +105,13 @@ shadowMarkdownRouter.patch('/', requireRole('MEMBER'), async (c) => {
     return c.json({ errors }, 422)
   }
 
+  const mutationContext = userMutationContext(ctx, 'SHADOW_MARKDOWN')
   for (const move of moves) {
     const col = allColumns.find(c => c.id === move.columnId)!
-    await db.transaction(async (tx) => {
-      const before = await snapshotItem(tx, ctx.tenantId, projectId, move.itemId)
-      await tx.update(items).set({ columnId: move.columnId, status: col.baseStatus, updatedAt: new Date().toISOString() }).where(and(eq(items.id, move.itemId), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
-      await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: move.itemId, eventType: 'STATUS_CHANGED', actorId: ctx.userId, origin: 'SHADOW_MARKDOWN', before, after: await snapshotItem(tx, ctx.tenantId, projectId, move.itemId) })
-    })
+    const fromColumnName = allColumns.find(candidate => candidate.id === allItems.find(item => item.id === move.itemId)?.columnId)?.name ?? ''
+    await persistence.unitOfWork.moveItem(mutationContext, projectId, move.itemId, {
+      id: col.id, name: col.name, baseStatus: col.baseStatus,
+    }, fromColumnName)
 
     broadcast(projectId, {
       type: 'CARD_MOVED',

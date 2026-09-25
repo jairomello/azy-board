@@ -1,11 +1,10 @@
 import type { Context, Next } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { getCookie } from 'hono/cookie'
-import { eq, and } from 'drizzle-orm'
 import { isGlobalGroup, verifyJwt } from '../services/auth'
 import { hasGlobalGroup, hasMemberRole, hasKeyPermission, isValidApiKeyPermissionScope, parseApiKeyScope } from '../services/authorization'
-import { db } from '../db/index'
-import { apiKeys, memberships, projects } from '../db/schema'
+import { persistence } from '../persistence/runtime'
+import { userPersistenceContext } from '../persistence/context'
 import type { GlobalGroup, RequestContext, MemberRole } from '@azy-board/types'
 
 // [TENANT] Middleware principal: resolve tenant_id e userId de toda requisição autenticada.
@@ -19,11 +18,9 @@ export async function authMiddleware(c: Context<HonoEnv>, next: Next) {
   if (token) {
     try {
       const payload = await verifyJwt(token)
-      const persisted = await db.query.users.findFirst({
-        // [TENANT] Grupo e identidade vêm do banco, não de valores enviados pelo cliente.
-        where: (u) => and(eq(u.id, payload.sub), eq(u.tenantId, payload.tenantId)),
-        columns: { id: true, tenantId: true, email: true, globalGroup: true },
-      })
+      const persisted = await persistence.identity.findUser({
+        tenantId: payload.tenantId, actorUserId: payload.sub, actorKind: 'SYSTEM',
+      }, payload.sub)
       if (persisted && isGlobalGroup(persisted.globalGroup)) {
         ctx = { userId: persisted.id, tenantId: persisted.tenantId, email: persisted.email, globalGroup: persisted.globalGroup }
       }
@@ -40,12 +37,7 @@ export async function authMiddleware(c: Context<HonoEnv>, next: Next) {
       const keyHash = await hashApiKey(rawKey)
 
       // [TENANT] API Key armazena tenant_id — resolve o contexto de tenant do agente
-      const keyRecord = await db
-        .select()
-        .from(apiKeys)
-        .where(eq(apiKeys.keyHash, keyHash))
-        .limit(1)
-        .then(r => r[0])
+      const keyRecord = await persistence.apiKeys.findByHash(keyHash)
 
       if (keyRecord) {
         const now = new Date().toISOString()
@@ -61,9 +53,9 @@ export async function authMiddleware(c: Context<HonoEnv>, next: Next) {
         if (expired || revoked || (requestedProjectId && projectScope && !projectScope.includes(requestedProjectId))) {
           return c.json({ error: 'Não autorizado', code: 'UNAUTHORIZED', retryable: false }, 401)
         }
-        const owner = await db.query.users.findFirst({
-          where: (u) => and(eq(u.id, keyRecord.ownerId), eq(u.tenantId, keyRecord.tenantId)),
-        })
+        const owner = await persistence.identity.findUser({
+          tenantId: keyRecord.tenantId, actorUserId: keyRecord.ownerId, actorKind: 'SYSTEM',
+        }, keyRecord.ownerId)
         if (owner && owner.tenantId === keyRecord.tenantId && isGlobalGroup(owner.globalGroup)) {
           // [TENANT] tenant_id da API Key garante que agente opera no tenant correto
           ctx = { userId: owner.id, tenantId: keyRecord.tenantId, email: owner.email, globalGroup: owner.globalGroup }
@@ -72,7 +64,7 @@ export async function authMiddleware(c: Context<HonoEnv>, next: Next) {
           c.set('apiKeyName', keyRecord.name)
           c.set('apiKeyProjectScope', projectScope)
           c.set('apiKeyPermissionScope', permissionScope)
-          await db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, keyRecord.id))
+          await persistence.apiKeys.updateLastUsed({ tenantId: keyRecord.tenantId, actorUserId: owner.id, actorKind: 'SYSTEM' }, keyRecord.id, now)
         }
       }
     }
@@ -98,21 +90,11 @@ export function requireRole(minRole: MemberRole) {
 
     // [TENANT] Resolve a visibilidade do projeto no tenant atual antes do bypass global.
     // Projeto restrito sem membership ou gerência não pode ser acessado por nenhuma rota.
-    const project = await db.query.projects.findFirst({
-      where: (p) => and(eq(p.tenantId, ctx.tenantId), eq(p.id, projectId)),
-      columns: { isRestricted: true, managerUserId: true },
-    })
+    const persistenceContext = userPersistenceContext(ctx)
+    const project = await persistence.projects.getProject(persistenceContext, projectId)
     if (!project) return c.json({ error: 'Projeto não encontrado', code: 'RESOURCE_NOT_FOUND', retryable: false }, 404)
 
-    const membership = await db.query.memberships.findFirst({
-      where: (m) =>
-        // [TENANT] Duplo filtro: tenant_id + userId + projectId — nunca confiar só no projectId
-        and(
-          eq(m.tenantId, ctx.tenantId),
-          eq(m.userId, ctx.userId),
-          eq(m.projectId, projectId)
-        ),
-    })
+    const membership = await persistence.projects.getMembership(persistenceContext, projectId, ctx.userId)
 
     const globalAdmin = hasGlobalGroup(ctx.globalGroup, 'ADMIN')
     const isProjectManager = project.managerUserId === ctx.userId

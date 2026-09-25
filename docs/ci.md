@@ -35,6 +35,20 @@ Sobe a API na porta `3001` e o Web na `5173` e roda `bun run test:smoke`
 (`200` na raiz e `401` em `/api/auth/me`). Usa `DATABASE_URL` temporário
 (`/tmp/azy-ci-smoke.db`), então não depende de estado externo.
 
+### `advanced` (PostgreSQL + Valkey)
+
+Gate do perfil ADVANCED com serviços efêmeros:
+
+- **PostgreSQL 16** e **Valkey 8** como serviços do GitHub Actions.
+- Migrations PostgreSQL (schema + FKs compostas).
+- Testes de migrations (banco vazio, idempotência, tenant-composite, e-mail
+  global, CHECKs, timestamps).
+- Testes de paridade SIMPLE ↔ ADVANCED (tenant, usuário, projeto, item).
+- Testes de coordenação local (rate limiter, pub/sub, isolamento).
+
+O gate avançado é obrigatório para considerar o perfil ADVANCED pronto.
+O `bun run check` local continua sem serviços externos.
+
 ## Reprodução local
 
 Antes de abrir um pull request, rode os mesmos gates:

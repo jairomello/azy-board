@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createMcpServer } from './index.js'
-import { executeSharedTool, requiredFieldsFor, SHARED_TOOL_NAMES } from './registry.js'
+import { executeSharedTool, OPERATION_ARGS_REQUIRED, requiredFieldsFor, SHARED_TOOL_NAMES } from './registry.js'
 import { validateToolArguments } from './validation.js'
 import { toolGetBoard, type ApiCall } from './tools.js'
 
@@ -41,6 +41,15 @@ describe('contrato de campos opcionais do MCP', () => {
     const tool = (await exposedTools()).find(item => item.name === 'create_project')!
     const schema = tool.inputSchema as { required: string[] }
     expect(schema.required).toEqual(['name'])
+  })
+
+  test('operations expõe args exigindo apenas os campos realmente obrigatórios', async () => {
+    for (const name of ['batch', 'create_project_structure']) {
+      const tool = (await exposedTools()).find(item => item.name === name)!
+      const schema = tool.inputSchema as unknown as { properties: { operations: { items: { properties: { args: { required: string[] } } } } } }
+      const required = schema.properties.operations.items.properties.args.required
+      expect(new Set(required), `${name}.operations[].args.required`).toEqual(new Set(OPERATION_ARGS_REQUIRED))
+    }
   })
 })
 

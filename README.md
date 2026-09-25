@@ -46,6 +46,10 @@ single source of truth — without friction.
   overdue analytics with UTC daily series.
 - **AI API keys** — per-key scopes, traceable agent identity, badges and
   audit trail for every AI action.
+- **Installation profiles** — SIMPLE (SQLite, zero external services) for
+  small teams and quick evaluation; ADVANCED (PostgreSQL + Valkey) for larger
+  deployments. The choice is permanent per installation; data is not migrated
+  between profiles.
 
 ### A guided look
 

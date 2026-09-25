@@ -1,13 +1,11 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { eq, and } from 'drizzle-orm'
-import { db } from '../db/index'
-import { attachments, items } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { storage } from '../services/storage'
-import { enqueueStorageCleanup, triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
-import { generateId } from '../utils/id'
+import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
 import type { RequestContext } from '@azy-board/types'
+import { persistence } from '../persistence/runtime'
+import { userPersistenceContext } from '../persistence/context'
 
 export const attachmentsRouter = new Hono<HonoEnv>()
 attachmentsRouter.use('*', authMiddleware)
@@ -64,9 +62,8 @@ attachmentsRouter.post('/', requireRole('MEMBER'), async (c) => {
   const { projectId, itemId } = c.req.param()
 
   // [TENANT] Verifica que o item pertence ao tenant — anti-IDOR
-  const item = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId), eq(i.projectId, projectId)),
-  })
+  const projectContext = userPersistenceContext(ctx)
+  const item = await persistence.items.getItem(projectContext, projectId, itemId)
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
   const formData = await c.req.formData()
@@ -96,21 +93,15 @@ attachmentsRouter.post('/', requireRole('MEMBER'), async (c) => {
     mimeType
   )
 
-  const id = generateId()
-  await db.insert(attachments).values({
-    id,
-    // [TENANT] Anexo sempre vinculado ao tenant
-    tenantId: ctx.tenantId,
-    itemId,
-    filename: storagePath.split('/').pop()!,
+  const created = await persistence.files.createAttachment(projectContext, projectId, itemId, {
+    fileName: storagePath.split('/').pop()!,
     originalName: file.name,
     mimeType,
-    size: file.size,
+    sizeBytes: file.size,
     storagePath,
-    createdAt: new Date().toISOString(),
   })
 
-  return c.json({ id, url: attachmentUrl(projectId, itemId, id), filename: file.name, mimeType, size: file.size }, 201)
+  return c.json({ id: created.id, url: attachmentUrl(projectId, itemId, created.id), filename: file.name, mimeType, size: file.size }, 201)
 })
 
 // GET /projects/:projectId/items/:itemId/attachments
@@ -119,25 +110,21 @@ attachmentsRouter.get('/', requireRole('VIEWER'), async (c) => {
   const { projectId, itemId } = c.req.param()
 
   // [TENANT] Anti-IDOR: verifica item antes de listar anexos
-  const item = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId), eq(i.projectId, projectId)),
-  })
+  const projectContext = userPersistenceContext(ctx)
+  const item = await persistence.items.getItem(projectContext, projectId, itemId)
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
-  const result = await db.select({
-    id: attachments.id,
-    filename: attachments.originalName,
-    mimeType: attachments.mimeType,
-    size: attachments.size,
-    createdAt: attachments.createdAt,
-  }).from(attachments)
-    .where(and(eq(attachments.itemId, itemId), eq(attachments.tenantId, ctx.tenantId)))
+  const result = await persistence.files.listAttachments(projectContext, projectId, itemId)
 
-  const withUrls = result.map(a => ({
-    ...a,
+  const withUrls = result.map(attachment => ({
+    id: attachment.id,
+    filename: attachment.fileName,
+    mimeType: attachment.mimeType,
+    size: attachment.sizeBytes,
+    createdAt: attachment.createdAt,
     // [SECURITY] URL aponta para a rota autorizada por attachmentId — nunca para o caminho de disco.
-    url: attachmentUrl(projectId, itemId, a.id),
-    isImage: a.mimeType.startsWith('image/'),
+    url: attachmentUrl(projectId, itemId, attachment.id),
+    isImage: attachment.mimeType.startsWith('image/'),
   }))
 
   return c.json(withUrls)
@@ -151,15 +138,11 @@ attachmentsRouter.get('/:attachmentId/download', requireRole('VIEWER'), async (c
   const ctx = c.get('ctx') as RequestContext
   const { projectId, itemId, attachmentId } = c.req.param()
 
-  const item = await db.query.items.findFirst({
-    where: (i) => and(eq(i.id, itemId), eq(i.tenantId, ctx.tenantId), eq(i.projectId, projectId)),
-    columns: { id: true },
-  })
+  const projectContext = userPersistenceContext(ctx)
+  const item = await persistence.items.getItem(projectContext, projectId, itemId)
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
-  const attachment = await db.query.attachments.findFirst({
-    where: (a) => and(eq(a.id, attachmentId), eq(a.itemId, itemId), eq(a.tenantId, ctx.tenantId)),
-  })
+  const attachment = await persistence.files.getAttachment(projectContext, projectId, itemId, attachmentId)
   if (!attachment) return c.json({ error: 'Anexo não encontrado' }, 404)
 
   const file = Bun.file(attachment.storagePath)
@@ -168,7 +151,7 @@ attachmentsRouter.get('/:attachmentId/download', requireRole('VIEWER'), async (c
   return new Response(file, {
     headers: {
       'Content-Type': attachment.mimeType,
-      'Content-Length': String(attachment.size),
+      'Content-Length': String(attachment.sizeBytes),
       'Content-Disposition': contentDispositionFor(attachment.mimeType, attachment.originalName),
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'private, no-store',
@@ -182,24 +165,14 @@ attachmentsRouter.delete('/:attachmentId', requireRole('MEMBER'), async (c) => {
   const { projectId, itemId, attachmentId } = c.req.param()
 
   // [TENANT] O item ancora o anexo no projeto informado e impede deleção cross-project.
-  const item = await db.query.items.findFirst({
-    where: (candidate) => and(eq(candidate.id, itemId), eq(candidate.projectId, projectId), eq(candidate.tenantId, ctx.tenantId)),
-    columns: { id: true },
-  })
+  const projectContext = userPersistenceContext(ctx)
+  const item = await persistence.items.getItem(projectContext, projectId, itemId)
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
-  const attachment = await db.query.attachments.findFirst({
-    where: (a) => and(eq(a.id, attachmentId), eq(a.itemId, itemId), eq(a.tenantId, ctx.tenantId)),
-  })
-  if (!attachment) return c.json({ error: 'Anexo não encontrado' }, 404)
-
-  // Item 12: metadados saem em transação atomica; arquivo físico é removido
+  // Item 12: metadados saem em transação atômica; arquivo físico é removido
   // pós-commit via outbox de limpeza (idempotente, com retry).
-  await db.transaction(async (tx) => {
-    await tx.delete(attachments)
-      .where(and(eq(attachments.id, attachmentId), eq(attachments.itemId, itemId), eq(attachments.tenantId, ctx.tenantId)))
-    await enqueueStorageCleanup(tx, ctx.tenantId, [{ storagePath: attachment.storagePath }])
-  })
+  const removed = await persistence.files.deleteAttachmentWithCleanup(projectContext, projectId, itemId, attachmentId)
+  if (!removed) return c.json({ error: 'Anexo não encontrado' }, 404)
 
   triggerStorageCleanupAfterCommit()
 

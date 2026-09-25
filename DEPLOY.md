@@ -60,6 +60,49 @@ configurados somente na infraestrutura do ambiente, nunca neste repositório.
 O código da aplicação permanece portável entre raiz (`/`), subpaths e outros
 domínios.
 
+## Perfis de instalação
+
+O Azy Board suporta dois perfis de instalação, escolhidos **uma única vez** no
+setup de cada instalação. A escolha é permanente: para usar o outro perfil é
+preciso uma nova instalação com banco e volume novos.
+
+### SIMPLE (padrão)
+
+- **Banco:** SQLite local (arquivo).
+- **Serviços externos:** nenhum (sem PostgreSQL, sem Redis).
+- **Capacidade:** recomendado para até aproximadamente 20 pessoas.
+- **Produção pequena:** suportada com volumes persistentes e backups configurados.
+- **Configuração:** veja `apps/api/.env.example.simple`.
+- **Docker:** veja `docker-compose.simple.yml`.
+
+### ADVANCED
+
+- **Banco:** PostgreSQL 16+.
+- **Coordenação:** Valkey (BSD) ou Redis-compatível.
+- **Capacidade:** suporta mais usuários; instância única de API.
+- **Configuração:** veja `apps/api/.env.example.advanced`.
+- **Docker:** veja `docker-compose.advanced.yml`.
+
+#### Limites operacionais do ADVANCED
+
+- **Instância única de API:** múltiplas instâncias/HA não são suportadas até
+  que a fila/worker do agente (Item 4), a reconciliação do board (Item 20) e
+  os controles distribuídos restantes sejam implementados.
+- **Capacidade orientativa:** aproximadamente 20+ pessoas com uma instância.
+  Não é uma restrição de conta nem uma promessa de desempenho.
+- **Valkey é a referência comunitária** Redis-compatível (licença BSD). O
+  cliente `ioredis` (MIT) funciona com qualquer servidor Redis-compatível.
+
+#### Migração de dados entre perfis
+
+**Dados não são migrados entre perfis.** Se você testou em SQLite e quer usar
+ADVANCED, faça uma nova instalação e comece do zero. Se tem dados de produção
+que quer preservar, conduza um projeto de migração externo, fora do produto.
+
+O produto não fornece comando de importação, ferramenta de conversão, cutover
+SQLite → PostgreSQL nem rollback PostgreSQL → SQLite. Migrations de schema
+dentro do perfil escolhido continuam existindo normalmente.
+
 ## CI antes do deploy
 
 Todo push de branch e pull request passa pelo CI

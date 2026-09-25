@@ -40,8 +40,12 @@ id_ed25519*
 .vscode/
 *.local
 *.local.*
+!*.local.example
 
 # Runtime data
+.azyboard/
+.azyboard-test/
+.azyboard-installation.json
 *.db
 *.db-shm
 *.db-wal

@@ -1,28 +1,16 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { and, eq } from 'drizzle-orm'
-import { db } from '../db/index'
-import { columns, itemLogs, items, itemSprints, itemTags, memberships, modules, projectCostCenters, projects, projectVersions, sprints, tags, users } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import type { RequestContext } from '@azy-board/types'
-import { generateId } from '../utils/id'
 import { getIdempotent, saveIdempotent } from '../services/idempotency'
-import { assertProjectScope } from '../services/scope'
-import { appendAnalyticsEvent, snapshotItem } from '../services/analytics'
 import { broadcast } from '../services/websocket'
 import { batchSchema, batchUpdateSchema, parseJson } from '../validation'
+import { persistence } from '../persistence/runtime'
+import { userMutationContext } from '../persistence/context'
+import type { BatchItemCreateOperation, BatchItemUpdate, ItemPatch } from '../persistence/ports'
 
 export const batchRouter = new Hono<HonoEnv>()
 batchRouter.use('*', authMiddleware)
-
-type Operation = { tool?: string; args?: Record<string, unknown>; method?: string; path?: string; body?: Record<string, unknown> }
-type BatchTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
-type BatchDb = typeof db | BatchTransaction
-type ItemChange = { field?: unknown; operation?: unknown; value?: unknown }
-type ItemFilters = {
-  itemIds?: unknown; types?: unknown; statuses?: unknown; sprint?: unknown; version?: unknown; module?: unknown
-  assignee?: unknown; parent?: unknown; column?: unknown; tag?: unknown; titleContains?: unknown; onlyLeaves?: unknown; matchAll?: unknown
-}
 
 function exactResource<T extends { id: string; name: string }>(values: T[], selector: string, field: string): T {
   const normalized = selector.trim()
@@ -45,49 +33,6 @@ function shiftedDate(days: number): string {
   return date.toISOString().slice(0, 10)
 }
 
-async function runCreate(ctx: RequestContext, projectId: string, body: Record<string, unknown>, tx: BatchDb = db) {
-  // [TENANT] Projeto e todas as relações são resolvidos pelo contexto autenticado, nunca pelo body.
-  const project = await tx.query.projects.findFirst({ where: (p) => and(eq(p.id, projectId), eq(p.tenantId, ctx.tenantId)), columns: { id: true, tenantId: true, boardMode: true, simpleStoryId: true } })
-  if (!project || typeof body.title !== 'string' || !body.title.trim()) throw new Error('VALIDATION_ERROR')
-  assertProjectScope({ tenantId: project.tenantId, projectId: project.id }, ctx.tenantId, projectId)
-  const type = typeof body.type === 'string' ? body.type : 'TASK'
-  const parentId = project.boardMode === 'SIMPLE' && (type === 'TASK' || type === 'BUG') ? project.simpleStoryId : (typeof body.parentId === 'string' ? body.parentId : null)
-  if (type === 'STORY' && !parentId) throw new Error('VALIDATION_ERROR')
-  if ((type === 'TASK' || type === 'BUG') && !parentId) throw new Error('HIERARCHY_REQUIRED')
-  if (type === 'EPIC' && (parentId || typeof body.moduleId !== 'string')) throw new Error('VALIDATION_ERROR')
-  let ancestryPath: Array<{ id: string; title: string; type: string }> = []
-  if (parentId) {
-    const parent = await tx.query.items.findFirst({ where: (i) => and(eq(i.id, parentId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)), columns: { id: true, title: true, type: true, ancestryPath: true } })
-    if (!parent) throw new Error('RELATION_OUT_OF_SCOPE')
-    if (type === 'STORY' && parent.type !== 'EPIC') throw new Error('VALIDATION_ERROR')
-    if ((type === 'TASK' || type === 'BUG') && !['STORY', 'TASK', 'BUG'].includes(parent.type)) throw new Error('VALIDATION_ERROR')
-    try { ancestryPath = JSON.parse(parent.ancestryPath) } catch { ancestryPath = [] }
-    ancestryPath.push({ id: parent.id, title: parent.title, type: parent.type })
-  }
-  if (typeof body.moduleId === 'string') {
-    const module = await tx.query.modules.findFirst({ where: (m) => and(eq(m.id, body.moduleId as string), eq(m.projectId, projectId), eq(m.tenantId, ctx.tenantId)), columns: { id: true } })
-    if (!module) throw new Error('RELATION_OUT_OF_SCOPE')
-  }
-  const firstColumn = type === 'TASK' || type === 'BUG'
-    ? await tx.query.columns.findFirst({ where: (column) => and(eq(column.projectId, projectId), eq(column.tenantId, ctx.tenantId)), orderBy: (column, { asc }) => [asc(column.position)], columns: { id: true } })
-    : null
-  const id = generateId(); const now = new Date().toISOString()
-  const priority = typeof body.priority === 'string' && ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].includes(body.priority) ? body.priority as 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' : 'MEDIUM'
-  await tx.insert(items).values({ id, tenantId: ctx.tenantId, projectId, type: type as 'EPIC' | 'STORY' | 'TASK' | 'BUG', parentId, moduleId: typeof body.moduleId === 'string' ? body.moduleId : null, columnId: firstColumn?.id ?? null, title: body.title.trim(), description: typeof body.description === 'string' ? body.description : null, ancestryPath: JSON.stringify(ancestryPath), status: 'NOT_STARTED', priority, points: typeof body.points === 'number' ? body.points : null, assigneeId: body.assignToCurrentUser === true ? ctx.userId : null, position: 0, authorId: ctx.userId, createdAt: now, updatedAt: now })
-  await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: id, eventType: 'ITEM_CREATED', actorId: ctx.userId, origin: 'BATCH', correlationId: `${id}`, after: await snapshotItem(tx, ctx.tenantId, projectId, id) })
-  return {
-    id, title: body.title.trim(), type, projectId, parentId,
-    moduleId: typeof body.moduleId === 'string' ? body.moduleId : null,
-    columnId: firstColumn?.id ?? null,
-    ancestryPath: JSON.stringify(ancestryPath),
-    description: typeof body.description === 'string' ? body.description : null,
-    priority,
-    points: typeof body.points === 'number' ? body.points : null,
-    assigneeId: body.assignToCurrentUser === true ? ctx.userId : null,
-    status: 'NOT_STARTED',
-  }
-}
-
 batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
@@ -105,11 +50,10 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
     }
   }
 
-  const project = await db.query.projects.findFirst({
-    where: (row) => and(eq(row.id, projectId), eq(row.tenantId, ctx.tenantId)),
-    columns: { id: true, boardMode: true, simpleStoryId: true },
-  })
-  if (!project) return c.json({ code: 'PROJECT_NOT_FOUND', error: 'Projeto não encontrado' }, 404)
+  const snapshot = await persistence.batch.loadItemUpdateSnapshot(userMutationContext(ctx, 'MCP'), projectId)
+  if (!snapshot) return c.json({ code: 'PROJECT_NOT_FOUND', error: 'Projeto não encontrado' }, 404)
+  const { project, items: projectItems, modules: projectModules, sprints: projectSprints, versions, columns: projectColumns,
+    costCenters, tags: projectTags, memberships: projectMemberships, users: tenantUsers, sprintLinks, tagLinks } = snapshot
   const filters = body.filters ?? {}
   const changes = body.changes
   const allowedFields = new Set(['title', 'description', 'priority', 'type', 'status', 'points', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint'])
@@ -124,26 +68,7 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
   if (!filterValues.some(value => value !== null && value !== undefined) && filters.matchAll !== true) return c.json({ code: 'VALIDATION_ERROR', error: 'Informe filtros ou confirme matchAll' }, 422)
 
   try {
-    // Item 15: relações item_sprints/item_tags carregadas apenas do tenant/projeto
-    // autenticado (join com itens), nunca as tabelas globais.
-    // [TENANT] tenant + projeto nos dois lados do join
-    // [DB-SWAP] Em PostgreSQL, o join vale; validar plano com EXPLAIN (ANALYZE).
-    const activeItemScope = and(eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId))
-    const [projectItems, projectModules, projectSprints, versions, projectColumns, costCenters, projectTags, projectMemberships, tenantUsers, sprintLinks, tagLinks] = await Promise.all([
-      db.select().from(items).where(activeItemScope),
-      db.select().from(modules).where(and(eq(modules.projectId, projectId), eq(modules.tenantId, ctx.tenantId))),
-      db.select().from(sprints).where(and(eq(sprints.projectId, projectId), eq(sprints.tenantId, ctx.tenantId))),
-      db.select().from(projectVersions).where(and(eq(projectVersions.projectId, projectId), eq(projectVersions.tenantId, ctx.tenantId))),
-      db.select().from(columns).where(and(eq(columns.projectId, projectId), eq(columns.tenantId, ctx.tenantId))),
-      db.select().from(projectCostCenters).where(and(eq(projectCostCenters.projectId, projectId), eq(projectCostCenters.tenantId, ctx.tenantId))),
-      db.select().from(tags).where(and(eq(tags.projectId, projectId), eq(tags.tenantId, ctx.tenantId))),
-      db.select().from(memberships).where(and(eq(memberships.projectId, projectId), eq(memberships.tenantId, ctx.tenantId))),
-      db.select().from(users).where(eq(users.tenantId, ctx.tenantId)),
-      db.select({ itemId: itemSprints.itemId, sprintId: itemSprints.sprintId }).from(itemSprints).innerJoin(items, and(eq(items.id, itemSprints.itemId), eq(items.tenantId, itemSprints.tenantId))).where(and(eq(itemSprints.tenantId, ctx.tenantId), activeItemScope)),
-      db.select({ itemId: itemTags.itemId, tagId: itemTags.tagId }).from(itemTags).innerJoin(items, and(eq(items.id, itemTags.itemId), eq(items.tenantId, itemTags.tenantId))).where(and(eq(itemTags.tenantId, ctx.tenantId), activeItemScope)),
-    ])
     const activeItems = projectItems.filter(item => item.status !== 'ARCHIVED')
-    const itemById = new Map(projectItems.map(item => [item.id, item]))
     const members = projectMemberships.map(membership => {
       const user = tenantUsers.find(candidate => candidate.id === membership.userId)!
       return { id: membership.userId, name: user?.name ?? '', email: user?.email ?? '' }
@@ -169,8 +94,8 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
     const epicModule = new Map(activeItems.filter(item => item.type === 'EPIC').map(item => [item.id, item.moduleId]))
     // Item 15: pares deduplicados por (item, relação) — cobre resíduos de vínculos repetidos
     // sem alterar o resultado dos filtros.
-    const sprintLinkPairs = new Set(sprintLinks.map(link => `${link.itemId}\u0000${link.sprintId}`))
-    const tagLinkPairs = new Set(tagLinks.map(link => `${link.itemId}\u0000${link.tagId}`))
+    const sprintLinkPairs = new Set(sprintLinks.map(link => `${link.itemId}\u0000${link.relatedId}`))
+    const tagLinkPairs = new Set(tagLinks.map(link => `${link.itemId}\u0000${link.relatedId}`))
     let matched = activeItems.filter(item => {
       if (Array.isArray(filters.itemIds) && !filters.itemIds.includes(item.id)) return false
       if (Array.isArray(filters.types) && !filters.types.includes(item.type)) return false
@@ -285,34 +210,40 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
     }
     for (const id of resulting.keys()) ancestryFor(id)
 
-    const resultItems = await db.transaction(async tx => {
-      const output: Array<{ id: string; changes: Record<string, unknown> }> = []
-      for (const item of matched) {
-        const update = updatesById.get(item.id)!
-        const before = await snapshotItem(tx, ctx.tenantId, projectId, item.id)
-        await tx.update(items).set(update).where(and(eq(items.id, item.id), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
-        const sprintChange = resolvedChanges.find(change => change.field === 'sprint')
-        if (sprintChange) {
-          // [TENANT] Escopo explícito no delete e no insert do vínculo
-          await tx.delete(itemSprints).where(and(eq(itemSprints.itemId, item.id), eq(itemSprints.tenantId, ctx.tenantId)))
-          if (sprintChange.relationId) await tx.insert(itemSprints).values({ tenantId: ctx.tenantId, itemId: item.id, sprintId: sprintChange.relationId })
-        }
-        const visibleUpdate = Object.fromEntries(Object.entries(update).filter(([key]) => key !== 'updatedAt'))
-        const auditChanges = resolvedChanges.map(change => `${labels[change.field]}: "${change.operation === 'CLEAR' ? '' : String(visibleUpdate[relationFields[change.field] ?? change.field] ?? change.relationId ?? change.value ?? '')}"`)
-        await tx.insert(itemLogs).values({ id: generateId(), tenantId: ctx.tenantId, itemId: item.id, authorId: ctx.userId, type: 'auto', actorType: agentRunId ? 'AGENT' : 'HUMAN', actorLabel: agentRunId ? 'Azy Agent' : null, source: agentRunId ? 'MCP' : 'REST', activity: `Campos alterados em lote: ${auditChanges.join('; ').slice(0, 10_000)}`, durationMin: null, createdAt: now, updatedAt: now })
-        const after = await snapshotItem(tx, ctx.tenantId, projectId, item.id)
-        const analytics: Array<[string, 'STATUS_CHANGED' | 'POINTS_CHANGED' | 'TYPE_CHANGED' | 'SPRINT_CHANGED' | 'VERSION_CHANGED' | 'ITEM_REPARENTED' | 'MODULE_CHANGED']> = [['status', 'STATUS_CHANGED'], ['points', 'POINTS_CHANGED'], ['type', 'TYPE_CHANGED'], ['sprint', 'SPRINT_CHANGED'], ['version', 'VERSION_CHANGED'], ['parent', 'ITEM_REPARENTED'], ['module', 'MODULE_CHANGED']]
-        for (const [field, eventType] of analytics) if (changedFields.has(field)) await appendAnalyticsEvent(tx, { tenantId: ctx.tenantId, projectId, itemId: item.id, eventType, actorId: ctx.userId, origin: agentRunId ? 'MCP' : 'REST', correlationId: agentRunId, before, after })
-        output.push({ id: item.id, changes: visibleUpdate })
+    const batchUpdates: BatchItemUpdate[] = []
+    const sprintChange = resolvedChanges.find(change => change.field === 'sprint')
+    for (const item of matched) {
+      const update = updatesById.get(item.id)!
+      const ancestryPath = JSON.stringify(pathCache.get(item.id) ?? [])
+      if ((changedFields.has('title') || changedFields.has('parent') || changedFields.has('type')) && ancestryPath !== item.ancestryPath) {
+        update.ancestryPath = ancestryPath
       }
-      if (changedFields.has('title') || changedFields.has('parent') || changedFields.has('type')) {
-        for (const item of projectItems) {
-          const ancestryPath = JSON.stringify(pathCache.get(item.id) ?? [])
-          if (ancestryPath !== item.ancestryPath) await tx.update(items).set({ ancestryPath, updatedAt: now }).where(and(eq(items.id, item.id), eq(items.projectId, projectId), eq(items.tenantId, ctx.tenantId)))
+      const visibleUpdate = Object.fromEntries(Object.entries(update).filter(([key]) => key !== 'updatedAt'))
+      const auditChanges = resolvedChanges.map(change => `${labels[change.field]}: "${change.operation === 'CLEAR' ? '' : String(visibleUpdate[relationFields[change.field] ?? change.field] ?? change.relationId ?? change.value ?? '')}"`)
+      batchUpdates.push({
+        itemId: item.id,
+        patch: update as ItemPatch,
+        ...(sprintChange ? { sprintIds: sprintChange.relationId ? [sprintChange.relationId] : [] } : {}),
+        changedFields: [...changedFields],
+        activity: `Campos alterados em lote: ${auditChanges.join('; ').slice(0, 10_000)}`,
+        responseChanges: visibleUpdate,
+      })
+    }
+    if (changedFields.has('title') || changedFields.has('parent') || changedFields.has('type')) {
+      const included = new Set(matched.map(item => item.id))
+      for (const item of projectItems) {
+        const ancestryPath = JSON.stringify(pathCache.get(item.id) ?? [])
+        if (!included.has(item.id) && ancestryPath !== item.ancestryPath) {
+          batchUpdates.push({ itemId: item.id, patch: { ancestryPath }, changedFields: [] })
         }
       }
-      return output
-    })
+    }
+    const mutationContext = userMutationContext(ctx, agentRunId ? 'MCP' : 'REST', agentRunId ?? null)
+    if (agentRunId) {
+      mutationContext.mutation.actorType = 'AGENT'
+      mutationContext.mutation.actorLabel = 'Azy Agent'
+    }
+    const resultItems = await persistence.unitOfWork.applyItemBatch(mutationContext, projectId, batchUpdates)
     const result = { matchedCount: matched.length, updatedCount: resultItems.length, fields: [...changedFields], items: resultItems }
     if (agentRunId) await saveIdempotent(ctx, 'update-items', agentRunId, payload, result)
     for (const item of resultItems) broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemId: item.id, ...item.changes } })
@@ -341,94 +272,60 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
       return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
     }
   }
-  let failedAt = -1
-  let failedReason = ''
-  const createdModules: Array<{ id: string; name: string; position: number; description: string | null }> = []
-  const execute = async (tx: BatchDb) => {
-    const refs = new Map<string, string>()
-    const projectModules = await tx.select({ id: modules.id, name: modules.name }).from(modules).where(and(eq(modules.projectId, projectId), eq(modules.tenantId, ctx.tenantId)))
-    const ensureModule = async (name: string) => {
-      const existing = projectModules.find(module => module.name.localeCompare(name, undefined, { sensitivity: 'accent' }) === 0)
-      if (existing) return existing
-      const id = generateId()
-      const position = projectModules.length
-      await tx.insert(modules).values({ id, tenantId: ctx.tenantId, projectId, name, description: null, position })
-      projectModules.push({ id, name })
-      createdModules.push({ id, name, position, description: null })
-      return { id, name }
+
+  const operations: BatchItemCreateOperation[] = input.operations.map(operation => {
+    const body = operation.args ?? operation.body ?? {}
+    const tool = operation.tool ?? (operation.method === 'POST' && operation.path === '/items' ? 'create_task' : '')
+    const rawType = body.type
+    const validType = rawType === 'EPIC' || rawType === 'STORY' || rawType === 'TASK' || rawType === 'BUG'
+    const rawPriority = body.priority
+    const priority = rawPriority === 'LOW' || rawPriority === 'MEDIUM' || rawPriority === 'HIGH' || rawPriority === 'CRITICAL'
+      ? rawPriority
+      : undefined
+    return {
+      tool,
+      title: typeof body.title === 'string' ? body.title : null,
+      ...(validType ? { type: rawType } : typeof rawType === 'string' ? { invalidType: rawType } : {}),
+      ref: typeof body.ref === 'string' ? body.ref : null,
+      parentRef: typeof body.parentRef === 'string' ? body.parentRef : null,
+      parentId: typeof body.parentId === 'string' ? body.parentId : null,
+      moduleId: typeof body.moduleId === 'string' ? body.moduleId : null,
+      moduleName: typeof body.moduleName === 'string' ? body.moduleName : null,
+      description: typeof body.description === 'string' ? body.description : null,
+      priority,
+      points: typeof body.points === 'number' ? body.points : null,
+      assignToCurrentUser: body.assignToCurrentUser === true,
     }
-    // Validate local references before writing; relation IDs are resolved as preceding operations execute.
-    // [TENANT] Módulos inexistentes citados no lote são criados no projeto do tenant autenticado.
-    if (atomic) {
-      const declaredRefs = new Set<string>()
-      const missingModules = new Set<string>()
-      for (const [index, operation] of input.operations.entries()) {
-        try {
-          const tool = operation.tool ?? (operation.method === 'POST' && operation.path === '/items' ? 'create_task' : '')
-          const body = operation.args ?? operation.body ?? {}
-          if ((tool !== 'create_task' && tool !== 'create_item') || typeof body.title !== 'string' || !body.title.trim()) throw new Error('VALIDATION_ERROR')
-          const project = await tx.query.projects.findFirst({ where: (p) => and(eq(p.id, projectId), eq(p.tenantId, ctx.tenantId)), columns: { id: true } })
-          if (!project) throw new Error('VALIDATION_ERROR')
-          const ref = typeof body.ref === 'string' ? body.ref : null
-          if (ref && declaredRefs.has(ref)) throw new Error('VALIDATION_ERROR')
-          const parentRef = typeof body.parentRef === 'string' ? body.parentRef : null
-          if (parentRef && !declaredRefs.has(parentRef)) throw new Error('VALIDATION_ERROR')
-          if (ref) declaredRefs.add(ref)
-          const parentId = typeof body.parentId === 'string' ? body.parentId : null
-          if (parentId) {
-            const parent = await tx.query.items.findFirst({ where: (i) => and(eq(i.id, parentId), eq(i.projectId, projectId), eq(i.tenantId, ctx.tenantId)), columns: { id: true } })
-            if (!parent) throw new Error('RELATION_OUT_OF_SCOPE')
-          }
-          if (typeof body.moduleId === 'string') {
-            const module = await tx.query.modules.findFirst({ where: (m) => and(eq(m.id, body.moduleId as string), eq(m.projectId, projectId), eq(m.tenantId, ctx.tenantId)), columns: { id: true } })
-            if (!module) throw new Error('RELATION_OUT_OF_SCOPE')
-          }
-          if (typeof body.moduleName === 'string' && !projectModules.some(module => module.name.localeCompare(body.moduleName as string, undefined, { sensitivity: 'accent' }) === 0)) missingModules.add(body.moduleName)
-        } catch (error) {
-          failedAt = index
-          failedReason = error instanceof Error ? error.message : 'INTERNAL_ERROR'
-          throw error
-        }
-      }
-      for (const name of missingModules) await ensureModule(name)
-    }
-    const results: Array<{ ok: boolean; data?: unknown; code?: string }> = []
-    for (const [index, operation] of input.operations.entries()) {
-      const tool = operation.tool ?? (operation.method === 'POST' && operation.path === '/items' ? 'create_task' : '')
-      try {
-        if (tool !== 'create_task' && tool !== 'create_item') throw new Error('VALIDATION_ERROR')
-        const body = operation.args ?? operation.body ?? {}
-        const parentRef = typeof body.parentRef === 'string' ? body.parentRef : null
-        const parentId = parentRef ? refs.get(parentRef) : body.parentId
-        if (parentRef && !parentId) throw new Error('RELATION_OUT_OF_SCOPE')
-        const moduleName = typeof body.moduleName === 'string' ? body.moduleName : null
-        const moduleId = moduleName ? (await ensureModule(moduleName)).id : body.moduleId
-        const data = await runCreate(ctx, projectId, { ...body, parentId, moduleId }, tx)
-        if (typeof body.ref === 'string') refs.set(body.ref, data.id)
-        results.push({ ok: true, data })
-      } catch (error) {
-        failedAt = index
-        failedReason = error instanceof Error ? error.message : 'INTERNAL_ERROR'
-        if (atomic) throw error
-        const code = error instanceof Error && ['VALIDATION_ERROR', 'RELATION_OUT_OF_SCOPE', 'HIERARCHY_REQUIRED'].includes(error.message) ? error.message : 'INTERNAL_ERROR'
-        results.push({ ok: false, code })
-      }
-    }
-    return { atomic, agentRunId: input.agentRunId ?? null, results }
-  }
+  })
+
   try {
-    const result = atomic ? await db.transaction(tx => execute(tx)) : await execute(db)
-    if (key) await saveIdempotent(ctx, 'batch', key, payload, result)
-    for (const module of createdModules) broadcast(projectId, { type: 'MODULE_CREATED', projectId, payload: module })
-    for (const entry of result.results) {
-      if (!entry.ok || !entry.data || typeof entry.data !== 'object') continue
-      const item = entry.data as { id: string; parentId?: string | null }
-      broadcast(projectId, { type: item.parentId ? 'SUBTASK_CREATED' : 'ITEM_CREATED', projectId, payload: item.parentId ? { parentId: item.parentId, item: entry.data } : entry.data })
+    const mutationContext = userMutationContext(ctx, 'BATCH', input.agentRunId ?? null)
+    if (input.agentRunId) {
+      mutationContext.mutation.actorType = 'AGENT'
+      mutationContext.mutation.actorSource = 'MCP'
+      mutationContext.mutation.actorLabel = 'Azy Agent'
     }
-    return c.json(result, 200)
+    const result = await persistence.unitOfWork.createItemsBatch(mutationContext, projectId, operations, {
+      atomic, agentRunId: input.agentRunId ?? null,
+    })
+    const response = { atomic: result.atomic, agentRunId: result.agentRunId, results: result.results }
+    if (key) await saveIdempotent(ctx, 'batch', key, payload, response)
+    for (const module of result.createdModules) broadcast(projectId, { type: 'MODULE_CREATED', projectId, payload: module })
+    for (const entry of result.results) {
+      if (!entry.ok || !entry.data) continue
+      broadcast(projectId, {
+        type: entry.data.parentId ? 'SUBTASK_CREATED' : 'ITEM_CREATED', projectId,
+        payload: entry.data.parentId ? { parentId: entry.data.parentId, item: entry.data } : entry.data,
+      })
+    }
+    return c.json(response, 200)
   } catch (error) {
-    const code = error instanceof Error && ['VALIDATION_ERROR', 'HIERARCHY_REQUIRED'].includes(error.message) ? error.message : 'BATCH_ROLLED_BACK'
-    const detail = failedAt >= 0 ? ` (operação ${failedAt + 1}: ${failedReason})` : ''
+    const message = error instanceof Error ? error.message : 'INTERNAL_ERROR'
+    const match = message.match(/^BATCH_ITEM:(\d+):(.*)$/)
+    const failedAt = match ? Number(match[1]) : -1
+    const reason = match?.[2] ?? message
+    const code = reason === 'VALIDATION_ERROR' || reason === 'HIERARCHY_REQUIRED' ? reason : 'BATCH_ROLLED_BACK'
+    const detail = failedAt >= 0 ? ` (operação ${failedAt + 1}: ${reason})` : ''
     return c.json({ code, error: atomic ? `Lote desfeito; nenhuma operação foi aplicada${detail}` : 'Erro no lote' }, 422)
   }
 })

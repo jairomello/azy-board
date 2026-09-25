@@ -22,7 +22,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import type { ApiCall } from './tools.js'
 import { hasMcpPolicy } from './policies.js'
-import { executeSharedTool, getSharedToolDefinitions, requiredFieldsFor, sanitizeToolOutput, type ToolDefinition } from './registry.js'
+import { executeSharedTool, getSharedToolDefinitions, OPERATION_ARGS_REQUIRED, requiredFieldsFor, sanitizeToolOutput, type ToolDefinition } from './registry.js'
 
 // [TENANT] API Key autentica o agente como o Owner humano vinculado — resolvido pelo middleware da API
 export async function makeApiCall(apiUrl: string, apiKey: string, options: { timeoutMs?: number } = {}) {
@@ -87,8 +87,31 @@ export type McpServerOptions = {
 function withOptionalFields(tool: ToolDefinition): ToolDefinition {
   const mandatory = new Set(requiredFieldsFor(tool.name))
   const required = tool.inputSchema.required.filter(field => mandatory.has(field))
-  if (required.length === tool.inputSchema.required.length) return tool
-  return { ...tool, inputSchema: { ...tool.inputSchema, required } }
+  const inputSchema = required.length === tool.inputSchema.required.length ? tool.inputSchema : { ...tool.inputSchema, required }
+  return { ...tool, inputSchema: withOptionalOperationArgs(inputSchema) }
+}
+
+// `operations[].args` (batch e create_project_structure) também vem com todos os
+// campos em `required` no schema interno; a exposição MCP volta a exigir apenas
+// OPERATION_ARGS_REQUIRED.
+function withOptionalOperationArgs(inputSchema: ToolDefinition['inputSchema']): ToolDefinition['inputSchema'] {
+  const operations = inputSchema.properties.operations
+  if (!operations || typeof operations !== 'object') return inputSchema
+  const operationNode = operations as Record<string, unknown>
+  const items = operationNode.items as Record<string, unknown> | undefined
+  const properties = items?.properties as Record<string, unknown> | undefined
+  const args = properties?.args as Record<string, unknown> | undefined
+  if (!args || !Array.isArray(args.required)) return inputSchema
+  return {
+    ...inputSchema,
+    properties: {
+      ...inputSchema.properties,
+      operations: {
+        ...operationNode,
+        items: { ...items, properties: { ...properties, args: { ...args, required: [...OPERATION_ARGS_REQUIRED] } } },
+      },
+    },
+  }
 }
 
 // [DEFAULT PROJECT] Com projeto padrão configurado, `projectId` vira opcional no schema.

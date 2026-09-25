@@ -231,10 +231,8 @@ describe('processador de limpeza de storage (Item 12)', () => {
     const tenantId = generateId()
     await db.insert(tenants).values({ id: tenantId, name: 'Tenant jobs', slug: `jobs-${tenantId}`, createdAt: new Date().toISOString() })
     const path = `/tmp/azy-dedupe-${tenantId}.txt`
-    await db.transaction(async (tx) => {
-      await enqueueStorageCleanup(tx, tenantId, [{ storagePath: path }])
-      await enqueueStorageCleanup(tx, tenantId, [{ storagePath: path }])
-    })
+    await enqueueStorageCleanup(tenantId, [{ storagePath: path }])
+    await enqueueStorageCleanup(tenantId, [{ storagePath: path }])
     const pending = await db.select().from(storageCleanupJobs).where(and(eq(storageCleanupJobs.tenantId, tenantId), eq(storageCleanupJobs.status, 'PENDING')))
     expect(pending).toHaveLength(1)
   })
@@ -245,9 +243,7 @@ describe('processador de limpeza de storage (Item 12)', () => {
     const failingPath = `/tmp/azy-failing-${tenantId}.txt`
 
     // Job concreto que falha em TODAS as passadas (adapter sempre caído)
-    await db.transaction(async (tx) => {
-      await enqueueStorageCleanup(tx, tenantId, [{ storagePath: failingPath }])
-    })
+    await enqueueStorageCleanup(tenantId, [{ storagePath: failingPath }])
     const failingAdapter = await fakeAdapter(async () => { throw new Error('storage indisponível') })
     for (let attempt = 1; attempt <= 8; attempt++) {
       await processPendingStorageCleanup({ adapter: failingAdapter, limit: 10, now: new Date(Date.now() + attempt * 60 * 60_000) })
@@ -262,9 +258,7 @@ describe('processador de limpeza de storage (Item 12)', () => {
     const tenantId = generateId()
     await db.insert(tenants).values({ id: tenantId, name: 'Tenant missing', slug: `missing-${tenantId}`, createdAt: new Date().toISOString() })
     const missingPath = `/tmp/azy-missing-${tenantId}.txt`
-    await db.transaction(async (tx) => {
-      await enqueueStorageCleanup(tx, tenantId, [{ storagePath: missingPath }])
-    })
+    await enqueueStorageCleanup(tenantId, [{ storagePath: missingPath }])
     const result = await processPendingStorageCleanup({ limit: 10 })
     expect(result.done).toBeGreaterThanOrEqual(1)
     const job = (await db.select().from(storageCleanupJobs).where(eq(storageCleanupJobs.storagePath, missingPath)))[0]!
@@ -275,9 +269,7 @@ describe('processador de limpeza de storage (Item 12)', () => {
     const tenantId = generateId()
     await db.insert(tenants).values({ id: tenantId, name: 'Tenant done', slug: `done-${tenantId}`, createdAt: new Date().toISOString() })
     const path = `/tmp/azy-done-${tenantId}.txt`
-    await db.transaction(async (tx) => {
-      await enqueueStorageCleanup(tx, tenantId, [{ storagePath: path }])
-    })
+    await enqueueStorageCleanup(tenantId, [{ storagePath: path }])
     await processPendingStorageCleanup({ limit: 10 })
     const rows = await db.select().from(storageCleanupJobs).where(eq(storageCleanupJobs.storagePath, path))
     expect(rows).toHaveLength(1)

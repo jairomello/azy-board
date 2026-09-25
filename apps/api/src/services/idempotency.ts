@@ -1,7 +1,4 @@
-import { and, eq, lt } from 'drizzle-orm'
-import { db } from '../db/index'
-import { idempotencyRecords } from '../db/schema'
-import { generateId } from '../utils/id'
+import { persistence } from '../persistence/runtime'
 
 const RETENTION_MS = 24 * 60 * 60 * 1000
 
@@ -20,10 +17,9 @@ export async function payloadHash(value: unknown): Promise<string> {
 
 export async function getIdempotent(ctx: { tenantId: string; userId: string }, tool: string, key: string, payload: unknown) {
   const now = new Date().toISOString()
-  await db.delete(idempotencyRecords).where(lt(idempotencyRecords.expiresAt, now))
-  const record = await db.query.idempotencyRecords.findFirst({
-    where: (r) => and(eq(r.tenantId, ctx.tenantId), eq(r.ownerId, ctx.userId), eq(r.tool, tool), eq(r.idempotencyKey, key)),
-  })
+  const context = { tenantId: ctx.tenantId, actorUserId: ctx.userId, actorKind: 'USER' as const }
+  await persistence.idempotency.pruneExpired(now)
+  const record = await persistence.idempotency.find(context, tool, key)
   if (!record) return null
   const hash = await payloadHash(payload)
   if (record.payloadHash !== hash) throw new Error('IDEMPOTENCY_CONFLICT')
@@ -32,9 +28,11 @@ export async function getIdempotent(ctx: { tenantId: string; userId: string }, t
 
 export async function saveIdempotent(ctx: { tenantId: string; userId: string }, tool: string, key: string, payload: unknown, response: unknown) {
   const now = new Date()
-  await db.insert(idempotencyRecords).values({
-    id: generateId(), tenantId: ctx.tenantId, ownerId: ctx.userId, tool, idempotencyKey: key,
-    payloadHash: await payloadHash(payload), responseJson: JSON.stringify(response),
-    createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + RETENTION_MS).toISOString(),
-  }).onConflictDoNothing()
+  await persistence.idempotency.save(
+    { tenantId: ctx.tenantId, actorUserId: ctx.userId, actorKind: 'USER' },
+    {
+      tool, key, payloadHash: await payloadHash(payload), responseJson: JSON.stringify(response),
+      createdAt: now.toISOString(), expiresAt: new Date(now.getTime() + RETENTION_MS).toISOString(),
+    },
+  )
 }

@@ -288,4 +288,25 @@ describe('Azy Agent harness', () => {
   test('classifica falta de saldo com orientação acionável', () => {
     expect(safeError(new Error('429 insufficient_quota: no credits remaining'))).toBe('Saldo insuficiente no provedor de IA. Adicione créditos à conta do provedor para continuar.')
   })
+
+  test('classifica erro transitório do provider com orientação acionável', () => {
+    expect(safeError(new Error('401 Provider returned error'))).toBe('O provedor de IA está temporariamente indisponível. Tente novamente em instantes.')
+    expect(safeError(new Error('429 Provider returned error'))).toBe('O provedor de IA está temporariamente indisponível. Tente novamente em instantes.')
+  })
+
+  test('repete a chamada de modelo quando o provider falha de forma transitória', async () => {
+    class TransientProvider extends MockProvider {
+      async createRun(): Promise<ModelResponse> {
+        this.calls++
+        if (this.calls === 1) throw new Error('401 Provider returned error')
+        return { id: `ok-${this.calls}`, output: [{ type: 'message', text: 'Concluído após nova tentativa.' }] }
+      }
+    }
+    const provider = new TransientProvider()
+    const harness = new AssistantHarness({ provider, executeTool: async () => [], authorize: async () => {} })
+    const result = await harness.run({ source: 'azy-agent', userId, tenantId, globalGroup: 'TEAM_MEMBER', conversationId }, 'gpt-4o-mini', 'olá', `retry-${id()}`)
+    expect(result.status).toBe('COMPLETED')
+    expect(result.text).toBe('Concluído após nova tentativa.')
+    expect(provider.calls).toBe(2)
+  })
 })

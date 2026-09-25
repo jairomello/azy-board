@@ -1,0 +1,26 @@
+# Perfil SIMPLE — Azy Board com SQLite (sem serviços externos)
+# Uso: docker compose -f docker-compose.simple.yml up -d
+# Não requer PostgreSQL nem Redis.
+services:
+  azyboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: azyboard-simple
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=/data/dev.db
+      - AZYBOARD_INSTALL_PROFILE=SIMPLE
+      - AZYBOARD_INSTANCE_DIR=/data
+      - JWT_SECRET=${JWT_SECRET:-change-me-use-a-long-random-secret}
+      - NODE_ENV=production
+    volumes:
+      # Volume persistente: banco SQLite + marcador de instalação
+      - azyboard-data:/data
+      - azyboard-uploads:/app/uploads
+
+volumes:
+  azyboard-data:
+  azyboard-uploads:

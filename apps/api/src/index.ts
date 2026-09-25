@@ -16,19 +16,19 @@ import { batchRouter } from './routes/batch'
 import { wsHandler } from './services/websocket'
 import type { WsClientData } from './services/websocket'
 import { hasGlobalGroup, verifyJwt } from './services/auth'
-import { db } from './db/index'
+import { db, installProfile, sqlite } from './db/index'
+import { ensureInstallationMarkers, sqliteInstallationMarkerStore } from './db/installationMarkers'
 import { and, eq } from 'drizzle-orm'
 import { serve } from 'bun'
 import { agentResponseMiddleware } from './middleware/agentResponse'
 import { dashboardRouter } from './routes/dashboard'
-import { assertAnalyticsCutoverReady } from './services/analytics'
 import { assistantRouter } from './routes/assistant'
 import { openApiDocument } from './validation'
 import { classifyDatabaseError, errorResponseMiddleware, normalizeErrorPayload } from './middleware/errorResponse'
 import { clientIpMiddleware } from './middleware/clientIp'
 import type { HonoEnv } from './types/hono'
 import { startStorageCleanupWorker } from './services/storageCleanup'
-import { ensureDashboardRollupsBackfill } from './services/dashboardMetrics'
+import { persistence } from './persistence/runtime'
 
 export const app = new Hono<HonoEnv>()
 
@@ -82,11 +82,12 @@ api.route('/assistant', assistantRouter)
 // que valida membership, item, projeto e tenant e aplica Content-Disposition.
 
 export async function startServer() {
-  await assertAnalyticsCutoverReady()
+  await ensureInstallationMarkers(installProfile, sqliteInstallationMarkerStore(sqlite))
+  await persistence.analytics.assertCutoverReady()
   // [TENANT] Backfill determinístico do rollup por projeto (idempotente: só
   // preenche projetos com cobertura e sem linhas). [DB-SWAP] PostgreSQL:
   // mover para job separado com refresh/materialized view.
-  await ensureDashboardRollupsBackfill()
+  await persistence.analytics.backfillRollups()
   // Item 12: drena a fila de limpeza de storage no startup e em ciclo periódico
   // (backoff e FAILED são persistidos; index de intervalo é com unref, não
   // impede o processo de encerrar).

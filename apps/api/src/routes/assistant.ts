@@ -1,8 +1,5 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
-import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm'
-import { assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantRuns, assistantSettings, assistantToolCalls, items, memberships, projects, users } from '../db/schema'
-import { db } from '../db/index'
 import type { AssistantScreen } from '@azy-board/types'
 import { DEFAULT_GOVERNANCE, GOVERNANCE_BOUNDS, MAX_ASSISTANT_ACTIONS, MAX_MESSAGE_BYTES, type Governance } from '@azy-board/types'
 import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
@@ -18,6 +15,9 @@ import type { RequestContext } from '@azy-board/types'
 import { hasGlobalGroup } from '../services/authorization'
 import { MCP_TOOL_POLICIES } from '../../../mcp/src/policies.js'
 import { assistantAdjustSchema, assistantAnswerSchema, assistantApprovalSchema, assistantAvailabilitySchema, assistantGovernanceSchema, assistantMessageSchema, assistantProviderSchema, conversationSchema, parseJson } from '../validation'
+import { persistence } from '../persistence/runtime'
+import { userPersistenceContext } from '../persistence/context'
+import type { AssistantSettingsRecord, PersistenceContext } from '../persistence/models'
 
 export const assistantRouter = new Hono<HonoEnv>()
 assistantRouter.use('*', authMiddleware)
@@ -38,9 +38,10 @@ async function authorizeAssistantTool(toolContext: HumanToolContext, name: strin
   if (!await canUseProject(toolContext.tenantId, toolContext.userId, toolContext.globalGroup, projectId)) throw new Error('PROJECT_PERMISSION_REQUIRED')
   if (!policy.localRole) return
   if (globalGroupRank[toolContext.globalGroup] >= globalGroupRank.ADMIN) return
+  const scope = { tenantId: toolContext.tenantId, actorUserId: toolContext.userId, actorKind: 'USER' as const }
   const [project, membership] = await Promise.all([
-    db.query.projects.findFirst({ where: (item) => and(eq(item.id, projectId), eq(item.tenantId, toolContext.tenantId)), columns: { managerUserId: true } }),
-    db.query.memberships.findFirst({ where: (item) => and(eq(item.projectId, projectId), eq(item.tenantId, toolContext.tenantId), eq(item.userId, toolContext.userId)), columns: { role: true } }),
+    persistence.projects.getProject(scope, projectId),
+    persistence.projects.getMembership(scope, projectId, toolContext.userId),
   ])
   const effectiveRole = project?.managerUserId === toolContext.userId ? 'ADMIN' : membership?.role
   if (!effectiveRole || localRoleRank[effectiveRole] < localRoleRank[policy.localRole]) throw new Error('PROJECT_ROLE_REQUIRED')
@@ -75,22 +76,27 @@ const requestTimes = new Map<string, number[]>()
 function context(c: Context<HonoEnv>): RequestContext { return c.get('ctx') as RequestContext }
 function operationalError(c: Context<HonoEnv>, code: string, status: 400 | 404 | 409 | 413 | 422 | 429 | 500) { return c.json({ error: 'Não foi possível processar a solicitação', code, retryable: status >= 500 || status === 429 }, status) }
 
+function scopeOf(tenantId: string, userId: string | null): PersistenceContext {
+  return { tenantId, actorUserId: userId, actorKind: userId ? 'USER' : 'SYSTEM' }
+}
+
 async function available(tenantId: string) {
-  const row = await db.query.assistantSettings.findFirst({ where: (s) => eq(s.tenantId, tenantId) })
+  const row = await persistence.agent.getSettings(scopeOf(tenantId, null))
   if (!row?.enabled || row.validationStatus !== 'VALID' || !row.credentialId) return null
-  const credential = await db.query.assistantCredentials.findFirst({ where: (item) => and(eq(item.id, row.credentialId!), eq(item.tenantId, tenantId), isNull(item.revokedAt)) })
+  const credential = await persistence.agent.getActiveCredential(scopeOf(tenantId, null), row.credentialId)
   return credential ? { row, credential } : null
 }
 
 async function ownedConversation(tenantId: string, userId: string, id: string) {
-  return db.query.assistantConversations.findFirst({ where: (conversation) => and(eq(conversation.id, id), eq(conversation.tenantId, tenantId), eq(conversation.userId, userId), isNull(conversation.deletedAt)) })
+  return persistence.agent.getOwnedConversation(scopeOf(tenantId, userId), userId, id)
 }
 
 export async function canUseProject(tenantId: string, userId: string, globalGroup: RequestContext['globalGroup'], projectId: string) {
   // [TENANT] A autorização do assistente é limitada ao projeto do tenant atual.
-  const project = await db.query.projects.findFirst({ where: (item) => and(eq(item.id, projectId), eq(item.tenantId, tenantId)), columns: { id: true, isRestricted: true, managerUserId: true } })
+  const scope = scopeOf(tenantId, userId)
+  const project = await persistence.projects.getProject(scope, projectId)
   if (!project) return false
-  const member = await db.query.memberships.findFirst({ where: (item) => and(eq(item.tenantId, tenantId), eq(item.projectId, projectId), eq(item.userId, userId)), columns: { id: true } })
+  const member = await persistence.projects.getMembership(scope, projectId, userId)
   const isProjectManager = project.managerUserId === userId
   if (project.isRestricted && !member && !isProjectManager) return false
   if (hasGlobalGroup(globalGroup, 'ADMIN')) return true
@@ -110,10 +116,8 @@ export function formatAssistantPromptContext(value: AssistantPromptContext): str
 }
 
 async function resolveSelectedItem(tenantId: string, projectId: string, itemId: string): Promise<AssistantPromptContext['selectedItem'] | undefined> {
-  const selected = await db.query.items.findFirst({
-    where: (item) => and(eq(item.id, itemId), eq(item.projectId, projectId), eq(item.tenantId, tenantId)),
-    columns: { id: true, title: true, type: true, parentId: true },
-  })
+  const scope = scopeOf(tenantId, null)
+  const selected = await persistence.items.getItem(scope, projectId, itemId)
   if (!selected) return undefined
   const ancestry: PromptNode[] = []
   const visited = new Set([selected.id])
@@ -121,10 +125,7 @@ async function resolveSelectedItem(tenantId: string, projectId: string, itemId: 
   while (parentId) {
     if (visited.has(parentId) || ancestry.length >= 20) return undefined
     visited.add(parentId)
-    const parent = await db.query.items.findFirst({
-      where: (item) => and(eq(item.id, parentId!), eq(item.projectId, projectId), eq(item.tenantId, tenantId)),
-      columns: { id: true, title: true, type: true, parentId: true },
-    })
+    const parent = await persistence.items.getItem(scope, projectId, parentId)
     if (!parent) return undefined
     ancestry.unshift({ id: parent.id, title: parent.title, type: parent.type })
     parentId = parent.parentId
@@ -132,7 +133,7 @@ async function resolveSelectedItem(tenantId: string, projectId: string, itemId: 
   return { id: selected.id, title: selected.title, type: selected.type, ancestry }
 }
 
-function governance(row?: typeof assistantSettings.$inferSelect): Governance {
+function governance(row?: AssistantSettingsRecord | null): Governance {
   return row ? { requestsPerMinute: row.requestsPerMinute, maxActivePerUser: row.maxActivePerUser, maxActivePerTenant: row.maxActivePerTenant, dailyBudgetMicros: row.dailyBudgetMicros, tenantDailyBudgetMicros: row.tenantDailyBudgetMicros, maxSteps: row.maxSteps, maxToolCalls: row.maxToolCalls, maxInputTokens: row.maxInputTokens, maxOutputTokens: row.maxOutputTokens, maxPayloadBytes: row.maxPayloadBytes, timeoutMs: row.timeoutMs } : DEFAULT_GOVERNANCE
 }
 
@@ -156,21 +157,19 @@ function checkRate(userId: string, limit: number): boolean {
 
 async function enforceBudget(tenantId: string, userId: string, limits: Governance) {
   const start = new Date(); start.setUTCHours(0, 0, 0, 0)
-  const rows = await db.select({ cost: assistantRuns.costMicros }).from(assistantRuns).where(and(eq(assistantRuns.tenantId, tenantId), eq(assistantRuns.userId, userId), gt(assistantRuns.createdAt, start.toISOString())))
-  const userCost = rows.reduce((sum, row) => sum + (row.cost ?? 0), 0)
+  const userCost = await persistence.agent.sumDailyCostMicros(tenantId, userId, start.toISOString())
   if (userCost >= limits.dailyBudgetMicros) return false
-  const tenantRows = await db.select({ cost: assistantRuns.costMicros }).from(assistantRuns).where(and(eq(assistantRuns.tenantId, tenantId), gt(assistantRuns.createdAt, start.toISOString())))
-  return tenantRows.reduce((sum, row) => sum + (row.cost ?? 0), 0) < limits.tenantDailyBudgetMicros
+  const tenantCost = await persistence.agent.sumDailyCostMicros(tenantId, null, start.toISOString())
+  return tenantCost < limits.tenantDailyBudgetMicros
 }
 
 async function activeRuns(tenantId: string, userId?: string) {
-  const rows = await db.select({ id: assistantRuns.id }).from(assistantRuns).where(and(eq(assistantRuns.tenantId, tenantId), ...(userId ? [eq(assistantRuns.userId, userId)] : []), sql`${assistantRuns.status} IN ('QUEUED', 'RUNNING', 'WAITING_USER', 'WAITING_APPROVAL')`))
-  return rows.length
+  return persistence.agent.countActiveRuns(tenantId, userId)
 }
 
 async function resolveExplicitProject(content: string, ctx: RequestContext, currentProjectId?: string | null): Promise<string | undefined> {
   const text = content.toLocaleLowerCase('pt-BR')
-  const projectsInTenant = await db.query.projects.findMany({ where: (project) => eq(project.tenantId, ctx.tenantId), columns: { id: true, name: true } })
+  const projectsInTenant = await persistence.projects.listProjects(scopeOf(ctx.tenantId, ctx.userId), { includeHidden: true })
   const matches: string[] = []
   for (const project of projectsInTenant) {
     if (project.id === currentProjectId || project.name.trim().length < 2) continue
@@ -296,10 +295,10 @@ function isBulkMoveMessage(text: string): boolean {
 }
 
 async function setting(tenantId: string) {
-  return db.query.assistantSettings.findFirst({ where: (s) => eq(s.tenantId, tenantId) })
+  return persistence.agent.getSettings(scopeOf(tenantId, null))
 }
 
-function projection(row: NonNullable<Awaited<ReturnType<typeof setting>>>) {
+function projection(row: AssistantSettingsRecord) {
   return { enabled: row.enabled, configured: row.validationStatus === 'VALID' && row.credentialId !== null, provider: row.provider, model: row.model, credentialMode: row.credentialMode, validationStatus: row.validationStatus, validatedAt: row.validatedAt, updatedAt: row.updatedAt, governance: governance(row) }
 }
 
@@ -326,7 +325,7 @@ assistantRouter.patch('/root/availability', requireGlobalGroup('ROOT'), async (c
   if (typeof body.enabled !== 'boolean') return c.json(safeError('INVALID_REQUEST'), 400)
   const tenantId = c.get('ctx').tenantId
   const now = new Date().toISOString()
-  await db.insert(assistantSettings).values({ tenantId, enabled: body.enabled, validationStatus: 'UNVALIDATED', updatedAt: now }).onConflictDoUpdate({ target: assistantSettings.tenantId, set: { enabled: body.enabled, updatedAt: now } })
+  await persistence.agent.saveAvailability(scopeOf(tenantId, null), body.enabled, now)
   const row = await setting(tenantId)
   return c.json(projection(row!))
 })
@@ -339,7 +338,7 @@ assistantRouter.patch('/root/governance', requireGlobalGroup('ROOT'), async (c) 
   if (!patch) return c.json(safeError('INVALID_GOVERNANCE'), 400)
   const tenantId = c.get('ctx').tenantId
   const now = new Date().toISOString()
-  await db.insert(assistantSettings).values({ tenantId, enabled: false, validationStatus: 'UNVALIDATED', updatedAt: now, ...DEFAULT_GOVERNANCE, ...patch }).onConflictDoUpdate({ target: assistantSettings.tenantId, set: { ...patch, updatedAt: now } })
+  await persistence.agent.saveGovernance(scopeOf(tenantId, null), patch as Record<string, number>, now)
   const row = await setting(tenantId)
   return c.json({ governance: governance(row) })
 })
@@ -348,11 +347,11 @@ assistantRouter.get('/root/governance/usage', requireGlobalGroup('ROOT'), async 
   const tenantId = c.get('ctx').tenantId, row = await setting(tenantId)
   if (!row) return c.json({ activeRuns: 0, dailyCostMicros: 0, limits: DEFAULT_GOVERNANCE })
   const start = new Date(); start.setUTCHours(0, 0, 0, 0)
-  const [active, runs] = await Promise.all([
+  const [active, dailyCostMicros] = await Promise.all([
     activeRuns(tenantId),
-    db.select({ cost: assistantRuns.costMicros }).from(assistantRuns).where(and(eq(assistantRuns.tenantId, tenantId), gt(assistantRuns.createdAt, start.toISOString()))),
+    persistence.agent.sumDailyCostMicros(tenantId, null, start.toISOString()),
   ])
-  return c.json({ activeRuns: active, dailyCostMicros: runs.reduce((sum, item) => sum + (item.cost ?? 0), 0), limits: governance(row) })
+  return c.json({ activeRuns: active, dailyCostMicros, limits: governance(row) })
 })
 
 async function configure(c: Context<HonoEnv>) {
@@ -368,10 +367,13 @@ async function configure(c: Context<HonoEnv>) {
     const tenantId = c.get('ctx').tenantId
     const now = new Date().toISOString()
     const credentialId = generateId()
-     await db.insert(assistantCredentials).values({ id: credentialId, tenantId, provider, credentialMode: 'API_KEY', ciphertext: encrypted.ciphertext, ciphertextVersion: encrypted.version, keyPrefix: body.secret.slice(0, 7) + '...', scopesJson: '[]', revokedAt: null, createdBy: c.get('ctx').userId, createdAt: now })
+    const scope = scopeOf(tenantId, c.get('ctx').userId)
     const old = await setting(tenantId)
-     await db.insert(assistantSettings).values({ tenantId, enabled: old?.enabled ?? false, provider, model: body.model, credentialMode: 'API_KEY', credentialId, validationStatus: 'VALID', validatedAt: now, updatedAt: now }).onConflictDoUpdate({ target: assistantSettings.tenantId, set: { provider, model: body.model, credentialMode: 'API_KEY', credentialId, validationStatus: 'VALID', validatedAt: now, updatedAt: now } })
-    if (old?.credentialId) await db.update(assistantCredentials).set({ revokedAt: now }).where(and(eq(assistantCredentials.id, old.credentialId), eq(assistantCredentials.tenantId, tenantId), isNull(assistantCredentials.revokedAt)))
+    await persistence.agent.createCredential(scope, {
+      id: credentialId, provider, ciphertext: encrypted.ciphertext, ciphertextVersion: encrypted.version,
+      keyPrefix: body.secret.slice(0, 7) + '...', createdBy: c.get('ctx').userId, createdAt: now,
+    })
+    await persistence.agent.saveProvider(scope, { provider, model: body.model, credentialId, validatedAt: now, updatedAt: now }, old?.credentialId ?? null)
     return c.json(projection((await setting(tenantId))!), 200)
   } catch (error) {
     if (error instanceof AssistantEncryptionError) return c.json(safeError('ENCRYPTION_NOT_CONFIGURED', 500), 500)
@@ -395,23 +397,20 @@ assistantRouter.post('/root/provider/test', requireGlobalGroup('ROOT'), async (c
 assistantRouter.post('/root/provider/activate', requireGlobalGroup('ROOT'), async (c) => {
   const row = await setting(c.get('ctx').tenantId)
   if (!row?.credentialId || row.validationStatus !== 'VALID') return c.json(safeError('PROVIDER_NOT_VALIDATED'), 422)
-  const now = new Date().toISOString()
-  await db.update(assistantSettings).set({ enabled: true, updatedAt: now }).where(eq(assistantSettings.tenantId, c.get('ctx').tenantId))
+  await persistence.agent.activateProvider(scopeOf(c.get('ctx').tenantId, null), new Date().toISOString())
   return c.json(projection((await setting(c.get('ctx').tenantId))!))
 })
 
 assistantRouter.post('/root/provider/revoke', requireGlobalGroup('ROOT'), async (c) => {
   const tenantId = c.get('ctx').tenantId
-  const row = await setting(tenantId)
-  if (row?.credentialId) await db.update(assistantCredentials).set({ revokedAt: new Date().toISOString() }).where(and(eq(assistantCredentials.id, row.credentialId), eq(assistantCredentials.tenantId, tenantId)))
-  await db.update(assistantSettings).set({ enabled: false, credentialId: null, validationStatus: 'UNVALIDATED', validatedAt: null, updatedAt: new Date().toISOString() }).where(eq(assistantSettings.tenantId, tenantId))
+  await persistence.agent.revokeProvider(scopeOf(tenantId, null), new Date().toISOString())
   return c.json({ enabled: false, configured: false, provider: null, status: 'DISABLED' as const })
 })
 
 // Chat API: conversation ownership is deliberately narrower than tenant access.
 assistantRouter.get('/conversations', async (c) => {
   const ctx = context(c)
-  const rows = await db.query.assistantConversations.findMany({ where: (item) => and(eq(item.tenantId, ctx.tenantId), eq(item.userId, ctx.userId), isNull(item.deletedAt)), orderBy: [desc(assistantConversations.updatedAt)] })
+  const rows = await persistence.agent.listConversations(scopeOf(ctx.tenantId, ctx.userId), ctx.userId)
   return c.json(rows.map(row => ({ id: row.id, projectId: row.projectId, title: row.title, createdAt: row.createdAt, updatedAt: row.updatedAt })))
 })
 
@@ -424,16 +423,18 @@ assistantRouter.post('/conversations', async (c) => {
   const projectId = typeof body.projectId === 'string' ? body.projectId : null
   if (projectId && !await canUseProject(ctx.tenantId, ctx.userId, ctx.globalGroup, projectId)) return operationalError(c, 'PROJECT_NOT_FOUND', 404)
   const now = new Date().toISOString(), id = generateId()
-  await db.insert(assistantConversations).values({ id, tenantId: ctx.tenantId, userId: ctx.userId, projectId, title: typeof body.title === 'string' ? body.title.slice(0, 200) : null, createdAt: now, updatedAt: now, deletedAt: null })
-  return c.json({ id, projectId, title: typeof body.title === 'string' ? body.title.slice(0, 200) : null, createdAt: now, updatedAt: now }, 201)
+  const title = typeof body.title === 'string' ? body.title.slice(0, 200) : null
+  await persistence.agent.createConversation(scopeOf(ctx.tenantId, ctx.userId), { id, userId: ctx.userId, projectId, title, now })
+  return c.json({ id, projectId, title, createdAt: now, updatedAt: now }, 201)
 })
 
 assistantRouter.get('/conversations/:conversationId', async (c) => {
   const ctx = context(c), conversation = await ownedConversation(ctx.tenantId, ctx.userId, c.req.param('conversationId'))
   if (!conversation) return operationalError(c, 'CONVERSATION_NOT_FOUND', 404)
+  const scope = scopeOf(ctx.tenantId, ctx.userId)
   const [messages, runs] = await Promise.all([
-    db.query.assistantMessages.findMany({ where: (item) => and(eq(item.tenantId, ctx.tenantId), eq(item.conversationId, conversation.id)), orderBy: [asc(assistantMessages.createdAt)] }),
-    db.query.assistantRuns.findMany({ where: (item) => and(eq(item.tenantId, ctx.tenantId), eq(item.conversationId, conversation.id)), orderBy: [desc(assistantRuns.createdAt)] }),
+    persistence.agent.listMessages(scope, conversation.id),
+    persistence.agent.listRuns(scope, conversation.id),
   ])
   return c.json({ ...conversation, messages: messages.map(message => ({ ...message, metadata: jsonValue(message.metadataJson) })), runs })
 })
@@ -441,7 +442,8 @@ assistantRouter.get('/conversations/:conversationId', async (c) => {
 assistantRouter.delete('/conversations/:conversationId', async (c) => {
   const ctx = context(c), id = c.req.param('conversationId')
   if (!await ownedConversation(ctx.tenantId, ctx.userId, id)) return operationalError(c, 'CONVERSATION_NOT_FOUND', 404)
-  await db.update(assistantConversations).set({ deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }).where(and(eq(assistantConversations.id, id), eq(assistantConversations.tenantId, ctx.tenantId), eq(assistantConversations.userId, ctx.userId)))
+  const now = new Date().toISOString()
+  await persistence.agent.softDeleteConversation(scopeOf(ctx.tenantId, ctx.userId), ctx.userId, id, now)
   return c.json({ ok: true })
 })
 
@@ -462,11 +464,14 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
   if (conversation.projectId && !await canUseProject(ctx.tenantId, ctx.userId, ctx.globalGroup, conversation.projectId)) return operationalError(c, 'PROJECT_NOT_FOUND', 404)
   const explicitProjectId = await resolveExplicitProject(content, ctx, conversation.projectId)
   const effectiveProjectId = explicitProjectId ?? conversation.projectId
-  const [authenticatedUser, selectedProject] = await Promise.all([
-    db.query.users.findFirst({ where: (user) => and(eq(user.id, ctx.userId), eq(user.tenantId, ctx.tenantId)), columns: { id: true, name: true, email: true, globalGroup: true, language: true } }),
-    effectiveProjectId ? db.query.projects.findFirst({ where: (project) => and(eq(project.id, effectiveProjectId), eq(project.tenantId, ctx.tenantId)), columns: { id: true, name: true, startDate: true, plannedEndDate: true, plannedPoints: true, plannedHours: true, scope: true } }) : null,
+  const scope = scopeOf(ctx.tenantId, ctx.userId)
+  const [authenticatedUserRecord, selectedProjectRecord] = await Promise.all([
+    persistence.identity.findUser(scope, ctx.userId),
+    effectiveProjectId ? persistence.projects.getProject(scope, effectiveProjectId) : null,
   ])
-  if (!authenticatedUser) return operationalError(c, 'USER_NOT_FOUND', 404)
+  if (!authenticatedUserRecord) return operationalError(c, 'USER_NOT_FOUND', 404)
+  const authenticatedUser = { id: authenticatedUserRecord.id, name: authenticatedUserRecord.name, email: authenticatedUserRecord.email, globalGroup: authenticatedUserRecord.globalGroup, language: authenticatedUserRecord.language }
+  const selectedProject = selectedProjectRecord ? { id: selectedProjectRecord.id, name: selectedProjectRecord.name, startDate: selectedProjectRecord.startDate, plannedEndDate: selectedProjectRecord.plannedEndDate, plannedPoints: selectedProjectRecord.plannedPoints, plannedHours: selectedProjectRecord.plannedHours, scope: selectedProjectRecord.scope } : null
   const selectedItem = expectedItemId && !explicitProjectId
     ? conversation.projectId ? await resolveSelectedItem(ctx.tenantId, conversation.projectId, expectedItemId) : undefined
     : null
@@ -474,13 +479,12 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
   // Runs órfãs de restart do servidor: QUEUED/RUNNING além do timeout não têm processo
   // associado e bloqueariam novas mensagens por maxActivePerUser — expira antes do limite.
   const staleCutoff = new Date(Date.now() - (limits.timeoutMs + 10_000)).toISOString()
-  await db.update(assistantRuns).set({ status: 'EXPIRED', errorCode: 'TIMEOUT', finishedAt: new Date().toISOString() })
-    .where(and(eq(assistantRuns.tenantId, ctx.tenantId), inArray(assistantRuns.status, ['QUEUED', 'RUNNING']), lt(assistantRuns.startedAt, staleCutoff)))
+  await persistence.agent.expireStaleRuns(ctx.tenantId, staleCutoff, new Date().toISOString())
   if ((await activeRuns(ctx.tenantId, ctx.userId)) >= limits.maxActivePerUser || (await activeRuns(ctx.tenantId)) >= limits.maxActivePerTenant) return operationalError(c, 'CONCURRENCY_LIMIT', 429)
   const now = new Date().toISOString(), messageId = generateId()
-  await db.insert(assistantMessages).values({ id: messageId, tenantId: ctx.tenantId, conversationId, userId: ctx.userId, role: 'USER', content, metadataJson: '{}', createdAt: now })
-  await db.update(assistantConversations).set({ updatedAt: now }).where(and(eq(assistantConversations.id, conversationId), eq(assistantConversations.tenantId, ctx.tenantId), eq(assistantConversations.userId, ctx.userId)))
-  const recentMessages = await db.query.assistantMessages.findMany({ where: (message) => and(eq(message.tenantId, ctx.tenantId), eq(message.conversationId, conversationId)), orderBy: [desc(assistantMessages.createdAt)], limit: 12 })
+  await persistence.agent.createMessage(scope, { conversationId, userId: ctx.userId, role: 'USER', content, metadataJson: '{}', createdAt: now })
+  await persistence.agent.touchConversation(scope, ctx.userId, conversationId, now)
+  const recentMessages = await persistence.agent.listRecentMessages(scope, conversationId, 12)
   const modelInput = recentMessages.reverse().map(message => ({ role: message.role === 'ASSISTANT' ? 'assistant' : 'user', content: message.content.slice(0, 20_000) }))
   modelInput.unshift({ role: 'system', content: formatAssistantPromptContext({ currentDate: new Date().toISOString().slice(0, 10), authenticatedUser, selectedProject: selectedProject ?? null, selectedItem: selectedItem ?? null }) })
   if (modelContext && modelInput.length) modelInput[modelInput.length - 1]!.content = `${modelInput[modelInput.length - 1]!.content}\n\nContexto confiável da operação anterior:\n${modelContext}`
@@ -497,7 +501,7 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
     : toolsForMessage(content, `${toolContext} ${modelContext ?? ''}`)
   const toolAllowlist = await filterToolsByPolicy(ctx, candidateTools, effectiveProjectId ?? undefined)
   void harness.run(runContext, config.row.model!, modelInput, idempotencyKey, toolAllowlist).then(async result => {
-    if (result.text) await db.insert(assistantMessages).values({ id: generateId(), tenantId: ctx.tenantId, conversationId, userId: null, role: 'ASSISTANT', content: result.text.slice(0, 20_000), metadataJson: JSON.stringify({ runId: result.runId }), createdAt: new Date().toISOString() })
+    if (result.text) await persistence.agent.createMessage(scope, { conversationId, userId: null, role: 'ASSISTANT', content: result.text.slice(0, 20_000), metadataJson: JSON.stringify({ runId: result.runId }), createdAt: new Date().toISOString() })
   }).catch(() => undefined)
   return c.json({ messageId, runId, status: 'QUEUED' }, 202)
 }
@@ -513,23 +517,24 @@ assistantRouter.post('/conversations/:conversationId/messages', async (c) => {
 assistantRouter.post('/conversations/:conversationId/resume', async (c) => {
   const ctx = context(c), conversation = await ownedConversation(ctx.tenantId, ctx.userId, c.req.param('conversationId'))
   if (!conversation) return operationalError(c, 'CONVERSATION_NOT_FOUND', 404)
-  const run = await db.query.assistantRuns.findFirst({ where: (item) => and(eq(item.tenantId, ctx.tenantId), eq(item.conversationId, conversation.id), eq(item.userId, ctx.userId), sql`${item.status} IN ('WAITING_USER', 'WAITING_APPROVAL')`), orderBy: [desc(assistantRuns.createdAt)] })
+  const run = await persistence.agent.findResumableRun(scopeOf(ctx.tenantId, ctx.userId), ctx.userId, conversation.id)
   if (!run) return operationalError(c, 'RUN_NOT_RESUMABLE', 409)
   return c.json({ runId: run.id, status: run.status, cursor: run.currentCursor })
 })
 
 async function ownedRun(tenantId: string, userId: string, runId: string) {
-  return db.query.assistantRuns.findFirst({ where: (run) => and(eq(run.id, runId), eq(run.tenantId, tenantId), eq(run.userId, userId)) })
+  return persistence.agent.getOwnedRun(scopeOf(tenantId, userId), userId, runId)
 }
 
 assistantRouter.get('/runs/:runId', async (c) => {
   const ctx = context(c), run = await ownedRun(ctx.tenantId, ctx.userId, c.req.param('runId'))
   if (!run) return operationalError(c, 'RUN_NOT_FOUND', 404)
+  const scope = scopeOf(ctx.tenantId, ctx.userId)
   const [tools, approval] = await Promise.all([
-    db.query.assistantToolCalls.findMany({ where: (call) => and(eq(call.tenantId, ctx.tenantId), eq(call.runId, run.id)), columns: { id: true, toolName: true, riskLevel: true, status: true, resultSummary: true, startedAt: true, finishedAt: true } }),
-    db.query.assistantApprovals.findFirst({ where: (item) => and(eq(item.tenantId, ctx.tenantId), eq(item.runId, run.id), eq(item.status, 'PENDING')), columns: { id: true, status: true, previewJson: true, operationHash: true, expiresAt: true } }),
+    persistence.agent.listToolCalls(scope, run.id),
+    persistence.agent.listPendingApproval(scope, run.id),
   ])
-  return c.json({ id: run.id, status: run.status, model: run.model, cursor: run.currentCursor, inputTokens: run.inputTokens, outputTokens: run.outputTokens, costMicros: run.costMicros, errorCode: run.errorCode, createdAt: run.createdAt, startedAt: run.startedAt, finishedAt: run.finishedAt, tools: tools.map(tool => ({ ...tool, displayName: friendlyToolName(tool.toolName) })), approval: approval ? { ...approval, preview: jsonValue(approval.previewJson) } : null })
+  return c.json({ id: run.id, status: run.status, model: run.model, cursor: run.currentCursor, inputTokens: run.inputTokens, outputTokens: run.outputTokens, costMicros: run.costMicros, errorCode: run.errorCode, createdAt: run.createdAt, startedAt: run.startedAt, finishedAt: run.finishedAt, tools: tools.map(tool => ({ id: tool.id, toolName: tool.toolName, riskLevel: tool.riskLevel, status: tool.status, resultSummary: tool.resultSummary, startedAt: tool.startedAt, finishedAt: tool.finishedAt, displayName: friendlyToolName(tool.toolName) })), approval: approval ? { id: approval.id, status: approval.status, operationHash: approval.operationHash, expiresAt: approval.expiresAt, preview: jsonValue(approval.previewJson) } : null })
 })
 
 assistantRouter.get('/runs/:runId/events', async (c) => {
@@ -545,7 +550,7 @@ assistantRouter.get('/runs/:runId/events', async (c) => {
       const deadline = Date.now() + 30_000
       try {
         while (Date.now() < deadline) {
-          const events = await db.query.assistantEvents.findMany({ where: (event) => and(eq(event.tenantId, ctx.tenantId), eq(event.runId, runId), gt(event.sequence, next)), orderBy: [asc(assistantEvents.sequence)] })
+          const events = await persistence.agent.listEventsAfter(scopeOf(ctx.tenantId, ctx.userId), runId, next)
           for (const event of events) {
             next = event.sequence
             const payload = sanitizeToolOutput(jsonValue(event.payloadJson)) as Record<string, unknown>
@@ -569,15 +574,10 @@ assistantRouter.post('/runs/:runId/question', async (c) => {
   if (!parsed.ok) return parsed.response
   const body = parsed.data
   const answer = body.answer.slice(0, 20_000)
-  const resumed = await db.transaction(async (tx) => {
-    const updated = await tx.update(assistantRuns).set({ status: 'QUEUED', errorCode: null })
-      .where(and(eq(assistantRuns.id, run.id), eq(assistantRuns.tenantId, ctx.tenantId), eq(assistantRuns.userId, ctx.userId), eq(assistantRuns.status, 'WAITING_USER')))
-      .returning({ id: assistantRuns.id })
-    if (!updated.length) return false
-    await tx.insert(assistantMessages).values({ id: generateId(), tenantId: ctx.tenantId, conversationId: run.conversationId, userId: ctx.userId, role: 'USER', content: answer, metadataJson: JSON.stringify({ runId: run.id, kind: 'question_answer' }), createdAt: new Date().toISOString() })
-    return true
-  })
+  const scope = scopeOf(ctx.tenantId, ctx.userId)
+  const resumed = await persistence.agent.updateRunInStatuses(run.id, ctx.tenantId, ctx.userId, ['WAITING_USER'], { status: 'QUEUED', errorCode: null })
   if (!resumed) return operationalError(c, 'RUN_STATE_CONFLICT', 409)
+  await persistence.agent.createMessage(scope, { conversationId: run.conversationId, userId: ctx.userId, role: 'USER', content: answer, metadataJson: JSON.stringify({ runId: run.id, kind: 'question_answer' }), createdAt: new Date().toISOString() })
   return c.json({ runId: run.id, status: 'QUEUED' })
 })
 
@@ -594,11 +594,12 @@ assistantRouter.post('/runs/:runId/approval', async (c) => {
     else await harness.reject(run.id, ctx.tenantId, ctx.userId, body.operationHash)
   } catch (error) { return operationalError(c, error instanceof Error && error.message === 'APPROVAL_EXPIRED' ? 'APPROVAL_EXPIRED' : 'APPROVAL_INVALID', 409) }
   if (body.approved) {
-    const approval = await db.query.assistantApprovals.findFirst({ where: (item) => and(eq(item.runId, run.id), eq(item.tenantId, ctx.tenantId), eq(item.operationHash, body.operationHash as string)) })
-    const call = approval?.toolCallId ? await db.query.assistantToolCalls.findFirst({ where: (item) => and(eq(item.id, approval.toolCallId!), eq(item.tenantId, ctx.tenantId), eq(item.runId, run.id)) }) : undefined
+    const scope = scopeOf(ctx.tenantId, ctx.userId)
+    const approval = await persistence.agent.findApproval(scope, run.id, body.operationHash as string, 'APPROVED')
+    const call = approval?.toolCallId ? await persistence.agent.getToolCall(scope, run.id, approval.toolCallId) : null
     if (call) {
       try {
-        await db.update(assistantToolCalls).set({ status: 'RUNNING', startedAt: new Date().toISOString() }).where(and(eq(assistantToolCalls.id, call.id), eq(assistantToolCalls.tenantId, ctx.tenantId)))
+        await persistence.agent.updateToolCallInStatuses(call.id, ctx.tenantId, ['WAITING_APPROVAL'], { status: 'RUNNING', startedAt: new Date().toISOString() })
         const argumentsValue = jsonValue(call.argumentsJson)
         const approvedArgs = Object.fromEntries(Object.entries(argumentsValue).filter(([, value]) => value !== 'null' && value !== ''))
         if (operationHash(call.toolName, approvedArgs) !== body.operationHash) throw new Error('APPROVAL_INVALID')
@@ -606,17 +607,15 @@ assistantRouter.post('/runs/:runId/approval', async (c) => {
         const executionContext: HumanToolContext = { ...ctx, source: 'azy-agent', runId: run.id, projectId: typeof approvedArgs.projectId === 'string' ? approvedArgs.projectId : undefined, itemId: typeof approvedArgs.itemId === 'string' ? approvedArgs.itemId : undefined, screen: 'global-other' }
         await authorizeAssistantTool(executionContext, call.toolName, approvedArgs)
         const result = await executeSharedTool(call.toolName, approvedArgs, { api: toolApi(c), context: executionContext, authorize: authorizeAssistantTool })
-        await db.update(assistantToolCalls).set({ status: 'COMPLETED', resultSummary: JSON.stringify(sanitizeToolOutput(result)), finishedAt: new Date().toISOString() }).where(eq(assistantToolCalls.id, call.id))
-        await db.update(assistantRuns).set({ status: 'COMPLETED', finishedAt: new Date().toISOString() }).where(eq(assistantRuns.id, run.id))
-        await db.insert(assistantMessages).values({ id: generateId(), tenantId: ctx.tenantId, conversationId: run.conversationId, userId: null, role: 'ASSISTANT', content: successMessage(call.toolName, result), metadataJson: JSON.stringify({ runId: run.id }), createdAt: new Date().toISOString() })
-        const previous = await db.query.assistantEvents.findFirst({ where: (event) => and(eq(event.runId, run.id), eq(event.tenantId, ctx.tenantId)), orderBy: [desc(assistantEvents.sequence)] })
-        await db.insert(assistantEvents).values({ id: generateId(), tenantId: ctx.tenantId, runId: run.id, sequence: (previous?.sequence ?? 0) + 1, eventType: 'RUN_COMPLETED', payloadJson: JSON.stringify({}), createdAt: new Date().toISOString() })
+        await persistence.agent.updateToolCall(call.id, ctx.tenantId, { status: 'COMPLETED', resultSummary: JSON.stringify(sanitizeToolOutput(result)), finishedAt: new Date().toISOString() })
+        await persistence.agent.updateRun(run.id, ctx.tenantId, { status: 'COMPLETED', finishedAt: new Date().toISOString() })
+        await persistence.agent.createMessage(scope, { conversationId: run.conversationId, userId: null, role: 'ASSISTANT', content: successMessage(call.toolName, result), metadataJson: JSON.stringify({ runId: run.id }), createdAt: new Date().toISOString() })
+        await persistence.agent.insertEvent(scope, run.id, 'RUN_COMPLETED', JSON.stringify({}), new Date().toISOString())
       } catch (error) {
         const detail = error instanceof Error ? error.message.slice(0, 300) : 'Erro de execução'
-        await db.update(assistantToolCalls).set({ status: 'FAILED', finishedAt: new Date().toISOString() }).where(eq(assistantToolCalls.id, call.id))
-        await db.update(assistantRuns).set({ status: 'FAILED', errorCode: exposeAssistantErrors ? detail : 'TOOL_EXECUTION_FAILED', finishedAt: new Date().toISOString() }).where(eq(assistantRuns.id, run.id))
-        const previous = await db.query.assistantEvents.findFirst({ where: (event) => and(eq(event.runId, run.id), eq(event.tenantId, ctx.tenantId)), orderBy: [desc(assistantEvents.sequence)] })
-        await db.insert(assistantEvents).values({ id: generateId(), tenantId: ctx.tenantId, runId: run.id, sequence: (previous?.sequence ?? 0) + 1, eventType: 'RUN_FAILED', payloadJson: JSON.stringify({ error: exposeAssistantErrors ? `Falha ao executar ${call.toolName}: ${detail}` : 'Não foi possível executar a ação aprovada.' }), createdAt: new Date().toISOString() })
+        await persistence.agent.updateToolCall(call.id, ctx.tenantId, { status: 'FAILED', finishedAt: new Date().toISOString() })
+        await persistence.agent.updateRun(run.id, ctx.tenantId, { status: 'FAILED', errorCode: exposeAssistantErrors ? detail : 'TOOL_EXECUTION_FAILED', finishedAt: new Date().toISOString() })
+        await persistence.agent.insertEvent(scope, run.id, 'RUN_FAILED', JSON.stringify({ error: exposeAssistantErrors ? `Falha ao executar ${call.toolName}: ${detail}` : 'Não foi possível executar a ação aprovada.' }), new Date().toISOString())
         return c.json({ error: exposeAssistantErrors ? `Falha ao executar ${call.toolName}: ${detail}` : 'Não foi possível executar a ação aprovada.', code: 'TOOL_EXECUTION_FAILED', retryable: false }, 422)
       }
     } else return operationalError(c, 'TOOL_CALL_NOT_FOUND', 409)
@@ -631,19 +630,17 @@ assistantRouter.post('/runs/:runId/adjust', async (c) => {
   const parsed = await parseJson(c, assistantAdjustSchema)
   if (!parsed.ok) return parsed.response
   const body = parsed.data
-  const approval = await db.query.assistantApprovals.findFirst({ where: (item) => and(eq(item.runId, run.id), eq(item.tenantId, ctx.tenantId), eq(item.operationHash, body.operationHash as string), eq(item.status, 'PENDING')) })
-  const call = approval?.toolCallId ? await db.query.assistantToolCalls.findFirst({ where: (item) => and(eq(item.id, approval.toolCallId!), eq(item.tenantId, ctx.tenantId), eq(item.runId, run.id)) }) : undefined
+  const scope = scopeOf(ctx.tenantId, ctx.userId)
+  const approval = await persistence.agent.findApproval(scope, run.id, body.operationHash as string, 'PENDING')
+  const call = approval?.toolCallId ? await persistence.agent.getToolCall(scope, run.id, approval.toolCallId) : null
   if (!approval || !call) return operationalError(c, 'APPROVAL_INVALID', 409)
-  const previous = await db.query.assistantEvents.findFirst({ where: (event) => and(eq(event.runId, run.id), eq(event.tenantId, ctx.tenantId)), orderBy: [desc(assistantEvents.sequence)] })
   const now = new Date().toISOString()
-  await db.transaction(async tx => {
-    await tx.update(assistantApprovals).set({ status: 'CANCELLED', decidedBy: ctx.userId, decidedAt: now }).where(and(eq(assistantApprovals.id, approval.id), eq(assistantApprovals.status, 'PENDING')))
-    await tx.update(assistantToolCalls).set({ status: 'CANCELLED', finishedAt: now }).where(and(eq(assistantToolCalls.id, call.id), eq(assistantToolCalls.status, 'WAITING_APPROVAL')))
-    await tx.update(assistantRuns).set({ status: 'CANCELLED', finishedAt: now }).where(and(eq(assistantRuns.id, run.id), eq(assistantRuns.status, 'WAITING_APPROVAL')))
-    await tx.insert(assistantEvents).values([
-      { id: generateId(), tenantId: ctx.tenantId, runId: run.id, sequence: (previous?.sequence ?? 0) + 1, eventType: 'APPROVAL_DECIDED', payloadJson: JSON.stringify({ approved: false, adjusted: true }), createdAt: now },
-      { id: generateId(), tenantId: ctx.tenantId, runId: run.id, sequence: (previous?.sequence ?? 0) + 2, eventType: 'RUN_CANCELLED', payloadJson: JSON.stringify({ reason: 'adjusted' }), createdAt: now },
-    ])
+  await persistence.agent.cancelApprovalAndRun(scope, {
+    approvalId: approval.id, toolCallId: call.id, runId: run.id, now,
+    events: [
+      { eventType: 'APPROVAL_DECIDED', payloadJson: JSON.stringify({ approved: false, adjusted: true }) },
+      { eventType: 'RUN_CANCELLED', payloadJson: JSON.stringify({ reason: 'adjusted' }) },
+    ],
   })
   const modelContext = `A operação ${call.toolName} ainda não foi executada. Argumentos anteriores: ${call.argumentsJson}. Aplique esta alteração e chame novamente a ferramenta para gerar uma nova aprovação: ${body.instruction.trim()}`
   const key = c.req.header('Idempotency-Key') ?? `adjust:${run.id}:${generateId()}`
@@ -654,14 +651,12 @@ assistantRouter.post('/runs/:runId/cancel', async (c) => {
   const ctx = context(c), run = await ownedRun(ctx.tenantId, ctx.userId, c.req.param('runId'))
   if (!run) return operationalError(c, 'RUN_NOT_FOUND', 404)
   if (['COMPLETED', 'FAILED', 'CANCELLED', 'EXPIRED'].includes(run.status)) return c.json({ runId: run.id, status: run.status })
-  const cancelled = await db.update(assistantRuns).set({ status: 'CANCELLED', finishedAt: new Date().toISOString(), errorCode: 'CANCELLED' })
-    .where(and(eq(assistantRuns.id, run.id), eq(assistantRuns.tenantId, ctx.tenantId), eq(assistantRuns.userId, ctx.userId), inArray(assistantRuns.status, ['QUEUED', 'RUNNING', 'WAITING_USER', 'WAITING_APPROVAL'])))
-    .returning({ id: assistantRuns.id })
-  if (!cancelled.length) {
+  const scope = scopeOf(ctx.tenantId, ctx.userId)
+  const cancelled = await persistence.agent.updateRunInStatuses(run.id, ctx.tenantId, ctx.userId, ['QUEUED', 'RUNNING', 'WAITING_USER', 'WAITING_APPROVAL'], { status: 'CANCELLED', finishedAt: new Date().toISOString(), errorCode: 'CANCELLED' })
+  if (!cancelled) {
     const current = await ownedRun(ctx.tenantId, ctx.userId, run.id)
     return c.json({ runId: run.id, status: current?.status ?? run.status })
   }
-  const last = await db.query.assistantEvents.findFirst({ where: (event) => and(eq(event.tenantId, ctx.tenantId), eq(event.runId, run.id)), orderBy: [desc(assistantEvents.sequence)] })
-  await db.insert(assistantEvents).values({ id: generateId(), tenantId: ctx.tenantId, runId: run.id, sequence: (last?.sequence ?? 0) + 1, eventType: 'RUN_CANCELLED', payloadJson: JSON.stringify({ actor: ctx.userId }), createdAt: new Date().toISOString() })
+  await persistence.agent.insertEvent(scope, run.id, 'RUN_CANCELLED', JSON.stringify({ actor: ctx.userId }), new Date().toISOString())
   return c.json({ runId: run.id, status: 'CANCELLED' })
 })

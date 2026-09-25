@@ -17,6 +17,7 @@ export const webPort = Number(process.env.E2E_WEB_PORT ?? 5173)
 export const apiUrl = `http://localhost:${apiPort}`
 export const webUrl = `http://localhost:${webPort}`
 const dbPath = `/tmp/azy-e2e-${process.pid}.db`
+const instanceDir = `${dbPath}.state`
 
 // Chave de 32 bytes para cifrar a credencial fictícia do assistente no seed.
 const encryptionKey = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
@@ -68,8 +69,9 @@ export async function waitFor(check: () => Promise<boolean>, label: string, time
 
 async function prepareDatabase() {
   for (const suffix of ['', '-wal', '-shm']) rmSync(`${dbPath}${suffix}`, { force: true })
-  const env = { DATABASE_URL: dbPath, ASSISTANT_ENCRYPTION_KEY: encryptionKey, E2E_TENANT_SLUG: admin.slug, E2E_MEMBER_EMAIL: member.email, E2E_MEMBER_PASSWORD: member.password }
-  await runCommand(['bun', 'run', '--cwd', 'apps/api', 'db:migrate'], { DATABASE_URL: dbPath })
+  rmSync(instanceDir, { recursive: true, force: true })
+  const env = { DATABASE_URL: dbPath, AZYBOARD_INSTALL_PROFILE: 'SIMPLE', AZYBOARD_INSTANCE_DIR: instanceDir, ASSISTANT_ENCRYPTION_KEY: encryptionKey, E2E_TENANT_SLUG: admin.slug, E2E_MEMBER_EMAIL: member.email, E2E_MEMBER_PASSWORD: member.password }
+  await runCommand(['bun', 'run', '--cwd', 'apps/api', 'db:migrate'], env)
   await runCommand([
     'bun', 'run', '--cwd', 'apps/api', 'setup',
     admin.tenant, admin.slug, admin.email, admin.password, admin.name,
@@ -78,12 +80,16 @@ async function prepareDatabase() {
 }
 
 function startApi() {
+  const logDir = join(root, 'tmp', 'e2e-logs')
+  mkdirSync(logDir, { recursive: true })
   const proc = Bun.spawn({
     cmd: ['bun', 'apps/api/src/index.ts'],
     cwd: root,
     env: {
       ...process.env,
       DATABASE_URL: dbPath,
+      AZYBOARD_INSTALL_PROFILE: 'SIMPLE',
+      AZYBOARD_INSTANCE_DIR: instanceDir,
       PORT: String(apiPort),
       NODE_ENV: 'test',
       ASSISTANT_ENCRYPTION_KEY: encryptionKey,
@@ -91,20 +97,22 @@ function startApi() {
       JWT_SECRET: 'e2e-jwt-secret-not-for-production',
       FRONTEND_URL: webUrl,
     },
-    stdout: 'ignore',
-    stderr: 'ignore',
+    stdout: Bun.file(join(logDir, 'api.log')),
+    stderr: Bun.file(join(logDir, 'api-error.log')),
   })
   children.push(proc)
 }
 
 function startWeb() {
   const command = existsSync(viteBin) ? [viteBin] : ['bun', 'x', 'vite']
+  const logDir = join(root, 'tmp', 'e2e-logs')
+  mkdirSync(logDir, { recursive: true })
   const proc = Bun.spawn({
     cmd: [...command, '--port', String(webPort), '--strictPort'],
     cwd: webDir,
     env: { ...process.env, AZYBOARD_API_TARGET: apiUrl },
-    stdout: 'ignore',
-    stderr: 'ignore',
+    stdout: Bun.file(join(logDir, 'web.log')),
+    stderr: Bun.file(join(logDir, 'web-error.log')),
   })
   children.push(proc)
 }
@@ -191,6 +199,7 @@ export async function deleteColumn(page: Page, columnName: string) {
 export async function cleanup() {
   for (const proc of children) proc.kill()
   for (const suffix of ['', '-wal', '-shm']) rmSync(`${dbPath}${suffix}`, { force: true })
+  rmSync(instanceDir, { recursive: true, force: true })
 }
 
 export async function runJourneys(page: Page, journeys: Journey[], retries = 1): Promise<JourneyResult[]> {

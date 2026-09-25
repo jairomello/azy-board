@@ -1,23 +1,32 @@
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { Database as BunDatabase } from 'bun:sqlite'
 import * as schema from './schema'
+import { resolveInstallProfile } from './installProfile'
+import { preflightInstallationMarkers, preflightVolumeMarker } from './installationMarkers'
 
-// [DB-SWAP] Para PostgreSQL/Supabase em produção:
-//   1. npm install drizzle-orm/node-postgres pg
-//   2. Trocar para: import { drizzle } from 'drizzle-orm/node-postgres'
-//   3. Trocar para: import { Pool } from 'pg'
-//   4. const pool = new Pool({ connectionString: process.env.DATABASE_URL })
-//   5. export const db = drizzle(pool, { schema })
-//
-// Para Supabase especificamente:
-//   DATABASE_URL=<postgres connection string>
+// [DB-SWAP] Este módulo é somente o adapter SIMPLE (SQLite). ADVANCED precisa
+// de imports, schema, pool, migrations e auditoria PostgreSQL próprios; não é
+// seguro trocar apenas o driver ou reutilizar o schema sqlite-core.
 
-const dbPath = process.env.DATABASE_URL ?? './dev.db'
+export const installProfile = resolveInstallProfile()
 
-// [DB-SWAP] Esta linha muda ao migrar para PostgreSQL — apenas aqui
-const sqlite = new BunDatabase(dbPath)
+if (installProfile.profile !== 'SIMPLE') {
+  throw new Error('ADVANCED_DATABASE_ADAPTER_NOT_READY: refusing to open a PostgreSQL installation with the SQLite driver.')
+}
+
+// Recusa troca de perfil/URL com base no marcador persistente antes de criar
+// ou modificar o arquivo SQLite (inclusive a alteração de journal_mode abaixo).
+preflightVolumeMarker(installProfile)
+
+// [DB-SWAP] Criar conexão Bun SQLite somente depois de validar perfil SIMPLE.
+export const sqlite = new BunDatabase(installProfile.databaseUrl)
+
+// Se a base já tem marcador, ele também precisa corresponder ao volume antes
+// de qualquer PRAGMA ou consulta da aplicação.
+preflightInstallationMarkers(installProfile, sqlite)
 
 // Habilitar WAL mode para melhor performance de escrita concorrente no SQLite
+// [DB-SWAP] WAL e PRAGMA são exclusivamente SIMPLE; o adapter PostgreSQL não executa comandos SQLite.
 sqlite.exec('PRAGMA journal_mode = WAL;')
 sqlite.exec('PRAGMA foreign_keys = ON;')
 

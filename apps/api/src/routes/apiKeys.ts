@@ -1,14 +1,12 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { eq, and, inArray } from 'drizzle-orm'
-import { db } from '../db/index'
-import { apiKeys, projects } from '../db/schema'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateApiKey } from '../services/auth'
-import { generateId } from '../utils/id'
 import type { RequestContext } from '@azy-board/types'
 import { API_KEY_PERMISSIONS } from '../services/authorization'
 import { parseJson, projectApiKeySchema, userApiKeySchema } from '../validation'
+import { persistence } from '../persistence/runtime'
+import { userPersistenceContext } from '../persistence/context'
 
 export const apiKeysRouter = new Hono<HonoEnv>()
 apiKeysRouter.use('*', authMiddleware)
@@ -23,25 +21,15 @@ apiKeysRouter.post('/', requireRole('MEMBER'), async (c) => {
 
   const { key } = generateApiKey()
   const keyHash = await hashKey(key)
-  const id = generateId()
-
-  await db.insert(apiKeys).values({
-    id,
-    // [TENANT] API Key sempre vinculada ao tenant do criador
-    tenantId: ctx.tenantId,
-    ownerId: ctx.userId,
-    name: body.name,
-    keyHash,
-    aiModelName: body.aiModelName,
+  const created = await persistence.apiKeys.create(userPersistenceContext(ctx), {
+    ownerId: ctx.userId, name: body.name, keyHash, aiModelName: body.aiModelName,
     projectScope: JSON.stringify([c.req.param('projectId')]),
     permissionScope: body.permissionScope ? JSON.stringify(body.permissionScope) : null,
     expiresAt: body.expiresAt ?? null,
-    revokedAt: null,
-    createdAt: new Date().toISOString(),
   })
 
   // Retorna o valor completo apenas nesta resposta — não é possível recuperá-lo depois
-  return c.json({ id, key, name: body.name }, 201)
+  return c.json({ id: created.id, key, name: body.name }, 201)
 })
 
 // GET /projects/:projectId/api-keys — listar chaves (rota legada, mantida por compatibilidade)
@@ -49,16 +37,7 @@ apiKeysRouter.get('/', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
 
   // [TENANT] Filtra por tenantId + ownerId — agente só vê suas próprias chaves
-  const keys = await db
-    .select({
-      id: apiKeys.id,
-      name: apiKeys.name,
-      aiModelName: apiKeys.aiModelName,
-      createdAt: apiKeys.createdAt,
-      lastUsedAt: apiKeys.lastUsedAt,
-    })
-    .from(apiKeys)
-    .where(and(eq(apiKeys.tenantId, ctx.tenantId), eq(apiKeys.ownerId, ctx.userId)))
+  const keys = await persistence.apiKeys.listOwned(userPersistenceContext(ctx))
 
   return c.json(keys)
 })
@@ -73,16 +52,7 @@ userApiKeysRouter.get('/', async (c) => {
   const ctx = c.get('ctx') as RequestContext
 
   // [TENANT] Filtra por tenantId + ownerId — isolamento cross-tenant obrigatório
-  const keys = await db
-    .select({
-      id: apiKeys.id,
-      name: apiKeys.name,
-      aiModelName: apiKeys.aiModelName,
-      createdAt: apiKeys.createdAt,
-      lastUsedAt: apiKeys.lastUsedAt,
-    })
-    .from(apiKeys)
-    .where(and(eq(apiKeys.tenantId, ctx.tenantId), eq(apiKeys.ownerId, ctx.userId)))
+  const keys = await persistence.apiKeys.listOwned(userPersistenceContext(ctx))
 
   return c.json(keys)
 })
@@ -101,34 +71,23 @@ userApiKeysRouter.post('/', async (c) => {
 
   const { key } = generateApiKey()
   const keyHash = await hashKey(key)
-  const id = generateId()
-
   const projectScope = body.projectScope ? [...new Set(body.projectScope)] : []
   if (projectScope.length > 0) {
     // O escopo é validado contra projetos do tenant; a autorização final
     // continua sendo a interseção com grupo/membership em cada chamada.
-    const scopedProjects = await db.select({ id: projects.id }).from(projects)
-      .where(and(eq(projects.tenantId, ctx.tenantId), inArray(projects.id, projectScope)))
+    const scopedProjects = await persistence.projects.listProjectIds(userPersistenceContext(ctx), projectScope)
     if (scopedProjects.length !== projectScope.length) return c.json({ error: 'Escopo contém projeto inválido' }, 400)
   }
 
-  await db.insert(apiKeys).values({
-    id,
-    // [TENANT] API Key sempre vinculada ao tenant do criador
-    tenantId: ctx.tenantId,
-    ownerId: ctx.userId,
-    name: body.name.trim(),
-    keyHash,
-    aiModelName: body.aiModelName ?? null,
+  const created = await persistence.apiKeys.create(userPersistenceContext(ctx), {
+    ownerId: ctx.userId, name: body.name.trim(), keyHash, aiModelName: body.aiModelName ?? null,
     projectScope: projectScope.length > 0 ? JSON.stringify(projectScope) : null,
     permissionScope: body.permissionScope ? JSON.stringify(body.permissionScope) : null,
     expiresAt: body.expiresAt ?? null,
-    revokedAt: null,
-    createdAt: new Date().toISOString(),
   })
 
   // Retorna o valor completo apenas nesta resposta — não é possível recuperá-lo depois
-  return c.json({ id, key, name: body.name }, 201)
+  return c.json({ id: created.id, key, name: body.name }, 201)
 })
 
 // DELETE /api-keys/:id — revogar chave (anti-IDOR: verifica tenantId + ownerId + id)
@@ -137,21 +96,8 @@ userApiKeysRouter.delete('/:id', async (c) => {
   const id = c.req.param('id')
 
   // [TENANT] Inclui tenantId + ownerId no filtro — retorna 404 se não for do usuário
-  const existing = await db
-    .select({ id: apiKeys.id })
-    .from(apiKeys)
-    .where(and(
-      eq(apiKeys.id, id),
-      eq(apiKeys.tenantId, ctx.tenantId),
-      eq(apiKeys.ownerId, ctx.userId),
-    ))
-    .limit(1)
-
-  if (existing.length === 0) return c.json({ error: 'Não encontrado' }, 404)
-
-  await db.update(apiKeys)
-    .set({ revokedAt: new Date().toISOString() })
-    .where(and(eq(apiKeys.id, id), eq(apiKeys.tenantId, ctx.tenantId), eq(apiKeys.ownerId, ctx.userId)))
+  const revoked = await persistence.apiKeys.revokeOwned(userPersistenceContext(ctx), id, new Date().toISOString())
+  if (!revoked) return c.json({ error: 'Não encontrado' }, 404)
 
   return c.body(null, 204)
 })
