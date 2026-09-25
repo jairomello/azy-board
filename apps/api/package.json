@@ -29,7 +29,14 @@
     "openai": "^7.9.0",
     "pg": "^8.23.0",
     "sharp": "^0.35.4",
-    "zod": "^4.6.4"
+    "zod": "^4.6.4",
+    "@azy-board/tool-registry": "workspace:*",
+    "@azy-board/domain": "workspace:*",
+    "@azy-board/api-contracts": "workspace:*",
+    "@azy-board/realtime-contracts": "workspace:*",
+    "@azy-board/assistant-contracts": "workspace:*",
+    "@azy-board/ui-contracts": "workspace:*",
+    "@azy-board/types": "workspace:*"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

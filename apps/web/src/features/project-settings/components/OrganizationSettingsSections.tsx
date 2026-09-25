@@ -3,7 +3,7 @@ import { Check, Network, Pencil, Trash2, UserPlus, Users, X } from 'lucide-react
 import { useTranslation } from 'react-i18next'
 import { AccordionSection } from '../../../components/AccordionSection'
 import type { Column, CostCenter, Manager, Member, Squad } from '../model/types'
-import type { ColumnBaseStatus } from '@azy-board/types'
+import type { ColumnBaseStatus } from '@azy-board/domain'
 
 interface Props {
   projectId?: string

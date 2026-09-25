@@ -1,4 +1,4 @@
-import type { GlobalGroup, MemberRole } from '@azy-board/types'
+import type { GlobalGroup, MemberRole } from '@azy-board/domain'
 import { GLOBAL_GROUP_LEVEL, isGlobalGroup } from './auth'
 
 export const API_KEY_PERMISSIONS = ['read', 'write', 'admin', 'delete'] as const

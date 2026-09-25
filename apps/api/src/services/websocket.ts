@@ -1,5 +1,5 @@
 import type { ServerWebSocket } from 'bun'
-import type { WsEvent, WsEventType } from '@azy-board/types'
+import type { WsEvent, WsEventType } from '@azy-board/realtime-contracts'
 
 // Mapa de conexões WebSocket agrupadas por projectId
 // [TENANT] As conexões já chegam autenticadas com tenantId — isolamento garantido pelo authMiddleware

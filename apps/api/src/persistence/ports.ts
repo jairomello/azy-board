@@ -3,7 +3,8 @@
  * Toda operação com dados de negócio recebe tenant/ator explicitamente; o
  * lookup global por e-mail é a única exceção de escopo (identidade global).
  */
-import type { AssistantApprovalStatus, AssistantRunStatus, BoardMode, ColumnBaseStatus, GlobalGroup, ItemType, MemberRole, Priority, TaskStatus } from '@azy-board/types'
+import type { AssistantApprovalStatus, AssistantRunStatus } from '@azy-board/assistant-contracts'
+import type { BoardMode, ColumnBaseStatus, GlobalGroup, ItemType, MemberRole, Priority, TaskStatus } from '@azy-board/domain'
 import type {
   AssistantApprovalDetailRecord,
   AssistantConversationRecord,

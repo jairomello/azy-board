@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs'
 import { SignJWT, jwtVerify } from 'jose'
-import type { GlobalGroup, JwtPayload } from '@azy-board/types'
+import type { JwtPayload } from '@azy-board/api-contracts'
+import type { GlobalGroup } from '@azy-board/domain'
 
 export const GLOBAL_GROUPS = ['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT'] as const
 export const GLOBAL_GROUP_LEVEL: Record<GlobalGroup, number> = {

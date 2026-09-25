@@ -6,6 +6,13 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@azy-board/domain": "workspace:*",
+    "@azy-board/api-contracts": "workspace:*",
+    "@azy-board/realtime-contracts": "workspace:*",
+    "@azy-board/assistant-contracts": "workspace:*",
+    "@azy-board/ui-contracts": "workspace:*"
+  },
   "devDependencies": {
     "bun-types": "^1.4.2",
     "typescript": "^5.6.0"

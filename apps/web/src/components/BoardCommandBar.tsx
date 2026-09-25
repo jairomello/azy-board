@@ -14,7 +14,7 @@ import {
   SlidersHorizontal,
   Plus,
 } from 'lucide-react'
-import type { BoardMode, ItemType } from '@azy-board/types'
+import type { BoardMode, ItemType } from '@azy-board/domain'
 import type { Tag } from './TagSelector'
 import { BoardFilters, type BoardFilterState } from './BoardFilters'
 

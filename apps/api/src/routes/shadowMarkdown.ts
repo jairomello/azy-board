@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { broadcast } from '../services/websocket'
-import type { RequestContext } from '@azy-board/types'
+import type { RequestContext } from '@azy-board/api-contracts'
 import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
 

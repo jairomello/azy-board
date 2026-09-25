@@ -1,4 +1,4 @@
-import type { Theme } from '@azy-board/types'
+import type { Theme } from '@azy-board/ui-contracts'
 
 // Card T4: tema automático por horário. Faixas padrão definidas como constantes
 // configuráveis: claro durante o dia, escuro à noite, pela hora local.

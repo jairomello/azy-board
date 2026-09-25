@@ -24,6 +24,11 @@ export default defineConfig(({ mode }) => {
       // Espelha o paths do tsconfig para que imports de valor (não só `import type`)
       // resolvam no build; antes só existiam imports de tipo, apagados na compilação.
       '@azy-board/types': path.resolve(__dirname, '../../packages/types/src/index.ts'),
+      '@azy-board/domain': path.resolve(__dirname, '../../packages/domain/src/index.ts'),
+      '@azy-board/api-contracts': path.resolve(__dirname, '../../packages/api-contracts/src/index.ts'),
+      '@azy-board/realtime-contracts': path.resolve(__dirname, '../../packages/realtime-contracts/src/index.ts'),
+      '@azy-board/assistant-contracts': path.resolve(__dirname, '../../packages/assistant-contracts/src/index.ts'),
+      '@azy-board/ui-contracts': path.resolve(__dirname, '../../packages/ui-contracts/src/index.ts'),
     },
   },
   server: {

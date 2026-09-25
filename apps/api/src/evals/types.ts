@@ -19,7 +19,8 @@ export const EVAL_DIMENSIONS: Record<EvalDimension, { label: string }> = {
   promptAlignment: { label: 'Alinhamento ao system prompt' },
 }
 
-export type ItemType = 'EPIC' | 'STORY' | 'TASK' | 'BUG'
+import type { ItemType } from '@azy-board/domain'
+export type { ItemType }
 
 export type EvalSeedItem = {
   ref: string

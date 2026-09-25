@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
-import type { RequestContext } from '@azy-board/types'
+import type { RequestContext } from '@azy-board/api-contracts'
 import { getIdempotent, saveIdempotent } from '../services/idempotency'
 import { broadcast } from '../services/websocket'
 import { batchSchema, batchUpdateSchema, parseJson } from '../validation'

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
-import type { WsEvent, WsEventType } from '@azy-board/types'
+import type { WsEvent, WsEventType } from '@azy-board/realtime-contracts'
 
 type Handler = (event: WsEvent) => void
 

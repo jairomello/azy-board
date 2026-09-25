@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BookOpen, Check, CheckSquare, History, Info, ListChecks, X } from 'lucide-react'
-import type { ItemType } from '@azy-board/types'
+import type { ItemType } from '@azy-board/domain'
 import type { ProjectVersion } from './ItemModal'
 import { RichTextEditor } from './RichTextEditor'
 import { CardChildrenSection } from './CardChildrenSection'

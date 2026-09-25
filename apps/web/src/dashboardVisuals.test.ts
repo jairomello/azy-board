@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { agingData, burnupData, distributionData, hoursByAuthorData, overdueAgeData, progressData, statusData, teamLoadData } from './dashboardAdapters'
-import type { DashboardAging, DashboardBurnup, DashboardHours, DashboardSnapshot } from '@azy-board/types'
+import type { DashboardAging, DashboardBurnup, DashboardHours, DashboardSnapshot } from '@azy-board/ui-contracts'
 import ptBRDescriptions from './i18n/locales/pt-BR/dashboardDescriptions.json'
 import enDescriptions from './i18n/locales/en/dashboardDescriptions.json'
 import esDescriptions from './i18n/locales/es/dashboardDescriptions.json'

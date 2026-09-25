@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../../lib/api'
 import { useAuth } from '../../../contexts/AuthContext'
-import type { BoardMode } from '@azy-board/types'
+import type { BoardMode } from '@azy-board/domain'
 import type {
   Column,
   CostCenter,

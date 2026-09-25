@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { WsEvent } from '@azy-board/types'
+import type { WsEvent } from '@azy-board/realtime-contracts'
 import { applyBoardEvent, type BoardData } from '../hooks/useBoardData'
 import type { ItemData } from '../model/types'
 

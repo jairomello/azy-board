@@ -4,7 +4,8 @@ import { queryClient } from '../lib/queryClient'
 import i18n from '../i18n'
 import { gravarMostrarProjetosOcultos, lerMostrarProjetosOcultos } from '../lib/sessionPreferences'
 import { applyTheme, getEffectiveTheme, persistAutoThemeByTime, readAutoThemeByTime, readManualTheme } from '../lib/theme'
-import type { GlobalGroup, Theme, Language, LightShellTheme } from '@azy-board/types'
+import type { GlobalGroup } from '@azy-board/domain'
+import type { Language, LightShellTheme, Theme } from '@azy-board/ui-contracts'
 
 export interface User {
   id: string

@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { Check, Palette, EyeOff, Clock } from 'lucide-react'
-import type { LightShellTheme, Theme } from '@azy-board/types'
+import type { LightShellTheme, Theme } from '@azy-board/ui-contracts'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiKeysSection } from '../components/ApiKeysSection'
 import { ProfilePhotoSection } from '../components/ProfilePhotoSection'

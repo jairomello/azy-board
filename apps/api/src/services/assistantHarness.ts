@@ -4,8 +4,8 @@ import type { AgentPort } from '../persistence/ports'
 import type { AssistantEventTypeName, PersistenceContext } from '../persistence/models'
 import { executeSharedTool, friendlyToolName, getSharedToolDefinitions, sanitizeToolOutput, type HumanToolContext } from './assistantTools'
 import type { ModelInput, ModelProvider, ModelResponse, ModelTool } from './openaiProvider'
-import { validateToolArguments } from '../../../mcp/src/validation.js'
-import { HARNESS_LIMITS } from '@azy-board/types'
+import { validateToolArguments } from '@azy-board/tool-registry'
+import { HARNESS_LIMITS } from '@azy-board/assistant-contracts'
 import { isOtelInitialized, getOtelMeter } from './telemetry'
 
 // Métricas OTel para runs do agente

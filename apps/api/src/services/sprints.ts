@@ -1,4 +1,4 @@
-import type { SprintStatus } from '@azy-board/types'
+import type { SprintStatus } from '@azy-board/domain'
 
 export const SPRINT_STATUSES = ['PROPOSED', 'OPEN', 'CLOSED'] as const
 

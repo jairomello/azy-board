@@ -3,7 +3,7 @@ import { X, Bug, CheckSquare, BookOpen, Layers } from 'lucide-react'
 import { api } from '../lib/api'
 import { resolveAppUrl } from '../lib/appUrl'
 import type { ProjectVersion } from '../pages/SettingsPage'
-import type { ItemType } from '@azy-board/types'
+import type { ItemType } from '@azy-board/domain'
 import { formatDate } from '../lib/formatters'
 import { useTranslation } from 'react-i18next'
 

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Check, Clock3, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { api } from '../lib/api'
-import type { WorkLog } from '@azy-board/types'
+import type { WorkLog } from '@azy-board/ui-contracts'
 import { formatWorkDuration, parseWorkDuration } from '../lib/workLog'
 import { formatDateTime } from '../lib/formatters'
 

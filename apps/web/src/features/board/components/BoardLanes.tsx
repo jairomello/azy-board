@@ -1,6 +1,6 @@
 import { BookOpen, Pencil } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { ItemType } from '@azy-board/types'
+import type { ItemType } from '@azy-board/domain'
 import { ModuleSwimlane } from '../../../components/ModuleSwimlane'
 import { BoardColumns } from './BoardColumns'
 import type { ProjectVersion } from '../../../components/ItemModal'

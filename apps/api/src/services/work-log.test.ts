@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { formatWorkDuration, parseWorkDuration } from '@azy-board/types'
+import { formatWorkDuration, parseWorkDuration } from '@azy-board/ui-contracts'
 
 describe('duração do diário de trabalho', () => {
   test('converte H:MM para minutos', () => {

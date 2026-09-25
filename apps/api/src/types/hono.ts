@@ -1,10 +1,7 @@
-// Tipos locais (espelho do @azy-board/types para evitar problema de rootDir no TypeScript)
+// Tipos de contexto do Hono — importados dos packages compartilhados.
 
-
-import type { GlobalGroup } from '@azy-board/types'
-
-interface RequestContext { userId: string; tenantId: string; email: string; globalGroup: GlobalGroup }
-type MemberRole = 'ADMIN' | 'MEMBER' | 'VIEWER'
+import type { MemberRole } from '@azy-board/domain'
+import type { RequestContext } from '@azy-board/api-contracts'
 
 // Tipagem das variáveis de contexto do Hono
 // Todas as rotas protegidas recebem estas variáveis via middleware

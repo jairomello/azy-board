@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { BoardMode } from '@azy-board/types'
+import type { BoardMode } from '@azy-board/domain'
 import { RichTextEditor } from '../../../components/RichTextEditor'
 import { VisibilityToggles } from '../../../components/VisibilityToggles'
 import { AccordionSection } from '../../../components/AccordionSection'

@@ -1,4 +1,4 @@
-import type { ActivityActorType, ActivitySource } from '@azy-board/types'
+import type { ActivityActorType, ActivitySource } from '@azy-board/domain'
 import type { MutationContext } from '../persistence/models'
 import { persistence } from '../persistence/runtime'
 

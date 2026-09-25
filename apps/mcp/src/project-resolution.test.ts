@@ -3,7 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createMcpServer } from './index.js'
 import { executeSharedTool, resolveProjectId } from './registry.js'
-import { validateToolArguments } from './validation.js'
+import { validateToolArguments } from '@azy-board/tool-registry'
 import type { ApiCall } from './tools.js'
 
 const PROJECT_UUID = '0f6d7c1e-2a3b-4c5d-8e9f-0a1b2c3d4e5f'

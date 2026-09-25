@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { makeApiCall } from './index.js'
 import { toolBatch, toolListTasks } from './tools.js'
-import { validateToolArguments } from './validation.js'
+import { validateToolArguments } from '@azy-board/tool-registry'
 
 describe('MCP reliability contracts', () => {
   test('preserva paginação e permite chamadas concorrentes', async () => {

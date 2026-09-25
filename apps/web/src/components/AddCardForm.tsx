@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Plus, X } from 'lucide-react'
-import type { ItemType } from '@azy-board/types'
+import type { ItemType } from '@azy-board/domain'
 import { useTranslation } from 'react-i18next'
 
 interface Props {

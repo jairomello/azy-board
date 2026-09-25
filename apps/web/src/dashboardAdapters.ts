@@ -1,4 +1,4 @@
-import type { DashboardAging, DashboardBurnup, DashboardHours, DashboardSnapshot } from '@azy-board/types'
+import type { DashboardAging, DashboardBurnup, DashboardHours, DashboardSnapshot } from '@azy-board/ui-contracts'
 
 export type ChartDatum = Record<string, string | number | boolean>
 export const statusLabels: Record<string, string> = { NOT_STARTED: 'Not started', IN_PROGRESS: 'In progress', BLOCKED: 'Blocked', DONE: 'Done' }

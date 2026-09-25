@@ -7,7 +7,8 @@ import { useAuth } from '../../../contexts/AuthContext'
 import { queryKeys } from '../../../lib/queryKeys'
 import type { ProjectMember, ProjectVersion, CostCenter } from '../../../components/ItemModal'
 import type { Tag } from '../../../components/TagSelector'
-import type { WsEvent, WsEventType, BoardMode } from '@azy-board/types'
+import type { BoardMode } from '@azy-board/domain'
+import type { WsEvent, WsEventType } from '@azy-board/realtime-contracts'
 import { BOARD_INCREMENTAL_EVENT_TYPES } from '../../../lib/realtimeEvents'
 import {
   computeIsLeaf,

@@ -19,7 +19,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { canAccessAdmin, canAccessProjectSettings } from '../permissions'
 import { useTranslation } from 'react-i18next'
 import { useAssistant, type AssistantSelectedItem } from '../contexts/AssistantContext'
-import type { AssistantScreen } from '@azy-board/types'
+import type { AssistantScreen } from '@azy-board/assistant-contracts'
 import { isProjectNameTruncated, truncateProjectName } from '../lib/projectName'
 
 interface AppShellProps {

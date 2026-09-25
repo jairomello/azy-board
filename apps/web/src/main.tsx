@@ -7,7 +7,7 @@ import './i18n/index'
 import './styles/globals.css'
 import { getEffectiveTheme, readAutoThemeByTime } from './lib/theme'
 import { queryClient } from './lib/queryClient'
-import type { Theme } from '@azy-board/types'
+import type { Theme } from '@azy-board/ui-contracts'
 
 // Suporte a deploy path-based (ex.: /app/ atrás de um proxy reverso).
 // Quando publicado atrás de um proxy reverso que injeta window.__BASE_PATH__

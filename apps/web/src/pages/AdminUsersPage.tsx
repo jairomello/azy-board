@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { AppShell } from '../components/AppShell'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
-import type { GlobalGroup } from '@azy-board/types'
+import type { GlobalGroup } from '@azy-board/domain'
 
 interface ManagedUser { id: string; name: string; email: string; globalGroup: GlobalGroup; avatarUrl: string | null }
 const groups: GlobalGroup[] = ['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT']

@@ -5,7 +5,8 @@ import { isGlobalGroup, verifyJwt } from '../services/auth'
 import { hasGlobalGroup, hasMemberRole, hasKeyPermission, isValidApiKeyPermissionScope, parseApiKeyScope } from '../services/authorization'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
-import type { GlobalGroup, RequestContext, MemberRole } from '@azy-board/types'
+import type { RequestContext } from '@azy-board/api-contracts'
+import type { GlobalGroup, MemberRole } from '@azy-board/domain'
 
 // [TENANT] Middleware principal: resolve tenant_id e userId de toda requisição autenticada.
 // Aceita JWT (usuários humanos) ou API Key (agentes de IA).

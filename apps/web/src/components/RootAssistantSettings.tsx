@@ -12,7 +12,7 @@ import { AppShell } from "./AppShell";
 import { useAuth } from "../contexts/AuthContext";
 import { useAssistant } from "../contexts/AssistantContext";
 import { api } from "../lib/api";
-import { DEFAULT_GOVERNANCE } from "@azy-board/types";
+import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts';
 
 export default function RootAssistantSettings() {
   const { t } = useTranslation("assistant");

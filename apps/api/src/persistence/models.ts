@@ -1,22 +1,7 @@
 /** Modelos internos de persistência; não expõem tabelas nem tipos Drizzle. */
-import type {
-  AssistantApprovalStatus,
-  AssistantEventType,
-  AssistantRunStatus,
-  ActivityActorType,
-  ActivitySource,
-  BoardMode,
-  ColumnBaseStatus,
-  GlobalGroup,
-  ItemType,
-  Language,
-  LightShellTheme,
-  MemberRole,
-  Priority,
-  SprintStatus,
-  TaskStatus,
-  Theme,
-} from '@azy-board/types'
+import type { AssistantApprovalStatus, AssistantEventType, AssistantRunStatus } from '@azy-board/assistant-contracts'
+import type { ActivityActorType, ActivitySource, BoardMode, ColumnBaseStatus, GlobalGroup, ItemType, MemberRole, Priority, SprintStatus, TaskStatus } from '@azy-board/domain'
+import type { Language, LightShellTheme, Theme } from '@azy-board/ui-contracts'
 
 export interface PersistenceContext {
   tenantId: string

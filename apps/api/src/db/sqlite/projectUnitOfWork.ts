@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import type { BoardMode } from '@azy-board/types'
+import type { BoardMode } from '@azy-board/domain'
 import type { MutationContext, ProjectRecord } from '../../persistence/models'
 import type { CreateProjectAggregateInput, ProjectPatch } from '../../persistence/ports'
 import { generateId } from '../../utils/id'

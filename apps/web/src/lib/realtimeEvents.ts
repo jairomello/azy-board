@@ -1,4 +1,4 @@
-import type { WsEvent, WsEventType } from '@azy-board/types'
+import type { WsEvent, WsEventType } from '@azy-board/realtime-contracts'
 
 // Eventos aplicados incrementalmente no cache do board (patch por item).
 export const BOARD_INCREMENTAL_EVENT_TYPES: WsEventType[] = [

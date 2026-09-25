@@ -1,4 +1,4 @@
-import type { GlobalGroup } from '@azy-board/types'
+import type { GlobalGroup } from '@azy-board/domain'
 
 export function canAccessAdmin(group: GlobalGroup | undefined): boolean {
   return group === 'ADMIN' || group === 'ROOT'

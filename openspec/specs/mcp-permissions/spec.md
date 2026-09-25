@@ -43,7 +43,7 @@ O MCP SHALL permitir a Membros de Equipe e Gerentes somente projetos com members
 - **THEN** o MCP rejeita a operação sem revelar dados do projeto
 
 ### Requirement: Nível mínimo por ferramenta
-Cada ferramenta MCP SHALL declarar e verificar seu nível mínimo de grupo global e, quando aplicável, o nível mínimo de papel local. Ferramentas de conteúdo SHALL respeitar o papel local; criação de projetos SHALL exigir `MANAGER`; configurações e administração SHALL exigir o nível correspondente da política REST.
+Cada ferramenta SHALL declarar e verificar seu nível mínimo de grupo global e, quando aplicável, o nível mínimo de papel local, via `MCP_TOOL_POLICIES` em `packages/tool-registry` (`@azy-board/tool-registry`). Ferramentas de conteúdo SHALL respeitar o papel local; criação de projetos SHALL exigir `MANAGER`; configurações e administração SHALL exigir o nível correspondente da política REST.
 
 #### Scenario: Membro usa operação de conteúdo permitida
 - **WHEN** Membro de Equipe usa ferramenta de leitura ou mutação de conteúdo em projeto membro
@@ -60,6 +60,10 @@ Cada ferramenta MCP SHALL declarar e verificar seu nível mínimo de grupo globa
 #### Scenario: Gerente tenta administração global
 - **WHEN** API Key de Gerente invoca ferramenta de usuários ou outra ferramenta do módulo Admin
 - **THEN** o MCP retorna 403 sem executar a operação
+
+#### Scenario: Policy consultada do package
+- **WHEN** o MCP ou o harness do Azy Agent verifica permissões de uma ferramenta
+- **THEN** a policy é lida de `MCP_TOOL_POLICIES` em `packages/tool-registry`, não de arquivo interno do app
 
 ### Requirement: Defesa contra escalada e bypass
 O MCP SHALL rejeitar parâmetros que tentem alterar o Owner, tenant, grupo, membership efetiva ou escopo da chave, e SHALL executar autorização antes de qualquer leitura, resolução de nome, contagem, escrita ou chamada downstream.

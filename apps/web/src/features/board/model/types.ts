@@ -1,4 +1,5 @@
-import type { AncestorNode, BoardMode, ItemType, TaskStatus } from '@azy-board/types'
+import type { BoardMode, Column, ItemType, Sprint, TaskStatus } from '@azy-board/domain'
+import type { AncestorNode } from '@azy-board/ui-contracts'
 import type { BoardFilterState } from '../../../components/BoardFilters'
 import type { CardData } from '../../../components/KanbanCard'
 import type { CostCenter, ProjectMember, ProjectVersion } from '../../../components/ItemModal'
@@ -21,9 +22,8 @@ export interface ArchivedItem {
   updatedAt: string
 }
 
-export interface Column { id: string; name: string; baseStatus: string; position: number }
+export type { Column, Sprint }
 export interface Module { id: string; name: string; position?: number }
-export interface Sprint { id: string; name: string; status: 'PROPOSED' | 'OPEN' | 'CLOSED' }
 export interface ProjectContext { name: string; boardMode?: BoardMode; simpleStoryId?: string | null; advancedChecklists?: boolean }
 
 export interface ItemData extends CardData {

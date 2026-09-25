@@ -3,7 +3,7 @@ import { BookOpen, Bug, CheckSquare, Layers, AlertCircle, AlertTriangle, Chevron
 import { useTranslation } from 'react-i18next'
 import { api } from '../lib/api'
 import { resolveAppUrl } from '../lib/appUrl'
-import type { Priority, ItemType } from '@azy-board/types'
+import type { ItemType, Priority } from '@azy-board/domain'
 import { itemTypeMeta } from '../lib/itemTypeMeta'
 
 interface ChildItem {

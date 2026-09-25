@@ -1,6 +1,6 @@
 import type { DragEndEvent } from '@dnd-kit/core'
 import type { ItemData, Column } from './types'
-import type { ItemType } from '@azy-board/types'
+import type { ItemType } from '@azy-board/domain'
 import { arrayMove } from '@dnd-kit/sortable'
 
 export type BoardModalTarget =

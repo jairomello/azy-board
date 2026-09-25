@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import type { AncestorNode, AssistantScreen, ItemType } from '@azy-board/types'
+import type { AssistantScreen } from '@azy-board/assistant-contracts'
+import type { ItemType } from '@azy-board/domain'
+import type { AncestorNode } from '@azy-board/ui-contracts'
 import { useAuth } from './AuthContext'
 import { api } from '../lib/api'
 

@@ -3,7 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createMcpServer } from './index.js'
 import { dependencyToolsFor, executeSharedTool, getSharedToolDefinitions, sanitizeToolOutput, searchSharedTools, selectSharedTools, SHARED_TOOL_NAMES, SKILL_COMMAND_INTENTS } from './registry.js'
-import { validateToolArguments } from './validation.js'
+import { validateToolArguments } from '@azy-board/tool-registry'
 
 describe('shared MCP/Azy Agent registry', () => {
   test('mantém paridade de nomes com o catálogo exposto pelo servidor MCP', async () => {

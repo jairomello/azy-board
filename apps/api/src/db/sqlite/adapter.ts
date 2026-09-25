@@ -1,5 +1,5 @@
 import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm'
-import { DEFAULT_GOVERNANCE } from '@azy-board/types'
+import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts'
 import type { Database } from 'bun:sqlite'
 import type {
   AttachmentRecord,

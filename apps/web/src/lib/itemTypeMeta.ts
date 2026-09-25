@@ -1,5 +1,5 @@
 import { BookOpen, Bug, CheckSquare, Layers, type LucideIcon } from 'lucide-react'
-import type { ItemType } from '@azy-board/types'
+import type { ItemType } from '@azy-board/domain'
 
 // Fonte única do ícone, rótulo e cores de cada tipo de item. Evita que telas
 // diferentes apresentem o mesmo tipo com aparência divergente.

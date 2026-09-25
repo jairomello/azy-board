@@ -1,5 +1,5 @@
 import { Layers, LayoutList, Eye, EyeOff, ChevronsDown, ChevronsUp } from 'lucide-react'
-import type { ItemType } from '@azy-board/types'
+import type { ItemType } from '@azy-board/domain'
 import type { Tag } from './TagSelector'
 import { Tooltip } from './ui/Tooltip'
 import { useTranslation } from 'react-i18next'

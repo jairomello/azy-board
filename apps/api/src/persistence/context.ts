@@ -1,4 +1,4 @@
-import type { RequestContext } from '@azy-board/types'
+import type { RequestContext } from '@azy-board/api-contracts'
 import type { MutationContext, PersistenceContext } from './models'
 
 export function userPersistenceContext(context: RequestContext): PersistenceContext {

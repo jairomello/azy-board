@@ -1,6 +1,6 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { ItemType } from '@azy-board/types'
+import type { ItemType } from '@azy-board/domain'
 import { InlineEdit } from './InlineEdit'
 import { itemTypeMeta } from '../lib/itemTypeMeta'
 

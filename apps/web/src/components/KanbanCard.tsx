@@ -8,7 +8,8 @@ import { InlineEdit } from './InlineEdit'
 import { useToast } from './Toast'
 import { formatCardReference } from '../lib/cardReference'
 import { copyTextToClipboard } from '../lib/clipboard'
-import type { AncestorNode, Priority, TaskStatus, ItemType, ChecklistProgress } from '@azy-board/types'
+import type { ItemType, Priority, TaskStatus } from '@azy-board/domain'
+import type { AncestorNode, ChecklistProgress } from '@azy-board/ui-contracts'
 import { useTranslation } from 'react-i18next'
 
 const PRIORITY_COLORS: Record<Priority, string> = {

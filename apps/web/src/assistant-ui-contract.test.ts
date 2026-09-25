@@ -29,7 +29,7 @@ describe('contratos de interação do Azy Agent', () => {
   })
   test('mensagens longas são bloqueadas antes de criar uma run', async () => {
     const text = await source('./components/AzyAgentDrawer.tsx')
-    expect(text.includes('import { MAX_MESSAGE_BYTES } from "@azy-board/types"')).toBe(true)
+    expect(text.includes(`import { MAX_MESSAGE_BYTES } from '@azy-board/assistant-contracts'`)).toBe(true)
     expect(text.includes('MAX_MESSAGE_CHARS = MAX_MESSAGE_BYTES')).toBe(true)
     expect(text.includes('messageTooLong')).toBe(true)
     expect(text.includes('maxLength={MAX_MESSAGE_CHARS}')).toBe(true)
@@ -80,7 +80,7 @@ describe('contratos de interação do Azy Agent', () => {
   })
   test('governança do Root usa a fonte única de limites', async () => {
     const settings = await source('./components/RootAssistantSettings.tsx')
-    expect(settings.includes('import { DEFAULT_GOVERNANCE } from "@azy-board/types"')).toBe(true)
+    expect(settings.includes(`import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts'`)).toBe(true)
     expect(settings.includes('useState({ ...DEFAULT_GOVERNANCE })')).toBe(true)
     expect(settings.includes('maxSteps: 4')).toBe(false)
     expect(settings.includes('maxPayloadBytes: 50_000')).toBe(false)

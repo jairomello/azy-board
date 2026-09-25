@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import type { Language } from '@azy-board/types'
+import type { Language } from '@azy-board/ui-contracts'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from './Toast'
 

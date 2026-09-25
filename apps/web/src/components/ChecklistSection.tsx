@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { api } from '../lib/api'
-import type { Checklist, ChecklistItem } from '@azy-board/types'
+import type { Checklist, ChecklistItem } from '@azy-board/ui-contracts'
 import { useTranslation } from 'react-i18next'
 import { RichTextEditor } from './RichTextEditor'
 

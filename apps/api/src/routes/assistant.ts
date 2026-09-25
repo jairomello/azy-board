@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
-import type { AssistantScreen } from '@azy-board/types'
-import { DEFAULT_GOVERNANCE, GOVERNANCE_BOUNDS, MAX_ASSISTANT_ACTIONS, MAX_MESSAGE_BYTES, type Governance } from '@azy-board/types'
+import type { AssistantProvider, AssistantScreen } from '@azy-board/assistant-contracts'
+import { DEFAULT_GOVERNANCE, GOVERNANCE_BOUNDS, Governance, MAX_ASSISTANT_ACTIONS, MAX_MESSAGE_BYTES } from '@azy-board/assistant-contracts'
 import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
 import { AssistantEncryptionError, decryptAssistantSecret, encryptAssistantSecret } from '../services/assistantEncryption'
 import { probeOpenAICredential } from '../services/openaiProvider'
@@ -11,9 +11,9 @@ import { AssistantHarness, operationHash } from '../services/assistantHarness'
 import { dependencyToolsFor, executeSharedTool, friendlyToolName, getSharedToolDefinitions, sanitizeToolOutput, selectSharedTools, type HumanToolContext } from '../services/assistantTools'
 import { generateId } from '../utils/id'
 import type { HonoEnv } from '../types/hono'
-import type { RequestContext } from '@azy-board/types'
+import type { RequestContext } from '@azy-board/api-contracts'
 import { hasGlobalGroup } from '../services/authorization'
-import { MCP_TOOL_POLICIES } from '../../../mcp/src/policies.js'
+import { MCP_TOOL_POLICIES } from '@azy-board/tool-registry'
 import { assistantAdjustSchema, assistantAnswerSchema, assistantApprovalSchema, assistantAvailabilitySchema, assistantGovernanceSchema, assistantMessageSchema, assistantProviderSchema, conversationSchema, parseJson } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
@@ -35,7 +35,7 @@ async function initQuotaMetrics() {
 export const assistantRouter = new Hono<HonoEnv>()
 assistantRouter.use('*', authMiddleware)
 
-type ProviderName = 'OPENAI' | 'OPENROUTER'
+type ProviderName = AssistantProvider
 
 const globalGroupRank: Record<HumanToolContext['globalGroup'], number> = { TEAM_MEMBER: 0, MANAGER: 1, ADMIN: 2, ROOT: 3 }
 const localRoleRank: Record<'VIEWER' | 'MEMBER' | 'ADMIN', number> = { VIEWER: 0, MEMBER: 1, ADMIN: 2 }

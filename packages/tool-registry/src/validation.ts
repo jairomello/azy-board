@@ -1,4 +1,4 @@
-import { isRegisteredTool, requiredFieldsFor } from './registry.js'
+import { isRegisteredTool, requiredFieldsFor } from './fields.js'
 import { TOOL_TEXT_LIMITS } from './limits.js'
 
 export function assertNonEmptyString(value: unknown, field: string, maxLength = 200): asserts value is string {

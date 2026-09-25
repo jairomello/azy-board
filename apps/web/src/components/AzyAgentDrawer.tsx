@@ -13,7 +13,7 @@ import { api, ApiError } from "../lib/api";
 import { useAssistant } from "../contexts/AssistantContext";
 import { MarkdownText } from "./MarkdownText";
 import { notifyAssistantMutation } from "../lib/dataEvents";
-import { MAX_MESSAGE_BYTES } from "@azy-board/types";
+import { MAX_MESSAGE_BYTES } from '@azy-board/assistant-contracts';
 
 interface Conversation {
   id: string;

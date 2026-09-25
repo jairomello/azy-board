@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
-import type { RequestContext } from '@azy-board/types'
+import type { RequestContext } from '@azy-board/api-contracts'
 import { parseJson, tagSchema, updateTagSchema } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'

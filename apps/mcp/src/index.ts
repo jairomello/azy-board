@@ -21,7 +21,7 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import type { ApiCall } from './tools.js'
-import { hasMcpPolicy } from './policies.js'
+import { hasMcpPolicy } from '@azy-board/tool-registry'
 import { executeSharedTool, getSharedToolDefinitions, OPERATION_ARGS_REQUIRED, requiredFieldsFor, sanitizeToolOutput, type ToolDefinition } from './registry.js'
 
 // [TENANT] API Key autentica o agente como o Owner humano vinculado — resolvido pelo middleware da API

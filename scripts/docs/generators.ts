@@ -5,7 +5,7 @@
  * escreva os arquivos e `check-docs.ts` compare sem tocar o disco.
  */
 import { DEFAULT_GOVERNANCE, GOVERNANCE_BOUNDS, GOVERNANCE_KEYS, HARNESS_LIMITS, MAX_ASSISTANT_ACTIONS, MAX_MESSAGE_BYTES } from '../../packages/types/src/index'
-import { getSharedToolDefinitions } from '../../apps/mcp/src/registry'
+import { getSharedToolDefinitions } from '../../packages/tool-registry/src/index'
 import { openApiDocument } from '../../apps/api/src/validation'
 
 export const MCP_CATALOG_BEGIN = '<!-- BEGIN GENERATED: mcp-catalog -->'

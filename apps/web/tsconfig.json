@@ -7,6 +7,12 @@
     "outDir": "./dist",
     "paths": {
       "@azy-board/types": ["../../packages/types/src/index.ts"],
+      "@azy-board/domain": ["../../packages/domain/src/index.ts"],
+      "@azy-board/api-contracts": ["../../packages/api-contracts/src/index.ts"],
+      "@azy-board/realtime-contracts": ["../../packages/realtime-contracts/src/index.ts"],
+      "@azy-board/assistant-contracts": ["../../packages/assistant-contracts/src/index.ts"],
+      "@azy-board/ui-contracts": ["../../packages/ui-contracts/src/index.ts"],
+      "@azy-board/tool-registry": ["../../packages/tool-registry/src/index.ts"],
       "@/*": ["./src/*"]
     }
   },
