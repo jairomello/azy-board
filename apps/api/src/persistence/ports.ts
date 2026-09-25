@@ -280,6 +280,12 @@ export interface NewAssistantRun {
   idempotencyKey: string | null
   expiresAt: string | null
   createdAt: string
+  // Job queue: lease/claim columns
+  claimedBy?: string | null
+  claimExpiresAt?: string | null
+  attempts?: number
+  nextAttemptAt?: string | null
+  cancelRequested?: boolean
 }
 
 export interface NewAssistantToolCall {
@@ -330,11 +336,18 @@ export interface AgentPort {
   findRunByIdempotencyKey(context: PersistenceContext, userId: string, idempotencyKey: string): Promise<AssistantRunDetailRecord | null>
   findResumableRun(context: PersistenceContext, userId: string, conversationId: string): Promise<AssistantRunDetailRecord | null>
   insertRun(context: PersistenceContext, input: NewAssistantRun): Promise<void>
-  updateRun(runId: string, tenantId: string, patch: Partial<Pick<AssistantRunDetailRecord, 'status' | 'model' | 'currentCursor' | 'inputTokens' | 'outputTokens' | 'costMicros' | 'errorCode' | 'startedAt' | 'finishedAt'>>): Promise<void>
+  updateRun(runId: string, tenantId: string, patch: Partial<Pick<AssistantRunDetailRecord, 'status' | 'model' | 'currentCursor' | 'inputTokens' | 'outputTokens' | 'costMicros' | 'errorCode' | 'startedAt' | 'finishedAt' | 'claimedBy' | 'claimExpiresAt' | 'attempts' | 'nextAttemptAt' | 'cancelRequested'>>): Promise<void>
   updateRunInStatuses(runId: string, tenantId: string, userId: string, statuses: AssistantRunStatus[], patch: Partial<Pick<AssistantRunDetailRecord, 'status' | 'errorCode' | 'finishedAt'>>): Promise<boolean>
   expireStaleRuns(tenantId: string, cutoff: string, now: string): Promise<void>
   countActiveRuns(tenantId: string, userId?: string): Promise<number>
   sumDailyCostMicros(tenantId: string, userId: string | null, since: string): Promise<number>
+
+  // Job queue: lease/claim methods for persistent worker execution
+  claimRun(runId: string, tenantId: string, workerId: string, leaseExpiresAt: string, now: string): Promise<boolean>
+  heartbeatRun(runId: string, tenantId: string, workerId: string, leaseExpiresAt: string): Promise<boolean>
+  releaseRun(runId: string, tenantId: string, workerId: string, nextAttemptAt: string | null, incrementAttempts: boolean): Promise<boolean>
+  requestCancel(runId: string, tenantId: string, now: string): Promise<boolean>
+  listDueRuns(tenantId: string | null, now: string, limit: number): Promise<AssistantRunDetailRecord[]>
 
   insertToolCall(context: PersistenceContext, input: NewAssistantToolCall): Promise<void>
   updateToolCall(toolCallId: string, tenantId: string, patch: Partial<Pick<AssistantToolCallRecord, 'status' | 'resultSummary' | 'startedAt' | 'finishedAt'>>): Promise<void>

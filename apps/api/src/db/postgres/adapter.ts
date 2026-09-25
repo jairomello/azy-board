@@ -356,6 +356,9 @@ function mapAssistantRun(row: PgRow) {
     costMicros: row.cost_micros as number | null, errorCode: row.error_code as string | null,
     createdAt: row.created_at as string, startedAt: row.started_at as string | null,
     finishedAt: row.finished_at as string | null, expiresAt: row.expires_at as string | null,
+    claimedBy: row.claimed_by as string | null, claimExpiresAt: row.claim_expires_at as string | null,
+    attempts: (row.attempts as number | null) ?? 0, nextAttemptAt: row.next_attempt_at as string | null,
+    cancelRequested: (row.cancel_requested as number | null) === 1,
   }
 }
 
@@ -1681,8 +1684,9 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       },
       async insertRun(context, input) {
         await q(
-          'INSERT INTO assistant_runs (id, tenant_id, conversation_id, user_id, model, idempotency_key, status, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, \'QUEUED\', $7, $8)',
-          [input.id, context.tenantId, input.conversationId, input.userId, input.model, input.idempotencyKey, input.createdAt, input.expiresAt],
+          'INSERT INTO assistant_runs (id, tenant_id, conversation_id, user_id, model, idempotency_key, status, created_at, expires_at, claimed_by, claim_expires_at, attempts, next_attempt_at, cancel_requested) VALUES ($1, $2, $3, $4, $5, $6, \'QUEUED\', $7, $8, $9, $10, $11, $12, $13)',
+          [input.id, context.tenantId, input.conversationId, input.userId, input.model, input.idempotencyKey, input.createdAt, input.expiresAt,
+           input.claimedBy ?? null, input.claimExpiresAt ?? null, input.attempts ?? 0, input.nextAttemptAt ?? null, input.cancelRequested ? 1 : 0],
         )
       },
       async updateRun(runId, tenantId, patch) {
@@ -1693,6 +1697,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           status: 'status', model: 'model', currentCursor: 'current_cursor',
           inputTokens: 'input_tokens', outputTokens: 'output_tokens', costMicros: 'cost_micros',
           errorCode: 'error_code', startedAt: 'started_at', finishedAt: 'finished_at',
+          claimedBy: 'claimed_by', claimExpiresAt: 'claim_expires_at',
+          attempts: 'attempts', nextAttemptAt: 'next_attempt_at', cancelRequested: 'cancel_requested',
         }
         for (const [key, col] of Object.entries(fields)) {
           if (key in patch) { sets.push(`${col} = $${idx++}`); params.push((patch as Record<string, unknown>)[key]) }
@@ -1714,8 +1720,12 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       },
       async expireStaleRuns(tenantId, cutoff, now) {
         await q(
-          `UPDATE assistant_runs SET status = 'EXPIRED', error_code = 'TIMEOUT', finished_at = $1 WHERE tenant_id = $2 AND status IN ('QUEUED', 'RUNNING') AND started_at < $3`,
-          [now, tenantId, cutoff],
+          `UPDATE assistant_runs SET status = 'EXPIRED', error_code = 'TIMEOUT', finished_at = $1
+           WHERE tenant_id = $2 AND status IN ('QUEUED', 'RUNNING') AND (
+             (status = 'QUEUED' AND (claimed_by IS NULL OR claim_expires_at < $1) AND (next_attempt_at IS NULL OR next_attempt_at <= $1))
+             OR (status = 'RUNNING' AND claim_expires_at < $1)
+           )`,
+          [now, tenantId],
         )
       },
       async countActiveRuns(tenantId, userId) {
@@ -1731,6 +1741,48 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         if (userId) { sql += ' AND user_id = $3'; params.push(userId) }
         const row = await q1(sql, params)
         return (row?.total as number) ?? 0
+      },
+
+      // Job queue: lease/claim methods
+      async claimRun(runId, tenantId, workerId, leaseExpiresAt, now) {
+        const rows = await q(
+          `UPDATE assistant_runs SET claimed_by = $1, claim_expires_at = $2, status = 'RUNNING', started_at = $3, attempts = attempts + 1
+           WHERE id = $4 AND tenant_id = $5 AND status = 'QUEUED' AND (claimed_by IS NULL OR claim_expires_at < $3)
+           RETURNING id`,
+          [workerId, leaseExpiresAt, now, runId, tenantId],
+        )
+        return rows.length > 0
+      },
+      async heartbeatRun(runId, tenantId, workerId, leaseExpiresAt) {
+        const rows = await q(
+          `UPDATE assistant_runs SET claim_expires_at = $1 WHERE id = $2 AND tenant_id = $3 AND claimed_by = $4 RETURNING id`,
+          [leaseExpiresAt, runId, tenantId, workerId],
+        )
+        return rows.length > 0
+      },
+      async releaseRun(runId, tenantId, workerId, nextAttemptAt, incrementAttempts) {
+        const sets = ['claimed_by = NULL', 'claim_expires_at = NULL', 'status = \'QUEUED\'']
+        const params: unknown[] = [runId, tenantId, workerId]
+        let idx = 4
+        if (nextAttemptAt) { sets.push(`next_attempt_at = $${idx++}`); params.push(nextAttemptAt) }
+        if (incrementAttempts) sets.push('attempts = attempts + 1')
+        const rows = await q(`UPDATE assistant_runs SET ${sets.join(', ')} WHERE id = $1 AND tenant_id = $2 AND claimed_by = $3 RETURNING id`, params)
+        return rows.length > 0
+      },
+      async requestCancel(runId, tenantId, now) {
+        const rows = await q(
+          `UPDATE assistant_runs SET cancel_requested = 1 WHERE id = $1 AND tenant_id = $2 AND status IN ('QUEUED', 'RUNNING', 'WAITING_USER', 'WAITING_APPROVAL') RETURNING id`,
+          [runId, tenantId],
+        )
+        return rows.length > 0
+      },
+      async listDueRuns(tenantId, now, limit) {
+        const params: unknown[] = [now, limit]
+        let sql = `SELECT * FROM assistant_runs WHERE status = 'QUEUED' AND (next_attempt_at IS NULL OR next_attempt_at <= $1) AND (claimed_by IS NULL OR claim_expires_at < $1)`
+        if (tenantId) { sql += ' AND tenant_id = $3'; params.push(tenantId) }
+        sql += ' ORDER BY created_at ASC LIMIT $2 FOR UPDATE SKIP LOCKED'
+        const rows = await q(sql, params)
+        return rows.map(mapAssistantRun)
       },
 
       async insertToolCall(context, input) {

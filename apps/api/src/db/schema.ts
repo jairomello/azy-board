@@ -214,7 +214,17 @@ export const assistantRuns = sqliteTable('assistant_runs', {
   startedAt: text('started_at'),
   finishedAt: text('finished_at'),
   expiresAt: text('expires_at'),
-}, (table) => ({ conversationStatus: index('assistant_runs_tenant_conversation_status_idx').on(table.tenantId, table.conversationId, table.status), idempotency: uniqueIndex('assistant_runs_tenant_user_idempotency_unique').on(table.tenantId, table.userId, table.idempotencyKey) }))
+  // Job queue: lease/claim columns for persistent worker execution
+  claimedBy: text('claimed_by'),
+  claimExpiresAt: text('claim_expires_at'),
+  attempts: integer('attempts').notNull().default(0),
+  nextAttemptAt: text('next_attempt_at'),
+  cancelRequested: integer('cancel_requested', { mode: 'boolean' }).notNull().default(false),
+}, (table) => ({
+  conversationStatus: index('assistant_runs_tenant_conversation_status_idx').on(table.tenantId, table.conversationId, table.status),
+  idempotency: uniqueIndex('assistant_runs_tenant_user_idempotency_unique').on(table.tenantId, table.userId, table.idempotencyKey),
+  queueScan: index('agent_queue_scan_idx').on(table.status, table.nextAttemptAt),
+}))
 
 export const assistantEvents = sqliteTable('assistant_events', {
   id: text('id').primaryKey(),

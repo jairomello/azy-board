@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts'
 import type { Database } from 'bun:sqlite'
 import type {
@@ -203,6 +203,8 @@ function mapAssistantRun(row: typeof assistantRuns.$inferSelect): AssistantRunDe
     status: row.status, model: row.model, currentCursor: row.currentCursor, inputTokens: row.inputTokens,
     outputTokens: row.outputTokens, costMicros: row.costMicros, errorCode: row.errorCode,
     createdAt: row.createdAt, startedAt: row.startedAt, finishedAt: row.finishedAt, expiresAt: row.expiresAt,
+    claimedBy: row.claimedBy, claimExpiresAt: row.claimExpiresAt,
+    attempts: row.attempts, nextAttemptAt: row.nextAttemptAt, cancelRequested: row.cancelRequested,
   }
 }
 
@@ -1614,6 +1616,8 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         await database.insert(assistantRuns).values({
           id: input.id, tenantId: context.tenantId, conversationId: input.conversationId, userId: input.userId,
           model: input.model, idempotencyKey: input.idempotencyKey, status: 'QUEUED', createdAt: input.createdAt, expiresAt: input.expiresAt,
+          claimedBy: input.claimedBy ?? null, claimExpiresAt: input.claimExpiresAt ?? null,
+          attempts: input.attempts ?? 0, nextAttemptAt: input.nextAttemptAt ?? null, cancelRequested: input.cancelRequested ?? false,
         })
       },
       async updateRun(runId, tenantId, patch) {
@@ -1626,8 +1630,26 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return result.length > 0
       },
       async expireStaleRuns(tenantId, cutoff, now) {
+        // Expire QUEUED runs without active claim (queued too long or never claimed)
+        // and RUNNING runs with expired lease (worker died).
         await database.update(assistantRuns).set({ status: 'EXPIRED', errorCode: 'TIMEOUT', finishedAt: now }).where(and(
-          eq(assistantRuns.tenantId, tenantId), inArray(assistantRuns.status, ['QUEUED', 'RUNNING']), lt(assistantRuns.startedAt, cutoff),
+          eq(assistantRuns.tenantId, tenantId),
+          inArray(assistantRuns.status, ['QUEUED', 'RUNNING']),
+          or(
+            // QUEUED: no active claim and nextAttemptAt passed (or never set and createdAt old)
+            and(
+              eq(assistantRuns.status, 'QUEUED'),
+              or(
+                and(isNull(assistantRuns.claimedBy), or(isNull(assistantRuns.nextAttemptAt), lt(assistantRuns.nextAttemptAt, now))),
+                lt(assistantRuns.claimExpiresAt, now),
+              ),
+            ),
+            // RUNNING: lease expired (worker died)
+            and(
+              eq(assistantRuns.status, 'RUNNING'),
+              lt(assistantRuns.claimExpiresAt, now),
+            ),
+          ),
         ))
       },
       async countActiveRuns(tenantId, userId) {
@@ -1645,6 +1667,59 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           gt(assistantRuns.createdAt, since),
         ))
         return rows.reduce((sum, row) => sum + (row.cost ?? 0), 0)
+      },
+
+      // Job queue: lease/claim methods
+      async claimRun(runId, tenantId, workerId, leaseExpiresAt, now) {
+        const result = await database.update(assistantRuns).set({
+          claimedBy: workerId, claimExpiresAt: leaseExpiresAt, status: 'RUNNING', startedAt: now,
+          attempts: sql`${assistantRuns.attempts} + 1`,
+        }).where(and(
+          eq(assistantRuns.id, runId),
+          eq(assistantRuns.tenantId, tenantId),
+          eq(assistantRuns.status, 'QUEUED'),
+          or(
+            isNull(assistantRuns.claimedBy),
+            lt(assistantRuns.claimExpiresAt, now),
+          ),
+        )).returning({ id: assistantRuns.id })
+        return result.length > 0
+      },
+      async heartbeatRun(runId, tenantId, workerId, leaseExpiresAt) {
+        const result = await database.update(assistantRuns).set({ claimExpiresAt: leaseExpiresAt }).where(and(
+          eq(assistantRuns.id, runId),
+          eq(assistantRuns.tenantId, tenantId),
+          eq(assistantRuns.claimedBy, workerId),
+        )).returning({ id: assistantRuns.id })
+        return result.length > 0
+      },
+      async releaseRun(runId, tenantId, workerId, nextAttemptAt, incrementAttempts) {
+        const patch: Record<string, unknown> = { claimedBy: null, claimExpiresAt: null, status: 'QUEUED' }
+        if (nextAttemptAt) patch.nextAttemptAt = nextAttemptAt
+        if (incrementAttempts) patch.attempts = sql`${assistantRuns.attempts} + 1`
+        const result = await database.update(assistantRuns).set(patch).where(and(
+          eq(assistantRuns.id, runId),
+          eq(assistantRuns.tenantId, tenantId),
+          eq(assistantRuns.claimedBy, workerId),
+        )).returning({ id: assistantRuns.id })
+        return result.length > 0
+      },
+      async requestCancel(runId, tenantId, now) {
+        const result = await database.update(assistantRuns).set({ cancelRequested: true }).where(and(
+          eq(assistantRuns.id, runId),
+          eq(assistantRuns.tenantId, tenantId),
+          inArray(assistantRuns.status, ['QUEUED', 'RUNNING', 'WAITING_USER', 'WAITING_APPROVAL']),
+        )).returning({ id: assistantRuns.id })
+        return result.length > 0
+      },
+      async listDueRuns(tenantId, now, limit) {
+        const rows = await database.select().from(assistantRuns).where(and(
+          ...(tenantId ? [eq(assistantRuns.tenantId, tenantId)] : []),
+          eq(assistantRuns.status, 'QUEUED'),
+          or(isNull(assistantRuns.nextAttemptAt), lte(assistantRuns.nextAttemptAt, now)),
+          or(isNull(assistantRuns.claimedBy), lt(assistantRuns.claimExpiresAt, now)),
+        )).orderBy(asc(assistantRuns.createdAt)).limit(limit)
+        return rows.map(mapAssistantRun)
       },
 
       async insertToolCall(context, input) {

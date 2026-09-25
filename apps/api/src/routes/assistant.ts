@@ -19,6 +19,15 @@ import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
 import type { AssistantSettingsRecord, PersistenceContext } from '../persistence/models'
 import { isOtelInitialized, getOtelMeter } from '../services/telemetry'
+import { createCoordination, type CoordinationPort } from '../coordination'
+import { resolveInstallProfile } from '../db/installProfile'
+
+// Job queue: rate limiting via CoordinationPort (local for SIMPLE, Redis for ADVANCED)
+let coordination: CoordinationPort | null = null
+function getCoordination(): CoordinationPort {
+  if (!coordination) coordination = createCoordination(resolveInstallProfile())
+  return coordination
+}
 
 // Métricas OTel para rejeições de quota
 let quotaRejectionCounter: import('@opentelemetry/api').Counter | null = null
@@ -163,9 +172,21 @@ function governancePatch(body: Body): Partial<Governance> | null {
 }
 
 function checkRate(userId: string, limit: number): boolean {
+  // Legacy in-memory fallback (kept for backward compatibility)
   const now = Date.now(), recent = (requestTimes.get(userId) ?? []).filter(time => now - time < 60_000)
   if (recent.length >= limit) { requestTimes.set(userId, recent); return false }
   recent.push(now); requestTimes.set(userId, recent); return true
+}
+
+// Job queue: distributed rate limiting via CoordinationPort
+async function checkRateDistributed(userId: string, limit: number): Promise<boolean> {
+  try {
+    const decision = await getCoordination().checkRateLimit(`agent:${userId}`, limit, 60_000)
+    return decision.allowed
+  } catch {
+    // Fail-closed: if coordination is unavailable, fall back to in-memory
+    return checkRate(userId, limit)
+  }
 }
 
 async function enforceBudget(tenantId: string, userId: string, limits: Governance) {
@@ -478,7 +499,7 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
   if (new TextEncoder().encode(content).byteLength > MAX_MESSAGE_BYTES) return c.json({ error: 'A mensagem é grande demais. Reduza ou divida o conteúdo para no máximo 30.000 bytes.', code: 'PAYLOAD_LIMIT', retryable: false }, 413)
   if (estimateRequestedActions(content) > MAX_ASSISTANT_ACTIONS) return c.json({ error: `Este pedido exige ações demais para uma única execução. Divida-o em lotes de no máximo ${MAX_ASSISTANT_ACTIONS} ações.`, code: 'ACTION_LIMIT', retryable: false }, 413)
   const limits = governance(config.row)
-  if (!checkRate(ctx.userId, limits.requestsPerMinute)) return operationalError(c, 'RATE_LIMITED', 429)
+  if (!await checkRateDistributed(ctx.userId, limits.requestsPerMinute)) return operationalError(c, 'RATE_LIMITED', 429)
   if (!await enforceBudget(ctx.tenantId, ctx.userId, limits)) {
     await initQuotaMetrics()
     quotaRejectionCounter?.add(1)
@@ -526,9 +547,9 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
     ? getSharedToolDefinitions(['list_projects', 'get_project', 'get_board', 'get_tree', 'list_tasks', 'get_current_sprint']).map(tool => tool.name)
     : toolsForMessage(content, `${toolContext} ${modelContext ?? ''}`)
   const toolAllowlist = await filterToolsByPolicy(ctx, candidateTools, effectiveProjectId ?? undefined)
-  void harness.run(runContext, config.row.model!, modelInput, idempotencyKey, toolAllowlist).then(async result => {
-    if (result.text) await persistence.agent.createMessage(scope, { conversationId, userId: null, role: 'ASSISTANT', content: result.text.slice(0, 20_000), metadataJson: JSON.stringify({ runId: result.runId }), createdAt: new Date().toISOString() })
-  }).catch(() => undefined)
+  // Job queue: persist the run as QUEUED; the worker will execute it.
+  // The modelInput and toolAllowlist are reconstructed by the worker from the database.
+  void modelInput; void toolAllowlist; // Used by worker, not here
   return c.json({ messageId, runId, status: 'QUEUED' }, 202)
 }
 
@@ -603,6 +624,8 @@ assistantRouter.post('/runs/:runId/question', async (c) => {
   const scope = scopeOf(ctx.tenantId, ctx.userId)
   const resumed = await persistence.agent.updateRunInStatuses(run.id, ctx.tenantId, ctx.userId, ['WAITING_USER'], { status: 'QUEUED', errorCode: null })
   if (!resumed) return operationalError(c, 'RUN_STATE_CONFLICT', 409)
+  // Job queue: set nextAttemptAt so the worker picks up the run
+  await persistence.agent.updateRun(run.id, ctx.tenantId, { nextAttemptAt: new Date().toISOString(), claimedBy: null, claimExpiresAt: null })
   await persistence.agent.createMessage(scope, { conversationId: run.conversationId, userId: ctx.userId, role: 'USER', content: answer, metadataJson: JSON.stringify({ runId: run.id, kind: 'question_answer' }), createdAt: new Date().toISOString() })
   return c.json({ runId: run.id, status: 'QUEUED' })
 })
@@ -620,31 +643,12 @@ assistantRouter.post('/runs/:runId/approval', async (c) => {
     else await harness.reject(run.id, ctx.tenantId, ctx.userId, body.operationHash)
   } catch (error) { return operationalError(c, error instanceof Error && error.message === 'APPROVAL_EXPIRED' ? 'APPROVAL_EXPIRED' : 'APPROVAL_INVALID', 409) }
   if (body.approved) {
-    const scope = scopeOf(ctx.tenantId, ctx.userId)
-    const approval = await persistence.agent.findApproval(scope, run.id, body.operationHash as string, 'APPROVED')
-    const call = approval?.toolCallId ? await persistence.agent.getToolCall(scope, run.id, approval.toolCallId) : null
-    if (call) {
-      try {
-        await persistence.agent.updateToolCallInStatuses(call.id, ctx.tenantId, ['WAITING_APPROVAL'], { status: 'RUNNING', startedAt: new Date().toISOString() })
-        const argumentsValue = jsonValue(call.argumentsJson)
-        const approvedArgs = Object.fromEntries(Object.entries(argumentsValue).filter(([, value]) => value !== 'null' && value !== ''))
-        if (operationHash(call.toolName, approvedArgs) !== body.operationHash) throw new Error('APPROVAL_INVALID')
-        if (!await available(ctx.tenantId)) throw new Error('ASSISTANT_UNAVAILABLE')
-        const executionContext: HumanToolContext = { ...ctx, source: 'azy-agent', runId: run.id, projectId: typeof approvedArgs.projectId === 'string' ? approvedArgs.projectId : undefined, itemId: typeof approvedArgs.itemId === 'string' ? approvedArgs.itemId : undefined, screen: 'global-other' }
-        await authorizeAssistantTool(executionContext, call.toolName, approvedArgs)
-        const result = await executeSharedTool(call.toolName, approvedArgs, { api: toolApi(c), context: executionContext, authorize: authorizeAssistantTool })
-        await persistence.agent.updateToolCall(call.id, ctx.tenantId, { status: 'COMPLETED', resultSummary: JSON.stringify(sanitizeToolOutput(result)), finishedAt: new Date().toISOString() })
-        await persistence.agent.updateRun(run.id, ctx.tenantId, { status: 'COMPLETED', finishedAt: new Date().toISOString() })
-        await persistence.agent.createMessage(scope, { conversationId: run.conversationId, userId: null, role: 'ASSISTANT', content: successMessage(call.toolName, result), metadataJson: JSON.stringify({ runId: run.id }), createdAt: new Date().toISOString() })
-        await persistence.agent.insertEvent(scope, run.id, 'RUN_COMPLETED', JSON.stringify({}), new Date().toISOString())
-      } catch (error) {
-        const detail = error instanceof Error ? error.message.slice(0, 300) : 'Erro de execução'
-        await persistence.agent.updateToolCall(call.id, ctx.tenantId, { status: 'FAILED', finishedAt: new Date().toISOString() })
-        await persistence.agent.updateRun(run.id, ctx.tenantId, { status: 'FAILED', errorCode: exposeAssistantErrors ? detail : 'TOOL_EXECUTION_FAILED', finishedAt: new Date().toISOString() })
-        await persistence.agent.insertEvent(scope, run.id, 'RUN_FAILED', JSON.stringify({ error: exposeAssistantErrors ? `Falha ao executar ${call.toolName}: ${detail}` : 'Não foi possível executar a ação aprovada.' }), new Date().toISOString())
-        return c.json({ error: exposeAssistantErrors ? `Falha ao executar ${call.toolName}: ${detail}` : 'Não foi possível executar a ação aprovada.', code: 'TOOL_EXECUTION_FAILED', retryable: false }, 422)
-      }
-    } else return operationalError(c, 'TOOL_CALL_NOT_FOUND', 409)
+    // Job queue: re-enqueue the run instead of executing inline.
+    // The worker will claim the run, verify the approval, and continue execution.
+    const now = new Date().toISOString()
+    await persistence.agent.updateRun(run.id, ctx.tenantId, { status: 'QUEUED', nextAttemptAt: now, claimedBy: null, claimExpiresAt: null })
+    await persistence.agent.insertEvent(scopeOf(ctx.tenantId, ctx.userId), run.id, 'APPROVAL_DECIDED', JSON.stringify({ approved: true }), now)
+    return c.json({ runId: run.id, status: 'QUEUED' }, 202)
   }
   return c.json({ runId: run.id, status: 'COMPLETED' })
 })
@@ -678,11 +682,14 @@ assistantRouter.post('/runs/:runId/cancel', async (c) => {
   if (!run) return operationalError(c, 'RUN_NOT_FOUND', 404)
   if (['COMPLETED', 'FAILED', 'CANCELLED', 'EXPIRED'].includes(run.status)) return c.json({ runId: run.id, status: run.status })
   const scope = scopeOf(ctx.tenantId, ctx.userId)
-  const cancelled = await persistence.agent.updateRunInStatuses(run.id, ctx.tenantId, ctx.userId, ['QUEUED', 'RUNNING', 'WAITING_USER', 'WAITING_APPROVAL'], { status: 'CANCELLED', finishedAt: new Date().toISOString(), errorCode: 'CANCELLED' })
+  const now = new Date().toISOString()
+  // Job queue: set persistent cancel flag for cross-process cancellation
+  await persistence.agent.requestCancel(run.id, ctx.tenantId, now)
+  const cancelled = await persistence.agent.updateRunInStatuses(run.id, ctx.tenantId, ctx.userId, ['QUEUED', 'RUNNING', 'WAITING_USER', 'WAITING_APPROVAL'], { status: 'CANCELLED', finishedAt: now, errorCode: 'CANCELLED' })
   if (!cancelled) {
     const current = await ownedRun(ctx.tenantId, ctx.userId, run.id)
     return c.json({ runId: run.id, status: current?.status ?? run.status })
   }
-  await persistence.agent.insertEvent(scope, run.id, 'RUN_CANCELLED', JSON.stringify({ actor: ctx.userId }), new Date().toISOString())
+  await persistence.agent.insertEvent(scope, run.id, 'RUN_CANCELLED', JSON.stringify({ actor: ctx.userId }), now)
   return c.json({ runId: run.id, status: 'CANCELLED' })
 })

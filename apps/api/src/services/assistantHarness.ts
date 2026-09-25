@@ -48,7 +48,7 @@ export { HARNESS_LIMITS }
 export type RiskLevel = 'READ' | 'LOW' | 'MEDIUM' | 'HIGH' | 'DESTRUCTIVE'
 export type HarnessContext = HumanToolContext & { conversationId: string; runId: string; itemTypeScope?: Array<'EPIC' | 'STORY' | 'TASK' | 'BUG'> }
 type HarnessLimits = { [Key in keyof typeof HARNESS_LIMITS]: number }
-export type HarnessOptions = { agent?: AgentPort; provider: ModelProvider; executeTool: (name: string, args: Record<string, unknown>, context: HarnessContext) => Promise<unknown>; authorize?: (context: HarnessContext, name: string, args: Record<string, unknown>) => Promise<void>; assertAvailable?: (context: HarnessContext) => Promise<void>; limits?: Partial<HarnessLimits> }
+export type HarnessOptions = { agent?: AgentPort; provider: ModelProvider; executeTool: (name: string, args: Record<string, unknown>, context: HarnessContext) => Promise<unknown>; authorize?: (context: HarnessContext, name: string, args: Record<string, unknown>) => Promise<void>; assertAvailable?: (context: HarnessContext) => Promise<void>; limits?: Partial<HarnessLimits>; checkCancel?: (runId: string) => Promise<boolean> }
 
 const mutationNames = new Set(getSharedToolDefinitions().filter(tool => tool.routing.operation !== 'read').map(tool => tool.name))
 const destructiveNames = new Set(['delete_item', 'delete_project', 'archive_item', 'delete_checklist', 'delete_checklist_item', 'remove_member'])
@@ -157,7 +157,12 @@ export class AssistantHarness {
       let text = ''
       const seen = new Map<string, unknown>(), counts = { steps: 0, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 }
       while (true) {
+        // Check both in-memory and persistent cancel flags
         if (this.cancelled.has(runId)) return this.finish(runId, context.tenantId, 'CANCELLED', text, counts)
+        if (this.options.checkCancel && await this.options.checkCancel(runId)) {
+          this.cancelled.add(runId)
+          return this.finish(runId, context.tenantId, 'CANCELLED', text, counts)
+        }
         if (++counts.steps > this.limits.steps) throw new Error('STEP_LIMIT')
         counts.outputTokens += current.usage?.outputTokens ?? 0
         counts.inputTokens += current.usage?.inputTokens ?? 0

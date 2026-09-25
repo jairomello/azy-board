@@ -523,6 +523,12 @@ export interface AssistantRunDetailRecord {
   startedAt: string | null
   finishedAt: string | null
   expiresAt: string | null
+  // Job queue: lease/claim columns for persistent worker execution
+  claimedBy: string | null
+  claimExpiresAt: string | null
+  attempts: number
+  nextAttemptAt: string | null
+  cancelRequested: boolean
 }
 
 export interface AssistantToolCallRecord {

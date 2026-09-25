@@ -218,6 +218,13 @@
       "when": 1790196480427,
       "tag": "0030_jittery_gambit",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1790373032430,
+      "tag": "0031_agent_job_queue",
+      "breakpoints": true
     }
   ]
 }
