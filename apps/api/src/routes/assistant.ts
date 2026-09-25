@@ -182,9 +182,18 @@ function jsonValue(value: string | null | undefined): Record<string, unknown> {
   try { const parsed = JSON.parse(value ?? '{}'); return parsed && typeof parsed === 'object' ? parsed : {} } catch { return {} }
 }
 
-function toolApi(c: Context<HonoEnv>) {
+export function toolApi(c: Context<HonoEnv>) {
   return async (path: string, method = 'GET', body?: unknown) => {
-    const response = await fetch(new URL(`/api${path}`, c.req.url), { method, headers: { 'Content-Type': 'application/json', cookie: c.req.header('cookie') ?? '' }, body: body === undefined ? undefined : JSON.stringify(body) })
+    // Despacha internamente no próprio app (memória), sem auto-chamada HTTP:
+    // URLs reconstruídas a partir de c.req.url perdem o prefixo de reverse
+    // proxies por path (ex.: /azyboard no labapps) e caem em 404 fora do
+    // roteamento. O cookie da sessão original autoriza a chamada.
+    const { app } = await import('../index')
+    const response = await app.fetch(new Request(`http://azyboard.internal/api${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', cookie: c.req.header('cookie') ?? '' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }), c.env)
     const payload = await response.json().catch(() => undefined) as { error?: unknown; code?: unknown } | undefined
     if (!response.ok) {
       const reason = typeof payload?.error === 'string' ? payload.error : typeof payload?.code === 'string' ? payload.code : `HTTP ${response.status}`

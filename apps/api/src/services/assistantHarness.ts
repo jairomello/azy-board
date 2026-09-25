@@ -142,6 +142,7 @@ export class AssistantHarness {
         if ((counts.calls += calls.length) > this.limits.toolCalls) throw new Error('TOOL_CALL_LIMIT')
         const outputs: Record<string, unknown>[] = []
         for (const call of calls) {
+          let toolCallId: string | null = null
           try {
             const name = call.name ?? '', args = canonicalArguments(name, parseArguments(call.arguments), fullContext)
             if (!call.callId) throw new Error('INVALID_TOOL_CALL')
@@ -151,6 +152,7 @@ export class AssistantHarness {
             if (name === 'batch' && Array.isArray(args.operations) && args.operations.length > HARNESS_LIMITS.toolCalls) throw new Error('ACTION_LIMIT')
             validateToolArguments(name, args)
             const risk = riskForTool(name), hash = operationHash(name, args), callId = randomUUID()
+            toolCallId = callId
             if (seen.has(signature)) {
               if (risk !== 'READ') throw new Error('REPEATED_TOOL_CALL')
               outputs.push({ type: 'function_call_output', call_id: call.callId, output: JSON.stringify(seen.get(signature)) })
@@ -176,6 +178,10 @@ export class AssistantHarness {
             outputs.push({ type: 'function_call_output', call_id: call.callId, output: JSON.stringify(result) })
           } catch (error) {
             const recoverable = recoverableToolError(error)
+            if (toolCallId) {
+              const resultSummary = recoverable ? { ok: false, code: recoverable.code, error: recoverable.message } : { ok: false, error: safeError(error) }
+              await this.agent.updateToolCall(toolCallId, context.tenantId, { status: 'FAILED', resultSummary: JSON.stringify(resultSummary), finishedAt: new Date().toISOString() })
+            }
             if (!recoverable) throw error
             outputs.push({ type: 'function_call_output', call_id: call.callId ?? randomUUID(), output: JSON.stringify({ ok: false, recoverable: true, code: recoverable.code, error: recoverable.message }) })
           }

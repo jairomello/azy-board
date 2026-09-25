@@ -12,7 +12,7 @@ const { signJwt } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 const { decryptAssistantSecret, encryptAssistantSecret } = await import('./services/assistantEncryption')
 const { probeOpenAICredential } = await import('./services/openaiProvider')
-const { estimateRequestedActions, formatAssistantPromptContext, itemTypeScopeForMessage, toolsForMessage, canUseProject } = await import('./routes/assistant')
+const { estimateRequestedActions, formatAssistantPromptContext, itemTypeScopeForMessage, toolsForMessage, canUseProject, toolApi } = await import('./routes/assistant')
 
 await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
 
@@ -321,5 +321,15 @@ História: Projetos`
     const rejected = await requestJson(`/assistant/runs/${approvalRun}/approval`, rootId, tenantId, 'POST', { approved: false, operationHash: operation })
     expect(rejected.status).toBe(200)
     expect(await rejected.json()).toMatchObject({ runId: approvalRun, status: 'COMPLETED' })
+  })
+})
+
+describe('toolApi do Azy Agent', () => {
+  test('despacha no próprio app sem auto-chamada HTTP externa', async () => {
+    const contextFor = (cookie: string | undefined) => ({ req: { header: (name: string) => (name.toLowerCase() === 'cookie' ? cookie : undefined) }, env: undefined }) as unknown as Parameters<typeof toolApi>[0]
+    const session = await signJwt({ sub: rootId, tenantId, email: `${rootId}@test.local`, role: 'user' })
+    const projects = await toolApi(contextFor(`session=${session}`))('/projects')
+    expect(Array.isArray(projects)).toBe(true)
+    await expect(toolApi(contextFor(undefined))('/projects')).rejects.toThrow('HTTP 401')
   })
 })

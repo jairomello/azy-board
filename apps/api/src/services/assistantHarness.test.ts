@@ -62,6 +62,11 @@ describe('Azy Agent harness', () => {
     expect(result.status).toBe('COMPLETED')
     expect(result.text).toBe('Consultei novamente após o conflito.')
     expect(provider.calls).toBe(2)
+    const rows = await db.select().from(assistantToolCalls).where(eq(assistantToolCalls.runId, result.runId))
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.status).toBe('FAILED')
+    expect(rows[0]?.resultSummary).toContain('HTTP 409')
+    expect(rows[0]?.finishedAt).toBeTruthy()
   })
 
   test('trata argumento obrigatório ausente como erro recuperável', async () => {
