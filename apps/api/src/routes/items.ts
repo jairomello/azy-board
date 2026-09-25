@@ -156,7 +156,9 @@ itemsRouter.patch('/reorder', requireRole('MEMBER'), async (c) => {
   if (!targetColumn) return c.json({ error: 'Coluna não encontrada neste projeto' }, 404)
   const uniqueOrder = [...new Set(body.order)]
   if (uniqueOrder.length !== body.order.length) return c.json({ error: 'A ordem contém cards duplicados' }, 400)
-  const orderedItems = await persistence.items.listItems(userPersistenceContext(ctx), projectId, { columnId: body.columnId })
+  // Arquivar preserva columnId, mas o board não exibe nem envia cards arquivados.
+  const orderedItems = (await persistence.items.listItems(userPersistenceContext(ctx), projectId, { columnId: body.columnId }))
+    .filter(item => item.status !== 'ARCHIVED')
   if (orderedItems.length !== uniqueOrder.length) return c.json({ error: 'A ordem contém cards que não pertencem à coluna' }, 400)
   const orderSet = new Set(uniqueOrder)
   if (orderedItems.some(item => !orderSet.has(item.id))) return c.json({ error: 'A ordem contém cards que não pertencem à coluna' }, 400)

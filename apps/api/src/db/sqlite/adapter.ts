@@ -757,7 +757,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           const uniqueIds = [...new Set(itemIds)]
           if (uniqueIds.length !== itemIds.length) throw new Error('DUPLICATE_ITEM_IN_ORDER')
           for (const [position, itemId] of uniqueIds.entries()) {
-            const result = sqlite.query('UPDATE items SET position = ?, updated_at = ? WHERE tenant_id = ? AND project_id = ? AND column_id = ? AND id = ?')
+            const result = sqlite.query("UPDATE items SET position = ?, updated_at = ? WHERE tenant_id = ? AND project_id = ? AND column_id = ? AND id = ? AND status != 'ARCHIVED'")
               .run(position, new Date().toISOString(), context.tenantId, projectId, columnId, itemId)
             if (result.changes !== 1) throw new Error('ITEM_NOT_IN_COLUMN')
           }

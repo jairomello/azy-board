@@ -151,6 +151,39 @@ describe('modos de board de projetos', () => {
     expect((await db.select().from(items).where(eq(items.id, foreignId)))[0]?.position).toBe(0)
   })
 
+  test('reordena cards ativos mesmo com card arquivado na mesma coluna', async () => {
+    const projectResponse = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Reorder com arquivo', boardMode: 'SIMPLE' }),
+    })
+    const project = await projectResponse.json() as { id: string; simpleStoryId: string }
+    const column = (await db.select().from(columns).where(eq(columns.projectId, project.id)))
+      .find(candidate => candidate.name === 'A Fazer')!
+    const now = new Date().toISOString()
+    const firstId = generateId(), secondId = generateId(), archivedId = generateId()
+    await db.insert(items).values([
+      { id: firstId, tenantId, projectId: project.id, type: 'TASK', parentId: project.simpleStoryId, columnId: column.id, title: 'Primeiro', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now },
+      { id: archivedId, tenantId, projectId: project.id, type: 'TASK', parentId: project.simpleStoryId, columnId: column.id, title: 'Arquivado', ancestryPath: '[]', status: 'ARCHIVED', priority: 'MEDIUM', position: 1, createdAt: now, updatedAt: now },
+      { id: secondId, tenantId, projectId: project.id, type: 'TASK', parentId: project.simpleStoryId, columnId: column.id, title: 'Segundo', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 2, createdAt: now, updatedAt: now },
+    ])
+
+    const reordered = await request(`/projects/${project.id}/items/reorder`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ columnId: column.id, order: [secondId, firstId] }),
+    })
+    expect(reordered.status).toBe(200)
+    const positions = await db.select().from(items).where(eq(items.projectId, project.id))
+    expect(positions.find(item => item.id === secondId)?.position).toBe(0)
+    expect(positions.find(item => item.id === firstId)?.position).toBe(1)
+    expect(positions.find(item => item.id === archivedId)?.position).toBe(1)
+
+    const archivedReorder = await request(`/projects/${project.id}/items/reorder`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ columnId: column.id, order: [archivedId, firstId] }),
+    })
+    expect(archivedReorder.status).toBe(400)
+  })
+
   test('rejeita IDs cruzados entre card, checklist e passo', async () => {
     const projectResponse = await request('/projects', adminToken, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Checklist ownership', boardMode: 'SIMPLE' }),

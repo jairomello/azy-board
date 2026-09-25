@@ -172,6 +172,22 @@ export const journeys: Journey[] = [
         return Boolean(a && b && b.columnId === a.columnId && b.position < a.position)
       }, 'Card B reordenado antes do Card A no Backlog')
 
+      // Arquivar mantém o columnId no banco; a UI envia apenas cards visíveis.
+      await addCardToFirstColumn(page, 'Card arquivado')
+      const archived = (await fetchItems(page, projectId)).find(item => item.title === 'Card arquivado')
+      assert(archived, 'card para arquivamento não encontrado')
+      const archive = await page.request.post(`${apiUrl}/api/projects/${projectId}/items/${archived.id}/archive`)
+      assert(archive.ok(), `arquivamento respondeu ${archive.status()}`)
+      await page.reload()
+      await page.getByText('Card A', { exact: true }).waitFor()
+      await dragCardAboveCard(page, 'Card A', 'Card B')
+      await waitFor(async () => {
+        const items = await fetchItems(page, projectId)
+        const a = items.find(item => item.title === 'Card A')
+        const b = items.find(item => item.title === 'Card B')
+        return Boolean(a && b && a.position < b.position)
+      }, 'ordem persistida mesmo com card arquivado na coluna')
+
       // Move entre colunas: Card B vai para Fazendo.
       await dragCardToColumn(page, 'Card B', 'Fazendo')
       await waitFor(async () => {
