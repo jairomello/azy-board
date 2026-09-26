@@ -56,6 +56,7 @@ export default defineConfig(({ mode }) => {
           if (id.includes('@tanstack/react-query') || id.includes('@tanstack/query-core')) return 'vendor-query'
           if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor')) return 'vendor-charts'
           if (id.includes('@tiptap') || id.includes('prosemirror-')) return 'vendor-editor'
+          if (id.includes('marked') || id.includes('turndown')) return 'vendor-markdown'
           if (id.includes('react-router') || id.includes('/react-dom/') || id.includes('/react/') || id.includes('scheduler')) return 'vendor-react'
           return
         },

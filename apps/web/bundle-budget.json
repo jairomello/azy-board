@@ -6,6 +6,7 @@
     { "name": "vendor-query", "maxGzipBytes": 25000 },
     { "name": "vendor-charts", "maxGzipBytes": 130000 },
     { "name": "vendor-editor", "maxGzipBytes": 115000 },
+    { "name": "vendor-markdown", "maxGzipBytes": 24000 },
     { "name": "BoardPage", "maxGzipBytes": 60000 },
     { "name": "ProjectDashboardPage", "maxGzipBytes": 15000 },
     { "name": "SettingsPage", "maxGzipBytes": 15000 },

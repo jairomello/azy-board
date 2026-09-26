@@ -5,6 +5,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import Link from '@tiptap/extension-link'
 import { Maximize2, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { htmlToMarkdown, toCanonicalMarkdown, toEditorHtml } from '../lib/richText'
 
 interface ToolbarButtonProps {
   active?: boolean
@@ -49,7 +50,8 @@ export function RichTextEditorImpl({ content, onChange, placeholder, minHeight =
       Placeholder.configure({ placeholder: editorPlaceholder }),
       Link.configure({ openOnClick: false }),
     ],
-    content,
+    // Formato canônico é Markdown; o TipTap edita HTML — converte na carga.
+    content: toEditorHtml(content),
     editorProps: {
       attributes: {
         class: 'prose prose-sm dark:prose-invert max-w-none outline-none text-sm text-foreground',
@@ -57,10 +59,19 @@ export function RichTextEditorImpl({ content, onChange, placeholder, minHeight =
       },
     },
     onUpdate: ({ editor }) => {
-      const html = editor.getHTML()
-      onChange(html === '<p></p>' ? '' : html)
+      onChange(htmlToMarkdown(editor.getHTML()))
     },
   })
+
+  // Sincroniza mudanças externas de `content` (ex.: modal expandido que salvou)
+  // sem reescrever o documento enquanto o usuário digita: só aplica quando a
+  // forma canônica difere do que o editor já exibe.
+  useEffect(() => {
+    if (!editor) return
+    const atual = toCanonicalMarkdown(editor.getHTML())
+    if (atual === toCanonicalMarkdown(content)) return
+    editor.commands.setContent(toEditorHtml(content), false)
+  }, [editor, content])
 
   useEffect(() => {
     if (!expanded) return

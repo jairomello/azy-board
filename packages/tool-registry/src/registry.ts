@@ -153,7 +153,7 @@ const checklistItemChangeSchema = {
     checked: { type: ['boolean', 'null'], description: 'Marca o passo como concluído ou não.' },
     dueDate: { type: ['string', 'null'], description: 'Data prevista YYYY-MM-DD; requer advancedChecklists no projeto.' },
     assigneeId: { type: ['string', 'null'], description: 'ID de membro do projeto; requer advancedChecklists no projeto.' },
-    description: { type: ['string', 'null'], description: 'Descrição em HTML (até 20000 caracteres); requer advancedChecklists no projeto.' },
+    description: { type: ['string', 'null'], description: 'Descrição em Markdown (até 20000 caracteres); requer advancedChecklists no projeto.' },
   },
 }
 
@@ -218,7 +218,7 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
   if (field === 'plannedEndDate') return { ...nullable({ type: 'string' }), description: 'Planned end date in YYYY-MM-DD format.' }
   if (field === 'dueDate') return { ...nullable({ type: 'string' }), description: 'Data prevista YYYY-MM-DD (requer checklists detalhados no projeto).' }
   if (field === 'assigneeId') return { ...nullable({ type: 'string' }), description: 'ID de um membro do projeto (requer checklists detalhados no projeto).' }
-  if (field === 'scope') return { ...nullable({ type: 'string' }), description: 'Project scope as HTML rich text.' }
+  if (field === 'scope') return { ...nullable({ type: 'string' }), description: 'Project scope as Markdown rich text.' }
   if (field === 'projectId') return { ...nullable({ type: 'string' }), description: 'Project ID (UUID) or the exact project name; names are resolved against the projects accessible to the API key.' }
   if (field === 'limit' || field === 'durationMin' || field === 'points') return nullable({ type: 'number' })
   if (field === 'filters') return itemFiltersSchema
@@ -231,7 +231,7 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
   if (field === 'title') return nullable({ type: 'string', description: `Título do item (até ${TOOL_TEXT_LIMITS.title} caracteres).` })
   if (field === 'activity') return nullable({ type: 'string', description: `Texto do log de trabalho (até ${TOOL_TEXT_LIMITS.activity} caracteres; prefira textos curtos).` })
   if (field === 'name') return nullable({ type: 'string', description: `Nome (até ${TOOL_TEXT_LIMITS.name} caracteres).` })
-  if (field === 'description') return nullable({ type: 'string', description: `Descrição em texto/HTML (até ${TOOL_TEXT_LIMITS.description} caracteres).` })
+  if (field === 'description') return nullable({ type: 'string', description: `Descrição em Markdown (até ${TOOL_TEXT_LIMITS.description} caracteres).` })
   if (field === 'ref') return nullable({ type: 'string', description: `Referência curta usada por parentRef (até ${TOOL_TEXT_LIMITS.ref} caracteres).` })
   if (field === 'columnName') return nullable({ type: 'string', description: `Nome exato da coluna de destino (até ${TOOL_TEXT_LIMITS.columnName} caracteres).` })
   return nullable({ type: 'string' })

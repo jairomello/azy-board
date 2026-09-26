@@ -26,4 +26,15 @@ describe('contrato do editor rich text', () => {
       contains(editor, command)
     }
   })
+
+  // Regressão: descrições gravadas pela IA em Markdown apareciam cruas porque a
+  // string ia direto ao useEditor, que espera HTML. O contrato fixa a conversão
+  // nos dois sentidos e a sincronização de content externo.
+  test('converte Markdown na carga, HTML→Markdown no save e sincroniza content externo', async () => {
+    const editor = await source('./components/RichTextEditorImpl.tsx')
+    contains(editor, 'toEditorHtml(content)')
+    contains(editor, 'htmlToMarkdown(editor.getHTML())')
+    contains(editor, 'editor.commands.setContent')
+    contains(editor, 'toCanonicalMarkdown')
+  })
 })

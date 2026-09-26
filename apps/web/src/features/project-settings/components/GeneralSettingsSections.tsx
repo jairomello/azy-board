@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { BoardMode } from '@azy-board/domain'
 import { RichTextEditor } from '../../../components/RichTextEditor'
+import { toEditorHtml } from '../../../lib/richText'
 import { VisibilityToggles } from '../../../components/VisibilityToggles'
 import { AccordionSection } from '../../../components/AccordionSection'
 import { SettingsSection } from './SettingsSection'
@@ -126,7 +127,7 @@ export function GeneralSettingsSections({
       <div className="mt-4">
         <label className="block text-sm font-medium text-foreground mb-1">{t('settings:scope')}</label>
         {isAdmin ? <RichTextEditor content={scope} onChange={html => { onScopeChange(html); if (scopeTimerRef.current) clearTimeout(scopeTimerRef.current); scopeTimerRef.current = setTimeout(() => onPlanningChange('scope', html || null), 800) }} placeholder={t('settings:scopePlaceholder')} minHeight="160px" showExpand fieldLabel={t('settings:scope')} />
-          : scope ? <div className="prose prose-sm dark:prose-invert max-w-none rounded-lg border border-border p-3" dangerouslySetInnerHTML={{ __html: scope }} /> : <p className="text-sm text-muted-foreground italic">—</p>}
+          : scope ? <div className="prose prose-sm dark:prose-invert max-w-none rounded-lg border border-border p-3" dangerouslySetInnerHTML={{ __html: toEditorHtml(scope) }} /> : <p className="text-sm text-muted-foreground italic">—</p>}
       </div>
       {!isAdmin && <p className="text-xs text-muted-foreground mt-3">{t('settings:adminOnly')}</p>}
       {planningError && <p className="text-sm text-destructive mt-3">{planningError}</p>}
