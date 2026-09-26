@@ -249,3 +249,42 @@ jobs:
         run: bun test apps/api/src/db/postgres/parity.test.ts
       - name: Testes de coordenação (local)
         run: bun test apps/api/src/coordination/local.test.ts
+
+  image:
+    name: image (deploy reproduzível)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Coerência da versão do Bun no deploy
+        run: bun run check:deploy-versions
+      - name: Validar compose files
+        run: |
+          docker compose -f docker-compose.simple.yml config -q
+          docker compose -f docker-compose.advanced.yml config -q
+      - uses: docker/setup-buildx-action@v3
+      - name: Build da imagem da API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          tags: azyboard-api:local
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build da imagem Web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.web
+          tags: azyboard-web:local
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Teste automatizado de restore (SIMPLE)
+        run: bun run test:restore
+      - name: Diagnóstico
+        if: failure()
+        run: docker ps -a

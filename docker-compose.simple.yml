@@ -1,15 +1,44 @@
 # Perfil SIMPLE — Azy Board com SQLite (sem serviços externos)
+#
 # Uso: docker compose -f docker-compose.simple.yml up -d
-# Não requer PostgreSQL nem Redis.
+# Requer Docker Compose v2 (o serviço `migrate` usa
+# depends_on.condition: service_completed_successfully).
+#
+# O serviço `migrate` roda como job separado ANTES do start da API: o
+# `docker compose up -d` sozinho já executa migration e start na ordem
+# correta. O rollout completo (backup → migrate → up) e o rollback estão
+# documentados em DEPLOY.md — "Rollout, rollback e backup".
+#
+# Portas do host configuráveis: AZYBOARD_API_PORT (padrão 3000) e
+# AZYBOARD_WEB_PORT (padrão 8080).
 services:
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: azyboard-api:local
+    command: ["migrate"]
+    restart: "no"
+    environment:
+      - DATABASE_URL=/data/dev.db
+      - AZYBOARD_INSTALL_PROFILE=SIMPLE
+      - AZYBOARD_INSTANCE_DIR=/data
+      - JWT_SECRET=${JWT_SECRET:-change-me-use-a-long-random-secret}
+      - NODE_ENV=production
+    volumes:
+      - azyboard-data:/data
+      # Também montado para os one-shots de backup/restore
+      # (bun run deploy:backup / deploy:restore usam este serviço).
+      - azyboard-uploads:/app/uploads
+
   azyboard:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: azyboard-simple
+    image: azyboard-api:local
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${AZYBOARD_API_PORT:-3000}:3000"
     environment:
       - DATABASE_URL=/data/dev.db
       - AZYBOARD_INSTALL_PROFILE=SIMPLE
@@ -20,6 +49,24 @@ services:
       # Volume persistente: banco SQLite + marcador de instalação
       - azyboard-data:/data
       - azyboard-uploads:/app/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        AZYBOARD_BASE_PATH: "${AZYBOARD_BASE_PATH:-/}"
+    image: azyboard-web:local
+    restart: unless-stopped
+    ports:
+      - "${AZYBOARD_WEB_PORT:-8080}:80"
+    environment:
+      - AZYBOARD_API_UPSTREAM=http://azyboard:3000
+    depends_on:
+      - azyboard
 
 volumes:
   azyboard-data:

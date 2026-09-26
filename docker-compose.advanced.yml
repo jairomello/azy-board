@@ -1,21 +1,31 @@
 # Perfil ADVANCED — Azy Board com PostgreSQL + Valkey
+#
 # Uso: docker compose -f docker-compose.advanced.yml up -d
+# Requer Docker Compose v2 (o serviço `migrate` usa
+# depends_on.condition: service_completed_successfully).
 #
 # IMPORTANTE: ADVANCED exige instalação NOVA com banco NOVO e volume NOVO.
 # Não aponte para um banco SQLite existente. Dados não são migrados entre perfis.
+#
+# O serviço `migrate` roda como job separado ANTES do start da API. O rollout
+# completo (backup → migrate → up) e o rollback estão documentados em
+# DEPLOY.md — "Rollout, rollback e backup".
+#
+# Portas do host configuráveis: AZYBOARD_API_PORT (padrão 3000),
+# AZYBOARD_WEB_PORT (padrão 8080), AZYBOARD_PG_PORT (padrão 5432) e
+# AZYBOARD_VALKEY_PORT (padrão 6379).
 #
 # Valkey (BSD) é a referência comunitária Redis-compatível: https://valkey.io
 services:
   postgres:
     image: postgres:16
-    container_name: azyboard-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-azyboard}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
       POSTGRES_DB: ${POSTGRES_DB:-azyboard}
     ports:
-      - "5432:5432"
+      - "${AZYBOARD_PG_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -26,11 +36,10 @@ services:
 
   valkey:
     image: valkey/valkey:8
-    container_name: azyboard-valkey
     restart: unless-stopped
     command: valkey-server --requirepass ${VALKEY_PASSWORD:-change-me}
     ports:
-      - "6379:6379"
+      - "${AZYBOARD_VALKEY_PORT:-6379}:6379"
     volumes:
       - valkey-data:/data
     healthcheck:
@@ -39,14 +48,37 @@ services:
       timeout: 3s
       retries: 5
 
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: azyboard-api:local
+    command: ["migrate"]
+    restart: "no"
+    environment:
+      - AZYBOARD_INSTALL_PROFILE=ADVANCED
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-azyboard}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-azyboard}
+      - REDIS_URL=redis://:${VALKEY_PASSWORD:-change-me}@valkey:6379
+      - AZYBOARD_INSTANCE_DIR=/data
+      - JWT_SECRET=${JWT_SECRET:-change-me-use-a-long-random-secret}
+      - NODE_ENV=production
+    volumes:
+      - azyboard-instance:/data
+      # Também montado para os one-shots de backup/restore
+      # (bun run deploy:backup / deploy:restore usam este serviço).
+      - azyboard-uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   azyboard:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: azyboard-advanced
+    image: azyboard-api:local
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${AZYBOARD_API_PORT:-3000}:3000"
     environment:
       - AZYBOARD_INSTALL_PROFILE=ADVANCED
       - DATABASE_URL=postgresql://${POSTGRES_USER:-azyboard}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-azyboard}
@@ -59,8 +91,8 @@ services:
       - azyboard-instance:/data
       - azyboard-uploads:/app/uploads
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       valkey:
         condition: service_healthy
     healthcheck:
@@ -68,6 +100,21 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        AZYBOARD_BASE_PATH: "${AZYBOARD_BASE_PATH:-/}"
+    image: azyboard-web:local
+    restart: unless-stopped
+    ports:
+      - "${AZYBOARD_WEB_PORT:-8080}:80"
+    environment:
+      - AZYBOARD_API_UPSTREAM=http://azyboard:3000
+    depends_on:
+      - azyboard
 
 volumes:
   postgres-data:

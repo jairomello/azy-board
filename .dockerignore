@@ -1,0 +1,58 @@
+# Contexto de build das imagens — manter apenas o que o build precisa.
+# .git
+.git
+.git-credentials
+.netrc
+
+# Dependências e artefatos locais (reinstalados/buildados dentro da imagem)
+node_modules
+**/node_modules
+**/dist
+*.tsbuildinfo
+
+# Banco e runtime locais
+dev.db
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+uploads
+.azyboard
+.azyboard-test
+.azyboard-installation.json
+
+# Estado de agentes/ferramentas locais
+.opencode
+.claude
+.gemini
+.codex
+.agents
+.playwright-mcp
+.cursor
+.continue
+.aider*
+
+# Segredos e ambiente local (nunca copiar para a imagem)
+.env
+.env.*
+**/.env
+**/.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+id_rsa*
+id_ed25519*
+
+# Documentação privada do operador (não faz parte da imagem)
+DEPLOY_LABAPPS_LOCAL.md
+
+# Diversos
+tmp
+openspec
+docs/screenshots
+**/__screenshots__
+**/*.log
+**/.DS_Store

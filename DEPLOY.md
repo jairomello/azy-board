@@ -29,29 +29,56 @@ variável `AZYBOARD_BASE_PATH`; em desenvolvimento, quando ela não existe, o
 Vite usa paths relativos. Em uma publicação sob `/app/`, o ambiente de build
 deve definir `AZYBOARD_BASE_PATH=/app/`.
 
-O deploy usa 2 containers:
+O deploy usa 2 containers, buildados a partir dos arquivos **versionados neste
+repositório** (não há Dockerfile gerado fora do repo):
 
-- `azyboard-web` (nginx:alpine) servindo o build estático do Vite.
-- `azyboard-api` (oven/bun:1-alpine) rodando Hono + Drizzle.
+- `azyboard-web` (`Dockerfile.web`, nginx) servindo o build estático do Vite e,
+  em publicação standalone, repassando `/api` e `/ws` para a API.
+- `azyboard-api` (`Dockerfile`, Bun) rodando Hono + Drizzle.
 
-Configurar o proxy reverso para encaminhar a API, a aplicação e o WebSocket:
+### Arquivos de deploy versionados
 
-1. `/app/api/` → `azyboard-api:3000`, com rewrite
+| Arquivo | Papel |
+| --- | --- |
+| `Dockerfile` | imagem da API (multi-stage, `ARG BUN_VERSION` espelhando `.bun-version`) |
+| `Dockerfile.web` | imagem Web (build do Vite + nginx), build arg `AZYBOARD_BASE_PATH` |
+| `docker/entrypoint-api.sh` | subcomandos `api` (padrão) e `migrate` (job de rollout) |
+| `docker/nginx-web.conf.template` | nginx do web (estático, SPA fallback, proxy de `/api` e `/ws`) |
+| `docker-compose.simple.yml` | perfil SIMPLE (SQLite) |
+| `docker-compose.advanced.yml` | perfil ADVANCED (PostgreSQL + Valkey) |
+
+A coerência entre `.bun-version`, os Dockerfiles e o workflow do CI é garantida
+por `bun run check:deploy-versions` (executado no job `image` do CI).
+
+Configurar o proxy reverso para encaminhar a API, a aplicação e o WebSocket
+(abaixo, os hostnames `azyboard` e `web` são os serviços dos compose files
+versionados; ajuste conforme a rede do seu ambiente):
+
+1. `/app/api/` → `azyboard:3000`, com rewrite
    `^/app/api/(.*)$ /api/$1 break`.
-2. `/app/` → `azyboard-web:80`, com rewrite
+2. `/app/` → `web:80`, com rewrite
    `^/app/(.*)$ /$1 break` + sub_filter injetando
    `window.__BASE_PATH__="/app/"`.
 
-3. `/app/ws` → `azyboard-api:3000`, com rewrite para `/ws` e suporte a
+3. `/app/ws` → `azyboard:3000`, com rewrite para `/ws` e suporte a
    upgrade WebSocket HTTP/1.1.
+
+## Pré-requisitos
+
+- **Docker** e **Docker Compose v2** (`docker compose` — o serviço `migrate`
+  usa `depends_on.condition: service_completed_successfully`, não suportado
+  pelo docker-compose v1).
+- **Bun** na versão de `.bun-version` para builds/verificações locais.
 
 ## Variáveis de ambiente (produção)
 
 - `NODE_ENV=production`.
 - `PORT=3000` (api).
 - `DATABASE_URL=/data/azyboard.db` (SQLite via Drizzle).
-- `MIGRATIONS_DIR=/app/migrations` (path onde o Dockerfile move o
-  diretório `apps/api/src/db/migrations`).
+- `MIGRATIONS_DIR=/app/migrations` — definido pela imagem da API, que embute
+  `apps/api/src/db/migrations` em `/app/migrations` (revisadas junto com o
+  código em cada commit).
+- `UPLOADS_DIR=/app/uploads` — volume de uploads (definido pela imagem).
 - `FRONTEND_URL=https://example.com/app/` (origem permitido pelo CORS).
 - `JWT_SECRET`: segredo para assinar o cookie de sessão.
 
@@ -73,7 +100,10 @@ preciso uma nova instalação com banco e volume novos.
 - **Capacidade:** recomendado para até aproximadamente 20 pessoas.
 - **Produção pequena:** suportada com volumes persistentes e backups configurados.
 - **Configuração:** veja `apps/api/.env.example.simple`.
-- **Docker:** veja `docker-compose.simple.yml`.
+- **Docker:** veja `docker-compose.simple.yml`. Suba com
+  `docker compose -f docker-compose.simple.yml up -d` — web em
+  `http://localhost:8080` e API em `:3000` (portas configuráveis via
+  `AZYBOARD_WEB_PORT`/`AZYBOARD_API_PORT`).
 
 ### ADVANCED
 
@@ -81,7 +111,10 @@ preciso uma nova instalação com banco e volume novos.
 - **Coordenação:** Valkey (BSD) ou Redis-compatível.
 - **Capacidade:** suporta mais usuários; instância única de API.
 - **Configuração:** veja `apps/api/.env.example.advanced`.
-- **Docker:** veja `docker-compose.advanced.yml`.
+- **Docker:** veja `docker-compose.advanced.yml`. Suba com
+  `docker compose -f docker-compose.advanced.yml up -d` (mesmas portas do
+  SIMPLE; PostgreSQL/Valkey publicados nas portas padrão, configuráveis via
+  `AZYBOARD_PG_PORT`/`AZYBOARD_VALKEY_PORT`).
 
 #### Limites operacionais do ADVANCED
 
@@ -111,6 +144,59 @@ Todo push de branch e pull request passa pelo CI
 reproduzir localmente e para configurar os required checks, veja
 [`docs/ci.md`](docs/ci.md).
 
+## Rollout, rollback e backup
+
+> **BREAKING:** a migration **não** é mais aplicada implicitamente no start da
+> API em produção. A aplicação das migrations acontece apenas pelo job
+> separado `migrate` (serviço one-shot do compose / subcomando do entrypoint).
+> Instalações que dependiam de auto-migração no start devem executar o job
+> antes do primeiro `up` desta versão.
+
+### Ordem de rollout
+
+1. **Backup** (obrigatório em instalação com dados):
+   `bun run deploy:backup` (ou `--compose-file docker-compose.advanced.yml` no
+   ADVANCED). Gera `backups/backup-<data>/` com banco, uploads, marcador de
+   instalação e `manifest.json`.
+2. **Migration como job separado**: `docker compose -f <compose> run --rm migrate`
+   — falhou, aborte o rollout; a versão em execução permanece intacta.
+3. **Start**: `docker compose -f <compose> up -d` (nova imagem; o serviço
+   `migrate` roda de novo como no-op idempotente antes da API).
+
+Com os compose files versionados, o `docker compose up -d` já executa o job
+`migrate` antes de subir a API (`depends_on: condition:
+service_completed_successfully`); os passos explícitos acima são o rollout
+controlado de produção.
+
+### Backup e restore
+
+- `bun run deploy:backup [--out <dir>] [--perfil SIMPLE|ADVANCED]` — SIMPLE:
+  snapshot consistente do SQLite (`VACUUM INTO`) + marcador + uploads; ADVANCED:
+  `pg_dump` + uploads.
+- `bun run deploy:restore <dir-do-backup>` — restaura em **instância limpa**
+  (banco, marcador e uploads são substituídos; não é merge de dados).
+- `bun run test:restore` — teste automatizado de backup/restore em instância
+  efêmera (executado no CI, job `image`).
+
+### Compatibilidade entre versão da aplicação e schema
+
+- As migrations são apenas para frente. A aplicação da versão N roda com o
+  schema N e continua compatível com o schema N+1 correspondente.
+- **Downgrade de schema não é suportado.**
+- Releases com migrations destrutivas/incompatíveis são sinalizadas no
+  CHANGELOG; para essas, o rollback exige restaurar o backup feito antes da
+  migration.
+
+### Rollback
+
+1. **Schema compatível** (caso padrão): suba a imagem anterior
+   (`docker compose up -d` com a tag/commit anterior). Nenhuma restauração é
+   necessária.
+2. **Migration incompatível/estragada**: restaure o backup pré-migração
+   (`bun run deploy:restore <dir>`) e então suba a imagem anterior.
+3. Sem backup válido, não há rollback de dados — por isso o backup é etapa
+   obrigatória do rollout.
+
 ## Health endpoints
 
 A API expõe dois endpoints públicos de health (sem autenticação):
@@ -123,8 +209,9 @@ A API expõe dois endpoints públicos de health (sem autenticação):
 
 ### Healthchecks de deploy
 
-No `docker-compose.advanced.yml`, configure healthchecks apontando para
-`/health/ready`:
+Os compose files versionados já incluem healthcheck da API apontando para
+`/health/ready` (exatamente o bloco abaixo, usado em
+`docker-compose.advanced.yml`):
 
 ```yaml
 healthcheck:

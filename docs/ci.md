@@ -1,9 +1,9 @@
 # Integração contínua (CI)
 
 O workflow [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) roda em todo
-push de branch e em todo pull request. Ele é dividido em três jobs obrigatórios,
-nomeados exatamente como aparecem nos required checks da branch principal:
-`check`, `contracts` e `smoke`.
+push de branch e em todo pull request. Os gates obrigatórios da branch principal
+são nomeados exatamente como aparecem nos required checks: `check`, `contracts`,
+`smoke`, `e2e`, `advanced` e `image`.
 
 ## Jobs
 
@@ -49,6 +49,23 @@ Gate do perfil ADVANCED com serviços efêmeros:
 O gate avançado é obrigatório para considerar o perfil ADVANCED pronto.
 O `bun run check` local continua sem serviços externos.
 
+### `image` (deploy reproduzível)
+
+Prova que o deploy constrói a partir de um clone limpo do repositório:
+
+- `bun run check:deploy-versions` — coerência entre `.bun-version`, os
+  `ARG BUN_VERSION`/tags dos Dockerfiles e o workflow (reprova tags flutuantes
+  de runtime).
+- `docker compose config` dos compose files dos perfis SIMPLE e ADVANCED.
+- Build das imagens `Dockerfile` (API) e `Dockerfile.web` (nginx) com cache do
+  GitHub Actions.
+- `bun run test:restore` — teste automatizado de backup e restore em instância
+  efêmera do perfil SIMPLE (sondas no banco e em uploads, `down -v`, restore e
+  verificação de integridade + `/health/ready`).
+
+Qualquer falha reprova o job; o deploy considerado reproduzível é somente o que
+este job constrói.
+
 ## Reprodução local
 
 Antes de abrir um pull request, rode os mesmos gates:
@@ -70,6 +87,14 @@ DATABASE_URL=/tmp/azy-smoke.db JWT_SECRET=local-smoke PORT=3001 \
   bun run --cwd apps/api src/index.ts &
 AZYBOARD_API_TARGET=http://localhost:3001 bun run dev:web &
 bun run test:smoke
+
+# image: deploy reproduzível (exige Docker + Docker Compose v2)
+bun run check:deploy-versions
+docker compose -f docker-compose.simple.yml config -q
+docker compose -f docker-compose.advanced.yml config -q
+docker build -f Dockerfile -t azyboard-api:local .
+docker build -f Dockerfile.web -t azyboard-web:local .
+bun run test:restore
 ```
 
 ## Orçamento de bundle do Web
@@ -152,6 +177,8 @@ principal, marque como obrigatórios os jobs:
 - `contracts`
 - `smoke`
 - `e2e`
+- `advanced`
+- `image`
 
 ### Trabalho solo
 
