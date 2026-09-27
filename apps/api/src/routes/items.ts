@@ -279,10 +279,14 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
   const assigneeIdFilter = c.req.query('assigneeId')
   const statusFilter = c.req.query('status')
   const tagIdsFilter = c.req.query('tagIds')?.split(',').filter(Boolean) ?? []
-  const requestedPage = c.req.query('page')
   const requestedLimit = c.req.query('limit')
   const cursor = c.req.query('cursor')
-  const page = Math.max(1, Number.parseInt(requestedPage ?? '1', 10) || 1)
+  const includeDescriptions = c.req.query('includeDescriptions') === 'true'
+  const requestedFields = c.req.query('fields')?.split(',').map(field => field.trim()).filter(Boolean) ?? null
+  const allowedFields = new Set(['id', 'title', 'type', 'status', 'columnId', 'isLeaf', 'parentId', 'moduleId', 'assigneeId', 'description', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'childrenCount', 'checklistProgress', 'sprintId', 'sprintName', 'tagIds', 'tagNames'])
+  const unknownField = requestedFields?.find(field => !allowedFields.has(field))
+  if (unknownField) return c.json({ error: `Campo de projeção desconhecido: ${unknownField}`, code: 'INVALID_PROJECTION', retryable: false, details: { field: unknownField } }, 422)
+  const page = Math.max(1, Number.parseInt(c.req.query('page') ?? '1', 10) || 1)
   const limit = Math.min(100, Math.max(1, Number.parseInt(requestedLimit ?? '50', 10) || 50))
   let cursorOffset = 0
   if (cursor) {
@@ -357,22 +361,32 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
       : null,
   }))
 
-  if (leafOnly) {
-    const leafItems = withProgress.filter(i => i.isLeaf)
-    if (requestedPage || requestedLimit || cursor) {
-      const offset = cursor ? cursorOffset : (page - 1) * limit
-      const end = offset + limit
-      return c.json({ data: leafItems.slice(offset, end), page, limit, total: leafItems.length, hasMore: end < leafItems.length, nextCursor: end < leafItems.length ? Buffer.from(String(end)).toString('base64url') : null })
-    }
-    return c.json(leafItems)
-  }
+  const projected = withProgress.map(item => {
+    const flat = {
+      ...item,
+      sprintId: item.itemSprints[0]?.sprintId ?? null,
+      sprintName: null,
+      tagIds: item.itemTags.map(link => link.tag.id),
+      tagNames: item.itemTags.map(link => link.tag.name),
+    } as Record<string, unknown>
+    delete flat.itemSprints
+    delete flat.itemTags
+    if (!includeDescriptions) for (const field of ['description', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes']) delete flat[field]
+    if (!requestedFields) return flat
+    const minimum = new Set(['id', 'title', 'type', 'status', 'isLeaf'])
+    return Object.fromEntries(Object.entries(flat).filter(([field]) => minimum.has(field) || requestedFields.includes(field)))
+  })
 
-  if (requestedPage || requestedLimit || cursor) {
+  if (leafOnly) {
+    const leafItems = projected.filter(i => i.isLeaf)
     const offset = cursor ? cursorOffset : (page - 1) * limit
     const end = offset + limit
-    return c.json({ data: withProgress.slice(offset, end), page, limit, total: withProgress.length, hasMore: end < withProgress.length, nextCursor: end < withProgress.length ? Buffer.from(String(end)).toString('base64url') : null })
+    return c.json({ data: leafItems.slice(offset, end), page, limit, total: leafItems.length, hasMore: end < leafItems.length, nextCursor: end < leafItems.length ? Buffer.from(String(end)).toString('base64url') : null })
   }
-  return c.json(withProgress)
+
+  const offset = cursor ? cursorOffset : (page - 1) * limit
+  const end = offset + limit
+  return c.json({ data: projected.slice(offset, end), page, limit, total: projected.length, hasMore: end < projected.length, nextCursor: end < projected.length ? Buffer.from(String(end)).toString('base64url') : null })
 })
 
 // GET /projects/:projectId/items/archived — listar todos os items arquivados do projeto

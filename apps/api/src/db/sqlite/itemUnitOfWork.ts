@@ -675,9 +675,9 @@ export function createSqliteItemUnitOfWork(database: Database) {
       })
     },
 
-    applyItemBatch(context: MutationContext, projectId: string, updates: BatchItemUpdate[]): Array<{ id: string; changes: Record<string, unknown> }> {
+    applyItemBatch(context: MutationContext, projectId: string, updates: BatchItemUpdate[]): Array<{ id: string; identity: Record<string, unknown>; changes: Record<string, unknown> }> {
       return runSqliteAtomic(database, () => {
-        const output: Array<{ id: string; changes: Record<string, unknown> }> = []
+        const output: Array<{ id: string; identity: Record<string, unknown>; changes: Record<string, unknown> }> = []
         for (const operation of updates) {
           const current = itemById(database, context.tenantId, projectId, operation.itemId)
           if (!current) throw new Error('ITEM_NOT_FOUND')
@@ -708,7 +708,7 @@ export function createSqliteItemUnitOfWork(database: Database) {
               }
             }
           }
-          if (operation.responseChanges) output.push({ id: operation.itemId, changes: operation.responseChanges })
+          if (operation.responseChanges) output.push({ id: operation.itemId, identity: operation.responseIdentity ?? { id: operation.itemId }, changes: operation.responseChanges })
         }
         return output
       })

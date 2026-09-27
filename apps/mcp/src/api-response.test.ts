@@ -29,4 +29,25 @@ describe('MCP API adapter', () => {
       globalThis.fetch = originalFetch
     }
   })
+
+  test('preserva retryable falso para validação, autorização e conflito', async () => {
+    const api = await makeApiCall('http://mcp-test.invalid', 'test-key')
+    const originalFetch = globalThis.fetch
+    const responses = [
+      { code: 'INVALID_REQUEST', message: 'payload inválido' },
+      { code: 'FORBIDDEN', message: 'sem permissão' },
+      { code: 'CONFLICT', message: 'estado conflitante' },
+    ]
+    try {
+      for (const response of responses) {
+        globalThis.fetch = (async () => new Response(JSON.stringify({ error: { ...response, retryable: false, details: { path: 'items' } } }), {
+          status: 422,
+          headers: { 'content-type': 'application/json' },
+        })) as unknown as typeof fetch
+        await expect(api('/projects')).rejects.toMatchObject({ code: response.code, retryable: false, details: { path: 'items' } })
+      }
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
 })

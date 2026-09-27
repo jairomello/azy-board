@@ -132,13 +132,18 @@ describe('regressão dos fluxos recorrentes do Azy Agent', () => {
     const wrongParent = await createItem(project.id, { title: 'Task de outra história', type: 'TASK', parentId: otherStory.id, columnId: source.id })
     const wrongColumn = await createItem(project.id, { title: 'Task em outra lista', type: 'TASK', parentId: story.id, columnId: destination.id })
 
-    const result = await json<{ matchedCount: number; updatedCount: number }>(
+    const result = await json<{ matchedCount: number; updatedCount: number; applied?: { column?: { id: string; name: string } }; items: Array<{ identity: { id: string; title: string }; changes: { column: { id: string; name: string } } }> }>(
       `/projects/${project.id}/batch/items/update`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filters: { itemIds: null, types: ['TASK', 'BUG'], statuses: null, sprint: null, version: null, module: null, assignee: null, parent: 'História base', column: source.name, tag: null, titleContains: null, onlyLeaves: true, matchAll: false }, changes: [{ field: 'column', operation: 'SET', value: destination.name }] }) },
     )
 
     expect(result.response.status).toBe(200)
     expect(result.body).toMatchObject({ matchedCount: 2, updatedCount: 2 })
+    expect(result.body.applied?.column).toMatchObject({ id: destination.id, name: destination.name })
+    expect(result.body.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ identity: expect.objectContaining({ id: task.id, title: 'Task selecionada' }), changes: { column: { id: destination.id, name: destination.name } } }),
+      expect.objectContaining({ identity: expect.objectContaining({ id: bug.id, title: 'Bug selecionado' }), changes: { column: { id: destination.id, name: destination.name } } }),
+    ]))
     const persisted = await db.select().from(items).where(eq(items.projectId, project.id))
     expect(persisted.find(item => item.id === task.id)?.columnId).toBe(destination.id)
     expect(persisted.find(item => item.id === bug.id)?.columnId).toBe(destination.id)

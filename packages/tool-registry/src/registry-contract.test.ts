@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { getSharedToolDefinitions, requiredFieldsFor, SHARED_TOOL_NAMES } from './registry.js'
+import { applyOptionalFields, getSharedToolDefinitions, nestedRequiredFieldsFor, requiredFieldsFor, SHARED_TOOL_NAMES, toolFields } from './registry.js'
 import { validateToolArguments } from './validation.js'
 import { TOOL_TEXT_LIMITS } from './limits.js'
 
@@ -56,6 +56,41 @@ describe('contrato de fonte única do catálogo MCP', () => {
     for (const definition of definitions) walk(definition.name, definition.inputSchema)
   })
 
+  test('a visão MCP aplica required real em cada nó aninhado declarado', () => {
+    const findNode = (schema: unknown, path: string): { required?: string[] } | undefined => {
+      let node = schema as Record<string, unknown>
+      for (const segment of path.split('.')) {
+        const isArray = segment.endsWith('[]')
+        const property = isArray ? segment.slice(0, -2) : segment
+        node = (node.properties as Record<string, unknown>)[property] as Record<string, unknown>
+        if (!node) return undefined
+        if (isArray) node = node.items as Record<string, unknown>
+      }
+      return node as { required?: string[] }
+    }
+
+    for (const definition of definitions) {
+      const exposed = applyOptionalFields(definition.inputSchema, definition.name)
+      for (const [path, required] of Object.entries(nestedRequiredFieldsFor(definition.name))) {
+        expect(findNode(exposed, path), `${definition.name}.${path} ausente`).toBeDefined()
+        expect(findNode(exposed, path)!.required, `${definition.name}.${path}`).toEqual(required)
+      }
+    }
+  })
+
+  test('caminho nested órfão reprova e ferramenta sem nested preserva o schema', () => {
+    const projectFields = toolFields.create_project!
+    const original = projectFields.nested
+    try {
+      projectFields.nested = { orphan: [] }
+      expect(() => applyOptionalFields(byName.get('create_project')!.inputSchema, 'create_project')).toThrow('orphan')
+    } finally {
+      projectFields.nested = original
+    }
+    const exposed = applyOptionalFields(byName.get('create_project')!.inputSchema, 'create_project')
+    expect(exposed.required).toEqual(['name'])
+  })
+
   test('validador aceita os campos obrigatórios declarados e rejeita a omissão', () => {
     for (const definition of definitions) {
       const fields = requiredFieldsFor(definition.name)
@@ -78,6 +113,31 @@ describe('contrato de fonte única do catálogo MCP', () => {
   test('add_checklist_item_to_task exige checklistName e text', () => {
     expect(new Set(requiredFieldsFor('add_checklist_item_to_task'))).toEqual(new Set(['projectId', 'itemId', 'checklistName', 'text']))
     expect(() => validateToolArguments('add_checklist_item_to_task', { projectId: 'p', itemId: 'i' })).toThrow()
+  })
+
+  test('formas mínimas aninhadas passam na validação', () => {
+    expect(() => validateToolArguments('update_items', {
+      projectId: 'p',
+      filters: { sprint: 'CURRENT' },
+      changes: [{ field: 'title', operation: 'SET', value: 'Novo título' }],
+    })).not.toThrow()
+    expect(() => validateToolArguments('update_checklist', {
+      projectId: 'p', itemId: 'i', checklistId: 'c', changes: { name: 'Nova checklist' },
+    })).not.toThrow()
+    expect(() => validateToolArguments('update_item_log', {
+      projectId: 'p', itemId: 'i', logId: 'l', changes: { activity: 'Registro' },
+    })).not.toThrow()
+  })
+
+  test('changes aceita value nulo para operação que não usa valor', () => {
+    expect(() => validateToolArguments('update_items', {
+      projectId: 'p', filters: { matchAll: true }, changes: [{ field: 'description', operation: 'CLEAR', value: null }],
+    })).not.toThrow()
+  })
+
+  test('update_checklist e update_item_log rejeitam formato ou chave desconhecida', () => {
+    expect(() => validateToolArguments('update_checklist', { projectId: 'p', itemId: 'i', checklistId: 'c', changes: [] })).toThrow('changes deve ser um objeto')
+    expect(() => validateToolArguments('update_item_log', { projectId: 'p', itemId: 'i', logId: 'l', changes: { field: 'activity' } })).toThrow('Campo de alteração inválido')
   })
 
   test('limites de texto do schema coincidem com os aplicados pela validação', () => {

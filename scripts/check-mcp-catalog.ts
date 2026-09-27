@@ -19,6 +19,8 @@ const checklistSchemas = checklistTools.filter(tool => {
   if (['check_item', 'update_checklist_item', 'delete_checklist_item'].includes(tool.name)) fields.push('checklistItemId')
   return fields.some(field => typeof properties[field] !== 'object' || !String((properties[field] as { description?: string }).description ?? '').length)
 })
+const checkItems = definitions.find(tool => tool.name === 'check_items')
+const checkItemsValid = checkItems?.inputSchema.properties.items && (checkItems.inputSchema.properties.items as { maxItems?: number }).maxItems === 100
 
 // --- Garantias de fonte única (item 25) ---
 const missingRouting = definitions.filter(tool => !tool.routing?.domain || !tool.routing?.scope || !tool.routing?.operation || !tool.routing?.risk)
@@ -69,6 +71,7 @@ if (incomplete.length > 0) throw new Error(`Ferramentas MCP sem metadata/schema 
 if (missingDispatchers.length > 0) throw new Error(`Ferramentas MCP sem dispatcher: ${missingDispatchers.join(', ')}`)
 if (!checklistDocumentation) throw new Error('Documentação de checklist deve explicar itemId, checklistId e checklistItemId')
 if (checklistSchemas.length > 0) throw new Error(`Ferramentas de checklist sem descrições semânticas: ${checklistSchemas.map(tool => tool.name).join(', ')}`)
+if (!checkItemsValid || !documentation.includes('`check_items`')) throw new Error('check_items deve declarar limite 100 e documentação')
 if (missingRouting.length > 0) throw new Error(`Ferramentas MCP sem classificação de routing: ${missingRouting.map(tool => tool.name).join(', ')}`)
 if (orphanDefinitions.length > 0) throw new Error(`Definições MCP sem ferramenta registrada: ${orphanDefinitions.map(tool => tool.name).join(', ')}`)
 if (requiredMismatches.length > 0) throw new Error(`Obrigatórios do schema que a validação não exige: ${requiredMismatches.map(tool => tool.name).join(', ')}`)

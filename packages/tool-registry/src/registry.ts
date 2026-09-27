@@ -4,7 +4,7 @@
 import type { AssistantScreen } from '@azy-board/assistant-contracts'
 import { MCP_TOOL_POLICIES, type McpPolicy } from './policies.js'
 import { TOOL_TEXT_LIMITS } from './limits.js'
-import { toolFields, requiredFieldsFor, isRegisteredTool, OPERATION_ARGS_REQUIRED, SHARED_TOOL_NAMES } from './fields.js'
+import { toolFields, requiredFieldsFor, nestedRequiredFieldsFor, isRegisteredTool, OPERATION_ARGS_REQUIRED, SHARED_TOOL_NAMES } from './fields.js'
 
 export type ToolSource = 'mcp' | 'azy-agent'
 export type HumanToolContext = {
@@ -41,9 +41,21 @@ export type ToolDefinition = {
   policy: McpPolicy
   namespace: 'discovery' | 'planning' | 'mutation'
   routing: ToolRoutingMetadata
+  responseSchema?: SchemaNode
 }
 
-export { toolFields, requiredFieldsFor, isRegisteredTool, OPERATION_ARGS_REQUIRED, SHARED_TOOL_NAMES }
+export type ItemMutationResponse = {
+  matchedCount: number
+  updatedCount: number
+  applied?: Record<string, unknown>
+  items: Array<{
+    id: string
+    identity: Record<string, unknown>
+    changes: Record<string, unknown>
+  }>
+}
+
+export { toolFields, requiredFieldsFor, nestedRequiredFieldsFor, isRegisteredTool, OPERATION_ARGS_REQUIRED, SHARED_TOOL_NAMES }
 
 const discovery = new Set(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_shadow_markdown', 'list_tasks', 'list_modules', 'get_current_sprint', 'list_columns', 'list_sprints', 'list_tags', 'list_versions', 'list_members', 'list_squads', 'list_item_logs', 'list_cost_centers', 'list_attachments', 'list_checklists'])
 const planning = new Set(['claim_task', 'list_tasks', 'list_checklists', 'create_checklist', 'add_checklist_item', 'add_checklist_item_to_task', 'check_item', 'get_shadow_markdown'])
@@ -105,6 +117,7 @@ const classifications: Record<string, ToolClassification> = {
   add_checklist_item: { domain: 'evidence', scope: 'item', operation: 'create' },
   add_checklist_item_to_task: { domain: 'evidence', scope: 'item', operation: 'create' },
   check_item: { domain: 'evidence', scope: 'item', operation: 'update' },
+  check_items: { domain: 'evidence', scope: 'item', operation: 'update' },
   update_checklist_item: { domain: 'evidence', scope: 'item', operation: 'update' },
   delete_checklist_item: { domain: 'evidence', scope: 'item', operation: 'delete' },
 
@@ -154,6 +167,24 @@ const checklistItemChangeSchema = {
     dueDate: { type: ['string', 'null'], description: 'Data prevista YYYY-MM-DD; requer advancedChecklists no projeto.' },
     assigneeId: { type: ['string', 'null'], description: 'ID de membro do projeto; requer advancedChecklists no projeto.' },
     description: { type: ['string', 'null'], description: 'Descrição em Markdown (até 20000 caracteres); requer advancedChecklists no projeto.' },
+  },
+}
+
+const checklistChangeSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['name', 'position'],
+  properties: {
+    name: { type: ['string', 'null'], description: 'Novo nome da checklist.' },
+    position: { type: ['number', 'null'], description: 'Nova posição inteira da checklist.' },
+  },
+}
+
+const itemLogChangeSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['activity', 'durationMin'],
+  properties: {
+    activity: { type: ['string', 'null'], description: `Novo texto do log (até ${TOOL_TEXT_LIMITS.activity} caracteres).` },
+    durationMin: { type: ['number', 'null'], description: 'Nova duração do log em minutos.' },
   },
 }
 
@@ -208,7 +239,20 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
     ? { type: 'string', enum: ['HIERARCHICAL', 'SIMPLE'], description: 'Use only when explicitly requested.' }
     : { type: ['string', 'null'], enum: ['HIERARCHICAL', 'SIMPLE', null], description: 'Optional. Use null when the user did not specify a board mode; never ask for it.' }
   if (field === 'tagIds' || field === 'order') return nullable({ type: 'array', items: { type: 'string' } })
+  if (field === 'fields') return nullable({ type: 'array', items: { type: 'string' }, maxItems: 30, description: 'Campos da projeção; nomes desconhecidos são rejeitados.' })
   if (field === 'itemIds') return { ...nullable({ type: 'array', items: { type: 'string' } }), maxItems: 500, description: 'Item IDs to move (1 to 500).' }
+  if (field === 'items') return {
+    type: 'array', minItems: 1, maxItems: 100,
+    description: 'Passos a marcar/desmarcar; IDs ou checklistName + text/position.',
+    items: {
+      type: 'object', additionalProperties: false,
+      required: ['itemId', 'checklistId', 'checklistItemId', 'checklistName', 'text', 'position', 'checked'],
+      properties: {
+        itemId: { type: 'string' }, checklistId: { type: ['string', 'null'] }, checklistItemId: { type: ['string', 'null'] },
+        checklistName: { type: ['string', 'null'] }, text: { type: ['string', 'null'] }, position: { type: ['number', 'null'] }, checked: { type: 'boolean' },
+      },
+    },
+  }
   if (field === 'includeDescriptions') return { ...nullable({ type: 'boolean' }), description: 'Inclui description/scope/notes completos. Padrão false (texto resumido) para reduzir o payload.' }
   if (field === 'onlyLeaves' || field === 'atomic' || field === 'confirm' || field === 'dryRun' || field === 'checked') return nullable({ type: 'boolean' })
   if (field === 'advancedChecklists') return { ...nullable({ type: 'boolean' }), description: 'Habilita data, responsável e descrição nos itens de checklist do projeto (padrão false).' }
@@ -226,6 +270,7 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
   if (field === 'itemId') return nullable({ type: 'string', description: 'Board item/card ID. For checklist tools, this is the parent card that owns the checklist; never use checklistId or checklistItemId.' })
   if (field === 'checklistId') return nullable({ type: 'string', description: 'Checklist ID belonging to the board item identified by itemId.' })
   if (field === 'checklistItemId') return nullable({ type: 'string', description: 'Checklist step ID belonging to checklistId.' })
+  if (field === 'position') return nullable({ type: 'number', description: 'Posição usada para desempatar uma resolução semântica.' })
   if (field === 'checklistName') return nullable({ type: 'string', description: 'Checklist name to find or create on the board item identified by itemId.' })
   if (field === 'text') return nullable({ type: 'string', description: `Checklist step text (até ${TOOL_TEXT_LIMITS.text} caracteres).` })
   if (field === 'title') return nullable({ type: 'string', description: `Título do item (até ${TOOL_TEXT_LIMITS.title} caracteres).` })
@@ -235,6 +280,69 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
   if (field === 'ref') return nullable({ type: 'string', description: `Referência curta usada por parentRef (até ${TOOL_TEXT_LIMITS.ref} caracteres).` })
   if (field === 'columnName') return nullable({ type: 'string', description: `Nome exato da coluna de destino (até ${TOOL_TEXT_LIMITS.columnName} caracteres).` })
   return nullable({ type: 'string' })
+}
+
+type SchemaNode = Record<string, unknown>
+
+const itemMutationResponseSchema: SchemaNode = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['matchedCount', 'updatedCount', 'items'],
+  properties: {
+    matchedCount: { type: 'number' },
+    updatedCount: { type: 'number' },
+    applied: { type: ['object', 'null'], additionalProperties: true },
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'identity', 'changes'],
+        properties: {
+          id: { type: 'string' },
+          identity: { type: 'object', additionalProperties: true },
+          changes: { type: 'object', additionalProperties: true },
+        },
+      },
+    },
+  },
+}
+
+const checkItemsResponseSchema: SchemaNode = {
+  type: 'object', additionalProperties: false, required: ['matched', 'updated', 'items', 'failures'],
+  properties: {
+    matched: { type: 'number' }, updated: { type: 'number' },
+    items: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    failures: { type: 'array', items: { type: 'object', additionalProperties: true } },
+  },
+}
+
+export function applyOptionalFields(inputSchema: ToolDefinition['inputSchema'], toolName: string): ToolDefinition['inputSchema'] {
+  const nested = nestedRequiredFieldsFor(toolName)
+  const matched = new Set<string>()
+
+  const walk = (node: unknown, path: string): unknown => {
+    if (!node || typeof node !== 'object') return node
+    const current = node as SchemaNode
+    const types = Array.isArray(current.type) ? current.type : [current.type]
+    const clone: SchemaNode = { ...current }
+    if (Object.hasOwn(nested, path)) {
+      clone.required = [...nested[path]!]
+      matched.add(path)
+    }
+    if (current.properties && typeof current.properties === 'object') {
+      const properties = current.properties as Record<string, unknown>
+      clone.properties = Object.fromEntries(Object.entries(properties).map(([key, child]) => [key, walk(child, path ? `${path}.${key}` : key)]))
+    }
+    if (current.items && types.includes('array')) clone.items = walk(current.items, `${path}[]`)
+    return clone
+  }
+
+  const result = walk(inputSchema, '') as ToolDefinition['inputSchema']
+  const missing = Object.keys(nested).filter(path => !matched.has(path))
+  if (missing.length > 0) throw new Error(`Nó nested inexistente em ${toolName}: ${missing.join(', ')}`)
+  const rootRequired = requiredFieldsFor(toolName)
+  return { ...result, required: [...rootRequired] }
 }
 
 const friendlyNames: Record<string, string> = {
@@ -262,7 +370,8 @@ const toolDescriptions: Record<string, string> = {
   update_items: 'Atomically update one or many active items selected by filters. For bulk moves, set filters.column to the source column, preserve every other requested criterion, and add a column SET change with the destination. Generic tasks or cards in a bulk move covers leaf TASK and BUG items unless the user explicitly restricts the type. Also supports fixed values, clearing fields, relative dates, today, and copying each item creation date. Use itemIds for one item and matchAll only for every item without narrower filters.',
   add_checklist_item_to_task: 'Add a checklist step to a board card. itemId is the parent card ID, checklistName is the checklist name, and the tool creates the checklist when it does not exist. Use this when you do not already have a checklistId; it returns both checklist and checklist item IDs. Accepts optional dueDate, assigneeId and description when the project enables advancedChecklists.',
   add_checklist_item: 'Add a step to an existing checklist. itemId is the parent board card ID; checklistId must belong to that card; text is the step text. Do not use checklistId or checklistItemId as itemId. Accepts optional dueDate, assigneeId and description when the project enables advancedChecklists.',
-  check_item: 'Set a checklist step state. itemId is the parent board card ID, checklistId belongs to that card, and checklistItemId belongs to that checklist.',
+  check_item: 'Set a checklist step state by IDs or by itemId + checklistName + text/position. Ambiguous text requires IDs or position.',
+  check_items: 'Marca ou desmarca até 100 passos de checklist; resolve por IDs ou checklistName + text/position e é atômico por card.',
   create_checklist: 'Create a named checklist on a board card. itemId is the parent card ID, not a checklist or checklist item ID.',
   list_checklists: 'List checklists and their steps for a board card. itemId is the parent card ID. Returns dueDate, assigneeId and description on steps when the project enables advancedChecklists.',
   batch_move: 'Move up to 500 leaf items to a column in one atomic operation. Requires itemIds and the exact destination column name (or column ID). Prefer this over multiple move_task calls when moving several cards at once. For filter-based bulk moves without explicit IDs, use update_items.',
@@ -271,7 +380,7 @@ const toolDescriptions: Record<string, string> = {
   get_board: 'Retorna colunas, módulos e itens do board do projeto. As descrições longas vêm resumidas por padrão; use includeDescriptions=true para o texto completo. Em projetos grandes, prefira list_tasks com filtros.',
   get_tree: 'Retorna a hierarquia de itens (EPIC > STORY > TASK/BUG), filtrável por moduleId, assigneeId e sprintId. Descrições resumidas por padrão; use includeDescriptions=true para o texto completo.',
   get_shadow_markdown: 'Retorna o board do projeto em Markdown (board.md) para leitura rápida.',
-  list_tasks: 'Lista itens do projeto; onlyLeaves é true por padrão. Filtros opcionais: type, status, assigneeId, sprintId, tagIds, parentId, columnId, moduleId, com paginação por limit/cursor. Omitir um filtro equivale a não filtrar.',
+  list_tasks: 'Lista itens do projeto; onlyLeaves é true, includeDescriptions é false e limit é 50 por padrão. Filtros opcionais: type, status, assigneeId, sprintId, tagIds, parentId, columnId, moduleId, com projeção fields e paginação por limit/cursor. Omitir um filtro equivale a não filtrar.',
   list_modules: 'Lista os módulos do projeto.',
   get_current_sprint: 'Retorna a sprint ativa (CURRENT) do projeto, se houver.',
   list_columns: 'Lista as colunas do board com seus status base.',
@@ -323,11 +432,16 @@ export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinit
     inputSchema: (() => {
       const { fields, required: mandatoryFields } = toolFields[name]!
       const mandatory = new Set(mandatoryFields)
-      return { type: 'object' as const, properties: Object.fromEntries(fields.map(field => [field, name === 'update_checklist_item' && field === 'changes' ? checklistItemChangeSchema : schemaFor(field, mandatory.has(field))])), required: fields, additionalProperties: false }
+      return { type: 'object' as const, properties: Object.fromEntries(fields.map(field => [field,
+        name === 'update_checklist_item' && field === 'changes' ? checklistItemChangeSchema
+          : name === 'update_checklist' && field === 'changes' ? checklistChangeSchema
+            : name === 'update_item_log' && field === 'changes' ? itemLogChangeSchema
+              : schemaFor(field, mandatory.has(field))])), required: fields, additionalProperties: false }
     })(),
     policy: MCP_TOOL_POLICIES[name]!,
     namespace: discovery.has(name) ? 'discovery' : planning.has(name) ? 'planning' : 'mutation',
     routing: routingFor(name),
+    ...(['update_item', 'update_items'].includes(name) ? { responseSchema: itemMutationResponseSchema } : name === 'check_items' ? { responseSchema: checkItemsResponseSchema } : {}),
   }))
 }
 

@@ -5,7 +5,10 @@
 // Este módulo é compartilhado entre registry.ts e validation.ts para evitar
 // import circular.
 
-export type ToolFields = { fields: string[]; required: string[] }
+export type ToolFields = { fields: string[]; required: string[]; nested?: Record<string, string[]> }
+
+// Obrigatórios reais de `operations[].args` (batch e create_project_structure).
+export const OPERATION_ARGS_REQUIRED = ['ref', 'title', 'type', 'assignToCurrentUser'] as const
 
 export const toolFields: Record<string, ToolFields> = {
   list_projects: { fields: ['limit', 'cursor'], required: [] },
@@ -14,7 +17,7 @@ export const toolFields: Record<string, ToolFields> = {
   get_tree: { fields: ['projectId', 'onlyLeaves', 'includeDescriptions'], required: ['projectId'] },
   get_shadow_markdown: { fields: ['projectId'], required: ['projectId'] },
   get_current_sprint: { fields: ['projectId'], required: ['projectId'] },
-  list_tasks: { fields: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'onlyLeaves', 'limit', 'cursor'], required: ['projectId'] },
+  list_tasks: { fields: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'onlyLeaves', 'includeDescriptions', 'fields', 'limit', 'cursor'], required: ['projectId'] },
   list_modules: { fields: ['projectId'], required: ['projectId'] },
   list_columns: { fields: ['projectId'], required: ['projectId'] },
   list_sprints: { fields: ['projectId'], required: ['projectId'] },
@@ -35,9 +38,10 @@ export const toolFields: Record<string, ToolFields> = {
   create_checklist: { fields: ['projectId', 'itemId', 'name'], required: ['projectId', 'itemId', 'name'] },
   add_checklist_item: { fields: ['projectId', 'itemId', 'checklistId', 'text', 'dueDate', 'assigneeId', 'description'], required: ['projectId', 'itemId', 'checklistId', 'text'] },
   add_checklist_item_to_task: { fields: ['projectId', 'itemId', 'checklistName', 'text', 'dueDate', 'assigneeId', 'description'], required: ['projectId', 'itemId', 'checklistName', 'text'] },
-  check_item: { fields: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'], required: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checked'] },
-  update_item: { fields: ['projectId', 'itemId', 'changes'], required: ['projectId', 'itemId', 'changes'] },
-  update_items: { fields: ['projectId', 'filters', 'changes'], required: ['projectId', 'filters', 'changes'] },
+  check_item: { fields: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checklistName', 'text', 'position', 'checked'], required: ['projectId', 'itemId', 'checked'] },
+  check_items: { fields: ['projectId', 'items'], required: ['projectId', 'items'] },
+  update_item: { fields: ['projectId', 'itemId', 'changes'], required: ['projectId', 'itemId', 'changes'], nested: { 'changes[]': ['field', 'operation'] } },
+  update_items: { fields: ['projectId', 'filters', 'changes'], required: ['projectId', 'filters', 'changes'], nested: { filters: [], 'changes[]': ['field', 'operation'] } },
   delete_item: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
   delete_project: { fields: ['projectId'], required: ['projectId'] },
   archive_item: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
@@ -45,14 +49,14 @@ export const toolFields: Record<string, ToolFields> = {
   set_item_tags: { fields: ['projectId', 'itemId', 'tagIds'], required: ['projectId', 'itemId', 'tagIds'] },
   create_item_log: { fields: ['projectId', 'itemId', 'activity'], required: ['projectId', 'itemId', 'activity'] },
   reorder_items: { fields: ['projectId', 'columnId', 'order'], required: ['projectId', 'columnId', 'order'] },
-  update_checklist: { fields: ['projectId', 'itemId', 'checklistId', 'changes'], required: ['projectId', 'itemId', 'checklistId', 'changes'] },
+  update_checklist: { fields: ['projectId', 'itemId', 'checklistId', 'changes'], required: ['projectId', 'itemId', 'checklistId', 'changes'], nested: { changes: [] } },
   delete_checklist: { fields: ['projectId', 'itemId', 'checklistId'], required: ['projectId', 'itemId', 'checklistId'] },
-  update_checklist_item: { fields: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'changes'], required: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'changes'] },
+  update_checklist_item: { fields: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checklistName', 'text', 'position', 'changes'], required: ['projectId', 'itemId', 'changes'], nested: { changes: [] } },
   delete_checklist_item: { fields: ['projectId', 'itemId', 'checklistId', 'checklistItemId'], required: ['projectId', 'itemId', 'checklistId', 'checklistItemId'] },
-  update_item_log: { fields: ['projectId', 'itemId', 'logId', 'changes'], required: ['projectId', 'itemId', 'logId', 'changes'] },
-  batch: { fields: ['projectId', 'operations'], required: ['projectId', 'operations'] },
+  update_item_log: { fields: ['projectId', 'itemId', 'logId', 'changes'], required: ['projectId', 'itemId', 'logId', 'changes'], nested: { changes: [] } },
+  batch: { fields: ['projectId', 'operations'], required: ['projectId', 'operations'], nested: { 'operations[].args': [...OPERATION_ARGS_REQUIRED] } },
   create_project: { fields: ['name', 'description', 'boardMode', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], required: ['name'] },
-  create_project_structure: { fields: ['name', 'description', 'boardMode', 'managerUserId', 'operations', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], required: ['name', 'operations'] },
+  create_project_structure: { fields: ['name', 'description', 'boardMode', 'managerUserId', 'operations', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], required: ['name', 'operations'], nested: { 'operations[].args': [...OPERATION_ARGS_REQUIRED] } },
   update_project: { fields: ['projectId', 'name', 'description', 'boardMode', 'managerUserId', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], required: ['projectId'] },
   create_module: { fields: ['projectId', 'name'], required: ['projectId', 'name'] },
   create_column: { fields: ['projectId', 'name', 'baseStatus'], required: ['projectId', 'name', 'baseStatus'] },
@@ -76,10 +80,9 @@ export function requiredFieldsFor(name: string): string[] {
   return toolFields[name]?.required ?? []
 }
 
-// Obrigatórios reais de `operations[].args` (batch e create_project_structure),
-// coerentes com a validação em validation.ts. O schema interno mantém todos os
-// campos em `required` para o modo estrito; a exposição MCP usa esta lista.
-export const OPERATION_ARGS_REQUIRED = ['ref', 'title', 'type', 'assignToCurrentUser'] as const
+export function nestedRequiredFieldsFor(name: string): Record<string, string[]> {
+  return toolFields[name]?.nested ?? {}
+}
 
 export function isRegisteredTool(name: string): boolean {
   return Object.hasOwn(toolFields, name)

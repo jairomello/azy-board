@@ -40,7 +40,13 @@ describe('MCP protocol handlers', () => {
     const { client } = await connectedClient()
     const result = await client.callTool({ name: 'create_task', arguments: {} })
     expect(result.isError).toBe(true)
-    expect(result.structuredContent).toMatchObject({ error: { code: 'MCP_TOOL_ERROR', retryable: false, details: null } })
+    expect(result.structuredContent).toMatchObject({
+      error: {
+        code: 'MCP_VALIDATION_ERROR',
+        retryable: false,
+        details: { path: 'projectId', cause: expect.stringContaining('Campo obrigatório'), snippet: expect.any(String) },
+      },
+    })
     expect(JSON.stringify(result)).not.toContain('at ')
   })
 
@@ -92,5 +98,19 @@ describe('MCP protocol handlers', () => {
     })
     expect(result.isError).toBe(true)
     expect(JSON.stringify(result.structuredContent)).not.toContain('excede o limite')
+  })
+
+  test('retorna caminho, causa e snippet mínimo para campo inválido', async () => {
+    const { client } = await connectedClient()
+    const result = await client.callTool({ name: 'update_checklist_item', arguments: {
+      projectId: 'p', itemId: 'i', checklistId: 'c', checklistItemId: 'ci',
+      changes: { campoDesconhecido: 'x' },
+    } })
+    expect(result.structuredContent).toMatchObject({
+      error: {
+        code: 'MCP_VALIDATION_ERROR',
+        details: { path: 'changes.campoDesconhecido', cause: expect.stringContaining('inválido'), snippet: expect.any(String) },
+      },
+    })
   })
 })

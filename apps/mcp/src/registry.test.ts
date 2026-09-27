@@ -54,6 +54,14 @@ describe('shared MCP/Azy Agent registry', () => {
     expect(getSharedToolDefinitions(['add_checklist_item_to_task'])[0]?.description).toContain('creates the checklist')
   })
 
+  test('registra check_items com limite e política de escrita', () => {
+    const tool = getSharedToolDefinitions(['check_items'])[0]!
+    expect(tool.policy.localRole).toBe('MEMBER')
+    expect(tool.inputSchema.properties.items).toMatchObject({ type: 'array', maxItems: 100 })
+    expect(tool.routing.operation).toBe('update')
+    expect(() => validateToolArguments('check_items', { projectId: 'p', items: Array.from({ length: 101 }, () => ({ itemId: 'i', checked: true })) })).toThrow('1 e 100')
+  })
+
   test('expõe campos avançados opcionais nos passos de checklist', () => {
     const add = getSharedToolDefinitions(['add_checklist_item'])[0]!
     expect(add.inputSchema.properties).toHaveProperty('dueDate')

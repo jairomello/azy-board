@@ -28,6 +28,12 @@ export function assertNonNegativeNumber(value: unknown, field: string): void {
   }
 }
 
+function assertNonNegativeInteger(value: unknown, field: string): void {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new Error(`${field} deve ser um inteiro não negativo`)
+  }
+}
+
 export function assertIsoDate(value: unknown, field: string): void {
   if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) {
     throw new Error(`${field} deve ser uma data ISO válida`)
@@ -61,6 +67,12 @@ export function validateToolArguments(name: string, args: Record<string, unknown
   if (input.limit != null && (typeof input.limit !== 'number' || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)) {
     throw new Error('limit, quando informado, deve ser um inteiro entre 1 e 100 (omita ou envie null para o padrão)')
   }
+  if (name === 'list_tasks' && input.fields != null) {
+    if (!Array.isArray(input.fields) || input.fields.length > 30 || input.fields.some(field => typeof field !== 'string' || !field.trim())) throw new Error('fields deve ser uma lista de até 30 nomes não vazios')
+    const allowed = new Set(['id', 'title', 'type', 'status', 'columnId', 'isLeaf', 'parentId', 'moduleId', 'assigneeId', 'description', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'childrenCount', 'checklistProgress', 'sprintId', 'sprintName', 'tagIds', 'tagNames'])
+    const unknown = (input.fields as string[]).find(field => !allowed.has(field))
+    if (unknown) throw new Error(`fields contém campo desconhecido: ${unknown}`)
+  }
   if ((name === 'update_item' || name === 'update_items')) {
     if (!Array.isArray(input.changes) || input.changes.length < 1 || input.changes.length > 20) throw new Error('changes deve conter entre 1 e 20 alterações')
     const fields = new Set<string>()
@@ -68,10 +80,10 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     const clearableFields = new Set(['description', 'points', 'assignee', 'column', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint'])
     const allowedFields = new Set(['title', 'description', 'priority', 'type', 'status', 'points', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint'])
     for (const raw of input.changes as Array<Record<string, unknown>>) {
-      if (!raw || typeof raw !== 'object' || Array.isArray(raw) || typeof raw.field !== 'string' || !allowedFields.has(raw.field)) throw new Error('Campo de alteração inválido')
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw) || typeof raw.field !== 'string' || !allowedFields.has(raw.field)) throw new Error('changes[] deve conter field e operation (forma mínima: [{ "field": "title", "operation": "SET" }])')
       if (fields.has(raw.field)) throw new Error(`Campo duplicado em changes: ${raw.field}`)
       fields.add(raw.field)
-      if (!['SET', 'CLEAR', 'TODAY', 'OFFSET_DAYS', 'COPY_CREATED_DATE'].includes(String(raw.operation))) throw new Error(`Operação inválida para ${raw.field}`)
+      if (!['SET', 'CLEAR', 'TODAY', 'OFFSET_DAYS', 'COPY_CREATED_DATE'].includes(String(raw.operation))) throw new Error(`changes[] deve informar operation para ${raw.field} (forma mínima: { "field": "${raw.field}", "operation": "SET" })`)
       if (raw.operation === 'SET' && (typeof raw.value !== 'string' || !raw.value.trim())) throw new Error(`Valor obrigatório para ${raw.field}`)
       if (raw.operation === 'CLEAR' && !clearableFields.has(raw.field)) throw new Error(`${raw.field} não pode ser limpo`)
       if (['TODAY', 'OFFSET_DAYS', 'COPY_CREATED_DATE'].includes(String(raw.operation)) && !dateFields.has(raw.field)) throw new Error(`${raw.operation} só pode ser usado em datas`)
@@ -80,6 +92,23 @@ export function validateToolArguments(name: string, args: Record<string, unknown
       if (raw.field === 'type' && raw.operation === 'SET') assertEnum(raw.value, 'type', ['TASK', 'BUG'])
       if (raw.field === 'status' && raw.operation === 'SET') assertEnum(raw.value, 'status', ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'])
       if (raw.field === 'points' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^\d+$/.test(raw.value))) throw new Error('points deve ser um inteiro não negativo')
+    }
+  } else if (name === 'check_item') {
+    const hasIds = typeof input.checklistId === 'string' && typeof input.checklistItemId === 'string'
+    const hasSemantic = typeof input.checklistName === 'string' && typeof input.text === 'string'
+    if ((input.checklistId !== undefined && input.checklistId !== null) !== (input.checklistItemId !== undefined && input.checklistItemId !== null)) throw new Error('check_item exige checklistId e checklistItemId juntos')
+    if (!hasIds && !hasSemantic) throw new Error('check_item requer IDs ou checklistName + text (forma mínima: { "checklistName": "Checklist", "text": "Passo", "checked": true })')
+  } else if (name === 'check_items') {
+    if (!Array.isArray(input.items) || input.items.length < 1 || input.items.length > 100) throw new Error('items deve conter entre 1 e 100 entradas')
+    for (const [index, raw] of (input.items as unknown[]).entries()) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error(`items[${index}] deve ser um objeto`)
+      const entry = raw as Record<string, unknown>
+      if (typeof entry.itemId !== 'string' || !entry.itemId.trim()) throw new Error(`items[${index}].itemId é obrigatório`)
+      if (typeof entry.checked !== 'boolean') throw new Error(`items[${index}].checked deve ser booleano`)
+      const hasIds = typeof entry.checklistId === 'string' && typeof entry.checklistItemId === 'string'
+      const hasSemantic = typeof entry.checklistName === 'string' && typeof entry.text === 'string'
+      if ((entry.checklistId != null) !== (entry.checklistItemId != null)) throw new Error(`items[${index}] exige checklistId e checklistItemId juntos`)
+      if (!hasIds && !hasSemantic) throw new Error(`items[${index}] requer IDs ou checklistName + text`)
     }
   } else if (name === 'update_checklist_item') {
     const changes = input.changes
@@ -93,13 +122,31 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     if (value.assigneeId !== undefined && value.assigneeId !== null) assertNonEmptyString(value.assigneeId, 'assigneeId', 128)
     if (value.description !== undefined && value.description !== null && typeof value.description !== 'string') throw new Error('description deve ser uma string')
     if (typeof value.description === 'string' && value.description.length > TOOL_TEXT_LIMITS.description) throw new Error(`description excede o limite de ${TOOL_TEXT_LIMITS.description} caracteres`)
+    const hasIds = typeof input.checklistId === 'string' && typeof input.checklistItemId === 'string'
+    const hasSemantic = typeof input.checklistName === 'string' && typeof input.text === 'string'
+    if ((input.checklistId !== undefined && input.checklistId !== null) !== (input.checklistItemId !== undefined && input.checklistItemId !== null)) throw new Error('update_checklist_item exige checklistId e checklistItemId juntos')
+    if (!hasIds && !hasSemantic) throw new Error('update_checklist_item requer IDs ou checklistName + text')
+  } else if (name === 'update_checklist') {
+    const changes = input.changes
+    if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new Error('changes deve ser um objeto com name e/ou position (forma mínima: { "name": "Nova checklist" })')
+    const value = changes as Record<string, unknown>
+    for (const key of Object.keys(value)) if (!['name', 'position'].includes(key)) throw new Error(`Campo de alteração inválido: ${key}`)
+    if (value.name !== undefined && value.name !== null) assertNonEmptyString(value.name, 'name', TOOL_TEXT_LIMITS.name)
+    if (value.position !== undefined && value.position !== null) assertNonNegativeInteger(value.position, 'position')
+  } else if (name === 'update_item_log') {
+    const changes = input.changes
+    if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new Error('changes deve ser um objeto com activity e/ou durationMin (forma mínima: { "activity": "Texto" })')
+    const value = changes as Record<string, unknown>
+    for (const key of Object.keys(value)) if (!['activity', 'durationMin'].includes(key)) throw new Error(`Campo de alteração inválido: ${key}`)
+    if (value.activity !== undefined && value.activity !== null) assertNonEmptyString(value.activity, 'activity', TOOL_TEXT_LIMITS.activity)
+    if (value.durationMin !== undefined && value.durationMin !== null) assertNonNegativeNumber(value.durationMin, 'durationMin')
   } else if ('changes' in input && (typeof input.changes !== 'object' || input.changes === null || Array.isArray(input.changes))) throw new Error('changes deve ser um objeto')
   if (name === 'update_items') {
     const filters = input.filters
     if (!filters || typeof filters !== 'object' || Array.isArray(filters)) throw new Error('filters deve ser um objeto')
     const value = filters as Record<string, unknown>
     const hasFilter = ['itemIds', 'types', 'statuses', 'sprint', 'version', 'module', 'assignee', 'parent', 'column', 'tag', 'titleContains', 'onlyLeaves'].some(field => value[field] !== null && value[field] !== undefined)
-    if (!hasFilter && value.matchAll !== true) throw new Error('Informe filtros ou confirme matchAll')
+    if (!hasFilter && value.matchAll !== true) throw new Error('Informe filtros ou confirme matchAll (forma mínima: { "matchAll": true } ou { "sprint": "CURRENT" })')
     if (value.itemIds !== null && value.itemIds !== undefined) assertStringArray(value.itemIds, 'itemIds', 500)
     if (value.types !== null && value.types !== undefined) {
       assertStringArray(value.types, 'types', 4)

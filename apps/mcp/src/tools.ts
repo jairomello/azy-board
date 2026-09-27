@@ -76,7 +76,7 @@ export async function toolBatchMove(api: ApiCall, args: { projectId: string; ite
 
 interface Column   { id: string; name: string; baseStatus: string }
 interface Module   { id: string; name: string; position: number }
-interface Item     { id: string; type: string; title: string; isLeaf: boolean; parentId?: string | null; columnId?: string | null; status?: string }
+interface Item     { id: string; type: string; title: string; isLeaf: boolean; parentId?: string | null; columnId?: string | null; status?: string; [key: string]: unknown }
 export interface Page<T> { data: T[]; page?: number; limit?: number; total?: number; hasMore?: boolean; nextCursor?: string | null }
 interface Checklist { id: string; name: string; position: number; items: ChecklistItem[] }
 interface ChecklistItem { id: string; text: string; checked: boolean; position: number; dueDate?: string | null; assigneeId?: string | null; description?: string | null }
@@ -293,7 +293,12 @@ export async function toolDeleteChecklist(api: ApiCall, projectId: string, itemI
   return api(`/projects/${projectId}/items/${itemId}/checklists/${checklistId}`, 'DELETE')
 }
 
-export async function toolUpdateChecklistItem(api: ApiCall, projectId: string, itemId: string, checklistId: string, checklistItemId: string, changes: Record<string, unknown>): Promise<unknown> {
+export async function toolUpdateChecklistItem(api: ApiCall, projectId: string, itemId: string, checklistId: string | undefined, checklistItemId: string | undefined, changes: Record<string, unknown>, semantic?: { checklistName?: string; text?: string; position?: number }): Promise<unknown> {
+  if (!checklistId || !checklistItemId) {
+    const resolved = await resolveChecklistStep(api, projectId, itemId, semantic?.checklistName, semantic?.text, semantic?.position)
+    checklistId = resolved.checklistId
+    checklistItemId = resolved.itemId
+  }
   return api(`/projects/${projectId}/items/${itemId}/checklists/${checklistId}/items/${checklistItemId}`, 'PATCH', changes)
 }
 
@@ -309,10 +314,10 @@ export async function toolUpdateItemLog(api: ApiCall, projectId: string, itemId:
 
 export async function toolListTasks(
   api: ApiCall,
-  args: { projectId: string; type?: string; sprintId?: string; assigneeId?: string; status?: string; tagIds?: string[]; parentId?: string; columnId?: string; moduleId?: string; onlyLeaves?: boolean; cursor?: string; limit?: number }
+  args: { projectId: string; type?: string; sprintId?: string; assigneeId?: string; status?: string; tagIds?: string[]; parentId?: string; columnId?: string; moduleId?: string; onlyLeaves?: boolean; includeDescriptions?: boolean; fields?: string[]; cursor?: string; limit?: number }
 ): Promise<Item[] | Page<Item>> {
-  const { projectId, sprintId, type, assigneeId, status, tagIds, parentId, columnId, moduleId, cursor, limit, onlyLeaves = true } = args
-  const params = new URLSearchParams({ leaf: String(onlyLeaves) })
+  const { projectId, sprintId, type, assigneeId, status, tagIds, parentId, columnId, moduleId, cursor, limit = 50, onlyLeaves = true, includeDescriptions = false, fields } = args
+  const params = new URLSearchParams({ leaf: String(onlyLeaves), limit: String(limit), includeDescriptions: String(includeDescriptions) })
   if (sprintId) params.set('sprintId', sprintId)
   if (type)     params.set('type', type)
   if (assigneeId) params.set('assigneeId', assigneeId)
@@ -322,7 +327,7 @@ export async function toolListTasks(
   if (columnId) params.set('columnId', columnId)
   if (moduleId) params.set('moduleId', moduleId)
   if (cursor) params.set('cursor', cursor)
-  if (limit) params.set('limit', String(limit))
+  if (fields?.length) params.set('fields', fields.join(','))
   return api(`/projects/${projectId}/items?${params}`) as Promise<Item[] | Page<Item>>
 }
 
@@ -501,13 +506,93 @@ export async function toolCheckItem(
   api: ApiCall,
   projectId: string,
   itemId: string,
-  checklistId: string,
-  checklistItemId: string,
-  checked: boolean
+  checklistId: string | undefined,
+  checklistItemId: string | undefined,
+  checked: boolean,
+  semantic?: { checklistName?: string; text?: string; position?: number }
 ): Promise<unknown> {
+  if (!checklistId || !checklistItemId) {
+    const resolved = await resolveChecklistStep(api, projectId, itemId, semantic?.checklistName, semantic?.text, semantic?.position)
+    checklistId = resolved.checklistId
+    checklistItemId = resolved.itemId
+  }
   return api(
     `/projects/${projectId}/items/${itemId}/checklists/${checklistId}/items/${checklistItemId}`,
     'PATCH',
     { checked }
   )
+}
+
+export type CheckItemsEntry = {
+  itemId: string
+  checklistId?: string | null
+  checklistItemId?: string | null
+  checklistName?: string | null
+  text?: string | null
+  position?: number | null
+  checked: boolean
+}
+
+export async function toolCheckItems(api: ApiCall, projectId: string, entries: CheckItemsEntry[]): Promise<unknown> {
+  if (!Array.isArray(entries) || entries.length < 1 || entries.length > 100) throw new Error('items deve conter entre 1 e 100 entradas')
+  const result = { matched: 0, updated: 0, items: [] as Array<Record<string, unknown>>, failures: [] as Array<Record<string, unknown>> }
+  const groups = new Map<string, Array<{ entry: CheckItemsEntry; index: number }>>()
+  entries.forEach((entry, index) => groups.set(entry.itemId, [...(groups.get(entry.itemId) ?? []), { entry, index }]))
+
+  for (const [itemId, group] of groups) {
+    const resolved: Array<{ entry: CheckItemsEntry; index: number; checklistId: string; checklistItemId: string; previous: boolean }> = []
+    try {
+      const checklists = await toolListChecklists(api, projectId, itemId)
+      for (const candidate of group) {
+        const { entry } = candidate
+        let checklistId = entry.checklistId ?? undefined
+        let checklistItemId = entry.checklistItemId ?? undefined
+        let previous: boolean | undefined
+        if (checklistId && checklistItemId) {
+          const checklist = checklists.find(value => value.id === checklistId)
+          const step = checklist?.items.find(value => value.id === checklistItemId)
+          if (!step) throw new Error(`CHECKLIST_ITEM_NOT_FOUND: item ${candidate.index} não pertence ao card ${itemId}`)
+          previous = step.checked
+        } else {
+          const semantic = await resolveChecklistStep(api, projectId, itemId, entry.checklistName ?? undefined, entry.text ?? undefined, entry.position ?? undefined)
+          checklistId = semantic.checklistId
+          checklistItemId = semantic.itemId
+          const checklist = checklists.find(value => value.id === checklistId)
+          previous = checklist?.items.find(value => value.id === checklistItemId)?.checked
+        }
+        if (!checklistId || !checklistItemId || previous === undefined) throw new Error(`CHECKLIST_ITEM_NOT_FOUND: item ${candidate.index} não foi localizado`)
+        resolved.push({ entry, index: candidate.index, checklistId, checklistItemId, previous })
+      }
+
+      const applied: typeof resolved = []
+      try {
+        for (const value of resolved) {
+          await api(`/projects/${projectId}/items/${itemId}/checklists/${value.checklistId}/items/${value.checklistItemId}`, 'PATCH', { checked: value.entry.checked })
+          applied.push(value)
+        }
+      } catch (error) {
+        await Promise.allSettled(applied.map(value => api(`/projects/${projectId}/items/${itemId}/checklists/${value.checklistId}/items/${value.checklistItemId}`, 'PATCH', { checked: value.previous })))
+        throw error
+      }
+      result.matched += resolved.length
+      result.updated += applied.length
+      result.items.push(...applied.map(value => ({ index: value.index, itemId, checklistId: value.checklistId, checklistItemId: value.checklistItemId, checked: value.entry.checked })))
+    } catch (error) {
+      const code = error instanceof Error ? error.message.split(':', 1)[0] : 'CHECK_ITEMS_FAILED'
+      const message = error instanceof Error ? error.message : 'Lote rejeitado; nenhuma alteração foi aplicada'
+      result.failures.push(...group.map(value => ({ itemId, index: value.index, code, message })))
+    }
+  }
+  return result
+}
+
+async function resolveChecklistStep(api: ApiCall, projectId: string, itemId: string, checklistName?: string, text?: string, position?: number): Promise<{ checklistId: string; itemId: string }> {
+  const normalized = (value: string) => value.trim().toLocaleLowerCase('pt-BR').replace(/\s+/g, ' ')
+  const checklists = await toolListChecklists(api, projectId, itemId)
+  const checklistsByName = checklists.filter(checklist => normalized(checklist.name) === normalized(checklistName ?? ''))
+  if (checklistsByName.length !== 1) throw new Error(checklistsByName.length ? `CHECKLIST_AMBIGUOUS: checklistName "${checklistName}" corresponde a ${checklistsByName.length} checklists; informe checklistId` : `CHECKLIST_NOT_FOUND: checklistName "${checklistName}" não existe no card; liste as checklists`)
+  const candidates = checklistsByName[0]!.items.filter(step => normalized(step.text) === normalized(text ?? ''))
+  const positioned = position === undefined ? candidates : candidates.filter(step => step.position === position)
+  if (positioned.length !== 1) throw new Error(positioned.length ? `CHECKLIST_ITEM_AMBIGUOUS: use checklistItemId ou position; candidatos: ${positioned.map(step => step.id).join(', ')}` : `CHECKLIST_ITEM_NOT_FOUND: text "${text}" não existe em checklistName "${checklistName}"; liste os passos`)
+  return { checklistId: checklistsByName[0]!.id, itemId: positioned[0]!.id }
 }

@@ -50,6 +50,8 @@ checklistItemId = passo pertencente ao checklistId
 
 Fluxo recomendado: `list_tasks` para obter o `itemId`, `list_checklists` para obter o `checklistId`, e então `add_checklist_item` ou `check_item` usando os IDs retornados. Não invente UUIDs para esses campos.
 
+Para marcar vários passos, prefira `check_items` com no máximo 100 entradas. Cada entrada aceita os três IDs ou `checklistName` + `text`/`position`; a operação é atômica dentro de cada card, e `failures` informa o índice de cada entrada rejeitada. A busca semântica normaliza espaços externos/internos e caixa, mas nunca escolhe entre candidatos duplicados.
+
 ## Erros
 
-Respostas de erro têm `code`, `message` e `retryable`. Conflitos de claim, validação, autorização e IDs fora do escopo não devem ser repetidos automaticamente. Falhas transitórias só podem ser repetidas quando `retryable` for verdadeiro e a operação for segura/idempotente.
+Respostas de erro têm `code`, `message`, `retryable` e, para validação MCP, `details.path`, `details.cause` e `details.snippet`. Conflitos de claim, validação, autorização e IDs fora do escopo não devem ser repetidos automaticamente. Falhas transitórias só podem ser repetidas quando `retryable` for verdadeiro e a operação for segura/idempotente.

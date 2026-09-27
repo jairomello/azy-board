@@ -5,7 +5,7 @@
 
 import {
   toolAddChecklistItem, toolAddMember, toolActivateSprint, toolArchiveItem, toolBatch, toolBatchMove,
-  toolCheckItem, toolClaimTask, toolCloseSprint, toolCompleteTask, toolCreateChecklist, toolAddChecklistItemToTask,
+  toolCheckItem, toolCheckItems, toolClaimTask, toolCloseSprint, toolCompleteTask, toolCreateChecklist, toolAddChecklistItemToTask,
   toolCreateColumn, toolCreateCostCenter, toolCreateItemLog, toolCreateModule, toolCreateProject, toolCreateProjectStructure,
   toolCreateSprint, toolCreateSquad, toolCreateTag, toolCreateTask, toolCreateVersion,
   toolDeleteChecklist, toolDeleteChecklistItem, toolDeleteItem, toolDeleteProject,
@@ -99,7 +99,8 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'create_checklist': return toolCreateChecklist(api, args.projectId as string, args.itemId as string, args.name as string)
     case 'add_checklist_item': return toolAddChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.text as string, { dueDate: args.dueDate as string | null | undefined, assigneeId: args.assigneeId as string | null | undefined, description: args.description as string | null | undefined })
     case 'add_checklist_item_to_task': return toolAddChecklistItemToTask(api, args.projectId as string, args.itemId as string, args.checklistName as string, args.text as string, { dueDate: args.dueDate as string | null | undefined, assigneeId: args.assigneeId as string | null | undefined, description: args.description as string | null | undefined })
-    case 'check_item': return toolCheckItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string, args.checked as boolean)
+    case 'check_item': return toolCheckItem(api, args.projectId as string, args.itemId as string, args.checklistId as string | undefined, args.checklistItemId as string | undefined, args.checked as boolean, { checklistName: args.checklistName as string | undefined, text: args.text as string | undefined, position: args.position as number | undefined })
+    case 'check_items': return toolCheckItems(api, args.projectId as string, args.items as Parameters<typeof toolCheckItems>[2])
     case 'update_item': return toolUpdateItem(api, args.projectId as string, args.itemId as string, args.changes as Parameters<typeof toolUpdateItem>[3], execution.context.runId)
     case 'release_task': return toolReleaseTask(api, args.projectId as string, args.taskId as string)
     case 'delete_item': return toolDeleteItem(api, args.projectId as string, args.itemId as string, args.dryRun as boolean | undefined)
@@ -109,11 +110,11 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'set_item_tags': return toolSetItemTags(api, args.projectId as string, args.itemId as string, args.tagIds as string[])
     case 'create_item_log': return toolCreateItemLog(api, args.projectId as string, args.itemId as string, args.activity as string, args.durationMin as number | null | undefined)
     case 'reorder_items': return toolReorderItems(api, args.projectId as string, args.columnId as string, args.order as string[])
-    case 'update_checklist': return toolUpdateChecklist(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.changes as Record<string, unknown>)
+    case 'update_checklist': return toolUpdateChecklist(api, args.projectId as string, args.itemId as string, args.checklistId as string, pruneNullValues(args.changes as Record<string, unknown>))
     case 'delete_checklist': return toolDeleteChecklist(api, args.projectId as string, args.itemId as string, args.checklistId as string)
-    case 'update_checklist_item': return toolUpdateChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string, pruneNullValues(args.changes as Record<string, unknown>))
+    case 'update_checklist_item': return toolUpdateChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string | undefined, args.checklistItemId as string | undefined, pruneNullValues(args.changes as Record<string, unknown>), { checklistName: args.checklistName as string | undefined, text: args.text as string | undefined, position: args.position as number | undefined })
     case 'delete_checklist_item': return toolDeleteChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string)
-    case 'update_item_log': return toolUpdateItemLog(api, args.projectId as string, args.itemId as string, args.logId as string, args.changes as Record<string, unknown>)
+    case 'update_item_log': return toolUpdateItemLog(api, args.projectId as string, args.itemId as string, args.logId as string, pruneNullValues(args.changes as Record<string, unknown>))
     case 'batch': return toolBatch(api, args as Parameters<typeof toolBatch>[1])
     case 'update_items': return toolUpdateItems(api, args as Parameters<typeof toolUpdateItems>[1], execution.context.runId)
     case 'create_project': return toolCreateProject(api, args as Parameters<typeof toolCreateProject>[1])

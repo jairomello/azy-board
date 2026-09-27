@@ -408,6 +408,7 @@ export interface BatchItemUpdate {
   sprintIds?: string[]
   changedFields?: string[]
   activity?: string
+  responseIdentity?: Record<string, unknown>
   responseChanges?: Record<string, unknown>
 }
 
@@ -462,7 +463,7 @@ export interface UnitOfWork {
   deleteModuleAggregate(context: MutationContext, projectId: string, moduleId: string, options?: DeleteModuleMutationOptions): Promise<{ deleted: boolean; epicCount: number; deletedItemCount: number }>
   archiveItemSubtree(context: MutationContext, projectId: string, itemId: string): Promise<string[]>
   unarchiveItemSubtree(context: MutationContext, projectId: string, itemId: string): Promise<string[]>
-  applyItemBatch(context: MutationContext, projectId: string, updates: BatchItemUpdate[]): Promise<Array<{ id: string; changes: Record<string, unknown> }>>
+  applyItemBatch(context: MutationContext, projectId: string, updates: BatchItemUpdate[]): Promise<Array<{ id: string; identity: Record<string, unknown>; changes: Record<string, unknown> }>>
   createItemsBatch(context: MutationContext, projectId: string, operations: BatchItemCreateOperation[], options: { atomic: boolean; agentRunId?: string | null }): Promise<{ atomic: boolean; agentRunId: string | null; results: Array<{ ok: boolean; data?: BatchItemCreateResult; code?: string }>; createdModules: Array<{ id: string; name: string; position: number; description: string | null }> }>
 }
 

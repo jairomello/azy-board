@@ -32,7 +32,7 @@ describe('contrato de campos opcionais do MCP', () => {
     expect(schema.required).toEqual(['projectId'])
     expect(schema.properties.type).toBeDefined()
     expect(schema.properties.tagIds).toBeDefined()
-    expect(schema.properties.includeDescriptions).toBeUndefined()
+    expect(schema.properties.includeDescriptions).toBeDefined()
     expect(schema.required).not.toContain('tagIds')
     expect(schema.required).not.toContain('limit')
   })
@@ -50,6 +50,30 @@ describe('contrato de campos opcionais do MCP', () => {
       const required = schema.properties.operations.items.properties.args.required
       expect(new Set(required), `${name}.operations[].args.required`).toEqual(new Set(OPERATION_ARGS_REQUIRED))
     }
+  })
+
+  test('update_items permite omitir opcionais aninhados', async () => {
+    const tool = (await exposedTools()).find(item => item.name === 'update_items')!
+    const schema = tool.inputSchema as unknown as { properties: { filters: { required?: string[] }; changes: { items: { required?: string[] } } } }
+    expect(schema.properties.filters.required).toEqual([])
+    expect(schema.properties.changes.items.required).toEqual(['field', 'operation'])
+    expect(() => validateToolArguments('update_items', {
+      projectId: UUID,
+      filters: { sprint: 'CURRENT', matchAll: true },
+      changes: [{ field: 'title', operation: 'SET', value: 'T' }],
+    })).not.toThrow()
+  })
+
+  test('update_checklist e update_item_log expõem changes como objetos próprios', async () => {
+    const tools = await exposedTools()
+    const checklist = tools.find(item => item.name === 'update_checklist')!.inputSchema as unknown as { properties: { changes: { type: string; properties: Record<string, unknown>; required?: string[] } } }
+    const log = tools.find(item => item.name === 'update_item_log')!.inputSchema as unknown as { properties: { changes: { type: string; properties: Record<string, unknown>; required?: string[] } } }
+    expect(checklist.properties.changes.type).toBe('object')
+    expect(Object.keys(checklist.properties.changes.properties)).toEqual(['name', 'position'])
+    expect(checklist.properties.changes.required).toEqual([])
+    expect(log.properties.changes.type).toBe('object')
+    expect(Object.keys(log.properties.changes.properties)).toEqual(['activity', 'durationMin'])
+    expect(log.properties.changes.required).toEqual([])
   })
 })
 
@@ -84,7 +108,20 @@ describe('null vira omitido antes da execução', () => {
       api,
       context: { source: 'mcp', userId: 'u1', tenantId: 't1', globalGroup: 'TEAM_MEMBER' },
     })
-    expect(paths).toEqual([`/projects/${UUID}/items?leaf=true`])
+    expect(paths).toEqual([`/projects/${UUID}/items?leaf=true&limit=50&includeDescriptions=false`])
+  })
+
+  test('null aninhado permanece disponível para o batch', async () => {
+    let body: unknown
+    const api: ApiCall = async (_path, _method, requestBody) => {
+      body = requestBody
+      return []
+    }
+    await executeSharedTool('batch', {
+      projectId: UUID,
+      operations: [{ tool: 'create_task', args: { ref: 't', title: 'T', type: 'TASK', parentRef: null, assignToCurrentUser: false } }],
+    }, { api, context: { source: 'mcp', userId: 'u1', tenantId: 't1', globalGroup: 'TEAM_MEMBER' } })
+    expect((body as { operations: Array<{ args: { parentRef: null } }> }).operations[0]!.args.parentRef).toBeNull()
   })
 })
 

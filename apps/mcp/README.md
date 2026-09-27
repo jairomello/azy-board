@@ -39,7 +39,8 @@ Catálogo com 59 ferramentas, derivado de `apps/mcp/src/registry.ts`.
 | `archive_item` | Arquiva um item. confirm é true por padrão; suporta dryRun. |
 | `batch` | Create an ordered hierarchy of up to 50 EPIC, STORY, TASK, or BUG items in one atomic approval. Use refs and parentRefs instead of database IDs. Use moduleName for EPIC items; a module referenced by name that does not exist yet is created automatically. |
 | `batch_move` | Move up to 500 leaf items to a column in one atomic operation. Requires itemIds and the exact destination column name (or column ID). Prefer this over multiple move_task calls when moving several cards at once. For filter-based bulk moves without explicit IDs, use update_items. |
-| `check_item` | Set a checklist step state. itemId is the parent board card ID, checklistId belongs to that card, and checklistItemId belongs to that checklist. |
+| `check_item` | Marca/desmarca um passo por IDs ou por `itemId` + `checklistName` + `text`/`position`; em ambiguidade, informe os IDs. |
+| `check_items` | Marca/desmarca até 100 passos por chamada, por IDs ou resolução semântica, com atomicidade por card e falhas identificadas por entrada. |
 | `claim_task` | Atribui o item ao usuário atual (claim). Use apenas quando o item estiver disponível. |
 | `close_sprint` | Encerra a sprint informada. |
 | `complete_task` | Conclui um item. Para card folha, move-o para a coluna com baseStatus DONE. |
@@ -116,7 +117,7 @@ Nunca use `checklistId` ou `checklistItemId` como `itemId`. Para adicionar um pa
 }
 ```
 
-O fluxo manual é `list_tasks` → `list_checklists` → `add_checklist_item` → `check_item`, sempre reutilizando os IDs retornados pela etapa anterior.
+O fluxo manual é `list_tasks` → `list_checklists` → `add_checklist_item` → `check_item`, sempre reutilizando os IDs retornados pela etapa anterior. Para vários passos, use `check_items`; cada entrada pode usar IDs ou `checklistName` + `text`/`position`. A normalização semântica remove espaços nas extremidades, compacta espaços internos e ignora maiúsculas/minúsculas. Se um card tiver uma entrada inválida ou ambígua, nenhuma entrada daquele card é alterada.
 
 ### Campos avançados de checklist
 

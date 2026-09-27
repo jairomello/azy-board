@@ -89,7 +89,7 @@ describe('mutação coordenada de item e tags com concorrência otimista', () =>
 
   test('tag inválida faz rollback e não altera os campos', async () => {
     const before = await call(session, 'GET', `/projects/${projectId}/items`)
-    const beforeItem = (before.data as unknown as Array<{ id: string; title: string }>).find(item => item.id === taskId)
+    const beforeItem = ((before.data as { data: Array<{ id: string; title: string }> }).data).find(item => item.id === taskId)
 
     const rejected = await call(session, 'PATCH', `/projects/${projectId}/items/${taskId}`, {
       title: 'Não deve persistir', tagIds: ['00000000-0000-0000-0000-000000000000'],
@@ -97,13 +97,13 @@ describe('mutação coordenada de item e tags com concorrência otimista', () =>
     expect(rejected.status).toBe(400)
 
     const after = await call(session, 'GET', `/projects/${projectId}/items`)
-    const afterItem = (after.data as unknown as Array<{ id: string; title: string }>).find(item => item.id === taskId)
+    const afterItem = ((after.data as { data: Array<{ id: string; title: string }> }).data).find(item => item.id === taskId)
     expect(afterItem?.title).toBe(beforeItem?.title)
   })
 
   test('expectedUpdatedAt atual aplica e versão defasada retorna 409 CONFLICT', async () => {
     const list = await call(session, 'GET', `/projects/${projectId}/items`)
-    const current = (list.data as unknown as Array<{ id: string; updatedAt: string }>).find(item => item.id === taskId)!
+    const current = ((list.data as { data: Array<{ id: string; updatedAt: string }> }).data).find(item => item.id === taskId)!
     const staleUpdatedAt = current.updatedAt
 
     await Bun.sleep(5)
@@ -119,7 +119,7 @@ describe('mutação coordenada de item e tags com concorrência otimista', () =>
     expect(conflicted.data.error.code).toBe('CONFLICT')
 
     const after = await call(session, 'GET', `/projects/${projectId}/items`)
-    const afterItem = (after.data as unknown as Array<{ id: string; title: string }>).find(item => item.id === taskId)
+    const afterItem = ((after.data as { data: Array<{ id: string; title: string }> }).data).find(item => item.id === taskId)
     expect(afterItem?.title).toBe('Versão condicional')
   })
 
@@ -127,7 +127,7 @@ describe('mutação coordenada de item e tags com concorrência otimista', () =>
     const legacy = await call(session, 'POST', `/projects/${projectId}/items/${taskId}/tags`, { tagIds: [tagA] })
     expect(legacy.status).toBe(200)
     const list = await call(session, 'GET', `/projects/${projectId}/items`)
-    const item = (list.data as unknown as Array<{ id: string; itemTags: Array<{ tag: { id: string } }> }>).find(entry => entry.id === taskId)
-    expect(item?.itemTags.map(link => link.tag.id)).toEqual([tagA])
+    const item = ((list.data as { data: Array<{ id: string; tagIds: string[] }> }).data).find(entry => entry.id === taskId)
+    expect(item?.tagIds).toEqual([tagA])
   })
 })

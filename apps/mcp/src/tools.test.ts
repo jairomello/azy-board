@@ -4,6 +4,7 @@ import {
   toolAddChecklistItem,
   toolAddChecklistItemToTask,
   toolCheckItem,
+  toolCheckItems,
   toolClaimTask,
   toolCompleteTask,
   toolCreateChecklist,
@@ -328,6 +329,57 @@ describe('MCP tools regression suite', () => {
     await expect(toolListChecklists(fake.api, project.id, task.id)).resolves.toMatchObject([
       { id: first.checklist.id, items: [{ id: first.item.id }, { id: second.item.id }] },
     ])
+  })
+
+  test('resolve passo semântico e rejeita texto ambíguo', async () => {
+    const fake = new InMemoryMcpApi()
+    const project = fake.createProject('project-semantic')
+    const epic = await toolCreateTask(fake.api, { projectId: project.id, title: 'Épico', type: 'EPIC' })
+    const story = await toolCreateTask(fake.api, { projectId: project.id, title: 'História', type: 'STORY', parentId: epic.id })
+    const task = await toolCreateTask(fake.api, { projectId: project.id, title: 'Card', type: 'TASK', parentId: story.id })
+    const checklist = await toolCreateChecklist(fake.api, project.id, task.id, 'Validação')
+    await toolAddChecklistItem(fake.api, project.id, task.id, checklist.id, 'Executar')
+    await expect(toolCheckItem(fake.api, project.id, task.id, undefined, undefined, true, { checklistName: ' validação ', text: '  executar  ' })).resolves.toMatchObject({ checked: true })
+    await toolAddChecklistItem(fake.api, project.id, task.id, checklist.id, 'Executar')
+    await expect(toolCheckItem(fake.api, project.id, task.id, undefined, undefined, true, { checklistName: 'Validação', text: 'Executar' })).rejects.toThrow('CHECKLIST_ITEM_AMBIGUOUS')
+    await expect(toolCheckItem(fake.api, project.id, task.id, undefined, undefined, true, { checklistName: 'Validação', text: 'Inexistente' })).rejects.toThrow('CHECKLIST_ITEM_NOT_FOUND')
+  })
+
+  test('executa check_items atomicamente por card e reverte falha parcial', async () => {
+    const fake = new InMemoryMcpApi()
+    const project = fake.createProject('project-batch-check')
+    const epic = await toolCreateTask(fake.api, { projectId: project.id, title: 'Épico', type: 'EPIC' })
+    const story = await toolCreateTask(fake.api, { projectId: project.id, title: 'História', type: 'STORY', parentId: epic.id })
+    const task = await toolCreateTask(fake.api, { projectId: project.id, title: 'Card', type: 'TASK', parentId: story.id })
+    const checklist = await toolCreateChecklist(fake.api, project.id, task.id, 'Passos')
+    const first = await toolAddChecklistItem(fake.api, project.id, task.id, checklist.id, 'Um')
+    const second = await toolAddChecklistItem(fake.api, project.id, task.id, checklist.id, 'Dois')
+    let patches = 0
+    const failingApi: ApiCall = async (path, method, body) => {
+      if (method === 'PATCH' && path.includes('/checklists/')) {
+        patches++
+        if (patches === 2) throw new Error('falha simulada')
+      }
+      return fake.api(path, method, body)
+    }
+    const result = await toolCheckItems(failingApi, project.id, [
+      { itemId: task.id, checklistId: checklist.id, checklistItemId: first.id, checked: true },
+      { itemId: task.id, checklistId: checklist.id, checklistItemId: second.id, checked: true },
+    ]) as { matched: number; updated: number; failures: unknown[] }
+    expect(result).toMatchObject({ matched: 0, updated: 0 })
+    expect(result.failures).toHaveLength(2)
+    await expect(toolListChecklists(fake.api, project.id, task.id)).resolves.toMatchObject([{ items: [{ checked: false }, { checked: false }] }])
+  })
+
+  test('retorna contagens no lote válido por IDs', async () => {
+    const fake = new InMemoryMcpApi()
+    const project = fake.createProject('project-valid-check-batch')
+    const epic = await toolCreateTask(fake.api, { projectId: project.id, title: 'Épico', type: 'EPIC' })
+    const story = await toolCreateTask(fake.api, { projectId: project.id, title: 'História', type: 'STORY', parentId: epic.id })
+    const task = await toolCreateTask(fake.api, { projectId: project.id, title: 'Card', type: 'TASK', parentId: story.id })
+    const checklist = await toolCreateChecklist(fake.api, project.id, task.id, 'Passos')
+    const step = await toolAddChecklistItem(fake.api, project.id, task.id, checklist.id, 'Executar')
+    await expect(toolCheckItems(fake.api, project.id, [{ itemId: task.id, checklistId: checklist.id, checklistItemId: step.id, checked: true }])).resolves.toMatchObject({ matched: 1, updated: 1, failures: [] })
   })
 
   test('lists items by type and hides parents by default when onlyLeaves is omitted', async () => {

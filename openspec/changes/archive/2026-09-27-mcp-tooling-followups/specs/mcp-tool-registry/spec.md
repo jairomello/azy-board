@@ -1,8 +1,5 @@
-# mcp-tool-registry Specification
+## MODIFIED Requirements
 
-## Purpose
-Definir o catálogo compartilhado de ferramentas MCP, seus schemas, policies, routing e contratos de resposta.
-## Requirements
 ### Requirement: Fonte única de verdade por ferramenta
 
 O catálogo de ferramentas SHALL definir cada ferramenta em um único descritor que declara, no mesmo ponto, nome, descrição, campos aceitos (com tipo, obrigatoriedade, limites e texto de ajuda), routing, policy e forma da resposta. A fonte única SHALL viver em `packages/tool-registry` (`@azy-board/tool-registry`), acessível por API e MCP via nome de package. Nenhuma outra estrutura SHALL manter listas paralelas de campos obrigatórios, campos por ferramenta, classificação de routing, limites ou shape de resposta que precisem ser editadas separadamente.
@@ -10,7 +7,12 @@ O catálogo de ferramentas SHALL definir cada ferramenta em um único descritor 
 #### Scenario: Campo obrigatório declarado uma única vez
 
 - **WHEN** um campo de uma ferramenta passa a ser obrigatório ou deixa de ser
-- **THEN** a mudança é feita apenas no descritor da ferramenta em `packages/tool-registry` e se reflete no schema exposto, na validação de argumentos e no catálogo interno sem edição adicional
+- **THEN** a mudança é feita apenas no descritor da ferramenta em `packages/tool-registry` e se reflete no schema exposto, na validação e no catálogo interno sem edição adicional
+
+#### Scenario: Nova projeção declarada uma única vez
+
+- **WHEN** `list_tasks` ganha um campo projetável ou uma relação achatada
+- **THEN** tipo, limite, descrição, validação e resposta derivam do descritor compartilhado
 
 #### Scenario: Inclusão de nova ferramenta
 
@@ -36,28 +38,15 @@ O schema exposto ao cliente MCP e ao modo estrito SHALL ser derivado do mesmo de
 - **WHEN** um campo opcional é omitido ou enviado como null
 - **THEN** a validação trata o valor como não informado e a chamada prossegue, sem exigir o campo
 
-#### Scenario: Divergência entre schema e validação reprova o gate
-
-- **WHEN** um teste de contrato detecta um campo obrigatório no schema que a validação não exige, ou o inverso
-- **THEN** o teste falha antes do merge, impedindo a divergência
-
 #### Scenario: Resposta declarada coincide com executor
+
 - **WHEN** um agente invoca `update_items` ou `list_tasks`
 - **THEN** os campos de resposta publicados pelo catálogo correspondem à forma produzida pelo executor
 
-### Requirement: Routing e classificação derivados do descritor
+#### Scenario: Divergência entre schema e validação reprova o gate
 
-A classificação de cada ferramenta — domínio, escopo, operação, risco, dependências e telas suportadas — SHALL ser declarada no descritor ou derivada deterministicamente dela. NÃO SHALL existir conjuntos manuais de nomes de ferramentas usados apenas para classificar routing em paralelo ao catálogo.
-
-#### Scenario: Routing consultável por ferramenta
-
-- **WHEN** o harness ou o roteamento de ferramentas precisa saber o domínio, escopo, operação e risco de uma ferramenta
-- **THEN** obtém esses dados a partir da definição da ferramenta, sem consultar listas de nomes separadas
-
-#### Scenario: Classificação consistente após renomear
-
-- **WHEN** uma ferramenta é renomeada no descritor
-- **THEN** sua classificação acompanha o novo nome sem exigir atualização de conjuntos manuais
+- **WHEN** um teste de contrato detecta divergência de campo, projeção, nullable, resposta ou obrigatoriedade
+- **THEN** o teste falha antes do merge, impedindo a divergência
 
 ### Requirement: Contrato do catálogo verificado no CI
 
@@ -73,21 +62,12 @@ O projeto SHALL manter verificações automatizadas que garantam que catálogo, 
 - **WHEN** a verificação de catálogo roda
 - **THEN** ela confirma que todas as ferramentas expostas têm descritor, policy e executor, e que não há descritor sem executor
 
-#### Scenario: Testes de contrato no package
-
-- **WHEN** `bun test packages/tool-registry` roda
-- **THEN** os testes de unicidade e consistência do catálogo passam
-
-### Requirement: Projeção e resposta declaradas no catálogo
-O descritor de `list_tasks` SHALL declarar projeção, limite, relações achatadas e campos permitidos; descritores de mutação SHALL declarar a separação entre identidade, mudanças aplicadas e resumo agregado quando aplicável.
-
 #### Scenario: Orçamento de payload protegido
+
 - **WHEN** o teste de catálogo mede uma resposta padrão de `list_tasks`
 - **THEN** reprova se descrições completas ou relações aninhadas excederem o orçamento definido para a resposta leve
 
-### Requirement: Fluxos de checklist no catálogo
-O catálogo SHALL declarar a ferramenta `check_items`, seus limites, policy, routing e shape de resposta, mantendo os caminhos semânticos e por IDs consistentes entre schema, validação e executor.
-
 #### Scenario: Testes de contrato no package
+
 - **WHEN** `bun test packages/tool-registry` roda
 - **THEN** os testes de unicidade, consistência, projeção, resposta e shapes de checklist passam

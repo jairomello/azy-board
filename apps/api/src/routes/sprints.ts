@@ -15,7 +15,11 @@ sprintsRouter.get('/current', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
   const sprint = (await persistence.planning.listSprints(userPersistenceContext(ctx), projectId)).find(candidate => candidate.status === 'OPEN')
-  if (!sprint) return c.json({ status: 'NONE' })
+  if (!sprint) return c.json({ status: 'NONE', nextSteps: [
+    { tool: 'list_sprints', reason: 'Consultar sprints disponíveis antes de escolher uma ação.' },
+    { tool: 'create_sprint', reason: 'Criar uma sprint caso o projeto ainda não tenha uma disponível.' },
+    { tool: 'activate_sprint', reason: 'Ativar uma sprint PROPOSED para torná-la CURRENT.' },
+  ] })
   return c.json({ id: sprint.id, name: sprint.name, startDate: sprint.startDate, endDate: sprint.endDate, status: sprint.status })
 })
 

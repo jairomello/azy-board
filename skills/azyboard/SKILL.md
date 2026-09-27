@@ -27,6 +27,15 @@ Use o Azy Board como fonte compartilhada de planejamento e execução para pesso
 - Uma preferência explícita como "sempre criar cards" ou "não criar cards" vale para a sessão atual. Não transforme essa preferência em configuração persistente sem solicitação explícita.
 - Quando o trabalho for conduzido por uma change OpenSpec ligada a um card, registre `Board ref: <itemId>` nos artefatos da change e, ao concluir a implementação, feche o card com `complete_task` (encerrar a change não encerra o card).
 
+## Payloads leves e recuperação MCP
+
+- `list_tasks` usa `onlyLeaves=true`, `includeDescriptions=false` e `limit=50` por padrão; use `includeDescriptions=true`, `fields` e `cursor` somente quando necessário.
+- A resposta de `update_item`/`update_items` separa `identity`, `changes` aplicadas e o resumo comum `applied`; `matchedCount` e `updatedCount` confirmam o resultado sem reler o board.
+- Em erro de parsing JSON da chamada, repita a mesma intenção uma única vez, isoladamente e sem paralelismo. Se falhar novamente, informe ferramenta, caminho inválido e forma mínima aceita; nunca afirme que a mutação ocorreu.
+- Para erros da API, use `retryable` e `Retry-After`; não repita validação, autorização ou conflito permanentes.
+- Checklists aceitam `checklistName` + `text`/`position` como resolução semântica, normalizando espaços e maiúsculas/minúsculas somente para localizar. Em ambiguidade ou ausência, use os candidatos retornados e informe IDs. Para vários passos, prefira `check_items`, respeitando o limite de 100 e a atomicidade por card; falhas são identificadas por entrada.
+- Erros de validação MCP têm `code`, `details.path`, `details.cause` e `details.snippet`; corrija o caminho indicado antes de repetir.
+
 ## Regras de segurança
 
 - A API Key identifica um Owner humano. O agente herda tenant, grupo, membership, papel e escopos restritivos; nunca tente informar ou elevar esses valores.

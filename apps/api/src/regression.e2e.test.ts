@@ -182,7 +182,7 @@ describe('regressão ponta a ponta dos fluxos críticos', () => {
 
     const leaves = await call(adminSession, 'GET', `/projects/${projectId}/items?leaf=true`)
     expect(leaves.status).toBe(200)
-    const leafIds = (leaves.data as unknown as Array<{ id: string }>).map(item => item.id)
+    const leafIds = ((leaves.data as { data: Array<{ id: string }> }).data).map(item => item.id)
     expect(leafIds).toContain(taskId)
     expect(leafIds).toContain(bugId)
     expect(leafIds).not.toContain(epicId)
@@ -276,7 +276,7 @@ describe('regressão ponta a ponta dos fluxos críticos', () => {
     const children = await call(adminSession, 'GET', `/projects/${projectId}/items/${storyId}/children`)
     expect(children.data.total).toBe(3)
     const allItems = await call(adminSession, 'GET', `/projects/${projectId}/items`)
-    expect((allItems.data as unknown as Array<{ title: string }>).some(item => item.title === 'Válida')).toBe(false)
+    expect(((allItems.data as { data: Array<{ title: string }> }).data).some(item => item.title === 'Válida')).toBe(false)
   })
 
   test('arquiva, desarquiva e exclui preservando a integridade', async () => {
@@ -320,7 +320,7 @@ describe('regressão ponta a ponta dos fluxos críticos', () => {
     await toolMoveTask(apiCall, projectId, created.id, 'Fazendo')
 
     const listed = await toolListTasks(apiCall, { projectId, type: 'TASK' })
-    expect(Array.isArray(listed)).toBe(true)
-    expect((listed as Array<{ id: string }>).some(item => item.id === created.id)).toBe(true)
+    expect(Array.isArray((listed as { data?: unknown }).data)).toBe(true)
+    expect(((listed as { data: Array<{ id: string }> }).data).some(item => item.id === created.id)).toBe(true)
   })
 })

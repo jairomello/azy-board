@@ -212,21 +212,44 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
 
     const batchUpdates: BatchItemUpdate[] = []
     const sprintChange = resolvedChanges.find(change => change.field === 'sprint')
+    const relationResource = (field: string, id: string | null | undefined) => {
+      if (!id) return null
+      const values: Array<{ id: string; name?: string; title?: string; code?: string }> = field === 'sprint' ? projectSprints
+        : field === 'version' ? versions
+          : field === 'module' ? projectModules
+            : field === 'column' ? projectColumns
+              : field === 'tag' ? projectTags
+                : field === 'costCenter' ? costCenters.map(value => ({ ...value, name: value.code }))
+                  : field === 'assignee' ? members
+                    : activeItems
+      const value = values.find(candidate => candidate.id === id)
+      return value ? { id: value.id, name: value.name ?? value.title ?? value.code ?? value.id } : { id }
+    }
     for (const item of matched) {
       const update = updatesById.get(item.id)!
       const ancestryPath = JSON.stringify(pathCache.get(item.id) ?? [])
       if ((changedFields.has('title') || changedFields.has('parent') || changedFields.has('type')) && ancestryPath !== item.ancestryPath) {
         update.ancestryPath = ancestryPath
       }
-      const visibleUpdate = Object.fromEntries(Object.entries(update).filter(([key]) => key !== 'updatedAt'))
-      const auditChanges = resolvedChanges.map(change => `${labels[change.field]}: "${change.operation === 'CLEAR' ? '' : String(visibleUpdate[relationFields[change.field] ?? change.field] ?? change.relationId ?? change.value ?? '')}"`)
+      const responseChanges = Object.fromEntries(resolvedChanges.map(change => {
+        const key = relationFields[change.field] ?? change.field
+        const value = change.operation === 'CLEAR'
+          ? null
+          : relationFields[change.field]
+            ? relationResource(change.field, (update[key] as string | null | undefined) ?? change.relationId)
+            : update[key]
+        return [change.field, value]
+      }))
+      const identity = { id: item.id, title: item.title, type: item.type, parentId: item.parentId, moduleId: item.moduleId }
+      const auditChanges = Object.entries(responseChanges).map(([field, value]) => `${labels[field]}: "${value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')}"`)
       batchUpdates.push({
         itemId: item.id,
         patch: update as ItemPatch,
         ...(sprintChange ? { sprintIds: sprintChange.relationId ? [sprintChange.relationId] : [] } : {}),
         changedFields: [...changedFields],
         activity: `Campos alterados em lote: ${auditChanges.join('; ').slice(0, 10_000)}`,
-        responseChanges: visibleUpdate,
+        responseIdentity: identity,
+        responseChanges,
       })
     }
     if (changedFields.has('title') || changedFields.has('parent') || changedFields.has('type')) {
@@ -244,7 +267,9 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
       mutationContext.mutation.actorLabel = 'Azy Agent'
     }
     const resultItems = await persistence.unitOfWork.applyItemBatch(mutationContext, projectId, batchUpdates)
-    const result = { matchedCount: matched.length, updatedCount: resultItems.length, fields: [...changedFields], items: resultItems }
+    const firstChanges = resultItems[0]?.changes
+    const hasCommonApplied = firstChanges && resultItems.every(item => JSON.stringify(item.changes) === JSON.stringify(firstChanges))
+    const result = { matchedCount: matched.length, updatedCount: resultItems.length, ...(hasCommonApplied ? { applied: firstChanges } : {}), items: resultItems }
     if (agentRunId) await saveIdempotent(ctx, 'update-items', agentRunId, payload, result)
     for (const item of resultItems) broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemId: item.id, ...item.changes } })
     return c.json(result)

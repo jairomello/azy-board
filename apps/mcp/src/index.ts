@@ -21,8 +21,8 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import type { ApiCall } from './tools.js'
-import { hasMcpPolicy } from '@azy-board/tool-registry'
-import { executeSharedTool, getSharedToolDefinitions, OPERATION_ARGS_REQUIRED, requiredFieldsFor, sanitizeToolOutput, type ToolDefinition } from './registry.js'
+import { applyOptionalFields, hasMcpPolicy } from '@azy-board/tool-registry'
+import { executeSharedTool, getSharedToolDefinitions, sanitizeToolOutput, type ToolDefinition } from './registry.js'
 
 // [TENANT] API Key autentica o agente como o Owner humano vinculado — resolvido pelo middleware da API
 export async function makeApiCall(apiUrl: string, apiKey: string, options: { timeoutMs?: number } = {}) {
@@ -76,42 +76,28 @@ export class ApiError extends Error {
   }
 }
 
+function validationDetails(toolName: string, args: Record<string, unknown>, message: string) {
+  const missing = message.match(/Campo obrigatório ausente: (\w+)/)?.[1]
+  const invalidField = message.match(/Campo de alteração inválido: (\w+)/)?.[1]
+  const field = missing ?? invalidField ?? message.match(/(?:^|\s)([a-zA-Z][\w.]*) (?:deve|é|contém|inválido)/)?.[1] ?? 'arguments'
+  const path = invalidField ? `changes.${invalidField}` : field
+  const snippet = missing
+    ? JSON.stringify({ [missing]: '<valor>' })
+    : toolName === 'check_item'
+      ? '{ "itemId": "<card>", "checklistName": "Checklist", "text": "Passo", "checked": true }'
+      : toolName === 'check_items'
+        ? '{ "projectId": "<projeto>", "items": [{ "itemId": "<card>", "checked": true }] }'
+        : JSON.stringify(args)
+  return { path, cause: message, snippet }
+}
+
 export type McpServerOptions = {
   /** Projeto padrão da codebase (AZYBOARD_PROJECT_ID). Torna `projectId` opcional nas ferramentas. */
   defaultProjectId?: string
 }
 
-// O schema interno (getSharedToolDefinitions) mantém todos os campos em `required`
-// porque o OpenAI strict exige. Para clientes MCP, expõe apenas os campos realmente
-// obrigatórios: os opcionais podem ser omitidos (e null também é aceito).
 function withOptionalFields(tool: ToolDefinition): ToolDefinition {
-  const mandatory = new Set(requiredFieldsFor(tool.name))
-  const required = tool.inputSchema.required.filter(field => mandatory.has(field))
-  const inputSchema = required.length === tool.inputSchema.required.length ? tool.inputSchema : { ...tool.inputSchema, required }
-  return { ...tool, inputSchema: withOptionalOperationArgs(inputSchema) }
-}
-
-// `operations[].args` (batch e create_project_structure) também vem com todos os
-// campos em `required` no schema interno; a exposição MCP volta a exigir apenas
-// OPERATION_ARGS_REQUIRED.
-function withOptionalOperationArgs(inputSchema: ToolDefinition['inputSchema']): ToolDefinition['inputSchema'] {
-  const operations = inputSchema.properties.operations
-  if (!operations || typeof operations !== 'object') return inputSchema
-  const operationNode = operations as Record<string, unknown>
-  const items = operationNode.items as Record<string, unknown> | undefined
-  const properties = items?.properties as Record<string, unknown> | undefined
-  const args = properties?.args as Record<string, unknown> | undefined
-  if (!args || !Array.isArray(args.required)) return inputSchema
-  return {
-    ...inputSchema,
-    properties: {
-      ...inputSchema.properties,
-      operations: {
-        ...operationNode,
-        items: { ...items, properties: { ...properties, args: { ...args, required: [...OPERATION_ARGS_REQUIRED] } } },
-      },
-    },
-  }
+  return { ...tool, inputSchema: applyOptionalFields(tool.inputSchema, tool.name) }
 }
 
 // [DEFAULT PROJECT] Com projeto padrão configurado, `projectId` vira opcional no schema.
@@ -170,9 +156,9 @@ export function createMcpServer(apiCall: ApiCall, options: McpServerOptions = {}
       })))
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro desconhecido'
-      const code = error instanceof ApiError ? error.code : 'MCP_TOOL_ERROR'
+      const code = error instanceof ApiError ? error.code : message.match(/^([A-Z][A-Z0-9_]+):/)?.[1] ?? 'MCP_VALIDATION_ERROR'
       const retryable = error instanceof ApiError ? error.retryable : false
-      const details = error instanceof ApiError ? error.details : null
+      const details = error instanceof ApiError ? error.details : validationDetails(name, args, message)
       const errorPayload = { error: { code, message, retryable, details } }
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(errorPayload) }],

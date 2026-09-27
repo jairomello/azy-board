@@ -9,6 +9,11 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ## [Unreleased]
 
+### Changed
+
+- `list_tasks` agora retorna payload leve paginado por padrão (`limit=50`, sem descrições completas) e aceita projeção declarativa com `fields`.
+- Respostas de atualização separam identidade, mudanças aplicadas e resumo agregado.
+
 ### Added
 
 - Dashboard gerencial por projeto com dez blocos, filtros independentes, histórico parcial de burnup/aging, ciclos de sprint e horas registradas.
@@ -28,6 +33,9 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 - Respostas de erro HTTP, MCP e Azy Agent normalizadas no envelope
   `{ error: { code, message, retryable, details } }`.
 - Clientes web e MCP atualizados para consumir o contrato de erro aninhado.
+- Schemas MCP de objetos aninhados agora exigem apenas campos realmente obrigatórios;
+  `update_checklist` e `update_item_log` também expõem seus formatos próprios de
+  `changes`.
 
 ---
 
