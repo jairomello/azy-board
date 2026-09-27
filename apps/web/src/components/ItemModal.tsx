@@ -59,6 +59,7 @@ export interface FullItemData {
   startDate?: string | null
   dueDate?: string | null
   parentId?: string | null
+  columnId?: string | null
   assigneeId?: string | null
   assignee?: { id: string; name: string; avatarUrl: string | null } | null
   author?: { id: string; name: string; avatarUrl: string | null } | null

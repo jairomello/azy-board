@@ -96,6 +96,7 @@ export default function BoardPage() {
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
   const [view, setView] = useState<'kanban' | 'tree'>('kanban')
   const [itemModalId, setItemModalId] = useState<string | null>(null)
+  const [itemModalData, setItemModalData] = useState<FullItemData | null>(null)
   const [storyModalData, setStoryModalData] = useState<{ story?: StoryData } | null>(null)
   const [epicModalData, setEpicModalData] = useState<{ epic?: EpicData } | null>(null)
   const [columnAddForms, setColumnAddForms] = useState<Record<string, boolean>>({})
@@ -114,6 +115,19 @@ export default function BoardPage() {
     const itemId = searchParams.get('itemId')
     if (itemId && allItems.some(item => item.id === itemId)) setItemModalId(itemId)
   }, [allItems, searchParams])
+
+  useEffect(() => {
+    if (!itemModalId) {
+      setItemModalData(null)
+      return
+    }
+    let cancelled = false
+    setItemModalData(null)
+    api.get<FullItemData>(`/projects/${projectId}/items/${itemModalId}`)
+      .then(item => { if (!cancelled) setItemModalData(item) })
+      .catch(() => { if (!cancelled) setItemModalData(null) })
+    return () => { cancelled = true }
+  }, [itemModalId, projectId])
 
   // Ref para preservar o over ID mais recente durante o drag (evita perder o alvo no momento do drop)
   const lastOverRef = useRef<string | null>(null)
@@ -802,7 +816,7 @@ export default function BoardPage() {
     </div>
   )
 
-  const itemForModal = itemModalId ? allItems.find(i => i.id === itemModalId) : null
+  const itemForModal = itemModalId ? itemModalData : null
 
   function openStoryModal(story: ItemData) {
     setStoryModalData({
@@ -1082,7 +1096,7 @@ export default function BoardPage() {
         sprints={sprints}
         costCenters={projectCostCenters}
         advancedChecklists={advancedChecklists}
-        onCloseItem={() => { setItemModalId(null); setNewItemCreation(null) }}
+        onCloseItem={() => { setItemModalId(null); setItemModalData(null); setNewItemCreation(null) }}
         onCloseStory={() => setStoryModalData(null)}
         onCloseEpic={() => setEpicModalData(null)}
         onCloseModule={() => setModuleModalOpen(false)}
