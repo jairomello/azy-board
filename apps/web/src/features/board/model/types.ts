@@ -39,6 +39,7 @@ export interface ItemData extends CardData {
   authorId?: string | null
   versionId?: string | null
   itemSprints?: Array<{ sprintId: string }>
+  sprintId?: string | null
   persona?: string | null
   goal?: string | null
   benefit?: string | null
