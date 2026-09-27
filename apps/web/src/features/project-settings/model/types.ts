@@ -29,3 +29,18 @@ export interface ProjectSettingsData {
   plannedHours: string
   scope: string
 }
+
+// Resposta do servidor para os dados do projeto na seção `project` de Settings.
+export interface SettingsProject {
+  name: string
+  manager?: Manager | null
+  boardMode?: BoardMode
+  isRestricted?: boolean
+  isHidden?: boolean
+  advancedChecklists?: boolean
+  startDate?: string | null
+  plannedEndDate?: string | null
+  plannedPoints?: number | null
+  plannedHours?: number | null
+  scope?: string | null
+}

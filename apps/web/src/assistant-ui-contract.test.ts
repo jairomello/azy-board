@@ -18,13 +18,12 @@ describe('contratos de interação do Azy Agent', () => {
   })
   test('mutações do agente atualizam a interface sem polling', async () => {
     const drawer = await source('./components/AzyAgentDrawer.tsx')
-    const projects = await source('./pages/ProjectsPage.tsx')
+    const invalidation = await source('./hooks/useAssistantCacheInvalidation.ts')
     const events = await source('./lib/dataEvents.ts')
     expect(drawer.includes('notifyAssistantMutation')).toBe(true)
-    expect(projects.includes('onAssistantMutation')).toBe(true)
-    expect(projects.includes("toolName === 'create_project'")).toBe(true)
-    expect(projects.includes("toolName === 'create_project_structure'")).toBe(true)
-    expect(projects.includes('payload.project ?? payload')).toBe(true)
+    expect(invalidation.includes('onAssistantMutation')).toBe(true)
+    expect(invalidation.includes('PROJECT_LIST_TOOLS')).toBe(true)
+    expect(invalidation.includes('queryKeys.projects(user?.id)')).toBe(true)
     expect(events.includes('setInterval')).toBe(false)
   })
   test('mensagens longas são bloqueadas antes de criar uma run', async () => {

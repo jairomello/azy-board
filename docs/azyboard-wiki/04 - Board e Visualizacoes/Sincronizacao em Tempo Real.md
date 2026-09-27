@@ -43,7 +43,14 @@ Se a conexão em tempo real for interrompida:
 - A interface continua disponível para leitura e ações que alcancem a API.
 - O cliente tenta reconectar automaticamente.
 - O intervalo entre tentativas aumenta até um limite.
-- A reconexão não recarrega o estado automaticamente: mudanças ocorridas durante a interrupção aparecem na próxima consulta ou recarregamento.
+- Ao reconectar, as consultas ativas do projeto são refeitas para reconciliar mudanças ocorridas durante a interrupção. Além disso, a camada de cache (TanStack Query) refaz consultas automaticamente quando a rede volta.
+
+## Telas cobertas pela camada de cache
+
+Todas as telas de dados usam a camada única de cache com chaves por identidade
+e projeto, cancelamento de requisições obsoletas e invalidação por eventos ou
+reconexão: **Board, Dashboard, Settings, Projects, TreeView, AdminUsers e
+ApiKeys**.
 
 ## Isolamento
 
@@ -86,7 +93,7 @@ Mutações REST emitem eventos tipados, como item criado, atualizado, movido, ex
 
 ### Reconexão
 
-Em caso de fechamento ou erro, o cliente tenta novamente com backoff até o limite configurado. A reconexão restabelece apenas o canal de eventos; eventos perdidos durante a interrupção não são reproduzidos, e o estado é atualizado na próxima consulta ou recarregamento.
+Em caso de fechamento ou erro, o cliente tenta novamente com backoff até o limite configurado. A reconexão restabelece apenas o canal de eventos; eventos perdidos durante a interrupção não são reproduzidos, mas o estado é reconciliado na reconexão, quando as consultas ativas do projeto são invalidadas e refeitas pela camada de cache.
 
 </details>
 

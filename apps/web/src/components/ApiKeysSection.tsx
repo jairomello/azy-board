@@ -6,7 +6,7 @@ import { formatDate } from '../lib/formatters'
 
 export function ApiKeysSection() {
   const { t } = useTranslation('settings')
-  const { keys, loading, create, revoke } = useApiKeys()
+  const { keys, loading, error, create, revoke } = useApiKeys()
 
   const [showCreate, setShowCreate] = useState(false)
   const [newName, setNewName] = useState('')
@@ -24,6 +24,7 @@ export function ApiKeysSection() {
     setCreating(true)
     try {
       const result = await create(newName.trim(), newModel.trim() || undefined)
+      if (!result) return
       setCreatedKey(result.key)
       setShowCreate(false)
       setNewName('')
@@ -47,8 +48,8 @@ export function ApiKeysSection() {
 
   async function handleRevoke() {
     if (!revokeTarget) return
-    await revoke(revokeTarget.id)
-    setRevokeTarget(null)
+    const revoked = await revoke(revokeTarget.id)
+    if (revoked) setRevokeTarget(null)
   }
 
   return (
@@ -66,6 +67,8 @@ export function ApiKeysSection() {
           {t('newApiKey')}
         </button>
       </div>
+
+      {error && <p role="alert" className="rounded-lg bg-red-50 text-red-700 p-3 text-sm mb-3">{error}</p>}
 
       {loading ? (
         <div className="flex justify-center py-8">

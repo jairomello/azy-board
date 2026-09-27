@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../contexts/AuthContext'
-import { api } from '../lib/api'
+import { api, isAbortError } from '../lib/api'
+import { queryKeys } from '../lib/queryKeys'
 import { ArrowUpRight, Edit3, FolderKanban, Plus, Trash2 } from 'lucide-react'
 import { AppShell } from '../components/AppShell'
 import { useToast } from '../components/Toast'
@@ -10,7 +12,6 @@ import type { BoardMode, ProjectVisibility } from '@azy-board/domain'
 import { canCreateProject } from '../permissions'
 import { VisibilityToggles } from '../components/VisibilityToggles'
 import { ProjectVisibilityBadges } from '../components/ProjectVisibilityBadges'
-import { onAssistantMutation } from '../lib/dataEvents'
 
 type ProjectRole = 'ADMIN' | 'MEMBER' | 'VIEWER'
 interface Project extends ProjectVisibility { id: string; name: string; description: string | null; role: ProjectRole; boardMode: BoardMode }
@@ -20,7 +21,7 @@ export default function ProjectsPage() {
   const { user, showHiddenProjects } = useAuth()
   const { toast } = useToast()
   const navigate = useNavigate()
-  const [projects, setProjects] = useState<Project[]>([])
+  const queryClient = useQueryClient()
   const [showNew, setShowNew] = useState(false)
   const [newName, setNewName] = useState('')
   const [newBoardMode, setNewBoardMode] = useState<BoardMode>('HIERARCHICAL')
@@ -32,48 +33,37 @@ export default function ProjectsPage() {
   const [savingEdit, setSavingEdit] = useState(false)
   const [deletingProject, setDeletingProject] = useState<Project | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [loading, setLoading] = useState(true)
 
   // Projetos ocultos só entram na listagem quando a preferência da sessão está ligada.
-  const loadProjects = useCallback(
-    () => api.get<Project[]>(showHiddenProjects ? '/projects?includeHidden=true' : '/projects'),
-    [showHiddenProjects],
-  )
+  // Consulta via camada de cache única (chave por identidade + variante de visibilidade).
+  const projectsQuery = useQuery({
+    queryKey: [...queryKeys.projects(user?.id), showHiddenProjects ? 'withHidden' : 'default'],
+    queryFn: ({ signal }) => api.get<Project[]>(showHiddenProjects ? '/projects?includeHidden=true' : '/projects', { signal }),
+  })
+  const projects = projectsQuery.data ?? []
+  const loading = projectsQuery.isPending
 
-  useEffect(() => {
-    loadProjects()
-      .then(setProjects)
-      .finally(() => setLoading(false))
-  }, [loadProjects])
-
-  useEffect(() => onAssistantMutation(({ toolName, result }) => {
-    if ((toolName === 'create_project' || toolName === 'create_project_structure') && result && typeof result === 'object') {
-      const payload = result as Project & { project?: Project }
-      const project = payload.project ?? payload
-      if (typeof project.id === 'string' && typeof project.name === 'string') {
-        setProjects(current => current.some(item => item.id === project.id) ? current : [...current, project])
-      }
-      return
-    }
-    if (toolName === 'update_project' || toolName === 'delete_project') {
-      void loadProjects().then(setProjects)
-    }
-  }), [loadProjects])
+  // Mutações no padrão reconciliado: o cache só muda após o sucesso (invalidação + refetch).
+  const invalidateProjects = () => queryClient.invalidateQueries({ queryKey: queryKeys.projects(user?.id) })
 
   async function createProject(e: React.FormEvent) {
     e.preventDefault()
-    const p = await api.post<Project>('/projects', {
-      name: newName,
-      boardMode: newBoardMode,
-      isRestricted: newIsRestricted,
-      isHidden: newIsHidden,
-    })
-    setProjects(prev => [...prev, p])
-    setNewName('')
-    setNewBoardMode('HIERARCHICAL')
-    setNewIsRestricted(false)
-    setNewIsHidden(false)
-    setShowNew(false)
+    try {
+      await api.post<Project>('/projects', {
+        name: newName,
+        boardMode: newBoardMode,
+        isRestricted: newIsRestricted,
+        isHidden: newIsHidden,
+      })
+      await invalidateProjects()
+      setNewName('')
+      setNewBoardMode('HIERARCHICAL')
+      setNewIsRestricted(false)
+      setNewIsHidden(false)
+      setShowNew(false)
+    } catch (error) {
+      if (!isAbortError(error)) toast(error instanceof Error ? error.message : t('projectUpdateFailed'), 'error')
+    }
   }
 
   function openEdit(project: Project) {
@@ -101,11 +91,11 @@ export default function ProjectsPage() {
     setSavingEdit(true)
     setEditError('')
     try {
-      const updated = await api.patch<Project>(`/projects/${editingProject.id}`, { name })
-      setProjects(prev => prev.map(project => project.id === updated.id ? updated : project))
+      await api.patch<Project>(`/projects/${editingProject.id}`, { name })
+      await invalidateProjects()
       closeEdit()
     } catch (error) {
-      setEditError(error instanceof Error ? error.message : t('projectUpdateFailed'))
+      if (!isAbortError(error)) setEditError(error instanceof Error ? error.message : t('projectUpdateFailed'))
     } finally {
       setSavingEdit(false)
     }
@@ -117,11 +107,11 @@ export default function ProjectsPage() {
     setDeleting(true)
     try {
       await api.delete(`/projects/${deletingProject.id}`)
-      setProjects(prev => prev.filter(project => project.id !== deletingProject.id))
+      await invalidateProjects()
       setDeletingProject(null)
       toast(t('projectDeleted'))
     } catch (error) {
-      toast(error instanceof Error ? error.message : t('projectDeleteFailed'), 'error')
+      if (!isAbortError(error)) toast(error instanceof Error ? error.message : t('projectDeleteFailed'), 'error')
     } finally {
       setDeleting(false)
     }

@@ -1,5 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
-import { api } from '../lib/api'
+import { useCallback, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { api, isAbortError } from '../lib/api'
+import { queryKeys } from '../lib/queryKeys'
+import { useAuth } from '../contexts/AuthContext'
 
 export interface ApiKey {
   id: string
@@ -14,31 +17,49 @@ interface CreateApiKeyResult {
   name: string
 }
 
+// Consulta de API keys via camada de cache única (chave por identidade).
+// Mutações seguem o padrão reconciliado: o cache só muda após o sucesso,
+// via invalidação e refetch — nunca antes da resposta.
 export function useApiKeys() {
-  const [keys, setKeys] = useState<ApiKey[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
+  const [mutationError, setMutationError] = useState<string | null>(null)
+  const key = queryKeys.apiKeys(user?.id)
 
-  const load = useCallback(() => {
-    setLoading(true)
-    api.get<ApiKey[]>('/api-keys')
-      .then(setKeys)
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [])
+  const query = useQuery({
+    queryKey: key,
+    queryFn: ({ signal }) => api.get<ApiKey[]>('/api-keys', { signal }),
+  })
 
-  useEffect(() => { load() }, [load])
+  const create = useCallback(async (name: string, aiModelName?: string): Promise<CreateApiKeyResult | null> => {
+    setMutationError(null)
+    try {
+      const result = await api.post<CreateApiKeyResult>('/api-keys', { name, aiModelName: aiModelName || undefined })
+      await queryClient.invalidateQueries({ queryKey: key })
+      return result
+    } catch (e) {
+      if (!isAbortError(e)) setMutationError(e instanceof Error ? e.message : 'Falha ao criar a chave de API')
+      return null
+    }
+  }, [queryClient, key])
 
-  async function create(name: string, aiModelName?: string): Promise<CreateApiKeyResult> {
-    const result = await api.post<CreateApiKeyResult>('/api-keys', { name, aiModelName: aiModelName || undefined })
-    load()
-    return result
+  const revoke = useCallback(async (id: string): Promise<boolean> => {
+    setMutationError(null)
+    try {
+      await api.delete(`/api-keys/${id}`)
+      await queryClient.invalidateQueries({ queryKey: key })
+      return true
+    } catch (e) {
+      if (!isAbortError(e)) setMutationError(e instanceof Error ? e.message : 'Falha ao revogar a chave de API')
+      return false
+    }
+  }, [queryClient, key])
+
+  return {
+    keys: query.data ?? [],
+    loading: query.isPending,
+    error: mutationError ?? (query.error instanceof Error ? query.error.message : null),
+    create,
+    revoke,
   }
-
-  async function revoke(id: string): Promise<void> {
-    await api.delete(`/api-keys/${id}`)
-    setKeys(prev => prev.filter(k => k.id !== id))
-  }
-
-  return { keys, loading, error, create, revoke }
 }

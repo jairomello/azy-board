@@ -1,7 +1,10 @@
-import { useState, useEffect, useCallback, Fragment } from 'react'
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, Bug as BugIcon, Pencil, Plus } from 'lucide-react'
 import { api } from '../lib/api'
+import { invalidateTree, queryKeys } from '../lib/queryKeys'
+import { useAuth } from '../contexts/AuthContext'
 import type { BoardFilterState } from '../components/BoardFilters'
 
 // Nó genérico da árvore retornado por /items/tree
@@ -292,40 +295,44 @@ interface Props {
   onArchive?: (itemId: string, childrenCount: number) => void
   canCreate?: boolean
   canEdit?: boolean
-  refreshToken?: number
   onCreate?: (type: TreeCreationType, context: TreeActionContext) => void
   onEdit?: (itemId: string) => void
 }
 
-export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, canEdit = true, refreshToken = 0, onCreate, onEdit }: Props) {
+export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, canEdit = true, onCreate, onEdit }: Props) {
   const { t } = useTranslation()
-  const [tree, setTree] = useState<TreeNode[]>([])
-  const [loading, setLoading] = useState(true)
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   // Tarefa 10.2 — confirmação de arquivamento inline na tree view (quando sem callback externo)
   const [localArchiveConfirm, setLocalArchiveConfirm] = useState<{ itemId: string; childrenCount: number } | null>(null)
 
-  useEffect(() => {
+  // Árvore via camada de cache única (chave por identidade/projeto + filtros).
+  // Mutações de hierarquia invalidam a chave com invalidateTree (sem gatilho de refetch próprio).
+  const qs = useMemo(() => {
     const params = new URLSearchParams()
     if (filters?.moduleId)   params.set('moduleId', filters.moduleId)
     if (filters?.assigneeId) params.set('assigneeId', filters.assigneeId)
     if (filters?.sprintId)   params.set('sprintId', filters.sprintId)
     if (filters?.tagIds.length) params.set('tagIds', filters.tagIds.join(','))
-    const qs = params.toString()
-    const url = `/projects/${projectId}/items/tree${qs ? `?${qs}` : ''}`
+    return params.toString()
+  }, [filters?.moduleId, filters?.assigneeId, filters?.sprintId, filters?.tagIds.join(',')])
 
-    setLoading(true)
-    api.get<TreeNode[]>(url)
-      .then(data => {
-        setTree(data)
-        setExpanded(previous => {
-          const ids = collectAllIds(data)
-          const retained = new Set([...previous].filter(id => ids.has(id)))
-          return previous.size === 0 ? new Set(data.map(m => m.id)) : retained
-        })
-      })
-      .finally(() => setLoading(false))
-  }, [projectId, refreshToken, filters?.moduleId, filters?.assigneeId, filters?.sprintId, filters?.tagIds.join(',')])
+  const query = useQuery({
+    queryKey: [...queryKeys.tree(user?.id, projectId), qs],
+    queryFn: ({ signal }) => api.get<TreeNode[]>(`/projects/${projectId}/items/tree${qs ? `?${qs}` : ''}`, { signal }),
+  })
+  const tree = query.data ?? []
+  const loading = query.isPending
+
+  useEffect(() => {
+    if (!query.data) return
+    setExpanded(previous => {
+      const ids = collectAllIds(query.data)
+      const retained = new Set([...previous].filter(id => ids.has(id)))
+      return previous.size === 0 ? new Set(query.data.map(m => m.id)) : retained
+    })
+  }, [query.data])
 
   // Tarefa 11.5 — aplicar filtro hideEmptyEpics na árvore
   const displayTree = filters?.hideEmptyEpics
@@ -356,13 +363,8 @@ export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, 
   async function executeLocalArchive(itemId: string) {
     try {
       await api.post(`/projects/${projectId}/items/${itemId}/archive`, {})
-      // Remove o nó da árvore local
-      function removeNode(nodes: TreeNode[]): TreeNode[] {
-        return nodes
-          .filter(n => n.id !== itemId)
-          .map(n => ({ ...n, children: removeNode(n.children) }))
-      }
-      setTree(prev => removeNode(prev))
+      // Padrão reconciliado: invalida/refaz a consulta em vez de editar o cache local.
+      await invalidateTree(queryClient, user?.id, projectId)
       setLocalArchiveConfirm(null)
     } catch {
       // silently fail — BoardPage mostrará toast

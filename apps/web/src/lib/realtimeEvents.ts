@@ -24,9 +24,21 @@ export const DASHBOARD_INVALIDATE_EVENT_TYPES: WsEventType[] = [
   'PROGRESS_UPDATED',
 ]
 
+// Eventos que invalidam consultas das telas de Settings (metadados do projeto).
+export const SETTINGS_INVALIDATE_EVENT_TYPES: WsEventType[] = [
+  'MODULE_CREATED',
+]
+
 // Monta os handlers do dashboard: cada evento invalida (refaz) a consulta.
 export function buildDashboardHandlers(invalidate: () => void): Partial<Record<WsEventType, (event: WsEvent) => void>> {
   const handlers: Partial<Record<WsEventType, (event: WsEvent) => void>> = {}
   for (const type of DASHBOARD_INVALIDATE_EVENT_TYPES) handlers[type] = () => invalidate()
+  return handlers
+}
+
+// Monta os handlers de Settings: cada evento invalida as consultas afetadas.
+export function buildSettingsHandlers(invalidate: () => void): Partial<Record<WsEventType, (event: WsEvent) => void>> {
+  const handlers: Partial<Record<WsEventType, (event: WsEvent) => void>> = {}
+  for (const type of SETTINGS_INVALIDATE_EVENT_TYPES) handlers[type] = () => invalidate()
   return handlers
 }

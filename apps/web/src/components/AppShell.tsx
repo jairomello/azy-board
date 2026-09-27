@@ -16,6 +16,7 @@ import { ThemeToggle } from './ThemeToggle'
 import { Tooltip } from './ui/Tooltip'
 import { BrandLogo } from './BrandLogo'
 import { useAuth } from '../contexts/AuthContext'
+import { useAssistantCacheInvalidation } from '../hooks/useAssistantCacheInvalidation'
 import { canAccessAdmin, canAccessProjectSettings } from '../permissions'
 import { useTranslation } from 'react-i18next'
 import { useAssistant, type AssistantSelectedItem } from '../contexts/AssistantContext'
@@ -64,6 +65,8 @@ export function AppShell({
   const location = useLocation()
   const { user } = useAuth()
   const { setPageContext } = useAssistant()
+  // Ponto único: mutações do assistente invalidam o cache das telas de dados.
+  useAssistantCacheInvalidation(projectId)
   const { t: tCommon } = useTranslation('common')
   const { t: tDashboard } = useTranslation('dashboard')
   const { t: tAssistant } = useTranslation('assistant')

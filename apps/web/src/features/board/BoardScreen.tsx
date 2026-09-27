@@ -18,6 +18,8 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable'
 import { ApiError, api } from '../../lib/api'
+import { useQueryClient } from '@tanstack/react-query'
+import { invalidateTree } from '../../lib/queryKeys'
 import { KanbanCard } from '../../components/KanbanCard'
 import type { FullItemData } from '../../components/ItemModal'
 import type { EpicData } from '../../components/EpicModal'
@@ -101,7 +103,7 @@ export default function BoardPage() {
   const [epicModalData, setEpicModalData] = useState<{ epic?: EpicData } | null>(null)
   const [columnAddForms, setColumnAddForms] = useState<Record<string, boolean>>({})
   const [newItemCreation, setNewItemCreation] = useState<{ type: 'TASK' | 'BUG'; columnId?: string; costCenterId?: string | null; title?: string; parentId?: string } | null>(null)
-  const [treeRefreshToken, setTreeRefreshToken] = useState(0)
+  const queryClient = useQueryClient()
   const [moduleModalOpen, setModuleModalOpen] = useState(false)
   const [newModuleName, setNewModuleName] = useState('')
   const [newModuleDescription, setNewModuleDescription] = useState('')
@@ -505,7 +507,7 @@ export default function BoardPage() {
         tagIds,
       })
       setAllItems(prev => upsertItem(prev, created))
-      setTreeRefreshToken(value => value + 1)
+      void invalidateTree(queryClient, user?.id, projectId)
     } catch (error) {
       toast(tBoard('errorSave'), 'error')
       throw error instanceof Error ? error : new Error('failed')
@@ -524,7 +526,7 @@ export default function BoardPage() {
     if (!projectId) return
     try {
       await api.post(`/projects/${projectId}/items`, buildBoardItemCreatePayload(title, columnId, type, parentId, versionId, sprintId))
-      setTreeRefreshToken(value => value + 1)
+      void invalidateTree(queryClient, user?.id, projectId)
       setColumnAddForms(prev => ({ ...prev, [formKey ?? columnId]: false }))
     } catch {
       toast('Erro ao criar card', 'error')
@@ -559,7 +561,7 @@ export default function BoardPage() {
       if (result?.item) setAllItems(prev => upsertItem(prev, result.item))
       // Invalidação cobre mudanças em cascata de ancestryPath no servidor.
       invalidateBoard()
-      setTreeRefreshToken(value => value + 1)
+      void invalidateTree(queryClient, user?.id, projectId)
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         // Conflito de edição: reconcilia com o servidor em vez de sobrescrever.
@@ -576,7 +578,7 @@ export default function BoardPage() {
     if (!projectId) return
     try {
       await api.post(`/projects/${projectId}/items`, { title, parentId, type })
-      setTreeRefreshToken(value => value + 1)
+      void invalidateTree(queryClient, user?.id, projectId)
       toast('Subtask criada', 'success')
     } catch {
       toast('Erro ao criar subtask', 'error')
@@ -704,7 +706,7 @@ export default function BoardPage() {
           sequenceCode: data.sequenceCode,
         })
         setAllItems(prev => prev.map(i => i.id === data.id ? { ...i, title: data.title } : i))
-        setTreeRefreshToken(value => value + 1)
+        void invalidateTree(queryClient, user?.id, projectId)
       } else {
         const item = await api.post<ItemData>(`/projects/${projectId}/items`, {
           type: 'STORY',
@@ -720,7 +722,7 @@ export default function BoardPage() {
           sequenceCode: data.sequenceCode,
         })
         setAllItems(prev => upsertItem(prev, item))
-        setTreeRefreshToken(value => value + 1)
+        void invalidateTree(queryClient, user?.id, projectId)
       }
     } catch (error) {
       toast(tBoard('errorSaveStory'), 'error')
@@ -784,7 +786,7 @@ export default function BoardPage() {
       })
       const refreshed = await api.get<Module[]>(`/projects/${projectId}/modules`)
        setModules(refreshed.length > 0 ? refreshed : [...modules, created])
-       setTreeRefreshToken(value => value + 1)
+       void invalidateTree(queryClient, user?.id, projectId)
       setNewModuleName('')
       setNewModuleDescription('')
       setModuleModalOpen(false)
@@ -977,7 +979,6 @@ export default function BoardPage() {
              filters={filters}
              canCreate={members.find(member => member.userId === user?.id)?.role !== 'VIEWER'}
              canEdit={members.find(member => member.userId === user?.id)?.role !== 'VIEWER'}
-             refreshToken={treeRefreshToken}
              onCreate={openCreation}
              onEdit={handleOpenDetail}
             // Tarefa 10.2 — passa o handler de arquivamento para a tree view

@@ -448,15 +448,19 @@ features/project-settings/
 
 Cada seção de Settings deveria ter seu próprio componente, hook e estado.
 
-### 17. Não há camada consistente de cache e sincronização — RESOLVIDO (piloto Board + Dashboard)
+### 17. Não há camada consistente de cache e sincronização — RESOLVIDO
 
-> **Resolvido pela change `add-client-cache-sync` (card Item 17).** Foi introduzida
-> a camada de cache TanStack Query (`lib/queryClient.ts`, `lib/queryKeys.ts`),
-> `AbortSignal` no cliente `api`, chaves por identidade/projeto, cancelamento com
-> descarte de respostas obsoletas e invalidação/refetch por eventos WebSocket
-> (inclusive no reconnect). O piloto migrou **Board** e **Dashboard**; as demais
-> telas (Settings, Projects, TreeView, AdminUsers, ApiKeys) ficam para um card de
-> continuação (`Item 17 (continuação)`). Texto original mantido abaixo como registro.
+> **Resolvido pela change `add-client-cache-sync` (card Item 17) e concluído pela
+> change `migrate-remaining-screens-cache-sync` (card Item 17 (continuação)).**
+> Foi introduzida a camada de cache TanStack Query (`lib/queryClient.ts`,
+> `lib/queryKeys.ts`), `AbortSignal` no cliente `api`, chaves por
+> identidade/projeto, cancelamento com descarte de respostas obsoletas e
+> invalidação/refetch por eventos WebSocket (inclusive no reconnect). O piloto
+> migrou **Board** e **Dashboard**; a continuação migrou **Settings, Projects,
+> TreeView, AdminUsers e ApiKeys**, eliminando os refetches imperativos
+> (`refreshToken` do TreeView, `load()` de AdminUsers/Projects/ApiKeys) e
+> centralizando a invalidação de mutações do assistente em
+> `hooks/useAssistantCacheInvalidation.ts`. Texto original mantido abaixo como registro.
 
 Cada tela executa `api.get`, mantém seu próprio array e decide manualmente quando recarregar.
 

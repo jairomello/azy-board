@@ -42,7 +42,7 @@ describe('contrato de UI da visibilidade de projetos', () => {
     const text = await source('./pages/ProjectsPage.tsx')
     contains(text, "showHiddenProjects ? '/projects?includeHidden=true' : '/projects'")
     contains(text, 'const { user, showHiddenProjects } = useAuth()')
-    contains(text, '}, [loadProjects])')
+    contains(text, "showHiddenProjects ? 'withHidden' : 'default'")
   })
 
   test('configurações do projeto têm a seção de visibilidade com PATCH', async () => {

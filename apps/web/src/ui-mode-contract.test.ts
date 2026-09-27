@@ -116,11 +116,11 @@ describe('contratos de UI dos modos de board', () => {
     contains(tree, "['MODULE', 'EPIC', 'STORY', 'TASK', 'BUG']")
      contains(tree, "t('tree.edit'")
     contains(tree, 'stopPropagation()')
-    contains(tree, 'refreshToken')
+    contains(tree, 'queryKeys.tree(')
     contains(board, 'onCreate={openCreation}')
     contains(board, 'onEdit={handleOpenDetail}')
     contains(board, 'newItem={newItemCreation}')
-    contains(board, 'refreshToken={treeRefreshToken}')
+    contains(board, 'invalidateTree(queryClient, user?.id, projectId)')
   })
 
   test('editores ricos cobrem épico, história, task e subtask com expansão transacional', async () => {
