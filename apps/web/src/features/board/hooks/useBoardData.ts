@@ -37,6 +37,12 @@ export interface BoardData {
   advancedChecklists: boolean
 }
 
+export type BoardItemsResponse = ItemData[] | { data: ItemData[] }
+
+export function normalizeBoardItemsResponse(response: BoardItemsResponse): ItemData[] {
+  return Array.isArray(response) ? response : response.data
+}
+
 const EMPTY_BOARD: BoardData = {
   columns: [],
   allItems: [],
@@ -121,7 +127,7 @@ export function useBoardData(projectId: string | undefined) {
       const pid = projectId as string
       const [cols, its, mods, tags, sprs, mbrs, vers, ccs, sqs, proj] = await Promise.all([
         api.get<Column[]>(`/projects/${pid}/columns`, { signal }),
-        api.get<ItemData[]>(`/projects/${pid}/items`, { signal }),
+        api.get<BoardItemsResponse>(`/projects/${pid}/items`, { signal }),
         api.get<Module[]>(`/projects/${pid}/modules`, { signal }),
         api.get<Tag[]>(`/projects/${pid}/tags`, { signal }),
         api.get<Sprint[]>(`/projects/${pid}/sprints`, { signal }).catch(() => [] as Sprint[]),
@@ -133,7 +139,7 @@ export function useBoardData(projectId: string | undefined) {
       ])
       return {
         columns: cols,
-        allItems: computeIsLeaf(its),
+         allItems: computeIsLeaf(normalizeBoardItemsResponse(its)),
         modules: mods,
         sprints: sprs,
         members: mbrs,
