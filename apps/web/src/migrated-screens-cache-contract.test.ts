@@ -64,9 +64,10 @@ describe('contrato de cache das telas migradas', () => {
     contains(screen, 'useWebSocket(projectId ?? null')
     contains(screen, 'data.invalidateAll()')
     const events = await source('./lib/realtimeEvents.ts')
-    contains(events, 'SETTINGS_INVALIDATE_EVENT_TYPES')
+    contains(events, 'SETTINGS_METADATA_SECTIONS')
     contains(events, 'MODULE_CREATED')
     contains(events, 'export function buildSettingsHandlers(')
+    contains(events, 'PROJECT_METADATA_CHANGED')
   })
 
   test('ApiKeys consulta a camada de cache e reconcilia por invalidação', async () => {

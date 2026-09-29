@@ -116,6 +116,9 @@ checklistsRouter.patch('/:checklistId', requireRole('MEMBER'), async (c) => {
   })
   if (!updated) return c.json({ error: 'Checklist não encontrado' }, 404)
 
+  const progress = await persistence.checklists.getChecklistProgress(projectContext, itemId)
+  broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, checklistId, progress } })
+
   return c.json({ ...updated, items: undefined })
 })
 

@@ -166,7 +166,7 @@ itemsRouter.patch('/reorder', requireRole('MEMBER'), async (c) => {
 
   await persistence.items.reorderItems(userPersistenceContext(ctx), projectId, body.columnId, body.order)
 
-  broadcast(projectId, { type: 'CARD_UPDATED', projectId, payload: { reordered: true, columnId: body.columnId } })
+  broadcast(projectId, { type: 'CARD_UPDATED', projectId, payload: { reordered: true, columnId: body.columnId, itemIds: body.order } })
   return c.json({ ok: true })
 })
 
@@ -942,6 +942,7 @@ itemsRouter.post('/:itemId/tags', requireRole('MEMBER'), async (c) => {
     throw error
   }
 
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
   return c.json({ ok: true })
 })
 
@@ -962,6 +963,8 @@ itemsRouter.post('/:itemId/sprint', requireRole('MEMBER'), async (c) => {
     throw error
   }
 
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
+  broadcast(projectId, { type: 'SPRINT_CHANGED', projectId, payload: { itemId, sprintId: body.sprintId } })
   return c.json({ ok: true })
 })
 
@@ -1050,6 +1053,7 @@ itemsRouter.post('/:itemId/work-log', requireRole('MEMBER'), async (c) => {
     if (error instanceof Error && error.message === 'ITEM_NOT_FOUND') return c.json({ error: 'Item não encontrado' }, 404)
     throw error
   }
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
   return c.json({ id: created.id, durationMin: created.durationMin }, 201)
 })
 
@@ -1079,6 +1083,7 @@ itemsRouter.patch('/:itemId/work-log/:logId', requireRole('MEMBER'), async (c) =
     updates.durationMin = durationMin
   }
   await persistence.workLogs.updateItemLog(projectContext, projectId, itemId, logId, updates)
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
   return c.json({ ok: true })
 })
 
@@ -1094,6 +1099,7 @@ itemsRouter.delete('/:itemId/work-log/:logId', requireRole('MEMBER'), async (c) 
   if (!log || log.type !== 'manual') return c.json({ error: 'Registro de trabalho não encontrado' }, 404)
   if (log.authorId !== ctx.userId && memberRole !== 'ADMIN') return c.json({ error: 'Sem permissão para excluir este registro' }, 403)
   await persistence.workLogs.deleteItemLog(projectContext, projectId, itemId, logId)
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
   return c.json({ ok: true })
 })
 
@@ -1136,6 +1142,7 @@ itemsRouter.post('/:itemId/logs', requireRole('MEMBER'), async (c) => {
     throw error
   }
 
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
   return c.json({ id: created.id }, 201)
 })
 
@@ -1165,6 +1172,7 @@ itemsRouter.patch('/:itemId/logs/:logId', requireRole('MEMBER'), async (c) => {
 
   await persistence.workLogs.updateItemLog(projectContext, projectId, itemId, logId, updates)
 
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
   return c.json({ ok: true })
 })
 
@@ -1218,7 +1226,7 @@ itemsRouter.post('/:itemId/archive', requireRole('MEMBER'), async (c) => {
   mutationContext.mutation.actorLabel = audit.actorLabel
   await persistence.unitOfWork.archiveItemSubtree(mutationContext, projectId, itemId)
 
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { archived: true, ids: allIds } })
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { archived: true, itemIds: allIds } })
   return c.json({ ok: true, archivedCount: allIds.length })
 })
 
@@ -1259,6 +1267,6 @@ itemsRouter.post('/:itemId/unarchive', requireRole('MEMBER'), async (c) => {
   mutationContext.mutation.actorLabel = audit.actorLabel
   await persistence.unitOfWork.unarchiveItemSubtree(mutationContext, projectId, itemId)
 
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { unarchived: true, ids: allIds } })
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { unarchived: true, itemIds: allIds } })
   return c.json({ ok: true, restoredCount: allIds.length })
 })

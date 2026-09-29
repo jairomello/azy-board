@@ -1,58 +1,4 @@
-## Purpose
-
-Definir os requisitos da capacidade realtime sync.
-
-## Requirements
-
-### Requirement: Sincronização em tempo real via WebSocket
-O sistema SHALL manter conexões WebSocket por projeto e transmitir eventos de mudança para todos os participantes conectados (humanos e agentes de IA).
-
-#### Scenario: Card movido por humano visível para todos
-- **WHEN** usuário move card por drag-and-drop no board
-- **THEN** todos os outros usuários conectados ao mesmo projeto veem o card se mover em tempo real sem necessidade de refresh
-
-#### Scenario: Card movido por agente de IA visível para humanos
-- **WHEN** agente de IA move card via API REST ou MCP
-- **THEN** board dos usuários humanos atualiza instantaneamente refletindo a mudança
-
----
-
-### Requirement: Tipos de eventos WebSocket
-O sistema SHALL emitir eventos tipados para toda mutação que afete dados exibidos: criação, movimentação, atualização e exclusão de itens, claim/release de task, alteração de checklist, mudanças de sprint (inclusive ativação/abertura/fechamento) e mudanças de metadados do projeto (colunas, módulos, tags, versões, membros, squads, centros de custo e configurações). O contrato SHALL NOT conter tipos de evento nunca emitidos; payloads de eventos SHALL ser aplicáveis pelo cliente.
-
-#### Scenario: Evento de claim de task
-- **WHEN** agente de IA faz claim de uma task
-- **THEN** card no board de todos os participantes atualiza o responsável e exibe o badge de IA em tempo real
-
-#### Scenario: Mudança de sprint ativa é transmitida
-- **WHEN** uma sprint é ativada, aberta, fechada ou editada
-- **THEN** os participantes conectados recebem o evento e as telas afetadas são atualizadas
-
-#### Scenario: Metadados do projeto sincronizam as telas
-- **WHEN** uma coluna, módulo, tag, versão, membro, squad ou centro de custo é criado, editado ou excluído
-- **THEN** as telas que consomem esses metadados recebem o evento e atualizam sem recarregamento manual
-
-#### Scenario: Sem tipos legados no contrato
-- **WHEN** o contrato de eventos é inspecionado
-- **THEN** não existem tipos declarados que nenhuma rota emite nem payloads que o cliente descarta silenciosamente
-
-### Requirement: Reconexão automática
-O sistema SHALL suportar reconexão automática do cliente WebSocket com backoff exponencial persistente entre tentativas (com limite máximo), reiniciado somente após conexão estável. Ao reconectar, o cliente SHALL reconciliar o estado por replay de eventos ou por ressincronização (refetch das consultas ativas).
-
-#### Scenario: Reconexão após queda de rede
-- **WHEN** conexão WebSocket do cliente é interrompida
-- **THEN** cliente tenta reconectar automaticamente e, ao reconectar, reconcilia as mudanças perdidas por replay ou ressincronização
-
-#### Scenario: Backoff cresce entre tentativas
-- **WHEN** sucessivas tentativas de reconexão falham
-- **THEN** o intervalo entre tentativas dobra até o limite máximo, sem reiniciar o atraso a cada tentativa
-
-### Requirement: Isolamento por projeto
-O sistema SHALL garantir que eventos de um projeto não sejam transmitidos para participantes de outros projetos.
-
-#### Scenario: Isolamento de eventos entre projetos
-- **WHEN** card é movido no Projeto A
-- **THEN** usuários conectados ao Projeto B não recebem o evento
+## ADDED Requirements
 
 ### Requirement: Eventos ordenados e replay por cursor
 O sistema SHALL numerar os eventos WebSocket com uma `sequence` monotônica por projeto e SHALL manter um buffer limitado dos eventos recentes do projeto. Ao (re)conectar, o cliente SHALL informar o último cursor recebido e o servidor SHALL reenviar os eventos posteriores a esse cursor; quando o replay não for possível (cursor fora do buffer, servidor reiniciado ou gap incoerente), o servidor SHALL enviar uma ordem explícita de ressincronização e o cliente SHALL refazer as consultas ativas do projeto. Nenhuma dessas operações SHALL ser apresentada ao usuário como erro.
@@ -100,3 +46,33 @@ O web SHALL distinguir visualmente "conectado" de "dados reconciliados": o estad
 - **THEN** a UI reflete offline/conectando sem tratar a situação como falha de aplicação
 
 ## MODIFIED Requirements
+
+### Requirement: Tipos de eventos WebSocket
+O sistema SHALL emitir eventos tipados para toda mutação que afete dados exibidos: criação, movimentação, atualização e exclusão de itens, claim/release de task, alteração de checklist, mudanças de sprint (inclusive ativação/abertura/fechamento) e mudanças de metadados do projeto (colunas, módulos, tags, versões, membros, squads, centros de custo e configurações). O contrato SHALL NOT conter tipos de evento nunca emitidos; payloads de eventos SHALL ser aplicáveis pelo cliente.
+
+#### Scenario: Evento de claim de task
+- **WHEN** agente de IA faz claim de uma task
+- **THEN** card no board de todos os participantes atualiza o responsável e exibe o badge de IA em tempo real
+
+#### Scenario: Mudança de sprint ativa é transmitida
+- **WHEN** uma sprint é ativada, aberta, fechada ou editada
+- **THEN** os participantes conectados recebem o evento e as telas afetadas são atualizadas
+
+#### Scenario: Metadados do projeto sincronizam as telas
+- **WHEN** uma coluna, módulo, tag, versão, membro, squad ou centro de custo é criado, editado ou excluído
+- **THEN** as telas que consomem esses metadados recebem o evento e atualizam sem recarregamento manual
+
+#### Scenario: Sem tipos legados no contrato
+- **WHEN** o contrato de eventos é inspecionado
+- **THEN** não existem tipos declarados que nenhuma rota emite nem payloads que o cliente descarta silenciosamente
+
+### Requirement: Reconexão automática
+O sistema SHALL suportar reconexão automática do cliente WebSocket com backoff exponencial persistente entre tentativas (com limite máximo), reiniciado somente após conexão estável. Ao reconectar, o cliente SHALL reconciliar o estado por replay de eventos ou por ressincronização (refetch das consultas ativas).
+
+#### Scenario: Reconexão após queda de rede
+- **WHEN** conexão WebSocket do cliente é interrompida
+- **THEN** cliente tenta reconectar automaticamente e, ao reconectar, reconcilia as mudanças perdidas por replay ou ressincronização
+
+#### Scenario: Backoff cresce entre tentativas
+- **WHEN** sucessivas tentativas de reconexão falham
+- **THEN** o intervalo entre tentativas dobra até o limite máximo, sem reiniciar o atraso a cada tentativa

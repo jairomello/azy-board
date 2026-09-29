@@ -5,6 +5,7 @@ import type { RequestContext } from '@azy-board/api-contracts'
 import { parseJson, updateVersionSchema, versionSchema } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
+import { emitProjectMetadata } from '../services/websocket'
 
 export const versionsRouter = new Hono<HonoEnv>()
 versionsRouter.use('*', authMiddleware)
@@ -36,6 +37,7 @@ versionsRouter.post('/', requireRole('ADMIN'), async (c) => {
     status: body.status ?? 'PLANNED',
   })
 
+  emitProjectMetadata(projectId, 'versions')
   return c.json({ id: created.id, name: created.name, status: created.status }, 201)
 })
 
@@ -57,6 +59,7 @@ versionsRouter.patch('/:versionId', requireRole('ADMIN'), async (c) => {
     ...(body.status !== undefined ? { status: body.status } : {}),
     ...(body.position !== undefined ? { position: body.position } : {}),
   })
+  emitProjectMetadata(projectId, 'versions')
   return c.json({ version: updated })
 })
 
@@ -68,6 +71,7 @@ versionsRouter.delete('/:versionId', requireRole('ADMIN'), async (c) => {
   const deleted = await persistence.planning.deleteVersion(userPersistenceContext(ctx), projectId, versionId)
   if (!deleted) return c.json({ error: 'Versão não encontrada' }, 404)
 
+  emitProjectMetadata(projectId, 'versions')
   return c.json({ ok: true })
 })
 

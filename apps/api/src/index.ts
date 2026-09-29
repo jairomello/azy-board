@@ -13,7 +13,7 @@ import { apiKeysRouter, userApiKeysRouter } from './routes/apiKeys'
 import { versionsRouter } from './routes/versions'
 import { usersRouter } from './routes/users'
 import { batchRouter } from './routes/batch'
-import { wsHandler } from './services/websocket'
+import { startHeartbeat, wsHandler } from './services/websocket'
 import type { WsClientData } from './services/websocket'
 import { hasGlobalGroup, verifyJwt } from './services/auth'
 import { db, installProfile, sqlite } from './db/index'
@@ -144,6 +144,9 @@ export async function startServer() {
         const url = new URL(req.url)
         const projectId = url.searchParams.get('projectId')
         if (!projectId) return new Response('projectId obrigatório', { status: 400 })
+        // Cursor de replay: último sequence aplicado pelo cliente (ausente em cliente novo).
+        const sinceParam = url.searchParams.get('since')
+        const sinceCursor = sinceParam === null ? null : Number(sinceParam)
 
         // Autenticar antes de aceitar conexão WebSocket
         const cookieHeader = req.headers.get('cookie') ?? ''
@@ -170,7 +173,7 @@ export async function startServer() {
           if (!membership && !isManager && (project.isRestricted || !isGlobalAdmin)) return new Response('Projeto não encontrado', { status: 404 })
           // [TENANT] tenantId armazenado na conexão WebSocket para isolamento de broadcast
           server.upgrade(req, {
-            data: { projectId, tenantId: payload.tenantId, userId: payload.sub } satisfies WsClientData,
+            data: { projectId, tenantId: payload.tenantId, userId: payload.sub, sinceCursor } satisfies WsClientData,
           })
           return undefined as unknown as Response
         } catch {
@@ -182,6 +185,9 @@ export async function startServer() {
     },
     websocket: wsHandler(),
   })
+
+  // Heartbeat do canal WebSocket (mantém conexões vivas e descarta zumbis).
+  startHeartbeat()
 
   logger.info(`Azy Board API rodando em http://localhost:${PORT}`)
   return server

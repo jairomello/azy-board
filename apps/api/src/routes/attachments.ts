@@ -6,6 +6,7 @@ import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
+import { broadcast } from '../services/websocket'
 
 export const attachmentsRouter = new Hono<HonoEnv>()
 attachmentsRouter.use('*', authMiddleware)
@@ -101,6 +102,7 @@ attachmentsRouter.post('/', requireRole('MEMBER'), async (c) => {
     storagePath,
   })
 
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
   return c.json({ id: created.id, url: attachmentUrl(projectId, itemId, created.id), filename: file.name, mimeType, size: file.size }, 201)
 })
 
@@ -173,6 +175,7 @@ attachmentsRouter.delete('/:attachmentId', requireRole('MEMBER'), async (c) => {
   // pós-commit via outbox de limpeza (idempotente, com retry).
   const removed = await persistence.files.deleteAttachmentWithCleanup(projectContext, projectId, itemId, attachmentId)
   if (!removed) return c.json({ error: 'Anexo não encontrado' }, 404)
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
 
   triggerStorageCleanupAfterCommit()
 

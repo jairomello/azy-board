@@ -9,7 +9,7 @@ import type { ProjectMember, ProjectVersion, CostCenter } from '../../../compone
 import type { Tag } from '../../../components/TagSelector'
 import type { BoardMode } from '@azy-board/domain'
 import type { WsEvent, WsEventType } from '@azy-board/realtime-contracts'
-import { BOARD_INCREMENTAL_EVENT_TYPES } from '../../../lib/realtimeEvents'
+import { BOARD_INVALIDATE_EVENT_TYPES, BOARD_PATCH_EVENT_TYPES } from '../../../lib/realtimeEvents'
 import {
   computeIsLeaf,
   upsertItem,
@@ -63,6 +63,16 @@ function resolveValue<T>(previous: T, value: SetStateAction<T>): T {
   return typeof value === 'function' ? (value as (prev: T) => T)(previous) : value
 }
 
+// Eventos cujo payload não mapeia 1:1 para o cache do board são reconciliados
+// por refetch em vez de patch (honestidade de mecanismo por evento).
+function needsBoardRefetch(event: WsEvent): boolean {
+  const payload = (event.payload ?? {}) as { reordered?: boolean; unarchived?: boolean; itemIds?: string[]; itemId?: string; archived?: boolean }
+  if (payload.reordered) return true                                  // ordem não mapeia para o cache
+  if (payload.unarchived) return true                                 // restauração exige os itens completos
+  if (payload.itemIds && !payload.itemId && !payload.archived) return true // "touch" sem estado para aplicar
+  return false
+}
+
 // Reducer puro de eventos WebSocket sobre o cache do board (testável isoladamente).
 export function applyBoardEvent(previous: BoardData, event: WsEvent): BoardData {
   switch (event.type) {
@@ -72,15 +82,19 @@ export function applyBoardEvent(previous: BoardData, event: WsEvent): BoardData 
     }
     case 'ITEM_CREATED':
       return { ...previous, allItems: upsertItem(previous.allItems, event.payload as ItemData) }
-    case 'CARD_CREATED':
-      return { ...previous, allItems: upsertItem(previous.allItems, event.payload as ItemData) }
     case 'MODULE_CREATED': {
       const module = event.payload as Module
       return { ...previous, modules: previous.modules.some(item => item.id === module.id) ? previous.modules : [...previous.modules, module] }
     }
     case 'ITEM_UPDATED': {
-      const { itemId, ...updates } = event.payload as { itemId: string; [key: string]: unknown }
-      return { ...previous, allItems: computeIsLeaf(previous.allItems.map(item => item.id === itemId ? { ...item, ...updates } : item)) }
+      const payload = event.payload as { itemId?: string; itemIds?: string[]; archived?: boolean; [key: string]: unknown }
+      // Arquivamento em lote: remove os itens do cache pelo conjunto de ids.
+      if (payload.archived && Array.isArray(payload.itemIds)) {
+        const ids = new Set(payload.itemIds)
+        return { ...previous, allItems: computeIsLeaf(previous.allItems.filter(item => !ids.has(item.id))) }
+      }
+      const { itemId, itemIds: _itemIds, ...updates } = payload
+      return itemId ? { ...previous, allItems: computeIsLeaf(previous.allItems.map(item => item.id === itemId ? { ...item, ...updates } : item)) } : previous
     }
     case 'ITEM_DELETED': {
       const { itemId } = event.payload as { itemId: string }
@@ -90,11 +104,6 @@ export function applyBoardEvent(previous: BoardData, event: WsEvent): BoardData 
       const { taskId, itemId, ...updates } = event.payload as { taskId?: string; itemId?: string; [key: string]: unknown }
       const id = itemId ?? taskId
       return id ? { ...previous, allItems: previous.allItems.map(item => item.id === id ? { ...item, ...updates } : item) } : previous
-    }
-    case 'CARD_DELETED': {
-      const { itemId, taskId } = event.payload as { itemId?: string; taskId?: string }
-      const id = itemId ?? taskId
-      return id ? { ...previous, allItems: computeIsLeaf(previous.allItems.filter(item => item.id !== id)) } : previous
     }
     case 'TASK_CLAIMED': {
       const { itemId, taskId, assigneeId } = event.payload as { itemId?: string; taskId?: string; assigneeId: string }
@@ -194,24 +203,23 @@ export function useBoardData(projectId: string | undefined) {
 
   const boardHandlers = useMemo(() => {
     const handlers: Partial<Record<WsEventType, (event: WsEvent) => void>> = {}
-    for (const type of BOARD_INCREMENTAL_EVENT_TYPES) {
-      handlers[type] = (event) => patch(previous => applyBoardEvent(previous, event))
+    for (const type of BOARD_PATCH_EVENT_TYPES) {
+      handlers[type] = (event) => {
+        if (needsBoardRefetch(event)) {
+          invalidateBoard()
+          return
+        }
+        patch(previous => applyBoardEvent(previous, event))
+      }
+    }
+    for (const type of BOARD_INVALIDATE_EVENT_TYPES) {
+      handlers[type] = () => invalidateBoard()
     }
     return handlers
-  }, [patch])
+  }, [patch, invalidateBoard])
 
-  const syncState = useWebSocket(projectId ?? null, boardHandlers)
-
-  // Reconciliação no reconnect: após uma queda, refaz a consulta ativa do projeto.
-  const wasOfflineRef = useRef(false)
-  useEffect(() => {
-    if (syncState === 'offline') {
-      wasOfflineRef.current = true
-    } else if (syncState === 'synced' && wasOfflineRef.current) {
-      wasOfflineRef.current = false
-      invalidateBoard()
-    }
-  }, [syncState, invalidateBoard])
+  // Ressincronização explícita: replay impossível → refetch do board.
+  const syncState = useWebSocket(projectId ?? null, boardHandlers, invalidateBoard)
 
   return {
     columns: data.columns, setColumns,

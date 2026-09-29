@@ -7,6 +7,7 @@ import { validateSprintDates, validateSprintTransition } from '../services/sprin
 import { parseJson, sprintSchema } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
+import { broadcast } from '../services/websocket'
 
 export const sprintsRouter = new Hono<HonoEnv>()
 sprintsRouter.use('*', authMiddleware)
@@ -34,6 +35,7 @@ sprintsRouter.post('/', requireRole('ADMIN'), async (c) => {
   const sprint = await persistence.planning.createSprint(userPersistenceContext(ctx), projectId, {
     name: body.name!.trim(), status: 'PROPOSED', startDate: body.startDate!, endDate: body.endDate!,
   })
+  broadcast(projectId, { type: 'SPRINT_CHANGED', projectId, payload: { action: 'created', sprintId: sprint.id } })
   return c.json(sprint, 201)
 })
 
@@ -50,7 +52,9 @@ sprintsRouter.patch('/:sprintId', requireRole('ADMIN'), async (c) => {
   const updated = await persistence.planning.updateSprint(userPersistenceContext(ctx), projectId, sprintId, {
     name: (body.name ?? current.name).trim(), startDate: body.startDate ?? current.startDate, endDate: body.endDate ?? current.endDate,
   })
-  return updated ? c.json(updated) : c.json({ error: 'Sprint não encontrada' }, 404)
+  if (!updated) return c.json({ error: 'Sprint não encontrada' }, 404)
+  broadcast(projectId, { type: 'SPRINT_CHANGED', projectId, payload: { action: 'updated', sprintId } })
+  return c.json(updated)
 })
 
 sprintsRouter.patch('/:sprintId/activate', requireRole('ADMIN'), async (c) => transition(c, 'open'))
@@ -66,6 +70,7 @@ async function transition(c: Context<HonoEnv>, action: 'open' | 'close') {
   const error = validateSprintTransition(requested.status, action)
   if (error) return c.json({ error }, 409)
   const updated = await persistence.planning.transitionSprint(projectContext, projectId, sprintId, action === 'open' ? 'OPEN' : 'CLOSED')
+  broadcast(projectId, { type: 'SPRINT_CHANGED', projectId, payload: { action: action === 'open' ? 'opened' : 'closed', sprintId } })
   return c.json({ sprint: updated })
 }
 

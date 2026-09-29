@@ -523,7 +523,21 @@ Essas chamadas também não recebem o tratamento uniforme de sessão expirada de
 - Suportar body em `DELETE`.
 - Padronizar erro, retry, timeout e cancelamento.
 
-### 20. WebSocket dá aparência de sincronização mais forte do que oferece
+### 20. WebSocket dá aparência de sincronização mais forte do que oferece — RESOLVIDO
+
+> **Resolvido pela change `harden-realtime-sync` (card Item 20).** Eventos ganharam
+> `sequence` monotônica por projeto com ring buffer de replay (500 eventos) e
+> cursor (`since`) no handshake; quando o gap não é coberto (queda longa ou
+> reinício do servidor), o cliente recebe `RESYNC_REQUIRED` e refaz as consultas
+> ativas. Foi adicionado heartbeat de aplicação com detecção de conexão zumbi,
+> backoff exponencial persistente (1s→30s, reset só após conexão estável) e o
+> estado visual passou a separar `connecting → syncing → synced` ("Sincronizado"
+> só após reconciliação). O contrato perdeu os tipos legados
+> (`CARD_CREATED`/`CARD_DELETED`/`PROGRESS_UPDATED`), ganhou
+> `PROJECT_METADATA_CHANGED` (metadados do projeto) e `SPRINT_CHANGED` passou a
+> ser emitido de fato. Limitação assumida: o replay vive em memória por processo
+> — após reinício, o fallback é a ressincronização por refetch (nunca estado
+> incorreto). Texto original mantido abaixo como registro.
 
 O hook apresenta estado `synced` assim que conecta:
 

@@ -33,7 +33,7 @@ O sistema SHALL cancelar requisições em andamento quando os parâmetros de uma
 - **THEN** o sistema não exibe mensagem de erro nem registra falha para o usuário
 
 ### Requirement: Invalidação e sincronização por eventos WebSocket
-O sistema SHALL reconciliar o cache com eventos WebSocket do projeto ativo, aplicando atualizações incrementais quando possível e invalidando/refazendo a consulta quando necessário. Ao reconectar após uma queda, o sistema SHALL refazer as consultas ativas do projeto para sincronizar mudanças perdidas. As telas de dados migradas SHALL reagir aos eventos do projeto que afetam seus dados e SHALL ter suas consultas ativas refeitas no reconnect.
+O sistema SHALL reconciliar o cache com eventos WebSocket do projeto ativo, aplicando atualizações incrementais quando possível e invalidando/refazendo a consulta quando necessário. Ao reconectar após uma queda, o sistema SHALL reconciliar as consultas ativas do projeto — por replay dos eventos perdidos, por ressincronização (refetch) quando o replay não for possível, ou por ambos em sequência — para sincronizar mudanças perdidas. As telas de dados migradas SHALL reagir aos eventos do projeto que afetam seus dados e SHALL ter suas consultas ativas reconciliadas no reconnect.
 
 #### Scenario: Evento do board atualiza o cache
 - **WHEN** um evento de card do projeto ativo é recebido
@@ -47,13 +47,13 @@ O sistema SHALL reconciliar o cache com eventos WebSocket do projeto ativo, apli
 - **WHEN** um evento que altera dados de uma tela migrada é recebido (ex.: criação de módulo afeta Settings)
 - **THEN** a consulta correspondente da tela migrada é invalidada e refeita, sem exigir recarregamento manual
 
-#### Scenario: Reconexão ressincroniza o estado
+#### Scenario: Reconexão reconcilia o estado
 - **WHEN** a conexão WebSocket é restabelecida após uma queda
-- **THEN** as consultas ativas do projeto são refeitas para reconciliar mudanças ocorridas durante a desconexão
+- **THEN** as consultas ativas do projeto são reconciliadas por replay dos eventos perdidos e/ou refetch, conforme a cobertura do buffer de eventos
 
-#### Scenario: Reconexão ressincroniza as telas migradas
+#### Scenario: Reconexão reconcilia as telas migradas
 - **WHEN** a conexão WebSocket é restabelecida após uma queda com Settings, Projects, TreeView ou outra tela migrada ativa
-- **THEN** as consultas ativas dessas telas são refeitas para reconciliar mudanças ocorridas durante a desconexão
+- **THEN** as consultas ativas dessas telas são reconciliadas para refletir mudanças ocorridas durante a desconexão
 
 ### Requirement: Estado remoto separado e mutações otimistas com rollback
 O sistema SHALL manter o estado de servidor na camada de cache, separado do estado de UI, e SHALL aplicar mutações otimistas com rollback quando a operação falhar, sem deixar o cache divergente. Toda mutação SHALL seguir a política única de mutação (otimista com rollback ou reconciliada) definida em `optimistic-mutations`, e mutações otimistas SHALL restaurar o snapshot capturado antes da alteração.

@@ -41,9 +41,18 @@ Exemplo:
 Se a conexão em tempo real for interrompida:
 
 - A interface continua disponível para leitura e ações que alcancem a API.
-- O cliente tenta reconectar automaticamente.
-- O intervalo entre tentativas aumenta até um limite.
-- Ao reconectar, as consultas ativas do projeto são refeitas para reconciliar mudanças ocorridas durante a interrupção. Além disso, a camada de cache (TanStack Query) refaz consultas automaticamente quando a rede volta.
+- O cliente tenta reconectar automaticamente, com espera que dobra entre tentativas (até 30 segundos) e só volta ao início após a conexão se estabilizar.
+- Ao reconectar, o cliente informa o último evento que recebeu (cursor) e o servidor reenvia os eventos perdidos (replay). Quando o intervalo perdido é grande demais ou o servidor foi reiniciado, o cliente refaz as consultas ativas (ressincronização) — nunca fica com dados desatualizados aparentando estar em dia.
+- Um sinal de vida (heartbeat) corre nos dois sentidos: conexões mudas são tratadas como quedas e reconectadas.
+
+## Estados de sincronização
+
+A interface distingue **conectado** de **reconciliado**:
+
+- *Conectando* — abrindo a conexão;
+- *Sincronizando* — conectado, mas ainda aplicando eventos perdidos ou refazendo consultas;
+- *Sincronizado* — dados reconciliados (só aparece depois da reconciliação);
+- *Offline* — sem conexão, reconexão automática em andamento.
 
 ## Telas cobertas pela camada de cache
 
@@ -89,11 +98,11 @@ O cliente abre um WebSocket autenticado para o projeto atual. O servidor mantém
 
 ### Eventos
 
-Mutações REST emitem eventos tipados, como item criado, atualizado, movido, excluído, atribuído ou checklist atualizado. O frontend associa handlers aos tipos que alteram seu estado local.
+Mutações REST emitem eventos tipados, como item criado, atualizado, movido, excluído, atribuído, checklist atualizado, mudança de sprint ou de metadados do projeto (colunas, módulos, tags, versões, membros, squads, centros de custo). Cada evento carrega uma numeração crescente por projeto. O frontend associa handlers aos tipos que alteram seu estado local.
 
 ### Reconexão
 
-Em caso de fechamento ou erro, o cliente tenta novamente com backoff até o limite configurado. A reconexão restabelece apenas o canal de eventos; eventos perdidos durante a interrupção não são reproduzidos, mas o estado é reconciliado na reconexão, quando as consultas ativas do projeto são invalidadas e refeitas pela camada de cache.
+Em caso de fechamento ou erro, o cliente tenta novamente com backoff exponencial até o limite configurado. Ao reconectar, o cliente envia o cursor do último evento recebido e o servidor reenvia os eventos seguintes (buffer limitado por projeto); se o replay não for possível, o cliente recebe a ordem de ressincronização e refaz as consultas ativas pela camada de cache. Heartbeats mantêm as conexões vivas e conexões mudas são descartadas/reconectadas.
 
 </details>
 

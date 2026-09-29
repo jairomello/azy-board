@@ -1,7 +1,8 @@
-import { Cloud, CloudOff, LoaderCircle, Target } from 'lucide-react'
+import { Cloud, CloudOff, LoaderCircle, RefreshCw, Target } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-type SyncState = 'connecting' | 'synced' | 'offline'
+// Estados honestos do canal: conectado (syncing) ≠ dados reconciliados (synced).
+type SyncState = 'connecting' | 'syncing' | 'synced' | 'offline'
 
 interface BoardContextHeaderProps {
   sprintName?: string
@@ -37,6 +38,7 @@ export function BoardStatusRail({ syncState, visibleItems }: { syncState: SyncSt
   const { t } = useTranslation('board')
   const config = {
     connecting: { label: t('connecting'), icon: LoaderCircle, className: 'text-amber-600 animate-spin' },
+    syncing: { label: t('syncing'), icon: RefreshCw, className: 'text-amber-600 animate-pulse' },
     synced: { label: t('synced'), icon: Cloud, className: 'text-status-done' },
     offline: { label: t('offline'), icon: CloudOff, className: 'text-status-blocked' },
   }[syncState]
@@ -49,7 +51,7 @@ export function BoardStatusRail({ syncState, visibleItems }: { syncState: SyncSt
         {config.label}
       </span>
       <span className="w-px h-3 bg-border" />
-      <span>{t('realtimeUpdates')}</span>
+      <span>{syncState === 'synced' ? t('realtimeUpdates') : t('reconciling')}</span>
       <span className="ml-auto tabular-nums">{t(visibleItems === 1 ? 'visibleItemOne' : 'visibleItemMany', { count: visibleItems })}</span>
     </div>
   )

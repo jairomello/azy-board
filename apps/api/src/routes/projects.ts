@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
-import { broadcast } from '../services/websocket'
+import { broadcast, emitProjectMetadata } from '../services/websocket'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { hasGlobalGroup } from '../services/auth'
 import { hasKeyPermission } from '../services/authorization'
@@ -181,6 +181,7 @@ projectsRouter.delete('/:id', requireRole('ADMIN'), async (c) => {
   // Pós-commit: limpeza dos objetos físicos de anexos via outbox (Item 12)
   triggerStorageCleanupAfterCommit()
 
+  emitProjectMetadata(projectId, 'project')
   return c.json({ ok: true })
 })
 
@@ -302,6 +303,7 @@ projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
   const updatedProject = await persistence.projects.getProject(projectContext, id)
   if (!updatedProject) return c.json({ error: 'Projeto não encontrado' }, 404)
 
+  emitProjectMetadata(id, 'project')
   return c.json({ ...updatedProject, role: c.get('memberRole') })
 })
 
@@ -348,7 +350,9 @@ projectsRouter.patch('/:id/modules/:moduleId', requireRole('ADMIN'), async (c) =
     ...(body.position !== undefined ? { position: body.position } : {}),
   })
 
-  return updated ? c.json({ ok: true }) : c.json({ error: 'Módulo não encontrado' }, 404)
+  if (!updated) return c.json({ error: 'Módulo não encontrado' }, 404)
+  emitProjectMetadata(projectId, 'modules')
+  return c.json({ ok: true })
 })
 
 // DELETE /projects/:id/modules/:moduleId — Tarefas 2.1-2.4
@@ -385,6 +389,7 @@ projectsRouter.delete('/:id/modules/:moduleId', requireRole('ADMIN'), async (c) 
   )
   if (!outcome.deleted) return c.json({ error: 'Módulo não encontrado' }, 404)
   if (outcome.deletedItemCount > 0) triggerStorageCleanupAfterCommit()
+  emitProjectMetadata(projectId, 'modules')
   return c.json({ ok: true })
 })
 
@@ -398,6 +403,7 @@ projectsRouter.post('/:id/squads', requireRole('ADMIN'), async (c) => {
 
   const created = await persistence.projects.createSquad(userPersistenceContext(ctx), projectId, { name: body.name })
 
+  emitProjectMetadata(projectId, 'squads')
   return c.json({ id: created.id, name: created.name }, 201)
 })
 
@@ -414,6 +420,8 @@ projectsRouter.post('/:id/squads/:squadId/members', requireRole('ADMIN'), async 
 
   await persistence.projects.addSquadMember(userPersistenceContext(ctx), projectId, squadId, { userId: body.userId, role: body.role })
 
+  emitProjectMetadata(projectId, 'squads')
+  emitProjectMetadata(projectId, 'members')
   return c.json({ ok: true }, 201)
 })
 
@@ -436,6 +444,8 @@ projectsRouter.patch('/:id/members/:userId', requireRole('ADMIN'), async (c) => 
     ...(body.squadId !== undefined ? { squadId: body.squadId || null } : {}),
   })
 
+  emitProjectMetadata(projectId, 'members')
+  emitProjectMetadata(projectId, 'squads')
   return c.json({ ok: true })
 })
 
@@ -464,6 +474,8 @@ projectsRouter.delete('/:id/squads/:squadId/members/:userId', requireRole('ADMIN
 
   await persistence.projects.removeSquadMember(userPersistenceContext(ctx), projectId, squadId, userId)
 
+  emitProjectMetadata(projectId, 'squads')
+  emitProjectMetadata(projectId, 'members')
   return c.json({ ok: true })
 })
 
@@ -480,6 +492,7 @@ projectsRouter.patch('/:id/squads/:squadId', requireRole('ADMIN'), async (c) => 
 
   await persistence.projects.updateSquad(userPersistenceContext(ctx), projectId, squadId, body.name)
 
+  emitProjectMetadata(projectId, 'squads')
   return c.json({ ok: true })
 })
 
@@ -504,6 +517,8 @@ projectsRouter.delete('/:id/squads/:squadId', requireRole('ADMIN'), async (c) =>
 
   await persistence.projects.deleteSquad(userPersistenceContext(ctx), projectId, squadId)
 
+  emitProjectMetadata(projectId, 'squads')
+  emitProjectMetadata(projectId, 'members')
   return c.json({ ok: true })
 })
 
@@ -534,6 +549,8 @@ projectsRouter.post('/:id/members', requireRole('ADMIN'), async (c) => {
     userId: user.id, squadId: body.squadId ?? null, role: body.role,
   })
 
+  emitProjectMetadata(projectId, 'members')
+  emitProjectMetadata(projectId, 'squads')
   return c.json({ ok: true, user }, 201)
 })
 
@@ -546,6 +563,8 @@ projectsRouter.delete('/:id/members/:userId', requireRole('ADMIN'), async (c) =>
   if (!existingMember) return c.json({ error: 'Membro não encontrado' }, 404)
   await persistence.projects.removeProjectMember(userPersistenceContext(ctx), projectId, userId)
 
+  emitProjectMetadata(projectId, 'members')
+  emitProjectMetadata(projectId, 'squads')
   return c.json({ ok: true })
 })
 
@@ -578,6 +597,7 @@ projectsRouter.post('/:id/cost-centers', requireRole('ADMIN'), async (c) => {
     code: body.code.trim(), description: body.description?.trim() ?? null,
   })
 
+  emitProjectMetadata(projectId, 'costCenters')
   return c.json({ id: created.id, code: created.code, description: created.description, sortOrder: created.sortOrder }, 201)
 })
 
@@ -604,6 +624,7 @@ projectsRouter.patch('/:id/cost-centers/:ccId', requireRole('ADMIN'), async (c) 
     ...(body.description !== undefined ? { description: body.description?.trim() ?? null } : {}),
   })
 
+  emitProjectMetadata(projectId, 'costCenters')
   return c.json({ ok: true })
 })
 
@@ -623,5 +644,6 @@ projectsRouter.delete('/:id/cost-centers/:ccId', requireRole('ADMIN'), async (c)
 
   await persistence.planning.deleteCostCenter(projectContext, projectId, ccId)
 
+  emitProjectMetadata(projectId, 'costCenters')
   return c.json({ ok: true })
 })

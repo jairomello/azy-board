@@ -8,7 +8,7 @@ import { AppShell } from '../../components/AppShell'
 import { AccordionToolbar } from '../../components/AccordionToolbar'
 import { useToast } from '../../components/Toast'
 import type { BoardMode, ColumnBaseStatus } from '@azy-board/domain'
-import { useProjectSettingsData } from './hooks/useProjectSettingsData'
+import { useProjectSettingsData, type SettingsSectionName } from './hooks/useProjectSettingsData'
 import { runDeleteMutation } from './model/behavior'
 import type { Column, CostCenter, Member, Module, ProjectVersion, SettingsProject, Sprint, Squad } from './model/types'
 import { GeneralSettingsSections } from './components/GeneralSettingsSections'
@@ -16,6 +16,11 @@ import { OrganizationSettingsSections } from './components/OrganizationSettingsS
 import { DeliverySettingsSections } from './components/DeliverySettingsSections'
 
 export type { ProjectVersion } from './model/types'
+
+const SETTINGS_SECTIONS: SettingsSectionName[] = ['columns', 'members', 'squads', 'modules', 'versions', 'costCenters', 'sprints', 'project']
+function isSettingsSection(section: string): section is SettingsSectionName {
+  return SETTINGS_SECTIONS.includes(section as SettingsSectionName)
+}
 
 export default function ProjectSettingsScreen() {
   const { projectId } = useParams<{ projectId: string }>(); const { t } = useTranslation(['settings', 'common'])
@@ -27,17 +32,11 @@ export default function ProjectSettingsScreen() {
   const allSectionIds = ['board-format', 'visibility', 'checklists', 'planning', 'columns', 'manager', 'members-squads', 'cost-centers', 'modules', 'sprints', 'versions']; const visibleSectionIds = boardMode === 'HIERARCHICAL' ? allSectionIds : allSectionIds.filter(id => id !== 'modules')
   const toggleSection = (id: string) => setOpenSections(previous => { const next = new Set(previous); next.has(id) ? next.delete(id) : next.add(id); return next })
 
-  // Eventos do projeto invalidam as consultas de Settings (ex.: módulos criados).
-  const syncState = useWebSocket(projectId ?? null, buildSettingsHandlers(() => { void data.invalidate('modules') }))
-  const wasOfflineRef = useRef(false)
-  useEffect(() => {
-    if (syncState === 'offline') {
-      wasOfflineRef.current = true
-    } else if (syncState === 'synced' && wasOfflineRef.current) {
-      wasOfflineRef.current = false
-      void data.invalidateAll()
-    }
-  }, [syncState]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Eventos do projeto invalidam a consulta da seção de Settings afetada.
+  // Seções fora de Settings (ex.: tags) são ignoradas aqui — o board cuida delas.
+  const syncState = useWebSocket(projectId ?? null, buildSettingsHandlers(section => {
+    if (isSettingsSection(section)) void data.invalidate(section)
+  }), () => { void data.invalidateAll() })
 
   async function saveBoardMode(nextMode: BoardMode) { if (!projectId || !isAdmin) return; setSavingBoardMode(true); setBoardModeError(''); try { const updated = await api.patch<SettingsProject>(`/projects/${projectId}`, { boardMode: nextMode }); data.setBoardMode(nextMode); data.applyProject(updated); setPendingBoardMode(null) } catch (error) { setBoardModeError(error instanceof Error ? error.message : 'Não foi possível alterar o formato do board') } finally { setSavingBoardMode(false) } }
   async function saveVisibility(field: 'isRestricted' | 'isHidden', value: boolean) { if (!projectId || !isAdmin) return; const previous = field === 'isRestricted' ? isRestricted : isHidden; const apply = field === 'isRestricted' ? data.setIsRestricted : data.setIsHidden; apply(value); setSavingVisibility(true); setVisibilityError(''); try { const updated = await api.patch<SettingsProject>(`/projects/${projectId}`, { [field]: value }); data.applyProject(updated) } catch (error) { apply(previous); setVisibilityError(error instanceof Error ? error.message : t('settings:visibilitySaveError')) } finally { setSavingVisibility(false) } }

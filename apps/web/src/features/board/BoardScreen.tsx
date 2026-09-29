@@ -918,10 +918,10 @@ export default function BoardPage() {
       assistantFilters={{ hideEmptyEpics: filters.hideEmptyEpics, hideEmptyStories: filters.hideEmptyStories, moduleId: filters.moduleId || null, sprintId: filters.sprintId || null, versionId: filters.versionId || null, squadId: filters.squadId || null, assigneeId: filters.assigneeId || null, types: filters.types.length ? filters.types.join(',') : null }}
        sectionLabel={view === 'kanban' ? tBoard('viewBoard') : tBoard('viewTree')}
        contextLabel={activeSprint?.name ?? tBoard('optionsDescription')}
-      headerMeta={syncState === 'synced' ? (
+      headerMeta={syncState === 'synced' || syncState === 'syncing' ? (
         <span className="hidden sm:inline-flex items-center gap-1.5 text-[10px] text-shell-muted">
-          <span className="w-1.5 h-1.5 rounded-full bg-status-done" />
-           {tBoard('synced')}
+          <span className={`w-1.5 h-1.5 rounded-full ${syncState === 'synced' ? 'bg-status-done' : 'bg-amber-500'}`} />
+           {syncState === 'synced' ? tBoard('synced') : tBoard('syncing')}
         </span>
       ) : undefined}
       commandBar={(

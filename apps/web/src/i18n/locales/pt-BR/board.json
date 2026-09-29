@@ -190,6 +190,8 @@
   "save": "Salvar",
   "back": "Voltar",
   "synced": "Sincronizado",
+  "syncing": "Sincronizando",
+  "reconciling": "Reconciliando dados...",
   "connecting": "Conectando",
   "offline": "Offline",
   "realtimeUpdates": "Atualizações em tempo real",

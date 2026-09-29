@@ -15,7 +15,7 @@ function board(allItems: ItemData[]): BoardData {
 }
 
 function event(type: WsEvent['type'], payload: unknown): WsEvent {
-  return { type, projectId: 'p', payload }
+  return { type, projectId: 'p', payload, sequence: 1 }
 }
 
 describe('reducer de eventos do board no cache', () => {
@@ -50,11 +50,22 @@ describe('reducer de eventos do board no cache', () => {
       itemId: 'a', title: 'novo título', itemTags: [{ tag: { id: 't1', name: 'tag', color: '#000000' } }],
     }))
     expect(next.allItems[0]!.title).toBe('novo título')
-    expect(next.allItems[0]!.itemTags?.[0]?.tag.id).toBe('t1')
+    expect(next.allItems[0]?.itemTags?.[0]?.tag.id).toBe('t1')
+  })
+
+  test('ITEM_UPDATED com archived e itemIds remove os itens em lote', () => {
+    const next = applyBoardEvent(board([item('a'), item('b'), item('c')]), event('ITEM_UPDATED', { archived: true, itemIds: ['a', 'c'] }))
+    expect(next.allItems.map(i => i.id)).toEqual(['b'])
+  })
+
+  test('ITEM_UPDATED sem itemId não altera o estado', () => {
+    const previous = board([item('a')])
+    expect(applyBoardEvent(previous, event('ITEM_UPDATED', { itemIds: ['a'] }))).toBe(previous)
   })
 
   test('evento desconhecido mantém a referência do estado', () => {
     const previous = board([item('a')])
-    expect(applyBoardEvent(previous, event('PROGRESS_UPDATED', {}))).toBe(previous)
+    const unknown = { type: 'NOT_IN_CONTRACT', projectId: 'p', payload: {}, sequence: 1 } as unknown as WsEvent
+    expect(applyBoardEvent(previous, unknown)).toBe(previous)
   })
 })
