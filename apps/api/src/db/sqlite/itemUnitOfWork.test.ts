@@ -77,6 +77,7 @@ describe('comandos atômicos SQLite para itens', () => {
     insert.run('parent-new', 'tenant-a', 'project-a', 'STORY', null, '[]', 'Pai novo', 'NOT_STARTED', 'MEDIUM', 1, now, now)
     insert.run('child', 'tenant-a', 'project-a', 'TASK', 'parent-old', '[{"id":"parent-old","title":"Pai antigo","type":"STORY"}]', 'Filho', 'NOT_STARTED', 'MEDIUM', 0, now, now)
     insert.run('grandchild', 'tenant-a', 'project-a', 'BUG', 'child', '[{"id":"parent-old","title":"Pai antigo","type":"STORY"},{"id":"child","title":"Filho","type":"TASK"}]', 'Neto', 'NOT_STARTED', 'MEDIUM', 0, now, now)
+    insert.run('great-grandchild', 'tenant-a', 'project-a', 'TASK', 'grandchild', '[{"id":"parent-old","title":"Pai antigo","type":"STORY"},{"id":"child","title":"Filho","type":"TASK"},{"id":"grandchild","title":"Neto","type":"BUG"}]', 'Bisneto', 'NOT_STARTED', 'MEDIUM', 0, now, now)
 
     unit.reparentSubtree(context, 'project-a', 'child', 'parent-new')
 
@@ -86,6 +87,55 @@ describe('comandos atômicos SQLite para itens', () => {
     expect(JSON.parse(grandchild.ancestry_path)).toEqual([
       { id: 'parent-new', title: 'Pai novo', type: 'STORY' },
       { id: 'child', title: 'Filho', type: 'TASK' },
+    ])
+    const greatGrandchild = sqlite.query<{ ancestry_path: string }, [string]>("SELECT ancestry_path FROM items WHERE id = ?").get('great-grandchild')!
+    expect(JSON.parse(greatGrandchild.ancestry_path)).toEqual([
+      { id: 'parent-new', title: 'Pai novo', type: 'STORY' },
+      { id: 'child', title: 'Filho', type: 'TASK' },
+      { id: 'grandchild', title: 'Neto', type: 'BUG' },
+    ])
+    sqlite.close()
+  })
+
+  test('reparent recusa ciclo e profundidade além do limite sem escrita parcial', () => {
+    const { sqlite, context, unit } = setup()
+    const now = new Date().toISOString()
+    const insert = sqlite.query('INSERT INTO items (id, tenant_id, project_id, type, parent_id, ancestry_path, title, status, priority, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    insert.run('root', 'tenant-a', 'project-a', 'STORY', null, '[]', 'Raiz', 'NOT_STARTED', 'MEDIUM', 0, now, now)
+    insert.run('child', 'tenant-a', 'project-a', 'TASK', 'root', '[{"id":"root","title":"Raiz","type":"STORY"}]', 'Filho', 'NOT_STARTED', 'MEDIUM', 1, now, now)
+    expect(() => unit.reparentSubtree(context, 'project-a', 'root', 'child')).toThrow('HIERARCHY_CYCLE')
+
+    const deepParentPath = JSON.stringify(Array.from({ length: 50 }, (_, index) => ({ id: `ancestor-${index}`, title: `A${index}`, type: 'TASK' })))
+    insert.run('deep-parent', 'tenant-a', 'project-a', 'TASK', null, deepParentPath, 'Pai profundo', 'NOT_STARTED', 'MEDIUM', 2, now, now)
+    expect(() => unit.reparentSubtree(context, 'project-a', 'root', 'deep-parent')).toThrow('MAX_ANCESTRY_DEPTH')
+    expect(sqlite.query<{ parent_id: string | null }, [string]>("SELECT parent_id FROM items WHERE id = ?").get('root')?.parent_id).toBeNull()
+    sqlite.close()
+  })
+
+  test('renomear ancestral recalcula ancestry profunda sem alterar os pais', () => {
+    const { sqlite, context, unit } = setup()
+    const now = new Date().toISOString()
+    const insert = sqlite.query('INSERT INTO items (id, tenant_id, project_id, type, parent_id, ancestry_path, title, status, priority, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    insert.run('story-root', 'tenant-a', 'project-a', 'STORY', null, '[]', 'História antiga', 'NOT_STARTED', 'MEDIUM', 0, now, now)
+    insert.run('task-a', 'tenant-a', 'project-a', 'TASK', 'story-root', '[{"id":"story-root","title":"História antiga","type":"STORY"}]', 'Task A', 'NOT_STARTED', 'MEDIUM', 1, now, now)
+    insert.run('bug-b', 'tenant-a', 'project-a', 'BUG', 'task-a', '[{"id":"story-root","title":"História antiga","type":"STORY"},{"id":"task-a","title":"Task A","type":"TASK"}]', 'Bug B', 'NOT_STARTED', 'MEDIUM', 2, now, now)
+    insert.run('task-c', 'tenant-a', 'project-a', 'TASK', 'bug-b', '[{"id":"story-root","title":"História antiga","type":"STORY"},{"id":"task-a","title":"Task A","type":"TASK"},{"id":"bug-b","title":"Bug B","type":"BUG"}]', 'Task C', 'NOT_STARTED', 'MEDIUM', 3, now, now)
+
+    unit.updateItemWithRelations(context, 'project-a', 'story-root', { title: 'História atualizada' })
+
+    const rows = sqlite.query<{ id: string; ancestry_path: string }, []>(
+      "SELECT id, ancestry_path FROM items WHERE id IN ('task-a', 'bug-b', 'task-c') ORDER BY id",
+    ).all()
+    const paths = new Map(rows.map(row => [row.id, JSON.parse(row.ancestry_path)]))
+    expect(paths.get('task-a')).toEqual([{ id: 'story-root', title: 'História atualizada', type: 'STORY' }])
+    expect(paths.get('bug-b')).toEqual([
+      { id: 'story-root', title: 'História atualizada', type: 'STORY' },
+      { id: 'task-a', title: 'Task A', type: 'TASK' },
+    ])
+    expect(paths.get('task-c')).toEqual([
+      { id: 'story-root', title: 'História atualizada', type: 'STORY' },
+      { id: 'task-a', title: 'Task A', type: 'TASK' },
+      { id: 'bug-b', title: 'Bug B', type: 'BUG' },
     ])
     sqlite.close()
   })

@@ -3,7 +3,7 @@ import type { ItemRecord, MutationContext } from '../../persistence/models'
 import type { BatchItemCreateOperation, BatchItemCreateResult, BatchItemUpdate, ItemPatch, ItemRelationsMutation, NewItemRecord } from '../../persistence/ports'
 import { generateId } from '../../utils/id'
 import { runSqliteAtomic } from './atomicTransaction'
-import { readItemSnapshot, recordItemEvent } from './itemAnalytics'
+import { readItemSnapshot, readItemSnapshots, recordDeletedItemEventsBatch, recordItemEvent } from './itemAnalytics'
 
 interface ItemRow {
   id: string
@@ -44,6 +44,8 @@ interface AncestryNode {
   title: string
   type: ItemRecord['type']
 }
+
+const MAX_HIERARCHY_DEPTH = 50
 
 const itemColumns = {
   type: 'type',
@@ -141,103 +143,158 @@ function insertActivity(database: Database, context: MutationContext, itemId: st
       context.mutation.actorLabel, context.mutation.actorSource, activity, now, now)
 }
 
+function readSubtreeRows(database: Database, tenantId: string, projectId: string, rootId: string): Array<ItemRow & { subtree_depth: number }> {
+  const rows = database.query<ItemRow & { subtree_depth: number }, [string, string, string, string, string, number, string, string]>(`
+    WITH RECURSIVE subtree(id, depth) AS (
+      SELECT id, 0 FROM items WHERE tenant_id = ? AND project_id = ? AND id = ?
+      UNION ALL
+      SELECT child.id, subtree.depth + 1
+      FROM items AS child
+      INNER JOIN subtree ON child.parent_id = subtree.id
+      WHERE child.tenant_id = ? AND child.project_id = ? AND subtree.depth <= ?
+    )
+    SELECT items.*, subtree.depth AS subtree_depth
+    FROM subtree
+    INNER JOIN items ON items.tenant_id = ? AND items.project_id = ? AND items.id = subtree.id
+    ORDER BY subtree.depth, subtree.id
+  `).all(tenantId, projectId, rootId, tenantId, projectId, MAX_HIERARCHY_DEPTH, tenantId, projectId)
+  if (rows.some(row => row.subtree_depth > MAX_HIERARCHY_DEPTH)) throw new Error('MAX_ANCESTRY_DEPTH')
+  return rows
+}
+
 function collectSubtree(database: Database, tenantId: string, projectId: string, rootId: string): string[] {
-  const result: string[] = []
-  const queue = [rootId]
-  const visited = new Set<string>()
-  while (queue.length) {
-    const currentId = queue.shift()!
-    if (visited.has(currentId)) continue
-    const current = itemById(database, tenantId, projectId, currentId)
-    if (!current) continue
-    visited.add(currentId)
-    result.push(currentId)
-    const children = database.query<{ id: string }, [string, string, string]>(
-      'SELECT id FROM items WHERE tenant_id = ? AND project_id = ? AND parent_id = ? ORDER BY id',
-    ).all(tenantId, projectId, currentId)
-    queue.push(...children.map(child => child.id))
+  return readSubtreeRows(database, tenantId, projectId, rootId).map(row => row.id)
+}
+
+function collectModuleSubtrees(database: Database, tenantId: string, projectId: string, moduleId: string): string[] {
+  const rows = database.query<{ id: string; depth: number }, [string, string, string, string, string, number]>(`
+    WITH RECURSIVE subtree(id, depth) AS (
+      SELECT id, 0 FROM items
+      WHERE tenant_id = ? AND project_id = ? AND module_id = ? AND type = 'EPIC'
+      UNION ALL
+      SELECT child.id, subtree.depth + 1
+      FROM items AS child
+      INNER JOIN subtree ON child.parent_id = subtree.id
+      WHERE child.tenant_id = ? AND child.project_id = ? AND subtree.depth <= ?
+    )
+    SELECT id, depth FROM subtree ORDER BY depth, id
+  `).all(tenantId, projectId, moduleId, tenantId, projectId, MAX_HIERARCHY_DEPTH)
+  if (rows.some(row => row.depth > MAX_HIERARCHY_DEPTH)) throw new Error('MAX_ANCESTRY_DEPTH')
+  return rows.map(row => row.id)
+}
+
+function writeAncestryPaths(database: Database, tenantId: string, projectId: string, updates: Array<{ id: string; path: string }>) {
+  const batchSize = 200
+  const updatedAt = new Date().toISOString()
+  for (let offset = 0; offset < updates.length; offset += batchSize) {
+    const batch = updates.slice(offset, offset + batchSize)
+    const cases = batch.map(() => 'WHEN ? THEN ?').join(' ')
+    const ids = batch.map(() => '?').join(', ')
+    const params: Array<string> = []
+    for (const update of batch) params.push(update.id, update.path)
+    params.push(updatedAt, tenantId, projectId, ...batch.map(update => update.id))
+    database.query(
+      `UPDATE items SET ancestry_path = CASE id ${cases} ELSE ancestry_path END, updated_at = ?
+       WHERE tenant_id = ? AND project_id = ? AND id IN (${ids})`,
+    ).run(...params)
   }
-  return result
 }
 
 function refreshDescendantAncestry(database: Database, tenantId: string, projectId: string, rootId: string) {
-  const queue = [rootId]
-  const visited = new Set<string>()
-  while (queue.length > 0) {
-    const parentId = queue.shift()!
-    if (visited.has(parentId)) continue
-    visited.add(parentId)
-    const parent = itemById(database, tenantId, projectId, parentId)
-    if (!parent) continue
-    const parentPath = JSON.parse(parent.ancestry_path) as AncestryNode[]
-    const children = database.query<ItemRow, [string, string, string]>(
-      'SELECT * FROM items WHERE tenant_id = ? AND project_id = ? AND parent_id = ? ORDER BY id',
-    ).all(tenantId, projectId, parentId)
-    const childPath = [...parentPath, { id: parent.id, title: parent.title, type: parent.type }]
-    for (const child of children) {
-      if (visited.has(child.id)) throw new Error('HIERARCHY_CYCLE')
-      database.query('UPDATE items SET ancestry_path = ?, updated_at = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
-        .run(JSON.stringify(childPath), new Date().toISOString(), tenantId, projectId, child.id)
-      queue.push(child.id)
-    }
+  // [TENANT] A CTE lê somente a subárvore deste tenant e projeto; nenhuma
+  // consulta adicional é feita por pai ou descendente.
+  const rows = readSubtreeRows(database, tenantId, projectId, rootId)
+  if (rows.length < 2) return
+  const rowById = new Map(rows.map(row => [row.id, row]))
+  const pathById = new Map<string, AncestryNode[]>()
+  const root = rows[0]!
+  pathById.set(root.id, JSON.parse(root.ancestry_path || '[]') as AncestryNode[])
+  const updates: Array<{ id: string; path: string }> = []
+
+  for (const row of rows.slice(1)) {
+    if (!row.parent_id) throw new Error('HIERARCHY_INVALID_PARENT')
+    const parent = rowById.get(row.parent_id)
+    if (!parent) throw new Error('HIERARCHY_INVALID_PARENT')
+    const parentPath = pathById.get(parent.id)
+    if (!parentPath) throw new Error('HIERARCHY_ORDER_INVALID')
+    const path = [...parentPath, { id: parent.id, title: parent.title, type: parent.type }]
+    pathById.set(row.id, path)
+    updates.push({ id: row.id, path: JSON.stringify(path) })
   }
+
+  writeAncestryPaths(database, tenantId, projectId, updates)
 }
 
 function deleteItemsInsideTransaction(database: Database, context: MutationContext, projectId: string, itemIds: string[], recordAnalyticsEvents: boolean) {
   const itemIdSet = new Set(itemIds)
-  const snapshots = new Map<string, NonNullable<ReturnType<typeof readItemSnapshot>>>()
-  const parentSnapshots = new Map<string, NonNullable<ReturnType<typeof readItemSnapshot>>>()
+  const snapshots = readItemSnapshots(database, context.tenantId, projectId, itemIds)
+  const parentIds = [...new Set([...snapshots.values()].flatMap(snapshot => snapshot.parentId ? [snapshot.parentId] : []))]
+    .filter(parentId => !itemIdSet.has(parentId))
+  const parentSnapshots = readItemSnapshots(database, context.tenantId, projectId, parentIds)
   const storagePaths: string[] = []
 
-  for (const itemId of itemIds) {
-    const item = itemById(database, context.tenantId, projectId, itemId)
-    const snapshot = readItemSnapshot(database, context.tenantId, projectId, itemId)
-    if (!item || !snapshot) continue
-    snapshots.set(itemId, snapshot)
-    if (snapshot.parentId && !parentSnapshots.has(snapshot.parentId)) {
-      const parentSnapshot = readItemSnapshot(database, context.tenantId, projectId, snapshot.parentId)
-      if (parentSnapshot) parentSnapshots.set(snapshot.parentId, parentSnapshot)
-    }
-    const attachments = database.query<{ storage_path: string }, [string, string]>(
-      'SELECT storage_path FROM attachments WHERE tenant_id = ? AND item_id = ?',
-    ).all(context.tenantId, itemId)
+  // Dependências são lidas por lotes, em vez de uma consulta por item.
+  for (let offset = 0; offset < itemIds.length; offset += 300) {
+    const batch = itemIds.slice(offset, offset + 300)
+    const placeholders = batch.map(() => '?').join(', ')
+    const attachments = database.query<{ storage_path: string }, string[]>(
+      `SELECT storage_path FROM attachments WHERE tenant_id = ? AND item_id IN (${placeholders})`,
+    ).all(context.tenantId, ...batch)
     storagePaths.push(...attachments.map(attachment => attachment.storage_path))
   }
 
   const now = new Date().toISOString()
-  for (const storagePath of storagePaths) {
+  for (let offset = 0; offset < storagePaths.length; offset += 100) {
+    const batch = storagePaths.slice(offset, offset + 100)
+    const values = batch.map(() => "(?, ?, ?, 'ATTACHMENT', 'PENDING', 0, ?, ?, ?)").join(', ')
+    const params: string[] = []
+    for (const storagePath of batch) params.push(generateId(), context.tenantId, storagePath, now, now, now)
     database.query(`INSERT OR IGNORE INTO storage_cleanup_jobs
       (id, tenant_id, storage_path, resource_type, status, attempts, available_at, created_at, updated_at)
-      VALUES (?, ?, ?, 'ATTACHMENT', 'PENDING', 0, ?, ?, ?)`)
-      .run(generateId(), context.tenantId, storagePath, now, now, now)
+      VALUES ${values}`).run(...params)
   }
 
   if (recordAnalyticsEvents) {
-    for (const itemId of itemIds) {
-      const before = snapshots.get(itemId)
-      if (before) recordItemEvent(database, context, { projectId, itemId, eventType: 'ITEM_DELETED', before, after: null })
-    }
+    recordDeletedItemEventsBatch(database, context, projectId, snapshots)
   }
 
   // Filhos primeiro para satisfazer a FK auto-referenciada sem deferred constraints.
-  for (const itemId of [...itemIds].reverse()) {
-    const checklistIds = database.query<{ id: string }, [string, string]>(
-      'SELECT id FROM checklists WHERE tenant_id = ? AND item_id = ?',
-    ).all(context.tenantId, itemId).map(row => row.id)
-    for (const checklistId of checklistIds) {
-      database.query('DELETE FROM checklist_items WHERE tenant_id = ? AND checklist_id = ?').run(context.tenantId, checklistId)
+  // Remoção de relações e checklists é set-based por lote; apenas o DELETE de
+  // items continua ordenado por nó para respeitar a FK pai-filho imediata.
+  for (let offset = 0; offset < itemIds.length; offset += 300) {
+    const batch = itemIds.slice(offset, offset + 300)
+    const placeholders = batch.map(() => '?').join(', ')
+    const checklistIds = database.query<{ id: string }, string[]>(
+      `SELECT id FROM checklists WHERE tenant_id = ? AND item_id IN (${placeholders})`,
+    ).all(context.tenantId, ...batch).map(row => row.id)
+    for (let checklistOffset = 0; checklistOffset < checklistIds.length; checklistOffset += 300) {
+      const checklistBatch = checklistIds.slice(checklistOffset, checklistOffset + 300)
+      const checklistPlaceholders = checklistBatch.map(() => '?').join(', ')
+      database.query(`DELETE FROM checklist_items WHERE tenant_id = ? AND checklist_id IN (${checklistPlaceholders})`)
+        .run(context.tenantId, ...checklistBatch)
     }
-    database.query('DELETE FROM checklists WHERE tenant_id = ? AND item_id = ?').run(context.tenantId, itemId)
-    database.query('DELETE FROM item_tags WHERE tenant_id = ? AND item_id = ?').run(context.tenantId, itemId)
-    database.query('DELETE FROM item_sprints WHERE tenant_id = ? AND item_id = ?').run(context.tenantId, itemId)
-    database.query('DELETE FROM attachments WHERE tenant_id = ? AND item_id = ?').run(context.tenantId, itemId)
-    database.query('DELETE FROM item_logs WHERE tenant_id = ? AND item_id = ?').run(context.tenantId, itemId)
+    database.query(`DELETE FROM checklists WHERE tenant_id = ? AND item_id IN (${placeholders})`).run(context.tenantId, ...batch)
+    database.query(`DELETE FROM item_tags WHERE tenant_id = ? AND item_id IN (${placeholders})`).run(context.tenantId, ...batch)
+    database.query(`DELETE FROM item_sprints WHERE tenant_id = ? AND item_id IN (${placeholders})`).run(context.tenantId, ...batch)
+    database.query(`DELETE FROM attachments WHERE tenant_id = ? AND item_id IN (${placeholders})`).run(context.tenantId, ...batch)
+    database.query(`DELETE FROM item_logs WHERE tenant_id = ? AND item_id IN (${placeholders})`).run(context.tenantId, ...batch)
+  }
+  for (const itemId of [...itemIds].reverse()) {
     database.query('DELETE FROM items WHERE tenant_id = ? AND project_id = ? AND id = ?').run(context.tenantId, projectId, itemId)
   }
 
   if (recordAnalyticsEvents) {
+    const remainingParentIds = new Set<string>()
+    for (let offset = 0; offset < parentIds.length; offset += 300) {
+      const batch = parentIds.slice(offset, offset + 300)
+      const placeholders = batch.map(() => '?').join(', ')
+      const rows = database.query<{ parent_id: string }, string[]>(
+        `SELECT DISTINCT parent_id FROM items WHERE tenant_id = ? AND project_id = ? AND parent_id IN (${placeholders})`,
+      ).all(context.tenantId, projectId, ...batch)
+      rows.forEach(row => remainingParentIds.add(row.parent_id))
+    }
     for (const [parentId, before] of parentSnapshots) {
-      const after = itemIdSet.has(parentId) ? { ...before, isLeaf: true } : readItemSnapshot(database, context.tenantId, projectId, parentId)
+      const after = { ...before, isLeaf: !remainingParentIds.has(parentId) }
       recordItemEvent(database, context, { projectId, itemId: parentId, eventType: 'LEAF_CHANGED', before, after })
     }
   }
@@ -446,7 +503,8 @@ export function createSqliteItemUnitOfWork(database: Database) {
 
     reparentSubtree(context: MutationContext, projectId: string, itemId: string, newParentId: string | null): void {
       runSqliteAtomic(database, () => {
-        const root = itemById(database, context.tenantId, projectId, itemId)
+        const subtree = readSubtreeRows(database, context.tenantId, projectId, itemId)
+        const root = subtree[0]
         if (!root) throw new Error('ITEM_NOT_FOUND')
         if (root.parent_id === newParentId) return
         const parent = newParentId === null ? null : itemById(database, context.tenantId, projectId, newParentId)
@@ -460,27 +518,28 @@ export function createSqliteItemUnitOfWork(database: Database) {
           : null
 
         const parentPath = parent ? JSON.parse(parent.ancestry_path) as AncestryNode[] : []
-        if (parentPath.some(node => node.id === itemId) || newParentId === itemId) throw new Error('HIERARCHY_CYCLE')
+        const subtreeIds = new Set(subtree.map(row => row.id))
+        const subtreeById = new Map(subtree.map(row => [row.id, row]))
+        if ((newParentId && subtreeIds.has(newParentId)) || parentPath.some(node => node.id === itemId)) throw new Error('HIERARCHY_CYCLE')
         const rootPath = parent ? [...parentPath, { id: parent.id, title: parent.title, type: parent.type }] : []
+        const maxSubtreeDepth = subtree.reduce((max, row) => Math.max(max, row.subtree_depth), 0)
+        if (rootPath.length + maxSubtreeDepth > MAX_HIERARCHY_DEPTH) throw new Error('MAX_ANCESTRY_DEPTH')
 
-        const pending: Array<{ id: string; path: AncestryNode[] }> = [{ id: itemId, path: rootPath }]
         database.query('UPDATE items SET parent_id = ?, ancestry_path = ?, updated_at = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
           .run(newParentId, JSON.stringify(rootPath), new Date().toISOString(), context.tenantId, projectId, itemId)
 
-        while (pending.length > 0) {
-          const current = pending.shift()!
-          const currentRow = itemById(database, context.tenantId, projectId, current.id)
-          if (!currentRow) continue
-          const children = database.query<ItemRow, [string, string, string]>(
-            'SELECT * FROM items WHERE tenant_id = ? AND project_id = ? AND parent_id = ? ORDER BY id',
-          ).all(context.tenantId, projectId, current.id)
-          const childPath = [...current.path, { id: currentRow.id, title: currentRow.title, type: currentRow.type }]
-          for (const child of children) {
-            database.query('UPDATE items SET ancestry_path = ?, updated_at = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
-              .run(JSON.stringify(childPath), new Date().toISOString(), context.tenantId, projectId, child.id)
-            pending.push({ id: child.id, path: childPath })
-          }
+        const pathById = new Map<string, AncestryNode[]>([[itemId, rootPath]])
+        const pathUpdates: Array<{ id: string; path: string }> = []
+        for (const row of subtree.slice(1)) {
+          if (!row.parent_id) throw new Error('HIERARCHY_INVALID_PARENT')
+          const parentRow = subtreeById.get(row.parent_id)
+          const parentAncestry = pathById.get(row.parent_id)
+          if (!parentRow || !parentAncestry) throw new Error('HIERARCHY_ORDER_INVALID')
+          const path = [...parentAncestry, { id: parentRow.id, title: parentRow.title, type: parentRow.type }]
+          pathById.set(row.id, path)
+          pathUpdates.push({ id: row.id, path: JSON.stringify(path) })
         }
+        writeAncestryPaths(database, context.tenantId, projectId, pathUpdates)
 
         const after = readItemSnapshot(database, context.tenantId, projectId, itemId)
         if (before && after) recordItemEvent(database, context, { projectId, itemId, eventType: 'ITEM_REPARENTED', before, after })
@@ -538,10 +597,11 @@ export function createSqliteItemUnitOfWork(database: Database) {
       })
     },
 
-    deleteItemSubtree(context: MutationContext, projectId: string, itemId: string, options: { recordAnalyticsEvents?: boolean } = {}): void {
-      runSqliteAtomic(database, () => {
+    deleteItemSubtree(context: MutationContext, projectId: string, itemId: string, options: { recordAnalyticsEvents?: boolean } = {}): string[] {
+      return runSqliteAtomic(database, () => {
         const subtree = collectSubtree(database, context.tenantId, projectId, itemId)
         deleteItemsInsideTransaction(database, context, projectId, subtree, options.recordAnalyticsEvents ?? true)
+        return subtree
       })
     },
 
@@ -590,12 +650,9 @@ export function createSqliteItemUnitOfWork(database: Database) {
           database.query("UPDATE items SET module_id = ? WHERE tenant_id = ? AND project_id = ? AND module_id = ? AND type = 'EPIC'")
             .run(options.targetModuleId, context.tenantId, projectId, moduleId)
         } else if (epics.length && options.cascade) {
-          const subtree = new Set<string>()
-          for (const epic of epics) {
-            for (const itemId of collectSubtree(database, context.tenantId, projectId, epic.id)) subtree.add(itemId)
-          }
-          deletedItemCount = subtree.size
-          deleteItemsInsideTransaction(database, context, projectId, [...subtree], true)
+          const subtreeIds = collectModuleSubtrees(database, context.tenantId, projectId, moduleId)
+          deletedItemCount = subtreeIds.length
+          deleteItemsInsideTransaction(database, context, projectId, subtreeIds, true)
         } else if (epics.length) {
           throw new Error('MODULE_HAS_EPICS')
         }

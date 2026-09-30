@@ -225,6 +225,13 @@
       "when": 1790373032430,
       "tag": "0031_agent_job_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1790724438918,
+      "tag": "0032_items-tenant-project-parent-index",
+      "breakpoints": true
     }
   ]
 }

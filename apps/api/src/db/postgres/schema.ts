@@ -307,6 +307,7 @@ export const items = pgTable('items', {
   updatedAt: text('updated_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   tenantIdUnique: uniqueIndex('items_tenant_id_id_unique').on(table.tenantId, table.id),
+  hierarchyLookup: index('items_tenant_project_parent_idx').on(table.tenantId, table.projectId, table.parentId),
   pointsCheck: check('items_points_check', sql`${table.points} IS NULL OR ${table.points} >= 0`),
   positionCheck: check('items_position_check', sql`${table.position} >= 0`),
   datesCheck: check('items_dates_check', sql`${table.startDate} IS NULL OR ${table.dueDate} IS NULL OR ${table.dueDate} >= ${table.startDate}`),

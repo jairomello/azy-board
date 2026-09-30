@@ -705,6 +705,38 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         if (filter.versionId !== undefined) conditions.push(filter.versionId === null ? sql`${items.versionId} IS NULL` : eq(items.versionId, filter.versionId))
         return (await database.select().from(items).where(and(...conditions)).orderBy(items.position)).map(mapItem)
       },
+      async listSubtree(context, projectId, rootItemId, maxDepth = 50) {
+        const subtree = sqlite.query<{ id: string; depth: number }, [string, string, string, string, string, number]>(`
+          WITH RECURSIVE subtree(id, depth, visited) AS (
+            SELECT id, 0, '/' || id || '/'
+            FROM items
+            WHERE tenant_id = ? AND project_id = ? AND id = ?
+            UNION ALL
+            SELECT child.id, subtree.depth + 1, subtree.visited || child.id || '/'
+            FROM items AS child
+            INNER JOIN subtree ON child.parent_id = subtree.id
+            WHERE child.tenant_id = ? AND child.project_id = ?
+              AND subtree.depth <= ?
+              AND instr(subtree.visited, '/' || child.id || '/') = 0
+          )
+          SELECT subtree.id, subtree.depth
+          FROM subtree
+          ORDER BY subtree.depth, subtree.id
+        `).all(context.tenantId, projectId, rootItemId, context.tenantId, projectId, maxDepth)
+        if (subtree.some(row => row.depth > maxDepth)) throw new Error('MAX_ANCESTRY_DEPTH')
+        if (subtree.length === 0) return []
+        const ids = subtree.map(row => row.id)
+        const rows = await database.select().from(items).where(and(
+          eq(items.tenantId, context.tenantId), eq(items.projectId, projectId), inArray(items.id, ids),
+        ))
+        const byId = new Map(rows.map(row => [row.id, mapItem(row)]))
+        return subtree.map(row => byId.get(row.id)).filter((row): row is ItemRecord => row !== undefined)
+      },
+      async hasChildren(context, projectId, itemId) {
+        return sqlite.query<{ id: string }, [string, string, string]>(
+          'SELECT id FROM items WHERE tenant_id = ? AND project_id = ? AND parent_id = ? LIMIT 1',
+        ).get(context.tenantId, projectId, itemId) !== null
+      },
       async listItemsWithRelations(context, projectId): Promise<ItemWithRelationsRecord[]> {
         const rows = await database.query.items.findMany({
           where: and(eq(items.tenantId, context.tenantId), eq(items.projectId, projectId)),
@@ -814,24 +846,21 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
               (id, tenant_id, project_id, sprint_id, started_at, ended_at, end_reason, source)
               VALUES (?, ?, ?, ?, ?, NULL, NULL, 'OPENED')`)
               .run(cycleId, context.tenantId, projectId, sprintId, now)
-            const projectItems = sqlite.query<{ id: string; type: string; points: number | null; status: string; module_id: string | null; version_id: string | null }, [string, string]>(
-              'SELECT id, type, points, status, module_id, version_id FROM items WHERE tenant_id = ? AND project_id = ?',
-            ).all(context.tenantId, projectId)
-            for (const item of projectItems) {
-              if (item.type !== 'TASK' && item.type !== 'BUG') continue
-              const linked = sqlite.query<{ id: string }, [string, string, string]>(
-                'SELECT item_id AS id FROM item_sprints WHERE tenant_id = ? AND item_id = ? AND sprint_id = ?',
-              ).get(context.tenantId, item.id, sprintId)
-              if (!linked) continue
-              const child = sqlite.query<{ id: string }, [string, string, string]>(
-                'SELECT id FROM items WHERE tenant_id = ? AND project_id = ? AND parent_id = ? LIMIT 1',
-              ).get(context.tenantId, projectId, item.id)
-              if (child) continue
-              sqlite.query(`INSERT INTO sprint_cycle_items
-                (cycle_id, tenant_id, project_id, item_id, type, is_leaf, points, status, module_id, version_id)
-                VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`)
-                .run(cycleId, context.tenantId, projectId, item.id, item.type, item.points, item.status, item.module_id, item.version_id)
-            }
+            // Materializa compromisso da sprint em uma única operação set-based:
+            // sem buscar vínculo e existência de filho para cada item.
+            sqlite.query(`INSERT INTO sprint_cycle_items
+              (cycle_id, tenant_id, project_id, item_id, type, is_leaf, points, status, module_id, version_id)
+              SELECT ?, item.tenant_id, item.project_id, item.id, item.type, 1,
+                     item.points, item.status, item.module_id, item.version_id
+              FROM items AS item
+              INNER JOIN item_sprints AS link
+                ON link.tenant_id = item.tenant_id AND link.item_id = item.id AND link.sprint_id = ?
+              WHERE item.tenant_id = ? AND item.project_id = ? AND item.type IN ('TASK', 'BUG')
+                AND NOT EXISTS (
+                  SELECT 1 FROM items AS child
+                  WHERE child.tenant_id = item.tenant_id AND child.project_id = item.project_id AND child.parent_id = item.id
+                )`)
+              .run(cycleId, sprintId, context.tenantId, projectId)
           } else if (targetStatus === 'CLOSED') {
             sqlite.query("UPDATE sprints SET status = 'CLOSED' WHERE tenant_id = ? AND project_id = ? AND id = ?")
               .run(context.tenantId, projectId, sprintId)

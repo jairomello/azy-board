@@ -83,7 +83,7 @@ import type {
   UnitOfWork,
 } from '../../persistence/ports'
 import { generateId } from '../../utils/id'
-import { readItemSnapshot, recordItemEvent } from './itemAnalytics'
+import { readItemSnapshot, readItemSnapshots, recordDeletedItemEventsBatch, recordItemEvent } from './itemAnalytics'
 
 // ---------------------------------------------------------------------------
 // Mapeamento de linhas SQL para records de domínio
@@ -409,6 +409,76 @@ function asMutation(context: PersistenceContext): MutationContext {
       actorSource: 'SYSTEM',
       actorLabel: null,
     },
+  }
+}
+
+// Recalcula o ancestry de uma raiz já atualizada e de todos os descendentes
+// com uma CTE de leitura e updates em batches. Chamada dentro da transação do
+// UnitOfWork, após alterar parent_id e/ou title da raiz.
+async function refreshPostgresDescendantAncestry(client: PoolClient, tenantId: string, projectId: string, rootId: string): Promise<void> {
+  const result = await client.query(
+    `WITH RECURSIVE subtree(id, parent_id, title, type, ancestry_path, depth) AS (
+       SELECT id, parent_id, title, type, ancestry_path, 0
+       FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3
+       UNION ALL
+       SELECT child.id, child.parent_id, child.title, child.type, child.ancestry_path, subtree.depth + 1
+       FROM items AS child
+       INNER JOIN subtree ON child.parent_id = subtree.id
+       WHERE child.tenant_id = $1 AND child.project_id = $2 AND subtree.depth <= $4
+     )
+     SELECT id, parent_id, title, type, ancestry_path, depth FROM subtree ORDER BY depth, id`,
+    [tenantId, projectId, rootId, 50],
+  )
+  const rows = result.rows as Array<{ id: string; parent_id: string | null; title: string; type: ItemRecord['type']; ancestry_path: string; depth: number }>
+  const root = rows[0]
+  if (!root) throw new Error('ITEM_NOT_FOUND')
+  if (rows.some(row => row.depth > 50)) throw new Error('MAX_ANCESTRY_DEPTH')
+  const subtreeIds = new Set(rows.map(row => row.id))
+
+  let rootPath: Array<{ id: string; title: string; type: string }> = []
+  if (root.parent_id) {
+    if (subtreeIds.has(root.parent_id)) throw new Error('HIERARCHY_CYCLE')
+    const parentResult = await client.query(
+      'SELECT id, title, type, ancestry_path FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+      [tenantId, projectId, root.parent_id],
+    )
+    const parent = parentResult.rows[0] as { id: string; title: string; type: ItemRecord['type']; ancestry_path: string } | undefined
+    if (!parent) throw new Error('PARENT_NOT_FOUND')
+    try { rootPath = JSON.parse(parent.ancestry_path || '[]') } catch { throw new Error('HIERARCHY_INVALID_ANCESTRY') }
+    if (rootPath.some(node => node.id === rootId)) throw new Error('HIERARCHY_CYCLE')
+    rootPath = [...rootPath, { id: parent.id, title: parent.title, type: parent.type }]
+  }
+  const maxDepth = rows.reduce((depth, row) => Math.max(depth, row.depth), 0)
+  if (rootPath.length + maxDepth > 50) throw new Error('MAX_ANCESTRY_DEPTH')
+  await client.query(
+    'UPDATE items SET ancestry_path = $1 WHERE tenant_id = $2 AND project_id = $3 AND id = $4',
+    [JSON.stringify(rootPath), tenantId, projectId, rootId],
+  )
+
+  const rowById = new Map(rows.map(row => [row.id, row]))
+  const pathById = new Map<string, Array<{ id: string; title: string; type: string }>>([[rootId, rootPath]])
+  const updates: Array<{ id: string; path: string }> = []
+  for (const row of rows.slice(1)) {
+    if (!row.parent_id) throw new Error('HIERARCHY_INVALID_PARENT')
+    const parent = rowById.get(row.parent_id)
+    const parentPath = pathById.get(row.parent_id)
+    if (!parent || !parentPath) throw new Error('HIERARCHY_ORDER_INVALID')
+    const path = [...parentPath, { id: parent.id, title: parent.title, type: parent.type }]
+    pathById.set(row.id, path)
+    updates.push({ id: row.id, path: JSON.stringify(path) })
+  }
+  for (let offset = 0; offset < updates.length; offset += 200) {
+    const batch = updates.slice(offset, offset + 200)
+    const values = batch.map((_, index) => `($${index * 2 + 1}::text, $${index * 2 + 2}::text)`).join(', ')
+    const params: unknown[] = []
+    for (const update of batch) params.push(update.id, update.path)
+    params.push(tenantId, projectId)
+    await client.query(
+      `UPDATE items AS target SET ancestry_path = paths.path, updated_at = now()
+       FROM (VALUES ${values}) AS paths(id, path)
+       WHERE target.tenant_id = $${batch.length * 2 + 1} AND target.project_id = $${batch.length * 2 + 2} AND target.id = paths.id`,
+      params,
+    )
   }
 }
 
@@ -906,6 +976,40 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         const rows = await q(`SELECT * FROM items WHERE ${conditions.join(' AND ')} ORDER BY position`, params)
         return rows.map(mapItem)
       },
+      async listSubtree(context: PersistenceContext, projectId: string, rootItemId: string, maxDepth = 50): Promise<ItemRecord[]> {
+        const rows = await q(
+          `WITH RECURSIVE subtree(id, depth, visited) AS (
+             SELECT id, 0, ARRAY[id]::text[]
+             FROM items
+             WHERE tenant_id = $1 AND project_id = $2 AND id = $3
+             UNION ALL
+             SELECT child.id, subtree.depth + 1, subtree.visited || child.id
+             FROM items AS child
+             INNER JOIN subtree ON child.parent_id = subtree.id
+             WHERE child.tenant_id = $1 AND child.project_id = $2
+               AND subtree.depth <= $4
+               AND NOT child.id = ANY(subtree.visited)
+           )
+           SELECT id, depth FROM subtree ORDER BY depth, id`,
+          [context.tenantId, projectId, rootItemId, maxDepth],
+        )
+        if (rows.some(row => Number(row.depth) > maxDepth)) throw new Error('MAX_ANCESTRY_DEPTH')
+        if (!rows.length) return []
+        const ids = rows.map(row => String(row.id))
+        const itemsById = await q(
+          'SELECT * FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = ANY($3::text[])',
+          [context.tenantId, projectId, ids],
+        )
+        const byId = new Map(itemsById.map(row => [String(row.id), mapItem(row)]))
+        return rows.map(row => byId.get(String(row.id))).filter((row): row is ItemRecord => row !== undefined)
+      },
+      async hasChildren(context: PersistenceContext, projectId: string, itemId: string): Promise<boolean> {
+        const child = await q1(
+          'SELECT id FROM items WHERE tenant_id = $1 AND project_id = $2 AND parent_id = $3 LIMIT 1',
+          [context.tenantId, projectId, itemId],
+        )
+        return child !== null
+      },
       async listItemsWithRelations(context: PersistenceContext, projectId: string): Promise<ItemWithRelationsRecord[]> {
         const rows = await q('SELECT * FROM items WHERE tenant_id = $1 AND project_id = $2 ORDER BY position',
           [context.tenantId, projectId])
@@ -961,9 +1065,61 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return row ? mapSprint(row) : null
       },
       async transitionSprint(context: PersistenceContext, projectId: string, sprintId: string, targetStatus: string): Promise<SprintRecord | null> {
-        const row = await q1('UPDATE sprints SET status = $1 WHERE tenant_id = $2 AND project_id = $3 AND id = $4 RETURNING *',
-          [targetStatus, context.tenantId, projectId, sprintId])
-        return row ? mapSprint(row) : null
+        return tx(async client => {
+          const current = await client.query('SELECT id, status FROM sprints WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+            [context.tenantId, projectId, sprintId])
+          if (!current.rows[0]) return null
+          const now = new Date().toISOString()
+
+          if (targetStatus === 'OPEN') {
+            const active = await client.query("SELECT id FROM sprints WHERE tenant_id = $1 AND project_id = $2 AND status = 'OPEN' LIMIT 1",
+              [context.tenantId, projectId])
+            const activeId = (active.rows[0] as { id: string } | undefined)?.id
+            if (activeId && activeId !== sprintId) {
+              await client.query(`UPDATE sprint_cycles SET ended_at = $1, end_reason = 'SUSPENDED'
+                WHERE tenant_id = $2 AND project_id = $3 AND sprint_id = $4 AND ended_at IS NULL`,
+              [now, context.tenantId, projectId, activeId])
+              await client.query("UPDATE sprints SET status = 'PROPOSED' WHERE tenant_id = $1 AND project_id = $2 AND id = $3",
+                [context.tenantId, projectId, activeId])
+            }
+            await client.query("UPDATE sprints SET status = 'OPEN' WHERE tenant_id = $1 AND project_id = $2 AND id = $3",
+              [context.tenantId, projectId, sprintId])
+            const cycleId = generateId()
+            await client.query(
+              `INSERT INTO sprint_cycles (id, tenant_id, project_id, sprint_id, started_at, ended_at, end_reason, source)
+               VALUES ($1, $2, $3, $4, $5, NULL, NULL, 'OPENED')`,
+              [cycleId, context.tenantId, projectId, sprintId, now],
+            )
+            // Snapshot de compromisso set-based: uma seleção de vínculos + Leaf Rule,
+            // sem duas consultas adicionais por item candidato.
+            await client.query(
+              `INSERT INTO sprint_cycle_items (cycle_id, tenant_id, project_id, item_id, type, is_leaf, points, status, module_id, version_id)
+               SELECT $1, item.tenant_id, item.project_id, item.id, item.type, TRUE,
+                      item.points, item.status, item.module_id, item.version_id
+               FROM items AS item
+               INNER JOIN item_sprints AS link
+                 ON link.tenant_id = item.tenant_id AND link.item_id = item.id AND link.sprint_id = $2
+               WHERE item.tenant_id = $3 AND item.project_id = $4 AND item.type IN ('TASK', 'BUG')
+                 AND NOT EXISTS (
+                   SELECT 1 FROM items AS child
+                   WHERE child.tenant_id = item.tenant_id AND child.project_id = item.project_id AND child.parent_id = item.id
+                 )`,
+              [cycleId, sprintId, context.tenantId, projectId],
+            )
+          } else if (targetStatus === 'CLOSED') {
+            await client.query("UPDATE sprints SET status = 'CLOSED' WHERE tenant_id = $1 AND project_id = $2 AND id = $3",
+              [context.tenantId, projectId, sprintId])
+            await client.query(`UPDATE sprint_cycles SET ended_at = $1, end_reason = 'CLOSED'
+              WHERE tenant_id = $2 AND project_id = $3 AND sprint_id = $4 AND ended_at IS NULL`,
+            [now, context.tenantId, projectId, sprintId])
+          } else {
+            await client.query('UPDATE sprints SET status = $1 WHERE tenant_id = $2 AND project_id = $3 AND id = $4',
+              [targetStatus, context.tenantId, projectId, sprintId])
+          }
+          const row = await client.query('SELECT * FROM sprints WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+            [context.tenantId, projectId, sprintId])
+          return row.rows[0] ? mapSprint(row.rows[0] as PgRow) : null
+        })
       },
       async listTags(context: PersistenceContext, projectId: string): Promise<TagRecord[]> {
         const rows = await q('SELECT * FROM tags WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
@@ -2067,6 +2223,19 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       async updateItemWithRelations(context, projectId, itemId, patch, relations) {
         return tx(async (client) => {
           const before = await readItemSnapshot(client, context.tenantId, projectId, itemId)
+          const currentResult = await client.query(
+            'SELECT parent_id FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+            [context.tenantId, projectId, itemId],
+          )
+          const oldParentId = (currentResult.rows[0] as { parent_id: string | null } | undefined)?.parent_id ?? null
+          const newParentId = patch.parentId !== undefined ? patch.parentId : oldParentId
+          const parentChanged = newParentId !== oldParentId
+          const oldParentBefore = parentChanged && oldParentId
+            ? await readItemSnapshot(client, context.tenantId, projectId, oldParentId)
+            : null
+          const newParentBefore = parentChanged && newParentId
+            ? await readItemSnapshot(client, context.tenantId, projectId, newParentId)
+            : null
           const sets: string[] = []
           const params: unknown[] = [context.tenantId, projectId, itemId]
           let idx = 4
@@ -2100,6 +2269,9 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
                 [context.tenantId, itemId, sprintId])
             }
           }
+          if (patch.parentId !== undefined || patch.title !== undefined) {
+            await refreshPostgresDescendantAncestry(client, context.tenantId, projectId, itemId)
+          }
           if (relations?.activity) {
             const now = new Date().toISOString()
             await client.query(
@@ -2111,7 +2283,19 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           }
           const after = await readItemSnapshot(client, context.tenantId, projectId, itemId)
           if (before && after && JSON.stringify(before) !== JSON.stringify(after)) {
-            await recordItemEvent(client, context, { projectId, itemId, eventType: 'STATUS_CHANGED', before, after })
+            await recordItemEvent(client, context, { projectId, itemId, eventType: parentChanged ? 'ITEM_REPARENTED' : 'STATUS_CHANGED', before, after })
+          }
+          if (oldParentBefore && oldParentId) {
+            await recordItemEvent(client, context, {
+              projectId, itemId: oldParentId, eventType: 'LEAF_CHANGED', before: oldParentBefore,
+              after: await readItemSnapshot(client, context.tenantId, projectId, oldParentId),
+            })
+          }
+          if (newParentBefore && newParentId) {
+            await recordItemEvent(client, context, {
+              projectId, itemId: newParentId, eventType: 'LEAF_CHANGED', before: newParentBefore,
+              after: await readItemSnapshot(client, context.tenantId, projectId, newParentId),
+            })
           }
           const row = await client.query('SELECT * FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
             [context.tenantId, projectId, itemId])
@@ -2119,7 +2303,104 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         })
       },
       async reparentSubtree(context, projectId, itemId, newParentId) {
-        throw new Error('NOT_IMPLEMENTED: reparentSubtree')
+        await tx(async (client) => {
+          const subtreeResult = await client.query(
+            `WITH RECURSIVE subtree(id, parent_id, title, type, ancestry_path, depth) AS (
+               SELECT id, parent_id, title, type, ancestry_path, 0
+               FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3
+               UNION ALL
+               SELECT child.id, child.parent_id, child.title, child.type, child.ancestry_path, subtree.depth + 1
+               FROM items AS child
+               INNER JOIN subtree ON child.parent_id = subtree.id
+               WHERE child.tenant_id = $1 AND child.project_id = $2 AND subtree.depth <= $4
+             )
+             SELECT id, parent_id, title, type, ancestry_path, depth FROM subtree ORDER BY depth, id`,
+            [context.tenantId, projectId, itemId, 50],
+          )
+          const subtree = subtreeResult.rows as Array<{ id: string; parent_id: string | null; title: string; type: ItemRecord['type']; ancestry_path: string; depth: number }>
+          const root = subtree[0]
+          if (!root) throw new Error('ITEM_NOT_FOUND')
+          if (root.parent_id === newParentId) return
+          if (subtree.some(row => row.depth > 50)) throw new Error('MAX_ANCESTRY_DEPTH')
+
+          const subtreeIds = new Set(subtree.map(row => row.id))
+          let parent: { id: string; title: string; type: ItemRecord['type']; ancestry_path: string } | undefined
+          if (newParentId) {
+            const parentResult = await client.query(
+              'SELECT id, title, type, ancestry_path FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+              [context.tenantId, projectId, newParentId],
+            )
+            parent = parentResult.rows[0] as { id: string; title: string; type: ItemRecord['type']; ancestry_path: string } | undefined
+            if (!parent) throw new Error('PARENT_NOT_FOUND')
+            if (subtreeIds.has(newParentId)) throw new Error('HIERARCHY_CYCLE')
+          }
+
+          const before = await readItemSnapshot(client, context.tenantId, projectId, itemId)
+          const oldParentBefore = root.parent_id
+            ? await readItemSnapshot(client, context.tenantId, projectId, root.parent_id)
+            : null
+          const newParentBefore = newParentId
+            ? await readItemSnapshot(client, context.tenantId, projectId, newParentId)
+            : null
+          let parentPath: Array<{ id: string; title: string; type: string }> = []
+          if (parent) {
+            try { parentPath = JSON.parse(parent.ancestry_path || '[]') } catch { throw new Error('HIERARCHY_INVALID_ANCESTRY') }
+            if (parentPath.some(node => node.id === itemId)) throw new Error('HIERARCHY_CYCLE')
+          }
+          const rootPath = parent ? [...parentPath, { id: parent.id, title: parent.title, type: parent.type }] : []
+          const maxDepth = subtree.reduce((depth, row) => Math.max(depth, row.depth), 0)
+          if (rootPath.length + maxDepth > 50) throw new Error('MAX_ANCESTRY_DEPTH')
+
+          await client.query(
+            'UPDATE items SET parent_id = $1, ancestry_path = $2, updated_at = now() WHERE tenant_id = $3 AND project_id = $4 AND id = $5',
+            [newParentId, JSON.stringify(rootPath), context.tenantId, projectId, itemId],
+          )
+
+          const pathById = new Map<string, Array<{ id: string; title: string; type: string }>>([[itemId, rootPath]])
+          const updates: Array<{ id: string; path: string }> = []
+          const subtreeById = new Map(subtree.map(row => [row.id, row]))
+          for (const row of subtree.slice(1)) {
+            if (!row.parent_id) throw new Error('HIERARCHY_INVALID_PARENT')
+            const parentRow = subtreeById.get(row.parent_id)
+            const currentParentPath = pathById.get(row.parent_id)
+            if (!parentRow || !currentParentPath) throw new Error('HIERARCHY_ORDER_INVALID')
+            const path = [...currentParentPath, { id: parentRow.id, title: parentRow.title, type: parentRow.type }]
+            pathById.set(row.id, path)
+            updates.push({ id: row.id, path: JSON.stringify(path) })
+          }
+
+          const batchSize = 200
+          for (let offset = 0; offset < updates.length; offset += batchSize) {
+            const batch = updates.slice(offset, offset + batchSize)
+            const valueRows = batch.map((_, index) => `($${index * 2 + 1}::text, $${index * 2 + 2}::text)`).join(', ')
+            const params: unknown[] = []
+            for (const update of batch) params.push(update.id, update.path)
+            params.push(context.tenantId, projectId)
+            await client.query(
+              `UPDATE items AS target SET ancestry_path = changes.ancestry_path, updated_at = now()
+               FROM (VALUES ${valueRows}) AS changes(id, ancestry_path)
+               WHERE target.tenant_id = $${batch.length * 2 + 1}
+                 AND target.project_id = $${batch.length * 2 + 2}
+                 AND target.id = changes.id`,
+              params,
+            )
+          }
+
+          const after = await readItemSnapshot(client, context.tenantId, projectId, itemId)
+          if (before && after) await recordItemEvent(client, context, { projectId, itemId, eventType: 'ITEM_REPARENTED', before, after })
+          if (oldParentBefore && root.parent_id) {
+            await recordItemEvent(client, context, {
+              projectId, itemId: root.parent_id, eventType: 'LEAF_CHANGED', before: oldParentBefore,
+              after: await readItemSnapshot(client, context.tenantId, projectId, root.parent_id),
+            })
+          }
+          if (newParentBefore && newParentId) {
+            await recordItemEvent(client, context, {
+              projectId, itemId: newParentId, eventType: 'LEAF_CHANGED', before: newParentBefore,
+              after: await readItemSnapshot(client, context.tenantId, projectId, newParentId),
+            })
+          }
+        })
       },
       async claimItem(context, projectId, itemId, assigneeId, apiKeyId, columnId) {
         const rows = await q(
@@ -2162,7 +2443,86 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         })
       },
       async deleteItemSubtree(context, projectId, itemId, options) {
-        throw new Error('NOT_IMPLEMENTED: deleteItemSubtree')
+        return tx(async (client) => {
+          const result = await client.query(
+            `WITH RECURSIVE subtree(id, depth) AS (
+               SELECT id, 0 FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3
+               UNION ALL
+               SELECT child.id, subtree.depth + 1
+               FROM items AS child
+               INNER JOIN subtree ON child.parent_id = subtree.id
+               WHERE child.tenant_id = $1 AND child.project_id = $2 AND subtree.depth <= $4
+             )
+             SELECT id, depth FROM subtree ORDER BY depth, id`,
+            [context.tenantId, projectId, itemId, 50],
+          )
+          const subtreeRows = result.rows as Array<{ id: string; depth: number }>
+          if (subtreeRows.some(row => row.depth > 50)) throw new Error('MAX_ANCESTRY_DEPTH')
+          const itemIds = subtreeRows.map(row => String(row.id))
+          if (!itemIds.length) throw new Error('ITEM_NOT_FOUND')
+
+          const snapshots = await readItemSnapshots(client, context.tenantId, projectId, itemIds)
+          const parentIds = [...new Set([...snapshots.values()].flatMap(snapshot => snapshot.parentId ? [snapshot.parentId] : []))]
+          const parentSnapshots = await readItemSnapshots(client, context.tenantId, projectId, parentIds)
+          const attachmentRows = await client.query(
+            'SELECT storage_path FROM attachments WHERE tenant_id = $1 AND item_id = ANY($2::text[])',
+            [context.tenantId, itemIds],
+          )
+          const storagePaths = (attachmentRows.rows as Array<{ storage_path: string }>).map(row => row.storage_path)
+          if (storagePaths.length) {
+            const now = new Date().toISOString()
+            for (let offset = 0; offset < storagePaths.length; offset += 500) {
+              const batch = storagePaths.slice(offset, offset + 500)
+              const values: string[] = []
+              const params: unknown[] = []
+              for (const storagePath of batch) {
+                const base = params.length
+                values.push(`($${base + 1}, $${base + 2}, $${base + 3}, 'ATTACHMENT', 'PENDING', 0, $${base + 4}, $${base + 5}, $${base + 6})`)
+                params.push(generateId(), context.tenantId, storagePath, now, now, now)
+              }
+              await client.query(
+                `INSERT INTO storage_cleanup_jobs (id, tenant_id, storage_path, resource_type, status, attempts, available_at, created_at, updated_at)
+                 VALUES ${values.join(', ')} ON CONFLICT (tenant_id, storage_path) WHERE status = 'PENDING' DO NOTHING`,
+                params,
+              )
+            }
+          }
+
+          if (options?.recordAnalyticsEvents ?? true) {
+            await recordDeletedItemEventsBatch(client, context, projectId, snapshots)
+          }
+
+          const checklistRows = await client.query(
+            'SELECT id FROM checklists WHERE tenant_id = $1 AND item_id = ANY($2::text[])',
+            [context.tenantId, itemIds],
+          )
+          const checklistIds = (checklistRows.rows as Array<{ id: string }>).map(row => row.id)
+          if (checklistIds.length) {
+            await client.query('DELETE FROM checklist_items WHERE tenant_id = $1 AND checklist_id = ANY($2::text[])', [context.tenantId, checklistIds])
+          }
+          await client.query('DELETE FROM checklists WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
+          await client.query('DELETE FROM item_tags WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
+          await client.query('DELETE FROM item_sprints WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
+          await client.query('DELETE FROM attachments WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
+          await client.query('DELETE FROM item_logs WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
+          await client.query('DELETE FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = ANY($3::text[])', [context.tenantId, projectId, itemIds])
+
+          const externalParentIds = parentIds.filter(parentId => !itemIds.includes(parentId))
+          const remainingChildRows = externalParentIds.length
+            ? await client.query(
+              'SELECT DISTINCT parent_id FROM items WHERE tenant_id = $1 AND project_id = $2 AND parent_id = ANY($3::text[])',
+              [context.tenantId, projectId, externalParentIds],
+            )
+            : { rows: [] }
+          const parentsWithRemainingChildren = new Set((remainingChildRows.rows as Array<{ parent_id: string }>).map(row => row.parent_id))
+          if (options?.recordAnalyticsEvents ?? true) {
+            for (const [parentId, before] of parentSnapshots) {
+              const after = { ...before, isLeaf: itemIds.includes(parentId) || !parentsWithRemainingChildren.has(parentId) }
+              await recordItemEvent(client, context, { projectId, itemId: parentId, eventType: 'LEAF_CHANGED', before, after })
+            }
+          }
+          return itemIds
+        })
       },
       async deleteProjectAggregate(context, projectId, options) {
         throw new Error('NOT_IMPLEMENTED: deleteProjectAggregate')

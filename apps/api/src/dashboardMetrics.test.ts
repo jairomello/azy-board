@@ -1,16 +1,18 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { and, eq } from 'drizzle-orm'
-import type { ItemAnalyticsSnapshot } from './services/analytics'
+import { createSprintCycle, type ItemAnalyticsSnapshot } from './services/analytics'
 
 process.env.DATABASE_URL = ':memory:'
 
 const { app } = await import('./index')
-const { db } = await import('./db/index')
+const { db, sqlite } = await import('./db/index')
 const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
+sqlite.exec('PRAGMA foreign_keys = OFF;')
 await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
+sqlite.exec('PRAGMA foreign_keys = ON;')
 
 const {
-  tenants, users, projects, items, projectAnalyticsCoverage, projectMetricsDaily, memberships,
+  tenants, users, projects, items, itemSprints, sprints, sprintCycleItems, projectAnalyticsCoverage, projectMetricsDaily, memberships,
 } = await import('./db/schema')
 const { signJwt } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
@@ -41,6 +43,32 @@ describe('rollup diário transacional (Item 13)', () => {
     await db.insert(projects).values({ id: projectId, tenantId, name: 'Projeto rollup', createdAt: now })
     coveredDay = new Date('2026-01-05T12:00:00.000Z').toISOString().slice(0, 10)
     await db.insert(projectAnalyticsCoverage).values({ projectId, tenantId, coverageStartedAt: `${coveredDay}T00:00:00.000Z`, createdAt: now })
+  })
+
+  test('createSprintCycle seleciona só folhas vinculadas com uma consulta set-based', async () => {
+    const sprintId = generateId()
+    const storyId = generateId()
+    const leafId = generateId()
+    const parentId = generateId()
+    const childId = generateId()
+    await db.insert(sprints).values({
+      id: sprintId, tenantId, projectId, name: 'Ciclo N+1', status: 'OPEN',
+      startDate: '2026-01-01', endDate: '2026-01-31', createdAt: now,
+    })
+    await db.insert(items).values([
+      { id: storyId, tenantId, projectId, type: 'STORY', parentId: null, moduleId: null, ancestryPath: '[]', title: 'História', status: 'NOT_STARTED', priority: 'MEDIUM', points: null, position: 0, createdAt: now, updatedAt: now },
+      { id: leafId, tenantId, projectId, type: 'TASK', parentId: storyId, moduleId: null, ancestryPath: '[]', title: 'Folha', status: 'NOT_STARTED', priority: 'MEDIUM', points: 2, position: 1, createdAt: now, updatedAt: now },
+      { id: parentId, tenantId, projectId, type: 'TASK', parentId: storyId, moduleId: null, ancestryPath: '[]', title: 'Pai', status: 'NOT_STARTED', priority: 'MEDIUM', points: 3, position: 2, createdAt: now, updatedAt: now },
+      { id: childId, tenantId, projectId, type: 'BUG', parentId, moduleId: null, ancestryPath: '[]', title: 'Filho', status: 'NOT_STARTED', priority: 'MEDIUM', points: 1, position: 3, createdAt: now, updatedAt: now },
+    ])
+    await db.insert(itemSprints).values([
+      { tenantId, itemId: leafId, sprintId },
+      { tenantId, itemId: parentId, sprintId },
+    ])
+
+    const cycleId = await db.transaction(tx => createSprintCycle(tx, tenantId, projectId, sprintId, 'OPENED'))
+    const cycleRows = await db.select().from(sprintCycleItems).where(eq(sprintCycleItems.cycleId, cycleId))
+    expect(cycleRows.map(row => row.itemId)).toEqual([leafId])
   })
 
   test('evento único movimenta o dia e baseline define valores absolutos (1.4)', async () => {
@@ -123,9 +151,10 @@ describe('rollup diário transacional (Item 13)', () => {
 
   test('burnup sem filtros lê o rollup; com filtros usa replay por deltas (2.3/3.1)', async () => {
     const adminId = generateId()
-    await db.insert(users).values({ id: adminId, tenantId, email: 'rollup@test.local', passwordHash: 'h', name: 'Admin', theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR', createdAt: now })
+    const adminEmail = `${generateId()}@rollup.test`
+    await db.insert(users).values({ id: adminId, tenantId, email: adminEmail, passwordHash: 'h', name: 'Admin', theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR', createdAt: now })
     await db.insert(memberships).values({ id: generateId(), tenantId, userId: adminId, projectId, role: 'ADMIN', createdAt: now })
-    const session = await token(adminId, tenantId, 'rollup@test.local')
+    const session = await token(adminId, tenantId, adminEmail)
 
     const response = await request(`/projects/${projectId}/dashboard/burnup`, session)
     expect(response.status).toBe(200)
@@ -172,11 +201,12 @@ describe('agregação de horas por SQL (Item 13)', () => {
     tenantId = generateId()
     await db.insert(tenants).values({ id: tenantId, name: 'Hours tenant', slug: `hours-${tenantId.slice(0, 8)}`, createdAt: now })
     authorId = generateId()
-    await db.insert(users).values({ id: authorId, tenantId, email: 'hours@test.local', passwordHash: 'h', name: 'Author', theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR', createdAt: now })
+    const authorEmail = `${generateId()}@hours.test`
+    await db.insert(users).values({ id: authorId, tenantId, email: authorEmail, passwordHash: 'h', name: 'Author', theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR', createdAt: now })
     projectId = generateId()
     await db.insert(projects).values({ id: projectId, tenantId, name: 'Projeto hours', createdAt: now })
     await db.insert(memberships).values({ id: generateId(), tenantId, userId: authorId, projectId, role: 'ADMIN', createdAt: now })
-    adminToken = await token(authorId, tenantId, 'hours@test.local')
+    adminToken = await token(authorId, tenantId, authorEmail)
 
     // Semente: história → item com 7 logs manuais (somando 70 minutos)
     const storyId = generateId()

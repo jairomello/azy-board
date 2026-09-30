@@ -373,19 +373,29 @@ Com histórico grande, o endpoint pode degradar rapidamente.
 - Processamento incremental pelo outbox.
 - Política de retenção/compactação para eventos.
 
-### 14. Há N+1 em operações hierárquicas
+### 14. Há N+1 em operações hierárquicas — RESOLVIDO
 
-Exemplos:
-- Atualização recursiva de ancestry: `services/ancestry.ts:28-44`.
-- Cálculo recursivo de folhas: `services/ancestry.ts:68-93`.
-- Criação de ciclo consulta sprint e filho para cada item: `services/analytics.ts:69-80`.
-- Exclusão faz uma consulta por nível/pai: `routes/items.ts:981-994`.
+> **Resolvido pela change `optimize-hierarchical-operations` (card Item 14).**
+> Leituras de subárvore, reparent/ancestry, exclusão e determinação de folha
+> passaram a usar CTE recursiva, lotes e `hasChildren` indexado nos adapters
+> SQLite (SIMPLE, perfil padrão) e PostgreSQL (ADVANCED). Foi adicionado o
+> índice `items(tenant_id, project_id, parent_id)` nos dois bancos. Snapshots,
+> anexos e relações para exclusão são coletados em lote; atualizações de
+> `ancestryPath` usam batches transacionais. Eventos analíticos, Leaf Rule,
+> isolamento tenant/projeto e outbox de storage foram preservados. A verificação
+> inclui testes de contagem de consultas em árvores profundas e testes de
+> paridade dos adapters.
 
-**Correção:**
-- CTE recursiva no PostgreSQL.
-- Carregar subárvore em uma consulta.
-- Atualizações em lote.
-- Índice em `items(tenant_id, project_id, parent_id)`.
+Hotspots registrados antes da correção:
+- Atualização de ancestry dentro do unit-of-work SQLite: `apps/api/src/db/sqlite/itemUnitOfWork.ts`.
+- Verificação de folha que carregava todos os itens: `apps/api/src/routes/items.ts`.
+- Criação de ciclo de sprint com busca de sprint/filho por item: `apps/api/src/services/analytics.ts`.
+- Coleta de descendentes e dependências item a item durante exclusão: unit-of-work SQLite.
+
+As CTEs são implementadas nos dois adapters; a recursão aplica filtros `tenant_id`
+e `project_id` em cada passo. Writes por item continuam proporcionais ao número
+de registros modificados quando a operação precisa atualizar campos distintos,
+mas as leituras de descoberta/snapshot não executam SELECT por descendente.
 
 ### 15. Batch carrega relações de todos os tenants
 

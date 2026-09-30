@@ -160,6 +160,10 @@ export interface ProjectTeamPort {
 export interface WorkItemPort {
   getItem(context: PersistenceContext, projectId: string, itemId: string): Promise<ItemRecord | null>
   listItems(context: PersistenceContext, projectId: string, filter?: { types?: ItemType[]; status?: TaskStatus[]; moduleId?: string | null; columnId?: string | null; costCenterId?: string | null; versionId?: string | null }): Promise<ItemRecord[]>
+  /** Carrega uma subárvore em uma leitura recursiva, ordenada por nível e id. */
+  listSubtree(context: PersistenceContext, projectId: string, rootItemId: string, maxDepth?: number): Promise<ItemRecord[]>
+  /** Consulta indexada; não materializa os itens do projeto. */
+  hasChildren(context: PersistenceContext, projectId: string, itemId: string): Promise<boolean>
   listItemsWithRelations(context: PersistenceContext, projectId: string): Promise<ItemWithRelationsRecord[]>
   createItem(context: PersistenceContext, input: NewItemRecord): Promise<ItemRecord>
   updateItem(context: PersistenceContext, projectId: string, itemId: string, patch: ItemPatch): Promise<ItemRecord | null>
@@ -458,7 +462,7 @@ export interface UnitOfWork {
   claimItem(context: MutationContext, projectId: string, itemId: string, assigneeId: string, apiKeyId?: string, columnId?: string | null): Promise<boolean>
   releaseItem(context: MutationContext, projectId: string, itemId: string, activity?: string): Promise<void>
   moveItem(context: MutationContext, projectId: string, itemId: string, column: { id: string; name: string; baseStatus: ColumnBaseStatus }, fromColumnName: string): Promise<void>
-  deleteItemSubtree(context: MutationContext, projectId: string, itemId: string, options?: DeleteMutationOptions): Promise<void>
+  deleteItemSubtree(context: MutationContext, projectId: string, itemId: string, options?: DeleteMutationOptions): Promise<string[]>
   deleteProjectAggregate(context: MutationContext, projectId: string, options?: DeleteMutationOptions): Promise<void>
   deleteModuleAggregate(context: MutationContext, projectId: string, moduleId: string, options?: DeleteModuleMutationOptions): Promise<{ deleted: boolean; epicCount: number; deletedItemCount: number }>
   archiveItemSubtree(context: MutationContext, projectId: string, itemId: string): Promise<string[]>

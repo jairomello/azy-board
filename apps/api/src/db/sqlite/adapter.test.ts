@@ -47,6 +47,129 @@ describe('adapter SQLite dos ports', () => {
     sqlite.close()
   })
 
+  test('listSubtree e hasChildren são tenant/projeto-scoped e ordenados por profundidade', async () => {
+    const { sqlite, ports } = setup()
+    const project = await ports.projects.createProject(context, { name: 'Árvore A', boardMode: 'HIERARCHICAL' })
+    const otherProject = await ports.projects.createProject(context, { name: 'Árvore B', boardMode: 'HIERARCHICAL' })
+    const otherTenantProject = await ports.projects.createProject({ ...context, tenantId: 'tenant-b' }, { name: 'Árvore tenant B', boardMode: 'HIERARCHICAL' })
+    const now = new Date().toISOString()
+    const insert = sqlite.query('INSERT INTO items (id, tenant_id, project_id, type, parent_id, ancestry_path, title, status, priority, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    insert.run('root-a', 'tenant-a', project.id, 'STORY', null, '[]', 'Raiz', 'NOT_STARTED', 'MEDIUM', 0, now, now)
+    insert.run('child-a', 'tenant-a', project.id, 'TASK', 'root-a', '[{"id":"root-a","title":"Raiz","type":"STORY"}]', 'Filho', 'NOT_STARTED', 'MEDIUM', 1, now, now)
+    insert.run('grandchild-a', 'tenant-a', project.id, 'BUG', 'child-a', '[{"id":"root-a","title":"Raiz","type":"STORY"},{"id":"child-a","title":"Filho","type":"TASK"}]', 'Neto', 'NOT_STARTED', 'MEDIUM', 2, now, now)
+    // Relação parent_id malformada entre projetos do mesmo tenant: a CTE não atravessa project_id.
+    insert.run('foreign-project-child', 'tenant-a', otherProject.id, 'TASK', 'root-a', '[]', 'Outro projeto', 'NOT_STARTED', 'MEDIUM', 0, now, now)
+    insert.run('foreign-tenant-root', 'tenant-b', otherTenantProject.id, 'STORY', null, '[]', 'Outro tenant', 'NOT_STARTED', 'MEDIUM', 0, now, now)
+
+    expect(await ports.items.hasChildren(context, project.id, 'root-a')).toBe(true)
+    expect(await ports.items.hasChildren(context, project.id, 'grandchild-a')).toBe(false)
+    expect((await ports.items.listSubtree(context, project.id, 'root-a')).map(item => item.id))
+      .toEqual(['root-a', 'child-a', 'grandchild-a'])
+    await expect(ports.items.listSubtree(context, project.id, 'root-a', 1)).rejects.toThrow('MAX_ANCESTRY_DEPTH')
+    expect(await ports.items.listSubtree({ ...context, tenantId: 'tenant-b' }, project.id, 'root-a')).toEqual([])
+    sqlite.close()
+  })
+
+  test('renomear ancestry não dispara SELECT por descendente', async () => {
+    const { sqlite, ports } = setup()
+    const project = await ports.projects.createProject(context, { name: 'Query count', boardMode: 'HIERARCHICAL' })
+    const now = new Date().toISOString()
+    const insert = sqlite.query('INSERT INTO items (id, tenant_id, project_id, type, parent_id, ancestry_path, title, status, priority, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    insert.run('root', 'tenant-a', project.id, 'STORY', null, '[]', 'Root', 'NOT_STARTED', 'MEDIUM', 0, now, now)
+    let parentId = 'root'
+    let ancestry = [{ id: 'root', title: 'Root', type: 'STORY' }]
+    for (let depth = 1; depth <= 40; depth += 1) {
+      const id = `node-${depth}`
+      insert.run(id, 'tenant-a', project.id, depth % 2 ? 'TASK' : 'BUG', parentId, JSON.stringify(ancestry), id, 'NOT_STARTED', 'MEDIUM', depth, now, now)
+      ancestry = [...ancestry, { id, title: id, type: depth % 2 ? 'TASK' : 'BUG' }]
+      parentId = id
+    }
+
+    let reads = 0
+    const originalQuery = sqlite.query.bind(sqlite)
+    sqlite.query = ((statement: string) => {
+      if (/^\s*(SELECT|WITH\s+RECURSIVE)/i.test(statement)) reads += 1
+      return originalQuery(statement)
+    }) as typeof sqlite.query
+    await ports.unitOfWork.updateItemWithRelations({
+      ...context,
+      mutation: { origin: 'TEST', actorType: 'SYSTEM', actorSource: 'SYSTEM', actorLabel: null },
+    }, project.id, 'root', { title: 'Renamed root' })
+
+    expect(reads).toBeLessThan(20)
+    expect(JSON.parse((await ports.items.getItem(context, project.id, 'node-40'))!.ancestryPath)[0]).toEqual({ id: 'root', title: 'Renamed root', type: 'STORY' })
+    sqlite.close()
+  })
+
+  test('excluir subárvore não faz SELECT por item ou nível', async () => {
+    const { sqlite, ports } = setup()
+    const project = await ports.projects.createProject(context, { name: 'Delete query count', boardMode: 'HIERARCHICAL' })
+    const now = new Date().toISOString()
+    const insert = sqlite.query('INSERT INTO items (id, tenant_id, project_id, type, parent_id, ancestry_path, title, status, priority, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    insert.run('root', 'tenant-a', project.id, 'STORY', null, '[]', 'Root', 'NOT_STARTED', 'MEDIUM', 0, now, now)
+    let parentId = 'root'
+    let ancestry = [{ id: 'root', title: 'Root', type: 'STORY' }]
+    for (let depth = 1; depth <= 40; depth += 1) {
+      const id = `delete-${depth}`
+      insert.run(id, 'tenant-a', project.id, depth % 2 ? 'TASK' : 'BUG', parentId, JSON.stringify(ancestry), id, 'NOT_STARTED', 'MEDIUM', depth, now, now)
+      ancestry = [...ancestry, { id, title: id, type: depth % 2 ? 'TASK' : 'BUG' }]
+      parentId = id
+    }
+
+    let reads = 0
+    const originalQuery = sqlite.query.bind(sqlite)
+    sqlite.query = ((statement: string) => {
+      if (/^\s*(SELECT|WITH\s+RECURSIVE)/i.test(statement)) reads += 1
+      return originalQuery(statement)
+    }) as typeof sqlite.query
+    const deleted = await ports.unitOfWork.deleteItemSubtree({
+      ...context,
+      mutation: { origin: 'TEST', actorType: 'SYSTEM', actorSource: 'SYSTEM', actorLabel: null },
+    }, project.id, 'root')
+
+    expect(deleted).toHaveLength(41)
+    expect(reads).toBeLessThan(20)
+    sqlite.close()
+  })
+
+  test('abrir sprint materializa folhas com SELECTs limitados em vez de dois por item', async () => {
+    const { sqlite, ports } = setup()
+    const project = await ports.projects.createProject(context, { name: 'Sprint query count', boardMode: 'SIMPLE' })
+    const now = new Date().toISOString()
+    const sprintId = 'sprint-query-count'
+    sqlite.query('INSERT INTO sprints (id, tenant_id, project_id, name, status, start_date, end_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(sprintId, 'tenant-a', project.id, 'Sprint Q', 'PROPOSED', '2026-01-01', '2026-01-14', now)
+    const insertItem = sqlite.query('INSERT INTO items (id, tenant_id, project_id, type, parent_id, ancestry_path, title, status, priority, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    insertItem.run('story-root', 'tenant-a', project.id, 'STORY', null, '[]', 'Story', 'NOT_STARTED', 'MEDIUM', 0, now, now)
+    const itemIds = Array.from({ length: 40 }, (_, index) => `sprint-leaf-${index}`)
+    for (const [index, itemId] of itemIds.entries()) {
+      insertItem.run(itemId, 'tenant-a', project.id, 'TASK', 'story-root', '[]', itemId, 'NOT_STARTED', 'MEDIUM', index + 1, now, now)
+    }
+    insertItem.run('sprint-parent', 'tenant-a', project.id, 'TASK', 'story-root', '[]', 'Parent', 'NOT_STARTED', 'MEDIUM', 50, now, now)
+    insertItem.run('sprint-child', 'tenant-a', project.id, 'BUG', 'sprint-parent', '[]', 'Child', 'NOT_STARTED', 'MEDIUM', 51, now, now)
+    const insertLink = sqlite.query('INSERT INTO item_sprints (tenant_id, item_id, sprint_id) VALUES (?, ?, ?)')
+    for (const itemId of [...itemIds, 'sprint-parent', 'sprint-child']) insertLink.run('tenant-a', itemId, sprintId)
+
+    let reads = 0
+    const originalQuery = sqlite.query.bind(sqlite)
+    sqlite.query = ((statement: string) => {
+      if (/^\s*(SELECT|WITH\s+RECURSIVE)/i.test(statement)) reads += 1
+      return originalQuery(statement)
+    }) as typeof sqlite.query
+    await ports.planning.transitionSprint(context, project.id, sprintId, 'OPEN')
+    const cycle = sqlite.query<{ id: string }, [string, string, string]>(
+      'SELECT id FROM sprint_cycles WHERE tenant_id = ? AND project_id = ? AND sprint_id = ?',
+    ).get('tenant-a', project.id, sprintId)!
+    const captured = sqlite.query<{ item_id: string }, [string]>(
+      'SELECT item_id FROM sprint_cycle_items WHERE cycle_id = ?',
+    ).all(cycle.id).map(row => row.item_id)
+    expect(captured).toHaveLength(41)
+    expect(captured).not.toContain('sprint-parent')
+    // Duas leituras de estado + leitura final do sprint; não escala com 42 itens.
+    expect(reads).toBeLessThanOrEqual(5)
+    sqlite.close()
+  })
+
   test('cria agregado de projeto com defaults em uma operação atômica', async () => {
     const { sqlite, ports } = setup()
     const owner = await ports.identity.createUser(context, {

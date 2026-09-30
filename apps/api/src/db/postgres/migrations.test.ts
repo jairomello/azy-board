@@ -17,7 +17,7 @@ async function resetDatabase(client: Client) {
 
 async function runMigrations(client: Client) {
   const migrationsDir = join(import.meta.dir, 'migrations')
-  const files = ['0000_pale_warlock.sql', '0001_composite_fks.sql']
+  const files = ['0000_pale_warlock.sql', '0001_composite_fks.sql', '0003_items_tenant_project_parent_index.sql']
   for (const file of files) {
     const sql = readFileSync(join(migrationsDir, file), 'utf8')
     await client.query(sql)
@@ -37,6 +37,8 @@ describe('Migrations PostgreSQL', () => {
       expect(names).toContain('projects')
       expect(names).toContain('items')
       expect(names).toContain('assistant_runs')
+      const index = await client.query("SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'items_tenant_project_parent_idx'")
+      expect(index.rows[0]?.indexdef).toContain('(tenant_id, project_id, parent_id)')
     } finally {
       await client.end()
     }

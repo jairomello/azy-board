@@ -1,4 +1,4 @@
-import { and, eq, desc, sql } from 'drizzle-orm'
+import { and, eq, desc, inArray, sql } from 'drizzle-orm'
 import { db } from '../db/index'
 import { itemEvents, items, projectAnalyticsCoverage, sprintCycleItems, sprintCycles, itemSprints, projects } from '../db/schema'
 import { generateId } from '../utils/id'
@@ -82,14 +82,22 @@ export async function ensureCoverage(tx: AnalyticsDb, tenantId: string, projectI
 export async function createSprintCycle(tx: AnalyticsDb, tenantId: string, projectId: string, sprintId: string, source: 'OPENED' | 'MIGRATION', startedAt = new Date().toISOString()) {
   const id = generateId()
   await tx.insert(sprintCycles).values({ id, tenantId, projectId, sprintId, source, startedAt, endedAt: null, endReason: null })
-  const projectItems = await tx.query.items.findMany({ where: (i) => and(eq(i.tenantId, tenantId), eq(i.projectId, projectId)) })
-  const leaves = [] as typeof sprintCycleItems.$inferInsert[]
-  for (const item of projectItems) {
-    const linked = await tx.query.itemSprints.findFirst({ where: (link) => and(eq(link.itemId, item.id), eq(link.sprintId, sprintId)) })
-    if (!linked) continue
-    const child = await tx.query.items.findFirst({ where: (candidate) => and(eq(candidate.parentId, item.id), eq(candidate.tenantId, tenantId), eq(candidate.projectId, projectId)), columns: { id: true } })
-    if ((item.type === 'TASK' || item.type === 'BUG') && !child) leaves.push({ cycleId: id, tenantId, projectId, itemId: item.id, type: item.type, isLeaf: true, points: item.points, status: item.status, moduleId: item.moduleId, versionId: item.versionId })
-  }
+  const leafRows = await tx.select({
+    itemId: items.id, type: items.type, points: items.points, status: items.status,
+    moduleId: items.moduleId, versionId: items.versionId,
+  }).from(items).innerJoin(itemSprints, and(
+    eq(itemSprints.tenantId, items.tenantId), eq(itemSprints.itemId, items.id), eq(itemSprints.sprintId, sprintId),
+  )).where(and(
+    eq(items.tenantId, tenantId), eq(items.projectId, projectId), inArray(items.type, ['TASK', 'BUG']),
+    sql`NOT EXISTS (
+      SELECT 1 FROM items AS child
+      WHERE child.tenant_id = ${tenantId} AND child.project_id = ${projectId} AND child.parent_id = ${items.id}
+    )`,
+  )).orderBy(items.position)
+  const leaves = leafRows.map(item => ({
+    cycleId: id, tenantId, projectId, itemId: item.itemId, type: item.type,
+    isLeaf: true, points: item.points, status: item.status, moduleId: item.moduleId, versionId: item.versionId,
+  })) satisfies (typeof sprintCycleItems.$inferInsert)[]
   if (leaves.length) await tx.insert(sprintCycleItems).values(leaves)
   return id
 }

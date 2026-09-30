@@ -58,18 +58,14 @@ async function buildAncestryPath(tenantId: string, projectId: string, parentId: 
   return [...parentPath, { id: parent.id, title: parent.title, type: parent.type }]
 }
 
-// Detecta ciclo ANTES da escrita: sobe a cadeia de pais a partir de newParentId.
+// Detecta ciclo em uma leitura: ancestryPath do novo pai já contém a cadeia
+// completa de ancestrais, portanto não é necessário consultar cada nível.
 async function detectReparentCycle(tenantId: string, projectId: string, itemId: string, newParentId: string): Promise<boolean> {
-  let currentId: string | null = newParentId
-  const visited = new Set<string>()
-  for (let depth = 0; currentId && depth < MAX_ANCESTRY_DEPTH; depth++) {
-    if (currentId === itemId) return true
-    if (visited.has(currentId)) return true
-    visited.add(currentId)
-    const node = await persistence.items.getItem(systemContext(tenantId), projectId, currentId)
-    currentId = node?.parentId ?? null
-  }
-  return currentId !== null
+  const newParent = await persistence.items.getItem(systemContext(tenantId), projectId, newParentId)
+  if (!newParent) return false // validação de pai inexistente ocorre no fluxo de hierarquia
+  let ancestry: Array<{ id: string }> = []
+  try { ancestry = JSON.parse(newParent.ancestryPath || '[]') } catch { return true }
+  return ancestry.length >= MAX_ANCESTRY_DEPTH || ancestry.some(node => node.id === itemId)
 }
 
 // Gera o próximo sequenceCode disponível para o tipo no projeto
@@ -87,10 +83,9 @@ async function nextSequenceCode(tenantId: string, projectId: string, type: strin
   return `${prefix}${max + 1}`
 }
 
-// Verifica se item é folha (sem filhos) — Leaf Rule
+// Verifica se item é folha (sem filhos) via consulta indexada — Leaf Rule.
 async function isLeaf(tenantId: string, projectId: string, itemId: string): Promise<boolean> {
-  const projectItems = await persistence.items.listItems({ tenantId, actorUserId: null, actorKind: 'SYSTEM' }, projectId)
-  return !projectItems.some(item => item.parentId === itemId)
+  return !(await persistence.items.hasChildren(systemContext(tenantId), projectId, itemId))
 }
 
 // [TENANT] Valida que todas as tags pertencem ao projeto do tenant. Retorna os
@@ -890,31 +885,12 @@ itemsRouter.delete('/:itemId', requireRole('MEMBER'), async (c) => {
   if (!parsedBody.ok) return parsedBody.response
   const requestBody = parsedBody.data
 
-  // A lista vem isolada pelo port; a contagem é calculada em memória para o dry-run.
-  const projectItems = await persistence.items.listItems(projectContext, projectId)
-  const childrenByParent = new Map<string, string[]>()
-  for (const projectItem of projectItems) {
-    if (!projectItem.parentId) continue
-    const children = childrenByParent.get(projectItem.parentId) ?? []
-    children.push(projectItem.id)
-    childrenByParent.set(projectItem.parentId, children)
-  }
-  const allIds: string[] = []
-  const queue = [itemId]
-  const visited = new Set<string>()
-  while (queue.length > 0) {
-    const currentId = queue.shift()!
-    if (visited.has(currentId)) continue
-    visited.add(currentId)
-    allIds.push(currentId)
-    queue.push(...(childrenByParent.get(currentId) ?? []))
-  }
-
   if (requestBody.dryRun) {
+    const allIds = (await persistence.items.listSubtree(projectContext, projectId, itemId)).map(descendant => descendant.id)
     return c.json({ dryRun: true, itemId, projectId, descendantCount: allIds.length - 1, totalCount: allIds.length })
   }
 
-  await persistence.unitOfWork.deleteItemSubtree(
+  const allIds = await persistence.unitOfWork.deleteItemSubtree(
     userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST'), projectId, itemId,
   )
 

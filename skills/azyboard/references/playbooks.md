@@ -16,7 +16,7 @@ Para trabalho demorado ou com vários passos verificáveis, pergunte se deve cri
 
 ## Execução
 
-Liste folhas disponíveis, faça claim, registre contexto técnico, mova o card conforme progresso e registre apenas atividade relevante. Atualize checklist quando os passos forem verificáveis.
+Antes de escolher em `A Fazer`, consulte `list_tasks` filtrando `assigneeId` pela identidade autenticada e valide coluna/status. Priorize folhas elegíveis já atribuídas ao usuário atual. Não reivindique nem reatribua um item que já tenha responsável; use `claim_task` somente para card sem responsável, e nunca tome card atribuído a outra pessoa. Sem cards próprios elegíveis, mantenha a seleção normal entre cards sem responsável. Reconsulte após conflito ou mudança de disponibilidade. Registre contexto técnico, mova o card conforme progresso e registre apenas atividade relevante. Atualize checklist quando os passos forem verificáveis.
 
 ## Revisão
 

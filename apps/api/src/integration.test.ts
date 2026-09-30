@@ -14,7 +14,7 @@ const { db } = await import('./db/index')
 const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys, assistantConversations, assistantMessages, assistantRuns, assistantEvents, loginAttempts } = await import('./db/schema')
 const { signJwt, generateApiKey, hashPassword } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
-const { appendAnalyticsEvent, assertAnalyticsCutoverReady, ensureCoverage } = await import('./services/analytics')
+const { appendAnalyticsEvent, assertAnalyticsCutoverReady, createSprintCycle, ensureCoverage } = await import('./services/analytics')
 
 await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
 
@@ -740,6 +740,24 @@ describe('batch e idempotencia', () => {
     expect((await request(`/projects/${projectId}/sprints/${secondSprintId}/close`, session, { method: 'PATCH' })).status).toBe(200)
     expect((await request(`/projects/${projectId}/sprints/${sprintId}/open`, session, { method: 'PATCH' })).status).toBe(200)
     expect((await db.select().from(sprintCycles)).filter(row => row.projectId === projectId && row.sprintId === sprintId)).toHaveLength(2)
+  })
+
+  test('createSprintCycle inclui folhas vinculadas em lote e exclui pais', async () => {
+    const sprintId = generateId(); const story = generateId(); const parent = generateId(); const child = generateId()
+    const now = new Date().toISOString()
+    await db.insert(sprints).values({ id: sprintId, tenantId, projectId, name: 'Set based', status: 'OPEN', startDate: '2026-08-01', endDate: '2026-08-14', createdAt: now })
+    const leafIds = Array.from({ length: 12 }, () => generateId())
+    await db.insert(items).values([
+      { id: story, tenantId, projectId, type: 'STORY', parentId: null, moduleId: null, title: 'Story set', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now },
+      { id: parent, tenantId, projectId, type: 'TASK', parentId: story, moduleId: null, title: 'Pai set', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 1, createdAt: now, updatedAt: now },
+      { id: child, tenantId, projectId, type: 'BUG', parentId: parent, moduleId: null, title: 'Filho set', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 2, createdAt: now, updatedAt: now },
+      ...leafIds.map((id, position) => ({ id, tenantId, projectId, type: 'TASK' as const, parentId: story, moduleId: null, title: `Folha ${position}`, ancestryPath: '[]', status: 'NOT_STARTED' as const, priority: 'MEDIUM' as const, position: position + 3, createdAt: now, updatedAt: now })),
+    ])
+    await db.insert(itemSprints).values([parent, child, ...leafIds].map(itemId => ({ tenantId, itemId, sprintId })))
+
+    const cycleId = await db.transaction(tx => createSprintCycle(tx, tenantId, projectId, sprintId, 'OPENED'))
+    const captured = await db.select().from(sprintCycleItems).where(eq(sprintCycleItems.cycleId, cycleId))
+    expect(captured.map(row => row.itemId).sort()).toEqual([child, ...leafIds].sort())
   })
 
   test('ciclo captura somente folhas e rejeita período excessivo', async () => {

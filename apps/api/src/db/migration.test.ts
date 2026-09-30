@@ -64,6 +64,7 @@ describe('migration de rollup diário do dashboard (Item 13)', () => {
     const indexes = sqlite.query("SELECT name FROM sqlite_master WHERE type = 'index'").all() as Array<{ name: string }>
     expect(indexes.map(index => index.name)).toContain('item_events_item_occurrence_idx')
     expect(indexes.map(index => index.name)).toContain('item_logs_tenant_created_idx')
+    expect(indexes.map(index => index.name)).toContain('items_tenant_project_parent_idx')
     expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
     sqlite.close()
   })
