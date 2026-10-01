@@ -9,6 +9,7 @@ import type {
   AssistantApprovalDetailRecord,
   AssistantConversationRecord,
   AssistantCredentialRecord,
+  AssistantModelConfigRecord,
   AssistantEventFullRecord,
   AssistantEventTypeName,
   AssistantMessageRecord,
@@ -282,6 +283,7 @@ export interface NewAssistantRun {
   userId: string
   model: string | null
   idempotencyKey: string | null
+  executionContextJson?: string | null
   expiresAt: string | null
   createdAt: string
   // Job queue: lease/claim columns
@@ -314,9 +316,39 @@ export interface NewAssistantApproval {
   createdAt: string
 }
 
+export interface NewAssistantModelConfig {
+  id: string
+  provider: 'OPENAI' | 'OPENROUTER'
+  model: string
+  credentialId: string
+  position: number
+  enabled: boolean
+  validationStatus: 'UNVALIDATED' | 'VALID' | 'INVALID'
+  validatedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AssistantModelConfigPatch {
+  provider?: 'OPENAI' | 'OPENROUTER'
+  model?: string
+  credentialId?: string
+  position?: number
+  enabled?: boolean
+  validationStatus?: 'UNVALIDATED' | 'VALID' | 'INVALID'
+  validatedAt?: string | null
+  updatedAt: string
+}
+
 /** Azy Agent: settings, credenciais, conversas, runs, aprovações, tool calls e eventos. */
 export interface AgentPort {
   getSettings(context: PersistenceContext): Promise<AssistantSettingsRecord | null>
+  listModelConfigs(context: PersistenceContext): Promise<AssistantModelConfigRecord[]>
+  createModelConfig(context: PersistenceContext, input: NewAssistantModelConfig): Promise<boolean>
+  updateModelConfig(context: PersistenceContext, modelConfigId: string, patch: AssistantModelConfigPatch): Promise<boolean>
+  reorderModelConfigs(context: PersistenceContext, orderedIds: string[], updatedAt: string): Promise<boolean>
+  deleteModelConfig(context: PersistenceContext, modelConfigId: string, updatedAt: string): Promise<boolean>
+  clearModelConfigs(context: PersistenceContext, updatedAt: string): Promise<void>
   saveAvailability(context: PersistenceContext, enabled: boolean, updatedAt: string): Promise<void>
   saveGovernance(context: PersistenceContext, patch: Record<string, number>, updatedAt: string): Promise<void>
   saveProvider(context: PersistenceContext, input: { provider: 'OPENAI' | 'OPENROUTER'; model: string; credentialId: string; validatedAt: string; updatedAt: string }, previousCredentialId: string | null): Promise<void>
@@ -336,11 +368,12 @@ export interface AgentPort {
   touchConversation(context: PersistenceContext, userId: string, conversationId: string, now: string): Promise<void>
 
   listRuns(context: PersistenceContext, conversationId: string): Promise<AssistantRunDetailRecord[]>
+  getRun(context: PersistenceContext, runId: string): Promise<AssistantRunDetailRecord | null>
   getOwnedRun(context: PersistenceContext, userId: string, runId: string): Promise<AssistantRunDetailRecord | null>
   findRunByIdempotencyKey(context: PersistenceContext, userId: string, idempotencyKey: string): Promise<AssistantRunDetailRecord | null>
   findResumableRun(context: PersistenceContext, userId: string, conversationId: string): Promise<AssistantRunDetailRecord | null>
   insertRun(context: PersistenceContext, input: NewAssistantRun): Promise<void>
-  updateRun(runId: string, tenantId: string, patch: Partial<Pick<AssistantRunDetailRecord, 'status' | 'model' | 'currentCursor' | 'inputTokens' | 'outputTokens' | 'costMicros' | 'errorCode' | 'startedAt' | 'finishedAt' | 'claimedBy' | 'claimExpiresAt' | 'attempts' | 'nextAttemptAt' | 'cancelRequested'>>): Promise<void>
+  updateRun(runId: string, tenantId: string, patch: Partial<Pick<AssistantRunDetailRecord, 'status' | 'model' | 'currentCursor' | 'inputTokens' | 'outputTokens' | 'costMicros' | 'errorCode' | 'executionContextJson' | 'startedAt' | 'finishedAt' | 'claimedBy' | 'claimExpiresAt' | 'attempts' | 'nextAttemptAt' | 'cancelRequested'>>): Promise<void>
   updateRunInStatuses(runId: string, tenantId: string, userId: string, statuses: AssistantRunStatus[], patch: Partial<Pick<AssistantRunDetailRecord, 'status' | 'errorCode' | 'finishedAt'>>): Promise<boolean>
   expireStaleRuns(tenantId: string, cutoff: string, now: string): Promise<void>
   countActiveRuns(tenantId: string, userId?: string): Promise<number>

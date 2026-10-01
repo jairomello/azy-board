@@ -32,6 +32,7 @@ import type {
   ItemEventRecord,
   ItemWithRelationsRecord,
   BatchUpdateReadSnapshot,
+  AssistantModelConfigRecord,
   NewAttachmentRecord,
   SaveAvatarRecord,
   SprintCycleItemRecord,
@@ -79,7 +80,9 @@ import type {
   AnalyticsPort,
   DashboardReadPort,
   AgentPort,
+  AssistantModelConfigPatch,
   BatchMutationPort,
+  NewAssistantModelConfig,
   UnitOfWork,
 } from '../../persistence/ports'
 import { generateId } from '../../utils/id'
@@ -318,6 +321,17 @@ function mapAssistantSettings(row: PgRow) {
   }
 }
 
+function mapAssistantModelConfig(row: PgRow): AssistantModelConfigRecord {
+  return {
+    id: row.id as string, tenantId: row.tenant_id as string,
+    provider: row.provider as AssistantModelConfigRecord['provider'], model: row.model as string,
+    credentialId: row.credential_id as string, keyPrefix: row.key_prefix as string | null,
+    position: row.position as number, enabled: row.enabled as boolean,
+    validationStatus: row.validation_status as AssistantModelConfigRecord['validationStatus'],
+    validatedAt: row.validated_at as string | null, createdAt: row.created_at as string, updatedAt: row.updated_at as string,
+  }
+}
+
 function mapAssistantCredential(row: PgRow) {
   return {
     id: row.id as string, tenantId: row.tenant_id as string,
@@ -354,6 +368,7 @@ function mapAssistantRun(row: PgRow) {
     currentCursor: row.current_cursor as number,
     inputTokens: row.input_tokens as number | null, outputTokens: row.output_tokens as number | null,
     costMicros: row.cost_micros as number | null, errorCode: row.error_code as string | null,
+    executionContextJson: row.execution_context_json as string | null,
     createdAt: row.created_at as string, startedAt: row.started_at as string | null,
     finishedAt: row.finished_at as string | null, expiresAt: row.expires_at as string | null,
     claimedBy: row.claimed_by as string | null, claimExpiresAt: row.claim_expires_at as string | null,
@@ -508,6 +523,26 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       throw error
     } finally {
       client.release()
+    }
+  }
+
+  async function syncAssistantPrimary(client: PoolClient, tenantId: string, updatedAt: string) {
+    await client.query(`INSERT INTO assistant_settings (tenant_id, enabled, validation_status, updated_at)
+      VALUES ($1, false, 'UNVALIDATED', $2) ON CONFLICT (tenant_id) DO NOTHING`, [tenantId, updatedAt])
+    await client.query(`SELECT tenant_id FROM assistant_settings WHERE tenant_id = $1 FOR UPDATE`, [tenantId])
+    const result = await client.query(`SELECT m.provider, m.model, m.credential_id, m.validation_status, m.validated_at
+      FROM assistant_model_configs AS m
+      JOIN assistant_credentials AS c ON c.id = m.credential_id AND c.tenant_id = m.tenant_id AND c.provider = m.provider
+      WHERE m.tenant_id = $1 AND m.enabled = true AND m.validation_status = 'VALID' AND c.revoked_at IS NULL
+      ORDER BY m.position, m.created_at, m.id LIMIT 1`, [tenantId])
+    const primary = result.rows[0] as PgRow | undefined
+    if (primary) {
+      await client.query(`UPDATE assistant_settings SET provider = $1, model = $2, credential_mode = 'API_KEY', credential_id = $3,
+        validation_status = $4, validated_at = $5, updated_at = $6 WHERE tenant_id = $7`,
+      [primary.provider, primary.model, primary.credential_id, primary.validation_status, primary.validated_at, updatedAt, tenantId])
+    } else {
+      await client.query(`UPDATE assistant_settings SET provider = NULL, model = NULL, credential_mode = NULL, credential_id = NULL,
+        validation_status = 'UNVALIDATED', validated_at = NULL, updated_at = $1 WHERE tenant_id = $2`, [updatedAt, tenantId])
     }
   }
 
@@ -1711,6 +1746,103 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         const row = await q1('SELECT * FROM assistant_settings WHERE tenant_id = $1', [context.tenantId])
         return row ? mapAssistantSettings(row) : null
       },
+      // [TENANT] Toda leitura e mutação de modelos inclui tenant_id e, quando houver ID, o ID dentro desse mesmo tenant.
+      async listModelConfigs(context) {
+        const rows = await q(`SELECT m.*, c.key_prefix FROM assistant_model_configs AS m
+          JOIN assistant_credentials AS c ON c.id = m.credential_id AND c.tenant_id = m.tenant_id
+          WHERE m.tenant_id = $1 ORDER BY m.position, m.created_at, m.id`, [context.tenantId])
+        return rows.map(mapAssistantModelConfig)
+      },
+      // [TENANT] Insere o modelo usando exclusivamente o tenant do contexto.
+      async createModelConfig(context, input: NewAssistantModelConfig) {
+        await tx(async (client) => {
+          await client.query(`INSERT INTO assistant_settings (tenant_id, enabled, validation_status, updated_at)
+            VALUES ($1, false, 'UNVALIDATED', $2) ON CONFLICT (tenant_id) DO NOTHING`, [context.tenantId, input.updatedAt])
+          await client.query(`SELECT tenant_id FROM assistant_settings WHERE tenant_id = $1 FOR UPDATE`, [context.tenantId])
+          const lastPosition = await client.query(`SELECT COALESCE(MAX(position), -1)::int AS position FROM assistant_model_configs WHERE tenant_id = $1`, [context.tenantId])
+          const position = Number((lastPosition.rows[0] as PgRow | undefined)?.position ?? -1) + 1
+          await client.query(`INSERT INTO assistant_model_configs (
+            id, tenant_id, provider, model, credential_id, position, enabled, validation_status, validated_at, created_at, updated_at
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [
+            input.id, context.tenantId, input.provider, input.model, input.credentialId, position,
+            input.enabled, input.validationStatus, input.validatedAt, input.createdAt, input.updatedAt,
+          ])
+          await syncAssistantPrimary(client, context.tenantId, input.updatedAt)
+        })
+        return true
+      },
+      // [TENANT] Localiza e atualiza somente o modelo pertencente ao tenant do contexto.
+      async updateModelConfig(context, modelConfigId, patch: AssistantModelConfigPatch) {
+        return tx(async (client) => {
+          const currentResult = await client.query(`SELECT credential_id FROM assistant_model_configs WHERE tenant_id = $1 AND id = $2`, [context.tenantId, modelConfigId])
+          const current = currentResult.rows[0] as PgRow | undefined
+          if (!current) return false
+          const fields: Record<string, string> = {
+            provider: 'provider', model: 'model', credentialId: 'credential_id', position: 'position',
+            enabled: 'enabled', validationStatus: 'validation_status', validatedAt: 'validated_at',
+          }
+          const sets: string[] = []
+          const params: unknown[] = [context.tenantId, modelConfigId]
+          let index = 3
+          for (const [key, column] of Object.entries(fields)) {
+            if (!(key in patch)) continue
+            sets.push(`${column} = $${index++}`)
+            params.push((patch as unknown as Record<string, unknown>)[key])
+          }
+          sets.push(`updated_at = $${index++}`)
+          params.push(patch.updatedAt)
+          await client.query(`UPDATE assistant_model_configs SET ${sets.join(', ')} WHERE tenant_id = $1 AND id = $2`, params)
+          const previousCredentialId = current.credential_id as string
+          if (patch.credentialId && patch.credentialId !== previousCredentialId) {
+            const usage = await client.query(`SELECT count(*)::int AS count FROM assistant_model_configs WHERE tenant_id = $1 AND credential_id = $2`, [context.tenantId, previousCredentialId])
+            if (Number((usage.rows[0] as PgRow | undefined)?.count ?? 0) === 0) {
+              await client.query(`UPDATE assistant_credentials SET revoked_at = $1 WHERE tenant_id = $2 AND id = $3 AND revoked_at IS NULL`, [patch.updatedAt, context.tenantId, previousCredentialId])
+            }
+          }
+          await syncAssistantPrimary(client, context.tenantId, patch.updatedAt)
+          return true
+        })
+      },
+      // [TENANT] Valida e reordena a lista completa dentro do tenant em uma transação.
+      async reorderModelConfigs(context, orderedIds, updatedAt) {
+        return tx(async (client) => {
+          const result = await client.query(`SELECT id FROM assistant_model_configs WHERE tenant_id = $1 ORDER BY position, created_at, id`, [context.tenantId])
+          const existing = (result.rows as PgRow[]).map(row => row.id as string)
+          if (existing.length !== orderedIds.length || new Set(orderedIds).size !== orderedIds.length || orderedIds.some(id => !existing.includes(id))) return false
+          for (let position = 0; position < orderedIds.length; position++) {
+            await client.query(`UPDATE assistant_model_configs SET position = $1, updated_at = $2 WHERE tenant_id = $3 AND id = $4`, [position, updatedAt, context.tenantId, orderedIds[position]])
+          }
+          await syncAssistantPrimary(client, context.tenantId, updatedAt)
+          return true
+        })
+      },
+      // [TENANT] Remove modelo e revoga sua credencial somente no tenant do contexto.
+      async deleteModelConfig(context, modelConfigId, updatedAt) {
+        return tx(async (client) => {
+          const result = await client.query(`SELECT credential_id FROM assistant_model_configs WHERE tenant_id = $1 AND id = $2`, [context.tenantId, modelConfigId])
+          const current = result.rows[0] as PgRow | undefined
+          if (!current) return false
+          const credentialId = current.credential_id as string
+          await client.query(`DELETE FROM assistant_model_configs WHERE tenant_id = $1 AND id = $2`, [context.tenantId, modelConfigId])
+          const usage = await client.query(`SELECT count(*)::int AS count FROM assistant_model_configs WHERE tenant_id = $1 AND credential_id = $2`, [context.tenantId, credentialId])
+          if (Number((usage.rows[0] as PgRow | undefined)?.count ?? 0) === 0) {
+            await client.query(`UPDATE assistant_credentials SET revoked_at = $1 WHERE tenant_id = $2 AND id = $3 AND revoked_at IS NULL`, [updatedAt, context.tenantId, credentialId])
+          }
+          await syncAssistantPrimary(client, context.tenantId, updatedAt)
+          return true
+        })
+      },
+      // [TENANT] Limpa a lista e credenciais referenciadas somente no tenant do contexto.
+      async clearModelConfigs(context, updatedAt) {
+        await tx(async (client) => {
+          await client.query(`UPDATE assistant_credentials SET revoked_at = $1 WHERE tenant_id = $2 AND id IN
+            (SELECT credential_id FROM assistant_model_configs WHERE tenant_id = $2
+             UNION SELECT credential_id FROM assistant_settings WHERE tenant_id = $2 AND credential_id IS NOT NULL) AND revoked_at IS NULL`, [updatedAt, context.tenantId])
+          await client.query(`DELETE FROM assistant_model_configs WHERE tenant_id = $1`, [context.tenantId])
+          await syncAssistantPrimary(client, context.tenantId, updatedAt)
+          await client.query(`UPDATE assistant_settings SET enabled = false, updated_at = $1 WHERE tenant_id = $2`, [updatedAt, context.tenantId])
+        })
+      },
       async saveAvailability(context, enabled, updatedAt) {
         await q(
           `INSERT INTO assistant_settings (tenant_id, enabled, validation_status, updated_at)
@@ -1821,6 +1953,10 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           [context.tenantId, conversationId])
         return rows.map(mapAssistantRun)
       },
+      async getRun(context, runId) {
+        const row = await q1('SELECT * FROM assistant_runs WHERE tenant_id = $1 AND id = $2', [context.tenantId, runId])
+        return row ? mapAssistantRun(row) : null
+      },
       async getOwnedRun(context, userId, runId) {
         const row = await q1('SELECT * FROM assistant_runs WHERE id = $1 AND tenant_id = $2 AND user_id = $3',
           [runId, context.tenantId, userId])
@@ -1840,9 +1976,9 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       },
       async insertRun(context, input) {
         await q(
-          'INSERT INTO assistant_runs (id, tenant_id, conversation_id, user_id, model, idempotency_key, status, created_at, expires_at, claimed_by, claim_expires_at, attempts, next_attempt_at, cancel_requested) VALUES ($1, $2, $3, $4, $5, $6, \'QUEUED\', $7, $8, $9, $10, $11, $12, $13)',
+          'INSERT INTO assistant_runs (id, tenant_id, conversation_id, user_id, model, idempotency_key, status, created_at, expires_at, claimed_by, claim_expires_at, attempts, next_attempt_at, cancel_requested, execution_context_json) VALUES ($1, $2, $3, $4, $5, $6, \'QUEUED\', $7, $8, $9, $10, $11, $12, $13, $14)',
           [input.id, context.tenantId, input.conversationId, input.userId, input.model, input.idempotencyKey, input.createdAt, input.expiresAt,
-           input.claimedBy ?? null, input.claimExpiresAt ?? null, input.attempts ?? 0, input.nextAttemptAt ?? null, input.cancelRequested ? 1 : 0],
+            input.claimedBy ?? null, input.claimExpiresAt ?? null, input.attempts ?? 0, input.nextAttemptAt ?? null, input.cancelRequested ? 1 : 0, input.executionContextJson ?? null],
         )
       },
       async updateRun(runId, tenantId, patch) {
@@ -1852,7 +1988,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         const fields: Record<string, string> = {
           status: 'status', model: 'model', currentCursor: 'current_cursor',
           inputTokens: 'input_tokens', outputTokens: 'output_tokens', costMicros: 'cost_micros',
-          errorCode: 'error_code', startedAt: 'started_at', finishedAt: 'finished_at',
+          errorCode: 'error_code', executionContextJson: 'execution_context_json', startedAt: 'started_at', finishedAt: 'finished_at',
           claimedBy: 'claimed_by', claimExpiresAt: 'claim_expires_at',
           attempts: 'attempts', nextAttemptAt: 'next_attempt_at', cancelRequested: 'cancel_requested',
         }

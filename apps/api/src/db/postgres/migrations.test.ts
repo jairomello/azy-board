@@ -17,7 +17,7 @@ async function resetDatabase(client: Client) {
 
 async function runMigrations(client: Client) {
   const migrationsDir = join(import.meta.dir, 'migrations')
-  const files = ['0000_pale_warlock.sql', '0001_composite_fks.sql', '0003_items_tenant_project_parent_index.sql']
+  const files = ['0000_pale_warlock.sql', '0001_composite_fks.sql', '0003_items_tenant_project_parent_index.sql', '0004_assistant_model_configs.sql', '0005_assistant_run_context.sql']
   for (const file of files) {
     const sql = readFileSync(join(migrationsDir, file), 'utf8')
     await client.query(sql)
@@ -37,8 +37,42 @@ describe('Migrations PostgreSQL', () => {
       expect(names).toContain('projects')
       expect(names).toContain('items')
       expect(names).toContain('assistant_runs')
+      expect(names).toContain('assistant_model_configs')
       const index = await client.query("SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'items_tenant_project_parent_idx'")
       expect(index.rows[0]?.indexdef).toContain('(tenant_id, project_id, parent_id)')
+    } finally {
+      await client.end()
+    }
+  })
+
+  test('migra provider singleton para o primeiro modelo e mantém isolamento da credencial', async () => {
+    const client = await getClient()
+    try {
+      await resetDatabase(client)
+      const migrationsDir = join(import.meta.dir, 'migrations')
+      for (const file of ['0000_pale_warlock.sql', '0001_composite_fks.sql', '0003_items_tenant_project_parent_index.sql']) {
+        await client.query(readFileSync(join(migrationsDir, file), 'utf8'))
+      }
+      await client.query("INSERT INTO tenants (id, name, slug) VALUES ('model-tenant', 'Models', 'models')")
+      await client.query("INSERT INTO users (id, tenant_id, email, password_hash, name) VALUES ('model-root', 'model-tenant', 'root@models.test', 'hash', 'Root')")
+      await client.query(`INSERT INTO assistant_credentials (id, tenant_id, provider, credential_mode, ciphertext, ciphertext_version, key_prefix, scopes_json, created_by, created_at)
+        VALUES ('model-credential', 'model-tenant', 'OPENROUTER', 'API_KEY', 'ciphertext', 1, 'sk-model...', '[]', 'model-root', '2026-01-01T00:00:00.000Z')`)
+      await client.query(`INSERT INTO assistant_settings (tenant_id, enabled, provider, model, credential_mode, credential_id, validation_status, validated_at, updated_at)
+        VALUES ('model-tenant', true, 'OPENROUTER', 'anthropic/claude-sonnet-4', 'API_KEY', 'model-credential', 'VALID', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`)
+      for (const file of ['0004_assistant_model_configs.sql', '0005_assistant_run_context.sql']) {
+        await client.query(readFileSync(join(migrationsDir, file), 'utf8'))
+      }
+      const migrated = await client.query(`SELECT tenant_id, provider, model, credential_id, position, enabled, validation_status
+        FROM assistant_model_configs WHERE tenant_id = 'model-tenant'`)
+      expect(migrated.rows).toHaveLength(1)
+      expect(migrated.rows[0]).toMatchObject({
+        tenant_id: 'model-tenant', provider: 'OPENROUTER', model: 'anthropic/claude-sonnet-4',
+        credential_id: 'model-credential', position: 0, enabled: true, validation_status: 'VALID',
+      })
+      await client.query("INSERT INTO tenants (id, name, slug) VALUES ('other-tenant', 'Other', 'other')")
+      await expect(client.query(`INSERT INTO assistant_model_configs
+        (id, tenant_id, provider, model, credential_id, position, enabled, validation_status, created_at, updated_at)
+        VALUES ('cross-model', 'other-tenant', 'OPENROUTER', 'model', 'model-credential', 0, true, 'VALID', 'now', 'now')`)).rejects.toThrow()
     } finally {
       await client.end()
     }

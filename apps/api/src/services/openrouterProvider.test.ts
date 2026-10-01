@@ -64,6 +64,30 @@ describe('OpenRouterProvider', () => {
     ])
   })
 
+  test('converte transcript canônico para fallback entre adapters', async () => {
+    let requestBody: Record<string, unknown> | undefined
+    const provider = new OpenRouterProvider('or-key', {
+      fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
+        return new Response(JSON.stringify({ id: 'chatcmpl-fallback', choices: [{ message: { role: 'assistant', content: 'Resumo final' } }] }), { headers: { 'Content-Type': 'application/json' } })
+      }) as unknown as typeof fetch,
+    })
+    await provider.createRun({
+      model: 'anthropic/claude-sonnet-4', userId: 'user-1', tools: [],
+      input: [
+        { role: 'system', content: 'Contexto' }, { role: 'user', content: 'Liste projetos' },
+        { type: 'function_call', call_id: 'tool-call-1', name: 'list_projects', arguments: '{}' },
+        { type: 'function_call_output', call_id: 'tool-call-1', output: '[{"id":"p1"}]' },
+      ],
+    })
+    expect(requestBody?.messages).toEqual([
+      { role: 'system', content: 'Contexto' },
+      { role: 'user', content: 'Liste projetos' },
+      { role: 'assistant', content: null, tool_calls: [{ id: 'tool-call-1', type: 'function', function: { name: 'list_projects', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'tool-call-1', content: '[{"id":"p1"}]' },
+    ])
+  })
+
   test('valida modelo OpenRouter via catálogo sem expor a chave', async () => {
     let authorization = ''
     const provider = new OpenRouterProvider('or-secret', {

@@ -1,0 +1,1 @@
+ALTER TABLE `assistant_runs` ADD `execution_context_json` text;

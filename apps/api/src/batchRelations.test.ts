@@ -55,7 +55,7 @@ describe('relações de batch limitadas ao tenant/projeto (Item 15)', () => {
   beforeAll(() => { console.log('PHASE-DESC keys:', Object.keys(contexts).join(',')) })
   test('batch por sprint seleciona apenas itens do projeto correto (3.1)', async () => {
     console.log('PHASE-TEST keys:', Object.keys(contexts).join(','))
-    const alpha = contexts['alpha']!; const beta = contexts['beta']!
+    const alpha = contexts.alpha!; const beta = contexts.beta!
     const sprintA = generateId()
     await db.insert(sprints).values({ id: sprintA, tenantId: alpha.tenantId, projectId: alpha.projectId, name: 'Sprint comum', status: 'OPEN', startDate: '2026-01-01', endDate: '2026-01-14', createdAt: now })
     const sprintB = generateId()
@@ -76,7 +76,7 @@ describe('relações de batch limitadas ao tenant/projeto (Item 15)', () => {
   })
 
   test('batch por tag seleciona apenas itens do projeto correto (3.2/3.3)', async () => {
-    const alpha = contexts['alpha']!; const beta = contexts['beta']!
+    const alpha = contexts.alpha!; const beta = contexts.beta!
     const tagA = generateId()
     await db.insert(tags).values({ id: tagA, tenantId: alpha.tenantId, projectId: alpha.projectId, name: 'Tag comum', color: '#111111' })
     const tagB = generateId()
@@ -111,7 +111,7 @@ describe('relações de batch limitadas ao tenant/projeto (Item 15)', () => {
   })
 
   test('atomic=true reverte lote e preserva relações de outros tenants (3.4)', async () => {
-    const alpha = contexts['alpha']!
+    const alpha = contexts.alpha!
     const before = (await db.select().from(itemTags).where(and(eq(itemTags.tenantId, alpha.tenantId), eq(itemTags.itemId, alpha.itemId)))).length
     const run = await batchUpdate(alpha, { atomic: true, operations: [{ tool: 'create_task', args: { title: 'Válida', ref: 'a' } }, { tool: 'create_task', args: { title: '', ref: 'b' } }] })
     expect([400, 422]).toContain(run.status)
@@ -123,7 +123,7 @@ describe('relações de batch limitadas ao tenant/projeto (Item 15)', () => {
   })
 
   test('idempotência do update em lote não duplica filtros escopados (3.4)', async () => {
-    const alpha = contexts['alpha']!
+    const alpha = contexts.alpha!
     const payload = { filters: { tag: 'Tag comum' }, changes: [{ field: 'priority', operation: 'SET', value: 'LOW' }], agentRunId: generateId() }
     const first = await batchUpdate(alpha, payload)
     expect(first.status).toBe(200)
@@ -135,11 +135,11 @@ describe('relações de batch limitadas ao tenant/projeto (Item 15)', () => {
   test('consulta de relações não carrega vínculos de outros tenants (3.5)', async () => {
     // sanity: vínculos existentes pertencem apenas aos tenants semeados
     const all = await db.select().from(itemSprints)
-    expect(all.every(link => link.tenantId === contexts['alpha']!.tenantId || link.tenantId === contexts['beta']!.tenantId)).toBe(true)
-    const beta = contexts['beta']!
+    expect(all.every(link => link.tenantId === contexts.alpha!.tenantId || link.tenantId === contexts.beta!.tenantId)).toBe(true)
+    const beta = contexts.beta!
     // O batch do beta não pode selecionar o item do alpha por sprint do beta
-    const leaked = await batchUpdate(beta, { filters: { itemIds: [contexts['alpha']!.itemId] }, changes: [{ field: 'priority', operation: 'SET', value: 'LOW' }] })
+    const leaked = await batchUpdate(beta, { filters: { itemIds: [contexts.alpha!.itemId] }, changes: [{ field: 'priority', operation: 'SET', value: 'LOW' }] })
     expect(leaked.status).toBe(422)
-    expect((await db.select().from(items).where(eq(items.id, contexts['alpha']!.itemId)))[0]!.priority).toBe('LOW') // item do alpha intacto (LOw definido no primeiro teste)
+    expect((await db.select().from(items).where(eq(items.id, contexts.alpha!.itemId)))[0]!.priority).toBe('LOW') // item do alpha intacto (LOw definido no primeiro teste)
   })
 })

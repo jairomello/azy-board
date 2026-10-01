@@ -20,6 +20,7 @@ import type {
   AssistantApprovalDetailRecord,
   AssistantConversationRecord,
   AssistantCredentialRecord,
+  AssistantModelConfigRecord,
   AssistantEventFullRecord,
   AssistantMessageRecord,
   AssistantRunDetailRecord,
@@ -41,10 +42,10 @@ import type {
   StoredAvatarRecord,
   UserCredentialRecord,
 } from '../../persistence/models'
-import type { ChecklistItemPatch, ColumnPatch, CostCenterPatch, ItemLogPatch, ModulePatch, NewApiKeyRecord, NewChecklistItemRecord, NewColumnRecord, NewCostCenterRecord, NewItemLogRecord, NewModuleRecord, NewProjectMembership, NewSquadRecord, NewTenantRecord, NewVersionRecord, PersistencePorts, ProjectMembershipPatch, ProjectPatch, UserPreferencesPatch, VersionPatch } from '../../persistence/ports'
+import type { AssistantModelConfigPatch, ChecklistItemPatch, ColumnPatch, CostCenterPatch, ItemLogPatch, ModulePatch, NewApiKeyRecord, NewAssistantModelConfig, NewChecklistItemRecord, NewColumnRecord, NewCostCenterRecord, NewItemLogRecord, NewModuleRecord, NewProjectMembership, NewSquadRecord, NewTenantRecord, NewVersionRecord, PersistencePorts, ProjectMembershipPatch, ProjectPatch, UserPreferencesPatch, VersionPatch } from '../../persistence/ports'
 import type { DrizzleDb } from '../index'
 import {
-  apiKeys, assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantRuns, assistantSettings, assistantToolCalls,
+  apiKeys, assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantModelConfigs, assistantRuns, assistantSettings, assistantToolCalls,
   attachments, checklistItems, checklists, columns, idempotencyRecords, itemEvents, itemLogs, itemSprints, itemTags,
   items, loginAttempts, memberships, modules, projectAnalyticsCoverage, projectCostCenters, projectMetricsDaily, projectVersions, projects, squads, sprintCycleItems, sprintCycles, sprints,
   storageCleanupJobs, tags, tenants, userAvatars, users,
@@ -183,6 +184,17 @@ function mapAssistantSettings(row: typeof assistantSettings.$inferSelect): Assis
   }
 }
 
+function mapAssistantModelConfig(row: Record<string, unknown>): AssistantModelConfigRecord {
+  return {
+    id: row.id as string, tenantId: row.tenant_id as string,
+    provider: row.provider as AssistantModelConfigRecord['provider'], model: row.model as string,
+    credentialId: row.credential_id as string, keyPrefix: row.key_prefix as string | null,
+    position: row.position as number, enabled: Boolean(row.enabled),
+    validationStatus: row.validation_status as AssistantModelConfigRecord['validationStatus'],
+    validatedAt: row.validated_at as string | null, createdAt: row.created_at as string, updatedAt: row.updated_at as string,
+  }
+}
+
 function mapAssistantConversation(row: typeof assistantConversations.$inferSelect): AssistantConversationRecord {
   return {
     id: row.id, tenantId: row.tenantId, userId: row.userId, projectId: row.projectId,
@@ -201,7 +213,7 @@ function mapAssistantRun(row: typeof assistantRuns.$inferSelect): AssistantRunDe
   return {
     id: row.id, tenantId: row.tenantId, conversationId: row.conversationId, userId: row.userId,
     status: row.status, model: row.model, currentCursor: row.currentCursor, inputTokens: row.inputTokens,
-    outputTokens: row.outputTokens, costMicros: row.costMicros, errorCode: row.errorCode,
+    outputTokens: row.outputTokens, costMicros: row.costMicros, errorCode: row.errorCode, executionContextJson: row.executionContextJson,
     createdAt: row.createdAt, startedAt: row.startedAt, finishedAt: row.finishedAt, expiresAt: row.expiresAt,
     claimedBy: row.claimedBy, claimExpiresAt: row.claimExpiresAt,
     attempts: row.attempts, nextAttemptAt: row.nextAttemptAt, cancelRequested: row.cancelRequested,
@@ -277,6 +289,29 @@ async function replaysProjectRollup(database: DrizzleDb, sqlite: Database, tenan
 export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Database): PersistencePorts {
   const itemCommands = createSqliteItemUnitOfWork(sqlite)
   const projectCommands = createSqliteProjectUnitOfWork(sqlite)
+  const ensureAssistantSettings = (tenantId: string, updatedAt: string) => {
+    sqlite.query(`INSERT OR IGNORE INTO assistant_settings (tenant_id, enabled, validation_status, updated_at)
+      VALUES (?, 0, 'UNVALIDATED', ?)`).run(tenantId, updatedAt)
+  }
+  const syncLegacyAssistantProvider = (tenantId: string, updatedAt: string) => {
+    ensureAssistantSettings(tenantId, updatedAt)
+    const primary = sqlite.query(`SELECT m.provider, m.model, m.credential_id, m.validation_status, m.validated_at
+      FROM assistant_model_configs AS m
+      JOIN assistant_credentials AS c ON c.id = m.credential_id AND c.tenant_id = m.tenant_id AND c.provider = m.provider
+      WHERE m.tenant_id = ? AND m.enabled = 1 AND m.validation_status = 'VALID' AND c.revoked_at IS NULL
+      ORDER BY m.position, m.created_at, m.id LIMIT 1`).get(tenantId) as {
+        provider: 'OPENAI' | 'OPENROUTER'; model: string; credential_id: string; validation_status: 'VALID'; validated_at: string | null
+      } | null
+    if (primary) {
+      sqlite.query(`UPDATE assistant_settings SET provider = ?, model = ?, credential_mode = 'API_KEY', credential_id = ?,
+        validation_status = ?, validated_at = ?, updated_at = ? WHERE tenant_id = ?`)
+        .run(primary.provider, primary.model, primary.credential_id, primary.validation_status, primary.validated_at, updatedAt, tenantId)
+    } else {
+      sqlite.query(`UPDATE assistant_settings SET provider = NULL, model = NULL, credential_mode = NULL, credential_id = NULL,
+        validation_status = 'UNVALIDATED', validated_at = NULL, updated_at = ? WHERE tenant_id = ?`)
+        .run(updatedAt, tenantId)
+    }
+  }
   const unitOfWork: PersistencePorts['unitOfWork'] = {
     createProjectAggregate: async (...args) => projectCommands.createProjectAggregate(...args),
     convertProjectBoardMode: async (...args) => projectCommands.convertProjectBoardMode(...args),
@@ -1498,6 +1533,101 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         const row = await database.query.assistantSettings.findFirst({ where: eq(assistantSettings.tenantId, context.tenantId) })
         return row ? mapAssistantSettings(row) : null
       },
+      // [TENANT] Toda leitura e mutação de modelos inclui tenant_id e, quando houver ID, o ID dentro desse mesmo tenant.
+      async listModelConfigs(context) {
+        const rows = sqlite.query(`SELECT m.*, c.key_prefix FROM assistant_model_configs AS m
+          JOIN assistant_credentials AS c ON c.id = m.credential_id AND c.tenant_id = m.tenant_id
+          WHERE m.tenant_id = ? ORDER BY m.position, m.created_at, m.id`).all(context.tenantId) as Record<string, unknown>[]
+        return rows.map(mapAssistantModelConfig)
+      },
+      // [TENANT] Insere o modelo usando exclusivamente o tenant do contexto.
+      async createModelConfig(context, input) {
+        runSqliteAtomic(sqlite, () => {
+          ensureAssistantSettings(context.tenantId, input.updatedAt)
+          const lastPosition = sqlite.query(`SELECT COALESCE(MAX(position), -1) AS position FROM assistant_model_configs WHERE tenant_id = ?`)
+            .get(context.tenantId) as { position: number }
+          sqlite.query(`INSERT INTO assistant_model_configs (
+            id, tenant_id, provider, model, credential_id, position, enabled, validation_status, validated_at, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+            input.id, context.tenantId, input.provider, input.model, input.credentialId, Number(lastPosition.position) + 1,
+            input.enabled ? 1 : 0, input.validationStatus, input.validatedAt, input.createdAt, input.updatedAt,
+          )
+          syncLegacyAssistantProvider(context.tenantId, input.updatedAt)
+        })
+        return true
+      },
+      // [TENANT] Localiza e atualiza somente o modelo pertencente ao tenant do contexto.
+      async updateModelConfig(context, modelConfigId, patch) {
+        return runSqliteAtomic(sqlite, () => {
+          const current = sqlite.query(`SELECT credential_id FROM assistant_model_configs WHERE tenant_id = ? AND id = ?`)
+            .get(context.tenantId, modelConfigId) as { credential_id: string } | null
+          if (!current) return false
+          const fields: Record<string, string> = {
+            provider: 'provider', model: 'model', credentialId: 'credential_id', position: 'position',
+            enabled: 'enabled', validationStatus: 'validation_status', validatedAt: 'validated_at',
+          }
+          const sets: string[] = []
+          const values: Array<string | number | boolean | null> = []
+          for (const [key, column] of Object.entries(fields)) {
+            if (!(key in patch)) continue
+            sets.push(`${column} = ?`)
+            const value = (patch as unknown as Record<string, string | number | boolean | null>)[key]
+            values.push(key === 'enabled' ? (value ? 1 : 0) : value)
+          }
+          sets.push('updated_at = ?')
+          values.push(patch.updatedAt, context.tenantId, modelConfigId)
+          sqlite.query(`UPDATE assistant_model_configs SET ${sets.join(', ')} WHERE tenant_id = ? AND id = ?`).run(...values)
+          if (patch.credentialId && patch.credentialId !== current.credential_id) {
+            const usage = sqlite.query(`SELECT count(*) AS count FROM assistant_model_configs WHERE tenant_id = ? AND credential_id = ?`)
+              .get(context.tenantId, current.credential_id) as { count: number }
+            if (!usage.count) sqlite.query(`UPDATE assistant_credentials SET revoked_at = ? WHERE tenant_id = ? AND id = ? AND revoked_at IS NULL`)
+              .run(patch.updatedAt, context.tenantId, current.credential_id)
+          }
+          syncLegacyAssistantProvider(context.tenantId, patch.updatedAt)
+          return true
+        })
+      },
+      // [TENANT] Valida e reordena a lista completa dentro do tenant em uma transação.
+      async reorderModelConfigs(context, orderedIds, updatedAt) {
+        return runSqliteAtomic(sqlite, () => {
+          const rows = sqlite.query(`SELECT id FROM assistant_model_configs WHERE tenant_id = ?`).all(context.tenantId) as Array<{ id: string }>
+          if (rows.length !== orderedIds.length || new Set(orderedIds).size !== orderedIds.length) return false
+          const expected = new Set(rows.map(row => row.id))
+          if (orderedIds.some(id => !expected.has(id))) return false
+          orderedIds.forEach((id, position) => sqlite.query(`UPDATE assistant_model_configs SET position = ?, updated_at = ? WHERE tenant_id = ? AND id = ?`)
+            .run(position, updatedAt, context.tenantId, id))
+          syncLegacyAssistantProvider(context.tenantId, updatedAt)
+          return true
+        })
+      },
+      // [TENANT] Remove modelo e revoga sua credencial somente no tenant do contexto.
+      async deleteModelConfig(context, modelConfigId, updatedAt) {
+        return runSqliteAtomic(sqlite, () => {
+          const current = sqlite.query(`SELECT credential_id FROM assistant_model_configs WHERE tenant_id = ? AND id = ?`)
+            .get(context.tenantId, modelConfigId) as { credential_id: string } | null
+          if (!current) return false
+          sqlite.query(`DELETE FROM assistant_model_configs WHERE tenant_id = ? AND id = ?`).run(context.tenantId, modelConfigId)
+          const usage = sqlite.query(`SELECT count(*) AS count FROM assistant_model_configs WHERE tenant_id = ? AND credential_id = ?`)
+            .get(context.tenantId, current.credential_id) as { count: number }
+          if (!usage.count) sqlite.query(`UPDATE assistant_credentials SET revoked_at = ? WHERE tenant_id = ? AND id = ? AND revoked_at IS NULL`)
+            .run(updatedAt, context.tenantId, current.credential_id)
+          syncLegacyAssistantProvider(context.tenantId, updatedAt)
+          return true
+        })
+      },
+      // [TENANT] Limpa a lista e credenciais referenciadas somente no tenant do contexto.
+      async clearModelConfigs(context, updatedAt) {
+        runSqliteAtomic(sqlite, () => {
+          sqlite.query(`UPDATE assistant_credentials SET revoked_at = ? WHERE tenant_id = ? AND id IN
+            (SELECT credential_id FROM assistant_model_configs WHERE tenant_id = ?
+             UNION SELECT credential_id FROM assistant_settings WHERE tenant_id = ? AND credential_id IS NOT NULL) AND revoked_at IS NULL`)
+            .run(updatedAt, context.tenantId, context.tenantId, context.tenantId)
+          sqlite.query(`DELETE FROM assistant_model_configs WHERE tenant_id = ?`).run(context.tenantId)
+          ensureAssistantSettings(context.tenantId, updatedAt)
+          sqlite.query(`UPDATE assistant_settings SET enabled = 0, updated_at = ? WHERE tenant_id = ?`).run(updatedAt, context.tenantId)
+          syncLegacyAssistantProvider(context.tenantId, updatedAt)
+        })
+      },
       async saveAvailability(context, enabled, updatedAt) {
         await database.insert(assistantSettings).values({ tenantId: context.tenantId, enabled, validationStatus: 'UNVALIDATED', updatedAt })
           .onConflictDoUpdate({ target: assistantSettings.tenantId, set: { enabled, updatedAt } })
@@ -1619,6 +1749,10 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         })
         return rows.map(mapAssistantRun)
       },
+      async getRun(context, runId) {
+        const row = await database.query.assistantRuns.findFirst({ where: and(eq(assistantRuns.id, runId), eq(assistantRuns.tenantId, context.tenantId)) })
+        return row ? mapAssistantRun(row) : null
+      },
       async getOwnedRun(context, userId, runId) {
         const row = await database.query.assistantRuns.findFirst({ where: and(
           eq(assistantRuns.id, runId), eq(assistantRuns.tenantId, context.tenantId), eq(assistantRuns.userId, userId),
@@ -1644,7 +1778,8 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
       async insertRun(context, input) {
         await database.insert(assistantRuns).values({
           id: input.id, tenantId: context.tenantId, conversationId: input.conversationId, userId: input.userId,
-          model: input.model, idempotencyKey: input.idempotencyKey, status: 'QUEUED', createdAt: input.createdAt, expiresAt: input.expiresAt,
+          model: input.model, idempotencyKey: input.idempotencyKey, executionContextJson: input.executionContextJson ?? null,
+          status: 'QUEUED', createdAt: input.createdAt, expiresAt: input.expiresAt,
           claimedBy: input.claimedBy ?? null, claimExpiresAt: input.claimExpiresAt ?? null,
           attempts: input.attempts ?? 0, nextAttemptAt: input.nextAttemptAt ?? null, cancelRequested: input.cancelRequested ?? false,
         })

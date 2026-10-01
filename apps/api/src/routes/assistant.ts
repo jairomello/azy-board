@@ -6,15 +6,15 @@ import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
 import { AssistantEncryptionError, decryptAssistantSecret, encryptAssistantSecret } from '../services/assistantEncryption'
 import { probeOpenAICredential } from '../services/openaiProvider'
 import { probeOpenRouterCredential } from '../services/openrouterProvider'
-import { createAssistantProvider } from '../services/assistantProvider'
-import { AssistantHarness, operationHash } from '../services/assistantHarness'
+import { ASSIGNED_CARD_PRIORITY_INSTRUCTION, AZY_AGENT_SYSTEM_PROMPT, AssistantHarness, operationHash } from '../services/assistantHarness'
+import type { ModelProvider } from '../services/openaiProvider'
 import { dependencyToolsFor, executeSharedTool, friendlyToolName, getSharedToolDefinitions, sanitizeToolOutput, selectSharedTools, type HumanToolContext } from '../services/assistantTools'
 import { generateId } from '../utils/id'
 import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { hasGlobalGroup } from '../services/authorization'
 import { MCP_TOOL_POLICIES } from '@azy-board/tool-registry'
-import { assistantAdjustSchema, assistantAnswerSchema, assistantApprovalSchema, assistantAvailabilitySchema, assistantGovernanceSchema, assistantMessageSchema, assistantProviderSchema, conversationSchema, parseJson } from '../validation'
+import { assistantAdjustSchema, assistantAnswerSchema, assistantApprovalSchema, assistantAvailabilitySchema, assistantGovernanceSchema, assistantMessageSchema, assistantModelConfigSchema, assistantModelConfigTestSchema, assistantModelConfigUpdateSchema, assistantModelConfigsReorderSchema, assistantProviderSchema, conversationSchema, parseJson } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
 import type { AssistantSettingsRecord, PersistenceContext } from '../persistence/models'
@@ -44,12 +44,18 @@ async function initQuotaMetrics() {
 export const assistantRouter = new Hono<HonoEnv>()
 assistantRouter.use('*', authMiddleware)
 
+const queuedRunProvider: ModelProvider = {
+  name: 'QUEUED', capabilities: { tools: false, streaming: false, cancellation: false },
+  createRun: async () => { throw new Error('QUEUED_RUN_REQUIRES_WORKER') },
+  streamRun: async function* () { yield* []; throw new Error('QUEUED_RUN_REQUIRES_WORKER') },
+}
+
 type ProviderName = AssistantProvider
 
 const globalGroupRank: Record<HumanToolContext['globalGroup'], number> = { TEAM_MEMBER: 0, MANAGER: 1, ADMIN: 2, ROOT: 3 }
 const localRoleRank: Record<'VIEWER' | 'MEMBER' | 'ADMIN', number> = { VIEWER: 0, MEMBER: 1, ADMIN: 2 }
 
-async function authorizeAssistantTool(toolContext: HumanToolContext, name: string, args: Record<string, unknown>): Promise<void> {
+export async function authorizeAssistantTool(toolContext: HumanToolContext, name: string, args: Record<string, unknown>): Promise<void> {
   const definition = getSharedToolDefinitions([name])[0]
   const policy = MCP_TOOL_POLICIES[name]
   if (!definition || !policy) throw new Error('TOOL_NOT_REGISTERED')
@@ -82,7 +88,7 @@ async function filterToolsByPolicy(ctx: RequestContext, names: string[], project
   return allowed
 }
 type Body = Partial<Governance> & { enabled?: unknown; provider?: unknown; model?: unknown; secret?: unknown }
-const safeError = (code: string, status: 400 | 422 | 500 = 400) => ({ error: 'Não foi possível concluir a operação', code, retryable: status === 500 })
+const safeError = (code: string, status: 400 | 404 | 409 | 422 | 500 = 400) => ({ error: 'Não foi possível concluir a operação', code, retryable: status === 500 })
 
 // Reexportado para compatibilidade; a fonte única é @azy-board/types.
 export { MAX_ASSISTANT_ACTIONS, MAX_MESSAGE_BYTES }
@@ -102,11 +108,31 @@ function scopeOf(tenantId: string, userId: string | null): PersistenceContext {
   return { tenantId, actorUserId: userId, actorKind: userId ? 'USER' : 'SYSTEM' }
 }
 
-async function available(tenantId: string) {
+async function eligibleModels(tenantId: string) {
+  const scope = scopeOf(tenantId, null)
+  const models = await persistence.agent.listModelConfigs(scope)
+  const candidates = []
+  for (const model of models) {
+    if (!model.enabled || model.validationStatus !== 'VALID') continue
+    const credential = await persistence.agent.getActiveCredential(scope, model.credentialId)
+    if (credential && credential.provider === model.provider) candidates.push({ model, credential })
+  }
+  return candidates
+}
+
+function publicModelConfig(model: Awaited<ReturnType<typeof persistence.agent.listModelConfigs>>[number]) {
+  return {
+    id: model.id, provider: model.provider, model: model.model, keyPrefix: model.keyPrefix,
+    position: model.position, enabled: model.enabled, validationStatus: model.validationStatus,
+    validatedAt: model.validatedAt, createdAt: model.createdAt, updatedAt: model.updatedAt,
+  }
+}
+
+export async function available(tenantId: string) {
   const row = await persistence.agent.getSettings(scopeOf(tenantId, null))
-  if (!row?.enabled || row.validationStatus !== 'VALID' || !row.credentialId) return null
-  const credential = await persistence.agent.getActiveCredential(scopeOf(tenantId, null), row.credentialId)
-  return credential ? { row, credential } : null
+  if (!row?.enabled) return null
+  const models = await eligibleModels(tenantId)
+  return models.length ? { row, models } : null
 }
 
 async function ownedConversation(tenantId: string, userId: string, id: string) {
@@ -341,14 +367,21 @@ async function setting(tenantId: string) {
   return persistence.agent.getSettings(scopeOf(tenantId, null))
 }
 
-function projection(row: AssistantSettingsRecord) {
-  return { enabled: row.enabled, configured: row.validationStatus === 'VALID' && row.credentialId !== null, provider: row.provider, model: row.model, credentialMode: row.credentialMode, validationStatus: row.validationStatus, validatedAt: row.validatedAt, updatedAt: row.updatedAt, governance: governance(row) }
+function projection(row: AssistantSettingsRecord | null, models: Awaited<ReturnType<typeof persistence.agent.listModelConfigs>> = [], configured = models.some(model => model.enabled && model.validationStatus === 'VALID')) {
+  const primary = models.find(model => model.enabled && model.validationStatus === 'VALID') ?? models[0]
+  return {
+    enabled: Boolean(row?.enabled), configured,
+    provider: primary?.provider ?? null, model: primary?.model ?? null, credentialMode: primary ? 'API_KEY' : null,
+    validationStatus: primary?.validationStatus ?? 'UNVALIDATED', validatedAt: primary?.validatedAt ?? null,
+    updatedAt: row?.updatedAt ?? new Date().toISOString(), governance: governance(row),
+    models: models.map(publicModelConfig),
+  }
 }
 
 assistantRouter.get('/root', requireGlobalGroup('ROOT'), async (c) => {
-  const row = await setting(c.get('ctx').tenantId)
-  if (!row) return c.json({ enabled: false, configured: false, provider: null, governance: DEFAULT_GOVERNANCE, status: 'DISABLED' as const })
-  return c.json(projection(row))
+  const tenantId = c.get('ctx').tenantId
+  const [row, models, eligible] = await Promise.all([setting(tenantId), persistence.agent.listModelConfigs(scopeOf(tenantId, null)), eligibleModels(tenantId)])
+  return c.json({ ...projection(row, models, eligible.length > 0), status: row?.enabled ? 'ENABLED' : 'DISABLED' })
 })
 
 // Disponibilidade para a UI: não expõe provider, modelo, modalidade ou estado
@@ -357,7 +390,7 @@ assistantRouter.get('/availability', async (c) => {
   const row = await setting(c.get('ctx').tenantId)
   return c.json({
     enabled: Boolean(row?.enabled),
-    configured: Boolean(row && row.validationStatus === 'VALID' && row.credentialId),
+    configured: (await eligibleModels(c.get('ctx').tenantId)).length > 0,
   })
 })
 
@@ -367,10 +400,11 @@ assistantRouter.patch('/root/availability', requireGlobalGroup('ROOT'), async (c
   const body = parsed.data
   if (typeof body.enabled !== 'boolean') return c.json(safeError('INVALID_REQUEST'), 400)
   const tenantId = c.get('ctx').tenantId
+  if (body.enabled && (await eligibleModels(tenantId)).length === 0) return c.json(safeError('PROVIDER_NOT_VALIDATED', 422), 422)
   const now = new Date().toISOString()
   await persistence.agent.saveAvailability(scopeOf(tenantId, null), body.enabled, now)
-  const row = await setting(tenantId)
-  return c.json(projection(row!))
+  const [row, models, eligible] = await Promise.all([setting(tenantId), persistence.agent.listModelConfigs(scopeOf(tenantId, null)), eligibleModels(tenantId)])
+  return c.json(projection(row, models, eligible.length > 0))
 })
 
 assistantRouter.patch('/root/governance', requireGlobalGroup('ROOT'), async (c) => {
@@ -397,28 +431,175 @@ assistantRouter.get('/root/governance/usage', requireGlobalGroup('ROOT'), async 
   return c.json({ activeRuns: active, dailyCostMicros, limits: governance(row) })
 })
 
+async function probeModelConfiguration(provider: ProviderName, model: string, secret: string) {
+  return provider === 'OPENROUTER' ? probeOpenRouterCredential(secret, model) : probeOpenAICredential(secret, model)
+}
+
+assistantRouter.post('/root/models/test', requireGlobalGroup('ROOT'), async (c) => {
+  const parsed = await parseJson(c, assistantModelConfigSchema)
+  if (!parsed.ok) return parsed.response
+  const result = await probeModelConfiguration(parsed.data.provider, parsed.data.model, parsed.data.secret)
+  return c.json({ status: result.status, model: result.model, compatible: result.status === 'VALID', reason: result.reason })
+})
+
+assistantRouter.get('/root/models', requireGlobalGroup('ROOT'), async (c) => {
+  const models = await persistence.agent.listModelConfigs(scopeOf(c.get('ctx').tenantId, null))
+  return c.json({ models: models.map(publicModelConfig) })
+})
+
+assistantRouter.post('/root/models/:modelId/test', requireGlobalGroup('ROOT'), async (c) => {
+  const parsed = await parseJson(c, assistantModelConfigTestSchema)
+  if (!parsed.ok) return parsed.response
+  const ctx = context(c), scope = scopeOf(ctx.tenantId, ctx.userId)
+  const model = (await persistence.agent.listModelConfigs(scope)).find(entry => entry.id === c.req.param('modelId'))
+  if (!model) return c.json(safeError('MODEL_CONFIGURATION_NOT_FOUND', 404), 404)
+  const credential = await persistence.agent.getActiveCredential(scope, model.credentialId)
+  const provider = parsed.data.provider ?? model.provider
+  const modelName = parsed.data.model ?? model.model
+  if (parsed.data.secret === undefined && (!credential || credential.provider !== provider)) return c.json(safeError('MODEL_CREDENTIAL_UNAVAILABLE', 422), 422)
+  const secret = parsed.data.secret ?? await decryptAssistantSecret(credential!.ciphertext, credential!.ciphertextVersion)
+  const result = await probeModelConfiguration(provider, modelName, secret)
+  return c.json({ status: result.status, model: result.model, compatible: result.status === 'VALID', reason: result.reason })
+})
+
+assistantRouter.post('/root/models', requireGlobalGroup('ROOT'), async (c) => {
+  const parsed = await parseJson(c, assistantModelConfigSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
+  const probe = await probeModelConfiguration(body.provider, body.model, body.secret)
+  if (probe.status !== 'VALID') return c.json(safeError(probe.status, 422), 422)
+  const ctx = context(c), scope = scopeOf(ctx.tenantId, ctx.userId)
+  const now = new Date().toISOString(), models = await persistence.agent.listModelConfigs(scope)
+  const credentialId = generateId(), id = generateId()
+  try {
+    const encrypted = await encryptAssistantSecret(body.secret)
+    await persistence.agent.createCredential(scope, {
+      id: credentialId, provider: body.provider, ciphertext: encrypted.ciphertext,
+      ciphertextVersion: encrypted.version, keyPrefix: `${body.secret.slice(0, 7)}...`,
+      createdBy: ctx.userId, createdAt: now,
+    })
+    await persistence.agent.createModelConfig(scope, {
+      id, provider: body.provider, model: body.model, credentialId, position: models.length,
+      enabled: true, validationStatus: 'VALID', validatedAt: now, createdAt: now, updatedAt: now,
+    })
+    const created = (await persistence.agent.listModelConfigs(scope)).find(model => model.id === id)
+    if (!created) throw new Error('MODEL_CONFIGURATION_NOT_SAVED')
+    return c.json(publicModelConfig(created), 201)
+  } catch (error) {
+    await persistence.agent.revokeCredential(scope, credentialId, now).catch(() => undefined)
+    if (error instanceof AssistantEncryptionError) return c.json(safeError('ENCRYPTION_NOT_CONFIGURED', 500), 500)
+    return c.json(safeError('MODEL_CONFIGURATION_SAVE_FAILED', 500), 500)
+  }
+})
+
+assistantRouter.patch('/root/models/reorder', requireGlobalGroup('ROOT'), async (c) => {
+  const parsed = await parseJson(c, assistantModelConfigsReorderSchema)
+  if (!parsed.ok) return parsed.response
+  const tenantId = c.get('ctx').tenantId
+  const updatedAt = new Date().toISOString()
+  const reordered = await persistence.agent.reorderModelConfigs(scopeOf(tenantId, null), parsed.data.orderedIds, updatedAt)
+  if (!reordered) return c.json(safeError('MODEL_ORDER_MISMATCH', 409), 409)
+  return c.json({ models: (await persistence.agent.listModelConfigs(scopeOf(tenantId, null))).map(publicModelConfig) })
+})
+
+assistantRouter.patch('/root/models/:modelId', requireGlobalGroup('ROOT'), async (c) => {
+  const parsed = await parseJson(c, assistantModelConfigUpdateSchema)
+  if (!parsed.ok) return parsed.response
+  const ctx = context(c), scope = scopeOf(ctx.tenantId, ctx.userId), modelId = c.req.param('modelId')!
+  const current = (await persistence.agent.listModelConfigs(scope)).find(model => model.id === modelId)
+  if (!current) return c.json(safeError('MODEL_CONFIGURATION_NOT_FOUND', 404), 404)
+  const body = parsed.data
+  const provider = body.provider ?? current.provider
+  const model = body.model ?? current.model
+  const configurationChanged = provider !== current.provider || model !== current.model
+  let credentialId = current.credentialId
+  let createdCredentialId: string | null = null
+  let validationStatus = current.validationStatus
+  let validatedAt = current.validatedAt
+  const now = new Date().toISOString()
+  try {
+    if (body.secret || configurationChanged) {
+      const currentCredential = body.secret ? null : await persistence.agent.getActiveCredential(scope, current.credentialId)
+      if (!body.secret && (!currentCredential || currentCredential.provider !== provider)) {
+        return c.json(safeError('MODEL_CREDENTIAL_ROTATION_REQUIRED', 422), 422)
+      }
+      const secret = body.secret ?? await decryptAssistantSecret(currentCredential!.ciphertext, currentCredential!.ciphertextVersion)
+      const probe = await probeModelConfiguration(provider, model, secret)
+      if (probe.status !== 'VALID') return c.json(safeError(probe.status, 422), 422)
+      validationStatus = 'VALID'
+      validatedAt = now
+      const suppliedSecret = body.secret
+      if (suppliedSecret) {
+        const encrypted = await encryptAssistantSecret(suppliedSecret)
+        credentialId = generateId()
+        createdCredentialId = credentialId
+        await persistence.agent.createCredential(scope, {
+          id: credentialId, provider, ciphertext: encrypted.ciphertext, ciphertextVersion: encrypted.version,
+          keyPrefix: `${suppliedSecret.slice(0, 7)}...`, createdBy: ctx.userId, createdAt: now,
+        })
+      }
+    }
+    if (body.enabled === true && !body.secret && !configurationChanged) {
+      const credential = await persistence.agent.getActiveCredential(scope, credentialId)
+      if (!credential || credential.provider !== provider) return c.json(safeError('MODEL_CREDENTIAL_UNAVAILABLE', 422), 422)
+    }
+    if (body.enabled === true && validationStatus !== 'VALID') return c.json(safeError('PROVIDER_NOT_VALIDATED', 422), 422)
+    const updated = await persistence.agent.updateModelConfig(scope, modelId, {
+      provider, model, credentialId, ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+      validationStatus, validatedAt, updatedAt: now,
+    })
+    if (!updated) {
+      if (createdCredentialId) await persistence.agent.revokeCredential(scope, createdCredentialId, now).catch(() => undefined)
+      return c.json(safeError('MODEL_CONFIGURATION_NOT_FOUND', 404), 404)
+    }
+    const result = (await persistence.agent.listModelConfigs(scope)).find(entry => entry.id === modelId)
+    return result ? c.json(publicModelConfig(result)) : c.json(safeError('MODEL_CONFIGURATION_NOT_FOUND', 404), 404)
+  } catch (error) {
+    if (createdCredentialId) await persistence.agent.revokeCredential(scope, createdCredentialId, now).catch(() => undefined)
+    if (error instanceof AssistantEncryptionError) return c.json(safeError('ENCRYPTION_NOT_CONFIGURED', 500), 500)
+    return c.json(safeError('MODEL_CONFIGURATION_UPDATE_FAILED', 500), 500)
+  }
+})
+
+assistantRouter.delete('/root/models/:modelId', requireGlobalGroup('ROOT'), async (c) => {
+  const deleted = await persistence.agent.deleteModelConfig(scopeOf(c.get('ctx').tenantId, c.get('ctx').userId), c.req.param('modelId')!, new Date().toISOString())
+  if (!deleted) return c.json(safeError('MODEL_CONFIGURATION_NOT_FOUND', 404), 404)
+  return c.json({ deleted: true })
+})
+
 async function configure(c: Context<HonoEnv>) {
   const parsed = await parseJson(c, assistantProviderSchema)
   if (!parsed.ok) return parsed.response
   const body = parsed.data
   if ((body.provider !== 'OPENAI' && body.provider !== 'OPENROUTER') || typeof body.model !== 'string' || typeof body.secret !== 'string') return c.json(safeError('INVALID_REQUEST'), 400)
   const provider = body.provider as ProviderName
-  const probe = provider === 'OPENROUTER' ? await probeOpenRouterCredential(body.secret, body.model) : await probeOpenAICredential(body.secret, body.model)
+  const probe = await probeModelConfiguration(provider, body.model, body.secret)
   if (probe.status !== 'VALID') return c.json(safeError(probe.status, 422), 422)
+  const ctx = context(c), scope = scopeOf(ctx.tenantId, ctx.userId)
+  const now = new Date().toISOString()
+  const currentModels = await persistence.agent.listModelConfigs(scope)
+  const primary = currentModels[0]
+  const credentialId = generateId()
   try {
     const encrypted = await encryptAssistantSecret(body.secret)
-    const tenantId = c.get('ctx').tenantId
-    const now = new Date().toISOString()
-    const credentialId = generateId()
-    const scope = scopeOf(tenantId, c.get('ctx').userId)
-    const old = await setting(tenantId)
     await persistence.agent.createCredential(scope, {
       id: credentialId, provider, ciphertext: encrypted.ciphertext, ciphertextVersion: encrypted.version,
-      keyPrefix: body.secret.slice(0, 7) + '...', createdBy: c.get('ctx').userId, createdAt: now,
+      keyPrefix: `${body.secret.slice(0, 7)}...`, createdBy: ctx.userId, createdAt: now,
     })
-    await persistence.agent.saveProvider(scope, { provider, model: body.model, credentialId, validatedAt: now, updatedAt: now }, old?.credentialId ?? null)
-    return c.json(projection((await setting(tenantId))!), 200)
+    if (primary) {
+      await persistence.agent.updateModelConfig(scope, primary.id, {
+        provider, model: body.model, credentialId, validationStatus: 'VALID', validatedAt: now, updatedAt: now,
+      })
+    } else {
+      await persistence.agent.createModelConfig(scope, {
+        id: generateId(), provider, model: body.model, credentialId, position: 0,
+        enabled: true, validationStatus: 'VALID', validatedAt: now, createdAt: now, updatedAt: now,
+      })
+    }
+    const [row, models, eligible] = await Promise.all([setting(ctx.tenantId), persistence.agent.listModelConfigs(scope), eligibleModels(ctx.tenantId)])
+    return c.json(projection(row, models, eligible.length > 0), 200)
   } catch (error) {
+    await persistence.agent.revokeCredential(scope, credentialId, now).catch(() => undefined)
     if (error instanceof AssistantEncryptionError) return c.json(safeError('ENCRYPTION_NOT_CONFIGURED', 500), 500)
     return c.json(safeError('CREDENTIAL_STORAGE_FAILED', 500), 500)
   }
@@ -431,22 +612,21 @@ assistantRouter.post('/root/provider/test', requireGlobalGroup('ROOT'), async (c
   if (!parsed.ok) return parsed.response
   const body = parsed.data
   if ((body.provider !== 'OPENAI' && body.provider !== 'OPENROUTER') || typeof body.model !== 'string' || typeof body.secret !== 'string') return c.json(safeError('INVALID_REQUEST'), 400)
-  const result = body.provider === 'OPENROUTER'
-    ? await probeOpenRouterCredential(body.secret, body.model)
-     : await probeOpenAICredential(body.secret, body.model)
+  const result = await probeModelConfiguration(body.provider, body.model, body.secret)
   return c.json({ status: result.status, model: result.model, compatible: result.status === 'VALID' })
 })
 
 assistantRouter.post('/root/provider/activate', requireGlobalGroup('ROOT'), async (c) => {
-  const row = await setting(c.get('ctx').tenantId)
-  if (!row?.credentialId || row.validationStatus !== 'VALID') return c.json(safeError('PROVIDER_NOT_VALIDATED'), 422)
-  await persistence.agent.activateProvider(scopeOf(c.get('ctx').tenantId, null), new Date().toISOString())
-  return c.json(projection((await setting(c.get('ctx').tenantId))!))
+  const tenantId = c.get('ctx').tenantId
+  if ((await eligibleModels(tenantId)).length === 0) return c.json(safeError('PROVIDER_NOT_VALIDATED'), 422)
+  await persistence.agent.activateProvider(scopeOf(tenantId, null), new Date().toISOString())
+  const [row, models, eligible] = await Promise.all([setting(tenantId), persistence.agent.listModelConfigs(scopeOf(tenantId, null)), eligibleModels(tenantId)])
+  return c.json(projection(row, models, eligible.length > 0))
 })
 
 assistantRouter.post('/root/provider/revoke', requireGlobalGroup('ROOT'), async (c) => {
   const tenantId = c.get('ctx').tenantId
-  await persistence.agent.revokeProvider(scopeOf(tenantId, null), new Date().toISOString())
+  await persistence.agent.clearModelConfigs(scopeOf(tenantId, null), new Date().toISOString())
   return c.json({ enabled: false, configured: false, provider: null, status: 'DISABLED' as const })
 })
 
@@ -529,27 +709,35 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
   await persistence.agent.expireStaleRuns(ctx.tenantId, staleCutoff, new Date().toISOString())
   if ((await activeRuns(ctx.tenantId, ctx.userId)) >= limits.maxActivePerUser || (await activeRuns(ctx.tenantId)) >= limits.maxActivePerTenant) return operationalError(c, 'CONCURRENCY_LIMIT', 429)
   const now = new Date().toISOString(), messageId = generateId()
-  await persistence.agent.createMessage(scope, { conversationId, userId: ctx.userId, role: 'USER', content, metadataJson: '{}', createdAt: now })
+  await persistence.agent.createMessage(scope, {
+    conversationId, userId: ctx.userId, role: 'USER', content,
+    metadataJson: JSON.stringify({ targetProjectId: effectiveProjectId, itemId: explicitProjectId ? null : expectedItemId, screen }), createdAt: now,
+  })
   await persistence.agent.touchConversation(scope, ctx.userId, conversationId, now)
   const recentMessages = await persistence.agent.listRecentMessages(scope, conversationId, 12)
   const modelInput = recentMessages.reverse().map(message => ({ role: message.role === 'ASSISTANT' ? 'assistant' : 'user', content: message.content.slice(0, 20_000) }))
   modelInput.unshift({ role: 'system', content: formatAssistantPromptContext({ currentDate: new Date().toISOString().slice(0, 10), authenticatedUser, selectedProject: selectedProject ?? null, selectedItem: selectedItem ?? null }) })
+  modelInput.unshift({ role: 'system', content: `${AZY_AGENT_SYSTEM_PROMPT}\n${ASSIGNED_CARD_PRIORITY_INSTRUCTION}` })
   if (modelContext && modelInput.length) modelInput[modelInput.length - 1]!.content = `${modelInput[modelInput.length - 1]!.content}\n\nContexto confiável da operação anterior:\n${modelContext}`
-  const secret = await decryptAssistantSecret(config.credential.ciphertext, config.credential.ciphertextVersion)
-    const providerOptions = { timeoutMs: limits.timeoutMs, maxRetries: 0, maxOutputTokens: limits.maxOutputTokens }
-    const provider = createAssistantProvider({ providerName: config.row.provider, secret, options: providerOptions })
-  const harness = new AssistantHarness({ provider, limits: { steps: limits.maxSteps, toolCalls: limits.maxToolCalls, inputTokens: limits.maxInputTokens, outputTokens: limits.maxOutputTokens, payloadBytes: limits.maxPayloadBytes, timeoutMs: limits.timeoutMs, costMicros: limits.dailyBudgetMicros }, executeTool: async (name, args, toolContext) => executeSharedTool(name, args, { api: toolApi(c), context: toolContext, authorize: authorizeAssistantTool }), authorize: authorizeAssistantTool, assertAvailable: async () => { if (!await available(ctx.tenantId)) throw new Error('ASSISTANT_UNAVAILABLE') } })
   const itemTypeScope = itemTypeScopeForMessage(content)
-  const runContext = { source: 'azy-agent' as const, userId: ctx.userId, tenantId: ctx.tenantId, globalGroup: ctx.globalGroup, projectId: conversation.projectId ?? undefined, targetProjectId: effectiveProjectId ?? undefined, itemId: explicitProjectId ? undefined : expectedItemId ?? undefined, screen, conversationId, itemTypeScope }
-  const runId = await harness.createRun(runContext, config.row.model!, idempotencyKey)
   const toolContext = recentMessages.slice(-3).map(message => message.content).join(' ')
   const candidateTools = assistantToolRoutingMode() === 'legacy'
     ? getSharedToolDefinitions(['list_projects', 'get_project', 'get_board', 'get_tree', 'list_tasks', 'get_current_sprint']).map(tool => tool.name)
     : toolsForMessage(content, `${toolContext} ${modelContext ?? ''}`)
   const toolAllowlist = await filterToolsByPolicy(ctx, candidateTools, effectiveProjectId ?? undefined)
-  // Job queue: persist the run as QUEUED; the worker will execute it.
-  // The modelInput and toolAllowlist are reconstructed by the worker from the database.
-  void modelInput; void toolAllowlist; // Used by worker, not here
+  const runContext = { source: 'azy-agent' as const, userId: ctx.userId, tenantId: ctx.tenantId, globalGroup: ctx.globalGroup, projectId: conversation.projectId ?? undefined, targetProjectId: effectiveProjectId ?? undefined, itemId: explicitProjectId ? undefined : expectedItemId ?? undefined, screen, conversationId, itemTypeScope }
+  const executionState = {
+    transcript: modelInput,
+    toolAllowlist,
+    runContext: {
+      projectId: conversation.projectId ?? undefined, targetProjectId: effectiveProjectId ?? undefined,
+      itemId: explicitProjectId ? undefined : expectedItemId ?? undefined, screen, itemTypeScope,
+    },
+    counters: { steps: 0, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 },
+  }
+  if (new TextEncoder().encode(JSON.stringify(executionState)).byteLength > limits.maxPayloadBytes) return operationalError(c, 'PAYLOAD_LIMIT', 413)
+  const queueHarness = new AssistantHarness({ provider: queuedRunProvider, executeTool: async () => undefined })
+  const runId = await queueHarness.createRun(runContext, config.models[0]!.model.model, idempotencyKey, JSON.stringify(executionState))
   return c.json({ messageId, runId, status: 'QUEUED' }, 202)
 }
 

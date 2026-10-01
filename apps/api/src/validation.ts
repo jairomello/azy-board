@@ -179,6 +179,16 @@ const governanceShape = {
 export const assistantAvailabilitySchema = z.object({ enabled: z.boolean() }).strict()
 export const assistantGovernanceSchema = z.object(governanceShape).strict()
 export const assistantProviderSchema = z.object({ provider: z.enum(['OPENAI', 'OPENROUTER']), model: z.string().trim().min(1).max(200), secret: z.string().min(1).max(500) }).strict()
+export const assistantModelConfigSchema = assistantProviderSchema
+export const assistantModelConfigTestSchema = z.object({
+  provider: z.enum(['OPENAI', 'OPENROUTER']).optional(), model: z.string().trim().min(1).max(200).optional(),
+  secret: z.string().min(1).max(500).optional(),
+}).strict()
+export const assistantModelConfigUpdateSchema = z.object({
+  provider: z.enum(['OPENAI', 'OPENROUTER']).optional(), model: z.string().trim().min(1).max(200).optional(),
+  secret: z.string().min(1).max(500).optional(), enabled: z.boolean().optional(),
+}).strict().refine(value => Object.keys(value).length > 0, { message: 'Informe ao menos uma alteração' })
+export const assistantModelConfigsReorderSchema = z.object({ orderedIds: z.array(z.string().min(1).max(100)) }).strict()
 export const conversationSchema = z.object({ projectId: z.string().min(1).nullable().optional(), title: z.string().max(200).nullable().optional() }).strict()
 export const assistantMessageSchema = z.object({ content: z.string().trim().min(1).max(20_000), projectId: z.string().min(1).nullable().optional(), itemId: z.string().min(1).nullable().optional(), screen: z.enum(['projects-index', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'item-detail', 'account', 'admin-users', 'admin-assistant', 'global-other']).nullable().optional() }).strict()
 export const assistantAnswerSchema = z.object({ answer: z.string().trim().min(1).max(20_000) }).strict()

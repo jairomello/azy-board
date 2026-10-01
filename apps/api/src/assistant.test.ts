@@ -7,11 +7,13 @@ process.env.ASSISTANT_ENCRYPTION_KEY = 'a'.repeat(64)
 
 const { app } = await import('./index')
 const { db } = await import('./db/index')
-const { tenants, users, projects, projectAnalyticsCoverage, assistantCredentials, assistantSettings, assistantConversations, assistantMessages, assistantRuns, assistantEvents, assistantApprovals, assistantToolCalls } = await import('./db/schema')
+const { tenants, users, projects, projectAnalyticsCoverage, assistantCredentials, assistantModelConfigs, assistantSettings, assistantConversations, assistantMessages, assistantRuns, assistantEvents, assistantApprovals, assistantToolCalls } = await import('./db/schema')
 const { signJwt } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 const { decryptAssistantSecret, encryptAssistantSecret } = await import('./services/assistantEncryption')
 const { probeOpenAICredential } = await import('./services/openaiProvider')
+const { persistence } = await import('./persistence/runtime')
+const { executeAssistantRun } = await import('./services/assistantRunExecutor')
 const { estimateRequestedActions, formatAssistantPromptContext, itemTypeScopeForMessage, toolsForMessage, canUseProject, toolApi } = await import('./routes/assistant')
 
 await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
@@ -64,6 +66,12 @@ describe('configuração Root do Azy Agent', () => {
     expect(await response.json()).toEqual({ enabled: false, configured: false })
   })
 
+  test('não permite habilitar o agente sem modelo validado', async () => {
+    const response = await requestJson('/assistant/root/availability', rootId, tenantId, 'PATCH', { enabled: true })
+    expect(response.status).toBe(422)
+    expect(await response.json()).toMatchObject({ error: { code: 'PROVIDER_NOT_VALIDATED' } })
+  })
+
   test('Root consulta e configura governança do tenant dentro de limites seguros', async () => {
     const current = await request('/assistant/root', rootId, tenantId)
     expect((await current.json() as { governance: { requestsPerMinute: number } }).governance.requestsPerMinute).toBe(10)
@@ -110,6 +118,85 @@ describe('API de chat do Azy Agent', () => {
     const credentialId = generateId()
     await db.insert(assistantCredentials).values({ id: credentialId, tenantId, provider: 'OPENAI', credentialMode: 'API_KEY', ciphertext: (await encryptAssistantSecret('chat-secret')).ciphertext, ciphertextVersion: 1, keyPrefix: 'sk-chat...', scopesJson: '[]', createdBy: rootId, createdAt: now })
     await db.update(assistantSettings).set({ enabled: true, provider: 'OPENAI', model: 'gpt-4o-mini', credentialMode: 'API_KEY', credentialId, validationStatus: 'VALID', validatedAt: now, updatedAt: now }).where(eq(assistantSettings.tenantId, tenantId))
+    await db.insert(assistantModelConfigs).values({ id: generateId(), tenantId, provider: 'OPENAI', model: 'gpt-4o-mini', credentialId, position: 0, enabled: true, validationStatus: 'VALID', validatedAt: now, createdAt: now, updatedAt: now })
+    await db.insert(assistantModelConfigs).values({ id: generateId(), tenantId, provider: 'OPENAI', model: 'gpt-4o-mini', credentialId, position: 0, enabled: true, validationStatus: 'VALID', validatedAt: now, createdAt: now, updatedAt: now })
+  })
+
+  test('worker executa uma run enfileirada com a configuração ativa do tenant', async () => {
+    const now = new Date().toISOString()
+    const workerConversationId = generateId(), runId = generateId()
+    await db.insert(assistantConversations).values({ id: workerConversationId, tenantId, userId: rootId, createdAt: now, updatedAt: now })
+    const previousProvider = process.env.AZY_AGENT_PROVIDER
+    process.env.AZY_AGENT_PROVIDER = 'stub'
+    try {
+      await persistence.agent.insertRun({ tenantId, actorUserId: null, actorKind: 'SYSTEM' }, {
+        id: runId, conversationId: workerConversationId, userId: rootId, model: 'gpt-4o-mini', idempotencyKey: `worker-${runId}`,
+        executionContextJson: JSON.stringify({
+          transcript: [{ role: 'system', content: 'Contexto autorizado do teste' }, { role: 'user', content: 'Responda ao teste' }],
+          toolAllowlist: [], runContext: { screen: 'global-other' },
+          counters: { steps: 0, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 },
+        }),
+        createdAt: now, expiresAt: new Date(Date.now() + 90_000).toISOString(),
+      })
+      await executeAssistantRun(runId, tenantId)
+    } finally {
+      if (previousProvider === undefined) delete process.env.AZY_AGENT_PROVIDER
+      else process.env.AZY_AGENT_PROVIDER = previousProvider
+    }
+    const run = await persistence.agent.getRun({ tenantId, actorUserId: null, actorKind: 'SYSTEM' }, runId)
+    expect(run?.status).toBe('COMPLETED')
+    expect(run?.model).toBe('OPENAI/gpt-4o-mini')
+    const messages = await persistence.agent.listMessages({ tenantId, actorUserId: null, actorKind: 'SYSTEM' }, workerConversationId)
+    expect(messages.some(message => message.role === 'ASSISTANT' && message.content.includes('Resposta determinística'))).toBe(true)
+  })
+
+  test('lista e reordena modelos Root sem expor segredos nem cruzar tenants', async () => {
+    const existingModels = await db.select().from(assistantModelConfigs).where(eq(assistantModelConfigs.tenantId, tenantId))
+    expect(existingModels.length).toBeGreaterThan(0)
+    const baseline = existingModels[0]!
+    await db.delete(assistantModelConfigs).where(eq(assistantModelConfigs.tenantId, tenantId))
+    await db.insert(assistantModelConfigs).values({
+      id: baseline.id, tenantId, provider: baseline.provider, model: baseline.model, credentialId: baseline.credentialId,
+      position: 0, enabled: true, validationStatus: 'VALID', validatedAt: baseline.validatedAt, createdAt: baseline.createdAt, updatedAt: baseline.updatedAt,
+    })
+    const listed = await request('/assistant/root/models', rootId, tenantId)
+    expect(listed.status).toBe(200)
+    const initial = await listed.json() as { models: Array<{ id: string; model: string; keyPrefix: string }> }
+    expect(initial.models).toHaveLength(1)
+    expect(initial.models[0]).toMatchObject({ model: 'gpt-4o-mini', keyPrefix: 'sk-chat...' })
+    expect(JSON.stringify(initial)).not.toContain('chat-secret')
+    expect((await request('/assistant/root/models', adminId, tenantId)).status).toBe(403)
+    expect(await (await request('/assistant/root/models', otherRootId, otherTenantId)).json()).toEqual({ models: [] })
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () => new Response(JSON.stringify({ data: [{ id: 'openrouter/fallback-test' }] }), { headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch
+    let modelId = ''
+    let credentialId = ''
+    try {
+      const created = await requestJson('/assistant/root/models', rootId, tenantId, 'POST', { provider: 'OPENROUTER', model: 'openrouter/fallback-test', secret: 'or-second-secret' })
+      expect(created.status).toBe(201)
+      const createdModel = await created.json() as { id: string; model: string; keyPrefix: string; secret?: string; ciphertext?: string }
+      expect(createdModel).toMatchObject({ model: 'openrouter/fallback-test', keyPrefix: 'or-seco...' })
+      expect(createdModel.secret).toBeUndefined()
+      expect(createdModel.ciphertext).toBeUndefined()
+      modelId = createdModel.id
+      const tested = await requestJson(`/assistant/root/models/${modelId}/test`, rootId, tenantId, 'POST', { provider: 'OPENROUTER', model: 'openrouter/fallback-test' })
+      expect(await tested.json()).toMatchObject({ status: 'VALID', model: 'openrouter/fallback-test' })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+    credentialId = (await db.select().from(assistantModelConfigs).where(eq(assistantModelConfigs.id, modelId)))[0]!.credentialId
+
+    const reordered = await requestJson('/assistant/root/models/reorder', rootId, tenantId, 'PATCH', { orderedIds: [modelId, initial.models[0]!.id] })
+    expect(reordered.status).toBe(200)
+    const configs = await reordered.json() as { models: Array<{ id: string; position: number }> }
+    expect(configs.models.map(model => [model.id, model.position])).toEqual([[modelId, 0], [initial.models[0]!.id, 1]])
+    expect((await db.select().from(assistantSettings).where(eq(assistantSettings.tenantId, tenantId)))[0]?.model).toBe('openrouter/fallback-test')
+
+    expect((await requestJson(`/assistant/root/models/${modelId}`, otherRootId, otherTenantId, 'PATCH', { enabled: false })).status).toBe(404)
+    expect((await requestJson(`/assistant/root/models/${modelId}`, rootId, tenantId, 'PATCH', { enabled: false })).status).toBe(200)
+    expect((await requestJson(`/assistant/root/models/${modelId}`, rootId, tenantId, 'DELETE', {})).status).toBe(200)
+    expect((await db.select().from(assistantCredentials).where(eq(assistantCredentials.id, credentialId)))[0]?.revokedAt).toBeString()
   })
 
   test('cria, lista e isola conversa por ownership', async () => {

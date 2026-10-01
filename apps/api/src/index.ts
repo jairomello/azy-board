@@ -32,6 +32,8 @@ import { otelMiddleware } from './middleware/otel'
 import { healthRouter } from './routes/health'
 import type { HonoEnv } from './types/hono'
 import { startStorageCleanupWorker } from './services/storageCleanup'
+import { startAgentWorker } from './services/agentWorker'
+import { executeAssistantRun } from './services/assistantRunExecutor'
 import { persistence } from './persistence/runtime'
 import { resolveObservabilityConfig } from './config/observability'
 import { configureLogger, logger } from './services/logger'
@@ -46,6 +48,7 @@ configureLogger(obsConfig)
 
 // Error tracker — inicializado em startServer
 export let errorTracker: ErrorTracker = createErrorTracker(obsConfig)
+let stopAgentWorker: (() => void) | null = null
 
 app.onError((error, c) => {
   // [INTEGRIDADE] Conflitos de constraint são erros de domínio, não erro interno.
@@ -131,6 +134,7 @@ export async function startServer() {
   // (backoff e FAILED são persistidos; index de intervalo é com unref, não
   // impede o processo de encerrar).
   startStorageCleanupWorker()
+  if (!stopAgentWorker) stopAgentWorker = startAgentWorker({ executeRun: executeAssistantRun })
   const PORT = parseInt(process.env.PORT ?? '3000')
 
   // WebSocket server nativo do Bun — sem dependências extras

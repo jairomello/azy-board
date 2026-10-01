@@ -3,9 +3,10 @@
 
 import { persistence } from '../persistence/runtime'
 import { logger } from './logger'
-import type { AssistantRunDetailRecord, AssistantSettingsRecord } from '../persistence/models'
+import type { AssistantRunDetailRecord, AssistantSettingsRecord, UserCredentialRecord } from '../persistence/models'
 import type { Governance } from '@azy-board/assistant-contracts'
 import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts'
+import { formatAssistantPromptContext } from '../routes/assistant'
 
 export interface WorkerRunContext {
   runId: string
@@ -13,6 +14,13 @@ export interface WorkerRunContext {
   userId: string
   conversationId: string
   model: string
+  globalGroup: UserCredentialRecord['globalGroup']
+  projectId?: string
+  targetProjectId?: string
+  itemId?: string
+  screen?: string
+  itemTypeScope?: Array<'EPIC' | 'STORY' | 'TASK' | 'BUG'>
+  executionState: Record<string, unknown>
   // Governance limits
   governance: Governance
   // Messages for building model input
@@ -30,7 +38,7 @@ export async function loadRunContext(runId: string, tenantId: string): Promise<W
   const scope = { tenantId, actorUserId: null, actorKind: 'SYSTEM' as const }
 
   // Get the run
-  const run = await persistence.agent.getOwnedRun(scope, '', runId)
+  const run = await persistence.agent.getRun(scope, runId)
   if (!run) {
     logger.warn('worker-context: run not found', { runId, tenantId })
     return null
@@ -38,6 +46,12 @@ export async function loadRunContext(runId: string, tenantId: string): Promise<W
 
   // Get settings/governance
   const settings = await persistence.agent.getSettings(scope)
+  const user = await persistence.identity.findUser(scope, run.userId)
+  const conversation = await persistence.agent.getOwnedConversation(scope, run.userId, run.conversationId)
+  if (!user || !conversation) {
+    logger.warn('worker-context: user or conversation not found', { runId, tenantId })
+    return null
+  }
   const governance: Governance = settings
     ? {
         requestsPerMinute: settings.requestsPerMinute,
@@ -56,7 +70,37 @@ export async function loadRunContext(runId: string, tenantId: string): Promise<W
 
   // Get recent messages for the conversation
   const messages = await persistence.agent.listRecentMessages(scope, run.conversationId, 12)
-  const modelMessages = messages.map(m => ({ role: m.role, content: m.content }))
+  const modelMessages = messages.reverse().map(message => ({ role: message.role === 'ASSISTANT' ? 'assistant' : 'user', content: message.content.slice(0, 20_000) }))
+  let executionState: Record<string, unknown> = {}
+  try {
+    const parsed = JSON.parse(run.executionContextJson ?? '{}') as unknown
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) executionState = parsed as Record<string, unknown>
+  } catch {
+    logger.warn('worker-context: invalid execution context; rebuilding from messages', { runId, tenantId })
+  }
+  const transcript = Array.isArray(executionState.transcript) ? executionState.transcript as Array<Record<string, unknown>> : []
+  if (transcript.length === 0) {
+    const project = conversation.projectId ? await persistence.projects.getProject(scope, conversation.projectId) : null
+    const authenticatedUser = { id: user.id, name: user.name, email: user.email, globalGroup: user.globalGroup, language: user.language }
+    const selectedProject = project ? { id: project.id, name: project.name, startDate: project.startDate, plannedEndDate: project.plannedEndDate, plannedPoints: project.plannedPoints, plannedHours: project.plannedHours, scope: project.scope } : null
+    transcript.push({ role: 'system', content: formatAssistantPromptContext({ currentDate: new Date().toISOString().slice(0, 10), authenticatedUser, selectedProject, selectedItem: null }) })
+    transcript.push(...modelMessages)
+    executionState.transcript = transcript
+  }
+  const allMessages = await persistence.agent.listMessages(scope, run.conversationId)
+  const answerMessages = allMessages.filter(message => {
+    if (message.role !== 'USER' || !message.metadataJson) return false
+    try {
+      const metadata = JSON.parse(message.metadataJson) as Record<string, unknown>
+      return metadata.runId === runId && metadata.kind === 'question_answer'
+    } catch { return false }
+  })
+  const knownMessages = new Set(transcript.filter(message => message.role === 'user').map(message => String(message.content ?? '')))
+  for (const answer of answerMessages) if (!knownMessages.has(answer.content)) transcript.push({ role: 'user', content: answer.content })
+  executionState.transcript = transcript
+  const savedContext = executionState.runContext && typeof executionState.runContext === 'object'
+    ? executionState.runContext as Record<string, unknown>
+    : {}
 
   return {
     runId: run.id,
@@ -64,9 +108,16 @@ export async function loadRunContext(runId: string, tenantId: string): Promise<W
     userId: run.userId,
     conversationId: run.conversationId,
     model: run.model ?? settings?.model ?? 'gpt-4o-mini',
+    globalGroup: user.globalGroup,
+    projectId: typeof savedContext.projectId === 'string' ? savedContext.projectId : conversation.projectId ?? undefined,
+    targetProjectId: typeof savedContext.targetProjectId === 'string' ? savedContext.targetProjectId : conversation.projectId ?? undefined,
+    itemId: typeof savedContext.itemId === 'string' ? savedContext.itemId : undefined,
+    screen: typeof savedContext.screen === 'string' ? savedContext.screen : 'global-other',
+    itemTypeScope: Array.isArray(savedContext.itemTypeScope) ? savedContext.itemTypeScope as WorkerRunContext['itemTypeScope'] : undefined,
+    executionState,
     governance,
     messages: modelMessages,
-    toolAllowlist: [], // Worker uses all tools by default; policy filtering happens at execution
+    toolAllowlist: Array.isArray(executionState.toolAllowlist) ? executionState.toolAllowlist as string[] : [],
   }
 }
 

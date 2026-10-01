@@ -44,7 +44,7 @@ async function setupPostgres(): Promise<{ ports: PersistencePorts; pool: Pool; c
   const setupPool = new Pool({ connectionString: PG_URL })
   await setupPool.query('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;')
   const migrationsDir = join(import.meta.dir, 'migrations')
-  for (const file of ['0000_pale_warlock.sql', '0001_composite_fks.sql', '0003_items_tenant_project_parent_index.sql']) {
+  for (const file of ['0000_pale_warlock.sql', '0001_composite_fks.sql', '0003_items_tenant_project_parent_index.sql', '0004_assistant_model_configs.sql', '0005_assistant_run_context.sql']) {
     await runPgMigrations(setupPool, [readFileSync(join(migrationsDir, file), 'utf8')])
   }
   await setupPool.end()
@@ -54,6 +54,63 @@ async function setupPostgres(): Promise<{ ports: PersistencePorts; pool: Pool; c
 }
 
 describe('Paridade SIMPLE ↔ ADVANCED', () => {
+  test('modelos do agente têm a mesma ordem, disponibilidade e revogação nos dois adapters', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const tenantSqlite = await sqlite.ports.tenants.createTenant({ name: 'Tenant Modelos', slug: 'tenant-modelos' })
+      const tenantPg = await pg.ports.tenants.createTenant({ name: 'Tenant Modelos', slug: 'tenant-modelos' })
+      const userSqlite = await sqlite.ports.identity.createUser({ tenantId: tenantSqlite.id, actorUserId: null, actorKind: 'SYSTEM' }, { email: 'models@test.local', passwordHash: 'hash', name: 'Root', globalGroup: 'ROOT' })
+      const userPg = await pg.ports.identity.createUser({ tenantId: tenantPg.id, actorUserId: null, actorKind: 'SYSTEM' }, { email: 'models@test.local', passwordHash: 'hash', name: 'Root', globalGroup: 'ROOT' })
+      const makeModel = async (ports: PersistencePorts, tenantId: string, userId: string, suffix: string, position: number) => {
+        const context = { tenantId, actorUserId: userId, actorKind: 'USER' as const }
+        const now = new Date().toISOString(), credentialId = crypto.randomUUID()
+        await ports.agent.createCredential(context, { id: credentialId, provider: 'OPENAI', ciphertext: `cipher-${suffix}`, ciphertextVersion: 1, keyPrefix: `sk-${suffix}...`, createdBy: userId, createdAt: now })
+        await ports.agent.createModelConfig(context, { id: `model-${suffix}`, provider: 'OPENAI', model: `gpt-${suffix}`, credentialId, position, enabled: true, validationStatus: 'VALID', validatedAt: now, createdAt: now, updatedAt: now })
+        return credentialId
+      }
+      await Promise.all([
+        makeModel(sqlite.ports, tenantSqlite.id, userSqlite.id, 'primary', 0),
+        makeModel(pg.ports, tenantPg.id, userPg.id, 'primary', 0),
+      ])
+      const [credentialSqlite, credentialPg] = await Promise.all([
+        makeModel(sqlite.ports, tenantSqlite.id, userSqlite.id, 'fallback', 1),
+        makeModel(pg.ports, tenantPg.id, userPg.id, 'fallback', 1),
+      ])
+      const read = async (ports: PersistencePorts, tenantId: string, userId: string) => {
+        const context = { tenantId, actorUserId: userId, actorKind: 'USER' as const }
+        return {
+          models: (await ports.agent.listModelConfigs(context)).map(model => [model.id, model.model, model.position, model.enabled]),
+          primary: (await ports.agent.getSettings(context))?.model,
+        }
+      }
+      expect(await read(sqlite.ports, tenantSqlite.id, userSqlite.id)).toEqual(await read(pg.ports, tenantPg.id, userPg.id))
+
+      const now = new Date().toISOString()
+      await Promise.all([
+        sqlite.ports.agent.reorderModelConfigs({ tenantId: tenantSqlite.id, actorUserId: userSqlite.id, actorKind: 'USER' }, ['model-fallback', 'model-primary'], now),
+        pg.ports.agent.reorderModelConfigs({ tenantId: tenantPg.id, actorUserId: userPg.id, actorKind: 'USER' }, ['model-fallback', 'model-primary'], now),
+      ])
+      expect((await read(sqlite.ports, tenantSqlite.id, userSqlite.id)).primary).toBe('gpt-fallback')
+      expect((await read(pg.ports, tenantPg.id, userPg.id)).primary).toBe('gpt-fallback')
+      await Promise.all([
+        sqlite.ports.agent.updateModelConfig({ tenantId: tenantSqlite.id, actorUserId: userSqlite.id, actorKind: 'USER' }, 'model-fallback', { enabled: false, updatedAt: now }),
+        pg.ports.agent.updateModelConfig({ tenantId: tenantPg.id, actorUserId: userPg.id, actorKind: 'USER' }, 'model-fallback', { enabled: false, updatedAt: now }),
+      ])
+      expect((await read(sqlite.ports, tenantSqlite.id, userSqlite.id)).primary).toBe('gpt-primary')
+      expect((await read(pg.ports, tenantPg.id, userPg.id)).primary).toBe('gpt-primary')
+      await Promise.all([
+        sqlite.ports.agent.deleteModelConfig({ tenantId: tenantSqlite.id, actorUserId: userSqlite.id, actorKind: 'USER' }, 'model-fallback', now),
+        pg.ports.agent.deleteModelConfig({ tenantId: tenantPg.id, actorUserId: userPg.id, actorKind: 'USER' }, 'model-fallback', now),
+      ])
+      expect(await sqlite.ports.agent.getActiveCredential({ tenantId: tenantSqlite.id, actorUserId: null, actorKind: 'SYSTEM' }, credentialSqlite)).toBeNull()
+      expect(await pg.ports.agent.getActiveCredential({ tenantId: tenantPg.id, actorUserId: null, actorKind: 'SYSTEM' }, credentialPg)).toBeNull()
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+
   test('criação de tenant, usuário e projeto produz resultados equivalentes', async () => {
     const sqlite = await setupSqlite()
     const pg = await setupPostgres()

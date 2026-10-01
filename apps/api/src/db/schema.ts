@@ -149,7 +149,9 @@ export const assistantCredentials = sqliteTable('assistant_credentials', {
   revokedAt: text('revoked_at'),
   createdBy: text('created_by').notNull().references(() => users.id),
   createdAt: text('created_at').notNull(),
-})
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('assistant_credentials_tenant_id_id_unique').on(table.tenantId, table.id),
+}))
 
 export const assistantSettings = sqliteTable('assistant_settings', {
   tenantId: text('tenant_id').primaryKey().references(() => tenants.id, { onDelete: 'cascade' }),
@@ -173,6 +175,30 @@ export const assistantSettings = sqliteTable('assistant_settings', {
   timeoutMs: integer('timeout_ms').notNull().default(90_000),
   updatedAt: text('updated_at').notNull(),
 })
+
+export const assistantModelConfigs = sqliteTable('assistant_model_configs', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  provider: text('provider', { enum: ['OPENAI', 'OPENROUTER'] }).notNull(),
+  model: text('model').notNull(),
+  credentialId: text('credential_id').notNull(),
+  position: integer('position').notNull().default(0),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  validationStatus: text('validation_status', { enum: ['UNVALIDATED', 'VALID', 'INVALID'] }).notNull().default('UNVALIDATED'),
+  validatedAt: text('validated_at'),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+  updatedAt: text('updated_at').notNull().default(defaultNowIso()),
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('assistant_model_configs_tenant_id_id_unique').on(table.tenantId, table.id),
+  tenantPosition: index('assistant_model_configs_tenant_position_idx').on(table.tenantId, table.position),
+  providerCheck: check('assistant_model_configs_provider_check', sql`${table.provider} IN ('OPENAI','OPENROUTER')`),
+  validationCheck: check('assistant_model_configs_validation_check', sql`${table.validationStatus} IN ('UNVALIDATED','VALID','INVALID')`),
+  positionCheck: check('assistant_model_configs_position_check', sql`${table.position} >= 0`),
+  credentialFk: foreignKey(() => ({
+    columns: [table.tenantId, table.credentialId],
+    foreignColumns: [assistantCredentials.tenantId, assistantCredentials.id],
+  })),
+}))
 
 export const assistantConversations = sqliteTable('assistant_conversations', {
   id: text('id').primaryKey(),
@@ -210,6 +236,7 @@ export const assistantRuns = sqliteTable('assistant_runs', {
   outputTokens: integer('output_tokens'),
   costMicros: integer('cost_micros'),
   errorCode: text('error_code'),
+  executionContextJson: text('execution_context_json'),
   createdAt: text('created_at').notNull(),
   startedAt: text('started_at'),
   finishedAt: text('finished_at'),

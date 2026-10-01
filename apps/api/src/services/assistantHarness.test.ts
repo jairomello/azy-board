@@ -6,6 +6,7 @@ const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
 const { db } = await import('../db/index')
 const { tenants, users, assistantConversations, assistantRuns, assistantEvents, assistantApprovals, assistantToolCalls } = await import('../db/schema')
 const { AssistantHarness, AZY_AGENT_SYSTEM_PROMPT, ASSIGNED_CARD_PRIORITY_INSTRUCTION, HARNESS_LIMITS, approvalPreview, canonicalArguments, operationHash, riskForTool, safeError } = await import('./assistantHarness')
+const { FallbackModelProvider } = await import('./fallbackModelProvider')
 const { checkAssistantGuardrails } = await import('./assistantGuardrails')
 import type { ModelProvider, ModelResponse } from './openaiProvider'
 
@@ -198,6 +199,38 @@ describe('Azy Agent harness', () => {
     expect(ASSIGNED_CARD_PRIORITY_INSTRUCTION).toContain('already assigned to the authenticated user')
     expect(ASSIGNED_CARD_PRIORITY_INSTRUCTION).toContain('Never take a card assigned to another person')
     expect(ASSIGNED_CARD_PRIORITY_INSTRUCTION).toContain('not explicit user instructions to work on a specific card')
+  })
+
+  test('fallback entre providers preserva transcript e não repete tool já concluída', async () => {
+    let primaryCalls = 0
+    let toolExecutions = 0
+    let fallbackReceivedToolOutput = false
+    const provider = new FallbackModelProvider([
+      { configId: 'primary', provider: 'OPENAI', model: 'gpt-primary', secret: 'secret-primary' },
+      { configId: 'fallback', provider: 'OPENROUTER', model: 'openai/gpt-fallback', secret: 'secret-fallback' },
+    ], { timeoutMs: 5_000 }, undefined, candidate => ({
+      name: candidate.model,
+      capabilities: { tools: true, streaming: false, cancellation: true },
+      async createRun(request) {
+        if (candidate.configId === 'primary') {
+          primaryCalls++
+          if (primaryCalls === 1) return { id: 'response-1', output: [{ type: 'function_call', name: 'list_projects', callId: 'lookup-1', arguments: '{}' }] }
+          throw new Error('HTTP 503: service unavailable')
+        }
+        const input = Array.isArray(request.input) ? request.input : []
+        fallbackReceivedToolOutput = input.some(item => item.type === 'function_call_output' && item.call_id === 'lookup-1')
+        return { id: 'response-2', output: [{ type: 'message', text: 'A consulta foi concluída pelo fallback.' }] }
+      },
+      async *streamRun() {},
+    }))
+    const result = await new AssistantHarness({ provider, executeTool: async () => { toolExecutions++; return [{ id: 'p1' }] } })
+      .run({ source: 'azy-agent', userId, tenantId, globalGroup: 'TEAM_MEMBER', conversationId }, 'gpt-primary', 'liste projetos', `fallback-${id()}`)
+
+    expect(result.status).toBe('COMPLETED')
+    expect(result.text).toBe('A consulta foi concluída pelo fallback.')
+    expect(fallbackReceivedToolOutput).toBe(true)
+    expect(toolExecutions).toBe(1)
+    expect(primaryCalls).toBe(4)
   })
 
   test('processa múltiplas tools no mesmo passo e continua o loop', async () => {

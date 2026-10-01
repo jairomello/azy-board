@@ -138,11 +138,8 @@ export async function releaseRun(
  * Checks if a run has been requested to cancel.
  */
 export async function isCancelRequested(runId: string, tenantId: string): Promise<boolean> {
-  // Query the run directly to check cancelRequested flag
-  const { db } = await import('../db/index')
-  const { assistantRuns } = await import('../db/schema')
-  const { eq } = await import('drizzle-orm')
-  const run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
+  // [TENANT] O worker sempre consulta a run pelo par tenant + ID.
+  const run = await persistence.agent.getRun({ tenantId, actorUserId: null, actorKind: 'SYSTEM' }, runId)
   return run?.cancelRequested ?? false
 }
 
@@ -155,10 +152,8 @@ export async function requestCancel(runId: string, tenantId: string): Promise<bo
   const requested = await persistence.agent.requestCancel(runId, tenantId, now)
 
   // If run is QUEUED (not yet claimed), immediately cancel it
-  const { db } = await import('../db/index')
-  const { assistantRuns } = await import('../db/schema')
-  const { eq } = await import('drizzle-orm')
-  const run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
+  // [TENANT] Never resolve a run by its ID without the tenant scope.
+  const run = await persistence.agent.getRun({ tenantId, actorUserId: null, actorKind: 'SYSTEM' }, runId)
   if (run && run.status === 'QUEUED') {
     await persistence.agent.updateRunInStatuses(runId, tenantId, run.userId, ['QUEUED'], {
       status: 'CANCELLED',

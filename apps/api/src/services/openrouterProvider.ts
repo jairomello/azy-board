@@ -19,6 +19,10 @@ function messagesForInput(input: ModelInput, previousResponse?: ModelResponse): 
   messages.push(...input.map((value): ChatMessage => {
     const item = value as Record<string, unknown>
     if (item.type === 'function_call_output') return { role: 'tool' as const, tool_call_id: String(item.call_id ?? ''), content: String(item.output ?? '') }
+    if (item.type === 'function_call') return {
+      role: 'assistant', content: null,
+      tool_calls: [{ id: String(item.call_id ?? ''), type: 'function', function: { name: String(item.name ?? ''), arguments: String(item.arguments ?? '{}') } }],
+    }
     const role: ChatMessage['role'] = item.role === 'system' || item.role === 'assistant' ? item.role : 'user'
     return { role, content: typeof item.content === 'string' ? item.content : JSON.stringify(item.content ?? '') }
   }))

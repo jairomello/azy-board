@@ -485,6 +485,21 @@ export interface AssistantCredentialRecord {
   revokedAt: string | null
 }
 
+export interface AssistantModelConfigRecord {
+  id: string
+  tenantId: string
+  provider: 'OPENAI' | 'OPENROUTER'
+  model: string
+  credentialId: string
+  keyPrefix: string | null
+  position: number
+  enabled: boolean
+  validationStatus: 'UNVALIDATED' | 'VALID' | 'INVALID'
+  validatedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface AssistantConversationRecord {
   id: string
   tenantId: string
@@ -519,6 +534,7 @@ export interface AssistantRunDetailRecord {
   outputTokens: number | null
   costMicros: number | null
   errorCode: string | null
+  executionContextJson: string | null
   createdAt: string
   startedAt: string | null
   finishedAt: string | null

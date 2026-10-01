@@ -73,7 +73,7 @@ describe('contratos de interação do Azy Agent', () => {
     const context = await source('./contexts/AssistantContext.tsx')
     const settings = await source('./components/RootAssistantSettings.tsx')
     expect(context.includes('secret')).toBe(false)
-    expect(settings.includes('/assistant/root/provider/rotate')).toBe(true)
+    expect(settings.includes('/assistant/root/models')).toBe(true)
     expect(settings.includes('OAUTH')).toBe(false)
     expect(settings.includes('oauthUnsupported')).toBe(false)
   })

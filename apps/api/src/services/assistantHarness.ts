@@ -65,6 +65,17 @@ export function operationHash(name: string, args: Record<string, unknown>): stri
   return createHash('sha256').update(JSON.stringify([name, sortValue(args)])).digest('hex')
 }
 
+function modelTurnForTranscript(response: ModelResponse): Record<string, unknown>[] {
+  const transcript: Record<string, unknown>[] = []
+  for (const item of response.output) {
+    if (item.type === 'function_call') transcript.push({
+      type: 'function_call', call_id: item.callId ?? randomUUID(), name: item.name ?? '', arguments: item.arguments ?? '{}',
+    })
+    else if (item.type === 'message' && item.text) transcript.push({ role: 'assistant', content: item.text })
+  }
+  return transcript
+}
+
 function sortValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortValue)
   if (!value || typeof value !== 'object') return value
@@ -136,12 +147,12 @@ export class AssistantHarness {
     return { tenantId, actorUserId: userId ?? null, actorKind: 'USER' }
   }
 
-  async createRun(context: Omit<HarnessContext, 'runId'>, model: string, idempotencyKey: string): Promise<string> {
+  async createRun(context: Omit<HarnessContext, 'runId'>, model: string, idempotencyKey: string, executionContextJson: string | null = null): Promise<string> {
     const existing = await this.agent.findRunByIdempotencyKey(this.scope(context.tenantId, context.userId), context.userId, idempotencyKey)
     if (existing) return existing.id
     const id = randomUUID(), now = new Date().toISOString()
     await this.agent.insertRun(this.scope(context.tenantId, context.userId), {
-      id, conversationId: context.conversationId, userId: context.userId, model, idempotencyKey,
+      id, conversationId: context.conversationId, userId: context.userId, model, idempotencyKey, executionContextJson,
       createdAt: now, expiresAt: new Date(Date.now() + this.limits.timeoutMs).toISOString(),
     })
     await this.event(id, context.tenantId, 'RUN_CREATED', {})
@@ -149,15 +160,54 @@ export class AssistantHarness {
   }
 
   async run(context: Omit<HarnessContext, 'runId'>, model: string, input: ModelInput, idempotencyKey: string, allowlist?: readonly string[]): Promise<{ runId: string; status: string; text?: string }> {
-    if (JSON.stringify(input).length > this.limits.payloadBytes) throw new Error('PAYLOAD_LIMIT')
-    const runId = await this.createRun(context, model, idempotencyKey)
+    const transcript = [{ role: 'system', content: `${AZY_AGENT_SYSTEM_PROMPT}\n${ASSIGNED_CARD_PRIORITY_INSTRUCTION}` }, ...(typeof input === 'string' ? [{ role: 'user', content: input }] : input)]
+    const state = { transcript, toolAllowlist: allowlist ?? null, counters: { steps: 0, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 } }
+    if (JSON.stringify(state).length > this.limits.payloadBytes) throw new Error('PAYLOAD_LIMIT')
+    const runId = await this.createRun(context, model, idempotencyKey, JSON.stringify(state))
+    return this.runExisting(context, model, runId, state, allowlist)
+  }
+
+  async runExisting(
+    context: Omit<HarnessContext, 'runId'>,
+    model: string,
+    runId: string,
+    executionState: Record<string, unknown>,
+    allowlist?: readonly string[],
+    completedTools: Array<{ name: string; args: Record<string, unknown>; result: unknown }> = [],
+  ): Promise<{ runId: string; status: string; text?: string }> {
+    const transcript = Array.isArray(executionState.transcript) ? executionState.transcript as Record<string, unknown>[] : []
+    const toolAllowlist = allowlist ?? (Array.isArray(executionState.toolAllowlist) ? executionState.toolAllowlist as string[] : undefined)
+    if (JSON.stringify(executionState).length > this.limits.payloadBytes) throw new Error('PAYLOAD_LIMIT')
     const fullContext = { ...context, runId }
     await this.agent.updateRun(runId, context.tenantId, { status: 'RUNNING', startedAt: new Date().toISOString() })
-    await this.event(runId, context.tenantId, 'RUN_STARTED', {})
+    await this.event(runId, context.tenantId, 'RUN_STARTED', { resumed: true })
     try {
-      let current: ModelResponse = await this.callModel({ model, input: [{ role: 'system', content: `${AZY_AGENT_SYSTEM_PROMPT}\n${ASSIGNED_CARD_PRIORITY_INSTRUCTION}` }, ...(typeof input === 'string' ? [{ role: 'user', content: input }] : input)], tools: toolsForModel(fullContext, allowlist), userId: context.userId }, runId)
+      const persistedCounters = executionState.counters && typeof executionState.counters === 'object' ? executionState.counters as Record<string, unknown> : {}
+      const counts = {
+        steps: Number(persistedCounters.steps ?? 0), calls: Number(persistedCounters.calls ?? 0),
+        inputTokens: Number(persistedCounters.inputTokens ?? 0), outputTokens: Number(persistedCounters.outputTokens ?? 0),
+        costMicros: Number(persistedCounters.costMicros ?? 0),
+      }
+      const seen = new Map<string, unknown>()
+      const previouslyCompleted = new Set<string>(Array.isArray(executionState.completedMutationSignatures)
+        ? executionState.completedMutationSignatures.filter((value): value is string => typeof value === 'string')
+        : [])
+      for (const entry of completedTools) {
+        const args = canonicalArguments(entry.name, entry.args, fullContext)
+        const signature = `${entry.name}:${operationHash(entry.name, args)}`
+        seen.set(signature, entry.result)
+        previouslyCompleted.add(signature)
+      }
+      const persistTranscript = async () => {
+        executionState.transcript = transcript
+        executionState.toolAllowlist = toolAllowlist ?? null
+        executionState.counters = counts
+        const serialized = JSON.stringify(executionState)
+        if (serialized.length > this.limits.payloadBytes) throw new Error('PAYLOAD_LIMIT')
+        await this.agent.updateRun(runId, context.tenantId, { executionContextJson: serialized })
+      }
+      let current: ModelResponse = await this.callModel({ model, input: transcript, tools: toolsForModel(fullContext, toolAllowlist), userId: context.userId }, runId)
       let text = ''
-      const seen = new Map<string, unknown>(), counts = { steps: 0, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 }
       while (true) {
         // Check both in-memory and persistent cancel flags
         if (this.cancelled.has(runId)) return this.finish(runId, context.tenantId, 'CANCELLED', text, counts)
@@ -169,15 +219,28 @@ export class AssistantHarness {
         counts.outputTokens += current.usage?.outputTokens ?? 0
         counts.inputTokens += current.usage?.inputTokens ?? 0
         counts.costMicros += current.usage?.costMicros ?? 0
-        await this.agent.updateRun(runId, context.tenantId, { inputTokens: counts.inputTokens, outputTokens: counts.outputTokens, costMicros: counts.costMicros })
+        await this.agent.updateRun(runId, context.tenantId, {
+          ...(current.providerName && current.modelName ? { model: `${current.providerName}/${current.modelName}` } : {}),
+          inputTokens: counts.inputTokens, outputTokens: counts.outputTokens, costMicros: counts.costMicros,
+        })
         if (counts.inputTokens > this.limits.inputTokens) throw new Error('TOKEN_LIMIT')
         if (counts.outputTokens > this.limits.outputTokens) throw new Error('TOKEN_LIMIT')
         if (counts.costMicros > this.limits.costMicros) throw new Error('COST_LIMIT')
+        const turnStart = transcript.length
+        const assistantTurn = modelTurnForTranscript(current)
+        transcript.push(...assistantTurn)
+        await persistTranscript()
         const calls = current.output.filter(item => item.type === 'function_call')
         for (const item of current.output) if (item.type === 'message' && item.text) text += item.text
         if (!calls.length) return this.finish(runId, context.tenantId, 'COMPLETED', text, counts)
         if ((counts.calls += calls.length) > this.limits.toolCalls) throw new Error('TOOL_CALL_LIMIT')
-        const outputs: Record<string, unknown>[] = []
+        const turnOutputs: Record<string, unknown>[] = []
+        const persistTurnOutput = async (output: Record<string, unknown>) => {
+          turnOutputs.push(output)
+          transcript.splice(turnStart + assistantTurn.length)
+          transcript.push(...turnOutputs)
+          await persistTranscript()
+        }
         for (const call of calls) {
           let toolCallId: string | null = null
           try {
@@ -191,8 +254,11 @@ export class AssistantHarness {
             const risk = riskForTool(name), hash = operationHash(name, args), callId = randomUUID()
             toolCallId = callId
             if (seen.has(signature)) {
-              if (risk !== 'READ') throw new Error('REPEATED_TOOL_CALL')
-              outputs.push({ type: 'function_call_output', call_id: call.callId, output: JSON.stringify(seen.get(signature)) })
+              if (risk !== 'READ' && !previouslyCompleted.has(signature)) throw new Error('REPEATED_TOOL_CALL')
+              const cached = risk !== 'READ' && previouslyCompleted.has(signature)
+                ? { ok: true, alreadyExecuted: true, result: seen.get(signature) }
+                : seen.get(signature)
+              await persistTurnOutput({ type: 'function_call_output', call_id: call.callId, output: JSON.stringify(cached) })
               continue
             }
             await this.options.assertAvailable?.(fullContext)
@@ -204,15 +270,25 @@ export class AssistantHarness {
                 : undefined
               await this.agent.insertApproval(this.scope(context.tenantId, context.userId), { id: randomUUID(), runId, toolCallId: callId, previewJson: JSON.stringify(approvalPreview(name, args, fullContext, existingModules)), operationHash: hash, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), createdAt: new Date().toISOString() })
               await this.event(runId, context.tenantId, 'APPROVAL_REQUIRED', { tool: name, operationHash: hash, domain: tool.routing.domain, expanded: Boolean(allowlist && !allowlist.includes(name)), catalogCount: allowlist?.length ?? null })
+              const pendingIndex = assistantTurn.findIndex(entry => entry.type === 'function_call' && entry.call_id === call.callId)
+              if (pendingIndex >= 0) {
+                transcript.splice(turnStart)
+                transcript.push(...assistantTurn.slice(0, pendingIndex + 1), ...turnOutputs)
+                await persistTranscript()
+              }
               await this.agent.updateRun(runId, context.tenantId, { status: 'WAITING_APPROVAL' })
               return { runId, status: 'WAITING_APPROVAL' }
             }
             await this.event(runId, context.tenantId, 'TOOL_STARTED', { tool: name, domain: tool.routing.domain, expanded: Boolean(allowlist && !allowlist.includes(name)), catalogCount: allowlist?.length ?? null })
             const result = sanitizeToolOutput(await this.retrySafe(() => this.options.executeTool(name, args, fullContext), risk === 'READ'))
             seen.set(signature, result)
+            if (risk !== 'READ') {
+              previouslyCompleted.add(signature)
+              executionState.completedMutationSignatures = [...previouslyCompleted]
+            }
             await this.agent.updateToolCall(callId, context.tenantId, { status: 'COMPLETED', resultSummary: JSON.stringify(summary(result)), finishedAt: new Date().toISOString() })
             await this.event(runId, context.tenantId, 'TOOL_COMPLETED', { tool: name, result: summary(result) })
-            outputs.push({ type: 'function_call_output', call_id: call.callId, output: JSON.stringify(result) })
+            await persistTurnOutput({ type: 'function_call_output', call_id: call.callId, output: JSON.stringify(result) })
           } catch (error) {
             const recoverable = recoverableToolError(error)
             if (toolCallId) {
@@ -220,10 +296,10 @@ export class AssistantHarness {
               await this.agent.updateToolCall(toolCallId, context.tenantId, { status: 'FAILED', resultSummary: JSON.stringify(resultSummary), finishedAt: new Date().toISOString() })
             }
             if (!recoverable) throw error
-            outputs.push({ type: 'function_call_output', call_id: call.callId ?? randomUUID(), output: JSON.stringify({ ok: false, recoverable: true, code: recoverable.code, error: recoverable.message }) })
+            await persistTurnOutput({ type: 'function_call_output', call_id: call.callId ?? randomUUID(), output: JSON.stringify({ ok: false, recoverable: true, code: recoverable.code, error: recoverable.message }) })
           }
         }
-         current = await this.callModel({ model, input: outputs, previousResponse: current, tools: toolsForModel(fullContext, allowlist), userId: context.userId }, runId)
+        current = await this.callModel({ model, input: transcript, tools: toolsForModel(fullContext, toolAllowlist), userId: context.userId }, runId)
       }
     } catch (error) {
       await this.agent.updateRun(runId, context.tenantId, { status: 'FAILED', errorCode: safeError(error), finishedAt: new Date().toISOString() })
@@ -282,7 +358,13 @@ export class AssistantHarness {
   cancel(runId: string): void { this.cancelled.add(runId) }
   private provider(): ModelProvider { return this.options.provider }
   private async callModel(request: Parameters<ModelProvider['createRun']>[0], runId: string): Promise<ModelResponse> {
-    return this.withTimeout(this.retryTransient(() => this.provider().createRun(request), runId), runId)
+    const provider = this.provider()
+    const controller = new AbortController()
+    const requestWithSignal = { ...request, signal: controller.signal }
+    const operation = provider.handlesRetries
+      ? provider.createRun(requestWithSignal)
+      : this.retryTransient(() => provider.createRun(requestWithSignal), runId)
+    return this.withTimeout(operation, runId, controller)
   }
   private async retryTransient<T>(operation: () => Promise<T>, runId: string): Promise<T> {
     for (let attempt = 0; ; attempt++) {
@@ -292,9 +374,9 @@ export class AssistantHarness {
       }
     }
   }
-  private async withTimeout<T>(promise: Promise<T>, runId: string): Promise<T> {
+  private async withTimeout<T>(promise: Promise<T>, runId: string, controller?: AbortController): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined
-    return Promise.race([promise, new Promise<T>((_, reject) => { timer = setTimeout(() => { this.cancelled.add(runId); reject(new Error('TIMEOUT')) }, this.limits.timeoutMs) })]).finally(() => { if (timer) clearTimeout(timer) })
+    return Promise.race([promise, new Promise<T>((_, reject) => { timer = setTimeout(() => { this.cancelled.add(runId); controller?.abort(); reject(new Error('TIMEOUT')) }, this.limits.timeoutMs) })]).finally(() => { if (timer) clearTimeout(timer) })
   }
   private async retrySafe<T>(operation: () => Promise<T>, safe: boolean): Promise<T> {
     try { return await operation() } catch (error) {

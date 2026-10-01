@@ -86,6 +86,47 @@ describe('migration de rollup diário do dashboard (Item 13)', () => {
   })
 })
 
+describe('migração das configurações de modelo do Azy Agent', () => {
+  test('preserva a configuração singleton como primeiro modelo elegível', async () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    const source = new URL('./migrations', import.meta.url).pathname
+    const fullJournal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ idx: number; tag: string }> }
+    const priorEntries = fullJournal.entries.filter(entry => entry.idx <= 32)
+    const pre = `/tmp/azyboard-assistant-model-migration-${crypto.randomUUID()}`
+    await mkdir(`${pre}/meta`, { recursive: true })
+    for (const entry of priorEntries) await Bun.write(`${pre}/${entry.tag}.sql`, await Bun.file(`${source}/${entry.tag}.sql`).text())
+    await Bun.write(`${pre}/meta/_journal.json`, JSON.stringify({ ...fullJournal, entries: priorEntries }))
+    migrate(database, { migrationsFolder: pre })
+
+    const now = new Date().toISOString()
+    await database.insert(schema.tenants).values({ id: 'model-tenant', name: 'Models', slug: 'models', createdAt: now })
+    await database.insert(schema.users).values({
+      id: 'model-root', tenantId: 'model-tenant', email: 'model-root@test.local', passwordHash: 'hash', name: 'Root',
+      globalGroup: 'ROOT', createdAt: now, theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR',
+    })
+    await database.insert(schema.assistantCredentials).values({
+      id: 'model-credential', tenantId: 'model-tenant', provider: 'OPENROUTER', credentialMode: 'API_KEY',
+      ciphertext: 'encrypted-value', ciphertextVersion: 1, keyPrefix: 'sk-model...', scopesJson: '[]', revokedAt: null,
+      createdBy: 'model-root', createdAt: now,
+    })
+    await database.insert(schema.assistantSettings).values({
+      tenantId: 'model-tenant', enabled: true, provider: 'OPENROUTER', model: 'anthropic/claude-sonnet-4',
+      credentialMode: 'API_KEY', credentialId: 'model-credential', validationStatus: 'VALID', validatedAt: now, updatedAt: now,
+    })
+
+    migrate(database, { migrationsFolder: source })
+    const models = await database.select().from(schema.assistantModelConfigs).where(eq(schema.assistantModelConfigs.tenantId, 'model-tenant'))
+    expect(models).toHaveLength(1)
+    expect(models[0]).toMatchObject({
+      tenantId: 'model-tenant', provider: 'OPENROUTER', model: 'anthropic/claude-sonnet-4',
+      credentialId: 'model-credential', position: 0, enabled: true, validationStatus: 'VALID', validatedAt: now,
+    })
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+})
+
 describe('migration de analytics', () => {
   test('é idempotente em base vazia e cria índices aditivos', async () => {
     const sqlite = new Database(':memory:')

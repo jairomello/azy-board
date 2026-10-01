@@ -3,11 +3,14 @@ import { createHash } from 'node:crypto'
 
 export type ModelTool = { type: 'function'; name: string; description: string; parameters: Record<string, unknown>; strict: true }
 export type ModelInput = string | Array<Record<string, unknown>>
-export type ModelResponse = { id: string; output: Array<{ type: string; name?: string; callId?: string; arguments?: string; text?: string }>; usage?: { inputTokens?: number; outputTokens?: number; costMicros?: number }; history?: Array<Record<string, unknown>> }
+export type ModelProviderAttempt = { configId: string; provider: string; model: string; errorCode: string; durationMs: number }
+export type ModelResponse = { id: string; output: Array<{ type: string; name?: string; callId?: string; arguments?: string; text?: string }>; usage?: { inputTokens?: number; outputTokens?: number; costMicros?: number }; history?: Array<Record<string, unknown>>; providerName?: string; modelName?: string; fallbackAttempts?: ModelProviderAttempt[] }
 export type ModelStreamEvent = { type: 'text_delta' | 'response'; text?: string; response?: ModelResponse }
 export interface ModelProvider {
   readonly name: string
   readonly capabilities: { tools: boolean; streaming: boolean; cancellation: boolean }
+  /** Indica que o wrapper já aplica a política de retry/fallback. */
+  readonly handlesRetries?: boolean
   createRun(request: { model: string; input: ModelInput; tools: ModelTool[]; userId: string; previousResponse?: ModelResponse; signal?: AbortSignal }): Promise<ModelResponse>
   streamRun(request: { model: string; input: ModelInput; tools: ModelTool[]; userId: string; previousResponse?: ModelResponse; signal?: AbortSignal }): AsyncIterable<ModelStreamEvent>
   cancelRun?(providerRunId: string): Promise<void>

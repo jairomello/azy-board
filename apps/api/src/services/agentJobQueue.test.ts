@@ -6,6 +6,7 @@ const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
 const { db } = await import('../db/index')
 const { tenants, users, assistantConversations, assistantRuns } = await import('../db/schema')
 const { claimNextRun, heartbeatRun, releaseRun, isCancelRequested, requestCancel } = await import('./agentJobQueue')
+const { AgentWorker } = await import('./agentWorker')
 
 const id = () => crypto.randomUUID()
 
@@ -49,6 +50,23 @@ async function createRun(overrides: Partial<{
 }
 
 describe('Agent job queue', () => {
+  test('worker inicia polling e executa callback da run reivindicada', async () => {
+    const runId = await createRun()
+    let worker!: InstanceType<typeof AgentWorker>
+    const executed = new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Worker não consumiu a run')), 1_000)
+      worker = new AgentWorker({ tenantId, executeRun: async (claimedId, claimedTenantId) => {
+        clearTimeout(timer)
+        expect(claimedTenantId).toBe(tenantId)
+        await db.update(assistantRuns).set({ status: 'COMPLETED', finishedAt: new Date().toISOString() }).where(eq(assistantRuns.id, claimedId))
+        resolve(claimedId)
+      } })
+      worker.start()
+    })
+    try { expect(await executed).toBe(runId) } finally { worker.stop() }
+    expect((await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) }))?.status).toBe('COMPLETED')
+  })
+
   test('claim atômico: dois workers concorrem, apenas um executa', async () => {
     const runId = await createRun()
     const worker1 = 'worker-1'

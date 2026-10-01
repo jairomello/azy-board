@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
+import { eq } from 'drizzle-orm'
 import * as schema from '../schema'
 import { createSqlitePersistencePorts } from './adapter'
 import type { PersistenceContext } from '../../persistence/models'
@@ -16,12 +17,53 @@ function setup() {
   const now = new Date().toISOString()
   sqlite.query('INSERT INTO tenants (id, name, slug, created_at) VALUES (?, ?, ?, ?)').run('tenant-a', 'Tenant A', 'tenant-a', now)
   sqlite.query('INSERT INTO tenants (id, name, slug, created_at) VALUES (?, ?, ?, ?)').run('tenant-b', 'Tenant B', 'tenant-b', now)
-  return { sqlite, ports: createSqlitePersistencePorts(database, sqlite) }
+  return { sqlite, database, ports: createSqlitePersistencePorts(database, sqlite) }
 }
 
 const context: PersistenceContext = { tenantId: 'tenant-a', actorUserId: null, actorKind: 'SYSTEM' }
 
 describe('adapter SQLite dos ports', () => {
+  test('gerencia modelos do agente em ordem e revoga credenciais sem referências', async () => {
+    const { sqlite, database, ports } = setup()
+    const now = new Date().toISOString()
+    const ownerId = crypto.randomUUID()
+    await database.insert(schema.users).values({
+      id: ownerId, tenantId: 'tenant-a', email: `${ownerId}@test.local`, passwordHash: 'hash', name: 'Root',
+      globalGroup: 'ROOT', createdAt: now, theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR',
+    })
+    await database.insert(schema.assistantCredentials).values({
+      id: 'credential-shared', tenantId: 'tenant-a', provider: 'OPENAI', credentialMode: 'API_KEY',
+      ciphertext: 'ciphertext', ciphertextVersion: 1, keyPrefix: 'sk-test...', scopesJson: '[]',
+      revokedAt: null, createdBy: ownerId, createdAt: now,
+    })
+    await ports.agent.createModelConfig(context, {
+      id: 'model-primary', provider: 'OPENAI', model: 'gpt-primary', credentialId: 'credential-shared',
+      position: 50, enabled: true, validationStatus: 'VALID', validatedAt: now, createdAt: now, updatedAt: now,
+    })
+    await ports.agent.createModelConfig(context, {
+      id: 'model-fallback', provider: 'OPENAI', model: 'gpt-fallback', credentialId: 'credential-shared',
+      position: 50, enabled: true, validationStatus: 'VALID', validatedAt: now, createdAt: now, updatedAt: now,
+    })
+
+    expect((await ports.agent.listModelConfigs(context)).map(model => [model.id, model.position, model.keyPrefix]))
+      .toEqual([['model-primary', 0, 'sk-test...'], ['model-fallback', 1, 'sk-test...']])
+    expect((await ports.agent.getSettings(context))?.model).toBe('gpt-primary')
+    expect(await ports.agent.listModelConfigs({ ...context, tenantId: 'tenant-b' })).toEqual([])
+
+    expect(await ports.agent.reorderModelConfigs(context, ['model-fallback', 'model-primary'], now)).toBe(true)
+    expect((await ports.agent.getSettings(context))?.model).toBe('gpt-fallback')
+    expect(await ports.agent.updateModelConfig(context, 'model-fallback', { enabled: false, updatedAt: now })).toBe(true)
+    expect((await ports.agent.getSettings(context))?.model).toBe('gpt-primary')
+
+    expect(await ports.agent.deleteModelConfig(context, 'model-fallback', now)).toBe(true)
+    expect((await database.query.assistantCredentials.findFirst({ where: eq(schema.assistantCredentials.id, 'credential-shared') }))?.revokedAt).toBeNull()
+    expect(await ports.agent.deleteModelConfig(context, 'model-primary', now)).toBe(true)
+    expect((await database.query.assistantCredentials.findFirst({ where: eq(schema.assistantCredentials.id, 'credential-shared') }))?.revokedAt).toBe(now)
+    expect((await ports.agent.getSettings(context))?.credentialId).toBeNull()
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+
   test('normaliza e-mail canônico e escopa lookup de usuário por tenant', async () => {
     const { sqlite, ports } = setup()
     const user = await ports.identity.createUser(context, { email: '  User@Example.COM ', name: 'Usuário', passwordHash: 'hash', globalGroup: 'TEAM_MEMBER' })

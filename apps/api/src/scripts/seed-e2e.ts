@@ -9,7 +9,7 @@
  */
 import { eq } from 'drizzle-orm'
 import { db } from '../db/index'
-import { assistantCredentials, assistantSettings, tenants, users } from '../db/schema'
+import { assistantCredentials, assistantModelConfigs, assistantSettings, tenants, users } from '../db/schema'
 import { hashPassword } from '../services/auth'
 import { encryptAssistantSecret } from '../services/assistantEncryption'
 import { generateId } from '../utils/id'
@@ -62,5 +62,7 @@ await db.insert(assistantCredentials).values({
 await db.insert(assistantSettings)
   .values({ tenantId: tenant.id, enabled: true, provider: 'OPENAI', model: 'gpt-4o-mini', credentialMode: 'API_KEY', credentialId, validationStatus: 'VALID', validatedAt: now, updatedAt: now })
   .onConflictDoUpdate({ target: assistantSettings.tenantId, set: { enabled: true, provider: 'OPENAI', model: 'gpt-4o-mini', credentialId, validationStatus: 'VALID', validatedAt: now, updatedAt: now } })
+await db.delete(assistantModelConfigs).where(eq(assistantModelConfigs.tenantId, tenant.id))
+await db.insert(assistantModelConfigs).values({ id: generateId(), tenantId: tenant.id, provider: 'OPENAI', model: 'gpt-4o-mini', credentialId, position: 0, enabled: true, validationStatus: 'VALID', validatedAt: now, createdAt: now, updatedAt: now })
 
 console.log('Seed E2E aplicado: membro e assistente habilitados.')

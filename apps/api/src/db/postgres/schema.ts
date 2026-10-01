@@ -549,6 +549,7 @@ export const assistantCredentials = pgTable('assistant_credentials', {
   createdBy: text('created_by').notNull(),
   createdAt: text('created_at').notNull(),
 }, (table) => ({
+  tenantIdUnique: uniqueIndex('assistant_credentials_tenant_id_id_unique').on(table.tenantId, table.id),
   providerCheck: check('assistant_credentials_provider_check', sql`${table.provider} IN ('OPENAI','OPENROUTER')`),
   modeCheck: check('assistant_credentials_mode_check', sql`${table.credentialMode} IN ('API_KEY')`),
 }))
@@ -577,6 +578,26 @@ export const assistantSettings = pgTable('assistant_settings', {
 }, (table) => ({
   providerCheck: check('assistant_settings_provider_check', sql`${table.provider} IS NULL OR ${table.provider} IN ('OPENAI','OPENROUTER')`),
   validationCheck: check('assistant_settings_validation_check', sql`${table.validationStatus} IN ('UNVALIDATED','VALID','INVALID')`),
+}))
+
+export const assistantModelConfigs = pgTable('assistant_model_configs', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull(),
+  model: text('model').notNull(),
+  credentialId: text('credential_id').notNull(),
+  position: integer('position').notNull().default(0),
+  enabled: boolean('enabled').notNull().default(true),
+  validationStatus: text('validation_status').notNull().default('UNVALIDATED'),
+  validatedAt: text('validated_at'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('assistant_model_configs_tenant_id_id_unique').on(table.tenantId, table.id),
+  tenantPosition: index('assistant_model_configs_tenant_position_idx').on(table.tenantId, table.position),
+  providerCheck: check('assistant_model_configs_provider_check', sql`${table.provider} IN ('OPENAI','OPENROUTER')`),
+  validationCheck: check('assistant_model_configs_validation_check', sql`${table.validationStatus} IN ('UNVALIDATED','VALID','INVALID')`),
+  positionCheck: check('assistant_model_configs_position_check', sql`${table.position} >= 0`),
 }))
 
 export const assistantConversations = pgTable('assistant_conversations', {
@@ -620,6 +641,7 @@ export const assistantRuns = pgTable('assistant_runs', {
   outputTokens: integer('output_tokens'),
   costMicros: integer('cost_micros'),
   errorCode: text('error_code'),
+  executionContextJson: text('execution_context_json'),
   createdAt: text('created_at').notNull(),
   startedAt: text('started_at'),
   finishedAt: text('finished_at'),
