@@ -55,3 +55,13 @@ Para marcar vários passos, prefira `check_items` com no máximo 100 entradas. C
 ## Erros
 
 Respostas de erro têm `code`, `message`, `retryable` e, para validação MCP, `details.path`, `details.cause` e `details.snippet`. Conflitos de claim, validação, autorização e IDs fora do escopo não devem ser repetidos automaticamente. Falhas transitórias só podem ser repetidas quando `retryable` for verdadeiro e a operação for segura/idempotente.
+
+## Encerrar processos de teste sem derrubar o MCP
+
+O servidor MCP roda como processo local do harness, com o comando apontando para `apps/mcp/src/index.ts`. Matar processos por padrão amplo (por exemplo, `pkill -f "src/index.ts"` ou `pkill -f node_modules/.bin/vite`) pode casar com o processo do MCP e encerrar a conexão da sessão; o harness não reconecta no meio da sessão e as ferramentas deixam de existir até reiniciar.
+
+Ao encerrar servidores de desenvolvimento/teste:
+
+- Prefira matar por PID específico (guarde o PID do processo que você subiu), não por `pkill -f` genérico.
+- Se usar `pkill`, restrinja o padrão ao seu processo (ex.: `pkill -f "vite --port 5173"` ou o nome exato do comando da API), nunca a `src/index.ts` isolado.
+- Se a conexão do MCP cair durante a sessão, ela só volta ao reiniciar a sessão do harness; avise o usuário em vez de assumir que as ferramentas continuam disponíveis.
