@@ -1,5 +1,9 @@
-import { isRegisteredTool, PROJECTION_FIELDS, requiredFieldsFor } from './fields.js'
+import { isRegisteredTool, PROJECTION_FIELDS, requiredFieldsFor, toolFields } from './fields.js'
 import { TOOL_TEXT_LIMITS } from './limits.js'
+
+// Campos internos injetados por harness/executores que não fazem parte do schema
+// exposto (ex.: assistantHarness adiciona atomic: true em batch).
+export const INTERNAL_ARG_ALLOWLIST: ReadonlySet<string> = new Set(['atomic', 'idempotencyKey', 'agentRunId'])
 
 export function assertNonEmptyString(value: unknown, field: string, maxLength = 200): asserts value is string {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -50,6 +54,15 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) throw new Error(`Campo obrigatório ausente: ${field}`)
   }
   const input = args ?? {}
+  // O schema declara additionalProperties: false — aceitar campo desconhecido
+  // produzia resultado silenciosamente errado (ex.: titleContains/itemIds em
+  // list_tasks eram ignorados e a resposta vinha sem filtro).
+  const declaredFields = toolFields[name]!.fields
+  for (const key of Object.keys(input)) {
+    if (!declaredFields.includes(key) && !INTERNAL_ARG_ALLOWLIST.has(key)) {
+      throw new Error(`Campo desconhecido: ${key} em ${name}; campos aceitos: ${declaredFields.join(', ')}`)
+    }
+  }
   for (const field of ['projectId', 'itemId', 'taskId', 'sprintId', 'tagId', 'versionId', 'userId', 'columnId', 'moduleId', 'checklistId', 'checklistItemId', 'assigneeId']) if (field in input && input[field] != null) assertNonEmptyString(input[field], field, 128)
   // null é tratado como "não informado" (clients strict enviam todos os campos).
   if (input.name != null) assertNonEmptyString(input.name, 'name', TOOL_TEXT_LIMITS.name)

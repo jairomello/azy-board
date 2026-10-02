@@ -164,3 +164,32 @@ describe('contrato de fonte única do catálogo MCP', () => {
     }
   })
 })
+
+describe('rejeição de campos desconhecidos', () => {
+  test('campo de outra ferramenta é rejeitado citando os aceitos', () => {
+    expect(() => validateToolArguments('list_tasks', { projectId: 'p', titleContains: 'x' }))
+      .toThrow('Campo desconhecido: titleContains em list_tasks')
+    expect(() => validateToolArguments('list_tasks', { projectId: 'p', itemIds: ['a'] }))
+      .toThrow('Campo desconhecido: itemIds em list_tasks')
+    // A mensagem lista os campos aceitos para recuperação imediata
+    expect(() => validateToolArguments('list_tasks', { projectId: 'p', titleContains: 'x' }))
+      .toThrow('columnId')
+  })
+
+  test('campos declarados continuam aceitos', () => {
+    expect(() => validateToolArguments('list_tasks', {
+      projectId: 'p', type: 'TASK', status: 'DONE', columnId: 'c', onlyLeaves: true, includeDescriptions: false, fields: ['id'], limit: 10,
+    })).not.toThrow()
+  })
+
+  test('passthrough interno do harness é permitido', () => {
+    const operations = [{ tool: 'create_task', args: { ref: 'a', title: 'T', type: 'TASK', assignToCurrentUser: false } }]
+    expect(() => validateToolArguments('batch', { projectId: 'p', operations, atomic: true })).not.toThrow()
+    expect(() => validateToolArguments('batch', { projectId: 'p', operations, idempotencyKey: 'k', agentRunId: 'r' })).not.toThrow()
+  })
+
+  test('campo desconhecido em ferramenta de escrita é rejeitado antes de qualquer efeito', () => {
+    expect(() => validateToolArguments('create_task', { projectId: 'p', title: 'T', type: 'TASK', prioridade: 'HIGH' }))
+      .toThrow('Campo desconhecido: prioridade')
+  })
+})

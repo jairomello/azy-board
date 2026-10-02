@@ -19,7 +19,7 @@ import {
   type ApiCall,
 } from './tools.js'
 import {
-  getSharedToolDefinitions, validateToolArguments, TOOL_TEXT_LIMITS,
+  coerceArgumentsBySchema, getSharedToolDefinitions, validateToolArguments, TOOL_TEXT_LIMITS,
   type HumanToolContext,
 } from '@azy-board/tool-registry'
 
@@ -62,7 +62,9 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
   const definition = getSharedToolDefinitions().find(tool => tool.name === name)
   if (!definition) throw new Error('TOOL_NOT_REGISTERED')
   assertHumanContext(execution.context)
-  args = pruneNullArguments(args)
+  // Coerção guiada pelo schema ANTES da validação: clientes podem entregar
+  // escalares/JSON como string (harness serializa parâmetros em texto).
+  args = coerceArgumentsBySchema(name, pruneNullArguments(args))
   validateToolArguments(name, args)
   // [PROJECT RESOLUTION] projectId aceita ID ou nome exato; resolução só chama a API para nomes.
   if (typeof args.projectId === 'string' && args.projectId.trim()) {

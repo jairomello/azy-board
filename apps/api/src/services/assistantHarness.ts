@@ -4,7 +4,7 @@ import type { AgentPort } from '../persistence/ports'
 import type { AssistantEventTypeName, PersistenceContext } from '../persistence/models'
 import { executeSharedTool, friendlyToolName, getSharedToolDefinitions, sanitizeToolOutput, type HumanToolContext } from './assistantTools'
 import type { ModelInput, ModelProvider, ModelResponse, ModelTool } from './openaiProvider'
-import { validateToolArguments } from '@azy-board/tool-registry'
+import { coerceArgumentsBySchema, validateToolArguments } from '@azy-board/tool-registry'
 import { HARNESS_LIMITS } from '@azy-board/assistant-contracts'
 import { isOtelInitialized, getOtelMeter } from './telemetry'
 
@@ -244,7 +244,9 @@ export class AssistantHarness {
         for (const call of calls) {
           let toolCallId: string | null = null
           try {
-            const name = call.name ?? '', args = canonicalArguments(name, parseArguments(call.arguments), fullContext)
+            // Coerção guiada pelo schema antes de validar/persistir: preview de
+            // aprovação, hash de operação e execução usam exatamente o mesmo payload.
+            const name = call.name ?? '', args = coerceArgumentsBySchema(name, canonicalArguments(name, parseArguments(call.arguments), fullContext))
             if (!call.callId) throw new Error('INVALID_TOOL_CALL')
             const signature = `${name}:${operationHash(name, args)}`
             const tool = getSharedToolDefinitions().find(item => item.name === name)

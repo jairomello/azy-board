@@ -34,6 +34,7 @@ Use o Azy Board como fonte compartilhada de planejamento e execução para pesso
 ## Payloads leves e recuperação MCP
 
 - `list_tasks` usa `onlyLeaves=true`, `includeDescriptions=false` e `limit=50` por padrão; use `includeDescriptions=true`, `fields` e `cursor` somente quando necessário.
+- Escalares entregues como string (`limit: "50"`, `onlyLeaves: "false"`, arrays como texto JSON) são coeridos pelo servidor conforme o schema do catálogo; valores ambíguos ou inválidos seguem rejeitados com erro acionável. Campos de topo não declarados na ferramenta são rejeitados — não existe filtro silenciosamente ignorado.
 - A resposta de `update_item`/`update_items` separa `identity`, `changes` aplicadas e o resumo comum `applied`; `matchedCount` e `updatedCount` confirmam o resultado sem reler o board.
 - Use sempre literais JSON válidos nos argumentos das ferramentas: `true`/`false` em minúsculas (nunca `True`/`False`), aspas duplas, sem vírgula final. Um literal inválido trunca a serialização dos argumentos no cliente e produz `JSON parsing failed: Text: {...` com `Unexpected EOF` — o mesmo sintoma de chamadas paralelas corrompidas, porém determinístico.
 - Em erro de parsing JSON da chamada, revise primeiro os literais (booleanos capitalizados são a causa mais comum) e repita a mesma intenção uma única vez, isoladamente e sem paralelismo. Se falhar novamente, informe ferramenta, caminho inválido e forma mínima aceita; nunca afirme que a mutação ocorreu.
@@ -60,6 +61,7 @@ Use o Azy Board como fonte compartilhada de planejamento e execução para pesso
   - `limit, quando informado, deve ser um inteiro entre 1 e 100` → omita o campo para usar o padrão.
   - `... deve ser uma lista de até N strings não vazias` → envie uma lista válida ou omita o filtro.
   - `Campo obrigatório ausente: X` → o campo é realmente obrigatório; informe-o.
+  - `Campo desconhecido: X em <tool>` → X não pertence à ferramenta; a própria mensagem lista os campos aceitos. Corrija o nome ou remova o campo; não reenvie o mesmo payload.
 
 ## Referências
 

@@ -79,7 +79,8 @@ export class ApiError extends Error {
 function validationDetails(toolName: string, args: Record<string, unknown>, message: string) {
   const missing = message.match(/Campo obrigatório ausente: (\w+)/)?.[1]
   const invalidField = message.match(/Campo de alteração inválido: (\w+)/)?.[1]
-  const field = missing ?? invalidField ?? message.match(/(?:^|\s)([a-zA-Z][\w.]*) (?:deve|é|contém|inválido)/)?.[1] ?? 'arguments'
+  const unknownField = message.match(/Campo desconhecido: (\w+)/)?.[1]
+  const field = missing ?? invalidField ?? unknownField ?? message.match(/(?:^|\s)([a-zA-Z][\w.]*) (?:deve|é|contém|inválido)/)?.[1] ?? 'arguments'
   const path = invalidField ? `changes.${invalidField}` : field
   const snippet = missing
     ? JSON.stringify({ [missing]: '<valor>' })

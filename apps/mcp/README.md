@@ -236,3 +236,18 @@ agente não precisa criar módulo, EPIC ou parentId manualmente.
 As ferramentas retornam texto legível e conteúdo estruturado. Erros devem ser
 tratados como resultado operacional e não como sinal para repetir cegamente a
 operação, especialmente em conflitos de claim, conversões e exclusões.
+
+### Robustez de argumentos
+
+- **Coerção guiada pelo schema**: valores entregues como string são coeridos
+  antes da validação conforme o `inputSchema` do catálogo — `"50"` em campo
+  `number`, `"true"`/`"false"` em campo `boolean`, texto JSON em campo
+  `array`/`object` (inclusive entradas aninhadas como `check_items.items[]`).
+  A coerção é idempotente e nunca toca strings de texto, data ou ID; string que
+  não casa com o tipo declarado é preservada para o validador gerar o erro
+  acionável existente.
+- **Campos desconhecidos são rejeitados**: chave de topo fora do catálogo da
+  ferramenta retorna `Campo desconhecido: X em <tool>; campos aceitos: ...`
+  (`details.path` aponta o campo). Exceção: passthrough interno do harness
+  (`atomic`, `idempotencyKey`, `agentRunId`). Nenhum filtro é ignorado
+  silenciosamente.

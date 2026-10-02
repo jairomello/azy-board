@@ -162,3 +162,44 @@ describe('get_board reduz o payload por padrão', () => {
     expect(full.items[0]!.description).toBe(long)
   })
 })
+
+describe('coerção de tipos e campos desconhecidos na fronteira de execução', () => {
+  const context = { source: 'mcp', userId: 'u1', tenantId: 't1', globalGroup: 'TEAM_MEMBER' } as const
+
+  test('limit/onlyLeaves/includeDescriptions como string geram a query correta', async () => {
+    const paths: string[] = []
+    const api: ApiCall = async (path) => { paths.push(path); return [] }
+    await executeSharedTool('list_tasks', { projectId: UUID, limit: '5', onlyLeaves: 'false', includeDescriptions: 'true' }, { api, context })
+    expect(paths[0]).toContain('leaf=false')
+    expect(paths[0]).toContain('limit=5')
+    expect(paths[0]).toContain('includeDescriptions=true')
+  })
+
+  test('fields como string JSON aplica projeção', async () => {
+    const paths: string[] = []
+    const api: ApiCall = async (path) => { paths.push(path); return [] }
+    await executeSharedTool('list_tasks', { projectId: UUID, fields: '["id","title"]' }, { api, context })
+    expect(decodeURIComponent(paths[0]!)).toContain('fields=id,title')
+  })
+
+  test('campo desconhecido é rejeitado antes de qualquer chamada de rede', async () => {
+    let calls = 0
+    const api: ApiCall = async () => { calls++; return [] }
+    await expect(executeSharedTool('list_tasks', { projectId: UUID, titleContains: 'x' }, { api, context }))
+      .rejects.toThrow('Campo desconhecido: titleContains')
+    expect(calls).toBe(0)
+  })
+
+  test('batch com atomic interno e booleano aninhado como string', async () => {
+    let body: unknown
+    const api: ApiCall = async (_path, _method, requestBody) => { body = requestBody; return { results: [] } }
+    await executeSharedTool('batch', {
+      projectId: UUID,
+      atomic: true,
+      operations: [{ tool: 'create_task', args: { ref: 'a', title: 'T', type: 'TASK', assignToCurrentUser: 'false' } }],
+    }, { api, context })
+    expect((body as { atomic: boolean }).atomic).toBe(true)
+    const operations = (body as { operations: Array<{ args: { assignToCurrentUser: boolean } }> }).operations
+    expect(operations[0]!.args.assignToCurrentUser).toBe(false)
+  })
+})
