@@ -27,6 +27,11 @@ type ProfileEnvironment = Record<string, string | undefined>
  * PostgreSQL and a Redis-compatible coordinator. This parser deliberately
  * never includes environment values in errors, since DATABASE_URL/REDIS_URL
  * commonly contain credentials.
+ *
+ * Em `NODE_ENV=test` o default SIMPLE é um banco efêmero (`:memory:`), nunca o
+ * `./dev.db` do ambiente: a suíte não pode abrir, migrar nem escrever no banco
+ * de desenvolvimento, e um `dev.db` já marcado faria o preflight de instalação
+ * falhar nos testes (INSTALLATION_VOLUME_MARKER_MISSING).
  */
 export function resolveInstallProfile(env: ProfileEnvironment = process.env): InstallProfileConfig {
   const rawProfile = env.AZYBOARD_INSTALL_PROFILE?.trim().toUpperCase() || 'SIMPLE'
@@ -35,7 +40,8 @@ export function resolveInstallProfile(env: ProfileEnvironment = process.env): In
   }
 
   const profile = rawProfile as InstallProfile
-  const databaseUrl = env.DATABASE_URL?.trim() || (profile === 'SIMPLE' ? './dev.db' : '')
+  const isTestEnv = env.NODE_ENV === 'test'
+  const databaseUrl = env.DATABASE_URL?.trim() || (profile === 'SIMPLE' ? (isTestEnv ? ':memory:' : './dev.db') : '')
   if (!databaseUrl) {
     throw new InstallProfileConfigurationError('DATABASE_URL é obrigatório no perfil ADVANCED.')
   }
@@ -44,7 +50,7 @@ export function resolveInstallProfile(env: ProfileEnvironment = process.env): In
   const instanceDir = configuredInstanceDir || (profile === 'SIMPLE'
     ? env.NODE_ENV === 'production' && localDatabasePath !== ':memory:'
       ? dirname(resolve(localDatabasePath))
-      : resolve(env.NODE_ENV === 'test' ? '.azyboard-test' : '.azyboard')
+      : resolve(isTestEnv ? '.azyboard-test' : '.azyboard')
     : '')
   if (!instanceDir) {
     throw new InstallProfileConfigurationError('ADVANCED exige AZYBOARD_INSTANCE_DIR em volume persistente.')

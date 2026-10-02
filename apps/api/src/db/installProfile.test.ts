@@ -7,6 +7,19 @@ describe('configuração do perfil de instalação', () => {
     expect(resolveInstallProfile({})).toEqual({ profile: 'SIMPLE', databaseUrl: './dev.db', instanceDir: resolve('.azyboard') })
   })
 
+  test('NODE_ENV=test usa banco efêmero por padrão, nunca o dev.db do ambiente', () => {
+    // Regressão do card 204f54a3: a suíte abria/migrava o dev.db do CWD quando
+    // DATABASE_URL não era fixado antes dos imports, e o marcador desse banco
+    // derrubava health/ready, dashboardMetrics e analytics.
+    expect(resolveInstallProfile({ NODE_ENV: 'test' })).toEqual({
+      profile: 'SIMPLE', databaseUrl: ':memory:', instanceDir: resolve('.azyboard-test'),
+    })
+  })
+
+  test('DATABASE_URL explícito prevalece sobre o default efêmero de teste', () => {
+    expect(resolveInstallProfile({ NODE_ENV: 'test', DATABASE_URL: '/tmp/azyboard-suite.db' }).databaseUrl).toBe('/tmp/azyboard-suite.db')
+  })
+
   test('normaliza perfil e espaços externos sem modificar a URL SQLite', () => {
     expect(resolveInstallProfile({ AZYBOARD_INSTALL_PROFILE: ' simple ', DATABASE_URL: ' /data/azyboard.db ' })).toEqual({
       profile: 'SIMPLE', databaseUrl: '/data/azyboard.db', instanceDir: resolve('.azyboard'),

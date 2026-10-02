@@ -1,8 +1,28 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
 import { Hono } from 'hono'
-import { healthRouter } from './health'
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { configureLogger } from '../services/logger'
 import type { HonoEnv } from '../types/hono'
+
+// [HERMÉTICO] Fixa banco efêmero e diretórios isolados ANTES de importar a rota:
+// `health.ts` resolve o perfil de instalação no escopo do módulo e o handler de
+// readiness importa `persistence/runtime`, que abre o banco. Sem este bloco o
+// resultado dependeria do `dev.db`, do `uploads/` e do marcador de instalação
+// presentes no CWD de quem roda a suíte.
+process.env.DATABASE_URL = ':memory:'
+process.env.UPLOADS_DIR = await mkdtemp(join(tmpdir(), 'azyboard-health-uploads-'))
+process.env.AZYBOARD_INSTANCE_DIR = await mkdtemp(join(tmpdir(), 'azyboard-health-instance-'))
+
+const { healthRouter } = await import('./health')
+const { db } = await import('../db/index')
+const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
+
+// Readiness consulta o banco (assertCutoverReady). Um `:memory:` sem migração não
+// tem tabelas e reportaria a dependência 'database'; o cenário válido é banco
+// migrado e íntegro, como em uma instalação real.
+await migrate(db, { migrationsFolder: new URL('../db/migrations', import.meta.url).pathname })
 
 describe('health endpoints', () => {
   let logs: string[] = []
@@ -51,6 +71,16 @@ describe('health endpoints', () => {
     const res = await app.request('/health/ready')
     expect(res.status).toBe(200)
     const body = await res.json()
+    expect(body.status).toBe('ok')
+  })
+
+  test('GET /health/ready não depende do estado do ambiente de desenvolvimento', async () => {
+    // Regressão do card 204f54a3: com `dev.db` marcado no CWD e sem
+    // `.azyboard-test`, o readiness devolvia 503 {dependencies:['database']}.
+    const app = createApp()
+    const res = await app.request('/health/ready')
+    const body = await res.json() as { status: string; dependencies?: string[] }
+    expect(body.dependencies ?? []).toEqual([])
     expect(body.status).toBe('ok')
   })
 
