@@ -125,7 +125,7 @@ export function pgInstallationMarkerStore(pool: Pool): InstallationMarkerStore {
         'assistant_events', 'assistant_tool_calls', 'assistant_approvals', 'idempotency_records', 'projects', 'squads',
         'project_cost_centers', 'memberships', 'modules', 'columns', 'sprints', 'items', 'project_versions', 'item_logs',
         'tags', 'item_tags', 'item_sprints', 'project_analytics_coverage', 'item_events', 'sprint_cycles',
-        'sprint_cycle_items', 'attachments', 'checklists', 'checklist_items', 'storage_cleanup_jobs', 'project_metrics_daily',
+        'sprint_cycle_items', 'attachments', 'item_links', 'checklists', 'checklist_items', 'storage_cleanup_jobs', 'project_metrics_daily',
       ]
       const populated: string[] = []
       for (const table of APP_TABLES) {

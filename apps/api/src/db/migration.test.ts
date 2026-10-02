@@ -16,6 +16,8 @@ describe('migration de outbox de limpeza de storage (Item 12)', () => {
     migrate(database, { migrationsFolder })
     const tables = sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
     expect(tables.map(table => table.name)).toContain('storage_cleanup_jobs')
+    expect(tables.map(table => table.name)).toContain('item_links')
+    expect((sqlite.query("PRAGMA index_list('item_links')").all() as Array<{ name: string }>).map(index => index.name)).toContain('item_links_tenant_project_item_idx')
     // Base vazia, base recém-migrada e associação típica preservadas
     expect((sqlite.query('SELECT COUNT(*) AS count FROM storage_cleanup_jobs').get() as { count: number }).count).toBe(0)
     expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])

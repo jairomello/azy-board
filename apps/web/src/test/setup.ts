@@ -22,6 +22,18 @@ import { cleanup, within } from '@testing-library/react'
 
 expect.extend(matchers)
 
+// O happy-dom implementa `AbortSignal.timeout`/`AbortSignal.any` usando `this`
+// interno; chamá-los desanexados (como faz `lib/api` ao montar o signal de
+// timeout) lança TypeError e aborta a requisição antes do fetch. Revincular os
+// estáticos mantém o cliente HTTP utilizável nos testes de componente.
+const abortSignalStatics = AbortSignal as unknown as Record<string, unknown>
+for (const method of ['timeout', 'any'] as const) {
+  const original = abortSignalStatics[method]
+  if (typeof original === 'function') {
+    abortSignalStatics[method] = (original as (...args: unknown[]) => unknown).bind(AbortSignal)
+  }
+}
+
 // Limpa a árvore antes e depois de cada teste. Além do `cleanup` do Testing
 // Library (que só conhece os containers que ele mesmo montou), zeramos o
 // `document.body`: com o runner isolando os arquivos, os containers de um teste

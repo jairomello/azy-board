@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Info, Plus, Check, X, ChevronLeft, ChevronRight, CheckSquare, ListChecks, History, CalendarDays, UserRound, Paperclip } from 'lucide-react'
+import { Info, Plus, Check, X, ChevronLeft, ChevronRight, CheckSquare, ListChecks, History, CalendarDays, UserRound, Paperclip, Link2 } from 'lucide-react'
 import type { ItemType, Priority, TaskStatus } from '@azy-board/domain'
 import type { Checklist } from '@azy-board/ui-contracts'
 import { InlineEdit } from './InlineEdit'
@@ -16,6 +16,10 @@ import { AttachmentsArea } from './AttachmentsArea'
 import { itemTypeMeta } from '../lib/itemTypeMeta'
 import { api } from '../lib/api'
 import { resolveAppUrl } from '../lib/appUrl'
+
+// Área de links carregada sob demanda: mantém o chunk do Board fora do orçamento
+// (padrão já usado por RichTextEditor e DashboardVisuals).
+const ItemLinksArea = lazy(() => import('./ItemLinksArea').then(module => ({ default: module.ItemLinksArea })))
 
 interface Epic { id: string; title: string }
 interface StoryOption { id: string; title: string; epicId: string }
@@ -108,7 +112,7 @@ interface ChildModalState {
   loading: boolean
 }
 
-type ItemArea = 'details' | 'subtasks' | 'checklists' | 'attachments' | 'activity'
+type ItemArea = 'details' | 'subtasks' | 'checklists' | 'links' | 'attachments' | 'activity'
 
 interface Props {
   item: FullItemData
@@ -345,6 +349,7 @@ export function ItemModal({
     { id: 'details', label: t('areaDetails'), icon: CheckSquare },
     { id: 'subtasks', label: t('areaSubtasks'), icon: ListChecks, count: subtaskCount },
     { id: 'checklists', label: t('areaChecklists'), icon: ListChecks, count: checklists.length },
+    ...(item.id !== '__new__' ? [{ id: 'links' as const, label: t('areaLinks'), icon: Link2 }] : []),
     ...(attachmentsEnabled ? [{ id: 'attachments' as const, label: t('areaAttachments'), icon: Paperclip }] : []),
     { id: 'activity', label: t('areaActivity'), icon: History, count: activityCount, summary: totalMinutes != null ? formatDuration(totalMinutes, t('worked')) : undefined },
   ]
@@ -395,6 +400,7 @@ export function ItemModal({
                 </>}
                 {activeArea === 'subtasks' && <div className="rounded-lg border border-border p-4"><div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-semibold">{t('areaSubtasks')} ({subtaskCount})</h3>{item.isLeaf && <button type="button" onClick={() => setShowSubtaskForm(true)} className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/20"><Plus className="h-3.5 w-3.5" />{t('addSubtask')}</button>}</div>{item.id !== '__new__' && <CardChildrenSection itemId={item.id} projectId={projectId} onOpenChild={handleOpenChild} onCountChange={setSubtaskCount} refreshKey={subtaskRefreshKey} />}{showSubtaskForm && <div className="mt-4"><AddCardForm onAdd={async (subTitle, subType) => { await onAddSubtask(item.id, subTitle, subType); setSubtaskRefreshKey(key => key + 1); setShowSubtaskForm(false) }} onCancel={() => setShowSubtaskForm(false)} /></div>}{item.id === '__new__' && <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {activeArea === 'checklists' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' ? <ChecklistSection itemId={item.id} projectId={projectId} initialChecklists={checklists} onChange={setChecklists} advancedChecklists={advancedChecklists} members={members} /> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
+                {activeArea === 'links' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' && <Suspense fallback={<p className="text-sm text-muted-foreground">{t('itemLinksLoading')}</p>}><ItemLinksArea itemId={item.id} projectId={projectId} canEdit={currentUserRole !== 'VIEWER'} /></Suspense>}</div>}
                 {activeArea === 'attachments' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' ? <AttachmentsArea itemId={item.id} projectId={projectId} canEdit={currentUserRole !== 'VIEWER'} /> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {activeArea === 'activity' && <div id="item-area-activity" className="grid min-h-[360px] min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">{item.id !== '__new__' ? <><ActivityLogPanel itemId={item.id} projectId={projectId} onCountChange={setActivityCount} /><WorkLogPanel itemId={item.id} projectId={projectId} currentUserId={currentUserId ?? ''} currentUserRole={currentUserRole} onCountChange={setWorkLogCount} onTotalChange={setTotalMinutes} /></> : <p className="col-span-full rounded-lg border border-border p-6 text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {error && <p className="text-sm text-red-500" role="alert">{error}</p>}

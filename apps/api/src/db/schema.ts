@@ -736,6 +736,28 @@ export const attachments = sqliteTable('attachments', {
   sizeCheck: check('attachments_size_check', sql`${table.size} >= 0`),
 }))
 
+// ---------------------------------------------------------------------------
+// ITEM_LINKS — links externos associados a itens
+// [TENANT] Todo lookup filtra tenant_id e associa projeto/item antes da leitura
+// ---------------------------------------------------------------------------
+export const itemLinks = sqliteTable('item_links', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  itemId: text('item_id').notNull(),
+  name: text('name').notNull(),
+  url: text('url').notNull(),
+  description: text('description'),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+  updatedAt: text('updated_at').notNull().default(defaultNowIso()),
+}, (table) => ({
+  itemFk: foreignKey(() => ({ columns: [table.tenantId, table.itemId], foreignColumns: [items.tenantId, items.id] })).onDelete('cascade'),
+  itemList: index('item_links_tenant_project_item_idx').on(table.tenantId, table.projectId, table.itemId, table.createdAt),
+  nameCheck: check('item_links_name_check', sql`length(trim(${table.name})) > 0 AND length(${table.name}) <= 200`),
+  urlCheck: check('item_links_url_check', sql`length(${table.url}) > 0 AND length(${table.url}) <= 2048`),
+  descriptionCheck: check('item_links_description_check', sql`${table.description} IS NULL OR length(${table.description}) <= 20000`),
+}))
+
 export const tenantAttachmentSettings = sqliteTable('tenant_attachment_settings', {
   tenantId: text('tenant_id').primaryKey().references(() => tenants.id, { onDelete: 'cascade' }),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
@@ -897,6 +919,7 @@ export const itemsRelations = relations(items, ({ one, many }) => ({
   itemTags: many(itemTags),
   itemSprints: many(itemSprints),
   attachments: many(attachments),
+  links: many(itemLinks),
   checklists: many(checklists),
   logs: many(itemLogs),
 }))

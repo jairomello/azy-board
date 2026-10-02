@@ -44,7 +44,7 @@ async function setupPostgres(): Promise<{ ports: PersistencePorts; pool: Pool; c
   const setupPool = new Pool({ connectionString: PG_URL })
   await setupPool.query('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;')
   const migrationsDir = join(import.meta.dir, 'migrations')
-  for (const file of ['0000_pale_warlock.sql', '0001_composite_fks.sql', '0003_items_tenant_project_parent_index.sql', '0004_assistant_model_configs.sql', '0005_assistant_run_context.sql']) {
+  for (const file of ['0000_pale_warlock.sql', '0001_composite_fks.sql', '0003_items_tenant_project_parent_index.sql', '0004_assistant_model_configs.sql', '0005_assistant_run_context.sql', '0008_item_links.sql']) {
     await runPgMigrations(setupPool, [readFileSync(join(migrationsDir, file), 'utf8')])
   }
   await setupPool.end()

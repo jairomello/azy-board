@@ -277,6 +277,7 @@ function deleteItemsInsideTransaction(database: Database, context: MutationConte
     database.query(`DELETE FROM item_tags WHERE tenant_id = ? AND item_id IN (${placeholders})`).run(context.tenantId, ...batch)
     database.query(`DELETE FROM item_sprints WHERE tenant_id = ? AND item_id IN (${placeholders})`).run(context.tenantId, ...batch)
     database.query(`DELETE FROM attachments WHERE tenant_id = ? AND item_id IN (${placeholders})`).run(context.tenantId, ...batch)
+    database.query(`DELETE FROM item_links WHERE tenant_id = ? AND item_id IN (${placeholders})`).run(context.tenantId, ...batch)
     database.query(`DELETE FROM item_logs WHERE tenant_id = ? AND item_id IN (${placeholders})`).run(context.tenantId, ...batch)
   }
   for (const itemId of [...itemIds].reverse()) {

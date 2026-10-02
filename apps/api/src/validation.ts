@@ -215,6 +215,22 @@ export const attachmentMetadataSchema = z.object({
   referenceDate: blankToNull(calendarDate),
   description: blankToNull(optionalText(20_000).nullable().optional()),
 }).strict()
+const itemLinkUrlSchema = z.string().trim().min(1).max(2048).refine(value => {
+  try {
+    const url = new URL(value)
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password
+  } catch { return false }
+}, 'Informe uma URL HTTP ou HTTPS válida, sem credenciais.')
+export const createItemLinkSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  url: itemLinkUrlSchema,
+  description: optionalText(20_000).nullable().optional(),
+}).strict()
+export const updateItemLinkSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  url: itemLinkUrlSchema.optional(),
+  description: optionalText(20_000).nullable().optional(),
+}).strict().refine(value => Object.keys(value).length > 0, 'Informe ao menos um campo para atualizar.')
 export const moduleSchema = z.object({ name: z.string().trim().min(1).max(200), description: optionalText().nullable().optional() }).strict()
 export const updateModuleSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), position: z.number().int().min(0).optional() }).strict()
 export const deleteModuleSchema = z.object({ targetModuleId: z.string().min(1).optional(), cascade: z.boolean().optional() }).strict()

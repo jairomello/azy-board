@@ -7,6 +7,7 @@ import { sprintsRouter } from './routes/sprints'
 import { tagsRouter } from './routes/tags'
 import { itemsRouter } from './routes/items'
 import { attachmentSettingsRouter, attachmentsRouter } from './routes/attachments'
+import { itemLinksRouter } from './routes/itemLinks'
 import { checklistsRouter } from './routes/checklists'
 import { shadowMarkdownRouter } from './routes/shadowMarkdown'
 import { apiKeysRouter, userApiKeysRouter } from './routes/apiKeys'
@@ -98,6 +99,7 @@ api.route('/projects/:projectId/tags', tagsRouter)
 api.route('/projects/:projectId/items', itemsRouter)
 api.route('/projects/:projectId/batch', batchRouter)
 api.route('/projects/:projectId/items/:itemId/attachments', attachmentsRouter)
+api.route('/projects/:projectId/items/:itemId/links', itemLinksRouter)
 api.route('/tenant/attachments', attachmentSettingsRouter)
 api.route('/projects/:projectId/items/:itemId/checklists', checklistsRouter)
 api.route('/projects/:projectId/board.md', shadowMarkdownRouter)

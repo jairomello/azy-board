@@ -269,6 +269,21 @@ export interface AttachmentRecord {
   createdAt: string
 }
 
+export interface ItemLinkRecord {
+  id: string
+  tenantId: string
+  projectId: string
+  itemId: string
+  name: string
+  url: string
+  description: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type NewItemLinkRecord = Pick<ItemLinkRecord, 'name' | 'url'> & Partial<Pick<ItemLinkRecord, 'description'>>
+export type ItemLinkPatch = Partial<Pick<ItemLinkRecord, 'name' | 'url' | 'description'>>
+
 export interface TenantAttachmentSettingsRecord {
   tenantId: string
   enabled: boolean

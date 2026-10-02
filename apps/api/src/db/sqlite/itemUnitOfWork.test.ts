@@ -148,10 +148,13 @@ describe('comandos atômicos SQLite para itens', () => {
     insert.run('task', 'tenant-a', 'project-a', 'TASK', 'story', '[{"id":"story","title":"História","type":"STORY"}]', 'Tarefa', 'DONE', 'MEDIUM', 3, 0, now, now)
     sqlite.query('INSERT INTO attachments (id, tenant_id, item_id, filename, original_name, mime_type, size, storage_path, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run('attachment', 'tenant-a', 'task', 'stored.bin', 'arquivo.txt', 'text/plain', 10, 'tenant-a/task/stored.bin', now)
+    sqlite.query('INSERT INTO item_links (id, tenant_id, project_id, item_id, name, url, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run('link', 'tenant-a', 'project-a', 'task', 'Wiki', 'https://example.com/wiki', now, now)
 
     unit.deleteItemSubtree(context, 'project-a', 'story')
 
     expect(sqlite.query("SELECT id FROM items WHERE id IN ('story', 'task')").all()).toEqual([])
+    expect(sqlite.query('SELECT id FROM item_links WHERE tenant_id = ?').all('tenant-a')).toEqual([])
     expect(sqlite.query('SELECT storage_path, status FROM storage_cleanup_jobs WHERE tenant_id = ?').all('tenant-a'))
       .toEqual([{ storage_path: 'tenant-a/task/stored.bin', status: 'PENDING' }])
     const events = sqlite.query<{ event_type: string; item_id: string }, [string]>(

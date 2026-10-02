@@ -5,6 +5,7 @@ import type {
   ColumnRecord,
   CostCenterRecord,
   ItemLogRecord,
+  ItemLinkRecord,
   ItemRecord,
   MembershipRecord,
   ModuleRecord,
@@ -35,6 +36,7 @@ import type {
   BatchUpdateReadSnapshot,
   AssistantModelConfigRecord,
   NewAttachmentRecord,
+  NewItemLinkRecord,
   SaveAvatarRecord,
   SprintCycleItemRecord,
   SprintCycleRecord,
@@ -50,6 +52,7 @@ import type {
   IdempotencyPort,
   IdentityPort,
   ItemLogPatch,
+  ItemLinkPatch,
   LoginAttemptPort,
   ModulePatch,
   NewApiKeyRecord,
@@ -289,6 +292,15 @@ function mapAttachment(row: PgRow): AttachmentRecord {
     label: (row.label ?? null) as string | null, referenceDate: (row.reference_date ?? null) as string | null,
     description: (row.description ?? null) as string | null,
     createdAt: row.created_at as string,
+  }
+}
+
+function mapItemLink(row: PgRow): ItemLinkRecord {
+  return {
+    id: row.id as string, tenantId: row.tenant_id as string, projectId: row.project_id as string,
+    itemId: row.item_id as string, name: row.name as string, url: row.url as string,
+    description: row.description as string | null,
+    createdAt: row.created_at as string, updatedAt: row.updated_at as string,
   }
 }
 
@@ -1537,6 +1549,47 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       },
     },
 
+    itemLinks: {
+      async list(context: PersistenceContext, projectId: string, itemId: string): Promise<ItemLinkRecord[]> {
+        const rows = await q(
+          `SELECT links.* FROM item_links links JOIN items ON items.id = links.item_id AND items.tenant_id = links.tenant_id
+           WHERE links.tenant_id = $1 AND links.project_id = $2 AND links.item_id = $3 AND items.project_id = $2
+           ORDER BY links.created_at, links.id`,
+          [context.tenantId, projectId, itemId],
+        )
+        return rows.map(mapItemLink)
+      },
+      async create(context: PersistenceContext, projectId: string, itemId: string, input: NewItemLinkRecord): Promise<ItemLinkRecord> {
+        const row = await q1(
+          `INSERT INTO item_links (id, tenant_id, project_id, item_id, name, url, description, created_at, updated_at)
+           SELECT $1, $2, $3, $4, $5, $6, $7, now(), now()
+           WHERE EXISTS (SELECT 1 FROM items WHERE tenant_id = $2 AND project_id = $3 AND id = $4) RETURNING *`,
+          [generateId(), context.tenantId, projectId, itemId, input.name, input.url, input.description ?? null],
+        )
+        if (!row) throw new Error('ITEM_NOT_FOUND')
+        return mapItemLink(row)
+      },
+      async update(context: PersistenceContext, projectId: string, itemId: string, linkId: string, patch: ItemLinkPatch): Promise<ItemLinkRecord | null> {
+        const sets: string[] = []
+        const values: unknown[] = []
+        if ('name' in patch) { values.push(patch.name); sets.push(`name = $${values.length}`) }
+        if ('url' in patch) { values.push(patch.url); sets.push(`url = $${values.length}`) }
+        if ('description' in patch) { values.push(patch.description ?? null); sets.push(`description = $${values.length}`) }
+        if (!sets.length) return null
+        values.push(new Date().toISOString()); sets.push(`updated_at = $${values.length}`)
+        values.push(context.tenantId, projectId, itemId, linkId)
+        const row = await q1(
+          `UPDATE item_links SET ${sets.join(', ')} WHERE tenant_id = $${values.length - 3} AND project_id = $${values.length - 2} AND item_id = $${values.length - 1} AND id = $${values.length} RETURNING *`,
+          values,
+        )
+        return row ? mapItemLink(row) : null
+      },
+      async delete(context: PersistenceContext, projectId: string, itemId: string, linkId: string): Promise<boolean> {
+        const rows = await q('DELETE FROM item_links WHERE tenant_id = $1 AND project_id = $2 AND item_id = $3 AND id = $4 RETURNING id', [context.tenantId, projectId, itemId, linkId])
+        return rows.length > 0
+      },
+    },
+
     // -----------------------------------------------------------------------
     // AvatarPort
     // -----------------------------------------------------------------------
@@ -2695,6 +2748,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           await client.query('DELETE FROM item_tags WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
           await client.query('DELETE FROM item_sprints WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
           await client.query('DELETE FROM attachments WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
+          await client.query('DELETE FROM item_links WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
           await client.query('DELETE FROM item_logs WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
           await client.query('DELETE FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = ANY($3::text[])', [context.tenantId, projectId, itemIds])
 

@@ -11,7 +11,7 @@ process.env.LOGIN_PROGRESSIVE_DELAY_MS = '0'
 
 const { app } = await import('./index')
 const { db } = await import('./db/index')
-const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, tenantAttachmentSettings, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys, assistantConversations, assistantMessages, assistantRuns, assistantEvents, loginAttempts } = await import('./db/schema')
+const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, itemLinks, tenantAttachmentSettings, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys, assistantConversations, assistantMessages, assistantRuns, assistantEvents, loginAttempts } = await import('./db/schema')
 const { signJwt, generateApiKey, hashPassword } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 const { appendAnalyticsEvent, assertAnalyticsCutoverReady, createSprintCycle, ensureCoverage } = await import('./services/analytics')
@@ -1782,6 +1782,87 @@ describe('segurança de anexos', () => {
       expect((await request(`/projects/${projectId}/items/${itemId}/attachments`, memberToken)).status).toBe(200)
       await db.update(tenantAttachmentSettings).set({ enabled: true }).where(eq(tenantAttachmentSettings.tenantId, tenantId))
     })
+  })
+})
+
+describe('links externos de itens', () => {
+  let tenantId: string
+  let member: { id: string; email: string }
+  let viewer: { id: string; email: string }
+  let outsider: { id: string; email: string }
+  let projectId: string
+  let itemId: string
+  let memberToken: string
+  let viewerToken: string
+  let outsiderToken: string
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Links', slug: `links-${tenantId}`, createdAt: new Date().toISOString() })
+    member = await createUser(tenantId, 'links-member@test.local', 'Membro Links', 'TEAM_MEMBER')
+    viewer = await createUser(tenantId, 'links-viewer@test.local', 'Leitor Links', 'TEAM_MEMBER')
+    outsider = await createUser(tenantId, 'links-outsider@test.local', 'Visitante Links', 'ADMIN')
+    memberToken = await token(member.id, tenantId, member.email)
+    viewerToken = await token(viewer.id, tenantId, viewer.email)
+    outsiderToken = await token(outsider.id, tenantId, outsider.email)
+    projectId = generateId()
+    await db.insert(projects).values({
+      id: projectId, tenantId, name: 'Projeto de links', description: null,
+      boardMode: 'HIERARCHICAL', simpleStoryId: null, managerUserId: null,
+      isRestricted: true, isHidden: false, createdAt: new Date().toISOString(),
+    })
+    await db.insert(memberships).values([
+      { id: generateId(), tenantId, userId: member.id, projectId, role: 'MEMBER', createdAt: new Date().toISOString() },
+      { id: generateId(), tenantId, userId: viewer.id, projectId, role: 'VIEWER', createdAt: new Date().toISOString() },
+    ])
+    itemId = generateId()
+    const now = new Date().toISOString()
+    await db.insert(items).values({ id: itemId, tenantId, projectId, type: 'TASK', parentId: null, moduleId: null, columnId: null, ancestryPath: '[]', title: 'Card de links', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, authorId: member.id, createdAt: now, updatedAt: now })
+  })
+
+  test('faz CRUD com URL externa HTTP/HTTPS e mantém lista isolada pelo item', async () => {
+    const create = await request(`/projects/${projectId}/items/${itemId}/links`, memberToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Documentação', url: 'https://example.com/docs', description: '**Guia** externo' }),
+    })
+    expect(create.status).toBe(201)
+    const link = await create.json() as { id: string; name: string; url: string; description: string }
+    expect(link).toMatchObject({ name: 'Documentação', url: 'https://example.com/docs', description: '**Guia** externo' })
+
+    const list = await request(`/projects/${projectId}/items/${itemId}/links`, viewerToken)
+    expect(list.status).toBe(200)
+    expect(await list.json()).toEqual([link])
+
+    const patch = await request(`/projects/${projectId}/items/${itemId}/links/${link.id}`, memberToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Guia atualizado' }),
+    })
+    expect(patch.status).toBe(200)
+    expect(await patch.json()).toMatchObject({ name: 'Guia atualizado', url: 'https://example.com/docs' })
+
+    const remove = await request(`/projects/${projectId}/items/${itemId}/links/${link.id}`, memberToken, { method: 'DELETE' })
+    expect(remove.status).toBe(200)
+    expect(await (await request(`/projects/${projectId}/items/${itemId}/links`, viewerToken)).json()).toEqual([])
+  })
+
+  test('valida esquemas e campos e impede escrita de VIEWER e acesso por não membro', async () => {
+    for (const url of ['javascript:alert(1)', 'ftp://example.com', 'https://user:pass@example.com']) {
+      const invalid = await request(`/projects/${projectId}/items/${itemId}/links`, memberToken, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Inválido', url }),
+      })
+      expect(invalid.status).toBe(400)
+    }
+    const readOnly = await request(`/projects/${projectId}/items/${itemId}/links`, viewerToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Sem permissão', url: 'https://example.com' }),
+    })
+    expect(readOnly.status).toBe(403)
+    const forbiddenList = await request(`/projects/${projectId}/items/${itemId}/links`, outsiderToken)
+    expect(forbiddenList.status).toBe(404)
+  })
+
+  test('excluir item elimina os links associados por cascata', async () => {
+    const [link] = await db.insert(itemLinks).values({ id: generateId(), tenantId, projectId, itemId, name: 'Remoção em cascata', url: 'https://example.com', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }).returning()
+    await db.delete(items).where(and(eq(items.tenantId, tenantId), eq(items.id, itemId)))
+    expect(await db.select().from(itemLinks).where(eq(itemLinks.id, link!.id))).toHaveLength(0)
   })
 })
 

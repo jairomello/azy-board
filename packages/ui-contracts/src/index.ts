@@ -135,6 +135,15 @@ export interface Attachment {
   description?: string | null
 }
 
+export interface ItemLink {
+  id: string
+  name: string
+  url: string
+  description: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export type AttachmentProvider = 'local' | 's3'
 
 export interface TenantAttachmentSettings {

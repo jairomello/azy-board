@@ -32,6 +32,9 @@ import type {
   DashboardTransitionRecord,
   ItemEventRecord,
   ItemLogRecord,
+  ItemLinkRecord,
+  ItemLinkPatch,
+  NewItemLinkRecord,
   ItemRecord,
   ItemWithRelationsRecord,
   MembershipRecord,
@@ -57,6 +60,7 @@ import type {
   TenantRecord,
   UserCredentialRecord,
 } from './models'
+export type { ItemLinkPatch, NewItemLinkRecord } from './models'
 
 export type NewUserRecord = Pick<UserCredentialRecord, 'email' | 'passwordHash' | 'name' | 'globalGroup'>
 export type NewTenantRecord = Pick<TenantRecord, 'name' | 'slug'>
@@ -228,6 +232,13 @@ export interface FilePort {
   updateAttachment(context: PersistenceContext, projectId: string, itemId: string, attachmentId: string, patch: AttachmentPatch): Promise<AttachmentRecord | null>
   /** Remove metadados e enfileira a limpeza do objeto na MESMA transação (outbox). */
   deleteAttachmentWithCleanup(context: PersistenceContext, projectId: string, itemId: string, attachmentId: string): Promise<AttachmentRecord | null>
+}
+
+export interface ItemLinkPort {
+  list(context: PersistenceContext, projectId: string, itemId: string): Promise<ItemLinkRecord[]>
+  create(context: PersistenceContext, projectId: string, itemId: string, input: NewItemLinkRecord): Promise<ItemLinkRecord>
+  update(context: PersistenceContext, projectId: string, itemId: string, linkId: string, patch: ItemLinkPatch): Promise<ItemLinkRecord | null>
+  delete(context: PersistenceContext, projectId: string, itemId: string, linkId: string): Promise<boolean>
 }
 
 export interface TenantAttachmentSettingsPort {
@@ -424,6 +435,7 @@ export interface PersistenceTransaction {
   checklists: ChecklistPort
   workLogs: WorkLogPort
   files: FilePort
+  itemLinks: ItemLinkPort
   avatars: AvatarPort
   storageCleanup: StorageCleanupPort
   analytics: AnalyticsPort

@@ -9,6 +9,7 @@ import type {
   ColumnRecord,
   CostCenterRecord,
   ItemLogRecord,
+  ItemLinkRecord,
   ItemRecord,
   ItemWithRelationsRecord,
   MembershipRecord,
@@ -43,11 +44,11 @@ import type {
   TenantAttachmentSettingsRecord,
   UserCredentialRecord,
 } from '../../persistence/models'
-import type { AssistantModelConfigPatch, ChecklistItemPatch, ColumnPatch, CostCenterPatch, ItemLogPatch, ModulePatch, NewApiKeyRecord, NewAssistantModelConfig, NewChecklistItemRecord, NewColumnRecord, NewCostCenterRecord, NewItemLogRecord, NewModuleRecord, NewProjectMembership, NewSquadRecord, NewTenantRecord, NewVersionRecord, PersistencePorts, ProjectMembershipPatch, ProjectPatch, UserPreferencesPatch, VersionPatch } from '../../persistence/ports'
+import type { AssistantModelConfigPatch, ChecklistItemPatch, ColumnPatch, CostCenterPatch, ItemLinkPatch, ItemLogPatch, ModulePatch, NewApiKeyRecord, NewAssistantModelConfig, NewChecklistItemRecord, NewColumnRecord, NewCostCenterRecord, NewItemLinkRecord, NewItemLogRecord, NewModuleRecord, NewProjectMembership, NewSquadRecord, NewTenantRecord, NewVersionRecord, PersistencePorts, ProjectMembershipPatch, ProjectPatch, UserPreferencesPatch, VersionPatch } from '../../persistence/ports'
 import type { DrizzleDb } from '../index'
 import {
   apiKeys, assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantModelConfigs, assistantRuns, assistantSettings, assistantToolCalls,
-  attachments, checklistItems, checklists, columns, idempotencyRecords, itemEvents, itemLogs, itemSprints, itemTags,
+  attachments, checklistItems, checklists, columns, idempotencyRecords, itemEvents, itemLinks, itemLogs, itemSprints, itemTags,
   items, loginAttempts, memberships, modules, projectAnalyticsCoverage, projectCostCenters, projectMetricsDaily, projectVersions, projects, squads, sprintCycleItems, sprintCycles, sprints,
   storageCleanupJobs, tags, tenantAttachmentSettings, tenants, userAvatars, users,
 } from '../schema'
@@ -1327,6 +1328,36 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
             createdAt: row.created_at,
           } satisfies AttachmentRecord
         })
+      },
+    },
+    itemLinks: {
+      async list(context, projectId, itemId): Promise<ItemLinkRecord[]> {
+        const rows = await database.select({ link: itemLinks }).from(itemLinks).innerJoin(items, eq(itemLinks.itemId, items.id))
+          .where(and(eq(itemLinks.tenantId, context.tenantId), eq(itemLinks.projectId, projectId), eq(items.tenantId, context.tenantId), eq(items.projectId, projectId), eq(items.id, itemId)))
+          .orderBy(asc(itemLinks.createdAt), asc(itemLinks.id))
+        return rows.map(({ link }) => ({ ...link }))
+      },
+      async create(context, projectId, itemId, input: NewItemLinkRecord): Promise<ItemLinkRecord> {
+        const now = new Date().toISOString()
+        const [row] = await database.insert(itemLinks).values({
+          id: generateId(), tenantId: context.tenantId, projectId, itemId,
+          name: input.name, url: input.url, description: input.description ?? null, createdAt: now, updatedAt: now,
+        }).returning()
+        if (!row) throw new Error('Falha ao criar link no adapter SQLite.')
+        return { ...row }
+      },
+      async update(context, projectId, itemId, linkId, patch: ItemLinkPatch): Promise<ItemLinkRecord | null> {
+        const changes: ItemLinkPatch & { updatedAt?: string } = { ...patch, updatedAt: new Date().toISOString() }
+        const [row] = await database.update(itemLinks).set(changes).where(and(
+          eq(itemLinks.tenantId, context.tenantId), eq(itemLinks.projectId, projectId), eq(itemLinks.itemId, itemId), eq(itemLinks.id, linkId),
+        )).returning()
+        return row ? { ...row } : null
+      },
+      async delete(context, projectId, itemId, linkId): Promise<boolean> {
+        const rows = await database.delete(itemLinks).where(and(
+          eq(itemLinks.tenantId, context.tenantId), eq(itemLinks.projectId, projectId), eq(itemLinks.itemId, itemId), eq(itemLinks.id, linkId),
+        )).returning({ id: itemLinks.id })
+        return rows.length > 0
       },
     },
     avatars: {
