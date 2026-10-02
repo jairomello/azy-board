@@ -9,6 +9,7 @@ import {
   X,
   Bot,
   ChevronDown,
+  Paperclip,
 } from 'lucide-react'
 import { LanguageSelector } from './LanguageSelector'
 import { ProfileDropdown } from './ProfileDropdown'
@@ -145,6 +146,12 @@ export function AppShell({
             href: '/admin/users',
             icon: UserRound,
             active: location.pathname === '/admin/users',
+          },
+          {
+            label: tCommon('attachments'),
+            href: '/admin/attachments',
+            icon: Paperclip,
+            active: location.pathname === '/admin/attachments',
           },
           ...(user.globalGroup === 'ROOT'
             ? [{

@@ -13,6 +13,7 @@ const BoardPage = lazy(() => import('./pages/BoardPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const AccountPage = lazy(() => import('./pages/AccountPage'))
 const AdminUsersPage = lazy(() => import('./pages/AdminUsersPage'))
+const AdminAttachmentsPage = lazy(() => import('./pages/AdminAttachmentsPage'))
 const ProjectDashboardPage = lazy(() => import('./pages/ProjectDashboardPage'))
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/projects/:projectId/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
           <Route path="/account" element={<ProtectedRoute><AccountPage /></ProtectedRoute>} />
           <Route path="/admin/users" element={<ProtectedRoute><AdminUsersPage /></ProtectedRoute>} />
+          <Route path="/admin/attachments" element={<ProtectedRoute><AdminAttachmentsPage /></ProtectedRoute>} />
           <Route path="/admin/assistant" element={<ProtectedRoute><RootAssistantSettings /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/projects" replace />} />
         </Routes>

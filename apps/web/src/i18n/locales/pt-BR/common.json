@@ -157,6 +157,7 @@
   "account": "Conta",
   "settings": "Configurações",
   "users": "Usuários",
+  "attachments": "Anexos",
   "adminUsers": {
     "context": "Usuários do tenant",
     "heading": "Administração",

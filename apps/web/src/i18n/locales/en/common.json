@@ -157,6 +157,7 @@
   "account": "Account",
   "settings": "Settings",
   "users": "Users",
+  "attachments": "Attachments",
   "adminUsers": {
     "context": "Tenant users",
     "heading": "Administration",
