@@ -455,6 +455,11 @@ export const attachments = pgTable('attachments', {
   size: integer('size').notNull(),
   storagePath: text('storage_path').notNull(),
   storageProvider: text('storage_provider').notNull().default('local'),
+  // Metadados humanos opcionais (T10): label default = original_name no upload;
+  // reference_date default = data do upload; description em Markdown canônico.
+  label: text('label'),
+  referenceDate: text('reference_date'),
+  description: text('description'),
   createdAt: text('created_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   sizeCheck: check('attachments_size_check', sql`${table.size} >= 0`),

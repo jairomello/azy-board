@@ -8,6 +8,13 @@
       "when": 1790255565870,
       "tag": "0000_pale_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790960353708,
+      "tag": "0007_attachment-metadata",
+      "breakpoints": true
     }
   ]
 }

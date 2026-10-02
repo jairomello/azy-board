@@ -22,6 +22,7 @@ import type {
 } from '../../persistence/models'
 import type {
   AttachmentRecord,
+  AttachmentPatch,
   ChecklistItemRecord,
   ChecklistProgressRecord,
   ChecklistRecord,
@@ -284,7 +285,10 @@ function mapAttachment(row: PgRow): AttachmentRecord {
     id: row.id as string, tenantId: row.tenant_id as string, itemId: row.item_id as string,
     fileName: row.filename as string, originalName: row.original_name as string,
     mimeType: row.mime_type as string, sizeBytes: row.size as number,
-    storagePath: row.storage_path as string, storageProvider: (row.storage_provider ?? 'local') as 'local' | 's3', createdAt: row.created_at as string,
+    storagePath: row.storage_path as string, storageProvider: (row.storage_provider ?? 'local') as 'local' | 's3',
+    label: (row.label ?? null) as string | null, referenceDate: (row.reference_date ?? null) as string | null,
+    description: (row.description ?? null) as string | null,
+    createdAt: row.created_at as string,
   }
 }
 
@@ -1492,12 +1496,29 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       async createAttachment(context: PersistenceContext, projectId: string, itemId: string, input: NewAttachmentRecord): Promise<AttachmentRecord> {
         const id = generateId()
         const row = await q1(
-          `INSERT INTO attachments (id, tenant_id, item_id, filename, original_name, mime_type, size, storage_path, storage_provider, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now()) RETURNING *`,
-          [id, context.tenantId, itemId, input.fileName, input.originalName, input.mimeType, input.sizeBytes, input.storagePath, input.storageProvider ?? 'local'],
+          `INSERT INTO attachments (id, tenant_id, item_id, filename, original_name, mime_type, size, storage_path, storage_provider, label, reference_date, description, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now()) RETURNING *`,
+          [id, context.tenantId, itemId, input.fileName, input.originalName, input.mimeType, input.sizeBytes, input.storagePath, input.storageProvider ?? 'local', input.label ?? null, input.referenceDate ?? null, input.description ?? null],
         )
         if (!row) throw new Error('Falha ao criar anexo no adapter PostgreSQL.')
         return mapAttachment(row)
+      },
+      async updateAttachment(context: PersistenceContext, projectId: string, itemId: string, attachmentId: string, patch: AttachmentPatch): Promise<AttachmentRecord | null> {
+        const sets: string[] = []
+        const values: unknown[] = []
+        if ('label' in patch) { values.push(patch.label ?? null); sets.push(`label = $${values.length}`) }
+        if ('referenceDate' in patch) { values.push(patch.referenceDate ?? null); sets.push(`reference_date = $${values.length}`) }
+        if ('description' in patch) { values.push(patch.description ?? null); sets.push(`description = $${values.length}`) }
+        if (sets.length === 0) {
+          const existing = await q1('SELECT * FROM attachments WHERE tenant_id = $1 AND item_id = $2 AND id = $3', [context.tenantId, itemId, attachmentId])
+          return existing ? mapAttachment(existing) : null
+        }
+        values.push(context.tenantId, itemId, attachmentId)
+        const row = await q1(
+          `UPDATE attachments SET ${sets.join(', ')} WHERE tenant_id = $${values.length - 2} AND item_id = $${values.length - 1} AND id = $${values.length} RETURNING *`,
+          values,
+        )
+        return row ? mapAttachment(row) : null
       },
       async deleteAttachmentWithCleanup(context: PersistenceContext, projectId: string, itemId: string, attachmentId: string): Promise<AttachmentRecord | null> {
         return tx(async (client) => {

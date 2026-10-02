@@ -253,6 +253,13 @@
       "when": 1790939146009,
       "tag": "0035_tenant-attachment-storage",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1790960281447,
+      "tag": "0036_attachment-metadata",
+      "breakpoints": true
     }
   ]
 }

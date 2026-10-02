@@ -20,6 +20,7 @@ import type {
   ApiKeyRecord,
   BatchUpdateReadSnapshot,
   AttachmentRecord,
+  AttachmentPatch,
   ChecklistItemRecord,
   ChecklistProgressRecord,
   ChecklistRecord,
@@ -223,6 +224,8 @@ export interface FilePort {
   listAttachments(context: PersistenceContext, projectId: string, itemId: string): Promise<AttachmentRecord[]>
   getAttachment(context: PersistenceContext, projectId: string, itemId: string, attachmentId: string): Promise<AttachmentRecord | null>
   createAttachment(context: PersistenceContext, projectId: string, itemId: string, input: NewAttachmentRecord): Promise<AttachmentRecord>
+  /** Atualiza metadados opcionais (patch parcial; null limpa o campo). Last-write-wins. */
+  updateAttachment(context: PersistenceContext, projectId: string, itemId: string, attachmentId: string, patch: AttachmentPatch): Promise<AttachmentRecord | null>
   /** Remove metadados e enfileira a limpeza do objeto na MESMA transação (outbox). */
   deleteAttachmentWithCleanup(context: PersistenceContext, projectId: string, itemId: string, attachmentId: string): Promise<AttachmentRecord | null>
 }

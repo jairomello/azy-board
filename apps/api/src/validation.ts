@@ -201,6 +201,20 @@ export const updateWorkLogSchema = workLogSchema.partial().strict()
 export const itemLogSchema = z.object({ activity: z.string().trim().min(1).max(20_000), durationMin: z.number().finite().min(0).nullable().optional() }).strict()
 export const updateItemLogSchema = itemLogSchema.partial().strict()
 export const confirmationSchema = z.object({ confirm: z.boolean().optional(), dryRun: z.boolean().optional() }).strict()
+// T10: metadados opcionais de anexos (label, data de referência, descrição Markdown).
+// String em branco normaliza para null (limpa o campo); chave ausente = não alterada.
+// referenceDate valida calendário real (ISO date-only é estrito no Date.parse).
+const blankToNull = <T extends z.ZodTypeAny>(schema: T) => z.preprocess(value => (typeof value === 'string' && value.trim() === '' ? null : value), schema)
+const calendarDate = z.string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'referenceDate deve ser YYYY-MM-DD')
+  .refine(value => !Number.isNaN(Date.parse(value)), 'referenceDate não é uma data válida')
+  .nullable()
+  .optional()
+export const attachmentMetadataSchema = z.object({
+  label: blankToNull(optionalText(200).nullable().optional()),
+  referenceDate: blankToNull(calendarDate),
+  description: blankToNull(optionalText(20_000).nullable().optional()),
+}).strict()
 export const moduleSchema = z.object({ name: z.string().trim().min(1).max(200), description: optionalText().nullable().optional() }).strict()
 export const updateModuleSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), position: z.number().int().min(0).optional() }).strict()
 export const deleteModuleSchema = z.object({ targetModuleId: z.string().min(1).optional(), cascade: z.boolean().optional() }).strict()

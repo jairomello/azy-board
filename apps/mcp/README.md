@@ -65,7 +65,7 @@ Catálogo com 59 ferramentas, derivado de `apps/mcp/src/registry.ts`.
 | `get_project` | Consulta os dados de um projeto por projectId (ID ou nome exato). |
 | `get_shadow_markdown` | Retorna o board do projeto em Markdown (board.md) para leitura rápida. |
 | `get_tree` | Retorna a hierarquia de itens (EPIC > STORY > TASK/BUG), filtrável por moduleId, assigneeId e sprintId. Descrições resumidas por padrão; use includeDescriptions=true para o texto completo. |
-| `list_attachments` | Lista os anexos de um item. Requer projectId e itemId. |
+| `list_attachments` | Lista os anexos de um item, incluindo metadados opcionais (label, referenceDate, description). Requer projectId e itemId. |
 | `list_checklists` | List checklists and their steps for a board card. itemId is the parent card ID. Returns dueDate, assigneeId and description on steps when the project enables advancedChecklists. |
 | `list_columns` | Lista as colunas do board com seus status base. |
 | `list_cost_centers` | Lista os centros de custo do projeto. |

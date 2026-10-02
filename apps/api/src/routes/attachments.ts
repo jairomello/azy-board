@@ -6,6 +6,8 @@ import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
+import type { AttachmentPatch, AttachmentRecord } from '../persistence/models'
+import { attachmentMetadataSchema } from '../validation'
 import { broadcast } from '../services/websocket'
 import { decryptAssistantSecret, encryptAssistantSecret } from '../services/assistantEncryption'
 import { hasGlobalGroup } from '../services/auth'
@@ -188,6 +190,24 @@ function attachmentUrl(projectId: string, itemId: string, attachmentId: string):
   return `/api/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/download`
 }
 
+// Shape público de um anexo (lista, upload e edição de metadados).
+function serializeAttachment(projectId: string, itemId: string, attachment: AttachmentRecord) {
+  return {
+    id: attachment.id,
+    filename: attachment.fileName,
+    originalName: attachment.originalName,
+    label: attachment.label,
+    referenceDate: attachment.referenceDate,
+    description: attachment.description,
+    mimeType: attachment.mimeType,
+    size: attachment.sizeBytes,
+    createdAt: attachment.createdAt,
+    // [SECURITY] URL aponta para a rota autorizada por attachmentId — nunca para o caminho de disco.
+    url: attachmentUrl(projectId, itemId, attachment.id),
+    isImage: attachment.mimeType.startsWith('image/'),
+  }
+}
+
 // POST /projects/:projectId/items/:itemId/attachments
 attachmentsRouter.post('/', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
@@ -222,6 +242,19 @@ attachmentsRouter.post('/', requireRole('MEMBER'), async (c) => {
   if (!isValidContent(mimeType, new Uint8Array(buffer))) {
     return c.json({ error: 'O conteúdo do arquivo não corresponde ao tipo declarado', code: 'INVALID_FILE_CONTENT' }, 415)
   }
+
+  // T10: metadados opcionais no upload; ausentes/brancos recebem sugestão automática.
+  const metadata = attachmentMetadataSchema.safeParse({
+    label: formData.get('label') ?? undefined,
+    referenceDate: formData.get('referenceDate') ?? undefined,
+    description: formData.get('description') ?? undefined,
+  })
+  if (!metadata.success) {
+    return c.json({ error: 'Metadados do anexo inválidos', code: 'VALIDATION_ERROR', retryable: false }, 400)
+  }
+  const label = metadata.data.label ?? file.name.slice(0, 200)
+  const referenceDate = metadata.data.referenceDate ?? new Date().toISOString().slice(0, 10)
+
   const adapter = await storageAdapterForTenant(ctx.tenantId, settings.provider)
   const { storagePath } = await adapter.upload(
     ctx.tenantId,
@@ -238,10 +271,25 @@ attachmentsRouter.post('/', requireRole('MEMBER'), async (c) => {
     sizeBytes: file.size,
     storagePath,
     storageProvider: settings.provider,
+    label,
+    referenceDate,
+    description: metadata.data.description ?? null,
   })
 
   broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
-  return c.json({ id: created.id, url: attachmentUrl(projectId, itemId, created.id), filename: file.name, mimeType, size: file.size }, 201)
+  return c.json({
+    id: created.id,
+    url: attachmentUrl(projectId, itemId, created.id),
+    filename: file.name,
+    originalName: created.originalName,
+    label: created.label,
+    referenceDate: created.referenceDate,
+    description: created.description,
+    mimeType,
+    size: file.size,
+    createdAt: created.createdAt,
+    isImage: mimeType.startsWith('image/'),
+  }, 201)
 })
 
 // GET /projects/:projectId/items/:itemId/attachments
@@ -255,19 +303,7 @@ attachmentsRouter.get('/', requireRole('VIEWER'), async (c) => {
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
   const result = await persistence.files.listAttachments(projectContext, projectId, itemId)
-
-  const withUrls = result.map(attachment => ({
-    id: attachment.id,
-    filename: attachment.fileName,
-    mimeType: attachment.mimeType,
-    size: attachment.sizeBytes,
-    createdAt: attachment.createdAt,
-    // [SECURITY] URL aponta para a rota autorizada por attachmentId — nunca para o caminho de disco.
-    url: attachmentUrl(projectId, itemId, attachment.id),
-    isImage: attachment.mimeType.startsWith('image/'),
-  }))
-
-  return c.json(withUrls)
+  return c.json(result.map(attachment => serializeAttachment(projectId, itemId, attachment)))
 })
 
 // GET /projects/:projectId/items/:itemId/attachments/:attachmentId/download
@@ -302,6 +338,45 @@ attachmentsRouter.get('/:attachmentId/download', requireRole('VIEWER'), async (c
       'Cache-Control': 'private, no-store',
     },
   })
+})
+
+// PATCH /projects/:projectId/items/:itemId/attachments/:attachmentId
+// T10: edição parcial de metadados — chave ausente preserva o valor; null (ou string
+// em branco) limpa o campo. Last-write-wins (sem updated_at na tabela).
+attachmentsRouter.patch('/:attachmentId', requireRole('MEMBER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const { projectId, itemId, attachmentId } = c.req.param()
+
+  // [TENANT] O item ancora o anexo no projeto informado — anti-IDOR
+  const projectContext = userPersistenceContext(ctx)
+  const item = await persistence.items.getItem(projectContext, projectId, itemId)
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
+  const settings = await persistence.attachmentSettings.get(ctx.tenantId)
+  if (!settings?.enabled) return c.json({ error: 'Anexos estão desabilitados para este tenant' }, 409)
+
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: 'JSON inválido', code: 'INVALID_REQUEST', retryable: false }, 400)
+  }
+  const parsed = attachmentMetadataSchema.safeParse(body)
+  if (!parsed.success) {
+    return c.json({ error: 'Metadados do anexo inválidos', code: 'VALIDATION_ERROR', retryable: false }, 400)
+  }
+  // O patch é montado a partir das chaves presentes no corpo cru: o schema normaliza
+  // ('' → null), mas a ausência de chave deve significar "não alterar".
+  const raw = (body ?? {}) as Record<string, unknown>
+  const patch: AttachmentPatch = {}
+  if ('label' in raw) patch.label = parsed.data.label ?? null
+  if ('referenceDate' in raw) patch.referenceDate = parsed.data.referenceDate ?? null
+  if ('description' in raw) patch.description = parsed.data.description ?? null
+
+  const updated = await persistence.files.updateAttachment(projectContext, projectId, itemId, attachmentId, patch)
+  if (!updated) return c.json({ error: 'Anexo não encontrado' }, 404)
+
+  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
+  return c.json(serializeAttachment(projectId, itemId, updated))
 })
 
 // DELETE /projects/:projectId/items/:itemId/attachments/:attachmentId

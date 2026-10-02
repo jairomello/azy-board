@@ -260,6 +260,12 @@ export interface AttachmentRecord {
   sizeBytes: number
   storagePath: string
   storageProvider: 'local' | 's3'
+  /** Nome amigável de exibição (T10); default materializado = originalName no upload. */
+  label: string | null
+  /** Data de referência do documento (ISO YYYY-MM-DD); default = data do upload. */
+  referenceDate: string | null
+  /** Descrição em Markdown canônico. */
+  description: string | null
   createdAt: string
 }
 
@@ -327,6 +333,16 @@ export interface NewAttachmentRecord {
   sizeBytes: number
   storagePath: string
   storageProvider?: 'local' | 's3'
+  label?: string | null
+  referenceDate?: string | null
+  description?: string | null
+}
+
+/** Patch parcial de metadados do anexo: chave ausente = não alterada; null = limpar. */
+export interface AttachmentPatch {
+  label?: string | null
+  referenceDate?: string | null
+  description?: string | null
 }
 
 export interface StoredAvatarRecord {

@@ -391,7 +391,7 @@ const toolDescriptions: Record<string, string> = {
   list_squads: 'Lista os squads do projeto.',
   list_item_logs: 'Lista os logs de trabalho de um item do board.',
   list_cost_centers: 'Lista os centros de custo do projeto.',
-  list_attachments: 'Lista os anexos de um item. Requer projectId e itemId.',
+  list_attachments: 'Lista os anexos de um item, incluindo metadados opcionais (label, referenceDate, description). Requer projectId e itemId.',
   claim_task: 'Atribui o item ao usuário atual (claim). Use apenas quando o item estiver disponível.',
   move_task: 'Move um item para a coluna informada pelo nome exato (ou ID).',
   complete_task: 'Conclui um item. Para card folha, move-o para a coluna com baseStatus DONE.',

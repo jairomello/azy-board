@@ -282,12 +282,30 @@ describe('adapter SQLite dos ports', () => {
 
     const attachment = await ports.files.createAttachment(context, project.id, item.id, {
       fileName: 'stored.bin', originalName: 'relatorio.txt', mimeType: 'text/plain', sizeBytes: 5, storagePath: 'tenant-a/item/stored.bin',
+      label: 'Relatório mensal', referenceDate: '2026-09-30', description: 'Fechamento de setembro',
     })
     expect((await ports.files.listAttachments(context, project.id, item.id)).map(file => file.id)).toEqual([attachment.id])
+    expect(attachment).toMatchObject({ label: 'Relatório mensal', referenceDate: '2026-09-30', description: 'Fechamento de setembro' })
     expect(await ports.files.getAttachment({ ...context, tenantId: 'tenant-b' }, project.id, item.id, attachment.id)).toBeNull()
+
+    // T10: patch parcial preserva campos ausentes, null limpa e o escopo de tenant é respeitado
+    const patched = await ports.files.updateAttachment(context, project.id, item.id, attachment.id, { label: 'Relatório final' })
+    expect(patched).toMatchObject({ label: 'Relatório final', referenceDate: '2026-09-30', description: 'Fechamento de setembro' })
+    const cleared = await ports.files.updateAttachment(context, project.id, item.id, attachment.id, { description: null })
+    expect(cleared).toMatchObject({ label: 'Relatório final', description: null })
+    expect(await ports.files.updateAttachment({ ...context, tenantId: 'tenant-b' }, project.id, item.id, attachment.id, { label: 'invasão' })).toBeNull()
+    const noop = await ports.files.updateAttachment(context, project.id, item.id, attachment.id, {})
+    expect(noop?.label).toBe('Relatório final')
+
+    // Metadados ausentes no create persistem nulos (defaults são materializados na rota)
+    const plain = await ports.files.createAttachment(context, project.id, item.id, {
+      fileName: 'stored2.bin', originalName: 'simples.txt', mimeType: 'text/plain', sizeBytes: 3, storagePath: 'tenant-a/item/stored2.bin',
+    })
+    expect(plain).toMatchObject({ label: null, referenceDate: null, description: null })
 
     const removed = await ports.files.deleteAttachmentWithCleanup(context, project.id, item.id, attachment.id)
     expect(removed?.originalName).toBe('relatorio.txt')
+    expect(removed?.label).toBe('Relatório final')
     expect(await ports.files.getAttachment(context, project.id, item.id, attachment.id)).toBeNull()
     expect((await ports.storageCleanup.listDue(new Date().toISOString(), 10)).map(job => job.storagePath)).toEqual(['tenant-a/item/stored.bin'])
 

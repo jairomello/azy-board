@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Download, FileText, Image as ImageIcon, Loader2, Paperclip, Trash2, Upload } from 'lucide-react'
+import { Check, Download, FileText, Image as ImageIcon, Loader2, Paperclip, Pencil, Trash2, Upload, X } from 'lucide-react'
 import Lightbox from 'yet-another-react-lightbox'
 import 'yet-another-react-lightbox/styles.css'
 import type { Attachment } from '@azy-board/ui-contracts'
 import { api } from '../lib/api'
 import { resolveAppUrl } from '../lib/appUrl'
+import { formatDate } from '../lib/formatters'
+import { MarkdownText } from './MarkdownText'
+import { RichTextEditor } from './RichTextEditor'
 import { useToast } from './Toast'
 
 // [SECURITY] Apenas imagens raster aprovadas são exibidas inline na mesma origem.
@@ -17,10 +20,28 @@ interface Props {
   canEdit: boolean
 }
 
+interface MetadataDraft {
+  label: string
+  referenceDate: string
+  description: string
+}
+
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+// Data ISO (YYYY-MM-DD) é formatada como data LOCAL para evitar deslocamento
+// de fuso na exibição (new Date('YYYY-MM-DD') é UTC).
+function formatReferenceDate(value: string): string {
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return value
+  return formatDate(new Date(year, month - 1, day))
+}
+
+function displayName(attachment: Attachment): string {
+  return attachment.label ?? attachment.originalName ?? attachment.filename
 }
 
 export function AttachmentsArea({ itemId, projectId, canEdit }: Props) {
@@ -32,6 +53,9 @@ export function AttachmentsArea({ itemId, projectId, canEdit }: Props) {
   const [uploading, setUploading] = useState(false)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [lightboxIndex, setLightboxIndex] = useState(-1)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState<MetadataDraft>({ label: '', referenceDate: '', description: '' })
+  const [saving, setSaving] = useState(false)
 
   const baseUrl = `/projects/${projectId}/items/${itemId}/attachments`
 
@@ -74,7 +98,7 @@ export function AttachmentsArea({ itemId, projectId, canEdit }: Props) {
   }
 
   async function handleRemove(attachment: Attachment) {
-    if (!confirm(t('attachmentRemoveConfirm', { name: attachment.filename }))) return
+    if (!confirm(t('attachmentRemoveConfirm', { name: displayName(attachment) }))) return
     setRemovingId(attachment.id)
     try {
       await api.delete(`${baseUrl}/${attachment.id}`)
@@ -83,6 +107,38 @@ export function AttachmentsArea({ itemId, projectId, canEdit }: Props) {
       toast(t('attachmentRemoveError'), 'error')
     } finally {
       setRemovingId(null)
+    }
+  }
+
+  function openEdit(attachment: Attachment) {
+    setEditingId(attachment.id)
+    setDraft({
+      label: attachment.label ?? '',
+      referenceDate: attachment.referenceDate ?? '',
+      description: attachment.description ?? '',
+    })
+  }
+
+  function closeEdit() {
+    setEditingId(null)
+    setSaving(false)
+  }
+
+  async function handleSave(attachment: Attachment) {
+    setSaving(true)
+    try {
+      // Strings vazias viram null no servidor (limpam o campo e restauram a sugestão visual).
+      const updated = await api.patch<Attachment>(`${baseUrl}/${attachment.id}`, {
+        label: draft.label,
+        referenceDate: draft.referenceDate,
+        description: draft.description,
+      })
+      setAttachments(previous => previous.map(item => (item.id === attachment.id ? updated : item)))
+      toast(t('attachmentSaved'))
+      closeEdit()
+    } catch (error) {
+      toast(error instanceof Error ? error.message : t('attachmentSaveError'), 'error')
+      setSaving(false)
     }
   }
 
@@ -124,45 +180,126 @@ export function AttachmentsArea({ itemId, projectId, canEdit }: Props) {
           {attachments.map(attachment => {
             const inline = INLINE_IMAGE_TYPES.has(attachment.mimeType)
             const imageIndex = imageAttachments.findIndex(image => image.id === attachment.id)
+            const editing = editingId === attachment.id
+            const name = displayName(attachment)
             return (
-              <li key={attachment.id} className="flex items-center gap-3 rounded-lg border border-border p-2">
-                <button
-                  type="button"
-                  disabled={!inline}
-                  onClick={() => inline && setLightboxIndex(imageIndex)}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted disabled:cursor-default"
-                  aria-label={inline ? t('attachmentOpenImage', { name: attachment.filename }) : undefined}
-                >
-                  {inline ? (
-                    <img src={resolveAppUrl(attachment.url)} alt={t('attachmentImageAlt', { name: attachment.filename })} className="h-full w-full object-cover" />
-                  ) : attachment.mimeType.startsWith('image/') ? (
-                    <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                  )}
-                </button>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-foreground">{attachment.filename}</p>
-                  <p className="text-xs text-muted-foreground">{formatSize(attachment.size)}</p>
-                </div>
-                <a
-                  href={resolveAppUrl(attachment.url)}
-                  download={attachment.filename}
-                  className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  aria-label={t('attachmentDownload')}
-                >
-                  <Download className="h-4 w-4" />
-                </a>
-                {canEdit && (
+              <li key={attachment.id} className="rounded-lg border border-border p-2">
+                <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => void handleRemove(attachment)}
-                    disabled={removingId === attachment.id}
-                    className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-destructive disabled:opacity-50"
-                    aria-label={t('attachmentRemove')}
+                    disabled={!inline}
+                    onClick={() => inline && setLightboxIndex(imageIndex)}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted disabled:cursor-default"
+                    aria-label={inline ? t('attachmentOpenImage', { name }) : undefined}
                   >
-                    {removingId === attachment.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    {inline ? (
+                      <img src={resolveAppUrl(attachment.url)} alt={t('attachmentImageAlt', { name })} className="h-full w-full object-cover" />
+                    ) : attachment.mimeType.startsWith('image/') ? (
+                      <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <FileText className="h-4 w-4 text-muted-foreground" />
+                    )}
                   </button>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-foreground">{name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatSize(attachment.size)}
+                      {attachment.referenceDate && (
+                        <span> · {t('attachmentReferenceDate')}: {formatReferenceDate(attachment.referenceDate)}</span>
+                      )}
+                    </p>
+                  </div>
+                  <a
+                    href={resolveAppUrl(attachment.url)}
+                    download={attachment.originalName ?? attachment.filename}
+                    className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label={t('attachmentDownload')}
+                  >
+                    <Download className="h-4 w-4" />
+                  </a>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => (editing ? closeEdit() : openEdit(attachment))}
+                      className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      aria-label={t('attachmentEdit')}
+                      aria-expanded={editing}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                  )}
+                  {canEdit && (
+                    <button
+                      type="button"
+                      onClick={() => void handleRemove(attachment)}
+                      disabled={removingId === attachment.id}
+                      className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-destructive disabled:opacity-50"
+                      aria-label={t('attachmentRemove')}
+                    >
+                      {removingId === attachment.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    </button>
+                  )}
+                </div>
+
+                {!editing && attachment.description && (
+                  <div className="mt-2 max-h-40 overflow-y-auto rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
+                    <MarkdownText content={attachment.description} />
+                  </div>
+                )}
+
+                {editing && (
+                  <div className="mt-3 space-y-3 border-t border-border pt-3">
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium text-foreground">{t('attachmentName')}</span>
+                      <input
+                        type="text"
+                        value={draft.label}
+                        maxLength={200}
+                        placeholder={attachment.originalName ?? attachment.filename}
+                        onChange={event => setDraft(previous => ({ ...previous, label: event.target.value }))}
+                        className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </label>
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium text-foreground">{t('attachmentReferenceDate')}</span>
+                      <input
+                        type="date"
+                        value={draft.referenceDate}
+                        onChange={event => setDraft(previous => ({ ...previous, referenceDate: event.target.value }))}
+                        className="w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
+                    </label>
+                    <div className="space-y-1">
+                      <span className="text-xs font-medium text-foreground">{t('attachmentDescription')}</span>
+                      <RichTextEditor
+                        content={draft.description}
+                        onChange={markdown => setDraft(previous => ({ ...previous, description: markdown }))}
+                        placeholder={t('attachmentDescriptionPlaceholder')}
+                        minHeight="5rem"
+                        fieldLabel={t('attachmentDescription')}
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={closeEdit}
+                        disabled={saving}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        {t('attachmentCancel')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleSave(attachment)}
+                        disabled={saving}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                        {t('attachmentSave')}
+                      </button>
+                    </div>
+                  </div>
                 )}
               </li>
             )
@@ -174,7 +311,7 @@ export function AttachmentsArea({ itemId, projectId, canEdit }: Props) {
         open={lightboxIndex >= 0}
         index={lightboxIndex}
         close={() => setLightboxIndex(-1)}
-        slides={imageAttachments.map(attachment => ({ src: resolveAppUrl(attachment.url) ?? '', alt: attachment.filename }))}
+        slides={imageAttachments.map(attachment => ({ src: resolveAppUrl(attachment.url) ?? '', alt: displayName(attachment) }))}
       />
     </div>
   )

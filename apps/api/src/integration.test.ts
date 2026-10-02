@@ -1684,6 +1684,105 @@ describe('segurança de anexos', () => {
     expect(response.status).toBe(503)
     expect(await response.text()).not.toContain('segredo')
   })
+
+  describe('metadados de anexos (T10)', () => {
+    async function uploadComMetadados(nome: string, campos: Record<string, string> = {}) {
+      const form = new FormData()
+      form.append('file', new File(['conteudo'], nome, { type: 'text/plain' }))
+      for (const [key, value] of Object.entries(campos)) form.append(key, value)
+      return request(`/projects/${projectId}/items/${itemId}/attachments`, memberToken, { method: 'POST', body: form })
+    }
+
+    async function patchMetadados(attachmentId: string, body: unknown, sessionToken = memberToken) {
+      return request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}`, sessionToken, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    }
+
+    test('upload sem metadados aplica sugestões automáticas (label=original, data=hoje)', async () => {
+      const response = await uploadComMetadados('documento.txt')
+      expect(response.status).toBe(201)
+      const created = await response.json() as { label: string | null; referenceDate: string | null; description: string | null }
+      expect(created.label).toBe('documento.txt')
+      expect(created.referenceDate).toBe(new Date().toISOString().slice(0, 10))
+      expect(created.description).toBeNull()
+    })
+
+    test('upload com metadados explícitos grava os valores informados', async () => {
+      const response = await uploadComMetadados('nota.txt', { label: 'Nota da reunião', referenceDate: '2026-09-30', description: 'Registro da reunião' })
+      expect(response.status).toBe(201)
+      expect(await response.json()).toMatchObject({ label: 'Nota da reunião', referenceDate: '2026-09-30', description: 'Registro da reunião' })
+    })
+
+    test('upload rejeita metadados inválidos sem criar anexo', async () => {
+      const longo = await uploadComMetadados('ok.txt', { label: 'x'.repeat(201) })
+      expect(longo.status).toBe(400)
+      expect(await longo.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } })
+      const dataInvalida = await uploadComMetadados('ok.txt', { referenceDate: '30/09/2026' })
+      expect(dataInvalida.status).toBe(400)
+    })
+
+    test('PATCH edita metadados e a listagem expõe label, referenceDate, description e originalName', async () => {
+      const upload = await uploadComMetadados('editavel.txt')
+      const { id } = await upload.json() as { id: string }
+      const patched = await patchMetadados(id, { label: 'Contrato assinado', referenceDate: '2026-01-15', description: '# Contrato\nVersão final' })
+      expect(patched.status).toBe(200)
+      expect(await patched.json()).toMatchObject({ id, label: 'Contrato assinado', referenceDate: '2026-01-15', description: '# Contrato\nVersão final' })
+
+      const list = await request(`/projects/${projectId}/items/${itemId}/attachments`, memberToken)
+      const items = await list.json() as Array<{ id: string; label: string | null; originalName: string }>
+      const found = items.find(item => item.id === id)!
+      expect(found.label).toBe('Contrato assinado')
+      expect(found.originalName).toBe('editavel.txt')
+    })
+
+    test('PATCH parcial preserva campos ausentes; null e string vazia limpam', async () => {
+      const upload = await uploadComMetadados('parcial.txt', { label: 'Rótulo', referenceDate: '2026-02-01', description: 'Descrição' })
+      const { id } = await upload.json() as { id: string }
+
+      const parcial = await patchMetadados(id, { label: 'Novo rótulo' })
+      expect(parcial.status).toBe(200)
+      expect(await parcial.json()).toMatchObject({ label: 'Novo rótulo', referenceDate: '2026-02-01', description: 'Descrição' })
+
+      const limpar = await patchMetadados(id, { referenceDate: null, description: '' })
+      expect(limpar.status).toBe(200)
+      expect(await limpar.json()).toMatchObject({ label: 'Novo rótulo', referenceDate: null, description: null })
+    })
+
+    test('PATCH rejeita data inválida e campo desconhecido', async () => {
+      const upload = await uploadComMetadados('valida.txt')
+      const { id } = await upload.json() as { id: string }
+      expect((await patchMetadados(id, { referenceDate: '2026-99-99' })).status).toBe(400)
+      expect((await patchMetadados(id, { nome: 'x' })).status).toBe(400)
+    })
+
+    test('PATCH exige papel de escrita: VIEWER recebe 403', async () => {
+      const upload = await uploadComMetadados('somente-leitura.txt')
+      const { id } = await upload.json() as { id: string }
+      const viewer = await createUser(tenantId, `att-viewer-${generateId()}@test.local`, 'Viewer Anexos', 'TEAM_MEMBER')
+      await db.insert(memberships).values({ id: generateId(), tenantId, userId: viewer.id, projectId, role: 'VIEWER', createdAt: new Date().toISOString() })
+      const viewerToken = await token(viewer.id, tenantId, viewer.email)
+      expect((await patchMetadados(id, { label: 'tentativa' }, viewerToken)).status).toBe(403)
+    })
+
+    test('PATCH bloqueia não membro (anti-IDOR) e anexo inexistente com 404', async () => {
+      const upload = await uploadComMetadados('ancorado2.txt')
+      const { id } = await upload.json() as { id: string }
+      expect((await patchMetadados(id, { label: 'x' }, outsiderToken)).status).toBe(404)
+      expect((await patchMetadados(generateId(), { label: 'x' })).status).toBe(404)
+    })
+
+    test('anexos desabilitados bloqueiam PATCH e preservam leitura', async () => {
+      const upload = await uploadComMetadados('bloqueado.txt')
+      const { id } = await upload.json() as { id: string }
+      await db.update(tenantAttachmentSettings).set({ enabled: false }).where(eq(tenantAttachmentSettings.tenantId, tenantId))
+      expect((await patchMetadados(id, { label: 'x' })).status).toBe(409)
+      expect((await request(`/projects/${projectId}/items/${itemId}/attachments`, memberToken)).status).toBe(200)
+      await db.update(tenantAttachmentSettings).set({ enabled: true }).where(eq(tenantAttachmentSettings.tenantId, tenantId))
+    })
+  })
 })
 
 describe('reparenting transacional', () => {

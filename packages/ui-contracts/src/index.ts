@@ -127,6 +127,12 @@ export interface Attachment {
   createdAt: string
   url: string
   isImage: boolean
+  // T10: metadados humanos opcionais (opcionais no tipo para compatibilidade
+  // com respostas antigas; a API atual sempre os retorna).
+  originalName?: string
+  label?: string | null
+  referenceDate?: string | null
+  description?: string | null
 }
 
 export type AttachmentProvider = 'local' | 's3'

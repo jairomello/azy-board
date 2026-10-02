@@ -136,7 +136,9 @@ function mapAttachment(row: typeof attachments.$inferSelect): AttachmentRecord {
   return {
     id: row.id, tenantId: row.tenantId, itemId: row.itemId, fileName: row.filename,
     originalName: row.originalName, mimeType: row.mimeType, sizeBytes: row.size,
-    storagePath: row.storagePath, storageProvider: row.storageProvider as 'local' | 's3', createdAt: row.createdAt,
+    storagePath: row.storagePath, storageProvider: row.storageProvider as 'local' | 's3',
+    label: row.label, referenceDate: row.referenceDate, description: row.description,
+    createdAt: row.createdAt,
   }
 }
 
@@ -1282,15 +1284,31 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         const [row] = await database.insert(attachments).values({
           id: generateId(), tenantId: context.tenantId, itemId, filename: input.fileName,
           originalName: input.originalName, mimeType: input.mimeType, size: input.sizeBytes,
-          storagePath: input.storagePath, storageProvider: input.storageProvider ?? 'local', createdAt: new Date().toISOString(),
+          storagePath: input.storagePath, storageProvider: input.storageProvider ?? 'local',
+          label: input.label ?? null, referenceDate: input.referenceDate ?? null, description: input.description ?? null,
+          createdAt: new Date().toISOString(),
         }).returning()
         if (!row) throw new Error('Falha ao criar anexo no adapter SQLite.')
         return mapAttachment(row)
       },
+      async updateAttachment(context, projectId, itemId, attachmentId, patch) {
+        void projectId
+        const changes: { label?: string | null; referenceDate?: string | null; description?: string | null } = {}
+        if ('label' in patch) changes.label = patch.label ?? null
+        if ('referenceDate' in patch) changes.referenceDate = patch.referenceDate ?? null
+        if ('description' in patch) changes.description = patch.description ?? null
+        const scope = and(eq(attachments.tenantId, context.tenantId), eq(attachments.itemId, itemId), eq(attachments.id, attachmentId))
+        if (Object.keys(changes).length === 0) {
+          const [existing] = await database.select({ attachment: attachments }).from(attachments).where(scope).limit(1)
+          return existing ? mapAttachment(existing.attachment) : null
+        }
+        const [row] = await database.update(attachments).set(changes).where(scope).returning()
+        return row ? mapAttachment(row) : null
+      },
       async deleteAttachmentWithCleanup(context, projectId, itemId, attachmentId) {
         void projectId
         return runSqliteAtomic(sqlite, () => {
-          const row = sqlite.query<{ id: string; tenant_id: string; item_id: string; filename: string; original_name: string; mime_type: string; size: number; storage_path: string; storage_provider: string; created_at: string }, [string, string, string]>(
+          const row = sqlite.query<{ id: string; tenant_id: string; item_id: string; filename: string; original_name: string; mime_type: string; size: number; storage_path: string; storage_provider: string; label: string | null; reference_date: string | null; description: string | null; created_at: string }, [string, string, string]>(
             'SELECT * FROM attachments WHERE tenant_id = ? AND item_id = ? AND id = ?',
           ).get(context.tenantId, itemId, attachmentId)
           if (!row) return null
@@ -1304,7 +1322,9 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           return {
             id: row.id, tenantId: row.tenant_id, itemId: row.item_id, fileName: row.filename,
             originalName: row.original_name, mimeType: row.mime_type, sizeBytes: row.size,
-             storagePath: row.storage_path, storageProvider: (row.storage_provider ?? 'local') as 'local' | 's3', createdAt: row.created_at,
+             storagePath: row.storage_path, storageProvider: (row.storage_provider ?? 'local') as 'local' | 's3',
+            label: row.label, referenceDate: row.reference_date, description: row.description,
+            createdAt: row.created_at,
           } satisfies AttachmentRecord
         })
       },
