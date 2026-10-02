@@ -364,7 +364,8 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
       tagIds: item.itemTags.map(link => link.tag.id),
       tagNames: item.itemTags.map(link => link.tag.name),
     } as Record<string, unknown>
-    delete flat.itemSprints
+    // itemSprints é preservado na resposta: o Board filtra cards por sprint client-side
+    // via i.itemSprints?.some(...) (BoardScreen.tsx). Remover este campo esvaziava o board.
     delete flat.itemTags
     if (!includeDescriptions) for (const field of ['description', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes']) delete flat[field]
     if (!requestedFields) return flat
