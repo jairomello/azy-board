@@ -1,17 +1,100 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
-import { storage } from '../services/storage'
+import { createConfiguredStorageAdapter } from '../services/storage'
 import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
 import { broadcast } from '../services/websocket'
+import { decryptAssistantSecret, encryptAssistantSecret } from '../services/assistantEncryption'
+import { hasGlobalGroup } from '../services/auth'
 
 export const attachmentsRouter = new Hono<HonoEnv>()
 attachmentsRouter.use('*', authMiddleware)
 
-const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE ?? String(10 * 1024 * 1024)) // 10 MB
+export const attachmentSettingsRouter = new Hono<HonoEnv>()
+attachmentSettingsRouter.use('*', authMiddleware)
+
+function publicSettings(settings: Awaited<ReturnType<typeof persistence.attachmentSettings.get>>) {
+  return {
+    enabled: settings?.enabled ?? false,
+    provider: settings?.provider ?? 'local',
+    endpoint: settings?.endpoint ?? '',
+    region: settings?.region ?? '',
+    bucket: settings?.bucket ?? '',
+    prefix: settings?.prefix ?? '',
+    accessKeyId: settings?.accessKeyId ?? '',
+    hasSecret: Boolean(settings?.secretCiphertext),
+  }
+}
+
+attachmentSettingsRouter.get('/enabled', async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const settings = await persistence.attachmentSettings.get(ctx.tenantId)
+  return c.json({ enabled: settings?.enabled ?? false })
+})
+
+attachmentSettingsRouter.get('/', async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  if (!hasGlobalGroup(ctx.globalGroup, 'MANAGER')) return c.json({ error: 'Permissão insuficiente' }, 403)
+  return c.json(publicSettings(await persistence.attachmentSettings.get(ctx.tenantId)))
+})
+
+attachmentSettingsRouter.put('/', async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  if (!hasGlobalGroup(ctx.globalGroup, 'MANAGER')) return c.json({ error: 'Permissão insuficiente' }, 403)
+  const body = await c.req.json<Record<string, unknown>>().catch(() => null)
+  if (!body || typeof body.enabled !== 'boolean' || !['local', 's3'].includes(String(body.provider))) {
+    return c.json({ error: 'Configuração de anexos inválida' }, 400)
+  }
+  const previous = await persistence.attachmentSettings.get(ctx.tenantId)
+  const provider = body.provider as 'local' | 's3'
+  const endpoint = typeof body.endpoint === 'string' ? body.endpoint.trim().replace(/\/+$/, '') : ''
+  const region = typeof body.region === 'string' ? body.region.trim() : ''
+  const bucket = typeof body.bucket === 'string' ? body.bucket.trim() : ''
+  const prefix = typeof body.prefix === 'string' ? body.prefix.trim().replace(/^\/+|\/+$/g, '') : ''
+  const accessKeyId = typeof body.accessKeyId === 'string' ? body.accessKeyId.trim() : ''
+  const secret = typeof body.secret === 'string' ? body.secret : ''
+  if (provider === 's3') {
+    if (!region || !bucket || !accessKeyId || (!secret && !previous?.secretCiphertext)) {
+      return c.json({ error: 'Informe região, bucket, access key e secret key para configurar S3.' }, 400)
+    }
+    if (endpoint) {
+      try {
+        const parsed = new URL(endpoint)
+        if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error()
+      } catch {
+        return c.json({ error: 'Endpoint S3 inválido; informe uma URL HTTP ou HTTPS sem credenciais.' }, 400)
+      }
+    }
+  }
+  let secretCiphertext = provider === 's3' ? previous?.secretCiphertext ?? null : null
+  let secretVersion = provider === 's3' ? previous?.secretVersion ?? null : null
+  if (provider === 's3' && secret) {
+    try {
+      const encrypted = await encryptAssistantSecret(secret)
+      secretCiphertext = encrypted.ciphertext
+      secretVersion = encrypted.version
+    } catch {
+      return c.json({ error: 'Credencial não foi protegida. Configure ASSISTANT_ENCRYPTION_KEY no backend.' }, 503)
+    }
+  }
+  const saved = await persistence.attachmentSettings.save(ctx.tenantId, {
+    enabled: body.enabled,
+    provider,
+    endpoint: provider === 's3' ? endpoint || null : null,
+    region: provider === 's3' ? region : null,
+    bucket: provider === 's3' ? bucket : null,
+    prefix: provider === 's3' ? prefix || null : null,
+    accessKeyId: provider === 's3' ? accessKeyId : null,
+    secretCiphertext,
+    secretVersion,
+  })
+  return c.json(publicSettings(saved))
+})
+
+const MAX_FILE_SIZE = parseInt(process.env.MAX_FILE_SIZE ?? String(10 * 1024 * 1024), 10) // 10 MB
 
 // [SECURITY] Allowlist de tipos aceitos no upload. HTML/SVG ficam fora:
 // podem carregar script e seriam executados na origem da aplicação.
@@ -45,6 +128,54 @@ export function isAllowedAttachmentMimeType(mimeType: string): boolean {
   return ALLOWED_MIME_TYPES.has(normalizeMimeType(mimeType))
 }
 
+function isValidContent(mimeType: string, data: Uint8Array): boolean {
+  const starts = (...bytes: number[]) => bytes.every((byte, index) => data[index] === byte)
+  const ascii = (start: number, length: number) => new TextDecoder().decode(data.slice(start, start + length))
+  switch (mimeType) {
+    case 'image/png': return starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
+    case 'image/jpeg': return starts(0xff, 0xd8, 0xff)
+    case 'image/gif': return ascii(0, 6) === 'GIF87a' || ascii(0, 6) === 'GIF89a'
+    case 'image/webp': return ascii(0, 4) === 'RIFF' && ascii(8, 4) === 'WEBP'
+    case 'image/avif': return ascii(4, 8).startsWith('ftypavif') || ascii(4, 8).startsWith('ftypavis')
+    case 'image/bmp': return ascii(0, 2) === 'BM'
+    case 'application/pdf': return ascii(0, 5) === '%PDF-'
+    case 'application/zip':
+    case 'application/x-7z-compressed':
+    case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+    case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+    case 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+      return starts(0x50, 0x4b, 0x03, 0x04) || starts(0x50, 0x4b, 0x05, 0x06)
+    case 'application/gzip': return starts(0x1f, 0x8b)
+    case 'application/msword':
+    case 'application/vnd.ms-excel':
+    case 'application/vnd.ms-powerpoint': return starts(0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1)
+    case 'video/mp4': return ascii(4, 4) === 'ftyp'
+    case 'audio/mpeg': return ascii(0, 3) === 'ID3' || (data[0] === 0xff && (data[1]! & 0xe0) === 0xe0)
+    case 'audio/wav': return ascii(0, 4) === 'RIFF' && ascii(8, 4) === 'WAVE'
+    case 'audio/ogg': return ascii(0, 4) === 'OggS'
+    case 'video/webm': return starts(0x1a, 0x45, 0xdf, 0xa3)
+    default:
+      try {
+        const text = new TextDecoder('utf-8', { fatal: true }).decode(data)
+        if (data.some(byte => byte < 0x09 || (byte > 0x0a && byte < 0x20))) return false
+        if (mimeType === 'application/json') JSON.parse(text)
+        return true
+      } catch { return false }
+  }
+}
+
+async function storageAdapterForTenant(tenantId: string, providerOverride?: 'local' | 's3') {
+  const settings = await persistence.attachmentSettings.get(tenantId)
+  const provider = providerOverride ?? settings?.provider ?? 'local'
+  if (provider === 'local') return createConfiguredStorageAdapter({ provider })
+  if (!settings?.secretCiphertext || !settings.secretVersion || !settings.accessKeyId || !settings.bucket || !settings.region) {
+    throw new Error('Configuração S3 não disponível para este tenant.')
+  }
+  const secretAccessKey = await decryptAssistantSecret(settings.secretCiphertext, settings.secretVersion)
+  return createConfiguredStorageAdapter({ provider: 's3', endpoint: settings.endpoint, region: settings.region,
+    bucket: settings.bucket, prefix: settings.prefix, accessKeyId: settings.accessKeyId, secretAccessKey })
+}
+
 // [SECURITY] Content-Disposition seguro: nome ASCII entre aspas + RFC 5987 para UTF-8.
 function contentDispositionFor(mimeType: string, originalName: string): string {
   const inline = INLINE_SAFE_MIME_TYPES.has(mimeType)
@@ -66,6 +197,8 @@ attachmentsRouter.post('/', requireRole('MEMBER'), async (c) => {
   const projectContext = userPersistenceContext(ctx)
   const item = await persistence.items.getItem(projectContext, projectId, itemId)
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
+  const settings = await persistence.attachmentSettings.get(ctx.tenantId)
+  if (!settings?.enabled) return c.json({ error: 'Anexos estão desabilitados para este tenant' }, 409)
 
   const formData = await c.req.formData()
   const file = formData.get('file') as File | null
@@ -86,7 +219,11 @@ attachmentsRouter.post('/', requireRole('MEMBER'), async (c) => {
 
   const buffer = await file.arrayBuffer()
   const mimeType = normalizeMimeType(file.type)
-  const { storagePath } = await storage.upload(
+  if (!isValidContent(mimeType, new Uint8Array(buffer))) {
+    return c.json({ error: 'O conteúdo do arquivo não corresponde ao tipo declarado', code: 'INVALID_FILE_CONTENT' }, 415)
+  }
+  const adapter = await storageAdapterForTenant(ctx.tenantId, settings.provider)
+  const { storagePath } = await adapter.upload(
     ctx.tenantId,
     itemId,
     file.name,
@@ -100,6 +237,7 @@ attachmentsRouter.post('/', requireRole('MEMBER'), async (c) => {
     mimeType,
     sizeBytes: file.size,
     storagePath,
+    storageProvider: settings.provider,
   })
 
   broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
@@ -147,10 +285,15 @@ attachmentsRouter.get('/:attachmentId/download', requireRole('VIEWER'), async (c
   const attachment = await persistence.files.getAttachment(projectContext, projectId, itemId, attachmentId)
   if (!attachment) return c.json({ error: 'Anexo não encontrado' }, 404)
 
-  const file = Bun.file(attachment.storagePath)
-  if (!(await file.exists())) return c.json({ error: 'Arquivo não encontrado' }, 404)
+  let body: BodyInit | null
+  try {
+    body = await (await storageAdapterForTenant(ctx.tenantId, attachment.storageProvider)).download(attachment.storagePath)
+  } catch {
+    return c.json({ error: 'O armazenamento deste anexo está indisponível' }, 503)
+  }
+  if (!body) return c.json({ error: 'Arquivo não encontrado' }, 404)
 
-  return new Response(file, {
+  return new Response(body, {
     headers: {
       'Content-Type': attachment.mimeType,
       'Content-Length': String(attachment.sizeBytes),
@@ -170,6 +313,8 @@ attachmentsRouter.delete('/:attachmentId', requireRole('MEMBER'), async (c) => {
   const projectContext = userPersistenceContext(ctx)
   const item = await persistence.items.getItem(projectContext, projectId, itemId)
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
+  const settings = await persistence.attachmentSettings.get(ctx.tenantId)
+  if (!settings?.enabled) return c.json({ error: 'Anexos estão desabilitados para este tenant' }, 409)
 
   // Item 12: metadados saem em transação atômica; arquivo físico é removido
   // pós-commit via outbox de limpeza (idempotente, com retry).

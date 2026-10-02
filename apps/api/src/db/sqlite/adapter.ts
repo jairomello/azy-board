@@ -40,6 +40,7 @@ import type {
   SprintRecord,
   StorageCleanupJobRecord,
   StoredAvatarRecord,
+  TenantAttachmentSettingsRecord,
   UserCredentialRecord,
 } from '../../persistence/models'
 import type { AssistantModelConfigPatch, ChecklistItemPatch, ColumnPatch, CostCenterPatch, ItemLogPatch, ModulePatch, NewApiKeyRecord, NewAssistantModelConfig, NewChecklistItemRecord, NewColumnRecord, NewCostCenterRecord, NewItemLogRecord, NewModuleRecord, NewProjectMembership, NewSquadRecord, NewTenantRecord, NewVersionRecord, PersistencePorts, ProjectMembershipPatch, ProjectPatch, UserPreferencesPatch, VersionPatch } from '../../persistence/ports'
@@ -48,7 +49,7 @@ import {
   apiKeys, assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantModelConfigs, assistantRuns, assistantSettings, assistantToolCalls,
   attachments, checklistItems, checklists, columns, idempotencyRecords, itemEvents, itemLogs, itemSprints, itemTags,
   items, loginAttempts, memberships, modules, projectAnalyticsCoverage, projectCostCenters, projectMetricsDaily, projectVersions, projects, squads, sprintCycleItems, sprintCycles, sprints,
-  storageCleanupJobs, tags, tenants, userAvatars, users,
+  storageCleanupJobs, tags, tenantAttachmentSettings, tenants, userAvatars, users,
 } from '../schema'
 import { generateId } from '../../utils/id'
 import { runSqliteAtomic } from './atomicTransaction'
@@ -135,7 +136,7 @@ function mapAttachment(row: typeof attachments.$inferSelect): AttachmentRecord {
   return {
     id: row.id, tenantId: row.tenantId, itemId: row.itemId, fileName: row.filename,
     originalName: row.originalName, mimeType: row.mimeType, sizeBytes: row.size,
-    storagePath: row.storagePath, createdAt: row.createdAt,
+    storagePath: row.storagePath, storageProvider: row.storageProvider as 'local' | 's3', createdAt: row.createdAt,
   }
 }
 
@@ -412,6 +413,19 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         const [row] = await database.insert(tenants).values({ id: generateId(), ...input }).returning()
         if (!row) throw new Error('Falha ao criar tenant no adapter SQLite.')
         return { id: row.id, name: row.name, slug: row.slug, createdAt: row.createdAt }
+      },
+    },
+    attachmentSettings: {
+      async get(tenantId): Promise<TenantAttachmentSettingsRecord | null> {
+        const row = await database.query.tenantAttachmentSettings.findFirst({ where: eq(tenantAttachmentSettings.tenantId, tenantId) })
+        return row ? { ...row, provider: row.provider as 'local' | 's3' } : null
+      },
+      async save(tenantId, input) {
+        const updatedAt = new Date().toISOString()
+        const [row] = await database.insert(tenantAttachmentSettings).values({ tenantId, ...input, updatedAt })
+          .onConflictDoUpdate({ target: tenantAttachmentSettings.tenantId, set: { ...input, updatedAt } }).returning()
+        if (!row) throw new Error('Falha ao salvar configurações de anexos no adapter SQLite.')
+        return { ...row, provider: row.provider as 'local' | 's3' }
       },
     },
     apiKeys: {
@@ -1268,7 +1282,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         const [row] = await database.insert(attachments).values({
           id: generateId(), tenantId: context.tenantId, itemId, filename: input.fileName,
           originalName: input.originalName, mimeType: input.mimeType, size: input.sizeBytes,
-          storagePath: input.storagePath, createdAt: new Date().toISOString(),
+          storagePath: input.storagePath, storageProvider: input.storageProvider ?? 'local', createdAt: new Date().toISOString(),
         }).returning()
         if (!row) throw new Error('Falha ao criar anexo no adapter SQLite.')
         return mapAttachment(row)
@@ -1276,7 +1290,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
       async deleteAttachmentWithCleanup(context, projectId, itemId, attachmentId) {
         void projectId
         return runSqliteAtomic(sqlite, () => {
-          const row = sqlite.query<{ id: string; tenant_id: string; item_id: string; filename: string; original_name: string; mime_type: string; size: number; storage_path: string; created_at: string }, [string, string, string]>(
+          const row = sqlite.query<{ id: string; tenant_id: string; item_id: string; filename: string; original_name: string; mime_type: string; size: number; storage_path: string; storage_provider: string; created_at: string }, [string, string, string]>(
             'SELECT * FROM attachments WHERE tenant_id = ? AND item_id = ? AND id = ?',
           ).get(context.tenantId, itemId, attachmentId)
           if (!row) return null
@@ -1290,7 +1304,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           return {
             id: row.id, tenantId: row.tenant_id, itemId: row.item_id, fileName: row.filename,
             originalName: row.original_name, mimeType: row.mime_type, sizeBytes: row.size,
-            storagePath: row.storage_path, createdAt: row.created_at,
+             storagePath: row.storage_path, storageProvider: (row.storage_provider ?? 'local') as 'local' | 's3', createdAt: row.created_at,
           } satisfies AttachmentRecord
         })
       },

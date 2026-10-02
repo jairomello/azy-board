@@ -118,6 +118,30 @@ export interface ChecklistProgress {
   total: number
 }
 
+// Anexos de card e configuração de storage por tenant
+export interface Attachment {
+  id: string
+  filename: string
+  mimeType: string
+  size: number
+  createdAt: string
+  url: string
+  isImage: boolean
+}
+
+export type AttachmentProvider = 'local' | 's3'
+
+export interface TenantAttachmentSettings {
+  enabled: boolean
+  provider: AttachmentProvider
+  endpoint: string
+  region: string
+  bucket: string
+  prefix: string
+  accessKeyId: string
+  hasSecret: boolean
+}
+
 // Helpers de apresentação
 export interface WorkLog {
   id: string

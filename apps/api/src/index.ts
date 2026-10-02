@@ -6,7 +6,7 @@ import { columnsRouter } from './routes/columns'
 import { sprintsRouter } from './routes/sprints'
 import { tagsRouter } from './routes/tags'
 import { itemsRouter } from './routes/items'
-import { attachmentsRouter } from './routes/attachments'
+import { attachmentSettingsRouter, attachmentsRouter } from './routes/attachments'
 import { checklistsRouter } from './routes/checklists'
 import { shadowMarkdownRouter } from './routes/shadowMarkdown'
 import { apiKeysRouter, userApiKeysRouter } from './routes/apiKeys'
@@ -98,6 +98,7 @@ api.route('/projects/:projectId/tags', tagsRouter)
 api.route('/projects/:projectId/items', itemsRouter)
 api.route('/projects/:projectId/batch', batchRouter)
 api.route('/projects/:projectId/items/:itemId/attachments', attachmentsRouter)
+api.route('/tenant/attachments', attachmentSettingsRouter)
 api.route('/projects/:projectId/items/:itemId/checklists', checklistsRouter)
 api.route('/projects/:projectId/board.md', shadowMarkdownRouter)
 api.route('/projects/:projectId/api-keys', apiKeysRouter)
@@ -135,7 +136,7 @@ export async function startServer() {
   // impede o processo de encerrar).
   startStorageCleanupWorker()
   if (!stopAgentWorker) stopAgentWorker = startAgentWorker({ executeRun: executeAssistantRun })
-  const PORT = parseInt(process.env.PORT ?? '3000')
+  const PORT = parseInt(process.env.PORT ?? '3000', 10)
 
   // WebSocket server nativo do Bun — sem dependências extras
   // [DB-SWAP] Em produção com múltiplas instâncias, substituir o mapa em memória

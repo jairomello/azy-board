@@ -1,7 +1,8 @@
-import { storage, type StorageAdapter } from './storage'
+import { createConfiguredStorageAdapter, storage, type StorageAdapter } from './storage'
 import { persistence } from '../persistence/runtime'
 import { logger } from './logger'
 import { isOtelInitialized, getOtelMeter } from './telemetry'
+import { decryptAssistantSecret } from './assistantEncryption'
 
 // [DB-SWAP] Em PostgreSQL os mesmos inserts/updates valem; trocar apenas o driver.
 
@@ -69,7 +70,6 @@ export async function processPendingStorageCleanup(options: {
   await initMetrics()
 
   const limit = options.limit ?? 50
-  const adapter = options.adapter ?? storage
   const now = options.now ?? new Date()
   const nowIso = now.toISOString()
 
@@ -89,6 +89,19 @@ export async function processPendingStorageCleanup(options: {
   const result: CleanupProcessResult = { processed: due.length, done: 0, retried: 0, failed: 0 }
   for (const job of due) {
     try {
+      let adapter = options.adapter
+      if (!adapter && job.storagePath.startsWith('s3://')) {
+        const settings = await persistence.attachmentSettings.get(job.tenantId)
+        if (settings?.provider !== 's3' || !settings.secretCiphertext || !settings.secretVersion || !settings.accessKeyId || !settings.bucket || !settings.region) {
+          throw new Error('Configuração S3 atual indisponível para limpar o objeto.')
+        }
+        adapter = createConfiguredStorageAdapter({
+          provider: 's3', endpoint: settings.endpoint, region: settings.region, bucket: settings.bucket,
+          prefix: settings.prefix, accessKeyId: settings.accessKeyId,
+          secretAccessKey: await decryptAssistantSecret(settings.secretCiphertext, settings.secretVersion),
+        })
+      }
+      adapter ??= storage
       await adapter.delete(job.storagePath)
       await persistence.storageCleanup.markDone(job.id, job.tenantId, new Date().toISOString())
       result.done += 1

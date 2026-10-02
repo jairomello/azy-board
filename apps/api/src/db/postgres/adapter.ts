@@ -40,6 +40,7 @@ import type {
   SprintRecord,
   StorageCleanupJobRecord,
   StoredAvatarRecord,
+  TenantAttachmentSettingsRecord,
 } from '../../persistence/models'
 import type {
   ChecklistItemPatch,
@@ -283,7 +284,7 @@ function mapAttachment(row: PgRow): AttachmentRecord {
     id: row.id as string, tenantId: row.tenant_id as string, itemId: row.item_id as string,
     fileName: row.filename as string, originalName: row.original_name as string,
     mimeType: row.mime_type as string, sizeBytes: row.size as number,
-    storagePath: row.storage_path as string, createdAt: row.created_at as string,
+    storagePath: row.storage_path as string, storageProvider: (row.storage_provider ?? 'local') as 'local' | 's3', createdAt: row.created_at as string,
   }
 }
 
@@ -611,6 +612,39 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         )
         if (!row) throw new Error('Falha ao criar tenant no adapter PostgreSQL.')
         return mapTenant(row)
+      },
+    },
+
+    attachmentSettings: {
+      async get(tenantId: string): Promise<TenantAttachmentSettingsRecord | null> {
+        const row = await q1('SELECT * FROM tenant_attachment_settings WHERE tenant_id = $1', [tenantId])
+        return row ? {
+          tenantId: row.tenant_id as string, enabled: row.enabled as boolean,
+          provider: row.provider as 'local' | 's3', endpoint: row.endpoint as string | null,
+          region: row.region as string | null, bucket: row.bucket as string | null,
+          prefix: row.prefix as string | null, accessKeyId: row.access_key_id as string | null,
+          secretCiphertext: row.secret_ciphertext as string | null,
+          secretVersion: row.secret_version as number | null, updatedAt: row.updated_at as string,
+        } : null
+      },
+      async save(tenantId: string, input) {
+        const row = await q1(`INSERT INTO tenant_attachment_settings
+          (tenant_id, enabled, provider, endpoint, region, bucket, prefix, access_key_id, secret_ciphertext, secret_version, updated_at)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          ON CONFLICT (tenant_id) DO UPDATE SET enabled=EXCLUDED.enabled, provider=EXCLUDED.provider,
+          endpoint=EXCLUDED.endpoint, region=EXCLUDED.region, bucket=EXCLUDED.bucket, prefix=EXCLUDED.prefix,
+          access_key_id=EXCLUDED.access_key_id, secret_ciphertext=EXCLUDED.secret_ciphertext,
+          secret_version=EXCLUDED.secret_version, updated_at=EXCLUDED.updated_at RETURNING *`,
+        [tenantId, input.enabled, input.provider, input.endpoint, input.region, input.bucket, input.prefix,
+          input.accessKeyId, input.secretCiphertext, input.secretVersion, new Date().toISOString()])
+        if (!row) throw new Error('Falha ao salvar configurações de anexos no adapter PostgreSQL.')
+        return {
+          tenantId: row.tenant_id as string, enabled: row.enabled as boolean, provider: row.provider as 'local' | 's3',
+          endpoint: row.endpoint as string | null, region: row.region as string | null, bucket: row.bucket as string | null,
+          prefix: row.prefix as string | null, accessKeyId: row.access_key_id as string | null,
+          secretCiphertext: row.secret_ciphertext as string | null, secretVersion: row.secret_version as number | null,
+          updatedAt: row.updated_at as string,
+        }
       },
     },
 
@@ -1458,9 +1492,9 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       async createAttachment(context: PersistenceContext, projectId: string, itemId: string, input: NewAttachmentRecord): Promise<AttachmentRecord> {
         const id = generateId()
         const row = await q1(
-          `INSERT INTO attachments (id, tenant_id, item_id, filename, original_name, mime_type, size, storage_path, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now()) RETURNING *`,
-          [id, context.tenantId, itemId, input.fileName, input.originalName, input.mimeType, input.sizeBytes, input.storagePath],
+          `INSERT INTO attachments (id, tenant_id, item_id, filename, original_name, mime_type, size, storage_path, storage_provider, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now()) RETURNING *`,
+          [id, context.tenantId, itemId, input.fileName, input.originalName, input.mimeType, input.sizeBytes, input.storagePath, input.storageProvider ?? 'local'],
         )
         if (!row) throw new Error('Falha ao criar anexo no adapter PostgreSQL.')
         return mapAttachment(row)

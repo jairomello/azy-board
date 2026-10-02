@@ -11,7 +11,7 @@ process.env.LOGIN_PROGRESSIVE_DELAY_MS = '0'
 
 const { app } = await import('./index')
 const { db } = await import('./db/index')
-const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys, assistantConversations, assistantMessages, assistantRuns, assistantEvents, loginAttempts } = await import('./db/schema')
+const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, tenantAttachmentSettings, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys, assistantConversations, assistantMessages, assistantRuns, assistantEvents, loginAttempts } = await import('./db/schema')
 const { signJwt, generateApiKey, hashPassword } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 const { appendAnalyticsEvent, assertAnalyticsCutoverReady, createSprintCycle, ensureCoverage } = await import('./services/analytics')
@@ -1537,6 +1537,9 @@ describe('segurança de anexos', () => {
     itemId = generateId()
     const now = new Date().toISOString()
     await db.insert(items).values({ id: itemId, tenantId, projectId, type: 'TASK', parentId: null, moduleId: null, columnId: null, ancestryPath: '[]', title: 'Card com anexo', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, authorId: member.id, createdAt: now, updatedAt: now })
+    await db.insert(tenantAttachmentSettings).values({
+      tenantId, enabled: true, provider: 'local', updatedAt: now,
+    })
   })
 
   test('rejeita upload de MIME fora da allowlist (HTML e SVG)', async () => {
@@ -1601,6 +1604,85 @@ describe('segurança de anexos', () => {
     await db.insert(memberships).values({ id: generateId(), tenantId, userId: member.id, projectId: outroProjeto, role: 'MEMBER', createdAt: new Date().toISOString() })
     const response = await request(`/projects/${outroProjeto}/items/${itemId}/attachments/${attachmentId}/download`, memberToken)
     expect(response.status).toBe(404)
+  })
+
+  test('rejeita conteúdo que não corresponde ao MIME declarado (MIME forjado)', async () => {
+    const form = new FormData()
+    form.append('file', new File(['<svg>malicioso</svg>'], 'falsa.png', { type: 'image/png' }))
+    const response = await request(`/projects/${projectId}/items/${itemId}/attachments`, memberToken, { method: 'POST', body: form })
+    expect(response.status).toBe(415)
+    expect(await response.json()).toMatchObject({ error: { code: 'INVALID_FILE_CONTENT' } })
+  })
+
+  test('rejeita arquivo acima do limite configurado', async () => {
+    const form = new FormData()
+    form.append('file', new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'grande.txt', { type: 'text/plain' }))
+    const response = await request(`/projects/${projectId}/items/${itemId}/attachments`, memberToken, { method: 'POST', body: form })
+    expect(response.status).toBe(413)
+  })
+
+  test('não permite leitura cross-tenant', async () => {
+    const outroTenant = generateId()
+    await db.insert(tenants).values({ id: outroTenant, name: 'Outro tenant', slug: `out-${outroTenant}`, createdAt: new Date().toISOString() })
+    const intruso = await createUser(outroTenant, `intruso-${outroTenant}@test.local`, 'Intruso', 'ADMIN')
+    const intrusoToken = await token(intruso.id, outroTenant, intruso.email)
+    const attachmentId = await inserirAnexo('text/plain', 'cross.txt', 'x')
+    const response = await request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/download`, intrusoToken)
+    expect([403, 404]).toContain(response.status)
+    const list = await request(`/projects/${projectId}/items/${itemId}/attachments`, intrusoToken)
+    expect([403, 404]).toContain(list.status)
+  })
+
+  test('desativar anexos bloqueia upload e remoção, mas preserva leitura', async () => {
+    const attachmentId = await inserirAnexo('text/plain', 'preservado.txt', 'guarde')
+    await db.update(tenantAttachmentSettings).set({ enabled: false })
+      .where(eq(tenantAttachmentSettings.tenantId, tenantId))
+
+    const form = new FormData()
+    form.append('file', new File(['novo'], 'novo.txt', { type: 'text/plain' }))
+    const upload = await request(`/projects/${projectId}/items/${itemId}/attachments`, memberToken, { method: 'POST', body: form })
+    expect(upload.status).toBe(409)
+
+    const remove = await request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}`, memberToken, { method: 'DELETE' })
+    expect(remove.status).toBe(409)
+
+    const download = await request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/download`, memberToken)
+    expect(download.status).toBe(200)
+    expect(await download.text()).toBe('guarde')
+
+    const list = await request(`/projects/${projectId}/items/${itemId}/attachments`, memberToken)
+    expect(list.status).toBe(200)
+
+    await db.update(tenantAttachmentSettings).set({ enabled: true })
+      .where(eq(tenantAttachmentSettings.tenantId, tenantId))
+  })
+
+  test('configuração de anexos exige perfil MIN e não devolve segredo', async () => {
+    const response = await request('/tenant/attachments', memberToken)
+    expect(response.status).toBe(403)
+
+    const admin = await createUser(tenantId, `att-admin-${generateId()}@test.local`, 'Admin Anexos', 'ADMIN')
+    const adminToken = await token(admin.id, tenantId, admin.email)
+    const get = await request('/tenant/attachments', adminToken)
+    expect(get.status).toBe(200)
+    const body = await get.json() as Record<string, unknown>
+    expect(body).toHaveProperty('enabled')
+    expect(JSON.stringify(body)).not.toContain('secret')
+  })
+
+  test('configurar S3 sem chave de criptografia falha sem expor credencial', async () => {
+    const admin = await createUser(tenantId, `att-s3-${generateId()}@test.local`, 'Admin S3', 'ADMIN')
+    const adminToken = await token(admin.id, tenantId, admin.email)
+    const previousKey = process.env.ASSISTANT_ENCRYPTION_KEY
+    delete process.env.ASSISTANT_ENCRYPTION_KEY
+    const response = await request('/tenant/attachments', adminToken, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true, provider: 's3', region: 'us-east-1', bucket: 'b', accessKeyId: 'a', secret: 'segredo' }),
+    })
+    if (previousKey) process.env.ASSISTANT_ENCRYPTION_KEY = previousKey
+    expect(response.status).toBe(503)
+    expect(await response.text()).not.toContain('segredo')
   })
 })
 

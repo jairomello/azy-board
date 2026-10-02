@@ -454,10 +454,25 @@ export const attachments = pgTable('attachments', {
   mimeType: text('mime_type').notNull(),
   size: integer('size').notNull(),
   storagePath: text('storage_path').notNull(),
+  storageProvider: text('storage_provider').notNull().default('local'),
   createdAt: text('created_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   sizeCheck: check('attachments_size_check', sql`${table.size} >= 0`),
 }))
+
+export const tenantAttachmentSettings = pgTable('tenant_attachment_settings', {
+  tenantId: text('tenant_id').primaryKey().references(() => tenants.id, { onDelete: 'cascade' }),
+  enabled: boolean('enabled').notNull().default(false),
+  provider: text('provider').notNull().default('local'),
+  endpoint: text('endpoint'),
+  region: text('region'),
+  bucket: text('bucket'),
+  prefix: text('prefix'),
+  accessKeyId: text('access_key_id'),
+  secretCiphertext: text('secret_ciphertext'),
+  secretVersion: integer('secret_version'),
+  updatedAt: text('updated_at').notNull().default(defaultNowIso()),
+}, (table) => ({ providerCheck: check('tenant_attachment_settings_provider_check', sql`${table.provider} IN ('local','s3')`) }))
 
 // ---------------------------------------------------------------------------
 // CHECKLISTS

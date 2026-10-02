@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Info, Plus, Check, X, ChevronLeft, ChevronRight, CheckSquare, ListChecks, History, CalendarDays, UserRound } from 'lucide-react'
+import { Info, Plus, Check, X, ChevronLeft, ChevronRight, CheckSquare, ListChecks, History, CalendarDays, UserRound, Paperclip } from 'lucide-react'
 import type { ItemType, Priority, TaskStatus } from '@azy-board/domain'
 import type { Checklist } from '@azy-board/ui-contracts'
 import { InlineEdit } from './InlineEdit'
@@ -12,6 +12,7 @@ import { CardChildrenSection } from './CardChildrenSection'
 import { ActivityLogPanel } from './ActivityLogPanel'
 import { WorkLogPanel } from './WorkLogPanel'
 import { RichTextEditor } from './RichTextEditor'
+import { AttachmentsArea } from './AttachmentsArea'
 import { itemTypeMeta } from '../lib/itemTypeMeta'
 import { api } from '../lib/api'
 import { resolveAppUrl } from '../lib/appUrl'
@@ -107,7 +108,7 @@ interface ChildModalState {
   loading: boolean
 }
 
-type ItemArea = 'details' | 'subtasks' | 'checklists' | 'activity'
+type ItemArea = 'details' | 'subtasks' | 'checklists' | 'attachments' | 'activity'
 
 interface Props {
   item: FullItemData
@@ -184,6 +185,7 @@ export function ItemModal({
   const [subtaskCount, setSubtaskCount] = useState(0)
   const [subtaskRefreshKey, setSubtaskRefreshKey] = useState(0)
   const [activeArea, setActiveArea] = useState<ItemArea>('details')
+  const [attachmentsEnabled, setAttachmentsEnabled] = useState(false)
 
   // Resolução do papel do usuário atual no projeto
   const currentUserRole = members.find(m => m.userId === currentUserId)?.role ?? 'MEMBER'
@@ -230,6 +232,15 @@ export function ItemModal({
       .catch(() => { if (!cancelled) setActivityCount(0) })
     return () => { cancelled = true }
   }, [item.id, projectId])
+
+  // A área de anexos só é exibida quando a capacidade está habilitada no tenant.
+  useEffect(() => {
+    let cancelled = false
+    api.get<{ enabled: boolean }>('/tenant/attachments/enabled')
+      .then(res => { if (!cancelled) setAttachmentsEnabled(res.enabled) })
+      .catch(() => { if (!cancelled) setAttachmentsEnabled(false) })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     setTitle(item.title)
@@ -334,6 +345,7 @@ export function ItemModal({
     { id: 'details', label: t('areaDetails'), icon: CheckSquare },
     { id: 'subtasks', label: t('areaSubtasks'), icon: ListChecks, count: subtaskCount },
     { id: 'checklists', label: t('areaChecklists'), icon: ListChecks, count: checklists.length },
+    ...(attachmentsEnabled ? [{ id: 'attachments' as const, label: t('areaAttachments'), icon: Paperclip }] : []),
     { id: 'activity', label: t('areaActivity'), icon: History, count: activityCount, summary: totalMinutes != null ? formatDuration(totalMinutes, t('worked')) : undefined },
   ]
   const fieldClass = 'w-full px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/30'
@@ -383,6 +395,7 @@ export function ItemModal({
                 </>}
                 {activeArea === 'subtasks' && <div className="rounded-lg border border-border p-4"><div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-semibold">{t('areaSubtasks')} ({subtaskCount})</h3>{item.isLeaf && <button type="button" onClick={() => setShowSubtaskForm(true)} className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/20"><Plus className="h-3.5 w-3.5" />{t('addSubtask')}</button>}</div>{item.id !== '__new__' && <CardChildrenSection itemId={item.id} projectId={projectId} onOpenChild={handleOpenChild} onCountChange={setSubtaskCount} refreshKey={subtaskRefreshKey} />}{showSubtaskForm && <div className="mt-4"><AddCardForm onAdd={async (subTitle, subType) => { await onAddSubtask(item.id, subTitle, subType); setSubtaskRefreshKey(key => key + 1); setShowSubtaskForm(false) }} onCancel={() => setShowSubtaskForm(false)} /></div>}{item.id === '__new__' && <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {activeArea === 'checklists' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' ? <ChecklistSection itemId={item.id} projectId={projectId} initialChecklists={checklists} onChange={setChecklists} advancedChecklists={advancedChecklists} members={members} /> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
+                {activeArea === 'attachments' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' ? <AttachmentsArea itemId={item.id} projectId={projectId} canEdit={currentUserRole !== 'VIEWER'} /> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {activeArea === 'activity' && <div id="item-area-activity" className="grid min-h-[360px] min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">{item.id !== '__new__' ? <><ActivityLogPanel itemId={item.id} projectId={projectId} onCountChange={setActivityCount} /><WorkLogPanel itemId={item.id} projectId={projectId} currentUserId={currentUserId ?? ''} currentUserRole={currentUserRole} onCountChange={setWorkLogCount} onTotalChange={setTotalMinutes} /></> : <p className="col-span-full rounded-lg border border-border p-6 text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {error && <p className="text-sm text-red-500" role="alert">{error}</p>}
               </main>

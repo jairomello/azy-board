@@ -21,6 +21,7 @@ const EXEMPT = [
   "sprintsRouter.patch('/:sprintId/activate',",             // delega a transition()
   "sprintsRouter.patch('/:sprintId/open',",                 // delega a transition()
   "sprintsRouter.patch('/:sprintId/close',",                // delega a transition()
+  "attachmentSettingsRouter.put('/',",                      // configuração do tenant, fora da sala de projeto
 ]
 
 function routeSources(): Array<{ file: string; text: string }> {

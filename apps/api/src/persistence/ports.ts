@@ -51,6 +51,7 @@ import type {
   SprintRecord,
   StorageCleanupJobRecord,
   StoredAvatarRecord,
+  TenantAttachmentSettingsRecord,
   TagRecord,
   TenantRecord,
   UserCredentialRecord,
@@ -224,6 +225,11 @@ export interface FilePort {
   createAttachment(context: PersistenceContext, projectId: string, itemId: string, input: NewAttachmentRecord): Promise<AttachmentRecord>
   /** Remove metadados e enfileira a limpeza do objeto na MESMA transação (outbox). */
   deleteAttachmentWithCleanup(context: PersistenceContext, projectId: string, itemId: string, attachmentId: string): Promise<AttachmentRecord | null>
+}
+
+export interface TenantAttachmentSettingsPort {
+  get(tenantId: string): Promise<TenantAttachmentSettingsRecord | null>
+  save(tenantId: string, input: Omit<TenantAttachmentSettingsRecord, 'tenantId' | 'updatedAt'>): Promise<TenantAttachmentSettingsRecord>
 }
 
 export interface AvatarPort {
@@ -505,6 +511,7 @@ export interface UnitOfWork {
 }
 
 export interface PersistencePorts extends PersistenceTransaction {
+  attachmentSettings: TenantAttachmentSettingsPort
   tenants: TenantPort
   apiKeys: ApiKeyPort
   loginAttempts: LoginAttemptPort

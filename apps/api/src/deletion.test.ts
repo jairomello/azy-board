@@ -52,7 +52,7 @@ async function writeFile(content: string): Promise<string> {
 }
 
 async function fakeAdapter(deleteBehavior: () => Promise<void>): Promise<StorageAdapter> {
-  return { upload: async () => { throw new Error('não usado nos testes') }, delete: deleteBehavior }
+  return { upload: async () => { throw new Error('não usado nos testes') }, download: async () => null, delete: deleteBehavior }
 }
 
 describe('exclusão robusta de itens (Item 12)', () => {

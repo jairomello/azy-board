@@ -724,11 +724,26 @@ export const attachments = sqliteTable('attachments', {
   size: integer('size').notNull(),
   // [DB-SWAP] Caminho local (/uploads/tenantId/itemId/filename); trocar para S3 key em produção
   storagePath: text('storage_path').notNull(),
+  storageProvider: text('storage_provider').notNull().default('local'),
   createdAt: text('created_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   itemFk: foreignKey(() => ({ columns: [table.tenantId, table.itemId], foreignColumns: [items.tenantId, items.id] })),
   sizeCheck: check('attachments_size_check', sql`${table.size} >= 0`),
 }))
+
+export const tenantAttachmentSettings = sqliteTable('tenant_attachment_settings', {
+  tenantId: text('tenant_id').primaryKey().references(() => tenants.id, { onDelete: 'cascade' }),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
+  provider: text('provider').notNull().default('local'),
+  endpoint: text('endpoint'),
+  region: text('region'),
+  bucket: text('bucket'),
+  prefix: text('prefix'),
+  accessKeyId: text('access_key_id'),
+  secretCiphertext: text('secret_ciphertext'),
+  secretVersion: integer('secret_version'),
+  updatedAt: text('updated_at').notNull().default(defaultNowIso()),
+}, (table) => ({ providerCheck: check('tenant_attachment_settings_provider_check', sql`${table.provider} IN ('local','s3')`) }))
 
 // ---------------------------------------------------------------------------
 // CHECKLISTS — listas de verificação nomeadas dentro de qualquer card

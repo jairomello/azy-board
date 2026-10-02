@@ -14,6 +14,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1145.0",
+    "@azy-board/api-contracts": "workspace:*",
+    "@azy-board/assistant-contracts": "workspace:*",
+    "@azy-board/domain": "workspace:*",
+    "@azy-board/realtime-contracts": "workspace:*",
+    "@azy-board/tool-registry": "workspace:*",
+    "@azy-board/types": "workspace:*",
+    "@azy-board/ui-contracts": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/exporter-metrics-otlp-proto": "^0.57.0",
@@ -30,14 +38,7 @@
     "openai": "^7.9.0",
     "pg": "^8.23.0",
     "sharp": "^0.35.4",
-    "zod": "^4.6.4",
-    "@azy-board/tool-registry": "workspace:*",
-    "@azy-board/domain": "workspace:*",
-    "@azy-board/api-contracts": "workspace:*",
-    "@azy-board/realtime-contracts": "workspace:*",
-    "@azy-board/assistant-contracts": "workspace:*",
-    "@azy-board/ui-contracts": "workspace:*",
-    "@azy-board/types": "workspace:*"
+    "zod": "^4.6.4"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

@@ -259,7 +259,22 @@ export interface AttachmentRecord {
   mimeType: string
   sizeBytes: number
   storagePath: string
+  storageProvider: 'local' | 's3'
   createdAt: string
+}
+
+export interface TenantAttachmentSettingsRecord {
+  tenantId: string
+  enabled: boolean
+  provider: 'local' | 's3'
+  endpoint: string | null
+  region: string | null
+  bucket: string | null
+  prefix: string | null
+  accessKeyId: string | null
+  secretCiphertext: string | null
+  secretVersion: number | null
+  updatedAt: string
 }
 
 export interface ChecklistItemRecord {
@@ -311,6 +326,7 @@ export interface NewAttachmentRecord {
   mimeType: string
   sizeBytes: number
   storagePath: string
+  storageProvider?: 'local' | 's3'
 }
 
 export interface StoredAvatarRecord {

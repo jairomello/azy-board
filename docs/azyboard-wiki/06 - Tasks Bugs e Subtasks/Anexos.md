@@ -10,7 +10,16 @@ Anexos mantêm arquivos relevantes junto ao item de trabalho. Eles podem represe
 
 ## Situação atual
 
-A camada de anexos está disponível pela **API REST** e pelo catálogo de ferramentas MCP (consulta), e ainda **não possui interface própria** na janela de detalhes do item. Integrações e agentes podem anexar e consultar arquivos; a visualização dentro do Board será oferecida em uma versão futura.
+A funcionalidade de anexos é **configurável por organização (tenant)**. O administrador define, na aba de Anexos das configurações do projeto, se os anexos ficam habilitados e qual estratégia de armazenamento será usada. A janela de detalhes do item ganhou a aba **Anexos**, com envio, listagem, download, remoção e pré-visualização de imagens. A configuração também continua disponível pela **API REST** e pelo catálogo de ferramentas MCP (consulta).
+
+## Habilitar e configurar anexos
+
+Na seção **Arquivos anexados** das configurações, o administrador escolhe:
+
+- **Permitir anexos** — liga ou desliga a funcionalidade por tenant. Desligada, a aba some da janela do item e a API bloqueia novos envios e remoções; anexos já existentes continuam podendo ser listados e baixados.
+- **Armazenamento** — `Pasta local (simples)` para instalações simples, ou `Object storage S3-compatível` (o formato genérico aceita S3, MinIO e serviços equivalentes). Para o object storage, informe endpoint (opcional), região, bucket, prefixo e credenciais. A credencial secreta é guardada cifrada no backend e nunca é devolvida ao navegador.
+
+A configuração pode ser alterada a qualquer momento. Novos envios passam a usar o armazenamento escolhido, mas **nada é migrado ou apagado automaticamente**: mover arquivos entre estratégias e reapontar vínculos antigos é uma operação externa ao produto.
 
 ## Enviar um arquivo pela API
 
@@ -22,7 +31,8 @@ Content-Type: multipart/form-data
 - O campo do arquivo é enviado como `multipart/form-data`.
 - A API valida item, projeto, tenant, papel e tamanho antes de persistir.
 - O limite padrão é 10 MB por arquivo e pode ser configurado pela organização.
-- Arquivos acima do limite são rejeitados sem criar um anexo incompleto.
+- Só tipos previamente aprovados são aceitos (imagens raster, PDF, texto/Markdown/CSV/JSON, documentos Office, arquivos compactados e mídias de áudio/vídeo), e o **conteúdo real** é verificado — informar um tipo MIME diferente do conteúdo é rejeitado.
+- Arquivos acima do limite ou com tipo/conteúdo inválido são rejeitados sem criar um anexo incompleto.
 
 ## Consultar os anexos
 
@@ -77,10 +87,14 @@ O cliente envia `multipart/form-data`. A API valida item, projeto, tenant, papel
 
 ### Storage
 
-A camada de armazenamento abstrai filesystem local e provedores de objeto, como S3. O domínio trabalha com uma referência de storage sem depender do fornecedor.
+A interface `StorageAdapter` abstrai filesystem local e provedores S3-compatíveis. Cada anexo guarda o provedor que o criou e uma referência de storage opaca; o domínio não depende do fornecedor nem de caminhos do cliente. No modo local, o diretório fica fora de qualquer raiz pública e fora de arquivos estáticos. Trocar de provedor não migra nem reaponta objetos existentes.
 
-### Acesso
+### Configuração e segredos
 
-Listagem e download exigem autenticação. O caminho servido inclui tenant e item, e a API impede acesso a arquivos fora do contexto permitido.
+A configuração do tenant (`tenant_attachment_settings`) guarda habilitado, provedor, endpoint, região, bucket, prefixo e access key. A secret key é cifrada com a chave mestra do ambiente (`ASSISTANT_ENCRYPTION_KEY`) e nunca retorna nas respostas nem aparece em logs. Sem essa chave, salvar credenciais remotas falha com erro acionável.
+
+### Acesso e renderização
+
+Listagem, download e remoção exigem autenticação e membership no projeto; a consulta é isolada por tenant, projeto e item. Downloads passam por rota autorizada — não por URLs públicas. Apenas imagens raster aprovadas são renderizadas inline (lightbox); SVG e demais tipos ativos são entregues como `attachment`, com `X-Content-Type-Options: nosniff`. Remoções limpam o objeto físico de forma idempotente após o commit (outbox de limpeza).
 
 </details>
