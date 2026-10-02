@@ -8,7 +8,8 @@
 export type ToolFields = { fields: string[]; required: string[]; nested?: Record<string, string[]> }
 
 // Obrigatórios reais de `operations[].args` (batch e create_project_structure).
-export const OPERATION_ARGS_REQUIRED = ['ref', 'title', 'type', 'assignToCurrentUser'] as const
+// assignToCurrentUser é opcional: o servidor assume false quando omitido.
+export const OPERATION_ARGS_REQUIRED = ['ref', 'title', 'type'] as const
 
 export const toolFields: Record<string, ToolFields> = {
   list_projects: { fields: ['limit', 'cursor'], required: [] },
@@ -39,7 +40,7 @@ export const toolFields: Record<string, ToolFields> = {
   add_checklist_item: { fields: ['projectId', 'itemId', 'checklistId', 'text', 'dueDate', 'assigneeId', 'description'], required: ['projectId', 'itemId', 'checklistId', 'text'] },
   add_checklist_item_to_task: { fields: ['projectId', 'itemId', 'checklistName', 'text', 'dueDate', 'assigneeId', 'description'], required: ['projectId', 'itemId', 'checklistName', 'text'] },
   check_item: { fields: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checklistName', 'text', 'position', 'checked'], required: ['projectId', 'itemId', 'checked'] },
-  check_items: { fields: ['projectId', 'items'], required: ['projectId', 'items'] },
+  check_items: { fields: ['projectId', 'items'], required: ['projectId', 'items'], nested: { 'items[]': ['itemId', 'checked'] } },
   update_item: { fields: ['projectId', 'itemId', 'changes'], required: ['projectId', 'itemId', 'changes'], nested: { 'changes[]': ['field', 'operation'] } },
   update_items: { fields: ['projectId', 'filters', 'changes'], required: ['projectId', 'filters', 'changes'], nested: { filters: [], 'changes[]': ['field', 'operation'] } },
   delete_item: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
@@ -72,6 +73,15 @@ export const toolFields: Record<string, ToolFields> = {
   create_squad: { fields: ['projectId', 'name'], required: ['projectId', 'name'] },
   create_cost_center: { fields: ['projectId', 'code'], required: ['projectId', 'code'] },
 }
+
+// Campos aceitos na projeção `fields` de list_tasks. Fonte única entre o
+// validador MCP e a API — nomes desconhecidos são rejeitados em ambas as camadas.
+export const PROJECTION_FIELDS: readonly string[] = [
+  'id', 'title', 'type', 'status', 'columnId', 'isLeaf', 'parentId', 'moduleId', 'assigneeId', 'authorId',
+  'description', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'childrenCount', 'checklistProgress',
+  'sprintId', 'sprintName', 'tagIds', 'tagNames', 'priority', 'points', 'costCenterId', 'versionId',
+  'blockedReason', 'startDate', 'dueDate', 'position', 'sequenceCode', 'ancestryPath', 'createdAt', 'updatedAt',
+]
 
 // Campos realmente obrigatórios por ferramenta. O schema exposto pelo servidor MCP
 // usa esta lista em `required`; o schema interno (OpenAI strict) mantém todos os

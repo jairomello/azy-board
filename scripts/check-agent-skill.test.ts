@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { validateAgentSkill } from './check-agent-skill'
+import { validateAgentSkill, validateSkillMirror } from './check-agent-skill'
 
 async function fixture() {
   const projectRoot = await mkdtemp(join(tmpdir(), 'azyboard-skill-project-'))
@@ -42,5 +42,30 @@ describe('verificador da skill oficial', () => {
     await writeFile(join(baseDir, 'SKILL.md'), 'EASYBOARD_API_KEY=azb_1234567890abcdef')
     const errors = await validateAgentSkill(baseDir, projectRoot)
     expect(errors.some(error => error.includes('Possível segredo'))).toBe(true)
+  })
+})
+
+describe('espelho da skill no opencode', () => {
+  test('o espelho do repositório está sincronizado', async () => {
+    expect(await validateSkillMirror()).toEqual([])
+  })
+
+  test('detecta divergência de conteúdo além dos paths de referência', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'azyboard-skill-mirror-'))
+    await mkdir(join(projectRoot, 'skills/azyboard'), { recursive: true })
+    await mkdir(join(projectRoot, '.opencode/skills/azyboard'), { recursive: true })
+    await writeFile(join(projectRoot, 'skills/azyboard/SKILL.md'), 'conteudo oficial')
+    await writeFile(join(projectRoot, '.opencode/skills/azyboard/SKILL.md'), 'conteudo divergente')
+    const errors = await validateSkillMirror(projectRoot)
+    expect(errors).toContain('Skill divergente: .opencode/skills/azyboard/SKILL.md difere de skills/azyboard/SKILL.md (fora dos paths de referência)')
+  })
+
+  test('aceita diferenças somente nos paths de referência', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'azyboard-skill-mirror-'))
+    await mkdir(join(projectRoot, 'skills/azyboard'), { recursive: true })
+    await mkdir(join(projectRoot, '.opencode/skills/azyboard'), { recursive: true })
+    await writeFile(join(projectRoot, 'skills/azyboard/SKILL.md'), 'veja [x](references/x.md)')
+    await writeFile(join(projectRoot, '.opencode/skills/azyboard/SKILL.md'), 'veja [x](../../../skills/azyboard/references/x.md)')
+    expect(await validateSkillMirror(projectRoot)).toEqual([])
   })
 })

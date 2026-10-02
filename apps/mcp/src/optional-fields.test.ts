@@ -52,6 +52,12 @@ describe('contrato de campos opcionais do MCP', () => {
     }
   })
 
+  test('check_items expõe items[] exigindo apenas itemId e checked', async () => {
+    const tool = (await exposedTools()).find(item => item.name === 'check_items')!
+    const schema = tool.inputSchema as unknown as { properties: { items: { items: { required: string[] } } } }
+    expect(new Set(schema.properties.items.items.required)).toEqual(new Set(['itemId', 'checked']))
+  })
+
   test('update_items permite omitir opcionais aninhados', async () => {
     const tool = (await exposedTools()).find(item => item.name === 'update_items')!
     const schema = tool.inputSchema as unknown as { properties: { filters: { required?: string[] }; changes: { items: { required?: string[] } } } }
@@ -85,6 +91,25 @@ describe('validação aceita null e ausência em campos opcionais', () => {
 
   test('set_item_tags continua exigindo tagIds', () => {
     expect(() => validateToolArguments('set_item_tags', { projectId: UUID, itemId: 'i1', tagIds: null })).toThrow('Campo obrigatório ausente: tagIds')
+  })
+
+  test('check_item aceita resolução por checklistName + position sem text', () => {
+    expect(() => validateToolArguments('check_item', { projectId: UUID, itemId: 'i1', checklistName: 'Checklist', position: 2, checked: true })).not.toThrow()
+  })
+
+  test('check_items aceita entrada resolvida apenas por checklistName + position', () => {
+    expect(() => validateToolArguments('check_items', { projectId: UUID, items: [{ itemId: 'i1', checklistName: 'Checklist', position: 0, checked: true }] })).not.toThrow()
+  })
+
+  test('batch aceita assignToCurrentUser omitido e rejeita tipo errado', () => {
+    const operation = { tool: 'create_task', args: { ref: 'a', title: 'A', type: 'TASK', parentRef: null, moduleName: null } }
+    expect(() => validateToolArguments('batch', { projectId: UUID, operations: [operation] })).not.toThrow()
+    expect(() => validateToolArguments('batch', { projectId: UUID, operations: [{ tool: 'create_task', args: { ref: 'a', title: 'A', type: 'TASK', assignToCurrentUser: 'sim' } }] })).toThrow('assignToCurrentUser deve ser booleano')
+  })
+
+  test('list_tasks aceita projeção com priority, points, createdAt e updatedAt', () => {
+    expect(() => validateToolArguments('list_tasks', { projectId: UUID, fields: ['id', 'priority', 'points', 'createdAt', 'updatedAt'] })).not.toThrow()
+    expect(() => validateToolArguments('list_tasks', { projectId: UUID, fields: ['campoInexistente'] })).toThrow('campo desconhecido')
   })
 
   test('activity aceita o limite alinhado com a API e recusa acima', () => {

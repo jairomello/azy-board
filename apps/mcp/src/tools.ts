@@ -591,8 +591,10 @@ async function resolveChecklistStep(api: ApiCall, projectId: string, itemId: str
   const checklists = await toolListChecklists(api, projectId, itemId)
   const checklistsByName = checklists.filter(checklist => normalized(checklist.name) === normalized(checklistName ?? ''))
   if (checklistsByName.length !== 1) throw new Error(checklistsByName.length ? `CHECKLIST_AMBIGUOUS: checklistName "${checklistName}" corresponde a ${checklistsByName.length} checklists; informe checklistId` : `CHECKLIST_NOT_FOUND: checklistName "${checklistName}" não existe no card; liste as checklists`)
-  const candidates = checklistsByName[0]!.items.filter(step => normalized(step.text) === normalized(text ?? ''))
+  const candidates = text === undefined
+    ? checklistsByName[0]!.items
+    : checklistsByName[0]!.items.filter(step => normalized(step.text) === normalized(text))
   const positioned = position === undefined ? candidates : candidates.filter(step => step.position === position)
-  if (positioned.length !== 1) throw new Error(positioned.length ? `CHECKLIST_ITEM_AMBIGUOUS: use checklistItemId ou position; candidatos: ${positioned.map(step => step.id).join(', ')}` : `CHECKLIST_ITEM_NOT_FOUND: text "${text}" não existe em checklistName "${checklistName}"; liste os passos`)
+  if (positioned.length !== 1) throw new Error(positioned.length ? `CHECKLIST_ITEM_AMBIGUOUS: use checklistItemId ou position; candidatos: ${positioned.map(step => step.id).join(', ')}` : `CHECKLIST_ITEM_NOT_FOUND: ${text === undefined ? `position "${position}"` : `text "${text}"`} não existe em checklistName "${checklistName}"; liste os passos`)
   return { checklistId: checklistsByName[0]!.id, itemId: positioned[0]!.id }
 }

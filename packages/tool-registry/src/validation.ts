@@ -1,4 +1,4 @@
-import { isRegisteredTool, requiredFieldsFor } from './fields.js'
+import { isRegisteredTool, PROJECTION_FIELDS, requiredFieldsFor } from './fields.js'
 import { TOOL_TEXT_LIMITS } from './limits.js'
 
 export function assertNonEmptyString(value: unknown, field: string, maxLength = 200): asserts value is string {
@@ -69,7 +69,7 @@ export function validateToolArguments(name: string, args: Record<string, unknown
   }
   if (name === 'list_tasks' && input.fields != null) {
     if (!Array.isArray(input.fields) || input.fields.length > 30 || input.fields.some(field => typeof field !== 'string' || !field.trim())) throw new Error('fields deve ser uma lista de até 30 nomes não vazios')
-    const allowed = new Set(['id', 'title', 'type', 'status', 'columnId', 'isLeaf', 'parentId', 'moduleId', 'assigneeId', 'description', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'childrenCount', 'checklistProgress', 'sprintId', 'sprintName', 'tagIds', 'tagNames'])
+    const allowed = new Set(PROJECTION_FIELDS)
     const unknown = (input.fields as string[]).find(field => !allowed.has(field))
     if (unknown) throw new Error(`fields contém campo desconhecido: ${unknown}`)
   }
@@ -95,9 +95,9 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     }
   } else if (name === 'check_item') {
     const hasIds = typeof input.checklistId === 'string' && typeof input.checklistItemId === 'string'
-    const hasSemantic = typeof input.checklistName === 'string' && typeof input.text === 'string'
+    const hasSemantic = typeof input.checklistName === 'string' && (typeof input.text === 'string' || typeof input.position === 'number')
     if ((input.checklistId !== undefined && input.checklistId !== null) !== (input.checklistItemId !== undefined && input.checklistItemId !== null)) throw new Error('check_item exige checklistId e checklistItemId juntos')
-    if (!hasIds && !hasSemantic) throw new Error('check_item requer IDs ou checklistName + text (forma mínima: { "checklistName": "Checklist", "text": "Passo", "checked": true })')
+    if (!hasIds && !hasSemantic) throw new Error('check_item requer IDs ou checklistName + text/position (forma mínima: { "checklistName": "Checklist", "text": "Passo", "checked": true })')
   } else if (name === 'check_items') {
     if (!Array.isArray(input.items) || input.items.length < 1 || input.items.length > 100) throw new Error('items deve conter entre 1 e 100 entradas')
     for (const [index, raw] of (input.items as unknown[]).entries()) {
@@ -106,9 +106,9 @@ export function validateToolArguments(name: string, args: Record<string, unknown
       if (typeof entry.itemId !== 'string' || !entry.itemId.trim()) throw new Error(`items[${index}].itemId é obrigatório`)
       if (typeof entry.checked !== 'boolean') throw new Error(`items[${index}].checked deve ser booleano`)
       const hasIds = typeof entry.checklistId === 'string' && typeof entry.checklistItemId === 'string'
-      const hasSemantic = typeof entry.checklistName === 'string' && typeof entry.text === 'string'
+      const hasSemantic = typeof entry.checklistName === 'string' && (typeof entry.text === 'string' || typeof entry.position === 'number')
       if ((entry.checklistId != null) !== (entry.checklistItemId != null)) throw new Error(`items[${index}] exige checklistId e checklistItemId juntos`)
-      if (!hasIds && !hasSemantic) throw new Error(`items[${index}] requer IDs ou checklistName + text`)
+      if (!hasIds && !hasSemantic) throw new Error(`items[${index}] requer IDs ou checklistName + text/position`)
     }
   } else if (name === 'update_checklist_item') {
     const changes = input.changes
@@ -123,9 +123,9 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     if (value.description !== undefined && value.description !== null && typeof value.description !== 'string') throw new Error('description deve ser uma string')
     if (typeof value.description === 'string' && value.description.length > TOOL_TEXT_LIMITS.description) throw new Error(`description excede o limite de ${TOOL_TEXT_LIMITS.description} caracteres`)
     const hasIds = typeof input.checklistId === 'string' && typeof input.checklistItemId === 'string'
-    const hasSemantic = typeof input.checklistName === 'string' && typeof input.text === 'string'
+    const hasSemantic = typeof input.checklistName === 'string' && (typeof input.text === 'string' || typeof input.position === 'number')
     if ((input.checklistId !== undefined && input.checklistId !== null) !== (input.checklistItemId !== undefined && input.checklistItemId !== null)) throw new Error('update_checklist_item exige checklistId e checklistItemId juntos')
-    if (!hasIds && !hasSemantic) throw new Error('update_checklist_item requer IDs ou checklistName + text')
+    if (!hasIds && !hasSemantic) throw new Error('update_checklist_item requer IDs ou checklistName + text/position')
   } else if (name === 'update_checklist') {
     const changes = input.changes
     if (!changes || typeof changes !== 'object' || Array.isArray(changes)) throw new Error('changes deve ser um objeto com name e/ou position (forma mínima: { "name": "Nova checklist" })')
@@ -171,7 +171,7 @@ export function validateToolArguments(name: string, args: Record<string, unknown
       assertNonEmptyString(operation.args.ref, 'ref', TOOL_TEXT_LIMITS.ref)
       assertNonEmptyString(operation.args.title, 'title', TOOL_TEXT_LIMITS.title)
       assertEnum(operation.args.type, 'type', ['EPIC', 'STORY', 'TASK', 'BUG'])
-      if (typeof operation.args.assignToCurrentUser !== 'boolean') throw new Error('assignToCurrentUser deve ser booleano')
+      if (operation.args.assignToCurrentUser != null && typeof operation.args.assignToCurrentUser !== 'boolean') throw new Error('assignToCurrentUser deve ser booleano')
       const type = operation.args.type as string
       const parentRef = typeof operation.args.parentRef === 'string' ? operation.args.parentRef : null
       if (parentRef && !refs.has(parentRef)) throw new Error(`parentRef desconhecido ou fora de ordem: ${parentRef}`)

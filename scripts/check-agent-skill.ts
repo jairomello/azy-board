@@ -3,6 +3,18 @@ import { join } from 'node:path'
 const root = new URL('..', import.meta.url).pathname
 const skillDir = join(root, 'skills/azyboard')
 
+// Camada espelho carregada pelo opencode. O conteúdo deve ser idêntico ao oficial
+// exceto pelos paths de referências, que apontam de volta para skills/azyboard.
+export async function validateSkillMirror(projectRoot = root): Promise<string[]> {
+  const source = await Bun.file(join(projectRoot, 'skills/azyboard/SKILL.md')).text()
+  const copy = await Bun.file(join(projectRoot, '.opencode/skills/azyboard/SKILL.md')).text()
+  const normalize = (text: string) => text.replaceAll('../../../skills/azyboard/', '')
+  if (normalize(copy) !== normalize(source)) {
+    return ['Skill divergente: .opencode/skills/azyboard/SKILL.md difere de skills/azyboard/SKILL.md (fora dos paths de referência)']
+  }
+  return []
+}
+
 export async function validateAgentSkill(baseDir = skillDir, projectRoot = root): Promise<string[]> {
   const manifest = JSON.parse(await Bun.file(join(baseDir, 'manifest.json')).text()) as {
     entrypoint: string
@@ -51,7 +63,7 @@ export async function validateAgentSkill(baseDir = skillDir, projectRoot = root)
 }
 
 if (import.meta.main) {
-  const errors = await validateAgentSkill()
+  const errors = [...(await validateAgentSkill()), ...(await validateSkillMirror())]
   if (errors.length > 0) throw new Error(errors.join('\n'))
   console.log('Skill oficial consistente: catálogo, comandos e referências verificados')
 }

@@ -7,6 +7,7 @@ import { addTreeProgress, type TreeProgressNode } from '../services/treeProgress
 import type { RequestContext } from '@azy-board/api-contracts'
 import type { ActivityActorType, ActivitySource, ItemType } from '@azy-board/domain'
 import { parseWorkDuration } from '@azy-board/ui-contracts'
+import { PROJECTION_FIELDS } from '@azy-board/tool-registry'
 import { getIdempotent, saveIdempotent } from '../services/idempotency'
 import { claimItem, moveItem, releaseItem } from '../services/itemMutations'
 import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
@@ -278,7 +279,8 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
   const cursor = c.req.query('cursor')
   const includeDescriptions = c.req.query('includeDescriptions') === 'true'
   const requestedFields = c.req.query('fields')?.split(',').map(field => field.trim()).filter(Boolean) ?? null
-  const allowedFields = new Set(['id', 'title', 'type', 'status', 'columnId', 'isLeaf', 'parentId', 'moduleId', 'assigneeId', 'description', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'childrenCount', 'checklistProgress', 'sprintId', 'sprintName', 'tagIds', 'tagNames'])
+  // [DB-SWAP] Projeção é aplicada sobre o objeto plano já carregado — nada específico do driver.
+  const allowedFields = new Set(PROJECTION_FIELDS)
   const unknownField = requestedFields?.find(field => !allowedFields.has(field))
   if (unknownField) return c.json({ error: `Campo de projeção desconhecido: ${unknownField}`, code: 'INVALID_PROJECTION', retryable: false, details: { field: unknownField } }, 422)
   const page = Math.max(1, Number.parseInt(c.req.query('page') ?? '1', 10) || 1)
