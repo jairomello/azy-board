@@ -96,6 +96,10 @@
     "loadError": "No se pudo cargar el editor.",
     "retry": "Reintentar"
   },
+  "drafts": {
+    "descriptionRecovered": "Recuperamos un borrador sin guardar de esta descripción.",
+    "discard": "Descartar borrador"
+  },
   "priority": {
     "LOW": "Baja",
     "MEDIUM": "Media",

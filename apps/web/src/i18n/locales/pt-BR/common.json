@@ -96,6 +96,10 @@
     "loadError": "Não foi possível carregar o editor.",
     "retry": "Tentar novamente"
   },
+  "drafts": {
+    "descriptionRecovered": "Recuperamos um rascunho não salvo desta descrição.",
+    "discard": "Descartar rascunho"
+  },
   "priority": {
     "LOW": "Baixa",
     "MEDIUM": "Média",

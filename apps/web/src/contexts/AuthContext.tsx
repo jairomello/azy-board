@@ -3,6 +3,7 @@ import { api } from '../lib/api'
 import { queryClient } from '../lib/queryClient'
 import i18n from '../i18n'
 import { gravarMostrarProjetosOcultos, lerMostrarProjetosOcultos } from '../lib/sessionPreferences'
+import { clearAllItemDrafts } from '../lib/itemDraft'
 import { applyTheme, getEffectiveTheme, persistAutoThemeByTime, readAutoThemeByTime, readManualTheme } from '../lib/theme'
 import type { GlobalGroup } from '@azy-board/domain'
 import type { Language, LightShellTheme, Theme } from '@azy-board/ui-contracts'
@@ -121,6 +122,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function logout() {
     await api.post('/auth/logout', {})
     resetarProjetosOcultos()
+    // Descarta rascunhos de descrição do usuário para não deixar texto de trabalho no navegador.
+    clearAllItemDrafts()
     setUser(null)
     // Isolamento entre identidades: descarta o cache da conta anterior.
     queryClient.clear()

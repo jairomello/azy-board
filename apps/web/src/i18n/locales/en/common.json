@@ -96,6 +96,10 @@
     "loadError": "Could not load the editor.",
     "retry": "Try again"
   },
+  "drafts": {
+    "descriptionRecovered": "We recovered an unsaved draft of this description.",
+    "discard": "Discard draft"
+  },
   "priority": {
     "LOW": "Low",
     "MEDIUM": "Medium",

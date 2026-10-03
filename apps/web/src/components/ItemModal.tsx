@@ -16,6 +16,7 @@ import { AttachmentsArea } from './AttachmentsArea'
 import { itemTypeMeta } from '../lib/itemTypeMeta'
 import { api } from '../lib/api'
 import { resolveAppUrl } from '../lib/appUrl'
+import { useItemDescriptionDraft } from '../hooks/useItemDescriptionDraft'
 
 // Área de links carregada sob demanda: mantém o chunk do Board fora do orçamento
 // (padrão já usado por RichTextEditor e DashboardVisuals).
@@ -176,7 +177,7 @@ export function ItemModal({
   const [points, setPoints] = useState(item.points?.toString() ?? '')
   const [startDate, setStartDate] = useState(item.startDate ?? '')
   const [dueDate, setDueDate] = useState(item.dueDate ?? '')
-  const [description, setDescription] = useState(item.description ?? '')
+  const { description, setDescription, draftRecovered, discardDraft, commitDraft } = useItemDescriptionDraft(projectId, item.id, item.description ?? null)
   const [sequenceCode, setSequenceCode] = useState(item.sequenceCode ?? '')
   const [showSubtaskForm, setShowSubtaskForm] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -260,7 +261,6 @@ export function ItemModal({
     setPoints(item.points?.toString() ?? '')
     setStartDate(item.startDate ?? '')
     setDueDate(item.dueDate ?? '')
-    setDescription(item.description ?? '')
     setSequenceCode(item.sequenceCode ?? '')
     setActivityCount(0)
     setWorkLogCount(0)
@@ -333,6 +333,7 @@ export function ItemModal({
         description: description || null,
         sequenceCode: sequenceCode || null,
       }, selectedTags.map(t => t.id))
+      commitDraft()
       onClose()
     } catch {
       setError(t('errorSave'))
@@ -390,7 +391,7 @@ export function ItemModal({
               <main id={`item-area-${activeArea}`} role="tabpanel" aria-labelledby={`item-tab-${activeArea}`} className="min-w-0 space-y-4">
                 {activeArea === 'details' && <>
                   {!item.isLeaf && <div className="flex gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300"><Info className="mt-0.5 h-4 w-4 shrink-0" /><p className="text-xs leading-relaxed">{t('moveBlocked')}</p></div>}
-                  <div className="rounded-lg border border-border bg-card p-4"><h3 className="mb-3 text-sm font-semibold">{t('descriptionLabel')}</h3><RichTextEditor key={item.id} content={description} onChange={setDescription} placeholder={t('richText.itemPlaceholder')} fieldLabel={t('richText.itemField')} minHeight="120px" /></div>
+                  <div className="rounded-lg border border-border bg-card p-4"><h3 className="mb-3 text-sm font-semibold">{t('descriptionLabel')}</h3>{draftRecovered && <div role="status" className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300"><p className="text-xs leading-relaxed">{t('drafts.descriptionRecovered')}</p><button type="button" onClick={discardDraft} className="shrink-0 rounded px-2 py-1 text-xs font-medium underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-primary">{t('drafts.discard')}</button></div>}<RichTextEditor key={item.id} content={description} onChange={setDescription} placeholder={t('richText.itemPlaceholder')} fieldLabel={t('richText.itemField')} minHeight="120px" /></div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     {property(t('itemTypeLabel'), <select value={type} onChange={e => setType(e.target.value as 'TASK' | 'BUG')} className={fieldClass}>{TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}
                     {epics.length > 0 && property(t('parentStory'), <StorySelector epics={epics} stories={stories} value={parentId} onChange={setParentId} onCreateStory={onCreateStory} />)}

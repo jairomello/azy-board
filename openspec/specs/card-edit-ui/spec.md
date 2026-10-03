@@ -20,7 +20,7 @@ O sistema SHALL permitir editar o título do card diretamente no board ao dar du
 ---
 
 ### Requirement: Modal de edição de card organizada em accordions
-O sistema SHALL apresentar campos do card, descrição, subtasks, checklists e Histórico em áreas independentes, preservando edição, criação, abertura de filhos e salvamento. A área Histórico SHALL exibir dois painéis independentes: Auditoria de alterações (eventos automáticos) e Diário de trabalho (registros manuais, com total de duração e formulário inline). A modal SHALL manter título, descrição rich text (Tiptap), prioridade, responsável, story pai, tags, pontos e datas de início e fim.
+O sistema SHALL apresentar campos do card, descrição, subtasks, checklists e Histórico em áreas independentes, preservando edição, criação, abertura de filhos e salvamento. A área Histórico SHALL exibir dois painéis independentes: Auditoria de alterações (eventos automáticos) e Diário de trabalho (registros manuais, com total de duração e formulário inline). A modal SHALL manter título, descrição rich text (Tiptap), prioridade, responsável, story pai, tags, pontos e datas de início e fim. A descrição SHALL ter um rascunho local persistido automaticamente e preservado quando a modal é fechada sem salvar, sendo removido após salvamento confirmado.
 
 #### Scenario: Seções independentes
 - **WHEN** usuário abre a área Histórico de uma Task, Bug ou Subtask
@@ -40,7 +40,8 @@ O sistema SHALL apresentar campos do card, descrição, subtasks, checklists e H
 
 #### Scenario: Fechar modal sem salvar
 - **WHEN** usuário clica em Cancelar ou pressiona Escape fora de um editor de diário ativo
-- **THEN** modal fecha sem persistir alterações, inclusive alterações feitas em outras áreas
+- **THEN** modal fecha sem persistir alterações no servidor, inclusive alterações feitas em outras áreas
+- **AND** o rascunho local da descrição permanece recuperável na próxima abertura do mesmo item
 
 #### Scenario: Criar subtask pela modal
 - **WHEN** usuário clica em Adicionar subtask dentro da modal
