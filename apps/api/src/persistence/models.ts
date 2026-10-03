@@ -93,6 +93,8 @@ export interface ProjectRecord {
   plannedPoints: number | null
   plannedHours: number | null
   scope: string | null
+  icon: string | null
+  color: string | null
   createdAt: string
 }
 
@@ -218,6 +220,8 @@ export interface ItemRecord {
   dueDate: string | null
   authorId: string | null
   versionId: string | null
+  icon: string | null
+  color: string | null
   createdAt: string
   updatedAt: string
 }

@@ -93,6 +93,8 @@ export interface ProjectSummary {
   plannedPoints?: number | null
   plannedHours?: number | null
   scope?: string | null
+  icon?: string | null
+  color?: string | null
   role?: string
 }
 
@@ -123,7 +125,7 @@ export async function toolGetShadowMarkdown(api: ApiCall, projectId: string): Pr
   return api(`/projects/${projectId}/board.md`)
 }
 
-export async function toolCreateProject(api: ApiCall, args: { name: string; description?: string; boardMode?: 'HIERARCHICAL' | 'SIMPLE'; managerUserId?: string; startDate?: string | null; plannedEndDate?: string | null; plannedPoints?: number | null; plannedHours?: number | null; scope?: string | null }): Promise<ProjectSummary> {
+export async function toolCreateProject(api: ApiCall, args: { name: string; description?: string; boardMode?: 'HIERARCHICAL' | 'SIMPLE'; managerUserId?: string; startDate?: string | null; plannedEndDate?: string | null; plannedPoints?: number | null; plannedHours?: number | null; scope?: string | null; icon?: string | null; color?: string | null }): Promise<ProjectSummary> {
   if (!args.name?.trim()) throw new Error('name é obrigatório')
   const boardMode = typeof args.boardMode === 'string'
     ? /^(default|padr[aã]o)$/i.test(args.boardMode.trim()) ? undefined : /^(simple|simples)$/i.test(args.boardMode) ? 'SIMPLE' : /^(hierarchical|hierarquico|hierárquico)$/i.test(args.boardMode) ? 'HIERARCHICAL' : args.boardMode.toUpperCase()
@@ -131,10 +133,10 @@ export async function toolCreateProject(api: ApiCall, args: { name: string; desc
   return api('/projects', 'POST', { ...args, boardMode, name: args.name.trim() }) as Promise<ProjectSummary>
 }
 
-export async function toolCreateProjectStructure(api: ApiCall, args: { name: string; description?: string; boardMode?: 'HIERARCHICAL' | 'SIMPLE'; operations: ProjectStructureOperation[]; managerUserId?: string; startDate?: string | null; plannedEndDate?: string | null; plannedPoints?: number | null; plannedHours?: number | null; scope?: string | null }): Promise<unknown> {
+export async function toolCreateProjectStructure(api: ApiCall, args: { name: string; description?: string; boardMode?: 'HIERARCHICAL' | 'SIMPLE'; operations: ProjectStructureOperation[]; managerUserId?: string; startDate?: string | null; plannedEndDate?: string | null; plannedPoints?: number | null; plannedHours?: number | null; scope?: string | null; icon?: string | null; color?: string | null }): Promise<unknown> {
   if (!args.name?.trim()) throw new Error('name é obrigatório')
   if (!Array.isArray(args.operations) || args.operations.length < 1 || args.operations.length > 50) throw new Error('operations deve conter entre 1 e 50 entradas')
-  const project = await toolCreateProject(api, { name: args.name, description: args.description, boardMode: args.boardMode, managerUserId: args.managerUserId, startDate: args.startDate, plannedEndDate: args.plannedEndDate, plannedPoints: args.plannedPoints, plannedHours: args.plannedHours, scope: args.scope })
+  const project = await toolCreateProject(api, { name: args.name, description: args.description, boardMode: args.boardMode, managerUserId: args.managerUserId, startDate: args.startDate, plannedEndDate: args.plannedEndDate, plannedPoints: args.plannedPoints, plannedHours: args.plannedHours, scope: args.scope, icon: args.icon, color: args.color })
   const batch = await toolBatch(api, { projectId: project.id, operations: args.operations, atomic: true })
   return { project, batch }
 }
@@ -381,6 +383,8 @@ export async function toolCreateTask(
     points?:     number
     description?: string
     versionId?: string
+    icon?:       string
+    color?:      string
   }
 ): Promise<Item> {
   const { projectId, ...taskData } = args

@@ -77,6 +77,8 @@ projectsRouter.post('/', async (c) => {
         plannedPoints: body.plannedPoints ?? null,
         plannedHours: body.plannedHours ?? null,
         scope: body.scope ?? null,
+        icon: body.icon ?? null,
+        color: body.color ?? null,
       },
       defaultColumns: DEFAULT_COLUMNS,
       defaultModuleName: 'Geral',
@@ -130,6 +132,7 @@ projectsRouter.get('/:id/board', requireRole('VIEWER'), async (c) => {
     advancedChecklists: storedProject.advancedChecklists, startDate: storedProject.startDate,
     plannedEndDate: storedProject.plannedEndDate, plannedPoints: storedProject.plannedPoints,
     plannedHours: storedProject.plannedHours, scope: storedProject.scope,
+    icon: storedProject.icon, color: storedProject.color,
   } : null
   if (!project) return c.json({ error: 'Projeto não encontrado' }, 404)
 
@@ -261,6 +264,8 @@ projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
   if (body.plannedPoints !== undefined) updates.plannedPoints = body.plannedPoints
   if (body.plannedHours !== undefined) updates.plannedHours = body.plannedHours
   if (body.scope !== undefined) updates.scope = body.scope
+  if (body.icon !== undefined) updates.icon = body.icon
+  if (body.color !== undefined) updates.color = body.color
   const boardModeChanged = body.boardMode !== undefined && body.boardMode !== currentProject.boardMode
   if (body.boardMode !== undefined && !boardModeChanged) updates.boardMode = body.boardMode
   if (body.isRestricted !== undefined) updates.isRestricted = body.isRestricted

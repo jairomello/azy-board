@@ -90,8 +90,8 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     if (!Array.isArray(input.changes) || input.changes.length < 1 || input.changes.length > 20) throw new Error('changes deve conter entre 1 e 20 alterações')
     const fields = new Set<string>()
     const dateFields = new Set(['startDate', 'dueDate'])
-    const clearableFields = new Set(['description', 'points', 'assignee', 'column', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode'])
-    const allowedFields = new Set(['title', 'description', 'priority', 'type', 'status', 'points', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode'])
+    const clearableFields = new Set(['description', 'points', 'assignee', 'column', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode', 'icon', 'color'])
+    const allowedFields = new Set(['title', 'description', 'priority', 'type', 'status', 'points', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode', 'icon', 'color'])
     for (const raw of input.changes as Array<Record<string, unknown>>) {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw) || typeof raw.field !== 'string' || !allowedFields.has(raw.field)) throw new Error('changes[] deve conter field e operation (forma mínima: [{ "field": "title", "operation": "SET" }])')
       if (fields.has(raw.field)) throw new Error(`Campo duplicado em changes: ${raw.field}`)
@@ -106,6 +106,8 @@ export function validateToolArguments(name: string, args: Record<string, unknown
       if (raw.field === 'status' && raw.operation === 'SET') assertEnum(raw.value, 'status', ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'])
       if (raw.field === 'points' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^\d+$/.test(raw.value))) throw new Error('points deve ser um inteiro não negativo')
       if (raw.field === 'sequenceCode' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^[ESTB]\d+$/.test(raw.value))) throw new Error('sequenceCode deve seguir o padrão [ESTB]\\d+ (ex.: T12)')
+      if (raw.field === 'icon' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^[a-z0-9-]+$/.test(raw.value))) throw new Error('icon deve ser um nome kebab-case do catálogo de ícones')
+      if (raw.field === 'color' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(raw.value))) throw new Error('color deve ser um hex no formato #RRGGBB')
     }
   } else if (name === 'check_item') {
     const hasIds = typeof input.checklistId === 'string' && typeof input.checklistItemId === 'string'

@@ -124,6 +124,8 @@
   "teamMemberSettingsDenied": "Los miembros del equipo no pueden acceder a la configuración del proyecto.",
   "projectSettingsDescription": "Organiza el flujo, las personas y la estructura sin salir del espacio de trabajo.",
   "boardFormatDescription": "Elige entre un flujo único para proyectos simples o una organización por módulos, épicas e historias.",
+  "projectAppearanceDescription": "Elige un ícono y un color para identificar el proyecto.",
+  "projectAppearanceSaveError": "No se pudo guardar la apariencia del proyecto.",
   "simple": "Simple",
   "simpleBoardDescription": "Un Kanban único con una historia fija.",
   "hierarchical": "Jerárquico",

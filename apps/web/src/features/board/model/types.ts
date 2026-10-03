@@ -24,7 +24,7 @@ export interface ArchivedItem {
 
 export type { Column, Sprint }
 export interface Module { id: string; name: string; position?: number }
-export interface ProjectContext { name: string; boardMode?: BoardMode; simpleStoryId?: string | null; advancedChecklists?: boolean }
+export interface ProjectContext { name: string; boardMode?: BoardMode; simpleStoryId?: string | null; advancedChecklists?: boolean; icon?: string | null; color?: string | null }
 
 export interface ItemData extends CardData {
   type: ItemType

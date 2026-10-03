@@ -162,6 +162,16 @@
   "settings": "Settings",
   "users": "Users",
   "attachments": "Attachments",
+  "appearance": {
+    "choose": "Appearance",
+    "icon": "Icon",
+    "color": "Color",
+    "searchIcon": "Search icon",
+    "defaultIcon": "Default icon",
+    "defaultColor": "Theme default color",
+    "noIconFound": "No icon found",
+    "clear": "Remove customization"
+  },
   "adminUsers": {
     "context": "Tenant users",
     "heading": "Administration",

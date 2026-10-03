@@ -79,6 +79,7 @@ export default function BoardPage() {
     boardMode, setBoardMode,
     simpleStoryId, setSimpleStoryId,
     advancedChecklists,
+    projectIcon, projectColor,
     loading, setLoading,
     syncState,
     invalidateBoard,
@@ -917,6 +918,8 @@ export default function BoardPage() {
     <AppShell
            projectId={projectId!}
       projectName={projectName}
+      projectIcon={projectIcon}
+      projectColor={projectColor}
       assistantSelectedItem={assistantSelectedItem}
       assistantScreen={view === 'tree' ? 'project-board-tree' : 'project-board-kanban'}
       assistantBoardView={view}

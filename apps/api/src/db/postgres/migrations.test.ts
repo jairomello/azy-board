@@ -19,7 +19,7 @@ async function resetDatabase(client: Client) {
 
 async function runMigrations(client: Client) {
   const migrationsDir = join(import.meta.dir, 'migrations')
-  const files = ['0000_pale_warlock.sql', '0001_composite_fks.sql', '0003_items_tenant_project_parent_index.sql', '0004_assistant_model_configs.sql', '0005_assistant_run_context.sql']
+  const files = ['0000_pale_warlock.sql', '0001_composite_fks.sql', '0003_items_tenant_project_parent_index.sql', '0004_assistant_model_configs.sql', '0005_assistant_run_context.sql', '0009_project_and_item_icons.sql']
   for (const file of files) {
     const sql = readFileSync(join(migrationsDir, file), 'utf8')
     await client.query(sql)

@@ -3,7 +3,7 @@
 Definir os requisitos da capacidade card management.
 ## Requirements
 ### Requirement: CRUD completo de cards (tasks folha)
-O sistema SHALL permitir criar, visualizar, editar e excluir cards. Apenas tasks folha (sem filhos) são exibidas como cards móveis no Kanban. Campos: título, descrição (markdown), labels, prioridade (LOW | MEDIUM | HIGH | CRITICAL), responsável, story pai, tags, pontos (inteiro, opcional), status, sprint, versão, centro de custo e datas de início/fim quando disponíveis. A visualização e edição de TASK/BUG SHALL usar um modal amplo e responsivo com cabeçalho contextual, navegação entre Detalhes, Subtasks, Checklists e Histórico, conteúdo principal e painel de propriedades.
+O sistema SHALL permitir criar, visualizar, editar e excluir cards. Apenas tasks folha (sem filhos) são exibidas como cards móveis no Kanban. Campos: título, descrição (markdown), labels, prioridade (LOW | MEDIUM | HIGH | CRITICAL), responsável, story pai, tags, pontos (inteiro, opcional), status, sprint, versão, centro de custo, datas de início/fim quando disponíveis e os campos opcionais de aparência `icon` (nome no catálogo de ícones) e `color` (hex da paleta). A visualização e edição de TASK/BUG SHALL usar um modal amplo e responsivo com cabeçalho contextual, navegação entre Detalhes, Subtasks, Checklists e Histórico, conteúdo principal e painel de propriedades.
 
 #### Scenario: Abrir edição de card
 - **WHEN** membro clica em um card de TASK ou BUG
@@ -36,6 +36,10 @@ O sistema SHALL permitir criar, visualizar, editar e excluir cards. Apenas tasks
 #### Scenario: Exclusão de card
 - **WHEN** membro com perfil MEMBER ou superior exclui card
 - **THEN** card é removido do board e do banco; se a task excluída era o último filho de uma task pai, a task pai volta a ser folha e reaparece no Kanban
+
+#### Scenario: Editar aparência do card
+- **WHEN** membro escolhe um `icon` do catálogo e/ou uma `color` da paleta no modal do card e salva
+- **THEN** o sistema persiste os valores, o ícone do item aparece no card do Kanban com a cor definida e a mudança é propagada em tempo real
 
 ### Requirement: Breadcrumb dinâmico exibido no card
 O sistema SHALL exibir em cada card o caminho hierárquico completo abaixo do título: `Projeto > Módulo > Épico > Story > Task Pai > ... > Task Atual`.

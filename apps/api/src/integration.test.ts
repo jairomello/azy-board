@@ -2333,3 +2333,111 @@ describe('numeração de sequenceCode na criação e edição em lote', () => {
     expect((await (await request(`/projects/${projectId}/items/${taskA.id}`, sessionToken)).json() as { sequenceCode: string | null }).sequenceCode).toBeNull()
   })
 })
+
+describe('aparência de projeto e item (Card T14)', () => {
+  let tenantId: string
+  let adminToken: string
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Tenant Aparência', slug: `t-${tenantId}`, createdAt: new Date().toISOString() })
+    const admin = await createUser(tenantId, 'admin-appearance@test.com', 'Admin Aparência')
+    adminToken = await token(admin.id, tenantId, admin.email)
+  })
+
+  async function criarProjetoSimples(name: string, extra: Record<string, unknown> = {}): Promise<{ id: string; simpleStoryId: string | null }> {
+    const response = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, boardMode: 'SIMPLE', ...extra }),
+    })
+    expect(response.status).toBe(201)
+    return response.json() as Promise<{ id: string; simpleStoryId: string | null }>
+  }
+
+  test('POST /projects persiste e retorna icon e color', async () => {
+    const response = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto Aparência', icon: 'rocket', color: '#22c55e' }),
+    })
+    expect(response.status).toBe(201)
+    const body = await response.json() as { icon: string | null; color: string | null }
+    expect(body.icon).toBe('rocket')
+    expect(body.color).toBe('#22c55e')
+  })
+
+  test('POST /projects sem aparência persiste null', async () => {
+    const response = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto Sem Aparência' }),
+    })
+    const body = await response.json() as { icon: string | null; color: string | null }
+    expect(body.icon).toBeNull()
+    expect(body.color).toBeNull()
+  })
+
+  test('PATCH /projects/:id define e limpa icon/color', async () => {
+    const project = await criarProjetoSimples('Projeto Aparência PATCH')
+    const set = await request(`/projects/${project.id}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ icon: 'target', color: '#3b82f6' }),
+    })
+    expect(set.status).toBe(200)
+    expect((await set.json() as { icon: string | null; color: string | null })).toMatchObject({ icon: 'target', color: '#3b82f6' })
+
+    const clear = await request(`/projects/${project.id}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ icon: null, color: null }),
+    })
+    expect(clear.status).toBe(200)
+    expect((await clear.json() as { icon: string | null; color: string | null })).toMatchObject({ icon: null, color: null })
+  })
+
+  test('POST/PATCH /projects rejeita ícone fora do catálogo e cor fora da paleta', async () => {
+    const invalidIcon = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto Ícone Inválido', icon: 'not-an-icon' }),
+    })
+    expect(invalidIcon.status).toBe(400)
+
+    const invalidColor = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto Cor Inválida', color: '#000000' }),
+    })
+    expect(invalidColor.status).toBe(400)
+
+    const project = await criarProjetoSimples('Projeto Aparência Inválida')
+    const patch = await request(`/projects/${project.id}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ icon: 'nope' }),
+    })
+    expect(patch.status).toBe(400)
+  })
+
+  test('POST/PATCH de item define, limpa e valida icon/color', async () => {
+    const project = await criarProjetoSimples('Projeto Item Aparência')
+    const created = await request(`/projects/${project.id}/items`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Card com aparência', type: 'TASK', icon: 'bug', color: '#ef4444' }),
+    })
+    expect(created.status).toBe(201)
+    const item = await created.json() as { id: string; icon: string | null; color: string | null }
+    expect(item.icon).toBe('bug')
+    expect(item.color).toBe('#ef4444')
+
+    const cleared = await request(`/projects/${project.id}/items/${item.id}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ icon: null, color: null }),
+    })
+    expect(cleared.status).toBe(200)
+    expect((await cleared.json() as { item: { icon: string | null; color: string | null } }).item).toMatchObject({ icon: null, color: null })
+
+    const invalid = await request(`/projects/${project.id}/items/${item.id}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ icon: 'invalid-icon' }),
+    })
+    expect(invalid.status).toBe(400)
+  })
+})

@@ -28,6 +28,8 @@ export interface ProjectSettingsData {
   plannedPoints: string
   plannedHours: string
   scope: string
+  icon: string | null
+  color: string | null
 }
 
 // Resposta do servidor para os dados do projeto na seção `project` de Settings.
@@ -43,4 +45,6 @@ export interface SettingsProject {
   plannedPoints?: number | null
   plannedHours?: number | null
   scope?: string | null
+  icon?: string | null
+  color?: string | null
 }

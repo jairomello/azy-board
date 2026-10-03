@@ -124,6 +124,8 @@
   "teamMemberSettingsDenied": "Team members cannot access project settings.",
   "projectSettingsDescription": "Organize workflow, people, and structure without leaving the workspace.",
   "boardFormatDescription": "Choose between a single flow for simple projects or organization by modules, epics, and stories.",
+  "projectAppearanceDescription": "Choose an icon and color to identify the project.",
+  "projectAppearanceSaveError": "Could not save the project appearance.",
   "simple": "Simple",
   "simpleBoardDescription": "A single Kanban with one fixed story.",
   "hierarchical": "Hierarchical",

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { ItemType } from '@azy-board/domain'
 import { InlineEdit } from './InlineEdit'
 import { itemTypeMeta } from '../lib/itemTypeMeta'
+import { itemIconComponent } from '../lib/iconCatalog'
 
 interface Props {
   titleId: string
@@ -15,6 +16,8 @@ interface Props {
   statusLabel?: string
   autoEdit?: boolean
   onBack?: () => void
+  icon?: string | null
+  color?: string | null
 }
 
 // Cabeçalho contextual das modais de item: breadcrumb, ícone do tipo,
@@ -30,10 +33,13 @@ export function ItemDetailHeader({
   statusLabel,
   autoEdit = false,
   onBack,
+  icon,
+  color,
 }: Props) {
   const { t } = useTranslation('board')
   const typeMeta = itemTypeMeta(type)
   const TypeIcon = typeMeta.icon
+  const HeaderIcon = icon ? itemIconComponent(icon) : null
 
   return (
     <div className="flex min-w-0 flex-1 items-start gap-2">
@@ -61,7 +67,7 @@ export function ItemDetailHeader({
         </div>
         <div className="flex min-w-0 items-center gap-2">
           <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${typeMeta.iconClass}`}>
-            <TypeIcon className="h-4 w-4" />
+            {HeaderIcon ? <HeaderIcon className="h-4 w-4" style={{ color: color ?? undefined }} /> : <TypeIcon className="h-4 w-4" />}
           </span>
           <div className="min-w-0 flex-1">
             <h2 id={titleId} className="text-base font-semibold text-foreground sm:text-lg">

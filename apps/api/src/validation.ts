@@ -1,5 +1,6 @@
 import type { Context } from 'hono'
 import { z } from 'zod'
+import { isIconColor, isIconName } from '@azy-board/ui-contracts'
 import { passwordPolicyIssues } from './services/passwordPolicy'
 
 type Schema = z.ZodType
@@ -11,6 +12,9 @@ export const itemTypeSchema = z.enum(['EPIC', 'STORY', 'TASK', 'BUG'])
 const optionalText = (max = 20_000) => z.string().max(max)
 const optionalId = z.string().min(1).nullable().optional()
 const optionalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
+// Aparência (Card T14): `icon` precisa pertencer ao ICON_CATALOG e `color` à ICON_COLORS.
+const optionalIcon = z.string().refine(isIconName, 'Ícone não pertence ao catálogo').nullable().optional()
+const optionalIconColor = z.string().refine(isIconColor, 'Cor não pertence à paleta de ícones').nullable().optional()
 
 export const loginSchema = z.object({
   email: z.string().trim().email().max(320),
@@ -30,6 +34,8 @@ const projectFields = {
   plannedPoints: z.number().finite().nullable().optional(),
   plannedHours: z.number().finite().nullable().optional(),
   scope: optionalText(100_000).nullable().optional(),
+  icon: optionalIcon,
+  color: optionalIconColor,
 }
 
 export const createProjectSchema = z.object(projectFields).strict()
@@ -64,6 +70,8 @@ export const createItemSchema = z.object({
   dueDate: optionalDate,
   versionId: optionalId,
   costCenterId: optionalId,
+  icon: optionalIcon,
+  color: optionalIconColor,
   sprintId: optionalId,
   tagIds: z.array(z.string().min(1)).max(500).optional(),
   idempotencyKey: z.string().min(1).max(200).optional(),
@@ -86,6 +94,8 @@ export const updateItemSchema = z.object({
   blockedReason: optionalText(2_000).nullable().optional(),
   versionId: optionalId,
   costCenterId: optionalId,
+  icon: optionalIcon,
+  color: optionalIconColor,
   sprintId: optionalId,
   tagIds: z.array(z.string().min(1)).max(500).optional(),
   expectedUpdatedAt: z.string().min(1).max(40).optional(),

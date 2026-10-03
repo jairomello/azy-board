@@ -36,6 +36,8 @@ interface ItemRow {
   due_date: string | null
   author_id: string | null
   version_id: string | null
+  icon: string | null
+  color: string | null
   created_at: string
   updated_at: string
 }
@@ -75,6 +77,8 @@ const itemColumns = {
   dueDate: 'due_date',
   authorId: 'author_id',
   versionId: 'version_id',
+  icon: 'icon',
+  color: 'color',
 } as const
 
 function toItem(row: ItemRow): ItemRecord {
@@ -108,6 +112,8 @@ function toItem(row: ItemRow): ItemRecord {
     dueDate: row.due_date,
     authorId: row.author_id,
     versionId: row.version_id,
+    icon: row.icon,
+    color: row.color,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }

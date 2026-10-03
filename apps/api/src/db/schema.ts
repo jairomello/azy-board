@@ -337,6 +337,11 @@ export const projects = sqliteTable('projects', {
   plannedPoints: integer('planned_points'),
   plannedHours: real('planned_hours'),
   scope: text('scope'),
+  // Aparência do projeto: `icon` é um nome do ICON_CATALOG e `color` um hex da
+  // ICON_COLORS; ambos nullable (null = usar o default na apresentação).
+  // [TENANT] Lidos sempre dentro do tenant do projeto; validação ocorre no serviço.
+  icon: text('icon'),
+  color: text('color'),
   createdAt: text('created_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   // [TENANT] Habilita FKs compostas de tabelas filhas para projects(tenant_id, id)
@@ -532,6 +537,11 @@ export const items = sqliteTable('items', {
   authorId: text('author_id'),
   // Versão de entrega prevista — opcional
   versionId: text('version_id'),
+  // Aparência do item: `icon` é um nome do ICON_CATALOG e `color` um hex da
+  // ICON_COLORS; ambos nullable (null = usar o default na apresentação).
+  // [TENANT] Lidos sempre dentro do tenant do item; validação ocorre no serviço.
+  icon: text('icon'),
+  color: text('color'),
   createdAt: text('created_at').notNull().default(defaultNowIso()),
   updatedAt: text('updated_at').notNull().default(defaultNowIso()),
 }, (table) => ({

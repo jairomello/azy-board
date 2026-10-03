@@ -23,11 +23,14 @@ import { useTranslation } from 'react-i18next'
 import { useAssistant, type AssistantSelectedItem } from '../contexts/AssistantContext'
 import type { AssistantScreen } from '@azy-board/assistant-contracts'
 import { isProjectNameTruncated, truncateProjectName } from '../lib/projectName'
+import { projectIconComponent } from '../lib/iconCatalog'
 
 interface AppShellProps {
   children: ReactNode
   projectId?: string
   projectName?: string
+  projectIcon?: string | null
+  projectColor?: string | null
   sectionLabel: string
   contextLabel?: string
   headerMeta?: ReactNode
@@ -52,6 +55,8 @@ export function AppShell({
   children,
   projectId,
   projectName,
+  projectIcon,
+  projectColor,
   sectionLabel,
   contextLabel,
   headerMeta,
@@ -90,6 +95,7 @@ export function AppShell({
                 : 'global-other'
   const displayTitle = projectId && projectName ? truncateProjectName(projectName) : (contextLabel ?? sectionLabel)
   const titleIsTruncated = Boolean(projectId && projectName && isProjectNameTruncated(projectName))
+  const ProjectIcon = projectIcon ? projectIconComponent(projectIcon) : null
 
   useEffect(() => {
     if (projectId) localStorage.setItem('last-project-id', projectId)
@@ -277,7 +283,10 @@ export function AppShell({
         </nav>
 
         <div className="mt-auto px-2 hidden min-[1280px]:block">
-          <p className="text-xs font-medium text-shell-foreground truncate">{projectName ?? tCommon('workspace')}</p>
+          <p className="text-xs font-medium text-shell-foreground truncate flex items-center gap-1.5">
+            {ProjectIcon ? <ProjectIcon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: projectColor ?? undefined }} /> : null}
+            <span className="truncate">{projectName ?? tCommon('workspace')}</span>
+          </p>
           <p className="text-[11px] text-shell-muted mt-0.5">{tCommon('connectedWork')}</p>
         </div>
       </div>
@@ -334,7 +343,12 @@ export function AppShell({
         <div className="hidden sm:block lg:hidden w-px h-8 bg-white/15 flex-shrink-0" aria-hidden />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-[11px] text-shell-muted">
-            {projectName && <span className="truncate">{projectName}</span>}
+            {projectName && (
+              <span className="flex items-center gap-1 min-w-0">
+                {ProjectIcon ? <ProjectIcon className="w-3 h-3 flex-shrink-0" style={{ color: projectColor ?? undefined }} /> : null}
+                <span className="truncate">{projectName}</span>
+              </span>
+            )}
             {projectName && <span aria-hidden>•</span>}
             <span>{sectionLabel}</span>
           </div>

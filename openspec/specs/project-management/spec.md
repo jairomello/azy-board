@@ -1,11 +1,9 @@
 ## Purpose
 
 Definir os requisitos da capacidade project management.
-
 ## Requirements
-
 ### Requirement: Criar projeto
-O sistema SHALL permitir que um usuário autenticado crie um novo projeto informando nome, descrição opcional, modo de board opcional (`HIERARCHICAL` ou `SIMPLE`), os sinalizadores opcionais de visibilidade `isRestricted` e `isHidden`, e os campos opcionais de planejamento `startDate`, `plannedEndDate`, `plannedPoints`, `plannedHours` e `scope`. Quando o modo não for informado, SHALL usar `HIERARCHICAL`. Quando os sinalizadores de visibilidade não forem informados, SHALL usar `false` para ambos, produzindo um projeto visível para todos os membros do tenant conforme as regras de escopo por grupo. Quando os campos de planejamento não forem informados, SHALL persisti-los como `null`. Quando `managerUserId` não for informado, o sistema SHALL atribuir automaticamente o usuário autenticado (`ctx.userId`) como gerente do projeto.
+O sistema SHALL permitir que um usuário autenticado crie um novo projeto informando nome, descrição opcional, modo de board opcional (`HIERARCHICAL` ou `SIMPLE`), os sinalizadores opcionais de visibilidade `isRestricted` e `isHidden`, os campos opcionais de planejamento `startDate`, `plannedEndDate`, `plannedPoints`, `plannedHours` e `scope`, e os campos opcionais de aparência `icon` (nome no catálogo de ícones) e `color` (hex da paleta). Quando o modo não for informado, SHALL usar `HIERARCHICAL`. Quando os sinalizadores de visibilidade não forem informados, SHALL usar `false` para ambos, produzindo um projeto visível para todos os membros do tenant conforme as regras de escopo por grupo. Quando os campos de planejamento não forem informados, SHALL persisti-los como `null`. Quando `icon` e/ou `color` não forem informados, SHALL persisti-los como `null` (a interface aplica o ícone e a cor default). Quando `managerUserId` não for informado, o sistema SHALL atribuir automaticamente o usuário autenticado (`ctx.userId`) como gerente do projeto.
 
 #### Scenario: Criação bem-sucedida com colunas padrão
 - **WHEN** usuário envia nome do projeto
@@ -48,6 +46,15 @@ O sistema SHALL permitir que um usuário autenticado crie um novo projeto inform
 #### Scenario: Projeto criado com campos de planejamento
 - **WHEN** usuário cria projeto informando `startDate`, `plannedEndDate`, `plannedPoints`, `plannedHours` e/ou `scope`
 - **THEN** sistema persiste os campos de planejamento informados e os retorna na resposta
+
+#### Scenario: Projeto criado com ícone e cor
+- **WHEN** usuário cria projeto informando `icon` e/ou `color` válidos
+- **THEN** sistema persiste os valores de aparência informados e os retorna na resposta
+
+#### Scenario: Projeto criado sem informação de aparência
+- **WHEN** usuário cria projeto sem informar `icon` nem `color`
+- **THEN** sistema persiste ambos como `null` e a interface aplica os defaults de ícone e cor
+
 ### Requirement: Listar projetos do usuário
 O sistema SHALL retornar, na listagem de projetos, apenas os projetos que o usuário autenticado tem permissão de ver: para Membros de Equipe e Gerentes, somente os projetos com vínculo (membership ativa ou indicação como Gerente Geral); para Admin e Root, os projetos do tenant exceto os restritos sem vínculo. Em todos os casos, o sistema SHALL excluir projetos ocultos, a menos que a requisição informe `includeHidden=true`.
 
@@ -237,3 +244,4 @@ O sistema SHALL permitir que um usuário com papel `ADMIN` exclua um projeto a p
 #### Scenario: Falha aborta a exclusão
 - **WHEN** ocorre erro ao excluir qualquer registro filho durante a operação
 - **THEN** sistema faz rollback da transação, mantém o projeto e seus registros intactos e retorna erro ao cliente
+

@@ -597,6 +597,8 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
       costCenterId,
       startDate: body.startDate ?? null,
       dueDate: body.dueDate ?? null,
+      icon: body.icon ?? null,
+      color: body.color ?? null,
       position: 0,
     }, {
       tagIds,
@@ -732,6 +734,7 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
     'title', 'description', 'priority', 'type', 'status', 'points', 'assigneeId',
     'columnId', 'parentId', 'moduleId', 'startDate', 'dueDate', 'blockedReason',
     'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'versionId', 'costCenterId', 'sprintId', 'sequenceCode',
+    'icon', 'color',
   ])
   const safeBody = Object.fromEntries(Object.entries(body).filter(([field]) => writableFields.has(field))) as Omit<typeof body, 'authorId'>
   const updates: Record<string, unknown> = { ...safeBody, updatedAt: new Date().toISOString() }

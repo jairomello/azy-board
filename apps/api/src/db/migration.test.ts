@@ -244,7 +244,8 @@ describe('migration de checklists detalhados (Card T5)', () => {
     // Base legada (antes da 0027): projects ainda não possui advanced_checklists e
     // checklist_items ainda não possui due_date/assignee_id/description — SQL puro.
     sqlite.query("INSERT INTO projects (id, tenant_id, name, board_mode, is_restricted, is_hidden, created_at) VALUES ('t5-project', 't5-tenant', 'T5', 'HIERARCHICAL', 0, 0, ?)").run(now)
-    await database.insert(schema.items).values({ id: 't5-item', tenantId: 't5-tenant', projectId: 't5-project', type: 'TASK', ancestryPath: '[]', title: 'Card', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now })
+    // Base legada (antes da 0027): items ainda não possui icon/color (Card T14) — SQL puro.
+    sqlite.query("INSERT INTO items (id, tenant_id, project_id, type, ancestry_path, title, status, priority, position, created_at, updated_at) VALUES ('t5-item', 't5-tenant', 't5-project', 'TASK', '[]', 'Card', 'NOT_STARTED', 'MEDIUM', 0, ?, ?)").run(now, now)
     await database.insert(schema.checklists).values({ id: 't5-cl', tenantId: 't5-tenant', itemId: 't5-item', name: 'CL', position: 0, createdAt: now })
     sqlite.query("INSERT INTO checklist_items (id, tenant_id, checklist_id, text, checked, position) VALUES ('t5-ci', 't5-tenant', 't5-cl', 'Passo legado', 1, 0)").run()
 
@@ -334,6 +335,39 @@ describe('migration de tentativas de login (Item 28)', () => {
     insert.run('ok', '1.2.3.4', 'a@b.com', 'FAILURE', now)
 
     expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+})
+
+describe('migration de aparência de projeto e item (Card T14)', () => {
+  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+
+  test('adiciona icon/color nullable em projects e items com foreign_key_check limpo', () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    migrate(database, { migrationsFolder })
+    migrate(database, { migrationsFolder })
+
+    const projectColumns = (sqlite.query("PRAGMA table_info('projects')").all() as Array<{ name: string }>).map(column => column.name)
+    const itemColumns = (sqlite.query("PRAGMA table_info('items')").all() as Array<{ name: string }>).map(column => column.name)
+    for (const name of ['icon', 'color']) {
+      expect(projectColumns).toContain(name)
+      expect(itemColumns).toContain(name)
+    }
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+
+  test('persiste os campos de aparência do projeto', async () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    await migrate(database, { migrationsFolder })
+    const now = new Date().toISOString()
+    await database.insert(schema.tenants).values({ id: 'appearance-tenant', name: 'Appearance', slug: 'appearance', createdAt: now })
+    await database.insert(schema.projects).values({ id: 'appearance-project', tenantId: 'appearance-tenant', name: 'Appearance', icon: 'rocket', color: '#22c55e', createdAt: now })
+    const [project] = await database.select().from(schema.projects).where(eq(schema.projects.id, 'appearance-project'))
+    expect(project?.icon).toBe('rocket')
+    expect(project?.color).toBe('#22c55e')
     sqlite.close()
   })
 })

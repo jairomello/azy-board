@@ -12,9 +12,19 @@ import type { BoardMode, ProjectVisibility } from '@azy-board/domain'
 import { canCreateProject } from '../permissions'
 import { VisibilityToggles } from '../components/VisibilityToggles'
 import { ProjectVisibilityBadges } from '../components/ProjectVisibilityBadges'
+import { AppearancePicker } from '../components/AppearancePicker'
+import { projectIconComponent } from '../lib/iconCatalog'
 
 type ProjectRole = 'ADMIN' | 'MEMBER' | 'VIEWER'
-interface Project extends ProjectVisibility { id: string; name: string; description: string | null; role: ProjectRole; boardMode: BoardMode }
+interface Project extends ProjectVisibility { id: string; name: string; description: string | null; role: ProjectRole; boardMode: BoardMode; icon?: string | null; color?: string | null }
+
+function ProjectGlyph({ project }: { project: Project }) {
+  if (project.icon) {
+    const Icon = projectIconComponent(project.icon)
+    return <Icon className="w-5 h-5" style={{ color: project.color ?? undefined }} />
+  }
+  return <span className="text-primary font-bold text-lg">{project.name[0]?.toUpperCase()}</span>
+}
 
 export default function ProjectsPage() {
   const { t } = useTranslation()
@@ -27,6 +37,8 @@ export default function ProjectsPage() {
   const [newBoardMode, setNewBoardMode] = useState<BoardMode>('HIERARCHICAL')
   const [newIsRestricted, setNewIsRestricted] = useState(false)
   const [newIsHidden, setNewIsHidden] = useState(false)
+  const [newIcon, setNewIcon] = useState<string | null>(null)
+  const [newColor, setNewColor] = useState<string | null>(null)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [editingName, setEditingName] = useState('')
   const [editError, setEditError] = useState('')
@@ -54,12 +66,16 @@ export default function ProjectsPage() {
         boardMode: newBoardMode,
         isRestricted: newIsRestricted,
         isHidden: newIsHidden,
+        icon: newIcon,
+        color: newColor,
       })
       await invalidateProjects()
       setNewName('')
       setNewBoardMode('HIERARCHICAL')
       setNewIsRestricted(false)
       setNewIsHidden(false)
+      setNewIcon(null)
+      setNewColor(null)
       setShowNew(false)
     } catch (error) {
       if (!isAbortError(error)) toast(error instanceof Error ? error.message : t('projectUpdateFailed'), 'error')
@@ -167,8 +183,8 @@ export default function ProjectsPage() {
                 >
                  <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-primary to-status-review opacity-60" />
                  <div className="flex items-start justify-between">
-                   <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover/card:bg-primary/20 transition">
-                   <span className="text-primary font-bold text-lg">{p.name[0]?.toUpperCase()}</span>
+                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover/card:bg-primary/20 transition">
+                   <ProjectGlyph project={p} />
                    </div>
                    <div className="flex items-center gap-2">
                       {p.role === 'ADMIN' && (
@@ -245,6 +261,10 @@ export default function ProjectsPage() {
                      {t('simpleBoardHint')}
                   </p>
                 </div>
+               <div>
+                 <span className="text-xs font-medium text-muted-foreground block mb-1.5">{t('appearance.choose')}</span>
+                 <AppearancePicker icon={newIcon} color={newColor} onChange={({ icon, color }) => { setNewIcon(icon); setNewColor(color) }} />
+               </div>
                <VisibilityToggles
                  restricted={newIsRestricted}
                  hidden={newIsHidden}

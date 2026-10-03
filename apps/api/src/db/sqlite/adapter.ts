@@ -96,7 +96,7 @@ function mapProject(row: typeof projects.$inferSelect): ProjectRecord {
     boardMode: row.boardMode, simpleStoryId: row.simpleStoryId, managerUserId: row.managerUserId,
     isRestricted: row.isRestricted, isHidden: row.isHidden, advancedChecklists: row.advancedChecklists,
     startDate: row.startDate, plannedEndDate: row.plannedEndDate, plannedPoints: row.plannedPoints,
-    plannedHours: row.plannedHours, scope: row.scope, createdAt: row.createdAt,
+    plannedHours: row.plannedHours, scope: row.scope, icon: row.icon, color: row.color, createdAt: row.createdAt,
   }
 }
 
@@ -125,7 +125,8 @@ function mapItem(row: typeof items.$inferSelect): ItemRecord {
     statusBeforeArchive: row.statusBeforeArchive, costCenterId: row.costCenterId, priority: row.priority,
     points: row.points, assigneeId: row.assigneeId, assigneeApiKeyId: row.assigneeApiKeyId,
     blockedReason: row.blockedReason, position: row.position, startDate: row.startDate, dueDate: row.dueDate,
-    authorId: row.authorId, versionId: row.versionId, createdAt: row.createdAt, updatedAt: row.updatedAt,
+    authorId: row.authorId, versionId: row.versionId, icon: row.icon, color: row.color,
+    createdAt: row.createdAt, updatedAt: row.updatedAt,
   }
 }
 
@@ -525,6 +526,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           advancedChecklists: input.advancedChecklists ?? false, startDate: input.startDate ?? null,
           plannedEndDate: input.plannedEndDate ?? null, plannedPoints: input.plannedPoints ?? null,
           plannedHours: input.plannedHours ?? null, scope: input.scope ?? null,
+          icon: input.icon ?? null, color: input.color ?? null,
         }).returning()
         if (!row) throw new Error('Falha ao criar projeto no adapter SQLite.')
         return mapProject(row)

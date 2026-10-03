@@ -35,6 +35,8 @@ export interface BoardData {
   boardMode: BoardMode
   simpleStoryId: string | null
   advancedChecklists: boolean
+  projectIcon: string | null
+  projectColor: string | null
 }
 
 export type BoardItemsResponse = ItemData[] | { data: ItemData[] }
@@ -57,6 +59,8 @@ const EMPTY_BOARD: BoardData = {
   boardMode: 'HIERARCHICAL',
   simpleStoryId: null,
   advancedChecklists: false,
+  projectIcon: null,
+  projectColor: null,
 }
 
 function resolveValue<T>(previous: T, value: SetStateAction<T>): T {
@@ -144,7 +148,7 @@ export function useBoardData(projectId: string | undefined) {
         api.get<ProjectVersion[]>(`/projects/${pid}/versions`, { signal }).catch(() => [] as ProjectVersion[]),
         api.get<CostCenter[]>(`/projects/${pid}/cost-centers`, { signal }).catch(() => [] as CostCenter[]),
         api.get<{ id: string; name: string }[]>(`/projects/${pid}/squads`, { signal }).catch(() => []),
-        api.get<ProjectContext>(`/projects/${pid}`, { signal }).catch(() => ({ name: '', boardMode: 'HIERARCHICAL' as const, simpleStoryId: null, advancedChecklists: false })),
+        api.get<ProjectContext>(`/projects/${pid}`, { signal }).catch(() => ({ name: '', boardMode: 'HIERARCHICAL' as const, simpleStoryId: null, advancedChecklists: false, icon: null, color: null })),
       ])
       return {
         columns: cols,
@@ -160,6 +164,8 @@ export function useBoardData(projectId: string | undefined) {
         boardMode: proj.boardMode ?? 'HIERARCHICAL',
         simpleStoryId: proj.simpleStoryId ?? null,
         advancedChecklists: Boolean(proj.advancedChecklists),
+        projectIcon: proj.icon ?? null,
+        projectColor: proj.color ?? null,
       } satisfies BoardData
     },
   })
@@ -237,6 +243,7 @@ export function useBoardData(projectId: string | undefined) {
     boardMode: data.boardMode, setBoardMode,
     simpleStoryId: data.simpleStoryId, setSimpleStoryId,
     advancedChecklists: data.advancedChecklists, setAdvancedChecklists,
+    projectIcon: data.projectIcon, projectColor: data.projectColor,
     loading: query.isPending, setLoading,
     syncState,
     invalidateBoard,

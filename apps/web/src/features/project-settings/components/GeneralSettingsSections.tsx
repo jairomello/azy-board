@@ -4,6 +4,7 @@ import type { BoardMode } from '@azy-board/domain'
 import { RichTextEditor } from '../../../components/RichTextEditor'
 import { toEditorHtml } from '../../../lib/richText'
 import { VisibilityToggles } from '../../../components/VisibilityToggles'
+import { AppearancePicker } from '../../../components/AppearancePicker'
 import { AccordionSection } from '../../../components/AccordionSection'
 import { SettingsSection } from './SettingsSection'
 import type { Manager, Member } from '../model/types'
@@ -18,6 +19,8 @@ interface GeneralSettingsProps {
   plannedPoints: string
   plannedHours: string
   scope: string
+  icon: string | null
+  color: string | null
   manager: Manager | null
   managerUserId: string
   members: Member[]
@@ -25,6 +28,9 @@ interface GeneralSettingsProps {
   openSections: Set<string>
   onToggleSection: (id: string) => void
   onBoardModeChange: (mode: BoardMode) => void
+  onAppearanceChange: (value: { icon: string | null; color: string | null }) => void
+  savingAppearance: boolean
+  appearanceError: string
   onVisibilityChange: (field: 'isRestricted' | 'isHidden', value: boolean) => void
   onAdvancedChecklistsChange: (value: boolean) => void
   onPlanningChange: (field: string, value: string | number | null) => void
@@ -48,8 +54,8 @@ interface GeneralSettingsProps {
 
 export function GeneralSettingsSections({
   boardMode, isRestricted, isHidden, advancedChecklists, startDate, plannedEndDate, plannedPoints, plannedHours,
-  scope, manager, managerUserId, members, isAdmin, openSections, onToggleSection,
-  onBoardModeChange, onVisibilityChange, onAdvancedChecklistsChange, onPlanningChange, onPlanningFieldChange, onManagerChange, onScopeChange,
+  scope, icon, color, manager, managerUserId, members, isAdmin, openSections, onToggleSection,
+  onBoardModeChange, onAppearanceChange, savingAppearance, appearanceError, onVisibilityChange, onAdvancedChecklistsChange, onPlanningChange, onPlanningFieldChange, onManagerChange, onScopeChange,
   pendingBoardMode, savingBoardMode, boardModeError, savingVisibility, visibilityError,
   savingAdvancedChecklists, advancedChecklistsError, savingPlanning, planningError, savingManager, onConfirmBoardMode, onCancelBoardMode, onSaveManager,
 }: GeneralSettingsProps) {
@@ -74,6 +80,13 @@ export function GeneralSettingsSections({
       </div>
       {!isAdmin && <p className="text-xs text-muted-foreground mt-3">{t('settings:adminOnly')}</p>}
       {boardModeError && <p className="text-sm text-destructive mt-3">{boardModeError}</p>}
+    </SettingsSection>
+
+    <SettingsSection id="appearance" title={t('common:appearance.choose')} {...section('appearance')}>
+      <p className="text-sm text-muted-foreground mb-4">{t('settings:projectAppearanceDescription')}</p>
+      <AppearancePicker icon={icon} color={color} onChange={onAppearanceChange} disabled={!isAdmin || savingAppearance} />
+      {!isAdmin && <p className="text-xs text-muted-foreground mt-3">{t('settings:adminOnly')}</p>}
+      {appearanceError && <p className="text-sm text-destructive mt-3">{appearanceError}</p>}
     </SettingsSection>
 
     <SettingsSection id="visibility" title={t('settings:projectVisibility')} {...section('visibility')}>

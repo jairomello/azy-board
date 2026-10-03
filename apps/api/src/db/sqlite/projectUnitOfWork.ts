@@ -23,6 +23,8 @@ interface ProjectRow {
   planned_points: number | null
   planned_hours: number | null
   scope: string | null
+  icon: string | null
+  color: string | null
   created_at: string
 }
 
@@ -32,7 +34,7 @@ function mapProject(row: ProjectRow): ProjectRecord {
     boardMode: row.board_mode, simpleStoryId: row.simple_story_id, managerUserId: row.manager_user_id,
     isRestricted: row.is_restricted, isHidden: row.is_hidden, advancedChecklists: row.advanced_checklists,
     startDate: row.start_date, plannedEndDate: row.planned_end_date, plannedPoints: row.planned_points,
-    plannedHours: row.planned_hours, scope: row.scope, createdAt: row.created_at,
+    plannedHours: row.planned_hours, scope: row.scope, icon: row.icon, color: row.color, createdAt: row.created_at,
   }
 }
 
@@ -56,7 +58,7 @@ const projectPatchColumns = {
   name: 'name', description: 'description', managerUserId: 'manager_user_id',
   isRestricted: 'is_restricted', isHidden: 'is_hidden', advancedChecklists: 'advanced_checklists',
   startDate: 'start_date', plannedEndDate: 'planned_end_date', plannedPoints: 'planned_points',
-  plannedHours: 'planned_hours', scope: 'scope',
+  plannedHours: 'planned_hours', scope: 'scope', icon: 'icon', color: 'color',
 } as const
 
 function updateProjectRow(database: Database, tenantId: string, projectId: string, boardMode: BoardMode, simpleStoryId: string | null, patch: ProjectPatch) {
@@ -94,18 +96,20 @@ export function createSqliteProjectUnitOfWork(database: Database) {
         plannedPoints: projectInput.plannedPoints ?? null,
         plannedHours: projectInput.plannedHours ?? null,
         scope: projectInput.scope ?? null,
+        icon: projectInput.icon ?? null,
+        color: projectInput.color ?? null,
         createdAt: now,
       }
 
       return runSqliteAtomic(database, () => {
         database.query(`INSERT INTO projects
           (id, tenant_id, name, description, board_mode, simple_story_id, manager_user_id, is_restricted, is_hidden,
-           advanced_checklists, start_date, planned_end_date, planned_points, planned_hours, scope, created_at)
-          VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+           advanced_checklists, start_date, planned_end_date, planned_points, planned_hours, scope, icon, color, created_at)
+          VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .run(
             project.id, project.tenantId, project.name, project.description, project.boardMode, project.managerUserId,
             project.isRestricted, project.isHidden, project.advancedChecklists, project.startDate, project.plannedEndDate,
-            project.plannedPoints, project.plannedHours, project.scope, project.createdAt,
+            project.plannedPoints, project.plannedHours, project.scope, project.icon, project.color, project.createdAt,
           )
 
         database.query(`INSERT INTO memberships

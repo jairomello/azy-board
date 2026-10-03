@@ -11,6 +11,7 @@ function board(allItems: ItemData[]): BoardData {
   return {
     columns: [], allItems, modules: [], sprints: [], members: [], projectTags: [], projectVersions: [],
     projectCostCenters: [], projectSquads: [], projectName: 'P', boardMode: 'HIERARCHICAL', simpleStoryId: null, advancedChecklists: false,
+    projectIcon: null, projectColor: null,
   }
 }
 

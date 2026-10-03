@@ -152,6 +152,8 @@ function mapProject(row: PgRow): ProjectRecord {
     plannedPoints: row.planned_points as number | null,
     plannedHours: row.planned_hours as number | null,
     scope: row.scope as string | null,
+    icon: row.icon as string | null,
+    color: row.color as string | null,
     createdAt: row.created_at as string,
   }
 }
@@ -211,6 +213,8 @@ function mapItem(row: PgRow): ItemRecord {
     dueDate: row.due_date as string | null,
     authorId: row.author_id as string | null,
     versionId: row.version_id as string | null,
+    icon: row.icon as string | null,
+    color: row.color as string | null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }
@@ -780,14 +784,14 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       async createProject(context: PersistenceContext, input: NewProjectRecord): Promise<ProjectRecord> {
         const id = generateId()
         const row = await q1(
-          `INSERT INTO projects (id, tenant_id, name, description, board_mode, simple_story_id, manager_user_id, is_restricted, is_hidden, advanced_checklists, start_date, planned_end_date, planned_points, planned_hours, scope, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
+          `INSERT INTO projects (id, tenant_id, name, description, board_mode, simple_story_id, manager_user_id, is_restricted, is_hidden, advanced_checklists, start_date, planned_end_date, planned_points, planned_hours, scope, icon, color, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now())
            RETURNING *`,
           [id, context.tenantId, input.name, input.description ?? null, input.boardMode,
            input.simpleStoryId ?? null, input.managerUserId ?? context.actorUserId,
            input.isRestricted ?? false, input.isHidden ?? false, input.advancedChecklists ?? false,
            input.startDate ?? null, input.plannedEndDate ?? null, input.plannedPoints ?? null,
-           input.plannedHours ?? null, input.scope ?? null],
+           input.plannedHours ?? null, input.scope ?? null, input.icon ?? null, input.color ?? null],
         )
         if (!row) throw new Error('Falha ao criar projeto no adapter PostgreSQL.')
         return mapProject(row)
@@ -803,6 +807,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           advancedChecklists: 'advanced_checklists', startDate: 'start_date',
           plannedEndDate: 'planned_end_date', plannedPoints: 'planned_points',
           plannedHours: 'planned_hours', scope: 'scope',
+          icon: 'icon', color: 'color',
         }
         for (const [key, col] of Object.entries(fields)) {
           if (key in patch) { sets.push(`${col} = $${idx++}`); params.push((patch as Record<string, unknown>)[key]) }
@@ -2426,8 +2431,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             }
           }
           await client.query(
-            `INSERT INTO items (id, tenant_id, project_id, type, sequence_code, parent_id, module_id, column_id, ancestry_path, title, description, persona, goal, benefit, acceptance_criteria, notes, status, status_before_archive, cost_center_id, priority, points, assignee_id, assignee_api_key_id, blocked_reason, position, start_date, due_date, author_id, version_id, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31)`,
+            `INSERT INTO items (id, tenant_id, project_id, type, sequence_code, parent_id, module_id, column_id, ancestry_path, title, description, persona, goal, benefit, acceptance_criteria, notes, status, status_before_archive, cost_center_id, priority, points, assignee_id, assignee_api_key_id, blocked_reason, position, start_date, due_date, author_id, version_id, icon, color, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)`,
             [id, context.tenantId, input.projectId, input.type ?? 'TASK', input.sequenceCode ?? null,
              input.parentId ?? null, input.moduleId ?? null, input.columnId ?? null, ancestryPath,
              input.title, input.description ?? null, input.persona ?? null, input.goal ?? null, input.benefit ?? null,
@@ -2435,7 +2440,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
              input.costCenterId ?? null, input.priority ?? 'MEDIUM', input.points ?? null,
              input.assigneeId ?? null, input.assigneeApiKeyId ?? null, input.blockedReason ?? null,
              input.position ?? 0, input.startDate ?? null, input.dueDate ?? null,
-             context.actorUserId ?? null, input.versionId ?? null, now, now],
+             context.actorUserId ?? null, input.versionId ?? null, input.icon ?? null, input.color ?? null, now, now],
           )
           if (relations?.tagIds?.length) {
             for (const tagId of [...new Set(relations.tagIds)]) {
@@ -2491,6 +2496,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             costCenterId: 'cost_center_id', priority: 'priority', points: 'points',
             assigneeId: 'assignee_id', assigneeApiKeyId: 'assignee_api_key_id', blockedReason: 'blocked_reason',
             position: 'position', startDate: 'start_date', dueDate: 'due_date', versionId: 'version_id',
+            icon: 'icon', color: 'color',
           }
           for (const [key, col] of Object.entries(fields)) {
             if (key in patch) { sets.push(`${col} = $${idx++}`); params.push((patch as Record<string, unknown>)[key]) }

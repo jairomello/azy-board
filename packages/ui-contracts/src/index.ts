@@ -2,6 +2,101 @@
 
 import type { ItemType, Priority, TaskStatus } from '@azy-board/domain'
 
+// Catálogo de ícones do produto — fonte única dos nomes válidos (kebab-case),
+// servido por lucide-react (ISC). Compartilhado por web, API e MCP; o mapa de
+// nomes para componentes React vive apenas no web (apps/web/src/lib/iconCatalog.ts).
+export const ICON_CATALOG = [
+  'folder',
+  'folder-kanban',
+  'layout-dashboard',
+  'rocket',
+  'target',
+  'flag',
+  'star',
+  'bookmark',
+  'heart',
+  'zap',
+  'flame',
+  'lightbulb',
+  'bug',
+  'wrench',
+  'hammer',
+  'settings',
+  'shield',
+  'lock',
+  'key',
+  'globe',
+  'map',
+  'compass',
+  'palette',
+  'brush',
+  'pen-tool',
+  'code',
+  'terminal',
+  'database',
+  'server',
+  'cloud',
+  'cpu',
+  'smartphone',
+  'monitor',
+  'camera',
+  'image',
+  'film',
+  'music',
+  'gamepad-2',
+  'trophy',
+  'medal',
+  'award',
+  'gift',
+  'shopping-cart',
+  'credit-card',
+  'wallet',
+  'briefcase',
+  'building-2',
+  'home',
+  'users',
+  'user',
+  'calendar',
+  'clock',
+  'bell',
+  'mail',
+  'message-square',
+  'file-text',
+  'clipboard-list',
+  'book-open',
+  'graduation-cap',
+  'activity',
+] as const
+
+export type IconName = (typeof ICON_CATALOG)[number]
+
+export const DEFAULT_PROJECT_ICON: IconName = 'folder-kanban'
+export const DEFAULT_ITEM_ICON: IconName = 'file-text'
+
+// Paleta de cores de ícone — mesma base usada pelas tags (consistência visual).
+export const ICON_COLORS = [
+  '#6366f1',
+  '#8b5cf6',
+  '#ec4899',
+  '#ef4444',
+  '#f97316',
+  '#eab308',
+  '#22c55e',
+  '#06b6d4',
+  '#3b82f6',
+  '#64748b',
+] as const
+
+export type IconColor = (typeof ICON_COLORS)[number]
+
+export function isIconName(value: unknown): value is IconName {
+  return typeof value === 'string' && (ICON_CATALOG as readonly string[]).includes(value)
+}
+
+export function isIconColor(value: unknown): value is IconColor {
+  return typeof value === 'string' && (ICON_COLORS as readonly string[]).includes(value)
+}
+
 // Preferências de UI
 export type Theme = 'light' | 'dark'
 export type Language = 'pt-BR' | 'en' | 'es'
@@ -49,6 +144,8 @@ export interface Card {
   ancestryPath: AncestorRef[]
   parentId: string | null
   moduleId: string | null
+  icon: IconName | null
+  color: IconColor | null
 }
 
 // Converte item raw da API para interface Card
@@ -70,6 +167,8 @@ export function toCard(item: {
   ancestryPath: string
   parentId?: string | null
   moduleId?: string | null
+  icon?: string | null
+  color?: string | null
 }): Card {
   return {
     id: item.id,
@@ -91,6 +190,8 @@ export function toCard(item: {
     })(),
     parentId: item.parentId ?? null,
     moduleId: item.moduleId ?? null,
+    icon: isIconName(item.icon) ? item.icon : null,
+    color: isIconColor(item.color) ? item.color : null,
   }
 }
 

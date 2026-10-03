@@ -52,6 +52,9 @@ export default defineConfig(({ mode }) => {
         // (scripts/check-bundle.ts) casa por nome de chunk e precisa que eles
         // não migrem de arquivo a cada mudança.
         manualChunks(id) {
+          // Catálogo de ícones (lucide) isolado em chunk próprio: é compartilhado por
+          // várias telas e não deve inflar o chunk de entrada (orçamento "index").
+          if (id.includes('iconCatalog')) return 'icons'
           if (!id.includes('node_modules')) return
           if (id.includes('@tanstack/react-query') || id.includes('@tanstack/query-core')) return 'vendor-query'
           if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-vendor')) return 'vendor-charts'

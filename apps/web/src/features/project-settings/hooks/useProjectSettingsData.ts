@@ -24,7 +24,7 @@ export type SettingsSectionName =
 const EMPTY_PROJECT: ProjectSettingsData = {
   projectName: '', manager: null, managerUserId: '', boardMode: 'HIERARCHICAL',
   isRestricted: false, isHidden: false, advancedChecklists: false, startDate: '', plannedEndDate: '',
-  plannedPoints: '', plannedHours: '', scope: '',
+  plannedPoints: '', plannedHours: '', scope: '', icon: null, color: null,
 }
 
 // Cada seção é uma consulta da camada de cache única, com chave por
@@ -76,6 +76,8 @@ export function useProjectSettingsData(projectId: string | undefined) {
       plannedPoints: project.plannedPoints != null ? String(project.plannedPoints) : '',
       plannedHours: project.plannedHours != null ? String(project.plannedHours) : '',
       scope: project.scope ?? '',
+      icon: project.icon ?? null,
+      color: project.color ?? null,
     })
   }, [projectQuery.data, projectId])
 
@@ -113,6 +115,8 @@ export function useProjectSettingsData(projectId: string | undefined) {
      setPlannedPoints: (value: string) => setData(previous => updateSettingsField(previous, 'plannedPoints', value)),
      setPlannedHours: (value: string) => setData(previous => updateSettingsField(previous, 'plannedHours', value)),
      setScope: (value: string) => setData(previous => updateSettingsField(previous, 'scope', value)),
+     setIcon: (value: string | null) => setData(previous => updateSettingsField(previous, 'icon', value)),
+     setColor: (value: string | null) => setData(previous => updateSettingsField(previous, 'color', value)),
     columns, members, squads, modules, versions, costCenters, sprints,
     invalidate, invalidateAll, applyProject,
     currentMember, isAdmin,

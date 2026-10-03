@@ -151,7 +151,7 @@ const itemChangeSchema = {
   items: {
     type: 'object', additionalProperties: false, required: ['field', 'operation', 'value'],
     properties: {
-      field: { type: 'string', enum: ['title', 'description', 'priority', 'type', 'status', 'points', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode'] },
+      field: { type: 'string', enum: ['title', 'description', 'priority', 'type', 'status', 'points', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode', 'icon', 'color'] },
       operation: { type: 'string', enum: ['SET', 'CLEAR', 'TODAY', 'OFFSET_DAYS', 'COPY_CREATED_DATE'] },
       value: { type: ['string', 'null'], description: 'Value for SET, or signed day count for OFFSET_DAYS. Use null for operations that need no value.' },
     },

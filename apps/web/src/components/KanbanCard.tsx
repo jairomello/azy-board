@@ -11,6 +11,7 @@ import { copyTextToClipboard } from '../lib/clipboard'
 import type { ItemType, Priority, TaskStatus } from '@azy-board/domain'
 import type { AncestorNode, ChecklistProgress } from '@azy-board/ui-contracts'
 import { useTranslation } from 'react-i18next'
+import { itemIconComponent } from '../lib/iconCatalog'
 
 const PRIORITY_COLORS: Record<Priority, string> = {
   LOW: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
@@ -56,6 +57,8 @@ export interface CardData {
   isLeaf: boolean
   childrenCount?: number
   checklistProgress?: ChecklistProgress | null
+  icon?: string | null
+  color?: string | null
 }
 
 interface Props {
@@ -75,6 +78,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
   const breadcrumbRef = useRef<HTMLDivElement>(null)
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const CardIcon = card.icon ? itemIconComponent(card.icon) : null
 
   useEffect(() => () => {
     if (openTimerRef.current) clearTimeout(openTimerRef.current)
@@ -254,6 +258,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
         >
           {onTitleSave ? (
             <div className="flex items-center">
+              {CardIcon ? <CardIcon className="w-3.5 h-3.5 mr-1 flex-shrink-0" style={{ color: card.color ?? undefined }} /> : null}
               {card.sequenceCode && <span className="text-xs font-mono text-muted-foreground mr-1 flex-shrink-0">{card.sequenceCode} -</span>}
               <InlineEdit
                 value={card.title}
@@ -264,6 +269,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
             </div>
           ) : (
             <p className="text-sm font-medium text-foreground leading-snug line-clamp-2">
+              {CardIcon ? <CardIcon className="inline w-3.5 h-3.5 mr-1 -mt-0.5" style={{ color: card.color ?? undefined }} /> : null}
               {card.sequenceCode && <span className="text-xs font-mono text-muted-foreground mr-1">{card.sequenceCode} -</span>}
               {card.title}
             </p>

@@ -148,6 +148,10 @@ export const projects = pgTable('projects', {
   plannedPoints: integer('planned_points'),
   plannedHours: doublePrecision('planned_hours'),
   scope: text('scope'),
+  // [DB-SWAP] Aparência do projeto: colunas text nativas, iguais em SQLite e PG.
+  // [TENANT] Lidas sempre dentro do tenant do projeto; validação ocorre no serviço.
+  icon: text('icon'),
+  color: text('color'),
   createdAt: text('created_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   tenantIdUnique: uniqueIndex('projects_tenant_id_id_unique').on(table.tenantId, table.id),
@@ -303,6 +307,10 @@ export const items = pgTable('items', {
   dueDate: text('due_date'),
   authorId: text('author_id'),
   versionId: text('version_id'),
+  // [DB-SWAP] Aparência do item: colunas text nativas, iguais em SQLite e PG.
+  // [TENANT] Lidas sempre dentro do tenant do item; validação ocorre no serviço.
+  icon: text('icon'),
+  color: text('color'),
   createdAt: text('created_at').notNull().default(defaultNowIso()),
   updatedAt: text('updated_at').notNull().default(defaultNowIso()),
 }, (table) => ({

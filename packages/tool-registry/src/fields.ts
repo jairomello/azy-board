@@ -35,7 +35,7 @@ export const toolFields: Record<string, ToolFields> = {
   batch_move: { fields: ['projectId', 'itemIds', 'columnName'], required: ['projectId', 'itemIds', 'columnName'] },
   complete_task: { fields: ['projectId', 'taskId'], required: ['projectId', 'taskId'] },
   release_task: { fields: ['projectId', 'taskId'], required: ['projectId', 'taskId'] },
-  create_task: { fields: ['projectId', 'title', 'description', 'type', 'priority', 'points', 'parentId', 'moduleId', 'assigneeId', 'status'], required: ['projectId', 'title'] },
+  create_task: { fields: ['projectId', 'title', 'description', 'type', 'priority', 'points', 'parentId', 'moduleId', 'assigneeId', 'status', 'icon', 'color'], required: ['projectId', 'title'] },
   create_checklist: { fields: ['projectId', 'itemId', 'name'], required: ['projectId', 'itemId', 'name'] },
   add_checklist_item: { fields: ['projectId', 'itemId', 'checklistId', 'text', 'dueDate', 'assigneeId', 'description'], required: ['projectId', 'itemId', 'checklistId', 'text'] },
   add_checklist_item_to_task: { fields: ['projectId', 'itemId', 'checklistName', 'text', 'dueDate', 'assigneeId', 'description'], required: ['projectId', 'itemId', 'checklistName', 'text'] },
@@ -56,9 +56,9 @@ export const toolFields: Record<string, ToolFields> = {
   delete_checklist_item: { fields: ['projectId', 'itemId', 'checklistId', 'checklistItemId'], required: ['projectId', 'itemId', 'checklistId', 'checklistItemId'] },
   update_item_log: { fields: ['projectId', 'itemId', 'logId', 'changes'], required: ['projectId', 'itemId', 'logId', 'changes'], nested: { changes: [] } },
   batch: { fields: ['projectId', 'operations'], required: ['projectId', 'operations'], nested: { 'operations[].args': [...OPERATION_ARGS_REQUIRED] } },
-  create_project: { fields: ['name', 'description', 'boardMode', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], required: ['name'] },
-  create_project_structure: { fields: ['name', 'description', 'boardMode', 'managerUserId', 'operations', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], required: ['name', 'operations'], nested: { 'operations[].args': [...OPERATION_ARGS_REQUIRED] } },
-  update_project: { fields: ['projectId', 'name', 'description', 'boardMode', 'managerUserId', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope'], required: ['projectId'] },
+  create_project: { fields: ['name', 'description', 'boardMode', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope', 'icon', 'color'], required: ['name'] },
+  create_project_structure: { fields: ['name', 'description', 'boardMode', 'managerUserId', 'operations', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope', 'icon', 'color'], required: ['name', 'operations'], nested: { 'operations[].args': [...OPERATION_ARGS_REQUIRED] } },
+  update_project: { fields: ['projectId', 'name', 'description', 'boardMode', 'managerUserId', 'advancedChecklists', 'startDate', 'plannedEndDate', 'plannedPoints', 'plannedHours', 'scope', 'icon', 'color'], required: ['projectId'] },
   create_module: { fields: ['projectId', 'name'], required: ['projectId', 'name'] },
   create_column: { fields: ['projectId', 'name', 'baseStatus'], required: ['projectId', 'name', 'baseStatus'] },
   reorder_columns: { fields: ['projectId', 'order'], required: ['projectId', 'order'] },
@@ -81,6 +81,7 @@ export const PROJECTION_FIELDS: readonly string[] = [
   'description', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'childrenCount', 'checklistProgress',
   'sprintId', 'sprintName', 'tagIds', 'tagNames', 'priority', 'points', 'costCenterId', 'versionId',
   'blockedReason', 'startDate', 'dueDate', 'position', 'sequenceCode', 'ancestryPath', 'createdAt', 'updatedAt',
+  'icon', 'color',
 ]
 
 // Campos realmente obrigatórios por ferramenta. O schema exposto pelo servidor MCP

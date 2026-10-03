@@ -162,6 +162,16 @@
   "settings": "Configurações",
   "users": "Usuários",
   "attachments": "Anexos",
+  "appearance": {
+    "choose": "Aparência",
+    "icon": "Ícone",
+    "color": "Cor",
+    "searchIcon": "Buscar ícone",
+    "defaultIcon": "Ícone padrão",
+    "defaultColor": "Cor padrão do tema",
+    "noIconFound": "Nenhum ícone encontrado",
+    "clear": "Remover personalização"
+  },
   "adminUsers": {
     "context": "Usuários do tenant",
     "heading": "Administração",
