@@ -5,7 +5,7 @@ import type { ItemType, Priority, TaskStatus } from '@azy-board/domain'
 import type { Checklist } from '@azy-board/ui-contracts'
 import { InlineEdit } from './InlineEdit'
 import { TagSelector, type Tag } from './TagSelector'
-import { AppearancePicker } from './AppearancePicker'
+import { AppearancePopover } from './AppearancePopover'
 import { itemIconComponent } from '../lib/iconCatalog'
 import { StorySelector } from './StorySelector'
 import { AddCardForm } from './AddCardForm'
@@ -384,7 +384,18 @@ export function ItemModal({
                   <span>{item.id === '__new__' ? t('newTask') : (item.sequenceCode || item.title)}</span>
                 </div>
                 <div className="flex min-w-0 items-center gap-2">
-                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${typeMeta.iconClass}`}>{HeaderIcon ? <HeaderIcon className="h-4 w-4" style={{ color: color ?? undefined }} /> : <TypeIcon className="h-4 w-4" />}</span>
+                  <AppearancePopover
+                    icon={icon}
+                    color={color}
+                    applyMode="manual"
+                    disabled={currentUserRole === 'VIEWER'}
+                    onChange={({ icon: nextIcon, color: nextColor }) => { setIcon(nextIcon); setColor(nextColor) }}
+                    triggerAriaLabel={tCommon('appearance.choose')}
+                    triggerTitle={tCommon('appearance.choose')}
+                    triggerClassName={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${typeMeta.iconClass} hover:opacity-90 transition`}
+                  >
+                    {HeaderIcon ? <HeaderIcon className="h-4 w-4" style={{ color: color ?? undefined }} /> : <TypeIcon className="h-4 w-4" />}
+                  </AppearancePopover>
                   <div className="min-w-0 flex-1"><h2 id="item-modal-title" className="text-base font-semibold text-foreground sm:text-lg"><InlineEdit value={title} onSave={setTitle} autoEdit={item.id === '__new__'} placeholder={type === 'TASK' ? t('newTask') : `${t('newTask')} (${t(typeMeta.labelKey)})`} /></h2><div className="mt-1 flex flex-wrap items-center gap-2 text-xs"><span className={`rounded px-1.5 py-0.5 font-medium ${typeMeta.chipClass}`}>{t(typeMeta.labelKey)}</span><span className="rounded bg-muted px-1.5 py-0.5">{t(`status${status === 'NOT_STARTED' ? 'NotStarted' : status === 'IN_PROGRESS' ? 'InProgress' : status === 'BLOCKED' ? 'Blocked' : status === 'DONE' ? 'Done' : 'Cancelled'}`)}</span>{sequenceCode && <span className="text-muted-foreground">#{sequenceCode}</span>}</div></div>
                 </div>
               </div>
@@ -406,7 +417,6 @@ export function ItemModal({
                     {property(t('itemTypeLabel'), <select value={type} onChange={e => setType(e.target.value as 'TASK' | 'BUG')} className={fieldClass}>{TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}
                     {epics.length > 0 && property(t('parentStory'), <StorySelector epics={epics} stories={stories} value={parentId} onChange={setParentId} onCreateStory={onCreateStory} />)}
                     {property(t('tagsLabel'), <TagSelector allTags={projectTags} selected={selectedTags} onSelect={setSelectedTags} onCreate={onCreateTag} onEdit={onEditTag} />)}
-                    {property(tCommon('appearance.choose'), <AppearancePicker icon={icon} color={color} onChange={({ icon: nextIcon, color: nextColor }) => { setIcon(nextIcon); setColor(nextColor) }} />)}
                     {projectCostCenters.length > 0 && property(t('costCenterLabel'), <select value={costCenterId} onChange={e => setCostCenterId(e.target.value)} className={fieldClass}><option value="">{t('none')}</option>{projectCostCenters.map(cc => <option key={cc.id} value={cc.id}>{cc.code}{cc.description ? ` — ${cc.description}` : ''}</option>)}</select>)}
                   </div>
                 </>}

@@ -370,4 +370,29 @@ describe('migration de aparência de projeto e item (Card T14)', () => {
     expect(project?.color).toBe('#22c55e')
     sqlite.close()
   })
+
+  // Regressão: o migrator do Drizzle só aplica entries com `when` maior que o
+  // último `created_at` gravado. A 0038 nasceu com `when` menor que o da 0037 e
+  // era pulada ao atualizar uma base existente (colunas icon/color ausentes).
+  test('aplica a 0038 ao atualizar uma base já na 0037', async () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    const source = new URL('./migrations', import.meta.url).pathname
+    const journal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ idx: number; tag: string }> }
+    const upTo0037 = journal.entries.filter(entry => entry.idx <= 37)
+    const pre = `/tmp/azyboard-t14-regression-${crypto.randomUUID()}`
+    await mkdir(`${pre}/meta`, { recursive: true })
+    for (const entry of upTo0037) await Bun.write(`${pre}/${entry.tag}.sql`, await Bun.file(`${source}/${entry.tag}.sql`).text())
+    await Bun.write(`${pre}/meta/_journal.json`, JSON.stringify({ ...journal, entries: upTo0037 }))
+
+    migrate(database, { migrationsFolder: pre })
+    const before = (sqlite.query("PRAGMA table_info('items')").all() as Array<{ name: string }>).map(column => column.name)
+    expect(before).not.toContain('icon')
+
+    migrate(database, { migrationsFolder: source })
+    const after = (sqlite.query("PRAGMA table_info('items')").all() as Array<{ name: string }>).map(column => column.name)
+    expect(after).toContain('icon')
+    expect(after).toContain('color')
+    sqlite.close()
+  })
 })

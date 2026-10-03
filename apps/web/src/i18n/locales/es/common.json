@@ -170,7 +170,8 @@
     "defaultIcon": "Ícono predeterminado",
     "defaultColor": "Color predeterminado del tema",
     "noIconFound": "No se encontró ningún ícono",
-    "clear": "Quitar personalización"
+    "clear": "Quitar personalización",
+    "apply": "Aplicar"
   },
   "adminUsers": {
     "context": "Usuarios del tenant",

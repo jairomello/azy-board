@@ -170,7 +170,8 @@
     "defaultIcon": "Default icon",
     "defaultColor": "Theme default color",
     "noIconFound": "No icon found",
-    "clear": "Remove customization"
+    "clear": "Remove customization",
+    "apply": "Apply"
   },
   "adminUsers": {
     "context": "Tenant users",
