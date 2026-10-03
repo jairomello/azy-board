@@ -124,6 +124,21 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
     })
     if (matched.length === 0) return c.json({ code: 'NO_ITEMS_MATCHED', error: 'Nenhum item corresponde aos filtros informados' }, 422)
 
+    // Card T16 — escrita concorrente: divergência entre as revisões capturadas
+    // na fotografia da tela e o estado corrente recusa o lote, listando os divergentes.
+    const expectedRevisions = filters.expectedRevisions
+    if (expectedRevisions && typeof expectedRevisions === 'object' && !Array.isArray(expectedRevisions)) {
+      const divergentIds = Object.entries(expectedRevisions)
+        .filter(([id, revision]) => {
+          const item = projectItems.find(candidate => candidate.id === id)
+          return Boolean(item && item.updatedAt !== revision)
+        })
+        .map(([id]) => id)
+      if (divergentIds.length > 0) {
+        return c.json({ code: 'CONCURRENT_WRITE', error: 'O estado dos cards mudou desde a prévia. Recalcule a prévia com o mesmo conjunto.', retryable: false, details: { divergentIds } }, 409)
+      }
+    }
+
     const resolvedChanges = changes.map(change => {
       const field = change.field as string, operation = change.operation as string
       if (operation === 'SET' && (typeof change.value !== 'string' || !change.value.trim())) throw new Error(`VALUE_REQUIRED_${field}`)
@@ -141,7 +156,12 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
         if (field === 'module') relationId = exactResource(projectModules, change.value as string, 'MODULE').id
         if (field === 'version') relationId = exactResource(versions, change.value as string, 'VERSION').id
         if (field === 'costCenter') relationId = exactResource(costCenters.map(value => ({ ...value, name: value.code })), change.value as string, 'COST_CENTER').id
-        if (field === 'sprint') relationId = resolveSprint(change.value as string).id
+        if (field === 'sprint') {
+          const sprint = resolveSprint(change.value as string)
+          // Card T16 — sprint fechada não recebe associação nova de itens.
+          if (sprint.status === 'CLOSED') throw new Error('SPRINT_CLOSED')
+          relationId = sprint.id
+        }
       }
       return { field, operation, value: change.value as string | null, relationId }
     })

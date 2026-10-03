@@ -170,6 +170,79 @@ describe('Azy Agent harness', () => {
     })
   })
 
+  // Card T16 — escopo travado pela fotografia da tela: o servidor impõe o conjunto,
+  // ignora filtros do modelo e nunca re-filtra além da fotografia.
+  const snapshotFixtures = {
+    filtered: {
+      schemaVersion: 1 as const,
+      contextId: 'ctx-t16',
+      capturedAt: '2026-10-03T14:30:00.000Z',
+      route: '/projects/p1/board',
+      screen: 'project-board-kanban' as const,
+      projectId: 'p1',
+      projectName: null,
+      view: { mode: 'kanban' as const, activeModuleId: null, collapsedGroupIds: [] },
+      filters: { sprintId: { operator: 'IS_EMPTY' as const } },
+      scope: { mode: 'FILTERED' as const },
+      results: {
+        displayedItemIds: ['card-a', 'card-b'],
+        displayedCount: 2,
+        totalMatchingCount: 2,
+        isComplete: true,
+        revisions: { 'card-a': '2026-10-03T10:00:00.000Z', 'card-b': '2026-10-03T10:00:00.000Z' },
+      },
+      focus: { modalStack: 0, activeItemId: null, activeTab: null, hasUnsavedChanges: false },
+    },
+  }
+
+  test('escopo FILTERED fixa itemIds e descarta filtros que ampliem', () => {
+    const args = canonicalArguments('update_items', {
+      filters: { status: 'IN_PROGRESS', sprint: 'CURRENT', matchAll: true } as Record<string, unknown>,
+      changes: [{ field: 'sprint', operation: 'SET', value: 'Sprint 1' }],
+    }, { userId, projectId: 'p1', itemTypeScope: ['TASK'], screenSnapshot: snapshotFixtures.filtered })
+    expect(args).toMatchObject({
+      projectId: 'p1',
+      filters: { itemIds: ['card-a', 'card-b'], types: ['TASK'], matchAll: false },
+    })
+    // Nenhum filtro do modelo sobrevive: o conjunto é só da fotografia.
+    expect(args.filters).not.toHaveProperty('status')
+    expect(args.filters).not.toHaveProperty('sprint')
+  })
+
+  test('escopo ALL aplica a todos (matchAll) sem lista de IDs e sem filtros do modelo', () => {
+    const args = canonicalArguments('update_items', {
+      filters: { status: 'BLOCKED' } as Record<string, unknown>,
+      changes: [{ field: 'version', operation: 'SET', value: 'v1.0.0' }],
+    }, { userId, projectId: 'p1', itemTypeScope: ['TASK', 'BUG'], screenSnapshot: { ...snapshotFixtures.filtered, scope: { mode: 'ALL' }, results: { ...snapshotFixtures.filtered.results, displayedItemIds: [], totalMatchingCount: null } } })
+    expect(args).toMatchObject({
+      projectId: 'p1',
+      filters: { types: ['TASK', 'BUG'], matchAll: true },
+    })
+    expect(args.filters).not.toHaveProperty('itemIds')
+    expect(args.filters).not.toHaveProperty('status')
+  })
+
+  test('sem snapshot, canonical preserva o comportamento de filtragem existente', () => {
+    const args = canonicalArguments('update_items', {
+      filters: { sprint: 'CURRENT', matchAll: true },
+      changes: [{ field: 'points', operation: 'SET', value: '3' }],
+    }, { userId, projectId: 'p1', itemTypeScope: ['TASK'] })
+    expect(args).toMatchObject({ filters: { sprint: 'CURRENT', types: ['TASK'], matchAll: false } })
+  })
+
+  test('prévia mostra conjunto capturado × correspondências atuais e conflitos', () => {
+    const preview = approvalPreview('update_items', {
+      filters: { itemIds: ['card-a', 'card-b'], types: ['TASK'], matchAll: false },
+      changes: [{ field: 'sprint', operation: 'SET', value: 'Sprint 1' }, { field: 'version', operation: 'SET', value: 'v1.0.0' }],
+    }, { userId }, undefined, { displayedCount: 2, matchedCount: 1, conflictingCount: 1 })
+    expect(preview).toMatchObject({ summary: 'Atualizar cards do resultado exibido — 1 card(s)', count: 1 })
+    expect(String(preview.markdown)).toContain('conjunto fixado (2 card(s))')
+    expect(String(preview.markdown)).toContain('1 correspondem agora')
+    expect(String(preview.markdown)).toContain('1 com escrita concorrente')
+    expect(String(preview.markdown)).toContain('sprint:** SET (Sprint 1)')
+    expect(String(preview.markdown)).toContain('version:** SET (v1.0.0)')
+  })
+
   test('oculta projectId da IA quando a conversa já está vinculada ao projeto', async () => {
     let projectIdVisible = true
     class SchemaProvider implements ModelProvider {

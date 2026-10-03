@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   Check,
@@ -66,6 +66,14 @@ function friendlyRunError(error: string | null | undefined, t: (key: string) => 
 export function AzyAgentDrawer() {
   const { t } = useTranslation("assistant");
   const { availability, pageContext } = useAssistant();
+  // Card T16 — escopo interpretado: resultado completo (sem filtro) ou recorte com filtro.
+  const scopeChipLabels = useMemo(() => {
+    const snapshot = pageContext?.screenSnapshot
+    if (!snapshot) return null
+    return snapshot.scope.mode === 'ALL'
+      ? `${t("scopeAll")}${(snapshot.results.displayedCount ?? 0) > 0 ? ` · ${t("scopeAllCount", { count: snapshot.results.displayedCount })}` : ''}`
+      : `${t("scopeFiltered", { count: snapshot.results.displayedCount })}`
+  }, [pageContext?.screenSnapshot, t])
   const projectId = pageContext?.projectId;
   const itemId = pageContext?.item?.id;
   const [open, setOpen] = useState(false);
@@ -287,7 +295,7 @@ export function AzyAgentDrawer() {
       const current = await ensureConversation();
       const result = await api.post<{ runId: string; status: string }>(
         `/assistant/conversations/${current.id}/messages`,
-        { content: text, screen: pageContext?.screen ?? 'global-other', projectId: projectId ?? null, itemId: itemId ?? null },
+        { content: text, screen: pageContext?.screen ?? 'global-other', projectId: projectId ?? null, itemId: itemId ?? null, context: pageContext?.screenSnapshot ?? null },
       );
       setRun({ id: result.runId, status: result.status, cursor: 0 });
     } catch (e) {
@@ -348,7 +356,7 @@ export function AzyAgentDrawer() {
     try {
       const result = await api.post<{ runId: string; status: string }>(
         `/assistant/runs/${run.id}/adjust`,
-        { instruction, operationHash: run.approval.operationHash, screen: pageContext?.screen ?? 'global-other', projectId: projectId ?? null, itemId: itemId ?? null },
+        { instruction, operationHash: run.approval.operationHash, screen: pageContext?.screen ?? 'global-other', projectId: projectId ?? null, itemId: itemId ?? null, context: pageContext?.screenSnapshot ?? null },
       );
       setRun({ id: result.runId, status: result.status, cursor: 0 });
       setAdjusting(false);
@@ -413,8 +421,14 @@ export function AzyAgentDrawer() {
                   </nav>
                 ) : (
                   <p className="text-xs text-muted-foreground">{t("noProject")}</p>
-                )}
-              </div>
+                 )}
+                 {/* Card T16 — escopo interpretado do resultado exibido */}
+                 {scopeChipLabels && (
+                   <p className="mt-1 text-[11px] text-muted-foreground" aria-live="polite">
+                     {scopeChipLabels}
+                   </p>
+                 )}
+               </div>
               <button
                 type="button"
                 aria-label={t("close")}

@@ -770,6 +770,18 @@
                   }
                 ]
               },
+              "expectedRevisions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 40
+                }
+              },
               "types": {
                 "anyOf": [
                   {

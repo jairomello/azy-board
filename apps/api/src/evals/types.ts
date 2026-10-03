@@ -33,7 +33,12 @@ export type EvalSeedItem = {
   assign?: boolean
 }
 
-export type EvalSetup = { items?: EvalSeedItem[] }
+export type EvalSetup = {
+  items?: EvalSeedItem[]
+  // Card T16 — quando 'filtered', o runner publica um snapshot sintético da
+  // "tela" (conjunto capturado = itens do seed) antes da mensagem do caso.
+  captureMode?: 'filtered'
+}
 
 export type ExpectedTool = { name: string; argsContains?: Record<string, unknown> }
 

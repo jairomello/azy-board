@@ -13,6 +13,53 @@ export type AssistantApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXP
 
 export type AssistantScreen = 'projects-index' | 'project-board-kanban' | 'project-board-tree' | 'project-dashboard' | 'project-settings' | 'item-detail' | 'account' | 'admin-users' | 'admin-assistant' | 'global-other'
 
+// Versão do envelope de fotografia do contexto da tela (Card T16).
+export const SCREEN_SNAPSHOT_SCHEMA_VERSION = 1
+
+// Espelho fiel dos filtros publicados pela tela. O sentinela da interface
+// (`__empty__`) NUNCA viaja como valor: é convertido no operador tipado IS_EMPTY.
+export type AssistantScreenFilterValue = string | string[] | boolean | null | { operator: 'IS_EMPTY' }
+
+export type AssistantScreenScopeMode = 'ALL' | 'FILTERED'
+
+// Fotografia do contexto da tela capturada no envio do pedido e fixada na
+// execução/aprovação. IDs são referências a validar; nunca permissões.
+export interface AssistantScreenSnapshot {
+  schemaVersion: typeof SCREEN_SNAPSHOT_SCHEMA_VERSION
+  // Identificador opaco do envio (dedup/trace); não é chave de tabela.
+  contextId: string
+  capturedAt: string
+  route: string
+  screen: AssistantScreen
+  projectId: string | null
+  projectName: string | null
+  view: {
+    mode: 'kanban' | 'tree'
+    activeModuleId: string | null
+    collapsedGroupIds: string[]
+  }
+  filters: Record<string, AssistantScreenFilterValue>
+  // ALL = nenhum filtro aplicado (sem lista de IDs; ação vale para todos).
+  // FILTERED = há filtro ativo; o conjunto do resultado viaja em results.
+  scope: { mode: AssistantScreenScopeMode }
+  results: {
+    // Presente e preenchido apenas quando scope = FILTERED.
+    displayedItemIds: string[]
+    displayedCount: number
+    // Contagem total da consulta; null quando desconhecida (servidor resolve).
+    totalMatchingCount: number | null
+    isComplete: boolean
+    // Revisão (updatedAt) de cada card capturado — detecção de concorrência.
+    revisions: Record<string, string>
+  }
+  focus: {
+    modalStack: number
+    activeItemId: string | null
+    activeTab: string | null
+    hasUnsavedChanges: boolean
+  }
+}
+
 export interface AssistantAvailability {
   enabled: boolean
   configured: boolean

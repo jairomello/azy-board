@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
-import type { AssistantProvider, AssistantScreen } from '@azy-board/assistant-contracts'
+import type { AssistantProvider, AssistantScreen, AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 import { DEFAULT_GOVERNANCE, GOVERNANCE_BOUNDS, Governance, MAX_ASSISTANT_ACTIONS, MAX_MESSAGE_BYTES } from '@azy-board/assistant-contracts'
 import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
 import { AssistantEncryptionError, decryptAssistantSecret, encryptAssistantSecret } from '../services/assistantEncryption'
@@ -157,6 +157,35 @@ type AssistantPromptContext = {
   authenticatedUser: { id: string; name: string; email: string; globalGroup: string; language: string }
   selectedProject: { id: string; name: string; startDate?: string | null; plannedEndDate?: string | null; plannedPoints?: number | null; plannedHours?: number | null; scope?: string | null } | null
   selectedItem: (PromptNode & { ancestry: PromptNode[] }) | null
+  // Card T16 — fotografia compacta (sinais e contagens; sem lista de cards).
+  screenSnapshot: {
+    contextId: string
+    capturedAt: string
+    route: string
+    screen: AssistantScreen
+    scope: AssistantScreenSnapshot['scope']
+    filters: AssistantScreenSnapshot['filters']
+    results: Pick<AssistantScreenSnapshot['results'], 'displayedCount' | 'totalMatchingCount' | 'isComplete'> & { displayedItemIds: string[] }
+  } | null
+}
+
+// Fotografia compacta para a janela do prompt: contagens e no máximo 20 IDs de
+// referência. O conjunto completo viaja nos args da tool (escopo travado).
+function compactScreenSnapshot(snapshot: AssistantScreenSnapshot) {
+  return {
+    contextId: snapshot.contextId,
+    capturedAt: snapshot.capturedAt,
+    route: snapshot.route,
+    screen: snapshot.screen,
+    scope: snapshot.scope,
+    filters: snapshot.filters,
+    results: {
+      displayedItemIds: snapshot.results.displayedItemIds.slice(0, 20),
+      displayedCount: snapshot.results.displayedCount,
+      totalMatchingCount: snapshot.results.totalMatchingCount,
+      isComplete: snapshot.results.isComplete,
+    },
+  }
 }
 
 export function formatAssistantPromptContext(value: AssistantPromptContext): string {
@@ -672,7 +701,7 @@ assistantRouter.delete('/conversations/:conversationId', async (c) => {
 
 const assistantScreens = new Set<AssistantScreen>(['projects-index', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'item-detail', 'account', 'admin-users', 'admin-assistant', 'global-other'])
 
-async function runMessage(c: Context<HonoEnv>, conversationId: string, content: string, idempotencyKey: string, modelContext?: string, expectedProjectId?: string | null, expectedItemId?: string | null, screen: AssistantScreen = 'global-other') {
+async function runMessage(c: Context<HonoEnv>, conversationId: string, content: string, idempotencyKey: string, modelContext?: string, expectedProjectId?: string | null, expectedItemId?: string | null, screen: AssistantScreen = 'global-other', screenSnapshot?: AssistantScreenSnapshot | null) {
   const ctx = context(c), config = await available(ctx.tenantId)
   if (!config) return operationalError(c, 'ASSISTANT_UNAVAILABLE', 422)
   if (!content.trim()) return operationalError(c, 'INVALID_REQUEST', 400)
@@ -692,6 +721,31 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
   const explicitProjectId = await resolveExplicitProject(content, ctx, conversation.projectId)
   const effectiveProjectId = explicitProjectId ?? conversation.projectId
   const scope = scopeOf(ctx.tenantId, ctx.userId)
+
+  // ── Fotografia do contexto da tela (Card T16) ─────────────────────────────
+  // IDs do cliente são referências a validar; nunca permissões nem capacidades.
+  let screenContext: AssistantScreenSnapshot | undefined
+  if (screenSnapshot) {
+    if (screenSnapshot.projectId && effectiveProjectId && screenSnapshot.projectId !== effectiveProjectId) {
+      return operationalError(c, 'SCREEN_CONTEXT_PROJECT_MISMATCH', 409)
+    }
+    if (screenSnapshot.scope.mode === 'FILTERED') {
+      const projectItems = effectiveProjectId ? await persistence.items.listItems(scope, effectiveProjectId) : []
+      const knownIds = new Set(projectItems.map(item => item.id))
+      const invalidIds = screenSnapshot.results.displayedItemIds.filter(id => !knownIds.has(id))
+      if (invalidIds.length > 0) {
+        return c.json({ error: 'A fotografia da tela contém cards que não existem ou estão sem acesso neste projeto.', code: 'SCREEN_CONTEXT_UNKNOWN_ITEMS', retryable: false, details: { invalidIds } }, 422)
+      }
+      // Revisões autoritativas no instante da captura (mensagem): base da checagem
+      // de concorrência entre a prévia e a aprovação/execução.
+      const revisions = Object.fromEntries(projectItems.filter(item => item.updatedAt).map(item => [item.id, item.updatedAt]))
+      screenContext = {
+        ...screenSnapshot,
+        results: { ...screenSnapshot.results, revisions: { ...screenSnapshot.results.revisions, ...revisions } },
+      }
+    }
+  }
+
   const [authenticatedUserRecord, selectedProjectRecord] = await Promise.all([
     persistence.identity.findUser(scope, ctx.userId),
     effectiveProjectId ? persistence.projects.getProject(scope, effectiveProjectId) : null,
@@ -711,12 +765,12 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
   const now = new Date().toISOString(), messageId = generateId()
   await persistence.agent.createMessage(scope, {
     conversationId, userId: ctx.userId, role: 'USER', content,
-    metadataJson: JSON.stringify({ targetProjectId: effectiveProjectId, itemId: explicitProjectId ? null : expectedItemId, screen }), createdAt: now,
+    metadataJson: JSON.stringify({ targetProjectId: effectiveProjectId, itemId: explicitProjectId ? null : expectedItemId, screen, contextId: screenContext?.contextId, snapshotScope: screenContext?.scope.mode }), createdAt: now,
   })
   await persistence.agent.touchConversation(scope, ctx.userId, conversationId, now)
   const recentMessages = await persistence.agent.listRecentMessages(scope, conversationId, 12)
   const modelInput = recentMessages.reverse().map(message => ({ role: message.role === 'ASSISTANT' ? 'assistant' : 'user', content: message.content.slice(0, 20_000) }))
-  modelInput.unshift({ role: 'system', content: formatAssistantPromptContext({ currentDate: new Date().toISOString().slice(0, 10), authenticatedUser, selectedProject: selectedProject ?? null, selectedItem: selectedItem ?? null }) })
+  modelInput.unshift({ role: 'system', content: formatAssistantPromptContext({ currentDate: new Date().toISOString().slice(0, 10), authenticatedUser, selectedProject: selectedProject ?? null, selectedItem: selectedItem ?? null, screenSnapshot: screenContext ? compactScreenSnapshot(screenContext) : null }) })
   modelInput.unshift({ role: 'system', content: `${AZY_AGENT_SYSTEM_PROMPT}\n${ASSIGNED_CARD_PRIORITY_INSTRUCTION}` })
   if (modelContext && modelInput.length) modelInput[modelInput.length - 1]!.content = `${modelInput[modelInput.length - 1]!.content}\n\nContexto confiável da operação anterior:\n${modelContext}`
   const itemTypeScope = itemTypeScopeForMessage(content)
@@ -725,13 +779,14 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
     ? getSharedToolDefinitions(['list_projects', 'get_project', 'get_board', 'get_tree', 'list_tasks', 'get_current_sprint']).map(tool => tool.name)
     : toolsForMessage(content, `${toolContext} ${modelContext ?? ''}`)
   const toolAllowlist = await filterToolsByPolicy(ctx, candidateTools, effectiveProjectId ?? undefined)
-  const runContext = { source: 'azy-agent' as const, userId: ctx.userId, tenantId: ctx.tenantId, globalGroup: ctx.globalGroup, projectId: conversation.projectId ?? undefined, targetProjectId: effectiveProjectId ?? undefined, itemId: explicitProjectId ? undefined : expectedItemId ?? undefined, screen, conversationId, itemTypeScope }
+  const runContext = { source: 'azy-agent' as const, userId: ctx.userId, tenantId: ctx.tenantId, globalGroup: ctx.globalGroup, projectId: conversation.projectId ?? undefined, targetProjectId: effectiveProjectId ?? undefined, itemId: explicitProjectId ? undefined : expectedItemId ?? undefined, screen, conversationId, itemTypeScope, screenSnapshot: screenContext ?? undefined }
   const executionState = {
     transcript: modelInput,
     toolAllowlist,
     runContext: {
       projectId: conversation.projectId ?? undefined, targetProjectId: effectiveProjectId ?? undefined,
       itemId: explicitProjectId ? undefined : expectedItemId ?? undefined, screen, itemTypeScope,
+      screenSnapshot: screenContext ?? undefined,
     },
     counters: { steps: 0, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 },
   }
@@ -746,7 +801,7 @@ assistantRouter.post('/conversations/:conversationId/messages', async (c) => {
   if (!parsed.ok) return parsed.response
   const body = parsed.data
   const key = c.req.header('Idempotency-Key') ?? `message:${context(c).userId}:${generateId()}`
-  return runMessage(c, c.req.param('conversationId'), body.content, key, undefined, body.projectId === undefined ? undefined : body.projectId as string | null, body.itemId === undefined ? undefined : body.itemId as string | null, body.screen as AssistantScreen | undefined)
+  return runMessage(c, c.req.param('conversationId'), body.content, key, undefined, body.projectId === undefined ? undefined : body.projectId as string | null, body.itemId === undefined ? undefined : body.itemId as string | null, body.screen as AssistantScreen | undefined, body.context === undefined ? undefined : body.context)
 })
 
 assistantRouter.post('/conversations/:conversationId/resume', async (c) => {

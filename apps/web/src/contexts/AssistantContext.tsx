@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import type { AssistantScreen } from '@azy-board/assistant-contracts'
+import type { AssistantScreen, AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 import type { ItemType } from '@azy-board/domain'
 import type { AncestorNode } from '@azy-board/ui-contracts'
 import { useAuth } from './AuthContext'
@@ -30,6 +30,9 @@ export interface AssistantPageContext {
   item?: AssistantSelectedItem | null
   boardView?: 'kanban' | 'tree'
   filters?: Record<string, string | boolean | null>
+  // Fotografia do contexto da tela publicada pela visualização ativa
+  // (board Kanban/árvore). Capturada e fixada no envio do pedido.
+  screenSnapshot?: AssistantScreenSnapshot | null
 }
 
 interface AssistantContextValue {

@@ -325,4 +325,27 @@ export const coreDataset: EvalCase[] = [
     ],
     retry: 1,
   },
+  {
+    id: 'captured-screen-sprint-update',
+    description: 'Card T16 — pedido sobre os cards que estão aparecendo: o servidor fixa o conjunto capturado e aplica nele apenas sprint/versão',
+    userMessage: 'Coloque todos os cards que estão aparecendo na sprint "Ciclo 1" e na versão "V Um"',
+    setup: {
+      captureMode: 'filtered',
+      items: [
+        { ref: 'epic', title: 'Épico captura', type: 'EPIC' },
+        { ref: 'story', title: 'História captura', type: 'STORY', parentRef: 'epic' },
+        { ref: 'taskCap1', title: 'Task capturada 1', type: 'TASK', parentRef: 'story', column: 'A Fazer' },
+        { ref: 'bugCap1', title: 'Bug capturado 1', type: 'BUG', parentRef: 'story', column: 'A Fazer' },
+      ],
+    },
+    expectations: {
+      expectedTools: [{ name: 'update_items', argsContains: { filters: { matchAll: false } } }],
+      forbiddenTools: ['update_item', 'batch', 'move_task'],
+    },
+    qualitativeLints: [
+      { dimension: 'toolCorrectness', criterion: 'Considerando os args das chamadas acima, o servidor fixou o conjunto capturado da tela (matchAll: false) e atualizou sprint e versão somente nos cards capturados, sem re-filtrar além da fotografia' },
+      { dimension: 'scope', criterion: 'O resultado cobre exatamente os cards capturados, sem incluir itens fora do conjunto exibido' },
+    ],
+    retry: 1,
+  },
 ]

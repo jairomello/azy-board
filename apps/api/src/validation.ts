@@ -110,6 +110,9 @@ export const moveItemSchema = z.object({ columnId: z.string().min(1) }).strict()
 
 const itemFiltersSchema = z.object({
   itemIds: z.array(z.string().min(1)).max(500).nullable().optional(),
+  // Card T16 — revisões capturadas (id → updatedAt) verificadas na execução
+  // para detectar escrita concorrente entre a prévia e a aprovação.
+  expectedRevisions: z.record(z.string().max(64), z.string().min(1).max(40)).optional(),
   types: z.array(itemTypeSchema).nullable().optional(),
   statuses: z.array(z.enum(['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED', 'ARCHIVED'])).nullable().optional(),
   sprint: z.string().min(1).nullable().optional(),
@@ -200,10 +203,62 @@ export const assistantModelConfigUpdateSchema = z.object({
 }).strict().refine(value => Object.keys(value).length > 0, { message: 'Informe ao menos uma alteração' })
 export const assistantModelConfigsReorderSchema = z.object({ orderedIds: z.array(z.string().min(1).max(100)) }).strict()
 export const conversationSchema = z.object({ projectId: z.string().min(1).nullable().optional(), title: z.string().max(200).nullable().optional() }).strict()
-export const assistantMessageSchema = z.object({ content: z.string().trim().min(1).max(20_000), projectId: z.string().min(1).nullable().optional(), itemId: z.string().min(1).nullable().optional(), screen: z.enum(['projects-index', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'item-detail', 'account', 'admin-users', 'admin-assistant', 'global-other']).nullable().optional() }).strict()
-export const assistantAnswerSchema = z.object({ answer: z.string().trim().min(1).max(20_000) }).strict()
+
+// ── Fotografia do contexto da tela (Card T16) ───────────────────────────────
+const ASSISTANT_SCREEN_VALUES = ['projects-index', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'item-detail', 'account', 'admin-users', 'admin-assistant', 'global-other'] as const
+export const assistantScreenSchema = z.enum(ASSISTANT_SCREEN_VALUES)
+
+const screenFilterValueSchema = z.union([
+  z.string().max(600),
+  z.array(z.string().min(1).max(128)).max(100),
+  z.boolean(),
+  z.null(),
+  z.object({ operator: z.literal('IS_EMPTY') }).strict(),
+])
+
+const screenIdSchema = z.string().min(1).max(64)
+
+export const assistantScreenSnapshotSchema = z.object({
+  schemaVersion: z.literal(1),
+  contextId: screenIdSchema,
+  capturedAt: z.string().max(40),
+  route: z.string().max(600),
+  screen: assistantScreenSchema,
+  projectId: screenIdSchema.nullable(),
+  projectName: z.string().max(300).nullable(),
+  view: z.object({
+    mode: z.enum(['kanban', 'tree']),
+    activeModuleId: screenIdSchema.nullable(),
+    collapsedGroupIds: z.array(screenIdSchema).max(500),
+  }).strict(),
+  filters: z.record(z.string().max(64), screenFilterValueSchema),
+  scope: z.object({ mode: z.enum(['ALL', 'FILTERED']) }).strict(),
+  results: z.object({
+    displayedItemIds: z.array(screenIdSchema).max(500),
+    displayedCount: z.number().int().min(0).max(100_000),
+    totalMatchingCount: z.number().int().min(0).max(100_000).nullable(),
+    isComplete: z.boolean(),
+    revisions: z.record(z.string().max(64), z.string().min(1).max(40)),
+  }).strict(),
+  focus: z.object({
+    modalStack: z.number().int().min(0).max(20),
+    activeItemId: screenIdSchema.nullable(),
+    activeTab: z.string().max(64).nullable(),
+    hasUnsavedChanges: z.boolean(),
+  }).strict(),
+}).strict()
+// Tamanho máximo do envelope serializado (proteção da janela do prompt e do contexto de execução).
+export const SCREEN_SNAPSHOT_MAX_BYTES = 240_000
+
+export function screenSnapshotIssues(error: z.ZodError) {
+  return error.issues.map(issue => ({ path: issue.path.join('.'), message: issue.message }))
+}
+
+export const assistantMessageSchema = z.object({ content: z.string().trim().min(1).max(20_000), projectId: z.string().min(1).max(64).nullable().optional(), itemId: z.string().min(1).max(64).nullable().optional(), screen: assistantScreenSchema.nullable().optional(), context: assistantScreenSnapshotSchema.nullable().optional() }).strict()
 export const assistantApprovalSchema = z.object({ approved: z.boolean(), operationHash: z.string().min(1).max(500) }).strict()
-export const assistantAdjustSchema = z.object({ instruction: z.string().trim().min(1).max(20_000), operationHash: z.string().min(1).max(500), projectId: z.string().min(1).nullable().optional(), itemId: z.string().min(1).nullable().optional() }).strict()
+export const assistantAnswerSchema = z.object({ answer: z.string().trim().min(1).max(20_000) }).strict()
+export const assistantAdjustSchema = z.object({ instruction: z.string().trim().min(1).max(20_000), operationHash: z.string().min(1).max(500), projectId: z.string().min(1).max(64).nullable().optional(), itemId: z.string().min(1).max(64).nullable().optional(), context: assistantScreenSnapshotSchema.nullable().optional() }).strict()
+
 export const itemTagsSchema = z.object({ tagIds: z.array(z.string().min(1)).max(500) }).strict()
 export const itemSprintSchema = z.object({ sprintId: z.string().min(1) }).strict()
 export const workLogSchema = z.object({ activity: z.string().trim().min(1).max(20_000), duration: z.string().max(20).nullable().optional() }).strict()
@@ -211,6 +266,7 @@ export const updateWorkLogSchema = workLogSchema.partial().strict()
 export const itemLogSchema = z.object({ activity: z.string().trim().min(1).max(20_000), durationMin: z.number().finite().min(0).nullable().optional() }).strict()
 export const updateItemLogSchema = itemLogSchema.partial().strict()
 export const confirmationSchema = z.object({ confirm: z.boolean().optional(), dryRun: z.boolean().optional() }).strict()
+
 // T10: metadados opcionais de anexos (label, data de referência, descrição Markdown).
 // String em branco normaliza para null (limpa o campo); chave ausente = não alterada.
 // referenceDate valida calendário real (ISO date-only é estrito no Date.parse).

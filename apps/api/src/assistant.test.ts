@@ -345,10 +345,34 @@ História: Projetos`
       authenticatedUser: { id: 'u1', name: 'Usuário', email: 'user@test.local', globalGroup: 'TEAM_MEMBER', language: 'pt-BR' },
       selectedProject: { id: 'p1', name: 'Projeto' },
       selectedItem: { id: 't1', title: 'Task', type: 'TASK', ancestry: [{ id: 'e1', title: 'Épico', type: 'EPIC' }] },
+      screenSnapshot: null,
     })
     expect(prompt).toContain('"globalGroup":"TEAM_MEMBER"')
     expect(prompt).toContain('"selectedProject":{"id":"p1","name":"Projeto"}')
     expect(prompt).toContain('"ancestry":[{"id":"e1","title":"Épico","type":"EPIC"}]')
+  })
+
+  test('formata contexto autoritativo com fotografia compacta da tela (Card T16)', () => {
+    const prompt = formatAssistantPromptContext({
+      currentDate: '2026-10-03',
+      authenticatedUser: { id: 'u1', name: 'Usuário', email: 'user@test.local', globalGroup: 'TEAM_MEMBER', language: 'pt-BR' },
+      selectedProject: { id: 'p1', name: 'Projeto' },
+      selectedItem: null,
+      screenSnapshot: {
+        contextId: 'ctx-1',
+        capturedAt: '2026-10-03T14:30:00.000Z',
+        route: '/projects/p1/board',
+        screen: 'project-board-kanban',
+        scope: { mode: 'FILTERED' },
+        filters: { sprintId: { operator: 'IS_EMPTY' } },
+        results: { displayedItemIds: ['t1', 't2'], displayedCount: 2, totalMatchingCount: 2, isComplete: true },
+      },
+    })
+    expect(prompt).toContain('"contextId":"ctx-1"')
+    expect(prompt).toContain('"scope":{"mode":"FILTERED"}')
+    expect(prompt).toContain('"displayedCount":2')
+    // Compacto: no máximo 20 IDs de referência; sem revisões no prompt.
+    expect(prompt).not.toContain('"revisions"')
   })
 
   test('rejeita itemId inválido antes de persistir mensagem ou run', async () => {

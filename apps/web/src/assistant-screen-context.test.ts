@@ -17,4 +17,30 @@ describe('contexto de tela do Azy Agent', () => {
     expect(text.includes('CAPABILITY_NOT_IMPLEMENTED')).toBe(true)
     expect(text.includes('capabilityUnavailable')).toBe(true)
   })
+
+  test('fotografia do contexto da tela (Card T16)', async () => {
+    const contracts = await source('../../../packages/assistant-contracts/src/index.ts')
+    // Contrato: envelope versionado com modo de escopo (ALL sem IDs; FILTERED com ids).
+    expect(contracts.includes('AssistantScreenSnapshot')).toBe(true)
+    expect(contracts.includes("'ALL' | 'FILTERED'")).toBe(true)
+    expect(contracts.includes("operator: 'IS_EMPTY'")).toBe(true)
+
+    const board = await source('./features/board/BoardScreen.tsx')
+    expect(board.includes('buildScreenSnapshot')).toBe(true)
+    expect(board.includes('assistantScreenSnapshot={assistantScreenSnapshot}')).toBe(true)
+
+    const tree = await source('./pages/TreeViewPage.tsx')
+    expect(tree.includes('onSnapshotChange')).toBe(true)
+    expect(tree.includes("screen: 'project-board-tree'")).toBe(true)
+    // Nós de agrupamento ficam fora do conjunto capturado (somente TASK/BUG folhas).
+    expect(tree.includes("node.type === 'TASK' || node.type === 'BUG'")).toBe(true)
+
+    const context = await source('./contexts/AssistantContext.tsx')
+    expect(context.includes('screenSnapshot')).toBe(true)
+
+    const drawer = await source('./components/AzyAgentDrawer.tsx')
+    // O escopo interpretado aparece no chat e viaja no payload do envio.
+    expect(drawer.includes('scopeChipLabels')).toBe(true)
+    expect(drawer.includes('context: pageContext?.screenSnapshot ?? null')).toBe(true)
+  })
 })

@@ -41,7 +41,7 @@ describe('contratos de interação do Azy Agent', () => {
     expect(text.includes('history')).toBe(false)
     expect(text.includes('function openDrawer')).toBe(true)
     expect(text.includes('conversation.projectId === (projectId ?? null)')).toBe(true)
-    expect(text.includes('{ content: text, screen: pageContext?.screen ?? \'global-other\', projectId: projectId ?? null, itemId: itemId ?? null }')).toBe(true)
+    expect(text.includes('{ content: text, screen: pageContext?.screen ?? \'global-other\', projectId: projectId ?? null, itemId: itemId ?? null, context: pageContext?.screenSnapshot ?? null }')).toBe(true)
   })
   test('propaga item selecionado, mostra breadcrumb e reconcilia conclusão por runId', async () => {
     const drawer = await source('./components/AzyAgentDrawer.tsx')

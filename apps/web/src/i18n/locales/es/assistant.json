@@ -112,5 +112,8 @@
   "modelFormHelp": "Prueba el proveedor y el modelo antes de guardar. La clave se cifra en el servidor.",
   "fallbackPrivacyNote": "Las claves se almacenan cifradas; la lista solo muestra un prefijo enmascarado.",
   "connectionInvalid": "No se pudo validar la conexión.",
-  "credentialUnavailable": "Credencial no disponible"
+  "credentialUnavailable": "Credencial no disponible",
+  "scopeAll": "Resultado actual: todas las tarjetas (sin filtro) — la acción vale para todas",
+  "scopeAllCount": "{{count}} tarjetas en el resultado",
+  "scopeFiltered": "Resultado actual: {{count}} tarjetas mostradas (con filtro)"
 }

@@ -143,3 +143,77 @@ describe('relações de batch limitadas ao tenant/projeto (Item 15)', () => {
     expect((await db.select().from(items).where(eq(items.id, contexts.alpha!.itemId)))[0]!.priority).toBe('LOW') // item do alpha intacto (LOw definido no primeiro teste)
   })
 })
+
+describe('escopo travado pela fotografia da tela (Card T16)', () => {
+  async function storyIdOf(ctx: Ctx): Promise<string> {
+    const [project] = await db.select().from(projects).where(eq(projects.id, ctx.projectId))
+    return project!.simpleStoryId!
+  }
+
+  async function inserirCard(ctx: Ctx, titulo: string): Promise<string> {
+    const id = generateId()
+    await db.insert(items).values({ id, tenantId: ctx.tenantId, projectId: ctx.projectId, type: 'TASK', parentId: await storyIdOf(ctx), ancestryPath: '[]', title: titulo, status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now })
+    return id
+  }
+
+  test('aplica a mutação somente aos IDs fixados', async () => {
+    const alpha = contexts.alpha!
+    const cardA = await inserirCard(alpha, 'Capturado A')
+    const cardB = await inserirCard(alpha, 'Capturado B')
+    const cardC = await inserirCard(alpha, 'Fora do conjunto')
+    const run = await batchUpdate(alpha, {
+      filters: { itemIds: [cardA, cardB], matchAll: false },
+      changes: [{ field: 'priority', operation: 'SET', value: 'LOW' }],
+    })
+    expect(run.status).toBe(200)
+    expect((run.body as { matchedCount: number }).matchedCount).toBe(2)
+    expect(((await db.select().from(items).where(eq(items.id, cardC)))[0]!).priority).toBe('MEDIUM')
+  })
+
+  test('divergência de revisão recusa o conjunto com os IDs divergentes', async () => {
+    const alpha = contexts.alpha!
+    const card = await inserirCard(alpha, 'Concorrente')
+    const stale = new Date(Date.now() - 60_000).toISOString()
+    const conflicto = await batchUpdate(alpha, {
+      filters: { itemIds: [card], matchAll: false, expectedRevisions: { [card]: stale } },
+      changes: [{ field: 'priority', operation: 'SET', value: 'LOW' }],
+    })
+    expect(conflicto.status).toBe(409)
+    const conflictoBody = (conflicto.body as { error: { code?: string; details?: { divergentIds?: string[] } } }).error
+    expect(conflictoBody.code).toBe('CONCURRENT_WRITE')
+    expect(conflictoBody.details?.divergentIds).toEqual([card])
+
+    // Com a revisão corrente, a mesma operação é aceita.
+    const [corrente] = await db.select().from(items).where(eq(items.id, card))
+    const okRun = await batchUpdate(alpha, {
+      filters: { itemIds: [card], matchAll: false, expectedRevisions: { [card]: corrente!.updatedAt } },
+      changes: [{ field: 'priority', operation: 'SET', value: 'HIGH' }],
+    })
+    expect(okRun.status).toBe(200)
+  })
+
+  test('card novo que passa a corresponder não entra; conjunto vazio não faz fallback', async () => {
+    const alpha = contexts.alpha!
+    const foraDoConjunto = await inserirCard(alpha, 'Card novo após o envio')
+    const run = await batchUpdate(alpha, {
+      filters: { itemIds: [generateId()], matchAll: false },
+      changes: [{ field: 'priority', operation: 'SET', value: 'LOW' }],
+    })
+    expect(run.status).toBe(422)
+    expect((run.body as { error?: { code?: string } }).error?.code).toBe('NO_ITEMS_MATCHED')
+    expect(((await db.select().from(items).where(eq(items.id, foraDoConjunto)))[0]!).priority).toBe('MEDIUM')
+  })
+
+  test('SET de sprint em sprint fechada é recusado sem associação', async () => {
+    const alpha = contexts.alpha!
+    const card = await inserirCard(alpha, 'Sprint fechada')
+    const fechada = generateId()
+    await db.insert(sprints).values({ id: fechada, tenantId: alpha.tenantId, projectId: alpha.projectId, name: 'Fechada T16', status: 'CLOSED', startDate: '2026-01-01', endDate: '2026-01-14', createdAt: now })
+    const run = await batchUpdate(alpha, {
+      filters: { itemIds: [card], matchAll: false },
+      changes: [{ field: 'sprint', operation: 'SET', value: 'Fechada T16' }],
+    })
+    expect(run.status).toBe(422)
+    expect((await db.select().from(itemSprints).where(eq(itemSprints.itemId, card)))).toHaveLength(0)
+  })
+})

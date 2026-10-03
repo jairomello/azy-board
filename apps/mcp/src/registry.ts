@@ -118,7 +118,15 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'delete_checklist_item': return toolDeleteChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string)
     case 'update_item_log': return toolUpdateItemLog(api, args.projectId as string, args.itemId as string, args.logId as string, pruneNullValues(args.changes as Record<string, unknown>))
     case 'batch': return toolBatch(api, args as Parameters<typeof toolBatch>[1])
-    case 'update_items': return toolUpdateItems(api, args as Parameters<typeof toolUpdateItems>[1], execution.context.runId)
+    case 'update_items': {
+      // Card T16 — injeta as revisões capturadas na fotografia para a checagem
+      // de concorrência na rota de lote (após validação; campo interno server-side).
+      const revisions = execution.context.screenSnapshot?.results?.revisions
+      const withRevisions = revisions && Object.keys(revisions).length
+        ? { ...args, filters: { ...(args.filters as Record<string, unknown> | null ?? {}), expectedRevisions: revisions } }
+        : args
+      return toolUpdateItems(api, withRevisions as Parameters<typeof toolUpdateItems>[1], execution.context.runId)
+    }
     case 'create_project': return toolCreateProject(api, args as Parameters<typeof toolCreateProject>[1])
     case 'create_project_structure': return toolCreateProjectStructure(api, args as Parameters<typeof toolCreateProjectStructure>[1])
     case 'update_project': { const { projectId, ...changes } = args; return toolUpdateProject(api, projectId as string, changes) }

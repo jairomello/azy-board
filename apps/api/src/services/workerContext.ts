@@ -4,7 +4,7 @@
 import { persistence } from '../persistence/runtime'
 import { logger } from './logger'
 import type { AssistantRunDetailRecord, AssistantSettingsRecord, UserCredentialRecord } from '../persistence/models'
-import type { Governance } from '@azy-board/assistant-contracts'
+import type { AssistantScreenSnapshot, Governance } from '@azy-board/assistant-contracts'
 import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts'
 import { formatAssistantPromptContext } from '../routes/assistant'
 
@@ -20,6 +20,8 @@ export interface WorkerRunContext {
   itemId?: string
   screen?: string
   itemTypeScope?: Array<'EPIC' | 'STORY' | 'TASK' | 'BUG'>
+  // Card T16 — fotografia do contexto da tela fixada na criação do run.
+  screenSnapshot?: AssistantScreenSnapshot
   executionState: Record<string, unknown>
   // Governance limits
   governance: Governance
@@ -83,7 +85,7 @@ export async function loadRunContext(runId: string, tenantId: string): Promise<W
     const project = conversation.projectId ? await persistence.projects.getProject(scope, conversation.projectId) : null
     const authenticatedUser = { id: user.id, name: user.name, email: user.email, globalGroup: user.globalGroup, language: user.language }
     const selectedProject = project ? { id: project.id, name: project.name, startDate: project.startDate, plannedEndDate: project.plannedEndDate, plannedPoints: project.plannedPoints, plannedHours: project.plannedHours, scope: project.scope } : null
-    transcript.push({ role: 'system', content: formatAssistantPromptContext({ currentDate: new Date().toISOString().slice(0, 10), authenticatedUser, selectedProject, selectedItem: null }) })
+    transcript.push({ role: 'system', content: formatAssistantPromptContext({ currentDate: new Date().toISOString().slice(0, 10), authenticatedUser, selectedProject, selectedItem: null, screenSnapshot: null }) })
     transcript.push(...modelMessages)
     executionState.transcript = transcript
   }
@@ -114,6 +116,11 @@ export async function loadRunContext(runId: string, tenantId: string): Promise<W
     itemId: typeof savedContext.itemId === 'string' ? savedContext.itemId : undefined,
     screen: typeof savedContext.screen === 'string' ? savedContext.screen : 'global-other',
     itemTypeScope: Array.isArray(savedContext.itemTypeScope) ? savedContext.itemTypeScope as WorkerRunContext['itemTypeScope'] : undefined,
+    // Card T16 — snapshot cru do runContext: formato não exigido aqui; o
+    // canonicalArguments trata ausência como comportamento atual (sem snapshot).
+    screenSnapshot: savedContext.screenSnapshot && typeof savedContext.screenSnapshot === 'object' && !Array.isArray(savedContext.screenSnapshot)
+      ? savedContext.screenSnapshot as AssistantScreenSnapshot
+      : undefined,
     executionState,
     governance,
     messages: modelMessages,

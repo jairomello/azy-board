@@ -1,4 +1,5 @@
 import type { AssistantScreen, Governance } from '@azy-board/assistant-contracts'
+import type { HarnessContext, PreviewPopulation } from './assistantHarness'
 import { persistence } from '../persistence/runtime'
 import { authorizeAssistantTool, available } from '../routes/assistant'
 import { decryptAssistantSecret } from './assistantEncryption'
@@ -31,6 +32,38 @@ function harnessLimits(governance: Governance) {
     outputTokens: governance.maxOutputTokens, payloadBytes: governance.maxPayloadBytes,
     timeoutMs: governance.timeoutMs, costMicros: governance.dailyBudgetMicros,
   }
+}
+
+// Card T16 — população real do conjunto capturado pela fotografia da tela:
+// quantos correspondem agora e quantos divergem (escrita concorrente).
+async function updateItemsPopulation(context: HarnessContext, name: string, args: Record<string, unknown>): Promise<PreviewPopulation | null> {
+  if (name !== 'update_items') return null
+  const projectId = context.targetProjectId ?? context.projectId
+  if (!projectId) return null
+  const filters = (args.filters && typeof args.filters === 'object' && !Array.isArray(args.filters) ? args.filters : {}) as { itemIds?: unknown; expectedRevisions?: unknown; types?: unknown }
+  // [TENANT] Leitura do snapshot no tenant/autor do run — o run define a identidade.
+  const scope = { tenantId: context.tenantId, actorUserId: context.userId, actorKind: 'USER' as const }
+  const batchSnapshot = await persistence.batch.loadItemUpdateSnapshot(scope, projectId)
+  if (!batchSnapshot) return null
+  const activeItems = batchSnapshot.items.filter(item => item.status !== 'ARCHIVED')
+  const scopeTypes = Array.isArray(filters.types) && filters.types.length ? new Set(filters.types as string[]) : null
+  const expectedRevisions = filters.expectedRevisions && typeof filters.expectedRevisions === 'object' && !Array.isArray(filters.expectedRevisions)
+    ? filters.expectedRevisions as Record<string, string>
+    : null
+  const lockedIds = Array.isArray(filters.itemIds) && filters.itemIds.length ? filters.itemIds as string[] : null
+
+  let conflictingCount: number | null = null
+  if (expectedRevisions) {
+    let conflicts = 0
+    for (const [id, revision] of Object.entries(expectedRevisions)) {
+      const item = batchSnapshot.items.find(candidate => candidate.id === id)
+      if (item && item.updatedAt !== revision) conflicts += 1
+    }
+    conflictingCount = conflicts
+  }
+  const base = activeItems.filter(item => !scopeTypes || scopeTypes.has(item.type))
+  const matchedCount = lockedIds ? base.filter(item => lockedIds.includes(item.id)).length : base.length
+  return { displayedCount: lockedIds?.length ?? null, matchedCount, conflictingCount }
 }
 
 /** Executa uma run reivindicada, reconstruindo identidade, configuração e tools do tenant. */
@@ -81,6 +114,7 @@ export async function executeAssistantRun(runId: string, tenantId: string): Prom
     screen: (loaded.screen ?? 'global-other') as AssistantScreen,
     conversationId: loaded.conversationId,
     itemTypeScope: loaded.itemTypeScope,
+    screenSnapshot: loaded.screenSnapshot,
   }
   const provider = new FallbackModelProvider(candidates, {
     timeoutMs: loaded.governance.timeoutMs,
@@ -98,6 +132,8 @@ export async function executeAssistantRun(runId: string, tenantId: string): Prom
       api: workerApi, context: toolContext, authorize: authorizeAssistantTool,
     }),
     authorize: authorizeAssistantTool,
+    // Card T16 — prévia com a população real do conjunto capturado.
+    populationResolver: updateItemsPopulation,
     assertAvailable: async () => { if (!await available(tenantId)) throw new Error('ASSISTANT_UNAVAILABLE') },
     checkCancel: async currentRunId => await isCancelRequested(currentRunId, tenantId),
   })

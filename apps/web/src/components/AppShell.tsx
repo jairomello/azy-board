@@ -22,6 +22,7 @@ import { canAccessAdmin, canAccessProjectSettings } from '../permissions'
 import { useTranslation } from 'react-i18next'
 import { useAssistant, type AssistantSelectedItem } from '../contexts/AssistantContext'
 import type { AssistantScreen } from '@azy-board/assistant-contracts'
+import type { AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 import { isProjectNameTruncated, truncateProjectName } from '../lib/projectName'
 import { projectIconComponent } from '../lib/iconCatalog'
 
@@ -41,6 +42,7 @@ interface AppShellProps {
   assistantScreen?: AssistantScreen
   assistantBoardView?: 'kanban' | 'tree'
   assistantFilters?: Record<string, string | boolean | null>
+  assistantScreenSnapshot?: AssistantScreenSnapshot | null
 }
 
 interface NavItem {
@@ -67,6 +69,7 @@ export function AppShell({
   assistantScreen,
   assistantBoardView,
   assistantFilters,
+  assistantScreenSnapshot,
 }: AppShellProps) {
   const location = useLocation()
   const { user } = useAuth()
@@ -102,9 +105,9 @@ export function AppShell({
   }, [projectId])
 
   useEffect(() => {
-    setPageContext({ screen: assistantScreen ?? inferredScreen, projectId, projectName, item: assistantSelectedItem ?? null, boardView: assistantBoardView, filters: assistantFilters })
+    setPageContext({ screen: assistantScreen ?? inferredScreen, projectId, projectName, item: assistantSelectedItem ?? null, boardView: assistantBoardView, filters: assistantFilters, screenSnapshot: assistantScreenSnapshot ?? null })
     return () => setPageContext(null)
-  }, [assistantBoardView, assistantFilters, assistantScreen, assistantSelectedItem, inferredScreen, projectId, projectName, setPageContext])
+  }, [assistantBoardView, assistantFilters, assistantScreen, assistantScreenSnapshot, assistantSelectedItem, inferredScreen, projectId, projectName, setPageContext])
 
   useEffect(() => setMobileOpen(false), [location.pathname])
   useEffect(() => {

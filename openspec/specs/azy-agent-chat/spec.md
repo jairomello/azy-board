@@ -1,9 +1,7 @@
 ## Purpose
 
 Definir a conversa contextual do Azy Agent na interface humana.
-
 ## Requirements
-
 ### Requirement: Cortina lateral global do Azy Agent
 O frontend SHALL exibir uma cortina lateral de chat no lado direito das telas protegidas quando o tenant tiver o Azy Agent disponível, permitindo abrir, fechar, redimensionar em desktop quando suportado e usar layout adaptado em mobile.
 
@@ -16,7 +14,7 @@ O frontend SHALL exibir uma cortina lateral de chat no lado direito das telas pr
 - **THEN** o botão e a cortina não ficam disponíveis para o usuário comum
 
 ### Requirement: Conversa contextual com streaming
-O sistema SHALL permitir enviar mensagens autenticadas, associadas ao tenant, usuário e projeto opcional, e SHALL transmitir resposta, progresso de tools, perguntas e aprovações de forma incremental e reconectável. Quando um projeto estiver selecionado, o contexto injetado no prompt do agente SHALL incluir os campos de planejamento do projeto (`startDate`, `plannedEndDate`, `plannedPoints`, `plannedHours`, `scope`) quando preenchidos, permitindo ao agente usar essas informações como referência nas respostas.
+O sistema SHALL permitir enviar mensagens autenticadas, associadas ao tenant, usuário e projeto opcional, e SHALL transmitir resposta, progresso de tools, perguntas e aprovações de forma incremental e reconectável. O envio de mensagem, a revisão de aprovação e o ajuste SHALL poder transportar uma fotografia versionada do contexto da tela (tela, projeto, visualização, filtros com semântica de ausência e IDs dos cards apresentados), que o servidor SHALL validar e fixar na execução do run. Quando um projeto estiver selecionado, o contexto injetado no prompt do agente SHALL incluir os campos de planejamento do projeto (`startDate`, `plannedEndDate`, `plannedPoints`, `plannedHours`, `scope`) quando preenchidos, permitindo ao agente usar essas informações como referência nas respostas.
 
 #### Scenario: Usuário faz pergunta sobre o board
 - **WHEN** usuário envia pergunta com projeto selecionado
@@ -29,6 +27,14 @@ O sistema SHALL permitir enviar mensagens autenticadas, associadas ao tenant, us
 #### Scenario: Agente usa dados de planejamento no contexto
 - **WHEN** usuário pergunta ao agente sobre o planejamento do projeto selecionado
 - **THEN** o agente tem acesso aos campos `startDate`, `plannedEndDate`, `plannedPoints`, `plannedHours` e `scope` no contexto do projeto e pode referenciá-los na resposta
+
+#### Scenario: Mensagem transporta a fotografia da tela
+- **WHEN** usuário envia mensagem com fotografia do contexto disponível
+- **THEN** o servidor valida o projeto, os filtros e cada ID apresentado antes de fixar o snapshot na execução
+
+#### Scenario: Ajuste reenvia o contexto capturado
+- **WHEN** usuário envia instrução de ajuste em uma run pendente
+- **THEN** a revisão do pedido continua com o snapshot capturado no envio original
 
 ### Requirement: Perguntas e aprovações retomáveis
 O chat SHALL renderizar perguntas de esclarecimento e pedidos de aprovação como estados pendentes, preservando o run até que o usuário responda, aprove, rejeite ou expire.
@@ -88,3 +94,4 @@ O chat SHALL informar busca, esclarecimento ou limitação de forma localizada. 
 #### Scenario: Restrição real
 - **WHEN** a operação é proibida ou não implementada
 - **THEN** a mensagem explica a razão real e não exibe códigos internos do harness
+

@@ -112,5 +112,8 @@
   "modelFormHelp": "Test the provider and model before saving. The key is encrypted on the server.",
   "fallbackPrivacyNote": "Keys are stored encrypted; the list only shows a masked prefix.",
   "connectionInvalid": "The connection could not be validated.",
-  "credentialUnavailable": "Credential unavailable"
+  "credentialUnavailable": "Credential unavailable",
+  "scopeAll": "Current result: all cards (no filter) — the action applies to everyone",
+  "scopeAllCount": "{{count}} cards in the result",
+  "scopeFiltered": "Current result: {{count}} cards displayed (filtered)"
 }

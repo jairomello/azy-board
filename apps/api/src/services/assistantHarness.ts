@@ -6,6 +6,7 @@ import { executeSharedTool, friendlyToolName, getSharedToolDefinitions, sanitize
 import type { ModelInput, ModelProvider, ModelResponse, ModelTool } from './openaiProvider'
 import { coerceArgumentsBySchema, validateToolArguments } from '@azy-board/tool-registry'
 import { HARNESS_LIMITS } from '@azy-board/assistant-contracts'
+import type { AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 import { isOtelInitialized, getOtelMeter } from './telemetry'
 
 // Métricas OTel para runs do agente
@@ -48,9 +49,10 @@ export const ASSIGNED_CARD_PRIORITY_INSTRUCTION = `When choosing the next card t
 // Reexportado para compatibilidade; a fonte única é @azy-board/types.
 export { HARNESS_LIMITS }
 export type RiskLevel = 'READ' | 'LOW' | 'MEDIUM' | 'HIGH' | 'DESTRUCTIVE'
-export type HarnessContext = HumanToolContext & { conversationId: string; runId: string; itemTypeScope?: Array<'EPIC' | 'STORY' | 'TASK' | 'BUG'> }
+export type HarnessContext = HumanToolContext & { conversationId: string; runId: string; itemTypeScope?: Array<'EPIC' | 'STORY' | 'TASK' | 'BUG'>; screenSnapshot?: AssistantScreenSnapshot }
 type HarnessLimits = { [Key in keyof typeof HARNESS_LIMITS]: number }
-export type HarnessOptions = { agent?: AgentPort; provider: ModelProvider; executeTool: (name: string, args: Record<string, unknown>, context: HarnessContext) => Promise<unknown>; authorize?: (context: HarnessContext, name: string, args: Record<string, unknown>) => Promise<void>; assertAvailable?: (context: HarnessContext) => Promise<void>; limits?: Partial<HarnessLimits>; checkCancel?: (runId: string) => Promise<boolean> }
+export type PreviewPopulation = { displayedCount: number | null; matchedCount: number; conflictingCount: number | null }
+export type HarnessOptions = { agent?: AgentPort; provider: ModelProvider; executeTool: (name: string, args: Record<string, unknown>, context: HarnessContext) => Promise<unknown>; authorize?: (context: HarnessContext, name: string, args: Record<string, unknown>) => Promise<void>; assertAvailable?: (context: HarnessContext) => Promise<void>; limits?: Partial<HarnessLimits>; checkCancel?: (runId: string) => Promise<boolean>; populationResolver?: (context: HarnessContext, name: string, args: Record<string, unknown>) => Promise<PreviewPopulation | null> }
 
 const mutationNames = new Set(getSharedToolDefinitions().filter(tool => tool.routing.operation !== 'read').map(tool => tool.name))
 const destructiveNames = new Set(['delete_item', 'delete_project', 'archive_item', 'delete_checklist', 'delete_checklist_item', 'remove_member'])
@@ -270,7 +272,12 @@ export class AssistantHarness {
               const existingModules = name === 'batch' && typeof args.projectId === 'string'
                 ? await this.agent.listModuleNames(this.scope(context.tenantId, context.userId), args.projectId as string)
                 : undefined
-              await this.agent.insertApproval(this.scope(context.tenantId, context.userId), { id: randomUUID(), runId, toolCallId: callId, previewJson: JSON.stringify(approvalPreview(name, args, fullContext, existingModules)), operationHash: hash, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), createdAt: new Date().toISOString() })
+              // Card T16 — população real do conjunto capturado (quantidade e
+              // divergências) para a prévia de update_items escopado pela tela.
+              const population = name === 'update_items' && this.options.populationResolver
+                ? (await this.options.populationResolver(fullContext, name, args)) ?? undefined
+                : undefined
+              await this.agent.insertApproval(this.scope(context.tenantId, context.userId), { id: randomUUID(), runId, toolCallId: callId, previewJson: JSON.stringify(approvalPreview(name, args, fullContext, existingModules, population)), operationHash: hash, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(), createdAt: new Date().toISOString() })
               await this.event(runId, context.tenantId, 'APPROVAL_REQUIRED', { tool: name, operationHash: hash, domain: tool.routing.domain, expanded: Boolean(allowlist && !allowlist.includes(name)), catalogCount: allowlist?.length ?? null })
               const pendingIndex = assistantTurn.findIndex(entry => entry.type === 'function_call' && entry.call_id === call.callId)
               if (pendingIndex >= 0) {
@@ -406,10 +413,25 @@ export class AssistantHarness {
 }
 
 function parseArguments(value?: string): Record<string, unknown> { if (!value) throw new Error('INVALID_TOOL_ARGUMENTS'); try { const parsed = JSON.parse(value); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(); return Object.fromEntries(Object.entries(parsed as Record<string, unknown>).filter(([, item]) => item !== null && item !== 'null' && item !== '')) } catch { throw new Error('INVALID_TOOL_ARGUMENTS') } }
-export function canonicalArguments(name: string, args: Record<string, unknown>, context: Pick<HarnessContext, 'userId' | 'projectId' | 'targetProjectId' | 'itemTypeScope'>): Record<string, unknown> {
+export function canonicalArguments(name: string, args: Record<string, unknown>, context: Pick<HarnessContext, 'userId' | 'projectId' | 'targetProjectId' | 'itemTypeScope' | 'screenSnapshot'>): Record<string, unknown> {
   const scopedProjectId = context.targetProjectId ?? context.projectId
   const scopedArgs = scopedProjectId && name !== 'list_projects' && name !== 'create_project' && name !== 'create_project_structure' ? { ...args, projectId: scopedProjectId } : args
   if (name === 'update_items' && context.itemTypeScope?.length) {
+    // Card T16 — escopo travado pela fotografia da tela: o servidor reescreve
+    // os filtros e impede ampliação, independente do que o modelo produza.
+    if (context.screenSnapshot) {
+      const movesCards = Array.isArray(scopedArgs.changes) && (scopedArgs.changes as unknown[]).some(value => value && typeof value === 'object' && (value as Record<string, unknown>).field === 'column')
+        && context.itemTypeScope.every(type => type === 'TASK' || type === 'BUG')
+      const types = { ...(context.itemTypeScope.length ? { types: context.itemTypeScope } : {}), ...(movesCards ? { onlyLeaves: true } : {}) }
+      if (context.screenSnapshot.scope.mode === 'FILTERED') {
+        const ids = context.screenSnapshot.results.displayedItemIds.filter(id => typeof id === 'string' && id.trim())
+        if (ids.length === 0) return { ...scopedArgs, filters: { ...types, matchAll: false } }
+        return { ...scopedArgs, filters: { ...types, itemIds: ids, matchAll: false } }
+      }
+      // scope ALL (nenhum filtro aplicado): a ação vale para todos — população
+      // resolvida e contada no servidor; nenhuma filtragem do modelo é aplicada.
+      return { ...scopedArgs, filters: { ...types, matchAll: true } }
+    }
     const filters = scopedArgs.filters && typeof scopedArgs.filters === 'object' && !Array.isArray(scopedArgs.filters) ? scopedArgs.filters as Record<string, unknown> : {}
     const changes = Array.isArray(scopedArgs.changes) ? scopedArgs.changes : []
     const movesCards = changes.some(value => value && typeof value === 'object' && (value as Record<string, unknown>).field === 'column')
@@ -436,7 +458,7 @@ export function canonicalArguments(name: string, args: Record<string, unknown>, 
   }
   return name === 'create_project_structure' ? { ...projectArgs, operations: args.operations } : projectArgs
 }
-export function approvalPreview(name: string, args: Record<string, unknown>, context: Pick<HarnessContext, 'userId' | 'projectId' | 'itemId'>, existingModules?: readonly string[]): Record<string, unknown> {
+export function approvalPreview(name: string, args: Record<string, unknown>, context: Pick<HarnessContext, 'userId' | 'projectId' | 'itemId'>, existingModules?: readonly string[], population?: PreviewPopulation): Record<string, unknown> {
   if (name === 'create_project' || name === 'create_project_structure') {
     const fields = [
       ['Nome', args.name],
@@ -476,11 +498,26 @@ export function approvalPreview(name: string, args: Record<string, unknown>, con
   }
   if (name === 'update_items' && args.filters && Array.isArray(args.changes)) {
     const filters = args.filters as Record<string, unknown>
-    const activeFilters = Object.entries(filters).filter(([field, value]) => field !== 'matchAll' && value !== null && value !== undefined)
+    const activeFilters = Object.entries(filters).filter(([field, value]) => field !== 'matchAll' && field !== 'expectedRevisions' && value !== null && value !== undefined)
+    const lockedIds = Array.isArray(filters.itemIds) ? filters.itemIds as string[] : null
+    const matchAll = filters.matchAll === true
+    // Card T16 — para conjunto fixado, a prévia mostra a população capturada ×
+    // correspondências atuais (com conflitos), sem despejar a lista de IDs.
+    const controlledScope = lockedIds || matchAll
+    const scope = controlledScope
+      ? (matchAll
+        ? `Todos os cards do projeto (sem filtro aplicado na tela)`
+        : `Resultado exibido — conjunto fixado (${lockedIds!.length} card(s))`)
+      : activeFilters.length ? activeFilters.map(([field, value]) => `${field}: ${Array.isArray(value) ? value.join(', ') : String(value)}`).join('; ') : 'Todos os itens ativos do projeto'
+    const populationSection = population
+      ? `- **População:** ${population.displayedCount == null ? 'todos (matchAll)' : `${population.displayedCount} capturados`}; ${population.matchedCount} correspondem agora${population.conflictingCount ? `; ${population.conflictingCount} com escrita concorrente (serão recusados)` : ''}\n`
+      : ''
     const changes = args.changes as Array<{ field?: unknown; operation?: unknown; value?: unknown }>
     const lines = changes.map(change => `- **${String(change.field)}:** ${String(change.operation)}${change.value === null || change.value === undefined ? '' : ` (${String(change.value)})`}`)
-    const scope = activeFilters.length ? activeFilters.map(([field, value]) => `${field}: ${Array.isArray(value) ? value.join(', ') : String(value)}`).join('; ') : 'Todos os itens ativos do projeto'
-    return { summary: 'Atualizar itens', markdown: `### Atualizar itens\n\n- **Escopo:** ${scope}\n- **Execução:** atômica\n\n${lines.join('\n')}`, filters, changes }
+    const summaryText = population
+      ? `${controlledScope ? 'Atualizar cards do resultado exibido' : 'Atualizar itens'} — ${population.matchedCount} card(s)`
+      : 'Atualizar itens'
+    return { summary: summaryText, markdown: `### ${summaryText}\n\n- **Escopo:** ${scope}\n${populationSection}- **Execução:** atômica\n\n${lines.join('\n')}`, count: population?.matchedCount ?? (lockedIds?.length ?? 0), filters, changes }
   }
   const fields = Object.entries(args).map(([field, value]) => [field, Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value) : value])
   const displayName = friendlyToolName(name)

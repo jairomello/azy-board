@@ -4,8 +4,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, Bug as BugIcon, Pencil, Plus } from 'lucide-react'
 import { api } from '../lib/api'
 import { invalidateTree, queryKeys } from '../lib/queryKeys'
+import { buildScreenSnapshot } from '../lib/assistantSnapshot'
 import { useAuth } from '../contexts/AuthContext'
 import type { BoardFilterState } from '../components/BoardFilters'
+import type { AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 
 // Nó genérico da árvore retornado por /items/tree
 export interface TreeNode {
@@ -297,9 +299,11 @@ interface Props {
   canEdit?: boolean
   onCreate?: (type: TreeCreationType, context: TreeActionContext) => void
   onEdit?: (itemId: string) => void
+  // Card T16 — publica a fotografia do contexto da árvore (população apresentada).
+  onSnapshotChange?: (snapshot: AssistantScreenSnapshot | null) => void
 }
 
-export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, canEdit = true, onCreate, onEdit }: Props) {
+export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, canEdit = true, onCreate, onEdit, onSnapshotChange }: Props) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -338,6 +342,41 @@ export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, 
   const displayTree = filters?.hideEmptyEpics
     ? tree.map(filterHideEmptyEpics).filter((n): n is TreeNode => n !== null)
     : tree
+
+  // Card T16 — fotografia do contexto da árvore: população apresentada pela
+  // mesma árvore renderizada (nós de agrupamento excluídos do conjunto).
+  const treeSnapshot = useMemo(() => {
+    if (!projectId || loading) return null
+    const actionCardIds: string[] = []
+    const collect = (nodes: TreeNode[]) => {
+      for (const node of nodes) {
+        if ((node.type === 'TASK' || node.type === 'BUG') && (node.children ?? []).length === 0) actionCardIds.push(node.id)
+        collect(node.children ?? [])
+      }
+    }
+    collect(displayTree)
+    const expandedIds = new Set(expanded)
+    const collapsedGroupIds = [...new Set(collectAllIds(tree))].filter(id => !expandedIds.has(id))
+    return buildScreenSnapshot({
+      screen: 'project-board-tree',
+      route: window.location.pathname,
+      projectId,
+      projectName: null,
+      viewMode: 'tree',
+      activeModuleId: filters?.moduleId || null,
+      collapsedGroupIds,
+      filters: {
+        moduleId: filters?.moduleId || null,
+        sprintId: filters?.sprintId || null,
+        assigneeId: filters?.assigneeId || null,
+        tagIds: filters?.tagIds.length ? filters.tagIds : null,
+      },
+      actionCardIds,
+      revisions: {},
+    })
+  }, [projectId, displayTree, expanded, filters, loading])
+
+  useEffect(() => { onSnapshotChange?.(treeSnapshot) }, [treeSnapshot, onSnapshotChange])
 
   function toggleNode(id: string) {
     setExpanded(prev => {

@@ -230,7 +230,11 @@ export const journeys: Journey[] = [
     run: async page => {
       await logout(page)
       await login(page, admin)
+      // Card T16 — abre o board para publicar a fotografia do contexto da tela.
+      await openBoardOf(page, 'Projeto E2E')
       await page.getByRole('button', { name: 'Abrir Azy Agent' }).click()
+      // Sem filtro nenhum, o escopo interpretado declara que a ação vale para todos.
+      await page.getByText(/todos os cards \(sem filtro\)/).first().waitFor({ timeout: 15_000 })
       await page.getByRole('textbox', { name: 'Mensagem para o Azy Agent' }).fill('Olá, agente de teste')
       await page.getByRole('button', { name: 'Enviar mensagem' }).click()
       await page.getByText('Resposta determinística do agente de teste.').waitFor({ timeout: 30_000 })

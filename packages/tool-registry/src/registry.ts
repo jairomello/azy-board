@@ -1,7 +1,7 @@
 // Tool registry — definições, schemas e classificações de ferramentas.
 // Sem dependência de transporte HTTP; executeSharedTool fica em apps/mcp.
 
-import type { AssistantScreen } from '@azy-board/assistant-contracts'
+import type { AssistantScreen, AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 import { MCP_TOOL_POLICIES, type McpPolicy } from './policies.js'
 import { TOOL_TEXT_LIMITS } from './limits.js'
 import { toolFields, requiredFieldsFor, nestedRequiredFieldsFor, isRegisteredTool, OPERATION_ARGS_REQUIRED, SHARED_TOOL_NAMES } from './fields.js'
@@ -18,6 +18,9 @@ export type HumanToolContext = {
   itemId?: string
   screen?: AssistantScreen
   runId?: string
+  // Card T16 — fotografia do contexto da tela fixada na execução; IDs são
+  // referências a validar (nunca permissões).
+  screenSnapshot?: AssistantScreenSnapshot
 }
 
 export type ToolDomain = 'projects' | 'board' | 'items' | 'planning' | 'collaboration' | 'evidence' | 'account' | 'administration'

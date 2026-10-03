@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   DndContext,
@@ -20,6 +20,8 @@ import {
 import { ApiError, api } from '../../lib/api'
 import { useQueryClient } from '@tanstack/react-query'
 import { invalidateTree } from '../../lib/queryKeys'
+import { buildScreenSnapshot } from '../../lib/assistantSnapshot'
+import type { AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 import { KanbanCard } from '../../components/KanbanCard'
 import type { FullItemData } from '../../components/ItemModal'
 import type { EpicData } from '../../components/EpicModal'
@@ -110,6 +112,7 @@ export default function BoardPage() {
   const [newItemCreation, setNewItemCreation] = useState<{ type: 'TASK' | 'BUG'; columnId?: string; costCenterId?: string | null; title?: string; parentId?: string } | null>(null)
   const queryClient = useQueryClient()
   const [moduleModalOpen, setModuleModalOpen] = useState(false)
+  const location = useLocation()
   const [newModuleName, setNewModuleName] = useState('')
   const [newModuleDescription, setNewModuleDescription] = useState('')
   // Tarefa 10 — arquivamento
@@ -817,6 +820,41 @@ export default function BoardPage() {
     return { id: selected.id, title: selected.title, type: selected.type, ancestry }
   }, [allItems, epicModalData?.epic?.id, itemModalId, storyModalData?.story?.id])
 
+  // Fotografia do contexto da tela (Card T16): mesma população determinada por
+  // filtros/visualização. Sem filtro nenhum, escopo ALL — sem lista de IDs.
+  const [treeSnapshot, setTreeSnapshot] = useState<AssistantScreenSnapshot | null>(null)
+  const handleTreeSnapshot = useCallback((snapshot: AssistantScreenSnapshot | null) => setTreeSnapshot(snapshot), [])
+  const kanbanSnapshot = useMemo(() => {
+    if (!projectId) return null
+    const actionCards = allDisplayed.filter(item => (item.type === 'TASK' || item.type === 'BUG') && !item.id.startsWith('story-virtual-'))
+    const revisions: Record<string, string> = {}
+    for (const item of actionCards) if (item.updatedAt) revisions[item.id] = item.updatedAt
+    return buildScreenSnapshot({
+      screen: view === 'tree' ? 'project-board-tree' : 'project-board-kanban',
+      route: location.pathname,
+      projectId,
+      projectName,
+      viewMode: view === 'tree' ? 'tree' : 'kanban',
+      activeModuleId: filters.moduleId || null,
+      collapsedGroupIds: [...new Set([...collapsedEpics, ...collapsedModules, ...collapsedStories])],
+      filters: {
+        sprintId: filters.sprintId,
+        versionId: filters.versionId,
+        assigneeId: filters.assigneeId,
+        authorId: filters.authorId,
+        squadId: filters.squadId,
+        costCenterId: filters.costCenterId,
+        status: filters.status,
+        priority: filters.priority,
+        tagIds: filters.tagIds.length ? filters.tagIds : null,
+        types: filters.types.length ? filters.types : null,
+      },
+      actionCardIds: actionCards.map(item => item.id),
+      revisions,
+    })
+  }, [allDisplayed, projectId, projectName, view, filters, collapsedEpics, collapsedModules, collapsedStories])
+  const assistantScreenSnapshot = view === 'tree' ? treeSnapshot : kanbanSnapshot
+
   if (loading) return (
     <div className="flex items-center justify-center h-screen bg-background">
       <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
@@ -924,6 +962,7 @@ export default function BoardPage() {
       assistantScreen={view === 'tree' ? 'project-board-tree' : 'project-board-kanban'}
       assistantBoardView={view}
       assistantFilters={{ hideEmptyEpics: filters.hideEmptyEpics, hideEmptyStories: filters.hideEmptyStories, moduleId: filters.moduleId || null, sprintId: filters.sprintId || null, versionId: filters.versionId || null, squadId: filters.squadId || null, assigneeId: filters.assigneeId || null, types: filters.types.length ? filters.types.join(',') : null }}
+      assistantScreenSnapshot={assistantScreenSnapshot}
        sectionLabel={view === 'kanban' ? tBoard('viewBoard') : tBoard('viewTree')}
        contextLabel={activeSprint?.name ?? tBoard('optionsDescription')}
       headerMeta={syncState === 'synced' || syncState === 'syncing' ? (
@@ -987,8 +1026,9 @@ export default function BoardPage() {
              filters={filters}
              canCreate={members.find(member => member.userId === user?.id)?.role !== 'VIEWER'}
              canEdit={members.find(member => member.userId === user?.id)?.role !== 'VIEWER'}
-             onCreate={openCreation}
-             onEdit={handleOpenDetail}
+              onCreate={openCreation}
+              onEdit={handleOpenDetail}
+              onSnapshotChange={handleTreeSnapshot}
             // Tarefa 10.2 — passa o handler de arquivamento para a tree view
             onArchive={(itemId, childrenCount) => {
               if (childrenCount > 0) {
