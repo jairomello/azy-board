@@ -113,6 +113,18 @@
                 "type": "null"
               }
             ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -203,6 +215,18 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "dryRun": {
@@ -418,6 +442,18 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "sprintId": {
@@ -671,6 +707,18 @@
               {
                 "type": "null"
               }
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
             ]
           },
           "sprintId": {

@@ -30,6 +30,11 @@ export const admin = {
   name: 'E2E Admin',
 }
 
+// Idioma fixo do navegador de teste: no runner da CI o Chromium headless nasce com
+// navigator.language = en-US e o i18next daria a UI em inglês, quebrando todos os
+// seletores das jornadas. Fixar o locale do contexto garante igualdade local/CI.
+export const E2E_CONTEXT_OPTIONS = { locale: 'pt-BR' } as const
+
 export const member = {
   email: 'member@example.com',
   password: 'MemberPass123!',

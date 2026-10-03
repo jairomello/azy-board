@@ -181,6 +181,7 @@ jobs:
           path: |
             tmp/e2e-failures/**
             tmp/visual-diffs/**
+            tmp/e2e-logs/**
 
   advanced:
     name: advanced (PostgreSQL + Valkey)

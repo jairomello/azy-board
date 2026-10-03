@@ -12,7 +12,7 @@
  *   E2E_WEB_PORT        porta do web (padrão 5173)
  *   PLAYWRIGHT_CHROMIUM_EXECUTABLE  binário do Chromium (padrão /usr/bin/chromium)
  */
-import { bootStack, cleanup, launchBrowser, runJourneys } from './harness'
+import { bootStack, cleanup, E2E_CONTEXT_OPTIONS, launchBrowser, runJourneys } from './harness'
 import { journeys } from './journeys'
 
 async function main() {
@@ -22,7 +22,8 @@ async function main() {
     console.log('▶ Preparando stack descartável de regressão...')
     await bootStack()
     browser = await launchBrowser()
-    const page = await browser.newPage()
+    const context = await browser.newContext(E2E_CONTEXT_OPTIONS)
+    const page = await context.newPage()
     results = await runJourneys(page, journeys)
   } catch (error) {
     results = [{ name: 'bootstrap do stack', ok: false, error: error instanceof Error ? error.message : String(error) }]

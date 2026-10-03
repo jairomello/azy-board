@@ -5,7 +5,7 @@
  *   bun run test:visual                 # compara com as baselines
  *   E2E_UPDATE_SNAPSHOTS=1 bun run test:visual  # regenera as baselines
  */
-import { bootStack, cleanup, createProject, launchBrowser, login, openBoardOf, waitFor } from './harness'
+import { bootStack, cleanup, createProject, E2E_CONTEXT_OPTIONS, launchBrowser, login, openBoardOf, waitFor } from './harness'
 import { compareScreenshot, type VisualResult } from './screenshot'
 
 const viewport = { width: 1280, height: 800 }
@@ -17,7 +17,7 @@ async function main() {
     console.log('▶ Preparando stack descartável para a regressão visual...')
     await bootStack()
     browser = await launchBrowser()
-    const context = await browser.newContext({ viewport, colorScheme: 'light', deviceScaleFactor: 1 })
+    const context = await browser.newContext({ ...E2E_CONTEXT_OPTIONS, viewport, colorScheme: 'light', deviceScaleFactor: 1 })
     const page = await context.newPage()
 
     await page.goto(`${process.env.E2E_WEB_URL ?? 'http://localhost:5173'}/login`)
