@@ -51,6 +51,10 @@ describe('MCP reliability contracts', () => {
     expect(() => validateToolArguments('update_items', { projectId: 'p', filters, changes: [{ field: 'dueDate', operation: 'OFFSET_DAYS', value: '1' }] })).not.toThrow()
     expect(() => validateToolArguments('update_items', { projectId: 'p', filters: { ...filters, types: null, sprint: null }, changes: [{ field: 'title', operation: 'SET', value: 'Novo' }] })).toThrow('Informe filtros')
     expect(() => validateToolArguments('update_items', { projectId: 'p', filters, changes: [{ field: 'title', operation: 'TODAY', value: null }] })).toThrow('só pode ser usado em datas')
+    // sequenceCode é aceito (SET válido e CLEAR) e o formato é barrado antes da rede.
+    expect(() => validateToolArguments('update_items', { projectId: 'p', filters, changes: [{ field: 'sequenceCode', operation: 'SET', value: 'T12' }] })).not.toThrow()
+    expect(() => validateToolArguments('update_item', { projectId: 'p', itemId: 'i1', changes: [{ field: 'sequenceCode', operation: 'CLEAR', value: null }] })).not.toThrow()
+    expect(() => validateToolArguments('update_items', { projectId: 'p', filters, changes: [{ field: 'sequenceCode', operation: 'SET', value: 'X1' }] })).toThrow('padrão [ESTB]')
   })
 
   test('não duplica chamadas quando o cliente reutiliza a resposta idempotente', async () => {

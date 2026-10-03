@@ -494,6 +494,7 @@ export interface BatchItemCreateResult {
   parentId: string | null
   moduleId: string | null
   columnId: string | null
+  sequenceCode: string | null
   ancestryPath: string
   description: string | null
   priority: Priority

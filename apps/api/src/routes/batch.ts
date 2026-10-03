@@ -56,7 +56,7 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
     costCenters, tags: projectTags, memberships: projectMemberships, users: tenantUsers, sprintLinks, tagLinks } = snapshot
   const filters = body.filters ?? {}
   const changes = body.changes
-  const allowedFields = new Set(['title', 'description', 'priority', 'type', 'status', 'points', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint'])
+  const allowedFields = new Set(['title', 'description', 'priority', 'type', 'status', 'points', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode'])
   if (!Array.isArray(changes) || changes.length < 1 || changes.length > 20) return c.json({ code: 'VALIDATION_ERROR', error: 'changes deve conter entre 1 e 20 alterações' }, 422)
   const changedFields = new Set<string>()
   for (const change of changes) {
@@ -131,6 +131,7 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
       if (operation === 'CLEAR' && ['title', 'priority', 'type', 'status'].includes(field)) throw new Error(`FIELD_NOT_CLEARABLE_${field}`)
       if (field === 'parent' && operation === 'CLEAR') throw new Error('HIERARCHY_REQUIRED')
       if (operation === 'OFFSET_DAYS' && (typeof change.value !== 'string' || !/^-?\d+$/.test(change.value) || Math.abs(Number(change.value)) > 36_500)) throw new Error(`INVALID_OFFSET_${field}`)
+      if (field === 'sequenceCode' && operation === 'SET' && (typeof change.value !== 'string' || !/^[ESTB]\d+$/.test(change.value))) throw new Error('INVALID_SEQUENCE_CODE')
       let relationId: string | null | undefined
       if (operation === 'CLEAR') relationId = null
       else if (operation === 'SET') {
@@ -186,6 +187,16 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
     }
 
     const resulting = new Map<string, typeof projectItems[number]>(projectItems.map(item => [item.id, { ...item, ...(updatesById.get(item.id) ?? {}) } as typeof item]))
+    // Unicidade do sequenceCode sobre o estado resultante do projeto: cobre
+    // duplicatas entre itens do mesmo lote e colisão com itens não selecionados.
+    if (changedFields.has('sequenceCode')) {
+      const owners = new Map<string, string>()
+      for (const item of resulting.values()) {
+        if (!item.sequenceCode) continue
+        if (owners.has(item.sequenceCode)) throw new Error('SEQUENCE_CODE_DUPLICATED')
+        owners.set(item.sequenceCode, item.id)
+      }
+    }
     // A hierarquia só é revalidada quando a mutação toca pai/tipo: estruturas preexistentes
     // inválidas não devem bloquear updates de campos (versão, sprint, responsável etc.).
     if (changedFields.has('parent') || changedFields.has('type')) {
@@ -275,6 +286,8 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
     return c.json(result)
   } catch (error) {
     const code = error instanceof Error ? error.message : 'BULK_UPDATE_FAILED'
+    if (code === 'SEQUENCE_CODE_DUPLICATED') return c.json({ code, error: 'O sequenceCode informado já existe neste projeto.' }, 409)
+    if (code === 'INVALID_SEQUENCE_CODE') return c.json({ code, error: 'sequenceCode deve seguir o padrão [ESTB]\\d+ (ex.: T12).' }, 422)
     return c.json({ code, error: 'Nenhuma alteração foi aplicada. Revise os filtros e valores informados.' }, 422)
   }
 })

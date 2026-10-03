@@ -8,6 +8,7 @@ import type { RequestContext } from '@azy-board/api-contracts'
 import type { ActivityActorType, ActivitySource, ItemType } from '@azy-board/domain'
 import { parseWorkDuration } from '@azy-board/ui-contracts'
 import { PROJECTION_FIELDS } from '@azy-board/tool-registry'
+import { nextSequenceCode as computeNextSequenceCode } from '../utils/sequenceCode'
 import { getIdempotent, saveIdempotent } from '../services/idempotency'
 import { claimItem, moveItem, releaseItem } from '../services/itemMutations'
 import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
@@ -42,7 +43,6 @@ function normalizeAuditText(value: unknown): string {
     .trim()
 }
 
-const SEQUENCE_PREFIX: Record<string, string> = { EPIC: 'E', STORY: 'S', TASK: 'T', BUG: 'B' }
 const MAX_ANCESTRY_DEPTH = 50
 
 function systemContext(tenantId: string) {
@@ -72,16 +72,8 @@ async function detectReparentCycle(tenantId: string, projectId: string, itemId: 
 // Gera o próximo sequenceCode disponível para o tipo no projeto
 // [TENANT] filtrado por tenantId + projectId
 async function nextSequenceCode(tenantId: string, projectId: string, type: string): Promise<string> {
-  const prefix = SEQUENCE_PREFIX[type] ?? 'T'
   const rows = await persistence.items.listItems({ tenantId, actorUserId: null, actorKind: 'SYSTEM' }, projectId)
-  let max = 0
-  for (const row of rows) {
-    if (row.sequenceCode && row.sequenceCode.startsWith(prefix)) {
-      const num = parseInt(row.sequenceCode.slice(prefix.length), 10)
-      if (!Number.isNaN(num) && num > max) max = num
-    }
-  }
-  return `${prefix}${max + 1}`
+  return computeNextSequenceCode(rows.map(row => row.sequenceCode), type)
 }
 
 // Verifica se item é folha (sem filhos) via consulta indexada — Leaf Rule.

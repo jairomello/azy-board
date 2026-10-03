@@ -2262,3 +2262,74 @@ describe('política mínima de senha no cadastro', () => {
     expect(strong.status).toBe(201)
   })
 })
+
+describe('numeração de sequenceCode na criação e edição em lote', () => {
+  let tenantId: string
+  let projectId: string
+  let sessionToken: string
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'SeqCode', slug: `seq-${tenantId}`, createdAt: new Date().toISOString() })
+    const admin = await createUser(tenantId, `seq-admin-${tenantId}@test.local`, 'Admin Sequência')
+    sessionToken = await token(admin.id, tenantId, admin.email)
+    const projectResponse = await request('/projects', sessionToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto sequência', boardMode: 'SIMPLE' }),
+    })
+    projectId = (await projectResponse.json() as { id: string }).id
+  })
+
+  test('batch cria cards numerados por tipo e expõe o código no resultado', async () => {
+    const response = await request(`/projects/${projectId}/batch`, sessionToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ atomic: true, operations: [
+        { tool: 'create_task', args: { ref: 'a', title: 'Tarefa A', type: 'TASK' } },
+        { tool: 'create_task', args: { ref: 'b', title: 'Tarefa B', type: 'TASK' } },
+        { tool: 'create_task', args: { ref: 'c', title: 'Bug C', type: 'BUG' } },
+      ] }),
+    })
+    expect(response.status).toBe(200)
+    const body = await response.json() as { results: Array<{ ok: boolean; data: { id: string; sequenceCode: string | null } }> }
+    expect(body.results.map(entry => entry.data.sequenceCode)).toEqual(['T1', 'T2', 'B1'])
+
+    const list = await request(`/projects/${projectId}/items?type=TASK`, sessionToken)
+    const items = (await list.json() as { data: Array<{ sequenceCode: string | null }> }).data
+    expect(items.map(item => item.sequenceCode).sort()).toEqual(['T1', 'T2'])
+  })
+
+  test('update_items altera, rejeita duplicado/formato e limpa o sequenceCode', async () => {
+    const list = await request(`/projects/${projectId}/items?type=TASK`, sessionToken)
+    const items = (await list.json() as { data: Array<{ id: string; title: string; sequenceCode: string | null }> }).data
+    const taskA = items.find(item => item.title === 'Tarefa A')!
+    const taskB = items.find(item => item.title === 'Tarefa B')!
+
+    const set = await request(`/projects/${projectId}/batch/items/update`, sessionToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filters: { itemIds: [taskA.id] }, changes: [{ field: 'sequenceCode', operation: 'SET', value: 'T9' }] }),
+    })
+    expect(set.status).toBe(200)
+    expect((await (await request(`/projects/${projectId}/items/${taskA.id}`, sessionToken)).json() as { sequenceCode: string | null }).sequenceCode).toBe('T9')
+
+    const duplicate = await request(`/projects/${projectId}/batch/items/update`, sessionToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filters: { itemIds: [taskB.id] }, changes: [{ field: 'sequenceCode', operation: 'SET', value: 'T9' }] }),
+    })
+    expect(duplicate.status).toBe(409)
+    expect((await duplicate.json() as { error?: { code?: string } }).error?.code).toBe('SEQUENCE_CODE_DUPLICATED')
+
+    const invalid = await request(`/projects/${projectId}/batch/items/update`, sessionToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filters: { itemIds: [taskB.id] }, changes: [{ field: 'sequenceCode', operation: 'SET', value: 'X1' }] }),
+    })
+    expect(invalid.status).toBe(422)
+    expect((await invalid.json() as { error?: { code?: string } }).error?.code).toBe('INVALID_SEQUENCE_CODE')
+
+    const clear = await request(`/projects/${projectId}/batch/items/update`, sessionToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filters: { itemIds: [taskA.id] }, changes: [{ field: 'sequenceCode', operation: 'CLEAR' }] }),
+    })
+    expect(clear.status).toBe(200)
+    expect((await (await request(`/projects/${projectId}/items/${taskA.id}`, sessionToken)).json() as { sequenceCode: string | null }).sequenceCode).toBeNull()
+  })
+})

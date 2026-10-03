@@ -226,4 +226,26 @@ describe('comandos atômicos SQLite para itens', () => {
     expect(sqlite.query<{ module_id: string }, []>("SELECT module_id FROM items WHERE id = 'epic-move'").get()).toEqual({ module_id: 'module-new' })
     sqlite.close()
   })
+
+  test('criação em lote numera por tipo e continua a contagem existente', () => {
+    const { sqlite, context, unit } = setup()
+    const now = new Date().toISOString()
+    // Base com T1, T3 (T2 removido) e B1: o próximo TASK deve ser T4 e o próximo BUG, B2.
+    const insert = sqlite.query('INSERT INTO items (id, tenant_id, project_id, type, sequence_code, ancestry_path, title, status, priority, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    insert.run('story', 'tenant-a', 'project-a', 'STORY', null, '[]', 'História', 'NOT_STARTED', 'MEDIUM', 0, now, now)
+    insert.run('t1', 'tenant-a', 'project-a', 'TASK', 'T1', '[{"id":"story","title":"História","type":"STORY"}]', 'T1', 'NOT_STARTED', 'MEDIUM', 1, now, now)
+    insert.run('t3', 'tenant-a', 'project-a', 'TASK', 'T3', '[{"id":"story","title":"História","type":"STORY"}]', 'T3', 'NOT_STARTED', 'MEDIUM', 2, now, now)
+    insert.run('b1', 'tenant-a', 'project-a', 'BUG', 'B1', '[{"id":"story","title":"História","type":"STORY"}]', 'B1', 'NOT_STARTED', 'MEDIUM', 3, now, now)
+
+    const batch = unit.createItemsBatch(context, 'project-a', [
+      { tool: 'create_task', title: 'Nova TASK A', type: 'TASK', parentId: 'story' },
+      { tool: 'create_task', title: 'Nova TASK B', type: 'TASK', parentId: 'story' },
+      { tool: 'create_task', title: 'Novo BUG', type: 'BUG', parentId: 'story' },
+    ], { atomic: true })
+
+    expect(batch.results.map(entry => entry.data?.sequenceCode)).toEqual(['T4', 'T5', 'B2'])
+    const codes = sqlite.query<{ sequence_code: string }, [string]>('SELECT sequence_code FROM items WHERE tenant_id = ?').all('tenant-a').map(row => row.sequence_code)
+    expect(new Set(codes).size).toBe(codes.length)
+    sqlite.close()
+  })
 })

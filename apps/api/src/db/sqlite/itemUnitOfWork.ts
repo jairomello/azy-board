@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import type { ItemRecord, MutationContext } from '../../persistence/models'
 import type { BatchItemCreateOperation, BatchItemCreateResult, BatchItemUpdate, ItemPatch, ItemRelationsMutation, NewItemRecord } from '../../persistence/ports'
 import { generateId } from '../../utils/id'
+import { nextSequenceCode as computeNextSequenceCode, sequencePrefix } from '../../utils/sequenceCode'
 import { runSqliteAtomic } from './atomicTransaction'
 import { readItemSnapshot, readItemSnapshots, recordDeletedItemEventsBatch, recordItemEvent } from './itemAnalytics'
 
@@ -305,6 +306,17 @@ export function deleteSqliteItemsInsideTransaction(database: Database, context: 
   deleteItemsInsideTransaction(database, context, projectId, itemIds, recordAnalyticsEvents)
 }
 
+// Próximo sequence_code do tipo dentro da transação do lote: a consulta vê os
+// itens já gravados pelas operações anteriores do mesmo lote, então a numeração
+// sai sequencial e sem colisão sem precisar de contador separado.
+function nextBatchSequenceCode(database: Database, tenantId: string, projectId: string, type: string): string {
+  const prefix = sequencePrefix(type)
+  const rows = database.query<{ sequence_code: string | null }, [string, string, string]>(
+    'SELECT sequence_code FROM items WHERE tenant_id = ? AND project_id = ? AND sequence_code LIKE ?',
+  ).all(tenantId, projectId, `${prefix}%`)
+  return computeNextSequenceCode(rows.map(row => row.sequence_code), type)
+}
+
 function createBatchItemInsideTransaction(database: Database, context: MutationContext, projectId: string, operation: BatchItemCreateOperation, moduleCreates: Array<{ id: string; name: string; position: number; description: string | null }>): BatchItemCreateResult {
   if (operation.tool !== 'create_task' && operation.tool !== 'create_item') throw new Error('VALIDATION_ERROR')
   if (!operation.title?.trim()) throw new Error('VALIDATION_ERROR')
@@ -362,17 +374,18 @@ function createBatchItemInsideTransaction(database: Database, context: MutationC
   const title = operation.title.trim()
   const priority = operation.priority ?? 'MEDIUM'
   const assigneeId = operation.assignToCurrentUser ? context.actorUserId : null
+  const sequenceCode = nextBatchSequenceCode(database, context.tenantId, projectId, type)
   database.query(`INSERT INTO items
     (id, tenant_id, project_id, type, sequence_code, parent_id, module_id, column_id, ancestry_path, title, description,
      status, priority, points, assignee_id, author_id, position, created_at, updated_at)
-    VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 'NOT_STARTED', ?, ?, ?, ?, 0, ?, ?)`)
-    .run(id, context.tenantId, projectId, type, parentId, moduleId, firstColumn, JSON.stringify(ancestryPath), title,
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NOT_STARTED', ?, ?, ?, ?, 0, ?, ?)`)
+    .run(id, context.tenantId, projectId, type, sequenceCode, parentId, moduleId, firstColumn, JSON.stringify(ancestryPath), title,
       operation.description ?? null, priority, operation.points ?? null, assigneeId, context.actorUserId, now, now)
 
   const after = readItemSnapshot(database, context.tenantId, projectId, id)
   recordItemEvent(database, context, { projectId, itemId: id, eventType: 'ITEM_CREATED', correlationId: id, after })
   return {
-    id, title, type, projectId, parentId, moduleId, columnId: firstColumn,
+    id, title, type, projectId, parentId, moduleId, columnId: firstColumn, sequenceCode,
     ancestryPath: JSON.stringify(ancestryPath), description: operation.description ?? null,
     priority, points: operation.points ?? null, assigneeId, status: 'NOT_STARTED',
   }
