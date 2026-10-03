@@ -1,6 +1,10 @@
 // [GUARDA ANTI-REGRESSÃO] nenhuma tela de dados volta a buscar estado remoto
-// fora da camada de cache única. O workspace não possui DOM/jsdom; o guarda
-// varre o código-fonte das telas migradas e falha se o padrão antigo reaparecer.
+// fora da camada de cache única.
+// [CONTRATO-ESTRUTURAL] O invariante é não comportamental: "esta tela não contém
+// o padrão antigo de fetch/estado". Um teste de comportamento não enxerga
+// ausência de código — só a varredura da fonte garante que o padrão removido não
+// reapareça. A varredura é regex simples sobre o texto (sem executar a tela) e
+// monitora exatamente as telas migradas para a camada de cache.
 import { describe, expect, test } from 'bun:test'
 
 const MIGRATED_SCREENS = [

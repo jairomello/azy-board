@@ -1,6 +1,14 @@
 // Testes do contrato do hook useWebSocket. O workspace não tem DOM, então a
 // lógica pura (backoff, zumbi) é testada diretamente e a máquina de estados é
 // coberta por asserções estruturais no fonte.
+//
+// [CONTRATO-ESTRUTURAL] A máquina de estados (cursor enviado no handshake,
+// `synced` só após REPLAY_COMPLETE/onResync, heartbeat não toca dados) depende de
+// WebSocket + timers e não é reproduzível de forma determinística no runner. O
+// valor está em impedir que a sequência de reconciliação regresse — um invariante
+// de ordem no código-fonte. Candidato a migrar para teste de comportamento com
+// WebSocket mockado caso o hook seja refatorado para uma função pura testável;
+// até lá, backoff e zumbi seguem cobertos por teste de comportamento real.
 import { describe, expect, test } from 'bun:test'
 import { isZombieConnection, nextRetryDelay } from './useWebSocket'
 import { WS_ZOMBIE_TIMEOUT_MS } from '@azy-board/realtime-contracts'

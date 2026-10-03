@@ -1,10 +1,19 @@
+import { lazy, Suspense } from 'react'
 import { Archive, X } from 'lucide-react'
 import type { FullItemData, ProjectMember, ProjectVersion, CostCenter } from '../../../components/ItemModal'
-import { ItemModal } from '../../../components/ItemModal'
-import { EpicModal, type EpicData } from '../../../components/EpicModal'
-import { StoryModal, type StoryData } from '../../../components/StoryModal'
+import type { EpicData } from '../../../components/EpicModal'
+import type { StoryData } from '../../../components/StoryModal'
 import type { ItemData, Module, ArchivedItem, Sprint } from '../model/types'
 import type { Tag } from '../../../components/TagSelector'
+
+// [BUNDLE] Os modais de item só são necessários quando o usuário abre um card;
+// carregá-los sob demanda tira ItemModal, áreas pesadas (AttachmentsArea com
+// lightbox, ChecklistSection, painéis de atividade/worklog) e Epic/StoryModal do
+// chunk inicial do Board. Padrão já usado em RichTextEditor, DashboardVisuals e
+// ItemLinksArea.
+const ItemModal = lazy(() => import('../../../components/ItemModal').then(module => ({ default: module.ItemModal })))
+const EpicModal = lazy(() => import('../../../components/EpicModal').then(module => ({ default: module.EpicModal })))
+const StoryModal = lazy(() => import('../../../components/StoryModal').then(module => ({ default: module.StoryModal })))
 
 interface BoardModalsProps {
   projectId: string
@@ -60,9 +69,11 @@ export function BoardModals(props: BoardModalsProps) {
     columnId: props.newItem.columnId ?? null, costCenterId: props.newItem.costCenterId ?? null,
   })
   return <>
-    {item && <ItemModal item={item as FullItemData} projectId={props.projectId} epics={props.epics} stories={props.stories} projectTags={props.tags} members={props.members} currentUserId={props.userId} projectVersions={props.versions} projectSprints={props.sprints} projectCostCenters={props.costCenters} advancedChecklists={props.advancedChecklists} onClose={props.onCloseItem} onSave={props.newItem ? props.onCreate : props.onSaveItem} onAddSubtask={props.onAddSubtask} onCreateTag={props.onCreateTag} onEditTag={props.onEditTag} onCreateStory={props.onCreateStory} />}
-    {props.epic && <EpicModal projectId={props.projectId} modules={props.modules} epic={props.epic} projectVersions={props.versions} onOpenChild={props.onOpenChild} onSave={props.onSaveEpic} onClose={props.onCloseEpic} />}
-    {props.story !== undefined && <StoryModal projectId={props.projectId} epics={props.epics} story={props.story} projectVersions={props.versions} onOpenChild={props.onOpenChild} onSave={props.onSaveStory} onClose={props.onCloseStory} />}
+    <Suspense fallback={null}>
+      {item && <ItemModal item={item as FullItemData} projectId={props.projectId} epics={props.epics} stories={props.stories} projectTags={props.tags} members={props.members} currentUserId={props.userId} projectVersions={props.versions} projectSprints={props.sprints} projectCostCenters={props.costCenters} advancedChecklists={props.advancedChecklists} onClose={props.onCloseItem} onSave={props.newItem ? props.onCreate : props.onSaveItem} onAddSubtask={props.onAddSubtask} onCreateTag={props.onCreateTag} onEditTag={props.onEditTag} onCreateStory={props.onCreateStory} />}
+      {props.epic && <EpicModal projectId={props.projectId} modules={props.modules} epic={props.epic} projectVersions={props.versions} onOpenChild={props.onOpenChild} onSave={props.onSaveEpic} onClose={props.onCloseEpic} />}
+      {props.story !== undefined && <StoryModal projectId={props.projectId} epics={props.epics} story={props.story} projectVersions={props.versions} onOpenChild={props.onOpenChild} onSave={props.onSaveStory} onClose={props.onCloseStory} />}
+    </Suspense>
     {props.moduleOpen && <Dialog title={props.t('newModule')} onClose={props.onCloseModule}><label className="text-xs font-medium text-muted-foreground" htmlFor="module-name">{props.t('moduleLabel')}</label><input id="module-name" autoFocus value={props.moduleName} onChange={event => props.onModuleNameChange(event.target.value)} className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg" placeholder={props.t('moduleNamePlaceholder')} /><label className="text-xs font-medium text-muted-foreground" htmlFor="module-description">{props.t('descriptionLabel')}</label><textarea id="module-description" value={props.moduleDescription} onChange={event => props.onModuleDescriptionChange(event.target.value)} rows={3} className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg" placeholder={props.t('moduleDescriptionPlaceholder')} /><div className="flex gap-2"><button onClick={props.onModuleCreate} disabled={!props.moduleName.trim()} className="flex-1 py-2 text-sm bg-primary text-primary-foreground rounded-lg disabled:opacity-50">{props.t('create')}</button><button onClick={props.onCloseModule} className="flex-1 py-2 text-sm border border-border rounded-lg">{props.t('cancel')}</button></div></Dialog>}
     {props.archiveConfirm && <Dialog title={props.t('archiveItem')} onClose={props.onCloseArchive}><p className="text-sm text-muted-foreground">{props.t('archiveCascadeConfirmation', { count: props.archiveConfirm.childrenCount })}</p><div className="flex gap-2 justify-end"><button onClick={props.onCloseArchive} className="px-3 py-1.5 text-sm bg-muted rounded-lg">{props.t('cancel')}</button><button onClick={props.onArchive} className="px-4 py-1.5 text-sm bg-amber-600 text-white rounded-lg">{props.t('archiveItem')}</button></div></Dialog>}
     {props.archivedOpen && <Dialog title={props.t('archivedItems')} onClose={props.onCloseArchived}><div className="overflow-y-auto max-h-[60vh]">{props.archivedLoading ? <div className="py-8 text-center">...</div> : props.archivedItems.length === 0 ? <div className="py-12 text-center text-sm text-muted-foreground">Nenhum item arquivado neste projeto.</div> : <table className="w-full text-sm"><tbody>{props.archivedItems.map(archived => <tr key={archived.id} className="border-b border-border"><td className="py-2 pr-3">{archived.type}</td><td className="py-2">{archived.title}</td><td className="py-2 text-right"><button onClick={() => props.onUnarchive(archived.id)} className="text-xs text-primary hover:underline">{props.t('back')}</button></td></tr>)}</tbody></table>}</div></Dialog>}
