@@ -63,4 +63,20 @@ describe('contrato do shell integrado', () => {
     contains(shell, "tCommon('closeMenu')")
     contains(shell, "tCommon('closeNavigation')")
   })
+
+  test('posiciona Conta antes de Admin, com Admin ao final da navegacao', async () => {
+    const shell = await source('./components/AppShell.tsx')
+    const nav = shell.slice(shell.indexOf('const navItems'), shell.indexOf('return items'))
+
+    const accountIndex = nav.indexOf("label: tCommon('account')")
+    const adminIndex = nav.indexOf("label: tCommon('admin')")
+    const guardIndex = nav.indexOf('if (user && canAccessAdmin(user.globalGroup))')
+
+    expect(accountIndex).toBeGreaterThan(-1)
+    expect(adminIndex).toBeGreaterThan(-1)
+    expect(accountIndex).toBeLessThan(adminIndex)
+    expect(guardIndex).toBeGreaterThan(-1)
+    expect(guardIndex).toBeLessThan(adminIndex)
+    expect(nav.lastIndexOf('items.push(')).toBeLessThan(adminIndex)
+  })
 })

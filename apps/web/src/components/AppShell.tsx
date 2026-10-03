@@ -135,6 +135,12 @@ export function AppShell({
         active: location.pathname.includes(`/projects/${effectiveProjectId}/dashboard`),
       })
     }
+    items.push({
+      label: tCommon('account'),
+      href: '/account',
+      icon: UserRound,
+      active: location.pathname === '/account',
+    })
     if (user && canAccessAdmin(user.globalGroup)) {
       items.push({
         label: tCommon('admin'),
@@ -164,12 +170,6 @@ export function AppShell({
         ],
       })
     }
-    items.push({
-      label: tCommon('account'),
-      href: '/account',
-      icon: UserRound,
-      active: location.pathname === '/account',
-    })
     return items
   }, [effectiveProjectId, location.pathname, user, tCommon, tDashboard, tAssistant])
 
