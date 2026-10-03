@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import { Client } from 'pg'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { shouldRunPostgresTests } from './pgTestSupport'
 
 const PG_URL = process.env.TEST_PG_URL ?? 'postgresql://postgres:postgres@localhost:5432/azyboard_test'
+const runPostgres = await shouldRunPostgresTests(PG_URL)
 
 async function getClient(): Promise<Client> {
   const client = new Client({ connectionString: PG_URL })
@@ -24,7 +26,7 @@ async function runMigrations(client: Client) {
   }
 }
 
-describe('Migrations PostgreSQL', () => {
+describe.skipIf(!runPostgres)('Migrations PostgreSQL', () => {
   test('executa em banco vazio sem erro', async () => {
     const client = await getClient()
     try {

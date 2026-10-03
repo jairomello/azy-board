@@ -10,8 +10,10 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { PersistencePorts } from '../../persistence/ports'
 import type { MutationContext, PersistenceContext } from '../../persistence/models'
+import { shouldRunPostgresTests } from './pgTestSupport'
 
 const PG_URL = process.env.TEST_PG_URL ?? 'postgresql://postgres:postgres@localhost:5432/azyboard_parity'
+const runPostgres = await shouldRunPostgresTests(PG_URL)
 
 function makeContext(tenantId: string): PersistenceContext {
   return { tenantId, actorUserId: 'user-1', actorKind: 'USER', globalGroup: 'ADMIN' }
@@ -53,7 +55,7 @@ async function setupPostgres(): Promise<{ ports: PersistencePorts; pool: Pool; c
   return { ports, pool, cleanup: () => pool.end() }
 }
 
-describe('Paridade SIMPLE ↔ ADVANCED', () => {
+describe.skipIf(!runPostgres)('Paridade SIMPLE ↔ ADVANCED', () => {
   test('modelos do agente têm a mesma ordem, disponibilidade e revogação nos dois adapters', async () => {
     const sqlite = await setupSqlite()
     const pg = await setupPostgres()

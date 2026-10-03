@@ -35,9 +35,11 @@ function projectIdFromUrl(page: Page): string {
 }
 
 async function fetchItems(page: Page, projectId: string): Promise<ApiItem[]> {
-  const response = await page.request.get(`${apiUrl}/api/projects/${projectId}/items`)
+  const response = await page.request.get(`${apiUrl}/api/projects/${projectId}/items?limit=100`)
   assert(response.ok(), `GET items respondeu ${response.status()}`)
-  return (await response.json()) as ApiItem[]
+  // GET /items pagina: aceita o envelope { data } e a lista pura (mesma regra do web).
+  const body = (await response.json()) as ApiItem[] | { data: ApiItem[] }
+  return Array.isArray(body) ? body : body.data
 }
 
 async function fetchColumns(page: Page, projectId: string): Promise<ApiColumn[]> {
