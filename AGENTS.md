@@ -15,6 +15,17 @@ Código, comentários, commits, mensagens e documentação em **português do Br
   `claim_task` quando atribuível).
 - Não invente IDs, relações ou permissões. `get_board` é a fonte operacional.
 
+## Ferramentas MCP: chamadas isoladas, nunca paralelas
+
+- Emita **uma chamada por vez** para ferramentas MCP (`azy-board_*` e demais
+  servidores), nunca em paralelo com outras ferramentas. Chamadas paralelas
+  (especialmente do mesmo tipo) corrompem a serialização dos argumentos no
+  cliente e produzem `JSON parsing failed: Text: {...` com `Unexpected EOF` —
+  ou pior: mesclam o argumento de uma chamada dentro de outra, criando
+  duplicatas silenciosas de cards.
+- Se ocorrer `JSON parsing failed` / `Unexpected EOF`, repita a mesma intenção
+  uma única vez, isoladamente, sem paralelismo.
+
 ## Encerramento de trabalho ligado a um card (obrigatório)
 
 - Todo trabalho que tenha um card no Azy Board termina com o card em uma coluna

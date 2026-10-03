@@ -63,6 +63,11 @@ export async function validateAgentSkill(baseDir = skillDir, projectRoot = root)
   if (manifest.references.includes('references/mcp-setup.md') && !setupGuide.includes('EASYBOARD_API_KEY')) {
     errors.push('Roteiro de configuração do MCP sem a variável EASYBOARD_API_KEY')
   }
+  // A regra "nunca paralelize chamadas MCP" é a única defesa contra a corrupção
+  // de argumentos em chamadas paralelas do cliente (opencode#26131/#43311).
+  if (!entrypoint.includes('Nunca paralelize chamadas de ferramentas MCP')) {
+    errors.push('Skill sem a regra de chamadas MCP isoladas (nunca paralelas)')
+  }
   const allText = `${entrypoint}\n${referenceText}`
   for (const pattern of [/azb_[a-f0-9]{16,}/i, /Bearer\s+[A-Za-z0-9._-]{20,}/i, /password\s*[:=]\s*['"][^<>{}]+['"]/i]) {
     if (pattern.test(allText)) errors.push(`Possível segredo encontrado pela regra: ${pattern}`)

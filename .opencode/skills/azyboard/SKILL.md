@@ -9,6 +9,7 @@ Use o Azy Board como fonte compartilhada de planejamento e execução para pesso
 
 ## Fluxo obrigatório
 
+0. **Nunca paralelize chamadas de ferramentas MCP** (`azy-board_*` ou outros servidores): emita uma única chamada por vez. Chamadas paralelas do mesmo tipo corrompem a serialização dos argumentos no cliente, produzindo `JSON parsing failed: Text: {...` com `Unexpected EOF` ou argumentos mesclados entre chamadas (o que pode criar duplicatas silenciosas). Chamadas paralelas entre ferramentas não-MCP (bash, read, grep) são permitidas.
 1. Descubra o projeto: se `AZYBOARD_PROJECT_ID` estiver configurada no ambiente MCP, o projeto da codebase já é o padrão e `projectId` pode ser omitido nas ferramentas. Caso contrário, use `list_projects` para localizar o projeto. `projectId` também aceita o nome exato do projeto. Confirme o modo com `get_project`.
 2. Use `get_board` ou `get_tree` e consulte sprint, colunas e recursos necessários.
 3. Planeje no nível correto: EPIC -> STORY -> TASK/BUG em projetos `HIERARCHICAL`; TASK/BUG direto em projetos `SIMPLE`.
