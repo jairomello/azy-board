@@ -55,6 +55,40 @@ export interface StoryLaneGroup {
   tasks: ItemData[]
 }
 
+// Sentinela de valor vazio do estado de filtros. Distinto de '' (sem filtro).
+// Cobre apenas campos anuláveis (sprint, versão, responsável, autor, centro de custo).
+// A comparação é sempre exata pelo helper abaixo; IDs de catálogo são UUIDs e não
+// usam o segmento `__`, portanto não colidem com o sentinela.
+export const EMPTY_FILTER_VALUE = '__empty__'
+
+export function isEmptyFilterValue(value: string): boolean {
+  return value === EMPTY_FILTER_VALUE
+}
+
+// Predicados de filtro para campos escalares anuláveis. `''` (estado neutro) não filtra;
+// o sentinela seleciona apenas itens sem valor; qualquer outro valor exige correspondência exata.
+export function matchesScalarFilter(itemValue: string | null | undefined, filterValue: string): boolean {
+  if (!filterValue) return true
+  if (isEmptyFilterValue(filterValue)) return !itemValue
+  return itemValue === filterValue
+}
+
+export function matchesMemberFilter(
+  itemId: string | null | undefined,
+  nestedId: string | null | undefined,
+  filterValue: string,
+): boolean {
+  if (!filterValue) return true
+  if (isEmptyFilterValue(filterValue)) return !itemId && !nestedId
+  return itemId === filterValue || nestedId === filterValue
+}
+
+export function matchesSprintFilter(itemSprints: Array<{ sprintId: string }> | undefined, filterValue: string): boolean {
+  if (!filterValue) return true
+  if (isEmptyFilterValue(filterValue)) return !itemSprints?.length
+  return Boolean(itemSprints?.some(sprint => sprint.sprintId === filterValue))
+}
+
 export const DEFAULT_FILTERS: BoardFilterState = {
   moduleId: '',
   sprintId: '',

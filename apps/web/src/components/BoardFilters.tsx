@@ -3,6 +3,7 @@ import type { ItemType } from '@azy-board/domain'
 import type { Tag } from './TagSelector'
 import { Tooltip } from './ui/Tooltip'
 import { useTranslation } from 'react-i18next'
+import { EMPTY_FILTER_VALUE } from '../features/board/model/types'
 
 interface Module { id: string; name: string }
 interface Sprint { id: string; name: string; status: 'PROPOSED' | 'OPEN' | 'CLOSED' }
@@ -230,7 +231,8 @@ export function BoardFilters({
           onChange={e => update({ sprintId: e.target.value })}
           className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground"
         >
-            <option value="">{t('noSprint')}</option>
+            <option value="">{t('allSprints')}</option>
+            <option value={EMPTY_FILTER_VALUE}>{t('noSprint')}</option>
             {sprints.length === 0 && <option disabled>{t('noSprints')}</option>}
           {sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
@@ -244,11 +246,13 @@ export function BoardFilters({
           className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground"
         >
            <option value="">{t('filterAssignee')}</option>
+           <option value={EMPTY_FILTER_VALUE}>{t('unassigned')}</option>
           {members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
         </select>
       )}
       <select aria-label={t('filterVersion')} value={filters.versionId} onChange={e => update({ versionId: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
          <option value="">{t('filterVersion')}</option>
+         <option value={EMPTY_FILTER_VALUE}>{t('noVersion')}</option>
          {versions.length === 0 && <option disabled>{t('noVersions')}</option>}
         {versions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
       </select>
@@ -259,10 +263,11 @@ export function BoardFilters({
          <option value="">{t('filterStatus')}</option><option value="NOT_STARTED">{t('statusNotStarted')}</option><option value="IN_PROGRESS">{t('statusInProgress')}</option><option value="BLOCKED">{t('statusBlocked')}</option><option value="DONE">{t('statusDone')}</option><option value="CANCELLED">{t('statusCancelled')}</option>
       </select>
       {members.length > 0 && <select aria-label="Autor" value={filters.authorId} onChange={e => update({ authorId: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
-         <option value="">{t('filterAuthor')}</option>{members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
+         <option value="">{t('filterAuthor')}</option><option value={EMPTY_FILTER_VALUE}>{t('noAuthor')}</option>{members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
       </select>}
       <select aria-label="Centro de Custo" value={filters.costCenterId} onChange={e => update({ costCenterId: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
          <option value="">{t('filterCostCenter')}</option>
+         <option value={EMPTY_FILTER_VALUE}>{t('noCostCenter')}</option>
          {costCenters.length === 0 && <option disabled>{t('filterCostCenter')}</option>}
         {costCenters.map(center => (
           <option key={center.id} value={center.id}>{center.code}{center.description ? ` - ${center.description}` : ''}</option>

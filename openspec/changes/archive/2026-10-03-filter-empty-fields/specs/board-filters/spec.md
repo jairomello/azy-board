@@ -1,7 +1,5 @@
-## Purpose
+## MODIFIED Requirements
 
-Definir os filtros, controles de visualização e regras de ocultação aplicados ao conteúdo do Board.
-## Requirements
 ### Requirement: Filtros e opções no toolbar do board
 O sistema SHALL exibir filtros de conteúdo em um painel acionado pelo botão `Filtros` da command bar. O painel SHALL conter Squad, Módulo, Sprint, Responsável, Autor, Centro de Custo, Versão, Prioridade, Status, tipos e tags. Os filtros de Sprint, Versão, Responsável, Autor e Centro de Custo SHALL oferecer duas opções distintas de estado vazio: uma opção neutra de "sem filtro" (`value=""`), rotulada com o nome do campo ou `Todas`, e uma opção de valor vazio (`value="__empty__"`), rotulada `Sem sprint`, `Sem versão`, `Não atribuído`, `Sem autor` e `Sem centro de custo`, respectivamente. Quando não houver itens de catálogo, os controles SHALL permanecer visíveis exibindo a indicação neutra, sem permitir seleção de valor vazio inexistente. Sprint SHALL listar `PROPOSED`, `OPEN` e `CLOSED` quando houver sprints. Os controles de visualização SHALL estar no painel separado `Opções`.
 
@@ -75,59 +73,7 @@ O sistema SHALL exibir filtros de conteúdo em um painel acionado pelo botão `F
 - **WHEN** o usuário alterna entre `Hierarquia` e `Abas` no painel Opções
 - **THEN** o Board preserva os filtros aplicados e restaura o modo selecionado ao recarregar o projeto
 
-### Requirement: Filtros aplicados client-side
-Os filtros SHALL ser aplicados sobre a lista de tasks em memória (`displayedTasks`), sem re-fetch da API ao mudar filtros, usando os atributos já carregados ou derivados do projeto.
-
-#### Scenario: Alterar filtro sem recarregar itens
-- **WHEN** o usuário altera qualquer filtro do Board
-- **THEN** a lista visível é recalculada a partir dos itens já carregados
-- **AND** nenhuma nova consulta de itens é necessária
-
----
-
-### Requirement: Toggle "Ocultar épicos vazios" nos filtros do board
-O sistema SHALL oferecer um toggle "Ocultar épicos vazios" na barra de filtros do board. Quando ativado, épicos que não possuem nenhum item visível (não-arquivado, após aplicação dos filtros ativos) são ocultados da visualização do board e da tree view. O toggle é desligado por padrão.
-
-#### Scenario: Toggle desligado — todos os épicos visíveis (padrão)
-- **WHEN** toggle "Ocultar épicos vazios" está desativado
-- **THEN** todos os épicos não-arquivados são exibidos no board, incluindo os que não possuem cards dentro
-
-#### Scenario: Toggle ligado — épicos sem cards visíveis são ocultados
-- **WHEN** usuário ativa o toggle "Ocultar épicos vazios"
-- **THEN** sistema filtra client-side a lista de épicos, ocultando aqueles que não possuem nenhum item descendente na lista carregada (`displayedTasks`) após aplicação dos demais filtros ativos
-
-#### Scenario: Interação com outros filtros ativos
-- **WHEN** filtro por responsável está ativo E toggle "Ocultar épicos vazios" está ativo
-- **THEN** épicos que não possuem cards do responsável selecionado são também ocultados, pois "vazio" é avaliado após a aplicação dos demais filtros
-
-#### Scenario: Toggle incluído no indicador de filtro ativo
-- **WHEN** toggle "Ocultar épicos vazios" está ativado
-- **THEN** o indicador de filtros ativos no toolbar conta esse toggle como um filtro ativo (contribui para a contagem exibida)
-
-#### Scenario: Limpar filtros desativa o toggle
-- **WHEN** usuário clica em "Limpar filtros"
-- **THEN** toggle "Ocultar épicos vazios" é desativado junto com os demais filtros
-
----
-
-### Requirement: Toggle "Ocultar histórias vazias"
-O sistema SHALL oferecer `hideEmptyStories` somente quando `storyDisplay = lanes`. Quando ativado, lanes de STORY sem cards visíveis após os filtros SHALL ser omitidas. O toggle SHALL iniciar desligado.
-
-#### Scenario: Controle disponível no modo de lanes
-- **WHEN** `storyDisplay = lanes`
-- **THEN** o painel de filtros exibe o controle "Histórias vazias"
-
-#### Scenario: Controle indisponível no modo de cards
-- **WHEN** `storyDisplay = cards`
-- **THEN** o controle "Histórias vazias" não é exibido e não contribui para a contagem de filtros ativos
-
-#### Scenario: Ocultar história sem cards visíveis
-- **WHEN** usuário ativa `hideEmptyStories`
-- **THEN** cada STORY com zero cards após os demais filtros é omitida
-
-#### Scenario: Limpar filtros restaura histórias vazias
-- **WHEN** usuário limpa os filtros
-- **THEN** `hideEmptyStories` retorna a `false`
+## ADDED Requirements
 
 ### Requirement: Filtro por valor vazio em campos anuláveis
 O Board SHALL permitir filtrar cards pelos campos anuláveis Sprint, Versão, Responsável, Autor e Centro de Custo no estado "sem valor", usando um sentinela distinto do estado neutro `''`. O filtro por valor vazio SHALL ser aplicado client-side sobre os itens carregados. Campos `NOT NULL` (`priority`, `status`, `type`) SHALL NOT oferecer opção de valor vazio.
@@ -168,4 +114,3 @@ O Board SHALL permitir filtrar cards pelos campos anuláveis Sprint, Versão, Re
 #### Scenario: Campos não anuláveis sem opção vazia
 - **WHEN** o usuário abre os filtros de Prioridade, Status ou Tipo
 - **THEN** não há opção de valor vazio, pois esses campos sempre possuem valor
-

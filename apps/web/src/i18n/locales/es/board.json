@@ -161,6 +161,8 @@
   "statusLabel": "Estado",
   "priorityLabel": "Prioridad",
   "unassigned": "Sin asignar",
+  "noAuthor": "Sin autor",
+  "noCostCenter": "Sin centro de costo",
   "costCenterLabel": "Centro de costo",
   "none": "— Ninguno —",
   "authorLabel": "Autor",

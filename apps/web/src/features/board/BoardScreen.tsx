@@ -45,6 +45,10 @@ import {
   computeIsLeaf,
   getEpicIdFromPath,
   getStoryIdFromPath,
+  isEmptyFilterValue,
+  matchesMemberFilter,
+  matchesScalarFilter,
+  matchesSprintFilter,
   upsertItem,
   type ArchivedItem,
   type ItemData,
@@ -136,19 +140,19 @@ export default function BoardPage() {
 
 
   useEffect(() => {
-    if (versionsLoaded && filters.versionId && !projectVersions.some(version => version.id === filters.versionId)) {
+    if (versionsLoaded && filters.versionId && !isEmptyFilterValue(filters.versionId) && !projectVersions.some(version => version.id === filters.versionId)) {
       setFilters(previous => ({ ...previous, versionId: '' }))
     }
   }, [filters.versionId, projectVersions, versionsLoaded])
 
   useEffect(() => {
-    if (filters.sprintId && sprints.length > 0 && !sprints.some(sprint => sprint.id === filters.sprintId)) {
+    if (filters.sprintId && !isEmptyFilterValue(filters.sprintId) && sprints.length > 0 && !sprints.some(sprint => sprint.id === filters.sprintId)) {
       setFilters(previous => ({ ...previous, sprintId: '' }))
     }
   }, [filters.sprintId, sprints])
 
   useEffect(() => {
-    if (costCentersLoaded && filters.costCenterId && !projectCostCenters.some(center => center.id === filters.costCenterId)) {
+    if (costCentersLoaded && filters.costCenterId && !isEmptyFilterValue(filters.costCenterId) && !projectCostCenters.some(center => center.id === filters.costCenterId)) {
       setFilters(previous => ({ ...previous, costCenterId: '' }))
     }
   }, [filters.costCenterId, projectCostCenters, costCentersLoaded])
@@ -230,7 +234,7 @@ export default function BoardPage() {
       })
     }
     if (filters.assigneeId) {
-      result = result.filter(i => i.assigneeId === filters.assigneeId || i.assignee?.id === filters.assigneeId)
+      result = result.filter(i => matchesMemberFilter(i.assigneeId, i.assignee?.id, filters.assigneeId))
     }
     if (filters.squadId) {
       const squadUsers = squadMembersMap.get(filters.squadId)
@@ -248,13 +252,13 @@ export default function BoardPage() {
       )
     }
     if (filters.sprintId) {
-      result = result.filter(i => i.itemSprints?.some(sprint => sprint.sprintId === filters.sprintId))
+      result = result.filter(i => matchesSprintFilter(i.itemSprints, filters.sprintId))
     }
-    if (filters.versionId) result = result.filter(i => i.versionId === filters.versionId)
+    if (filters.versionId) result = result.filter(i => matchesScalarFilter(i.versionId, filters.versionId))
     if (filters.priority) result = result.filter(i => i.priority === filters.priority)
     if (filters.status) result = result.filter(i => i.status === filters.status)
-    if (filters.authorId) result = result.filter(i => i.authorId === filters.authorId || i.author?.id === filters.authorId)
-    if (filters.costCenterId) result = result.filter(i => i.costCenterId === filters.costCenterId)
+    if (filters.authorId) result = result.filter(i => matchesMemberFilter(i.authorId, i.author?.id, filters.authorId))
+    if (filters.costCenterId) result = result.filter(i => matchesScalarFilter(i.costCenterId, filters.costCenterId))
 
     // Histórias folha (sem filhos) — aparecem como cards arrastáveis quando "Histórias no board" ativo
     if (!isSimpleBoard && filters.storyDisplay === 'cards' && columns.length > 0) {
@@ -270,7 +274,7 @@ export default function BoardPage() {
         })
       }
       if (filters.assigneeId) {
-        leafStories = leafStories.filter(i => i.assigneeId === filters.assigneeId || i.assignee?.id === filters.assigneeId)
+        leafStories = leafStories.filter(i => matchesMemberFilter(i.assigneeId, i.assignee?.id, filters.assigneeId))
       }
       if (filters.squadId) {
         const squadUsers = squadMembersMap.get(filters.squadId)
@@ -285,13 +289,13 @@ export default function BoardPage() {
         )
       }
       if (filters.sprintId) {
-        leafStories = leafStories.filter(i => i.itemSprints?.some(sprint => sprint.sprintId === filters.sprintId))
+        leafStories = leafStories.filter(i => matchesSprintFilter(i.itemSprints, filters.sprintId))
       }
-      if (filters.versionId) leafStories = leafStories.filter(i => i.versionId === filters.versionId)
+      if (filters.versionId) leafStories = leafStories.filter(i => matchesScalarFilter(i.versionId, filters.versionId))
       if (filters.priority) leafStories = leafStories.filter(i => i.priority === filters.priority)
       if (filters.status) leafStories = leafStories.filter(i => i.status === filters.status)
-      if (filters.authorId) leafStories = leafStories.filter(i => i.authorId === filters.authorId || i.author?.id === filters.authorId)
-      if (filters.costCenterId) leafStories = leafStories.filter(i => i.costCenterId === filters.costCenterId)
+      if (filters.authorId) leafStories = leafStories.filter(i => matchesMemberFilter(i.authorId, i.author?.id, filters.authorId))
+      if (filters.costCenterId) leafStories = leafStories.filter(i => matchesScalarFilter(i.costCenterId, filters.costCenterId))
       result = [...result, ...leafStories]
     }
 
@@ -900,6 +904,7 @@ export default function BoardPage() {
   const activeFilterLabels = {
     filterLabel: tBoard('activeFilters'), module: tBoard('filterModule'), sprint: tBoard('filterSprint'), version: tBoard('filterVersion'),
     squad: tBoard('filterSquad'), assignee: tBoard('filterAssignee'), author: tBoard('filterAuthor'), costCenter: tBoard('filterCostCenter'),
+    sprintEmpty: tBoard('noSprint'), versionEmpty: tBoard('noVersion'), assigneeEmpty: tBoard('unassigned'), authorEmpty: tBoard('noAuthor'), costCenterEmpty: tBoard('noCostCenter'),
     priority: tBoard('filterPriority'), status: tBoard('filterStatus'), type: tBoard('filterType'), tag: tBoard('filterTag'),
     hideEmptyEpics: tBoard('hideEmptyEpics'), hideEmptyStories: tBoard('hideEmptyStories'), showSubtasks: tBoard('showSubtasks'),
     storyDisplay: tBoard('storyDisplay'), moduleViewMode: tBoard('moduleViewMode'), typeValues: { TASK: tBoard('typeTask'), BUG: tBoard('typeBug') },

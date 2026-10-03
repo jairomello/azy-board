@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import type { Tag } from './TagSelector'
 import type { BoardFilterState } from './BoardFilters'
+import { isEmptyFilterValue } from '../features/board/model/types'
 
 export type ActiveFilterKey =
   | 'moduleId' | 'sprintId' | 'versionId' | 'squadId' | 'assigneeId' | 'authorId'
@@ -31,6 +32,7 @@ export interface ActiveFilterLabels {
   filterLabel: string
   module: string; sprint: string; version: string; squad: string; assignee: string; author: string
   costCenter: string; priority: string; status: string; type: string; tag: string
+  sprintEmpty: string; versionEmpty: string; assigneeEmpty: string; authorEmpty: string; costCenterEmpty: string
   hideEmptyEpics: string; hideEmptyStories: string; showSubtasks: string; storyDisplay: string; moduleViewMode: string
   typeValues: Record<string, string>; priorityValues: Record<string, string>; statusValues: Record<string, string>
   storyDisplayCards: string; moduleViewTabs: string; enabled: string; remove: string
@@ -50,16 +52,18 @@ export function normalizeActiveBoardFilters(filters: BoardFilterState, catalogs:
   const add = (key: ActiveFilterKey, value: string | undefined, filterLabel: string, valueLabel: string) => {
     if (value) result.push({ key, value, filterLabel, valueLabel })
   }
+  const emptyOr = (value: string, emptyLabel: string, resolved: string) =>
+    isEmptyFilterValue(value) ? emptyLabel : resolved
   add('moduleId', filters.moduleId, labels.module, catalogName(catalogs.modules, filters.moduleId))
-  add('sprintId', filters.sprintId, labels.sprint, catalogName(catalogs.sprints, filters.sprintId))
-  add('versionId', filters.versionId, labels.version, catalogName(catalogs.versions, filters.versionId))
+  add('sprintId', filters.sprintId, labels.sprint, emptyOr(filters.sprintId, labels.sprintEmpty, catalogName(catalogs.sprints, filters.sprintId)))
+  add('versionId', filters.versionId, labels.version, emptyOr(filters.versionId, labels.versionEmpty, catalogName(catalogs.versions, filters.versionId)))
   add('squadId', filters.squadId, labels.squad, catalogName(catalogs.squads, filters.squadId))
-  add('assigneeId', filters.assigneeId, labels.assignee, memberName(catalogs.members, filters.assigneeId))
-  add('authorId', filters.authorId, labels.author, memberName(catalogs.members, filters.authorId))
-  add('costCenterId', filters.costCenterId, labels.costCenter, (() => {
+  add('assigneeId', filters.assigneeId, labels.assignee, emptyOr(filters.assigneeId, labels.assigneeEmpty, memberName(catalogs.members, filters.assigneeId)))
+  add('authorId', filters.authorId, labels.author, emptyOr(filters.authorId, labels.authorEmpty, memberName(catalogs.members, filters.authorId)))
+  add('costCenterId', filters.costCenterId, labels.costCenter, emptyOr(filters.costCenterId, labels.costCenterEmpty, (() => {
     const center = catalogs.costCenters.find(item => item.id === filters.costCenterId)
     return center ? `${center.code}${center.description ? ` - ${center.description}` : ''}` : shortId(filters.costCenterId)
-  })())
+  })()))
   add('priority', filters.priority, labels.priority, labels.priorityValues[filters.priority] ?? shortId(filters.priority))
   add('status', filters.status, labels.status, labels.statusValues[filters.status] ?? shortId(filters.status))
   for (const type of filters.types) add('types', type, labels.type, labels.typeValues[type] ?? shortId(type))

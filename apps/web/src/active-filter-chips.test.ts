@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import { normalizeActiveBoardFilters, removeActiveBoardFilter, type ActiveFilterLabels } from './components/ActiveFilterChips'
 import type { BoardFilterState } from './components/BoardFilters'
+import { EMPTY_FILTER_VALUE } from './features/board/model/types'
 
 const labels: ActiveFilterLabels = {
   filterLabel: 'Active filters', module: 'Module', sprint: 'Sprint', version: 'Version', squad: 'Squad', assignee: 'Assignee', author: 'Author',
   costCenter: 'Cost center', priority: 'Priority', status: 'Status', type: 'Type', tag: 'Tag', hideEmptyEpics: 'Hide empty epics', hideEmptyStories: 'Hide empty stories', showSubtasks: 'Show subtasks', storyDisplay: 'Stories', moduleViewMode: 'Modules',
+  sprintEmpty: 'No sprint', versionEmpty: 'No version', assigneeEmpty: 'Unassigned', authorEmpty: 'No author', costCenterEmpty: 'No cost center',
   typeValues: { TASK: 'Task', BUG: 'Bug' }, priorityValues: { HIGH: 'High' }, statusValues: { DONE: 'Done' }, storyDisplayCards: 'as cards', moduleViewTabs: 'as tabs', enabled: 'enabled', remove: 'Remove filter',
 }
 
@@ -43,5 +45,27 @@ describe('filtros ativos do Board', () => {
     expect(withoutMiddle.moduleId).toBe(filters.moduleId)
     expect(removeActiveBoardFilter(filters, 'moduleId').moduleId).toBe('')
     expect(removeActiveBoardFilter(filters, 'storyDisplay').storyDisplay).toBe('lanes')
+  })
+
+  test('cria chip para filtro por valor vazio com o rótulo do estado vazio', () => {
+    const empty = {
+      ...filters,
+      sprintId: EMPTY_FILTER_VALUE,
+      versionId: EMPTY_FILTER_VALUE,
+      assigneeId: EMPTY_FILTER_VALUE,
+      authorId: EMPTY_FILTER_VALUE,
+      costCenterId: EMPTY_FILTER_VALUE,
+    }
+    const active = normalizeActiveBoardFilters(empty, catalogs, labels)
+    expect(active.find(item => item.key === 'sprintId')?.valueLabel).toBe('No sprint')
+    expect(active.find(item => item.key === 'versionId')?.valueLabel).toBe('No version')
+    expect(active.find(item => item.key === 'assigneeId')?.valueLabel).toBe('Unassigned')
+    expect(active.find(item => item.key === 'authorId')?.valueLabel).toBe('No author')
+    expect(active.find(item => item.key === 'costCenterId')?.valueLabel).toBe('No cost center')
+  })
+
+  test('remove o filtro por valor vazio restaurando o estado neutro', () => {
+    const empty = { ...filters, sprintId: EMPTY_FILTER_VALUE }
+    expect(removeActiveBoardFilter(empty, 'sprintId').sprintId).toBe('')
   })
 })

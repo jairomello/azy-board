@@ -73,7 +73,7 @@ describe('contratos de UI dos modos de board', () => {
      contains(filters, "t('filterCostCenter')")
      contains(filters, "t('filterCostCenter')")
     contains(commandBar, 'costCenters={costCenters}')
-    contains(board, 'i.costCenterId === filters.costCenterId')
+    contains(board, 'matchesScalarFilter(i.costCenterId, filters.costCenterId)')
     contains(board, 'center.id === filters.costCenterId')
     contains(board, 'costCenterId: \'\'')
      contains(preferences, 'localStorage.setItem(`board-filters:${projectId}`')
@@ -89,6 +89,24 @@ describe('contratos de UI dos modos de board', () => {
     contains(board, 'simpleBoard={isSimpleBoard}')
     contains(lanes, 'simpleBoard && simpleStory')
     contains(board, "const isSimpleBoard = boardMode === 'SIMPLE'")
+  })
+
+  test('board oferece filtro por valor vazio distinto do estado neutro', async () => {
+    const filters = await source('./components/BoardFilters.tsx')
+    const board = await source('./features/board/BoardScreen.tsx')
+    const chips = await source('./components/ActiveFilterChips.tsx')
+    contains(filters, 'EMPTY_FILTER_VALUE')
+    contains(filters, "t('allSprints')")
+    contains(filters, "t('noSprint')")
+    contains(filters, "t('noVersion')")
+    contains(filters, "t('unassigned')")
+    contains(filters, "t('noAuthor')")
+    contains(filters, "t('noCostCenter')")
+    contains(board, 'matchesSprintFilter')
+    contains(board, 'matchesScalarFilter')
+    contains(board, 'matchesMemberFilter')
+    contains(board, 'isEmptyFilterValue(filters.versionId)')
+    contains(chips, 'isEmptyFilterValue')
   })
 
   test('regressão hierárquica conserva árvore, breadcrumbs e drag-and-drop', async () => {

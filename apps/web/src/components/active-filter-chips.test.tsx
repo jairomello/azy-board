@@ -3,11 +3,13 @@ import { describe, expect, test } from 'bun:test'
 import { render } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { BoardFilterState } from './BoardFilters'
+import { EMPTY_FILTER_VALUE } from '../features/board/model/types'
 import { ActiveFilterChips, type ActiveFilterCatalogs, type ActiveFilterKey, type ActiveFilterLabels } from './ActiveFilterChips'
 
 const labels: ActiveFilterLabels = {
   filterLabel: 'Filtros ativos', module: 'Módulo', sprint: 'Sprint', version: 'Versão', squad: 'Squad', assignee: 'Responsável', author: 'Autor',
   costCenter: 'Centro de custo', priority: 'Prioridade', status: 'Situação', type: 'Tipo', tag: 'Tag', hideEmptyEpics: 'Ocultar épicos vazios', hideEmptyStories: 'Ocultar histórias vazias', showSubtasks: 'Mostrar subtasks', storyDisplay: 'Histórias', moduleViewMode: 'Módulos',
+  sprintEmpty: 'Sem sprint', versionEmpty: 'Sem versão', assigneeEmpty: 'Não atribuído', authorEmpty: 'Sem autor', costCenterEmpty: 'Sem centro de custo',
   typeValues: { TASK: 'Task', BUG: 'Bug' }, priorityValues: { HIGH: 'Alta' }, statusValues: { DONE: 'Concluída' }, storyDisplayCards: 'como cards', moduleViewTabs: 'como abas', enabled: 'ativado', remove: 'Remover filtro',
 }
 
@@ -44,5 +46,19 @@ describe('ActiveFilterChips', () => {
     await user.click(screen.getByRole('button', { name: 'Remover filtro: Módulo Pagamentos' }))
 
     expect(removidos).toEqual([{ key: 'moduleId', value: 'module-1' }])
+  })
+
+  test('exibe chip de valor vazio com rótulo do estado vazio', () => {
+    render(
+      <ActiveFilterChips
+        filters={{ ...filters, moduleId: '', types: [], sprintId: EMPTY_FILTER_VALUE }}
+        catalogs={catalogs}
+        labels={labels}
+        onRemove={() => {}}
+      />,
+    )
+
+    expect(screen.getByText('Sem sprint')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remover filtro: Sprint Sem sprint' })).toBeInTheDocument()
   })
 })

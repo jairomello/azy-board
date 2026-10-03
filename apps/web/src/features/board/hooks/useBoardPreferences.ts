@@ -2,19 +2,26 @@ import { useEffect, useRef, useState } from 'react'
 import type { BoardFilterState } from '../../../components/BoardFilters'
 import { DEFAULT_FILTERS } from '../model/types'
 
+// Mescla o estado persistido com os defaults. Preserva valores escalares como o
+// sentinela de valor vazio (EMPTY_FILTER_VALUE); apenas normaliza listas e remove
+// a chave legada `showStories`.
+export function normalizePersistedFilters(parsed: Partial<BoardFilterState> & { showStories?: boolean }): BoardFilterState {
+  const { showStories: _legacyShowStories, ...currentFilters } = parsed
+  return {
+    ...DEFAULT_FILTERS,
+    ...currentFilters,
+    types: Array.isArray(currentFilters.types) ? currentFilters.types : [],
+    tagIds: Array.isArray(currentFilters.tagIds) ? currentFilters.tagIds : [],
+  }
+}
+
 function readFilters(projectId: string | undefined): BoardFilterState {
   if (!projectId) return DEFAULT_FILTERS
   try {
     const raw = localStorage.getItem(`board-filters:${projectId}`)
     if (!raw) return DEFAULT_FILTERS
     const parsed = JSON.parse(raw) as Partial<BoardFilterState> & { showStories?: boolean }
-    const { showStories: _legacyShowStories, ...currentFilters } = parsed
-    return {
-      ...DEFAULT_FILTERS,
-      ...currentFilters,
-      types: Array.isArray(currentFilters.types) ? currentFilters.types : [],
-      tagIds: Array.isArray(currentFilters.tagIds) ? currentFilters.tagIds : [],
-    }
+    return normalizePersistedFilters(parsed)
   } catch {
     return DEFAULT_FILTERS
   }
