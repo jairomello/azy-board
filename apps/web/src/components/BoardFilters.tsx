@@ -231,7 +231,7 @@ export function BoardFilters({
           onChange={e => update({ sprintId: e.target.value })}
           className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground"
         >
-            <option value="">{t('allSprints')}</option>
+            <option value="">{t('filterSprint')}</option>
             <option value={EMPTY_FILTER_VALUE}>{t('noSprint')}</option>
             {sprints.length === 0 && <option disabled>{t('noSprints')}</option>}
           {sprints.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}

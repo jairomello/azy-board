@@ -96,7 +96,7 @@ describe('contratos de UI dos modos de board', () => {
     const board = await source('./features/board/BoardScreen.tsx')
     const chips = await source('./components/ActiveFilterChips.tsx')
     contains(filters, 'EMPTY_FILTER_VALUE')
-    contains(filters, "t('allSprints')")
+    contains(filters, "<option value=\"\">{t('filterSprint')}</option>")
     contains(filters, "t('noSprint')")
     contains(filters, "t('noVersion')")
     contains(filters, "t('unassigned')")
