@@ -219,15 +219,20 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
         className={`kanban-card-content flex-1 py-2.5 space-y-2 min-w-0 ${onDelete ? 'pr-7' : 'pr-3'} ${onOpenDetail ? 'cursor-pointer' : ''}`}
         onClick={openDetail}
       >
-        {/* Breadcrumb — tooltip via portal para evitar clipping por stacking context do DnD */}
-        {ancestry.length > 0 && (
-          <div
-            ref={breadcrumbRef}
-            className="text-xs text-muted-foreground select-none"
-            onMouseEnter={handleBreadcrumbEnter}
-            onMouseLeave={() => setBreadcrumbOpen(false)}
-          >
-            {truncated ? `${breadcrumbText.slice(0, 42)}…` : breadcrumbText}
+        {/* Ícone no canto superior esquerdo + breadcrumb (tooltip via portal para evitar clipping do DnD) */}
+        {(CardIcon || ancestry.length > 0) && (
+          <div className="flex items-center gap-1.5 min-w-0">
+            {CardIcon ? <CardIcon className="w-4 h-4 flex-shrink-0" style={{ color: card.color ?? undefined }} /> : null}
+            {ancestry.length > 0 && (
+              <div
+                ref={breadcrumbRef}
+                className="text-xs text-muted-foreground select-none min-w-0 truncate"
+                onMouseEnter={handleBreadcrumbEnter}
+                onMouseLeave={() => setBreadcrumbOpen(false)}
+              >
+                {truncated ? `${breadcrumbText.slice(0, 42)}…` : breadcrumbText}
+              </div>
+            )}
           </div>
         )}
         {breadcrumbOpen && truncated && createPortal(
@@ -258,7 +263,6 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
         >
           {onTitleSave ? (
             <div className="flex items-center">
-              {CardIcon ? <CardIcon className="w-3.5 h-3.5 mr-1 flex-shrink-0" style={{ color: card.color ?? undefined }} /> : null}
               {card.sequenceCode && <span className="text-xs font-mono text-muted-foreground mr-1 flex-shrink-0">{card.sequenceCode} -</span>}
               <InlineEdit
                 value={card.title}
@@ -269,7 +273,6 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
             </div>
           ) : (
             <p className="text-sm font-medium text-foreground leading-snug line-clamp-2">
-              {CardIcon ? <CardIcon className="inline w-3.5 h-3.5 mr-1 -mt-0.5" style={{ color: card.color ?? undefined }} /> : null}
               {card.sequenceCode && <span className="text-xs font-mono text-muted-foreground mr-1">{card.sequenceCode} -</span>}
               {card.title}
             </p>
