@@ -28,7 +28,7 @@ Adicione ao seu `.claude/settings.json`:
 <!-- BEGIN GENERATED: mcp-catalog -->
 <!-- GERADO AUTOMATICAMENTE por scripts/generate-docs.ts — não editar; rode `bun run generate:docs`. -->
 
-Catálogo com 59 ferramentas, derivado de `apps/mcp/src/registry.ts`.
+Catálogo com 60 ferramentas, derivado de `apps/mcp/src/registry.ts`.
 
 | Ferramenta | Descrição |
 |---|---|
@@ -39,8 +39,8 @@ Catálogo com 59 ferramentas, derivado de `apps/mcp/src/registry.ts`.
 | `archive_item` | Arquiva um item. confirm é true por padrão; suporta dryRun. |
 | `batch` | Create an ordered hierarchy of up to 50 EPIC, STORY, TASK, or BUG items in one atomic approval. Use refs and parentRefs instead of database IDs. Use moduleName for EPIC items; a module referenced by name that does not exist yet is created automatically. |
 | `batch_move` | Move up to 500 leaf items to a column in one atomic operation. Requires itemIds and the exact destination column name (or column ID). Prefer this over multiple move_task calls when moving several cards at once. For filter-based bulk moves without explicit IDs, use update_items. |
-| `check_item` | Marca/desmarca um passo por IDs ou por `itemId` + `checklistName` + `text`/`position`; em ambiguidade, informe os IDs. |
-| `check_items` | Marca/desmarca até 100 passos por chamada, por IDs ou resolução semântica, com atomicidade por card e falhas identificadas por entrada. |
+| `check_item` | Set a checklist step state by IDs or by itemId + checklistName + text/position. Ambiguous text requires IDs or position. |
+| `check_items` | Marca ou desmarca até 100 passos de checklist; resolve por IDs ou checklistName + text/position e é atômico por card. |
 | `claim_task` | Atribui o item ao usuário atual (claim). Use apenas quando o item estiver disponível. |
 | `close_sprint` | Encerra a sprint informada. |
 | `complete_task` | Conclui um item. Para card folha, move-o para a coluna com baseStatus DONE. |
@@ -76,7 +76,7 @@ Catálogo com 59 ferramentas, derivado de `apps/mcp/src/registry.ts`.
 | `list_sprints` | Lista as sprints do projeto. |
 | `list_squads` | Lista os squads do projeto. |
 | `list_tags` | Lista as tags do projeto. |
-| `list_tasks` | Lista itens do projeto; onlyLeaves é true por padrão. Filtros opcionais: type, status, assigneeId, sprintId, tagIds, parentId, columnId, moduleId, com paginação por limit/cursor. Omitir um filtro equivale a não filtrar. |
+| `list_tasks` | Lista itens do projeto; onlyLeaves é true, includeDescriptions é false e limit é 50 por padrão. Filtros opcionais: type, status, assigneeId, sprintId, tagIds, parentId, columnId, moduleId, com projeção fields e paginação por limit/cursor. Omitir um filtro equivale a não filtrar. |
 | `list_versions` | Lista as versões do projeto. |
 | `move_task` | Move um item para a coluna informada pelo nome exato (ou ID). |
 | `release_task` | Libera a atribuição do item, removendo o responsável atual. |

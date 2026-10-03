@@ -10,12 +10,14 @@
     "start",
     "update",
     "complete",
-    "review"
+    "review",
+    "setup-mcp"
   ],
   "references": [
     "references/mcp-operations.md",
     "references/setup-and-security.md",
-    "references/playbooks.md"
+    "references/playbooks.md",
+    "references/mcp-setup.md"
   ],
   "distribution": {
     "claudeCode": "Copy SKILL.md and commands/*.md into the client's skill/commands locations.",

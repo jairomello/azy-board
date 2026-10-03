@@ -55,6 +55,14 @@ export async function validateAgentSkill(baseDir = skillDir, projectRoot = root)
       errors.push(`Comando ausente: ${command}`)
     }
   }
+  // O roteiro de configuração do MCP é obrigatório: sem ele a skill não guia o
+  // agente a se autoconfigurar, que é o objetivo do card T12.
+  if (!manifest.references.includes('references/mcp-setup.md')) errors.push('Referência obrigatória ausente no manifest: references/mcp-setup.md')
+  if (!manifest.commands.includes('setup-mcp')) errors.push('Comando obrigatório ausente no manifest: setup-mcp')
+  const setupGuide = referenceResults[manifest.references.indexOf('references/mcp-setup.md')] ?? ''
+  if (manifest.references.includes('references/mcp-setup.md') && !setupGuide.includes('EASYBOARD_API_KEY')) {
+    errors.push('Roteiro de configuração do MCP sem a variável EASYBOARD_API_KEY')
+  }
   const allText = `${entrypoint}\n${referenceText}`
   for (const pattern of [/azb_[a-f0-9]{16,}/i, /Bearer\s+[A-Za-z0-9._-]{20,}/i, /password\s*[:=]\s*['"][^<>{}]+['"]/i]) {
     if (pattern.test(allText)) errors.push(`Possível segredo encontrado pela regra: ${pattern}`)

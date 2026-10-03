@@ -10,3 +10,4 @@ Os arquivos desta pasta são comandos semânticos. Clientes que suportam slash c
 | `/azyboard-update` | Registra progresso, estado, checklist ou log | Mutação |
 | `/azyboard-complete` | Valida e conclui o trabalho | Mutação |
 | `/azyboard-review` | Revisa estado, evidências e bloqueios | Leitura |
+| `/azyboard-setup-mcp` | Guia o usuário na configuração do servidor MCP no seu code agent | Orientação |
