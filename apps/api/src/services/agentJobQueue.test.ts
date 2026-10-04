@@ -180,3 +180,26 @@ describe('Agent job queue', () => {
     expect(run!.errorCode).toBe('WORKER_LOST')
   })
 })
+
+// Card T16 — autenticação efetiva das tools do worker: a sessão sintética do run
+// assina JWT e o authMiddleware autentica (antes de 2026-10-03 o header livre
+// X-Worker-Context nunca era aceito e as tools caíam em 401 na fila).
+describe('tool API do worker autentica com sessão sintética', () => {
+  test('chamada interna lista projetos do tenant do usuário do run', async () => {
+    const { createWorkerToolApi, loadRunContext } = await import('./workerContext')
+    // Sessão requer registrar o run no banco para idempotência real do worker…
+    const runId = id()
+    const now = new Date().toISOString()
+    await db.insert(assistantRuns).values({
+      id: runId, tenantId, conversationId, userId, model: 'test',
+      status: 'QUEUED', attempts: 0, nextAttemptAt: now, claimedBy: null, claimExpiresAt: null, cancelRequested: false,
+      createdAt: now,
+    })
+    const loaded = await loadRunContext(runId, tenantId)
+    expect(loaded).toBeTruthy()
+
+    const api = await createWorkerToolApi(tenantId, userId)
+    const result = await api('/projects') as Array<Record<string, unknown>>
+    expect(Array.isArray(result)).toBe(true)
+  })
+})

@@ -129,25 +129,36 @@ export async function loadRunContext(runId: string, tenantId: string): Promise<W
 }
 
 /**
- * Creates a tool API for the worker that dispatches tools without HTTP cookies.
- * Uses the app's internal fetch with a synthetic session for the run's user.
+ * Cria a tool API do worker que despacha as ferramentas sem cookies de HTTP.
+ * Autenticação efetiva: assina um JWT sintético de sessão para o usuário do run
+ * (mesma verificação do authMiddleware — JWT_SECRET nunca sai do processo), em
+ * vez de um header livre (que era forjável e sempre caía em 401 na fila).
  */
-export function createWorkerToolApi(tenantId: string, userId: string) {
+export async function createWorkerToolApi(tenantId: string, userId: string) {
+  const { signJwt } = await import('../services/auth')
+  const session = await signJwt({ sub: userId, tenantId, email: '', role: 'user' })
   return async (path: string, method = 'GET', body?: unknown) => {
     const { app } = await import('../index')
-    // Create a synthetic request with a SYSTEM header for worker context.
-    // The auth middleware will need to handle this case.
     const response = await app.fetch(new Request(`http://azyboard.internal/api${path}`, {
       method,
       headers: {
         'Content-Type': 'application/json',
-        'X-Worker-Context': JSON.stringify({ tenantId, userId }),
+        cookie: `session=${session}`,
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     }), {})
     const payload = await response.json().catch(() => undefined) as { error?: unknown; code?: unknown } | undefined
     if (!response.ok) {
-      const reason = typeof payload?.error === 'string' ? payload.error : typeof payload?.code === 'string' ? payload.code : `HTTP ${response.status}`
+      const normalized = payload?.error && typeof payload?.error === 'object' && !Array.isArray(payload?.error)
+        ? (payload.error as { code?: unknown; message?: unknown })
+        : null
+      const reason = normalized && typeof normalized.message === 'string'
+        ? String(normalized.message)
+        : typeof payload?.error === 'string'
+          ? payload.error
+          : typeof payload?.code === 'string'
+            ? payload.code
+            : `HTTP ${response.status}`
       throw new Error(`HTTP ${response.status}: ${reason}`)
     }
     return payload

@@ -124,7 +124,7 @@ export async function executeAssistantRun(runId: string, tenantId: string): Prom
     runId, tenantId, modelConfigId: attempt.configId, provider: attempt.provider,
     model: attempt.model, errorCode: attempt.errorCode, durationMs: attempt.durationMs,
   }))
-  const workerApi = createWorkerToolApi(tenantId, loaded.userId)
+  const workerApi = await createWorkerToolApi(tenantId, loaded.userId)
   const harness = new AssistantHarness({
     provider,
     limits: harnessLimits(loaded.governance),
