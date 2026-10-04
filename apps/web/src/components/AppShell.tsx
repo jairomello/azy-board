@@ -321,9 +321,12 @@ export function AppShell({
         </div>
       )}
 
+      {/* z-10 mantém o header (e menus internos, como o do perfil) acima da
+          workspace do board, que cria stacking context próprio via backdrop-blur,
+          sem competir com overlays globais (z-50) nem com a sidebar (z-20). */}
       <header
         data-shell-header
-        className="shell-surface relative z-0 mx-3 mt-3 h-16 flex-shrink-0 rounded-2xl border border-shell-border bg-shell-header text-shell-foreground shadow-[0_10px_28px_rgba(20,35,50,0.13)] px-3 sm:px-5 flex items-center gap-3 lg:col-start-2 lg:row-start-1 lg:-ml-3 lg:mr-0 lg:mt-0 lg:pl-8 lg:rounded-l-none lg:rounded-r-2xl lg:border-l-0"
+        className="shell-surface relative z-10 mx-3 mt-3 h-16 flex-shrink-0 rounded-2xl border border-shell-border bg-shell-header text-shell-foreground shadow-[0_10px_28px_rgba(20,35,50,0.13)] px-3 sm:px-5 flex items-center gap-3 lg:col-start-2 lg:row-start-1 lg:-ml-3 lg:mr-0 lg:mt-0 lg:pl-8 lg:rounded-l-none lg:rounded-r-2xl lg:border-l-0"
       >
         <button
           onClick={() => setMobileOpen(true)}

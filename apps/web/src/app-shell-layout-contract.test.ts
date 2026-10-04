@@ -53,6 +53,13 @@ describe('contrato do shell integrado', () => {
     expect(shell.includes('data-shell-sidebar-brand className="h-16 flex-shrink-0 border-b')).toBe(false)
   })
 
+  test('mantem o header acima da workspace para o menu de perfil nao ficar atras', async () => {
+    const shell = await source('./components/AppShell.tsx')
+
+    contains(shell, 'shell-surface relative z-10')
+    expect(shell.includes('relative z-0')).toBe(false)
+  })
+
   test('preserva slots, drawer e tokens de tema existentes', async () => {
     const shell = await source('./components/AppShell.tsx')
 
