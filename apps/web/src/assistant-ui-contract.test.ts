@@ -79,7 +79,8 @@ describe('contratos de interação do Azy Agent', () => {
   })
   test('governança do Root usa a fonte única de limites', async () => {
     const settings = await source('./components/RootAssistantSettings.tsx')
-    expect(settings.includes(`import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts'`)).toBe(true)
+    expect(settings.includes('import { DEFAULT_GOVERNANCE, GOVERNANCE_BOUNDS } from "@azy-board/assistant-contracts"')).toBe(true)
+    expect(settings.includes('sanitizedGovernance')).toBe(true)
     expect(settings.includes('useState({ ...DEFAULT_GOVERNANCE })')).toBe(true)
     expect(settings.includes('maxSteps: 4')).toBe(false)
     expect(settings.includes('maxPayloadBytes: 50_000')).toBe(false)

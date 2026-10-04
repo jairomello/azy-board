@@ -15,7 +15,8 @@ import { AppShell } from "./AppShell";
 import { useAuth } from "../contexts/AuthContext";
 import { useAssistant } from "../contexts/AssistantContext";
 import { api } from "../lib/api";
-import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts';
+import { sanitizedGovernance } from "../lib/governanceLimits";
+import { DEFAULT_GOVERNANCE, GOVERNANCE_BOUNDS } from "@azy-board/assistant-contracts";
 
 type ModelConfig = {
   id: string
@@ -166,8 +167,13 @@ export default function RootAssistantSettings() {
     setBusy(true);
     setError("");
     try {
-      await api.patch("/assistant/root/governance", governance);
-       setMessage(t("governanceSaved"));
+      // Card B6 — campo vazio/fora dos limites não bloqueia o salvamento: cada
+      // chave é normalizada para os limites do contrato (`Number('')` = 0 volta
+      // ao default) e a própria tela passa a exibir os valores normalizados.
+      const normalized = sanitizedGovernance(governance);
+      await api.patch("/assistant/root/governance", normalized);
+      setGovernance(normalized);
+      setMessage(t("governanceSaved"));
       await refresh();
       const current = await api.get<{ activeRuns: number; dailyCostMicros: number }>("/assistant/root/governance/usage");
       setUsage(current);
@@ -268,7 +274,7 @@ export default function RootAssistantSettings() {
               ["timeoutMs", t("timeoutMs")],
               ["dailyBudgetMicros", t("dailyBudgetMicros")],
               ["tenantDailyBudgetMicros", t("tenantDailyBudgetMicros")],
-            ] as [keyof typeof governance, string][]).map(([key, label]) => <label key={key} className="text-sm">{label}<input type="number" min={1} value={governance[key]} onChange={(e) => setGovernance((current) => ({ ...current, [key]: Number(e.target.value) }))} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2" /></label>)}
+            ] as [keyof typeof governance, string][]).map(([key, label]) => <label key={key} className="text-sm">{label}<input type="number" min={GOVERNANCE_BOUNDS[key][0]} max={GOVERNANCE_BOUNDS[key][1]} value={governance[key]} onChange={(e) => setGovernance((current) => ({ ...current, [key]: Number(e.target.value) }))} className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2" /></label>)}
           </div>
            <button type="button" disabled={busy} onClick={() => void saveGovernance()} className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">{t("saveLimits")}</button>
         </section>
