@@ -53,7 +53,7 @@ export const GOVERNANCE_BOUNDS: { [K in keyof Governance]: readonly [number, num
   maxActivePerTenant: [1, 100],
   dailyBudgetMicros: [1_000, 100_000_000],
   tenantDailyBudgetMicros: [1_000, 1_000_000_000],
-  maxSteps: [1, 32],
+  maxSteps: [1, 60],
   maxToolCalls: [1, 100],
   maxInputTokens: [1_000, 128_000],
   maxOutputTokens: [256, 32_000],

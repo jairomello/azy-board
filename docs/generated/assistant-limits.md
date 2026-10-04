@@ -13,7 +13,7 @@ Valores derivados de `packages/types/src/assistantLimits.ts` (fonte única consu
 | `maxActivePerTenant` | 3 | 1–100 |
 | `dailyBudgetMicros` | 100000 | 1000–100000000 |
 | `tenantDailyBudgetMicros` | 1000000 | 1000–1000000000 |
-| `maxSteps` | 32 | 1–32 |
+| `maxSteps` | 32 | 1–60 |
 | `maxToolCalls` | 40 | 1–100 |
 | `maxInputTokens` | 65000 | 1000–128000 |
 | `maxOutputTokens` | 4000 | 256–32000 |
