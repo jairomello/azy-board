@@ -7,6 +7,7 @@ const admin: McpPolicy = { globalGroup: 'MANAGER', localRole: 'ADMIN' }
 export const MCP_TOOL_POLICIES: Readonly<Record<string, McpPolicy>> = {
   list_projects: { globalGroup: 'TEAM_MEMBER' }, create_project: { globalGroup: 'MANAGER' }, create_project_structure: { globalGroup: 'MANAGER' },
   get_project: read, get_board: read, get_tree: read, get_shadow_markdown: read,
+  get_screen_overview: read,
   list_tasks: read, list_modules: read, get_current_sprint: read, list_columns: read,
   list_sprints: read, list_tags: read, list_versions: read, list_members: read,
   list_squads: read, list_item_logs: read, list_cost_centers: read, list_attachments: read,

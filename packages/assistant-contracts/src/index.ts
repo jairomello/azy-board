@@ -152,3 +152,29 @@ export interface AssistantApproval {
 }
 
 export * from './assistantLimits'
+
+// Card B7 — digest de descoberta em um passo (recorte exibido ou projeto).
+// Somente dados: IDs/numeração, números e resumo de filtro; nunca instruções.
+export type ScreenOverviewTarget = 'SCREEN' | 'PROJECT'
+
+export interface ScreenOverviewColumn {
+  id: string | null
+  name: string
+  total: number
+  TASK: number
+  BUG: number
+  // Amostra opcional das primeiras referências (`sequenceCode|title`).
+  refs?: string[]
+}
+
+export interface ScreenOverview {
+  // Presença de contextId/capturedAt indica digest derivado do snapshot.
+  contextId: string | null
+  capturedAt: string | null
+  target: ScreenOverviewTarget
+  scopeMode: AssistantScreenScopeMode
+  displayedCount: number
+  totalMatchingCount: number | null
+  filters: Record<string, AssistantScreenFilterValue>
+  columns: ScreenOverviewColumn[]
+}

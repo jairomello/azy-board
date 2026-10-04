@@ -17,7 +17,8 @@ import { MCP_TOOL_POLICIES } from '@azy-board/tool-registry'
 import { assistantAdjustSchema, assistantAnswerSchema, assistantApprovalSchema, assistantAvailabilitySchema, assistantGovernanceSchema, assistantMessageSchema, assistantModelConfigSchema, assistantModelConfigTestSchema, assistantModelConfigUpdateSchema, assistantModelConfigsReorderSchema, assistantProviderSchema, conversationSchema, parseJson } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
-import type { AssistantSettingsRecord, PersistenceContext } from '../persistence/models'
+import type { AssistantSettingsRecord, ColumnRecord, ItemRecord, PersistenceContext } from '../persistence/models'
+import type { ScreenOverview } from '@azy-board/assistant-contracts'
 import { isOtelInitialized, getOtelMeter } from '../services/telemetry'
 import { createCoordination, type CoordinationPort } from '../coordination'
 import { resolveInstallProfile } from '../db/installProfile'
@@ -152,12 +153,15 @@ export async function canUseProject(tenantId: string, userId: string, globalGrou
 }
 
 type PromptNode = { id: string; title: string; type: string }
+// Card B7 — digest do recorte no contexto (ScreenOverview do contrato).
+type PromptScreenOverview = ScreenOverview
 type AssistantPromptContext = {
   currentDate: string
   authenticatedUser: { id: string; name: string; email: string; globalGroup: string; language: string }
   selectedProject: { id: string; name: string; startDate?: string | null; plannedEndDate?: string | null; plannedPoints?: number | null; plannedHours?: number | null; scope?: string | null } | null
   selectedItem: (PromptNode & { ancestry: PromptNode[] }) | null
   // Card T16 — fotografia compacta (sinais e contagens; sem lista de cards).
+  // Card B7 — `screenOverview` opcional com o digest do recorte.
   screenSnapshot: {
     contextId: string
     capturedAt: string
@@ -166,12 +170,43 @@ type AssistantPromptContext = {
     scope: AssistantScreenSnapshot['scope']
     filters: AssistantScreenSnapshot['filters']
     results: Pick<AssistantScreenSnapshot['results'], 'displayedCount' | 'totalMatchingCount' | 'isComplete'> & { displayedItemIds: string[] }
+    screenOverview?: PromptScreenOverview
   } | null
+}
+
+// Digest de um passo (proposal: descoberta em um passo) — dados autoritativos
+// do servidor a partir do snapshot validado; NUNCA instruções. Somente números,
+// contagens e resumo de filtro; sem títulos nem descrições de cards.
+export function screenOverviewFromSnapshot(snapshot: AssistantScreenSnapshot, items: Array<Pick<ItemRecord, 'id' | 'type' | 'columnId'>>, columns: Array<Pick<ColumnRecord, 'id' | 'name'>>): PromptScreenOverview | undefined {
+  if (snapshot.scope.mode !== 'FILTERED' || snapshot.results.displayedItemIds.length === 0) return undefined
+  const ids = new Set(snapshot.results.displayedItemIds)
+  const overview: ScreenOverview = {
+    contextId: snapshot.contextId,
+    capturedAt: snapshot.capturedAt,
+    target: 'SCREEN',
+    scopeMode: 'FILTERED',
+    displayedCount: snapshot.results.displayedCount,
+    totalMatchingCount: snapshot.results.totalMatchingCount,
+    filters: snapshot.filters,
+    columns: columns.map(column => ({ id: column.id, name: column.name, total: 0, TASK: 0, BUG: 0 })),
+  }
+  const byColumn = new Map(overview.columns.map(column => [column.id, column]))
+  const other = { id: null, name: 'sem coluna', total: 0, TASK: 0, BUG: 0 }
+  for (const item of items) {
+    if (!ids.has(item.id)) continue
+    const bucket = byColumn.get(item.columnId) ?? other
+    bucket.total++
+    if (item.type === 'TASK') bucket.TASK++
+    if (item.type === 'BUG') bucket.BUG++
+  }
+  if (other.total > 0) overview.columns.push(other)
+  return overview
 }
 
 // Fotografia compacta para a janela do prompt: contagens e no máximo 20 IDs de
 // referência. O conjunto completo viaja nos args da tool (escopo travado).
-function compactScreenSnapshot(snapshot: AssistantScreenSnapshot) {
+// Card B7 — `screenOverview` leva o digest do recorte já agregado pelo servidor.
+function compactScreenSnapshot(snapshot: AssistantScreenSnapshot, overview?: ScreenOverview) {
   return {
     contextId: snapshot.contextId,
     capturedAt: snapshot.capturedAt,
@@ -185,6 +220,7 @@ function compactScreenSnapshot(snapshot: AssistantScreenSnapshot) {
       totalMatchingCount: snapshot.results.totalMatchingCount,
       isComplete: snapshot.results.isComplete,
     },
+    ...(overview ? { screenOverview: overview } : {}),
   }
 }
 
@@ -725,6 +761,7 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
   // ── Fotografia do contexto da tela (Card T16) ─────────────────────────────
   // IDs do cliente são referências a validar; nunca permissões nem capacidades.
   let screenContext: AssistantScreenSnapshot | undefined
+  let screenOverview: ScreenOverview | undefined
   if (screenSnapshot) {
     if (screenSnapshot.projectId && effectiveProjectId && screenSnapshot.projectId !== effectiveProjectId) {
       return operationalError(c, 'SCREEN_CONTEXT_PROJECT_MISMATCH', 409)
@@ -742,6 +779,12 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
       screenContext = {
         ...screenSnapshot,
         results: { ...screenSnapshot.results, revisions: { ...screenSnapshot.results.revisions, ...revisions } },
+      }
+      // Card B7 — digest do recorte (contagens por coluna) computado no
+      // servidor a partir dos itens já validados, sem consulta extra na run.
+      if (effectiveProjectId) {
+        const columns = await persistence.projects.listColumns(scope, effectiveProjectId)
+        screenOverview = screenOverviewFromSnapshot(screenContext, projectItems, columns)
       }
     }
   }
@@ -770,7 +813,7 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
   await persistence.agent.touchConversation(scope, ctx.userId, conversationId, now)
   const recentMessages = await persistence.agent.listRecentMessages(scope, conversationId, 12)
   const modelInput = recentMessages.reverse().map(message => ({ role: message.role === 'ASSISTANT' ? 'assistant' : 'user', content: message.content.slice(0, 20_000) }))
-  modelInput.unshift({ role: 'system', content: formatAssistantPromptContext({ currentDate: new Date().toISOString().slice(0, 10), authenticatedUser, selectedProject: selectedProject ?? null, selectedItem: selectedItem ?? null, screenSnapshot: screenContext ? compactScreenSnapshot(screenContext) : null }) })
+  modelInput.unshift({ role: 'system', content: formatAssistantPromptContext({ currentDate: new Date().toISOString().slice(0, 10), authenticatedUser, selectedProject: selectedProject ?? null, selectedItem: selectedItem ?? null, screenSnapshot: screenContext ? compactScreenSnapshot(screenContext, screenOverview) : null }) })
   modelInput.unshift({ role: 'system', content: `${AZY_AGENT_SYSTEM_PROMPT}\n${ASSIGNED_CARD_PRIORITY_INSTRUCTION}` })
   if (modelContext && modelInput.length) modelInput[modelInput.length - 1]!.content = `${modelInput[modelInput.length - 1]!.content}\n\nContexto confiável da operação anterior:\n${modelContext}`
   const itemTypeScope = itemTypeScopeForMessage(content)

@@ -10,6 +10,8 @@ import {
   toolCreateChecklist,
   toolCreateTask,
   toolGetCurrentSprint,
+  toolGetBoard,
+  toolGetScreenOverview,
   toolListChecklists,
   toolListModules,
   toolListTasks,
@@ -479,5 +481,65 @@ describe('MCP tools regression suite', () => {
     await expect(toolCompleteTask(fake.api, project.id, task.id)).rejects.toThrow(
       'Nenhuma coluna mapeada para DONE no projeto'
     )
+  })
+})
+
+// Card B7 — digest de descoberta em um passo e modo summary das descobertas.
+describe('descoberta otimizada (get_screen_overview e modo summary)', () => {
+  const columns = [
+    { id: 'col-backlog', name: 'Backlog', baseStatus: 'NOT_STARTED' },
+    { id: 'col-done', name: 'Concluídas', baseStatus: 'DONE' },
+  ]
+  const makeItem = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id, sequenceCode: 'T1', title: `Card ${id}`, type: 'TASK', status: 'NOT_STARTED',
+    columnId: 'col-backlog', parentId: null, moduleId: null, priority: 'MEDIUM', assigneeId: null, points: null,
+    description: 'texto longo', notes: 'nota longa', icon: 'bug', color: '#ef4444', ...overrides,
+  })
+  const boardApi = (items: unknown[]) => (async (path: string) => {
+    if (path.endsWith('/board')) return { project: { id: 'p1', name: 'Projeto' }, columns, modules: [], items }
+    throw new Error(`Unexpected path ${path}`)
+  }) as ApiCall
+
+  test('get_board default devolve projeção summary sem campos pesados', async () => {
+    const board = await toolGetBoard(boardApi([makeItem('i1')]), 'p1') as { items: Array<Record<string, unknown>> }
+    expect(Object.keys(board.items[0]!).sort()).toEqual(['assigneeId', 'columnId', 'id', 'moduleId', 'parentId', 'points', 'priority', 'sequenceCode', 'status', 'title', 'type'])
+  })
+
+  test('get_board includeDetails mantém os campos pesados (compactados)', async () => {
+    const board = await toolGetBoard(boardApi([makeItem('i1')]), 'p1', false, true) as { items: Array<Record<string, unknown>> }
+    expect(board.items[0]!.description).toBeTypeOf('string')
+    expect(String(board.items[0]!.description).length).toBeLessThanOrEqual(161)
+  })
+
+  test('get_screen_overview PROJECT agrega contagens por coluna/status/tipo', async () => {
+    const items = [
+      makeItem('i1'), makeItem('i2'), makeItem('i3', { type: 'BUG' }),
+      makeItem('i4', { columnId: 'col-done', status: 'DONE' }),
+      makeItem('i5', { columnId: 'col-inexistente' }),
+    ]
+    const overview = await toolGetScreenOverview(boardApi(items), { projectId: 'p1', scope: 'PROJECT' }) as { target: string; contextId: null; columns: Array<{ id: string; name: string; total: number; TASK: number; BUG: number; refs: string[] }> }
+    expect(overview).toMatchObject({ target: 'PROJECT', contextId: null })
+    const backlog = overview.columns.find(column => column.id === 'col-backlog')!
+    expect(backlog).toMatchObject({ name: 'Backlog', total: 3, TASK: 2, BUG: 1 })
+    expect(backlog.refs).toEqual(['T1 Card i1', 'T1 Card i2', 'T1 Card i3'])
+  })
+
+  test('get_screen_overview SCREEN revalida os IDs do snapshot contra o board', async () => {
+    const items = [makeItem('i1'), makeItem('i2'), makeItem('i3', { type: 'BUG' })]
+    const snapshot = { contextId: 'ctx-9', capturedAt: '2026-10-04T14:00:00.000Z', projectId: 'p1', results: { displayedItemIds: ['i1', 'i3'] } }
+    const overview = await toolGetScreenOverview(boardApi(items), { projectId: 'p1', scope: 'SCREEN' }, { screenSnapshot: snapshot as never }) as { target: string; scopeMode: string; displayedCount: number; columns: Array<{ id: string; total: number; TASK: number; BUG: number }> }
+    expect(overview).toMatchObject({ target: 'SCREEN', scopeMode: 'FILTERED', contextId: 'ctx-9', capturedAt: '2026-10-04T14:00:00.000Z', displayedCount: 2 })
+    const backlog = overview.columns.find(column => column.id === 'col-backlog')!
+    expect(backlog).toMatchObject({ total: 2, TASK: 1, BUG: 1 })
+  })
+
+  test('get_screen_overview SCREEN sem snapshot falha com código acionável', async () => {
+    await expect(toolGetScreenOverview(boardApi([]), { projectId: 'p1', scope: 'SCREEN' })).rejects.toThrow('SCREEN_CONTEXT_REQUIRED')
+  })
+
+  test('amostra de referências por coluna respeita o teto de 20', async () => {
+    const items = Array.from({ length: 25 }, (_, index) => makeItem(`i${index}`, { sequenceCode: `T${index}` }))
+    const overview = await toolGetScreenOverview(boardApi(items), { projectId: 'p1', scope: 'PROJECT' }) as { columns: Array<{ refs: string[] }> }
+    expect(overview.columns[0]!.refs).toHaveLength(20)
   })
 })

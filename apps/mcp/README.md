@@ -28,7 +28,7 @@ Adicione ao seu `.claude/settings.json`:
 <!-- BEGIN GENERATED: mcp-catalog -->
 <!-- GERADO AUTOMATICAMENTE por scripts/generate-docs.ts — não editar; rode `bun run generate:docs`. -->
 
-Catálogo com 60 ferramentas, derivado de `apps/mcp/src/registry.ts`.
+Catálogo com 61 ferramentas, derivado de `apps/mcp/src/registry.ts`.
 
 | Ferramenta | Descrição |
 |---|---|
@@ -60,11 +60,12 @@ Catálogo com 60 ferramentas, derivado de `apps/mcp/src/registry.ts`.
 | `delete_checklist_item` | Exclui um passo da checklist. |
 | `delete_item` | Exclui um item. Ação destrutiva; suporta dryRun. |
 | `delete_project` | Exclui um projeto e os registros dependentes. Ação destrutiva; suporta dryRun. |
-| `get_board` | Retorna colunas, módulos e itens do board do projeto. As descrições longas vêm resumidas por padrão; use includeDescriptions=true para o texto completo. Em projetos grandes, prefira list_tasks com filtros. |
+| `get_board` | Retorna colunas, módulos e itens do board do projeto. As descrições longas vêm resumidas por padrão; includeDetails=true devolve os campos pesados e includeDescriptions=true o texto completo. Em projetos grandes, prefira list_tasks com filtros. |
 | `get_current_sprint` | Retorna a sprint ativa (CURRENT) do projeto, se houver. |
 | `get_project` | Consulta os dados de um projeto por projectId (ID ou nome exato). |
+| `get_screen_overview` | Digest do board em um único passo: contagens por coluna (total, TASK, BUG), sprint/filtro ativo e amostra de referências. Prefira sobre get_board para perguntas de contagem/recorte; scope=SCREEN reflete o recorte capturado na tela do usuário, scope=PROJECT o estado atual do banco. |
 | `get_shadow_markdown` | Retorna o board do projeto em Markdown (board.md) para leitura rápida. |
-| `get_tree` | Retorna a hierarquia de itens (EPIC > STORY > TASK/BUG), filtrável por moduleId, assigneeId e sprintId. Descrições resumidas por padrão; use includeDescriptions=true para o texto completo. |
+| `get_tree` | Retorna a hierarquia de itens (EPIC > STORY > TASK/BUG), filtrável por moduleId, assigneeId e sprintId. Descrições resumidas por padrão; includeDetails=true devolve os campos pesados e includeDescriptions=true o texto completo. |
 | `list_attachments` | Lista os anexos de um item, incluindo metadados opcionais (label, referenceDate, description). Requer projectId e itemId. |
 | `list_checklists` | List checklists and their steps for a board card. itemId is the parent card ID. Returns dueDate, assigneeId and description on steps when the project enables advancedChecklists. |
 | `list_columns` | Lista as colunas do board com seus status base. |

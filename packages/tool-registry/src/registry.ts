@@ -60,7 +60,7 @@ export type ItemMutationResponse = {
 
 export { toolFields, requiredFieldsFor, nestedRequiredFieldsFor, isRegisteredTool, OPERATION_ARGS_REQUIRED, SHARED_TOOL_NAMES }
 
-const discovery = new Set(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_shadow_markdown', 'list_tasks', 'list_modules', 'get_current_sprint', 'list_columns', 'list_sprints', 'list_tags', 'list_versions', 'list_members', 'list_squads', 'list_item_logs', 'list_cost_centers', 'list_attachments', 'list_checklists'])
+const discovery = new Set(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_screen_overview', 'get_shadow_markdown', 'list_tasks', 'list_modules', 'get_current_sprint', 'list_columns', 'list_sprints', 'list_tags', 'list_versions', 'list_members', 'list_squads', 'list_item_logs', 'list_cost_centers', 'list_attachments', 'list_checklists'])
 const planning = new Set(['claim_task', 'list_tasks', 'list_checklists', 'create_checklist', 'add_checklist_item', 'add_checklist_item_to_task', 'check_item', 'get_shadow_markdown'])
 
 type ToolClassification = {
@@ -81,6 +81,8 @@ const classifications: Record<string, ToolClassification> = {
 
   get_board: { domain: 'board', scope: 'project', operation: 'read' },
   get_tree: { domain: 'board', scope: 'project', operation: 'read' },
+  // Card B7 — digest de uma única chamada para perguntas de recorte/contagem.
+  get_screen_overview: { domain: 'board', scope: 'project', operation: 'read' },
   get_shadow_markdown: { domain: 'board', scope: 'project', operation: 'read' },
   list_columns: { domain: 'board', scope: 'project', operation: 'read' },
   create_column: { domain: 'board', scope: 'project', operation: 'create' },
@@ -257,6 +259,7 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
     },
   }
   if (field === 'includeDescriptions') return { ...nullable({ type: 'boolean' }), description: 'Inclui description/scope/notes completos. Padrão false (texto resumido) para reduzir o payload.' }
+  if (field === 'includeDetails') return { ...nullable({ type: 'boolean' }), description: 'Devolve description/persona/goal/benefit/acceptanceCriteria/notes/scope e demais metadados por item. Padrão false (projeção de resumo) para reduzir o payload.' }
   if (field === 'onlyLeaves' || field === 'atomic' || field === 'confirm' || field === 'dryRun' || field === 'checked') return nullable({ type: 'boolean' })
   if (field === 'advancedChecklists') return { ...nullable({ type: 'boolean' }), description: 'Habilita data, responsável e descrição nos itens de checklist do projeto (padrão false).' }
   if (field === 'plannedPoints') return { ...nullable({ type: 'number' }), description: 'Estimated total story points for the project.' }
@@ -351,6 +354,7 @@ export function applyOptionalFields(inputSchema: ToolDefinition['inputSchema'], 
 const friendlyNames: Record<string, string> = {
   update_items: 'Atualizar itens', update_item: 'Atualizar item', batch: 'Cadastrar estrutura', batch_move: 'Mover itens em lote',
   list_projects: 'Listar projetos', get_project: 'Consultar projeto', get_board: 'Consultar board', get_tree: 'Consultar hierarquia', list_tasks: 'Listar itens',
+  get_screen_overview: 'Resumo do board',
   create_project: 'Criar projeto', create_project_structure: 'Criar projeto e estrutura', update_project: 'Atualizar projeto', delete_project: 'Excluir projeto', create_task: 'Criar item', delete_item: 'Excluir item',
   move_task: 'Mover item', complete_task: 'Concluir item', claim_task: 'Assumir item', release_task: 'Liberar item', archive_item: 'Arquivar item', unarchive_item: 'Desarquivar item',
   list_sprints: 'Listar sprints', create_sprint: 'Criar sprint', activate_sprint: 'Ativar sprint', close_sprint: 'Fechar sprint', list_members: 'Listar membros',
@@ -380,8 +384,9 @@ const toolDescriptions: Record<string, string> = {
   batch_move: 'Move up to 500 leaf items to a column in one atomic operation. Requires itemIds and the exact destination column name (or column ID). Prefer this over multiple move_task calls when moving several cards at once. For filter-based bulk moves without explicit IDs, use update_items.',
   list_projects: 'Lista os projetos acessíveis à credencial. Use para descobrir projectId; aceita paginação com limit/cursor.',
   get_project: 'Consulta os dados de um projeto por projectId (ID ou nome exato).',
-  get_board: 'Retorna colunas, módulos e itens do board do projeto. As descrições longas vêm resumidas por padrão; use includeDescriptions=true para o texto completo. Em projetos grandes, prefira list_tasks com filtros.',
-  get_tree: 'Retorna a hierarquia de itens (EPIC > STORY > TASK/BUG), filtrável por moduleId, assigneeId e sprintId. Descrições resumidas por padrão; use includeDescriptions=true para o texto completo.',
+  get_board: 'Retorna colunas, módulos e itens do board do projeto. As descrições longas vêm resumidas por padrão; includeDetails=true devolve os campos pesados e includeDescriptions=true o texto completo. Em projetos grandes, prefira list_tasks com filtros.',
+  get_tree: 'Retorna a hierarquia de itens (EPIC > STORY > TASK/BUG), filtrável por moduleId, assigneeId e sprintId. Descrições resumidas por padrão; includeDetails=true devolve os campos pesados e includeDescriptions=true o texto completo.',
+  get_screen_overview: 'Digest do board em um único passo: contagens por coluna (total, TASK, BUG), sprint/filtro ativo e amostra de referências. Prefira sobre get_board para perguntas de contagem/recorte; scope=SCREEN reflete o recorte capturado na tela do usuário, scope=PROJECT o estado atual do banco.',
   get_shadow_markdown: 'Retorna o board do projeto em Markdown (board.md) para leitura rápida.',
   list_tasks: 'Lista itens do projeto; onlyLeaves é true, includeDescriptions é false e limit é 50 por padrão. Filtros opcionais: type, status, assigneeId, sprintId, tagIds, parentId, columnId, moduleId, com projeção fields e paginação por limit/cursor. Omitir um filtro equivale a não filtrar.',
   list_modules: 'Lista os módulos do projeto.',
@@ -436,7 +441,8 @@ export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinit
       const { fields, required: mandatoryFields } = toolFields[name]!
       const mandatory = new Set(mandatoryFields)
       return { type: 'object' as const, properties: Object.fromEntries(fields.map(field => [field,
-        name === 'update_checklist_item' && field === 'changes' ? checklistItemChangeSchema
+        name === 'get_screen_overview' && field === 'scope' ? { type: 'string', enum: ['SCREEN', 'PROJECT'], description: 'SCREEN = recorte capturado na tela do usuário (exige snapshot do run); PROJECT = estado atual do banco.' }
+          : name === 'update_checklist_item' && field === 'changes' ? checklistItemChangeSchema
           : name === 'update_checklist' && field === 'changes' ? checklistChangeSchema
             : name === 'update_item_log' && field === 'changes' ? itemLogChangeSchema
               : schemaFor(field, mandatory.has(field))])), required: fields, additionalProperties: false }
@@ -466,7 +472,7 @@ export function searchSharedTools(query: string, names = SHARED_TOOL_NAMES): Too
 }
 
 export function selectSharedTools(intent: 'read' | 'status' | 'plan' | 'start' | 'update' | 'complete' | 'review' | 'unknown'): ToolDefinition[] {
-  if (intent === 'unknown') return getSharedToolDefinitions(['list_projects', 'get_project', 'get_board', 'get_tree', 'list_tasks', 'get_current_sprint'])
+  if (intent === 'unknown') return getSharedToolDefinitions(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_screen_overview', 'list_tasks', 'get_current_sprint'])
   if (intent === 'read' || intent === 'review' || intent === 'status') return getSharedToolDefinitions().filter(tool => tool.namespace === 'discovery')
   if (intent === 'plan') return getSharedToolDefinitions().filter(tool => tool.namespace !== 'mutation' || planning.has(tool.name))
   return getSharedToolDefinitions()

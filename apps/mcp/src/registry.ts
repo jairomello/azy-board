@@ -9,7 +9,7 @@ import {
   toolCreateColumn, toolCreateCostCenter, toolCreateItemLog, toolCreateModule, toolCreateProject, toolCreateProjectStructure,
   toolCreateSprint, toolCreateSquad, toolCreateTag, toolCreateTask, toolCreateVersion,
   toolDeleteChecklist, toolDeleteChecklistItem, toolDeleteItem, toolDeleteProject,
-  toolGetBoard, toolGetCurrentSprint, toolGetProject, toolGetShadowMarkdown, toolGetTree,
+  toolGetBoard, toolGetCurrentSprint, toolGetProject, toolGetScreenOverview, toolGetShadowMarkdown, toolGetTree,
   toolListAttachments, toolListChecklists, toolListColumns, toolListCostCenters, toolListItemLogs,
   toolListMembers, toolListModules, toolListProjects, toolListSprints, toolListSquads,
   toolListTags, toolListTasks, toolListVersions, toolMoveTask, toolReorderColumns,
@@ -77,8 +77,9 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
   switch (name) {
     case 'list_projects': return toolListProjects(api)
     case 'get_project': return toolGetProject(api, args.projectId as string)
-    case 'get_board': return toolGetBoard(api, args.projectId as string, args.includeDescriptions === true)
+    case 'get_board': return toolGetBoard(api, args.projectId as string, args.includeDescriptions === true, args.includeDetails === true)
     case 'get_tree': return toolGetTree(api, args.projectId as string, args as Parameters<typeof toolGetTree>[2])
+    case 'get_screen_overview': return toolGetScreenOverview(api, args as Parameters<typeof toolGetScreenOverview>[1], execution.context)
     case 'get_shadow_markdown': return toolGetShadowMarkdown(api, args.projectId as string)
     case 'list_tasks': return toolListTasks(api, args as Parameters<typeof toolListTasks>[1])
     case 'list_modules': return toolListModules(api, args.projectId as string)

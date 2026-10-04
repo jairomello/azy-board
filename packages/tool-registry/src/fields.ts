@@ -14,8 +14,10 @@ export const OPERATION_ARGS_REQUIRED = ['ref', 'title', 'type'] as const
 export const toolFields: Record<string, ToolFields> = {
   list_projects: { fields: ['limit', 'cursor'], required: [] },
   get_project: { fields: ['projectId'], required: ['projectId'] },
-  get_board: { fields: ['projectId', 'includeDescriptions'], required: ['projectId'] },
-  get_tree: { fields: ['projectId', 'onlyLeaves', 'includeDescriptions'], required: ['projectId'] },
+  get_board: { fields: ['projectId', 'includeDescriptions', 'includeDetails'], required: ['projectId'] },
+  get_tree: { fields: ['projectId', 'onlyLeaves', 'includeDescriptions', 'includeDetails'], required: ['projectId'] },
+  // Card B7 — projectId pode ser injetado do contexto da conversa (obrigatório apenas para MCP fora do chat); scope é obrigatório.
+  get_screen_overview: { fields: ['projectId', 'scope'], required: ['scope'] },
   get_shadow_markdown: { fields: ['projectId'], required: ['projectId'] },
   get_current_sprint: { fields: ['projectId'], required: ['projectId'] },
   list_tasks: { fields: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'onlyLeaves', 'includeDescriptions', 'fields', 'limit', 'cursor'], required: ['projectId'] },

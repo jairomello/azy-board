@@ -106,19 +106,81 @@ export async function toolGetProject(api: ApiCall, projectId: string): Promise<P
   return api(`/projects/${projectId}`) as Promise<ProjectSummary>
 }
 
-export async function toolGetBoard(api: ApiCall, projectId: string, includeDescriptions = false): Promise<unknown> {
+export async function toolGetBoard(api: ApiCall, projectId: string, includeDescriptions = false, includeDetails = false): Promise<unknown> {
   const board = await api(`/projects/${projectId}/board`)
-  return includeDescriptions ? board : compactLongText(board)
+  const shaped = includeDetails ? board : summarizeDiscoveryPayload(board)
+  return includeDescriptions ? shaped : compactLongText(shaped)
 }
 
-export async function toolGetTree(api: ApiCall, projectId: string, options?: { moduleId?: string; assigneeId?: string; sprintId?: string; includeDescriptions?: boolean }): Promise<unknown> {
+export async function toolGetTree(api: ApiCall, projectId: string, options?: { moduleId?: string; assigneeId?: string; sprintId?: string; includeDescriptions?: boolean; includeDetails?: boolean }): Promise<unknown> {
   const params = new URLSearchParams()
   if (options?.moduleId) params.set('moduleId', options.moduleId)
   if (options?.assigneeId) params.set('assigneeId', options.assigneeId)
   if (options?.sprintId) params.set('sprintId', options.sprintId)
   const query = params.toString()
   const tree = await api(`/projects/${projectId}/items/tree${query ? `?${query}` : ''}`)
-  return options?.includeDescriptions ? tree : compactLongText(tree)
+  const shaped = options?.includeDetails ? tree : summarizeDiscoveryPayload(tree)
+  return options?.includeDescriptions ? shaped : compactLongText(shaped)
+}
+
+// Card B7 — modo summary: por item, devolve apenas a projeção leve; campos
+// pesados só entram com includeDetails=true. Guarda por forma de card.
+const SUMMARY_ITEM_FIELDS = new Set(['id', 'sequenceCode', 'title', 'type', 'status', 'parentId', 'columnId', 'moduleId', 'priority', 'assigneeId', 'points'])
+const OVERVIEW_SAMPLE_PER_COLUMN = 20
+
+function summarizeDiscoveryPayload(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(summarizeDiscoveryPayload)
+  if (!value || typeof value !== 'object') return value
+  const record = value as Record<string, unknown>
+  const isCard = typeof record.title === 'string' && 'type' in record && ('columnId' in record || 'parentId' in record || 'ancestryPath' in record)
+  if (isCard) return Object.fromEntries(Object.entries(record).filter(([key]) => SUMMARY_ITEM_FIELDS.has(key)))
+  return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, summarizeDiscoveryPayload(item)]))
+}
+
+// Digest de uma única chamada (proposal: descoberta em um passo). Agrega o
+// board-summary por coluna/status/tipo; SCREEN valida os IDs do snapshot
+// contra o board atual (IDs que sumiram são descartados, nunca somados).
+type DiscoveryBoard = { columns: Array<{ id: string; name: string }>; items: Array<Record<string, unknown>> }
+
+function overviewFromBoard(board: DiscoveryBoard, options: { contextId: string | null; capturedAt: string | null; target: 'SCREEN' | 'PROJECT'; displayedItemIds?: string[] }): unknown {
+  const columns = board.columns ?? []
+  const selectedIds = options.displayedItemIds ? new Set(options.displayedItemIds) : null
+  const perColumn = new Map(columns.map(column => [column.id, { id: column.id, name: column.name, total: 0, TASK: 0, BUG: 0, refs: [] as string[] }]))
+  let displayedCount = 0
+  for (const item of board.items ?? []) {
+    if (selectedIds && (!item.id || !selectedIds.has(String(item.id)))) continue
+    const bucket = perColumn.get(String(item.columnId))
+    if (!bucket) continue
+    displayedCount++
+    bucket.total++
+    if (item.type === 'TASK') bucket.TASK++
+    if (item.type === 'BUG') bucket.BUG++
+    if (bucket.refs.length < OVERVIEW_SAMPLE_PER_COLUMN) {
+      const code = item.sequenceCode ? `${String(item.sequenceCode)} ` : ''
+      bucket.refs.push(`${code}${String(item.title ?? '')}`)
+    }
+  }
+  return {
+    contextId: options.contextId,
+    capturedAt: options.capturedAt,
+    target: options.target,
+    scopeMode: options.displayedItemIds ? 'FILTERED' : 'ALL',
+    displayedCount,
+    totalMatchingCount: options.displayedItemIds ? options.displayedItemIds.length : displayedCount,
+    filters: {},
+    columns: [...perColumn.values()].filter(Boolean),
+  }
+}
+
+export async function toolGetScreenOverview(api: ApiCall, args: { projectId: string; scope?: 'SCREEN' | 'PROJECT' }, context?: { screenSnapshot?: { contextId: string; capturedAt: string; results?: { displayedItemIds?: string[] } | null; projectId?: string | null } }): Promise<unknown> {
+  if (args.scope === 'SCREEN') {
+    const snapshot = context?.screenSnapshot
+    if (!snapshot?.results?.displayedItemIds) throw new Error('SCREEN_CONTEXT_REQUIRED: não há snapshot do recorte de tela deste run; use scope=PROJECT')
+    const board = await api(`/projects/${args.projectId}/board`) as DiscoveryBoard
+    return overviewFromBoard(board, { contextId: snapshot.contextId, capturedAt: snapshot.capturedAt, target: 'SCREEN', displayedItemIds: snapshot.results.displayedItemIds })
+  }
+  const board = await api(`/projects/${args.projectId}/board`) as DiscoveryBoard
+  return overviewFromBoard(board, { contextId: null, capturedAt: null, target: 'PROJECT' })
 }
 
 export async function toolGetShadowMarkdown(api: ApiCall, projectId: string): Promise<unknown> {

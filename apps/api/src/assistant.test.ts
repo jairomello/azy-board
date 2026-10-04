@@ -14,7 +14,7 @@ const { decryptAssistantSecret, encryptAssistantSecret } = await import('./servi
 const { probeOpenAICredential } = await import('./services/openaiProvider')
 const { persistence } = await import('./persistence/runtime')
 const { executeAssistantRun } = await import('./services/assistantRunExecutor')
-const { estimateRequestedActions, formatAssistantPromptContext, itemTypeScopeForMessage, toolsForMessage, canUseProject, toolApi } = await import('./routes/assistant')
+const { estimateRequestedActions, formatAssistantPromptContext, itemTypeScopeForMessage, toolsForMessage, canUseProject, toolApi, screenOverviewFromSnapshot } = await import('./routes/assistant')
 
 await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
 
@@ -373,6 +373,44 @@ História: Projetos`
     expect(prompt).toContain('"displayedCount":2')
     // Compacto: no máximo 20 IDs de referência; sem revisões no prompt.
     expect(prompt).not.toContain('"revisions"')
+  })
+
+  test('digest do recorte (Card B7): contagens por coluna no contexto sem títulos', async () => {
+    const snapshot = {
+      contextId: 'ctx-b7',
+      capturedAt: '2026-10-04T15:00:00.000Z',
+      route: '/projects/p1/board',
+      screen: 'project-board-kanban' as const,
+      projectId: 'p1',
+      projectName: 'Projeto',
+      view: { mode: 'kanban' as const, activeModuleId: null, collapsedGroupIds: [] },
+      filters: { sprintId: 's1' },
+      scope: { mode: 'FILTERED' as const },
+      results: { displayedItemIds: ['t1', 't2', 't3'], displayedCount: 3, totalMatchingCount: 3, isComplete: true, revisions: {} },
+      focus: { modalStack: 0, activeItemId: null, activeTab: null, hasUnsavedChanges: false },
+    }
+    const items = [
+      { id: 't1', type: 'TASK' as const, columnId: 'col-a' },
+      { id: 't2', type: 'BUG' as const, columnId: 'col-a' },
+      { id: 't3', type: 'TASK' as const, columnId: 'col-inexistente' },
+    ]
+    const columns = [{ id: 'col-a', name: 'Backlog' }]
+    const overview = screenOverviewFromSnapshot(snapshot as never, items, columns)!
+    expect(overview).toMatchObject({ contextId: 'ctx-b7', target: 'SCREEN', scopeMode: 'FILTERED', displayedCount: 3, totalMatchingCount: 3, filters: { sprintId: 's1' } })
+    expect(overview.columns.find(column => column.id === 'col-a')).toMatchObject({ name: 'Backlog', total: 2, TASK: 1, BUG: 1 })
+    expect(overview.columns.find(column => column.name === 'sem coluna')).toMatchObject({ total: 1, TASK: 1, BUG: 0 })
+    const prompt = formatAssistantPromptContext({
+      currentDate: '2026-10-04',
+      authenticatedUser: { id: 'u1', name: 'Usuário', email: 'user@test.local', globalGroup: 'TEAM_MEMBER', language: 'pt-BR' },
+      selectedProject: null,
+      selectedItem: null,
+      screenSnapshot: { contextId: snapshot.contextId, capturedAt: snapshot.capturedAt, route: snapshot.route, screen: snapshot.screen, scope: snapshot.scope, filters: snapshot.filters, results: { displayedItemIds: snapshot.results.displayedItemIds, displayedCount: 3, totalMatchingCount: 3, isComplete: true }, screenOverview: overview },
+    })
+    expect(prompt).toContain('"screenOverview":{')
+    // Digest carrega apenas dados: contagens e resumo de filtro, sem títulos.
+    expect(prompt).not.toContain('Card ')
+    // Sem snapshot com results, digest não é injetado.
+    expect(screenOverviewFromSnapshot({ ...snapshot, scope: { mode: 'ALL' } } as never, items, columns)).toBeUndefined()
   })
 
   test('rejeita itemId inválido antes de persistir mensagem ou run', async () => {
