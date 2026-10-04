@@ -66,11 +66,15 @@ uploads/
 .mcp.*
 .codex
 .codex/
+.codex*
 .agents/
 opencode.json
 
 # Homelab deployment notes (must stay local)
 DEPLOY_LABAPPS_LOCAL.md
+
+# Local analysis drafts (must stay local)
+docs/SUGESTOES-EVOLUCAO-AZY-AGENT.md
 
 # Wiki internal editorial process (private authoring state)
 docs/azyboard-wiki/controle/
