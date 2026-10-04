@@ -455,7 +455,7 @@ export function AzyAgentDrawer() {
                       key={item.id}
                       className={`rounded-xl p-3 text-sm ${item.role === "USER" ? "ml-7 bg-primary text-primary-foreground" : "mr-3 bg-muted text-foreground"}`}
                     >
-                       <MarkdownText content={item.content} />
+                       <MarkdownText content={item.content} inheritColor />
                       {item.metadata?.sources?.length ? (
                         <p className="mt-2 border-t border-border/50 pt-2 text-xs opacity-75">
                           {t("sources")}: {item.metadata.sources.join(", ")}

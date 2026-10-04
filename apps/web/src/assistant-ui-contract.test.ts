@@ -77,6 +77,16 @@ describe('contratos de interação do Azy Agent', () => {
     expect(settings.includes('OAUTH')).toBe(false)
     expect(settings.includes('oauthUnsupported')).toBe(false)
   })
+  test('balões do chat herdam a cor do fundo no Markdown para manter contraste nos dois temas', async () => {
+    const markdown = await source('./components/MarkdownText.tsx')
+    const drawer = await source('./components/AzyAgentDrawer.tsx')
+    const styles = await source('./styles/globals.css')
+    expect(markdown.includes('inheritColor')).toBe(true)
+    expect(markdown.includes("inheritColor ? 'markdown-inherit' : 'dark:prose-invert'")).toBe(true)
+    expect(drawer.includes('<MarkdownText content={item.content} inheritColor />')).toBe(true)
+    expect(styles.includes('.markdown-inherit')).toBe(true)
+    expect(styles.includes('--tw-prose-body: currentColor')).toBe(true)
+  })
   test('governança do Root usa a fonte única de limites', async () => {
     const settings = await source('./components/RootAssistantSettings.tsx')
     expect(settings.includes('import { DEFAULT_GOVERNANCE, GOVERNANCE_BOUNDS } from "@azy-board/assistant-contracts"')).toBe(true)

@@ -153,6 +153,54 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: hsl(var(--muted-foreground) / 0.35); border-radius: 999px; }
 
+@layer utilities {
+  /* Markdown dentro de balões coloridos (ex.: chat do Azy Agent): o texto segue
+     a cor herdada do balão em vez da paleta fixa do plugin `prose`. Garante
+     contraste correto no tema claro e no escuro, sem depender de
+     `dark:prose-invert`. Código em bloco mantém o fundo próprio (self-contained). */
+  .markdown-inherit {
+    --tw-prose-body: currentColor;
+    --tw-prose-headings: currentColor;
+    --tw-prose-lead: currentColor;
+    --tw-prose-links: currentColor;
+    --tw-prose-bold: currentColor;
+    --tw-prose-counters: currentColor;
+    --tw-prose-bullets: currentColor;
+    --tw-prose-hr: currentColor;
+    --tw-prose-quotes: currentColor;
+    --tw-prose-quote-borders: currentColor;
+    --tw-prose-captions: currentColor;
+    --tw-prose-kbd: currentColor;
+    --tw-prose-code: currentColor;
+    --tw-prose-th-borders: currentColor;
+    --tw-prose-td-borders: currentColor;
+  }
+
+  .markdown-inherit :where(a) {
+    color: currentColor;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* Código inline vira "pill" translúcido derivado da própria cor do texto, em
+     vez dos backticks do plugin, que competem com o fundo do balão. */
+  .markdown-inherit :where(code)::before,
+  .markdown-inherit :where(code)::after {
+    content: none;
+  }
+
+  .markdown-inherit :where(code) {
+    background-color: color-mix(in oklab, currentColor 14%, transparent);
+    border-radius: 0.25rem;
+    padding: 0.1em 0.35em;
+  }
+
+  .markdown-inherit :where(pre code) {
+    background-color: transparent;
+    padding: 0;
+  }
+}
+
 .shell-control {
   --border: 0 0% 100% / 0.18;
 }
