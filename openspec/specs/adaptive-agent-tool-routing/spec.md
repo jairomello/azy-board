@@ -1,9 +1,7 @@
 ## Purpose
 
 Definir o roteamento adaptativo de tools do Azy Agent por contexto, capability, alvo e policy.
-
 ## Requirements
-
 ### Requirement: Metadados hierárquicos de capability
 O sistema SHALL classificar cada tool nominal por domínio, escopo, operação, risco, dependências, tipos de alvo e policy. A hierarquia SHALL apoiar busca e priorização sem substituir tools nominais por uma tool-fachada.
 
@@ -109,3 +107,15 @@ O sistema SHALL declarar uma capability indisponível somente depois de pesquisa
 #### Scenario: Informação obrigatória ausente
 - **WHEN** a capacidade existe mas o alvo obrigatório não pode ser inferido ou resolvido
 - **THEN** o agente faz uma pergunta curta e específica
+
+### Requirement: Roteamento de recortes de tela para `get_screen_overview`
+O roteamento adaptativo SHALL incluir `get_screen_overview` no conjunto inicial de tools de intenções `read` sobre board/recortes de tela (ao lado de `list_tasks`, `get_board`, `get_tree`, `get_current_sprint`, `list_columns`) e SHALL listar a nova ferramenta no catálogo compartilhado (MCP, README gerado e OpenAPI), com a classificação `{ domain: 'board', scope: 'project', operation: 'read' }`.
+
+#### Scenario: Pergunta de recorte roteada para o digest
+- **WHEN** um pedido `read` menciona contagens/recorte de tela ou coluna
+- **THEN** o roteador inclui `get_screen_overview` no conjunto disponível
+
+#### Scenario: Catalogo reflete a nova ferramenta
+- **WHEN** o catálogo MCP é gerado (`generate:docs`)
+- **THEN** `get_screen_overview` aparece entre as discovery tools registradas
+
