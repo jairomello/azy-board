@@ -325,6 +325,27 @@ describe('Azy Agent harness', () => {
     expect(executed).toEqual(['list_projects', 'get_project'])
   })
 
+  test('corta output de tool acima do teto no transcript e mantém a run viva', async () => {
+    class LargeToolProvider extends MockProvider {
+      async createRun(): Promise<ModelResponse> {
+        this.calls++
+        if (this.calls === 1) return { id: 'big', output: [{ type: 'function_call', name: 'list_projects', callId: 'big-call', arguments: '{}' }] }
+        return { id: 'done', output: [{ type: 'message', text: 'Resumido.' }] }
+      }
+    }
+    const provider = new LargeToolProvider()
+    const harness = new AssistantHarness({ provider, executeTool: async () => Array.from({ length: 40 }, (_, index) => ({ id: `p${index}`, data: 'x'.repeat(20_000) })), authorize: async () => {} })
+    const run = await harness.run({ source: 'azy-agent', userId, tenantId, globalGroup: 'TEAM_MEMBER', conversationId }, 'model', 'liste', `big-${id()}`)
+    expect(run.status).toBe('COMPLETED')
+    const state = (await db.select().from(assistantRuns).where(eq(assistantRuns.id, run.runId)))[0]
+    const serialized = JSON.parse(state?.executionContextJson ?? '{}')
+    const outputs = (serialized.transcript as Array<Record<string, unknown>>).filter(entry => entry.type === 'function_call_output')
+    expect(outputs).toHaveLength(1)
+    const output = String(outputs[0]?.output)
+    expect(output.length).toBeLessThanOrEqual(HARNESS_LIMITS.toolOutputChars + 200)
+    expect(output).toContain('TRUNCADO')
+  })
+
   test('reutiliza leitura idêntica sem falhar nem chamar a API novamente', async () => {
     class RepeatedReadProvider extends MockProvider {
       async createRun(): Promise<ModelResponse> {

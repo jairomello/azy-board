@@ -28,7 +28,7 @@ describe('fonte única dos limites do Azy Agent', () => {
   })
 
   test('mantém os limites do harness e do chat', () => {
-    expect(HARNESS_LIMITS).toEqual({ steps: 16, toolCalls: 40, inputTokens: 16_000, outputTokens: 8_000, payloadBytes: 100_000, timeoutMs: 60_000, costMicros: 2_000_000 })
+    expect(HARNESS_LIMITS).toEqual({ steps: 16, toolCalls: 40, inputTokens: 16_000, outputTokens: 8_000, payloadBytes: 100_000, timeoutMs: 60_000, costMicros: 2_000_000, toolOutputChars: 32_000 })
     expect(MAX_MESSAGE_BYTES).toBe(30_000)
     expect(MAX_ASSISTANT_ACTIONS).toBe(40)
   })

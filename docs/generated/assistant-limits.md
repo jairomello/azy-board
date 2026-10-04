@@ -31,6 +31,7 @@ Valores derivados de `packages/types/src/assistantLimits.ts` (fonte única consu
 | `payloadBytes` | 100000 |
 | `timeoutMs` | 60000 |
 | `costMicros` | 2000000 |
+| `toolOutputChars` | 32000 |
 
 ## Chat
 

@@ -92,6 +92,16 @@ export function safeError(error: unknown): string {
   return /secret|token|password|api.?key|ciphertext|prompt|pii/i.test(message) ? 'Falha segura na execução' : message.slice(0, 300)
 }
 
+// Card B7 — o output registrado no transcript é o prompt do próximo passo;
+// sem teto, uma descoberta grande (get_board/get_tree) infla a inferência
+// seguinte até estourar o timeoutMs do tenant e dispara PAYLOAD_LIMIT.
+const TRUNCATION_NOTICE = ' … [TRUNCADO — output acima do limite do tenant; refaça a consulta com list_tasks/get_tree e filtros específicos para reduzir o resultado]'
+export function toolOutputForTranscript(result: unknown): string {
+  const serialized = JSON.stringify(result)
+  const cap = HARNESS_LIMITS.toolOutputChars
+  return serialized.length > cap ? serialized.slice(0, cap) + TRUNCATION_NOTICE : serialized
+}
+
 // Falhas transitórias de provider (ex.: pool compartilhado do OpenRouter devolve
 // 401/429 embrulhados como "Provider returned error") podem ser repetidas.
 const transientModelError = /provider returned error|rate.?limit|temporar|overloaded|bad gateway|service unavailable|fetch failed|ECONNRESET|ETIMEDOUT|socket hang up|timed? ?out/i
@@ -262,7 +272,7 @@ export class AssistantHarness {
               const cached = risk !== 'READ' && previouslyCompleted.has(signature)
                 ? { ok: true, alreadyExecuted: true, result: seen.get(signature) }
                 : seen.get(signature)
-              await persistTurnOutput({ type: 'function_call_output', call_id: call.callId, output: JSON.stringify(cached) })
+              await persistTurnOutput({ type: 'function_call_output', call_id: call.callId, output: toolOutputForTranscript(cached) })
               continue
             }
             await this.options.assertAvailable?.(fullContext)
@@ -297,7 +307,7 @@ export class AssistantHarness {
             }
             await this.agent.updateToolCall(callId, context.tenantId, { status: 'COMPLETED', resultSummary: JSON.stringify(summary(result)), finishedAt: new Date().toISOString() })
             await this.event(runId, context.tenantId, 'TOOL_COMPLETED', { tool: name, result: summary(result) })
-            await persistTurnOutput({ type: 'function_call_output', call_id: call.callId, output: JSON.stringify(result) })
+            await persistTurnOutput({ type: 'function_call_output', call_id: call.callId, output: toolOutputForTranscript(result) })
           } catch (error) {
             const recoverable = recoverableToolError(error)
             if (toolCallId) {

@@ -69,6 +69,10 @@ export const HARNESS_LIMITS = {
   payloadBytes: 100_000,
   timeoutMs: 60_000,
   costMicros: 2_000_000,
+  // Card B7 — teto por chamada de ferramenta no transcript: um único output
+  // gigante (ex.: get_board) infla o prompt do próximo passo e estoura o
+  // timeout do tenant; cortado, a inferência seguinte continua rápida.
+  toolOutputChars: 32_000,
 } as const
 
 export const MAX_MESSAGE_BYTES = 30_000
