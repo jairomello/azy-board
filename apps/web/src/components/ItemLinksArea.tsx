@@ -2,15 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ExternalLink, Link2, Loader2, Pencil, Plus, Trash2, X, Check } from 'lucide-react'
 import type { ItemLink } from '@azy-board/ui-contracts'
+import type { AssistantFocusEntity } from '@azy-board/assistant-contracts'
 import { api } from '../lib/api'
 import { MarkdownText } from './MarkdownText'
 import { useToast } from './Toast'
 
-interface Props { itemId: string; projectId: string; canEdit: boolean }
+interface Props { itemId: string; projectId: string; canEdit: boolean; onEntityFocus?: (entity: AssistantFocusEntity | null) => void }
 interface Draft { name: string; url: string; description: string }
 const emptyDraft: Draft = { name: '', url: '', description: '' }
 
-export function ItemLinksArea({ itemId, projectId, canEdit }: Props) {
+export function ItemLinksArea({ itemId, projectId, canEdit, onEntityFocus }: Props) {
   const { t } = useTranslation('board')
   const { toast } = useToast()
   const [links, setLinks] = useState<ItemLink[]>([])
@@ -48,6 +49,7 @@ export function ItemLinksArea({ itemId, projectId, canEdit }: Props) {
       setDraft(emptyDraft)
       setEditingId(null)
       setFormOpen(false)
+      onEntityFocus?.(null)
     } catch (error) { toast(error instanceof Error ? error.message : t('itemLinksSaveError'), 'error') }
     finally { setSaving(false) }
   }
@@ -63,6 +65,7 @@ export function ItemLinksArea({ itemId, projectId, canEdit }: Props) {
   function edit(link: ItemLink) {
     setEditingId(link.id)
     setDraft({ name: link.name, url: link.url, description: link.description ?? '' })
+    onEntityFocus?.({ kind: 'link', id: link.id })
   }
 
   const inputClass = 'w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring'
@@ -77,7 +80,7 @@ export function ItemLinksArea({ itemId, projectId, canEdit }: Props) {
       <label className="block space-y-1"><span className="text-xs font-medium">{t('itemLinksUrl')}</span><input className={inputClass} type="url" required maxLength={2048} placeholder="https://" value={draft.url} onChange={event => setDraft(previous => ({ ...previous, url: event.target.value }))} /></label>
       <label className="block space-y-1"><span className="text-xs font-medium">{t('itemLinksDescription')}</span><textarea className={inputClass} maxLength={20000} rows={3} value={draft.description} onChange={event => setDraft(previous => ({ ...previous, description: event.target.value }))} /></label>
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={() => { setDraft(emptyDraft); setEditingId(null); setFormOpen(false) }} disabled={saving} className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs"><X className="h-3.5 w-3.5" />{t('attachmentCancel')}</button>
+        <button type="button" onClick={() => { setDraft(emptyDraft); setEditingId(null); setFormOpen(false); onEntityFocus?.(null) }} disabled={saving} className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs"><X className="h-3.5 w-3.5" />{t('attachmentCancel')}</button>
         <button type="button" onClick={() => void save()} disabled={saving || !draft.name.trim() || !draft.url.trim()} className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground disabled:opacity-50">{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}{t('attachmentSave')}</button>
       </div>
     </div>}

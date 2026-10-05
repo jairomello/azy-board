@@ -28,7 +28,7 @@ Adicione ao seu `.claude/settings.json`:
 <!-- BEGIN GENERATED: mcp-catalog -->
 <!-- GERADO AUTOMATICAMENTE por scripts/generate-docs.ts — não editar; rode `bun run generate:docs`. -->
 
-Catálogo com 61 ferramentas, derivado de `apps/mcp/src/registry.ts`.
+Catálogo com 62 ferramentas, derivado de `apps/mcp/src/registry.ts`.
 
 | Ferramenta | Descrição |
 |---|---|
@@ -37,7 +37,7 @@ Catálogo com 61 ferramentas, derivado de `apps/mcp/src/registry.ts`.
 | `add_checklist_item_to_task` | Add a checklist step to a board card. itemId is the parent card ID, checklistName is the checklist name, and the tool creates the checklist when it does not exist. Use this when you do not already have a checklistId; it returns both checklist and checklist item IDs. Accepts optional dueDate, assigneeId and description when the project enables advancedChecklists. |
 | `add_member` | Adiciona um membro ao projeto por e-mail com role ADMIN, MEMBER ou VIEWER. |
 | `archive_item` | Arquiva um item. confirm é true por padrão; suporta dryRun. |
-| `batch` | Create an ordered hierarchy of up to 50 EPIC, STORY, TASK, or BUG items in one atomic approval. Use refs and parentRefs instead of database IDs. Use moduleName for EPIC items; a module referenced by name that does not exist yet is created automatically. |
+| `batch` | Create an ordered hierarchy of up to 50 EPIC, STORY, TASK, or BUG items in one atomic approval. Use refs and parentRefs instead of database IDs. Use moduleName for EPIC items; a module referenced by name that does not exist yet is created automatically. New TASK/BUG items are automatically linked to the current sprint (OPEN and today within its dates) and to the upcoming version, and receive a default icon. |
 | `batch_move` | Move up to 500 leaf items to a column in one atomic operation. Requires itemIds and the exact destination column name (or column ID). Prefer this over multiple move_task calls when moving several cards at once. For filter-based bulk moves without explicit IDs, use update_items. |
 | `check_item` | Set a checklist step state by IDs or by itemId + checklistName + text/position. Ambiguous text requires IDs or position. |
 | `check_items` | Marca ou desmarca até 100 passos de checklist; resolve por IDs ou checklistName + text/position e é atômico por card. |
@@ -47,14 +47,14 @@ Catálogo com 61 ferramentas, derivado de `apps/mcp/src/registry.ts`.
 | `create_checklist` | Create a named checklist on a board card. itemId is the parent card ID, not a checklist or checklist item ID. |
 | `create_column` | Cria uma coluna no board com name e baseStatus (NOT_STARTED, IN_PROGRESS ou DONE). |
 | `create_cost_center` | Cria um centro de custo no projeto com code e description opcional. |
-| `create_item_log` | Registra um log de trabalho no item. activity é texto curto (até 20000 caracteres); durationMin é opcional, em minutos. |
+| `create_item_log` | Registra um apontamento de trabalho no item. activity é texto curto (até 20000 caracteres); durationMin é a duração em minutos (inteiro não negativo) e duration aceita formato humano-legível (ex.: 1h30), normalizado para minutos. A data do registro é o momento atual; não há suporte a data retroativa. |
 | `create_module` | Cria um módulo no projeto. |
 | `create_project` | Create an Azy Board project. Only name is required. Use null for an unspecified description or boardMode and never ask for optional values. The authenticated user is assigned as manager by the server. |
 | `create_project_structure` | Create a project and an ordered hierarchy of up to 50 items in one approved operation. Use refs and parentRefs instead of database IDs; moduleName resolves an existing module by name. |
 | `create_sprint` | Cria uma sprint com name, startDate e endDate (YYYY-MM-DD). |
 | `create_squad` | Cria um squad no projeto. |
 | `create_tag` | Cria uma tag no projeto; color é opcional. |
-| `create_task` | Create a single EPIC, STORY, TASK or BUG. SIMPLE projects: TASK/BUG auto-assign to the project story; parentId and moduleId are optional. HIERARCHICAL projects: parentId required for TASK/BUG (a STORY, TASK or BUG) and for STORY (an EPIC); EPIC is a root with moduleId. |
+| `create_task` | Create a single EPIC, STORY, TASK or BUG. SIMPLE projects: TASK/BUG auto-assign to the project story; parentId and moduleId are optional. HIERARCHICAL projects: parentId required for TASK/BUG (a STORY, TASK or BUG) and for STORY (an EPIC); EPIC is a root with moduleId. New TASK/BUG items are automatically linked to the current sprint (OPEN and today within its dates) and to the upcoming version, and receive a default icon; pass icon to override the icon (other auto-links can be changed later with update_items). |
 | `create_version` | Cria uma versão do projeto. |
 | `delete_checklist` | Exclui uma checklist do item. |
 | `delete_checklist_item` | Exclui um passo da checklist. |
@@ -62,6 +62,7 @@ Catálogo com 61 ferramentas, derivado de `apps/mcp/src/registry.ts`.
 | `delete_project` | Exclui um projeto e os registros dependentes. Ação destrutiva; suporta dryRun. |
 | `get_board` | Retorna colunas, módulos e itens do board do projeto. As descrições longas vêm resumidas por padrão; includeDetails=true devolve os campos pesados e includeDescriptions=true o texto completo. Em projetos grandes, prefira list_tasks com filtros. |
 | `get_current_sprint` | Retorna a sprint ativa (CURRENT) do projeto, se houver. |
+| `get_dashboard_metrics` | Métricas oficiais do Dashboard com os mesmos números e regras da tela: metric=snapshot (Progresso/Escopo, WIP, Bloqueados, Atrasados, Carga), burnup, aging, hours ou sprint. Aceita filtros (módulo, sprint, versão, squad, responsável, tipo) e período (from/to, AAAA-MM-DD); cycleId para sprint. Preserva avisos de cobertura parcial e rotula populações sobrepostas (WIP inclui Bloqueados; não somar). Quando não informados e a tela ativa é o Dashboard, usa os filtros da fotografia. |
 | `get_project` | Consulta os dados de um projeto por projectId (ID ou nome exato). |
 | `get_screen_overview` | Digest do board em um único passo: contagens por coluna (total, TASK, BUG), sprint/filtro ativo e amostra de referências. Prefira sobre get_board para perguntas de contagem/recorte; scope=SCREEN reflete o recorte capturado na tela do usuário, scope=PROJECT o estado atual do banco. |
 | `get_shadow_markdown` | Retorna o board do projeto em Markdown (board.md) para leitura rápida. |

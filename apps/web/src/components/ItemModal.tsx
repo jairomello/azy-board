@@ -19,6 +19,8 @@ import { itemTypeMeta } from '../lib/itemTypeMeta'
 import { api } from '../lib/api'
 import { resolveAppUrl } from '../lib/appUrl'
 import { useItemDescriptionDraft } from '../hooks/useItemDescriptionDraft'
+import type { AssistantFocusEntity, AssistantItemArea } from '@azy-board/assistant-contracts'
+import { clearFocusLevel, publishFocusLevel } from '../lib/assistantFocusStore'
 
 // Área de links carregada sob demanda: mantém o chunk do Board fora do orçamento
 // (padrão já usado por RichTextEditor e DashboardVisuals).
@@ -198,6 +200,17 @@ export function ItemModal({
   const [subtaskRefreshKey, setSubtaskRefreshKey] = useState(0)
   const [activeArea, setActiveArea] = useState<ItemArea>('details')
   const [attachmentsEnabled, setAttachmentsEnabled] = useState(false)
+  const [activeEntity, setActiveEntity] = useState<AssistantFocusEntity | null>(null)
+
+  // Card T19 — publica o nível de foco desta modal (item, aba ativa e objeto
+  // interno selecionado). O item em primeiro plano é o de maior profundidade.
+  useEffect(() => {
+    if (item.id === '__new__') return
+    publishFocusLevel(projectId, { depth: _depth, itemId: item.id, type: item.type ?? 'TASK', activeTab: activeArea as AssistantItemArea, activeEntity })
+    return () => clearFocusLevel(projectId, _depth)
+  }, [projectId, _depth, item.id, item.type, activeArea, activeEntity])
+
+  useEffect(() => { setActiveEntity(null) }, [item.id, activeArea])
 
   // Resolução do papel do usuário atual no projeto
   const currentUserRole = members.find(m => m.userId === currentUserId)?.role ?? 'MEMBER'
@@ -422,9 +435,9 @@ export function ItemModal({
                 </>}
                 {activeArea === 'subtasks' && <div className="rounded-lg border border-border p-4"><div className="mb-4 flex items-center justify-between"><h3 className="text-sm font-semibold">{t('areaSubtasks')} ({subtaskCount})</h3>{item.isLeaf && <button type="button" onClick={() => setShowSubtaskForm(true)} className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/20"><Plus className="h-3.5 w-3.5" />{t('addSubtask')}</button>}</div>{item.id !== '__new__' && <CardChildrenSection itemId={item.id} projectId={projectId} onOpenChild={handleOpenChild} onCountChange={setSubtaskCount} refreshKey={subtaskRefreshKey} />}{showSubtaskForm && <div className="mt-4"><AddCardForm onAdd={async (subTitle, subType) => { await onAddSubtask(item.id, subTitle, subType); setSubtaskRefreshKey(key => key + 1); setShowSubtaskForm(false) }} onCancel={() => setShowSubtaskForm(false)} /></div>}{item.id === '__new__' && <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {activeArea === 'checklists' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' ? <ChecklistSection itemId={item.id} projectId={projectId} initialChecklists={checklists} onChange={setChecklists} advancedChecklists={advancedChecklists} members={members} /> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
-                {activeArea === 'links' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' && <Suspense fallback={<p className="text-sm text-muted-foreground">{t('itemLinksLoading')}</p>}><ItemLinksArea itemId={item.id} projectId={projectId} canEdit={currentUserRole !== 'VIEWER'} /></Suspense>}</div>}
+                {activeArea === 'links' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' && <Suspense fallback={<p className="text-sm text-muted-foreground">{t('itemLinksLoading')}</p>}><ItemLinksArea itemId={item.id} projectId={projectId} canEdit={currentUserRole !== 'VIEWER'} onEntityFocus={setActiveEntity} /></Suspense>}</div>}
                 {activeArea === 'attachments' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' ? <AttachmentsArea itemId={item.id} projectId={projectId} canEdit={currentUserRole !== 'VIEWER'} /> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
-                {activeArea === 'activity' && <div id="item-area-activity" className="grid min-h-[360px] min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">{item.id !== '__new__' ? <><ActivityLogPanel itemId={item.id} projectId={projectId} onCountChange={setActivityCount} /><WorkLogPanel itemId={item.id} projectId={projectId} currentUserId={currentUserId ?? ''} currentUserRole={currentUserRole} onCountChange={setWorkLogCount} onTotalChange={setTotalMinutes} /></> : <p className="col-span-full rounded-lg border border-border p-6 text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
+                {activeArea === 'activity' && <div id="item-area-activity" className="grid min-h-[360px] min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">{item.id !== '__new__' ? <><ActivityLogPanel itemId={item.id} projectId={projectId} onCountChange={setActivityCount} /><WorkLogPanel itemId={item.id} projectId={projectId} currentUserId={currentUserId ?? ''} currentUserRole={currentUserRole} onCountChange={setWorkLogCount} onTotalChange={setTotalMinutes} onEntityFocus={setActiveEntity} /></> : <p className="col-span-full rounded-lg border border-border p-6 text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {error && <p className="text-sm text-red-500" role="alert">{error}</p>}
               </main>
 

@@ -1,9 +1,7 @@
 ## Purpose
 
 Definir a skill oficial, distribuível e agnóstica de cliente para orientar agentes no uso do Azy Board pelo MCP.
-
 ## Requirements
-
 ### Requirement: Skill oficial canônica para agentes
 O repositório SHALL manter uma skill oficial em diretório neutro, com um arquivo de entrada e referências versionadas, para orientar code agents a operar o Azy Board pelo MCP sem depender de instruções fora do repositório.
 
@@ -116,3 +114,28 @@ O roteiro de configuração SHALL deixar explícito que a API Key identifica um 
 #### Scenario: Chave exposta
 - **WHEN** o usuário relata que colou a chave em um arquivo versionado ou a compartilhou
 - **THEN** o agente orienta a revogar a chave em Minha conta, gerar uma nova e movê-la para variável de ambiente ou cofre do cliente
+
+### Requirement: Documentação de apontamento com duração
+
+A skill oficial SHALL documentar a criação de apontamento de trabalho por `create_item_log` com `activity` e duração, apresentando exemplos mínimos com `durationMin` (minutos) e `duration` (formato humano-legível, ex.: `1h30` normalizado para 90). A skill SHALL informar que a data do registro é o momento atual e que não há suporte a data retroativa, além de registrar a duração esperada na confirmação da mutação.
+
+#### Scenario: Exemplo mínimo de apontamento
+
+- **WHEN** o agente consulta a skill sobre como registrar tempo de trabalho
+- **THEN** encontra um exemplo de `create_item_log` com `activity` e `durationMin` e a regra de confirmação do resultado
+
+#### Scenario: Formato legível documentado
+
+- **WHEN** a skill descreve o campo de duração
+- **THEN** explica que `1h30` equivale a 90 minutos e pode ser enviado como `duration`
+
+#### Scenario: Limitação de data retroativa documentada
+
+- **WHEN** a skill trata da data do apontamento
+- **THEN** informa que o registro é sempre no momento atual, sem retroativo, para o agente não prometer o que o domínio não faz
+
+#### Scenario: Verificação de sincronização da skill
+
+- **WHEN** `bun run test:agent-skill` executa após a mudança
+- **THEN** a skill canônica e o espelho permanecem sincronizados e o verificador passa
+

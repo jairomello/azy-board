@@ -9,7 +9,7 @@ import {
   toolCreateColumn, toolCreateCostCenter, toolCreateItemLog, toolCreateModule, toolCreateProject, toolCreateProjectStructure,
   toolCreateSprint, toolCreateSquad, toolCreateTag, toolCreateTask, toolCreateVersion,
   toolDeleteChecklist, toolDeleteChecklistItem, toolDeleteItem, toolDeleteProject,
-  toolGetBoard, toolGetCurrentSprint, toolGetProject, toolGetScreenOverview, toolGetShadowMarkdown, toolGetTree,
+  toolGetBoard, toolGetCurrentSprint, toolGetDashboardMetrics, toolGetProject, toolGetScreenOverview, toolGetShadowMarkdown, toolGetTree,
   toolListAttachments, toolListChecklists, toolListColumns, toolListCostCenters, toolListItemLogs,
   toolListMembers, toolListModules, toolListProjects, toolListSprints, toolListSquads,
   toolListTags, toolListTasks, toolListVersions, toolMoveTask, toolReorderColumns,
@@ -19,7 +19,7 @@ import {
   type ApiCall,
 } from './tools.js'
 import {
-  coerceArgumentsBySchema, getSharedToolDefinitions, validateToolArguments, TOOL_TEXT_LIMITS,
+  coerceArgumentsBySchema, getSharedToolDefinitions, normalizeDurationArguments, validateToolArguments, TOOL_TEXT_LIMITS,
   type HumanToolContext,
 } from '@azy-board/tool-registry'
 
@@ -65,6 +65,7 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
   // Coerção guiada pelo schema ANTES da validação: clientes podem entregar
   // escalares/JSON como string (harness serializa parâmetros em texto).
   args = coerceArgumentsBySchema(name, pruneNullArguments(args))
+  args = normalizeDurationArguments(name, args)
   validateToolArguments(name, args)
   // [PROJECT RESOLUTION] projectId aceita ID ou nome exato; resolução só chama a API para nomes.
   if (typeof args.projectId === 'string' && args.projectId.trim()) {
@@ -80,6 +81,7 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'get_board': return toolGetBoard(api, args.projectId as string, args.includeDescriptions === true, args.includeDetails === true)
     case 'get_tree': return toolGetTree(api, args.projectId as string, args as Parameters<typeof toolGetTree>[2])
     case 'get_screen_overview': return toolGetScreenOverview(api, args as Parameters<typeof toolGetScreenOverview>[1], execution.context)
+    case 'get_dashboard_metrics': return toolGetDashboardMetrics(api, args as unknown as Parameters<typeof toolGetDashboardMetrics>[1], execution.context)
     case 'get_shadow_markdown': return toolGetShadowMarkdown(api, args.projectId as string)
     case 'list_tasks': return toolListTasks(api, args as Parameters<typeof toolListTasks>[1])
     case 'list_modules': return toolListModules(api, args.projectId as string)

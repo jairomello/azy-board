@@ -32,6 +32,30 @@ export interface AssistantScreenPresentation {
   hideEmptyStories: boolean
 }
 
+// Card T20 — filtros de população e período vigentes na tela do Dashboard.
+// Opcional: a ausência degrada a consulta para os filtros explícitos do pedido.
+export interface AssistantDashboardContext {
+  filters: Record<string, AssistantScreenFilterValue>
+  period: { from: string | null; to: string | null }
+}
+
+// Card T19 — foco da interface (pilha de modais, item em primeiro plano, aba
+// ativa e objeto interno selecionado). IDs são referências a validar.
+export type AssistantItemArea = 'details' | 'subtasks' | 'checklists' | 'links' | 'attachments' | 'activity'
+
+export interface AssistantFocusLevel {
+  itemId: string
+  type: 'EPIC' | 'STORY' | 'TASK' | 'BUG'
+}
+
+export type AssistantFocusEntityKind = 'checklist' | 'checklist_item' | 'link' | 'work_log' | 'attachment'
+
+export interface AssistantFocusEntity {
+  kind: AssistantFocusEntityKind
+  id: string
+  parentId?: string | null
+}
+
 // Fotografia do contexto da tela capturada no envio do pedido e fixada na
 // execução/aprovação. IDs são referências a validar; nunca permissões.
 export interface AssistantScreenSnapshot {
@@ -52,6 +76,9 @@ export interface AssistantScreenSnapshot {
     presentation?: AssistantScreenPresentation
   }
   filters: Record<string, AssistantScreenFilterValue>
+  // Card T20 — contexto do Dashboard (filtros de população + período). Opcional
+  // e restrito à tela project-dashboard; não afeta o escopo de mutação do board.
+  dashboard?: AssistantDashboardContext
   // ALL = nenhum filtro aplicado (sem lista de IDs; ação vale para todos).
   // FILTERED = há filtro ativo; o conjunto do resultado viaja em results.
   scope: { mode: AssistantScreenScopeMode }
@@ -67,8 +94,13 @@ export interface AssistantScreenSnapshot {
   }
   focus: {
     modalStack: number
+    // Card T19 — pilha ordenada de modais (raiz→topo). `activeItemId` é o item
+    // em primeiro plano (topo da pilha) e `activeTab` é a área ativa do item.
+    modalPath?: AssistantFocusLevel[]
     activeItemId: string | null
-    activeTab: string | null
+    activeTab: AssistantItemArea | null
+    // Objeto interno selecionado (checklist/etapa, link, apontamento, anexo).
+    activeEntity?: AssistantFocusEntity | null
     hasUnsavedChanges: boolean
   }
 }

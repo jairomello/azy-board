@@ -129,6 +129,19 @@ describe('contrato de fonte única do catálogo MCP', () => {
     })).not.toThrow()
   })
 
+  test('create_item_log aceita duração canônica e legível e rejeita conflito', () => {
+    expect(new Set(requiredFieldsFor('create_item_log'))).toEqual(new Set(['projectId', 'itemId', 'activity']))
+    const properties = byName.get('create_item_log')!.inputSchema.properties
+    expect(properties.durationMin).toBeDefined()
+    expect(properties.duration).toBeDefined()
+    expect(() => validateToolArguments('create_item_log', { projectId: 'p', itemId: 'i', activity: 'A', durationMin: 90 })).not.toThrow()
+    expect(() => validateToolArguments('create_item_log', { projectId: 'p', itemId: 'i', activity: 'A', duration: '1h30' })).not.toThrow()
+    expect(() => validateToolArguments('create_item_log', { projectId: 'p', itemId: 'i', activity: 'A', durationMin: 30, duration: '1h' })).toThrow('divergem')
+    expect(() => validateToolArguments('create_item_log', { projectId: 'p', itemId: 'i', activity: 'A', duration: 'ontem' })).toThrow('duration inválida')
+    expect(() => validateToolArguments('create_item_log', { projectId: 'p', itemId: 'i', activity: 'A', durationMin: -1 })).toThrow('inteiro não negativo')
+    expect(() => validateToolArguments('create_item_log', { projectId: 'p', itemId: 'i', activity: 'A', duracao: '1h' })).toThrow('Campo desconhecido: duracao')
+  })
+
   test('changes aceita value nulo para operação que não usa valor', () => {
     expect(() => validateToolArguments('update_items', {
       projectId: 'p', filters: { matchAll: true }, changes: [{ field: 'description', operation: 'CLEAR', value: null }],
@@ -162,6 +175,18 @@ describe('contrato de fonte única do catálogo MCP', () => {
       const sample = definitions.find(definition => field in definition.inputSchema.properties)!
       expect(JSON.stringify(sample.inputSchema.properties[field])).toContain(String(limit))
     }
+  })
+
+  test('get_dashboard_metrics expõe schema, enum, policy e classificação de leitura', () => {
+    const definition = byName.get('get_dashboard_metrics')!
+    expect(definition).toBeDefined()
+    expect(definition.policy).toEqual({ globalGroup: 'TEAM_MEMBER', localRole: 'VIEWER' })
+    expect(definition.routing).toMatchObject({ domain: 'board', scope: 'project', operation: 'read' })
+    expect(definition.namespace).toBe('discovery')
+    expect(definition.inputSchema.properties.metric).toMatchObject({ type: 'string', enum: ['snapshot', 'burnup', 'aging', 'hours', 'sprint'] })
+    expect(new Set(requiredFieldsFor('get_dashboard_metrics'))).toEqual(new Set(['metric']))
+    expect(() => validateToolArguments('get_dashboard_metrics', { metric: 'snapshot' })).not.toThrow()
+    expect(() => validateToolArguments('get_dashboard_metrics', { metric: 'inválida' })).toThrow()
   })
 })
 

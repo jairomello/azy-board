@@ -41,6 +41,7 @@ import type { Tag } from '../../components/TagSelector'
 import { useBoardPreferences } from './hooks/useBoardPreferences'
 import { useBoardData } from './hooks/useBoardData'
 import { subscribeViewSession, syncCurrentViewSession } from '../../lib/assistantViewStore'
+import { emptyFocusState, getFocusState, subscribeFocus, type AssistantFocusState } from '../../lib/assistantFocusStore'
 import { BoardLanes } from './components/BoardLanes'
 import { BoardModals } from './components/BoardModals'
 import { useBoardInteraction } from './hooks/useBoardInteraction'
@@ -166,6 +167,15 @@ export default function BoardPage() {
     if (!projectId) return
     syncCurrentViewSession(projectId, { filters, mode: view, activeModuleId, openItemId: itemModalId })
   }, [projectId, filters, view, activeModuleId, itemModalId])
+
+  // Card T19 — foco da interface (pilha de modais, item em primeiro plano, aba
+  // ativa e objeto interno) publicado pelas modais de item.
+  const [focusState, setFocusState] = useState<AssistantFocusState>(() => projectId ? getFocusState(projectId) : emptyFocusState())
+  useEffect(() => {
+    if (!projectId) return
+    setFocusState(getFocusState(projectId))
+    return subscribeFocus((state, pid) => { if (pid === projectId) setFocusState(state) })
+  }, [projectId])
 
   // Ref para preservar o over ID mais recente durante o drag (evita perder o alvo no momento do drop)
   const lastOverRef = useRef<string | null>(null)
@@ -822,7 +832,8 @@ export default function BoardPage() {
   const isColumnDrag = activeId?.includes(':col:') ?? false
   const activeCard = !isColumnDrag ? allItems.find(i => i.id === activeId) : null
   const assistantSelectedItem = useMemo(() => {
-    const selectedId = itemModalId ?? storyModalData?.story?.id ?? epicModalData?.epic?.id
+    // Card T19 — o item em primeiro plano (topo da pilha de modais) tem precedência.
+    const selectedId = focusState.activeItemId ?? itemModalId ?? storyModalData?.story?.id ?? epicModalData?.epic?.id
     const selected = selectedId ? allItems.find(item => item.id === selectedId) : undefined
     if (!selected) return null
     let ancestry: AncestorNode[] = []
@@ -833,7 +844,7 @@ export default function BoardPage() {
       ancestry = []
     }
     return { id: selected.id, title: selected.title, type: selected.type, ancestry }
-  }, [allItems, epicModalData?.epic?.id, itemModalId, storyModalData?.story?.id])
+  }, [allItems, epicModalData?.epic?.id, itemModalId, storyModalData?.story?.id, focusState.activeItemId])
 
   // Fotografia do contexto da tela (Card T16): mesma população determinada por
   // filtros/visualização. Sem filtro nenhum, escopo ALL — sem lista de IDs.
@@ -871,10 +882,11 @@ export default function BoardPage() {
         hideEmptyEpics: filters.hideEmptyEpics,
         hideEmptyStories: filters.hideEmptyStories,
       },
+      focus: focusState,
       actionCardIds: actionCards.map(item => item.id),
       revisions,
     })
-  }, [allDisplayed, projectId, projectName, view, filters, collapsedEpics, collapsedModules, collapsedStories])
+  }, [allDisplayed, projectId, projectName, view, filters, collapsedEpics, collapsedModules, collapsedStories, focusState])
   const assistantScreenSnapshot = view === 'tree' ? treeSnapshot : kanbanSnapshot
 
   if (loading) return (

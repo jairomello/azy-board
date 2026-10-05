@@ -22,6 +22,7 @@ import type { ScreenOverview } from '@azy-board/assistant-contracts'
 import { isOtelInitialized, getOtelMeter } from '../services/telemetry'
 import { createCoordination, type CoordinationPort } from '../coordination'
 import { resolveInstallProfile } from '../db/installProfile'
+import { focusFirstItemIds } from '../services/focusResolution'
 
 // Job queue: rate limiting via CoordinationPort (local for SIMPLE, Redis for ADVANCED)
 let coordination: CoordinationPort | null = null
@@ -169,6 +170,10 @@ type AssistantPromptContext = {
     screen: AssistantScreen
     scope: AssistantScreenSnapshot['scope']
     filters: AssistantScreenSnapshot['filters']
+    // Card T20 — filtros/período vigentes na tela do Dashboard (quando aplicável).
+    dashboard?: AssistantScreenSnapshot['dashboard']
+    // Card T19 — foco (pilha de modais, item em primeiro plano, aba, entidade).
+    focus?: AssistantScreenSnapshot['focus']
     results: Pick<AssistantScreenSnapshot['results'], 'displayedCount' | 'totalMatchingCount' | 'isComplete'> & { displayedItemIds: string[] }
     screenOverview?: PromptScreenOverview
   } | null
@@ -214,6 +219,8 @@ function compactScreenSnapshot(snapshot: AssistantScreenSnapshot, overview?: Scr
     screen: snapshot.screen,
     scope: snapshot.scope,
     filters: snapshot.filters,
+    ...(snapshot.dashboard ? { dashboard: snapshot.dashboard } : {}),
+    ...(snapshot.focus ? { focus: snapshot.focus } : {}),
     results: {
       displayedItemIds: snapshot.results.displayedItemIds.slice(0, 20),
       displayedCount: snapshot.results.displayedCount,
@@ -345,7 +352,7 @@ export function toolsForMessage(content: string, recentContext = ''): string[] {
   const contextual = `${recentContext} ${content}`.toLocaleLowerCase('pt-BR')
   const mutationPattern = /crie|criar|cadastre|cadastrar|registre|registrar|adicione|adicionar|mova|mover|complete|conclua|atualize|editar|edite|altere|alterar|mude|troque|defina|definir|estabeleça|estabelecer|remova|delete|arquive|create|add|register|move|complete|update|edit|change|set|remove|archive|create_project|create_task|prévia da mutação|aprovação/
   const planPattern = /planeje|planejar|organize|organizar|como faço|como fazer|plan|organize|how do i|how can i/
-  const readPattern = /status|andamento|progresso|revise|revisar|liste|listar|mostre|mostrar|consulte|consultar|verifique|verificar|progress|list|show|check|review|describe/
+  const readPattern = /status|andamento|progresso|revise|revisar|liste|listar|mostre|mostrar|consulte|consultar|verifique|verificar|progress|list|show|check|review|describe|wip|bloque|burnup|aging|envelhec|esfor|horas|compromisso|sprint/
   const classifyIntent = (value: string) => mutationPattern.test(value)
     ? 'start' as const
     : planPattern.test(value)
@@ -796,10 +803,17 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
   if (!authenticatedUserRecord) return operationalError(c, 'USER_NOT_FOUND', 404)
   const authenticatedUser = { id: authenticatedUserRecord.id, name: authenticatedUserRecord.name, email: authenticatedUserRecord.email, globalGroup: authenticatedUserRecord.globalGroup, language: authenticatedUserRecord.language }
   const selectedProject = selectedProjectRecord ? { id: selectedProjectRecord.id, name: selectedProjectRecord.name, startDate: selectedProjectRecord.startDate, plannedEndDate: selectedProjectRecord.plannedEndDate, plannedPoints: selectedProjectRecord.plannedPoints, plannedHours: selectedProjectRecord.plannedHours, scope: selectedProjectRecord.scope } : null
-  const selectedItem = expectedItemId && !explicitProjectId
-    ? conversation.projectId ? await resolveSelectedItem(ctx.tenantId, conversation.projectId, expectedItemId) : undefined
-    : null
-  if (expectedItemId && !selectedItem) return operationalError(c, 'ITEM_NOT_FOUND', 404)
+  // Card T19 — o item em primeiro plano (foco) tem precedência sobre o itemId da
+  // mensagem; ambos são referências validadas no projeto do tenant.
+  const focusItemId = !explicitProjectId ? screenContext?.focus?.activeItemId ?? null : null
+  const requestedItemId = expectedItemId && !explicitProjectId ? expectedItemId : null
+  let selectedItem: AssistantPromptContext['selectedItem'] | null = null
+  for (const candidateId of focusFirstItemIds(focusItemId, requestedItemId)) {
+    const resolved = conversation.projectId ? await resolveSelectedItem(ctx.tenantId, conversation.projectId, candidateId) : undefined
+    if (resolved) { selectedItem = resolved; break }
+  }
+  if (requestedItemId && !selectedItem) return operationalError(c, 'ITEM_NOT_FOUND', 404)
+  const resolvedItemId = selectedItem?.id ?? null
   // Runs órfãs de restart do servidor: QUEUED/RUNNING além do timeout não têm processo
   // associado e bloqueariam novas mensagens por maxActivePerUser — expira antes do limite.
   const staleCutoff = new Date(Date.now() - (limits.timeoutMs + 10_000)).toISOString()
@@ -822,13 +836,13 @@ async function runMessage(c: Context<HonoEnv>, conversationId: string, content: 
     ? getSharedToolDefinitions(['list_projects', 'get_project', 'get_board', 'get_tree', 'list_tasks', 'get_current_sprint']).map(tool => tool.name)
     : toolsForMessage(content, `${toolContext} ${modelContext ?? ''}`)
   const toolAllowlist = await filterToolsByPolicy(ctx, candidateTools, effectiveProjectId ?? undefined)
-  const runContext = { source: 'azy-agent' as const, userId: ctx.userId, tenantId: ctx.tenantId, globalGroup: ctx.globalGroup, projectId: conversation.projectId ?? undefined, targetProjectId: effectiveProjectId ?? undefined, itemId: explicitProjectId ? undefined : expectedItemId ?? undefined, screen, conversationId, itemTypeScope, screenSnapshot: screenContext ?? undefined }
+  const runContext = { source: 'azy-agent' as const, userId: ctx.userId, tenantId: ctx.tenantId, globalGroup: ctx.globalGroup, projectId: conversation.projectId ?? undefined, targetProjectId: effectiveProjectId ?? undefined, itemId: resolvedItemId ?? undefined, screen, conversationId, itemTypeScope, screenSnapshot: screenContext ?? undefined }
   const executionState = {
     transcript: modelInput,
     toolAllowlist,
     runContext: {
       projectId: conversation.projectId ?? undefined, targetProjectId: effectiveProjectId ?? undefined,
-      itemId: explicitProjectId ? undefined : expectedItemId ?? undefined, screen, itemTypeScope,
+      itemId: resolvedItemId ?? undefined, screen, itemTypeScope,
       screenSnapshot: screenContext ?? undefined,
     },
     counters: { steps: 0, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 },

@@ -1,4 +1,5 @@
 import { isRegisteredTool, PROJECTION_FIELDS, requiredFieldsFor, toolFields } from './fields.js'
+import { normalizeDurationArguments } from './duration.js'
 import { TOOL_TEXT_LIMITS } from './limits.js'
 
 // Campos internos injetados por harness/executores que não fazem parte do schema
@@ -76,7 +77,8 @@ export function validateToolArguments(name: string, args: Record<string, unknown
   if (input.columnName != null) assertNonEmptyString(input.columnName, 'columnName', TOOL_TEXT_LIMITS.columnName)
   if (input.tagIds != null) assertStringArray(input.tagIds, 'tagIds')
   if (input.order != null) assertStringArray(input.order, 'order')
-  if ('durationMin' in input && input.durationMin !== undefined && input.durationMin !== null) assertNonNegativeNumber(input.durationMin, 'durationMin')
+  if (input.durationMin != null && name !== 'create_item_log') assertNonNegativeNumber(input.durationMin, 'durationMin')
+  if (name === 'create_item_log') normalizeDurationArguments(name, input)
   if (input.limit != null && (typeof input.limit !== 'number' || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)) {
     throw new Error('limit, quando informado, deve ser um inteiro entre 1 e 100 (omita ou envie null para o padrão)')
   }
@@ -172,6 +174,13 @@ export function validateToolArguments(name: string, args: Record<string, unknown
       assertStringArray(value.statuses, 'statuses', 5)
       for (const status of value.statuses) assertEnum(status, 'status', ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'])
     }
+  }
+  if (name === 'get_dashboard_metrics') {
+    assertEnum(input.metric, 'metric', ['snapshot', 'burnup', 'aging', 'hours', 'sprint'])
+    if (input.type != null) assertEnum(input.type, 'type', ['TASK', 'BUG'])
+    if (input.from != null) assertIsoDate(input.from, 'from')
+    if (input.to != null) assertIsoDate(input.to, 'to')
+    if (input.includeItems != null && typeof input.includeItems !== 'boolean') throw new Error('includeItems deve ser booleano')
   }
   if (name === 'batch_move') {
     assertStringArray(input.itemIds, 'itemIds', 500)

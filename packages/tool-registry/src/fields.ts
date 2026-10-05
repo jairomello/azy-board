@@ -18,6 +18,8 @@ export const toolFields: Record<string, ToolFields> = {
   get_tree: { fields: ['projectId', 'onlyLeaves', 'includeDescriptions', 'includeDetails'], required: ['projectId'] },
   // Card B7 — projectId pode ser injetado do contexto da conversa (obrigatório apenas para MCP fora do chat); scope é obrigatório.
   get_screen_overview: { fields: ['projectId', 'scope'], required: ['scope'] },
+  // Card T20 — métricas oficiais do Dashboard; projectId injetado do contexto no chat.
+  get_dashboard_metrics: { fields: ['projectId', 'metric', 'from', 'to', 'moduleId', 'sprintId', 'versionId', 'squadId', 'assigneeId', 'type', 'cycleId', 'includeItems'], required: ['metric'] },
   get_shadow_markdown: { fields: ['projectId'], required: ['projectId'] },
   get_current_sprint: { fields: ['projectId'], required: ['projectId'] },
   list_tasks: { fields: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'onlyLeaves', 'includeDescriptions', 'fields', 'limit', 'cursor'], required: ['projectId'] },
@@ -50,7 +52,7 @@ export const toolFields: Record<string, ToolFields> = {
   archive_item: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
   unarchive_item: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
   set_item_tags: { fields: ['projectId', 'itemId', 'tagIds'], required: ['projectId', 'itemId', 'tagIds'] },
-  create_item_log: { fields: ['projectId', 'itemId', 'activity'], required: ['projectId', 'itemId', 'activity'] },
+  create_item_log: { fields: ['projectId', 'itemId', 'activity', 'durationMin', 'duration'], required: ['projectId', 'itemId', 'activity'] },
   reorder_items: { fields: ['projectId', 'columnId', 'order'], required: ['projectId', 'columnId', 'order'] },
   update_checklist: { fields: ['projectId', 'itemId', 'checklistId', 'changes'], required: ['projectId', 'itemId', 'checklistId', 'changes'], nested: { changes: [] } },
   delete_checklist: { fields: ['projectId', 'itemId', 'checklistId'], required: ['projectId', 'itemId', 'checklistId'] },

@@ -252,8 +252,18 @@ export const assistantScreenSnapshotSchema = z.object({
   }).strict(),
   focus: z.object({
     modalStack: z.number().int().min(0).max(20),
+    // Card T19 — pilha de modais, aba ativa e objeto interno selecionado.
+    modalPath: z.array(z.object({
+      itemId: screenIdSchema,
+      type: z.enum(['EPIC', 'STORY', 'TASK', 'BUG']),
+    }).strict()).max(20).optional(),
     activeItemId: screenIdSchema.nullable(),
-    activeTab: z.string().max(64).nullable(),
+    activeTab: z.enum(['details', 'subtasks', 'checklists', 'links', 'attachments', 'activity']).nullable(),
+    activeEntity: z.object({
+      kind: z.enum(['checklist', 'checklist_item', 'link', 'work_log', 'attachment']),
+      id: screenIdSchema,
+      parentId: screenIdSchema.nullable().optional(),
+    }).strict().nullable().optional(),
     hasUnsavedChanges: z.boolean(),
   }).strict(),
 }).strict()

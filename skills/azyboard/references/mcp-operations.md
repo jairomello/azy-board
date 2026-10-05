@@ -52,6 +52,21 @@ Fluxo recomendado: `list_tasks` para obter o `itemId`, `list_checklists` para ob
 
 Para marcar vários passos, prefira `check_items` com no máximo 100 entradas. Cada entrada aceita os três IDs ou `checklistName` + `text`/`position`; a operação é atômica dentro de cada card, e `failures` informa o índice de cada entrada rejeitada. A busca semântica normaliza espaços externos/internos e caixa, mas nunca escolhe entre candidatos duplicados.
 
+### Apontamentos de trabalho com duração
+
+`create_item_log` registra trabalho em uma única operação, com `activity` e duração opcional:
+
+```text
+create_item_log(projectId, itemId, activity, durationMin: 90)
+create_item_log(projectId, itemId, activity, duration: "1h30")  # normalizado para 90
+```
+
+- `durationMin` é a forma canônica, em minutos (inteiro não negativo).
+- `duration` aceita formato humano-legível (`1h30`, `1h`, `90`, `90min`, `1m`, `1:30`) e é normalizado para `durationMin`. Informe apenas um dos dois; valores divergentes são rejeitados.
+- Repetir a mesma atividade com a mesma duração na mesma run não cria um segundo apontamento.
+- A data do registro é sempre o momento atual: não há suporte a data retroativa. Se o pedido citar uma data passada, explique a limitação em vez de prometer o retroativo.
+- Confirme na resposta a atividade e a duração criadas. Para corrigir um apontamento existente use `update_item_log` com `changes` (`activity` e/ou `durationMin`).
+
 ## Erros
 
 Respostas de erro têm `code`, `message`, `retryable` e, para validação MCP, `details.path`, `details.cause` e `details.snippet`. Conflitos de claim, validação, autorização e IDs fora do escopo não devem ser repetidos automaticamente. Falhas transitórias só podem ser repetidas quando `retryable` for verdadeiro e a operação for segura/idempotente.

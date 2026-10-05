@@ -63,4 +63,44 @@ describe('contexto de tela do Azy Agent', () => {
     expect(store.includes('reveal_item')).toBe(true)
     expect(store.includes('applyReveal')).toBe(true)
   })
+
+  test('foco da interface (Card T19)', async () => {
+    const contracts = await source('../../../packages/assistant-contracts/src/index.ts')
+    expect(contracts.includes('AssistantFocusLevel')).toBe(true)
+    expect(contracts.includes('AssistantFocusEntity')).toBe(true)
+    expect(contracts.includes('modalPath')).toBe(true)
+
+    const store = await source('./lib/assistantFocusStore.ts')
+    expect(store.includes('publishFocusLevel')).toBe(true)
+    expect(store.includes('activeItemId')).toBe(true)
+
+    const modal = await source('./components/ItemModal.tsx')
+    expect(modal.includes('publishFocusLevel')).toBe(true)
+    expect(modal.includes('activeArea as AssistantItemArea')).toBe(true)
+
+    const snapshot = await source('./lib/assistantSnapshot.ts')
+    expect(snapshot.includes('focus: input.focus')).toBe(true)
+
+    const board = await source('./features/board/BoardScreen.tsx')
+    expect(board.includes('focusState.activeItemId')).toBe(true)
+
+    const harness = await source('../../../apps/api/src/services/assistantHarness.ts')
+    expect(harness.includes('Focus resolution (Card T19)')).toBe(true)
+    expect(harness.includes('ask one short question')).toBe(true)
+  })
+
+  test('métricas do Dashboard (Card T20)', async () => {
+    const contracts = await source('../../../packages/assistant-contracts/src/index.ts')
+    // Bloco opcional de filtros/período do Dashboard no snapshot.
+    expect(contracts.includes('AssistantDashboardContext')).toBe(true)
+
+    const snapshot = await source('./lib/assistantSnapshot.ts')
+    expect(snapshot.includes('input.dashboard')).toBe(true)
+    expect(snapshot.includes('AssistantDashboardContext')).toBe(true)
+
+    const page = await source('./pages/ProjectDashboardPage.tsx')
+    expect(page.includes('buildScreenSnapshot')).toBe(true)
+    expect(page.includes("screen: 'project-dashboard'")).toBe(true)
+    expect(page.includes('assistantScreenSnapshot={assistantSnapshot}')).toBe(true)
+  })
 })

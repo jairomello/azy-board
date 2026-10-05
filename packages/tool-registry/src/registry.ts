@@ -60,7 +60,7 @@ export type ItemMutationResponse = {
 
 export { toolFields, requiredFieldsFor, nestedRequiredFieldsFor, isRegisteredTool, OPERATION_ARGS_REQUIRED, SHARED_TOOL_NAMES }
 
-const discovery = new Set(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_screen_overview', 'get_shadow_markdown', 'list_tasks', 'list_modules', 'get_current_sprint', 'list_columns', 'list_sprints', 'list_tags', 'list_versions', 'list_members', 'list_squads', 'list_item_logs', 'list_cost_centers', 'list_attachments', 'list_checklists'])
+const discovery = new Set(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_screen_overview', 'get_dashboard_metrics', 'get_shadow_markdown', 'list_tasks', 'list_modules', 'get_current_sprint', 'list_columns', 'list_sprints', 'list_tags', 'list_versions', 'list_members', 'list_squads', 'list_item_logs', 'list_cost_centers', 'list_attachments', 'list_checklists'])
 const planning = new Set(['claim_task', 'list_tasks', 'list_checklists', 'create_checklist', 'add_checklist_item', 'add_checklist_item_to_task', 'check_item', 'get_shadow_markdown'])
 
 type ToolClassification = {
@@ -83,6 +83,8 @@ const classifications: Record<string, ToolClassification> = {
   get_tree: { domain: 'board', scope: 'project', operation: 'read' },
   // Card B7 — digest de uma única chamada para perguntas de recorte/contagem.
   get_screen_overview: { domain: 'board', scope: 'project', operation: 'read' },
+  // Card T20 — métricas oficiais do Dashboard (paridade com as rotas /dashboard/*).
+  get_dashboard_metrics: { domain: 'board', scope: 'project', operation: 'read' },
   get_shadow_markdown: { domain: 'board', scope: 'project', operation: 'read' },
   list_columns: { domain: 'board', scope: 'project', operation: 'read' },
   create_column: { domain: 'board', scope: 'project', operation: 'create' },
@@ -260,6 +262,9 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
   }
   if (field === 'includeDescriptions') return { ...nullable({ type: 'boolean' }), description: 'Inclui description/scope/notes completos. Padrão false (texto resumido) para reduzir o payload.' }
   if (field === 'includeDetails') return { ...nullable({ type: 'boolean' }), description: 'Devolve description/persona/goal/benefit/acceptanceCriteria/notes/scope e demais metadados por item. Padrão false (projeção de resumo) para reduzir o payload.' }
+  if (field === 'metric') return { type: 'string', enum: ['snapshot', 'burnup', 'aging', 'hours', 'sprint'], description: 'Métrica oficial do Dashboard: snapshot (Progresso/WIP/Bloqueados/Atrasados/Carga), burnup, aging, hours ou sprint.' }
+  if (field === 'includeItems') return { ...nullable({ type: 'boolean' }), description: 'Inclui uma amostra limitada dos itens que compõem o indicador (padrão true).' }
+  if (field === 'from' || field === 'to') return { ...nullable({ type: 'string' }), description: 'Data UTC no formato AAAA-MM-DD (período do burnup/horas).' }
   if (field === 'onlyLeaves' || field === 'atomic' || field === 'confirm' || field === 'dryRun' || field === 'checked') return nullable({ type: 'boolean' })
   if (field === 'advancedChecklists') return { ...nullable({ type: 'boolean' }), description: 'Habilita data, responsável e descrição nos itens de checklist do projeto (padrão false).' }
   if (field === 'plannedPoints') return { ...nullable({ type: 'number' }), description: 'Estimated total story points for the project.' }
@@ -270,7 +275,8 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
   if (field === 'assigneeId') return { ...nullable({ type: 'string' }), description: 'ID de um membro do projeto (requer checklists detalhados no projeto).' }
   if (field === 'scope') return { ...nullable({ type: 'string' }), description: 'Project scope as Markdown rich text.' }
   if (field === 'projectId') return { ...nullable({ type: 'string' }), description: 'Project ID (UUID) or the exact project name; names are resolved against the projects accessible to the API key.' }
-  if (field === 'limit' || field === 'durationMin' || field === 'points') return nullable({ type: 'number' })
+  if (field === 'limit' || field === 'points') return nullable({ type: 'number' })
+  if (field === 'durationMin') return { ...nullable({ type: 'number' }), description: 'Duração em minutos (inteiro não negativo); alternativa a duration.' }
   if (field === 'filters') return itemFiltersSchema
   if (field === 'changes') return itemChangeSchema
   if (field === 'itemId') return nullable({ type: 'string', description: 'Board item/card ID. For checklist tools, this is the parent card that owns the checklist; never use checklistId or checklistItemId.' })
@@ -281,6 +287,7 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
   if (field === 'text') return nullable({ type: 'string', description: `Checklist step text (até ${TOOL_TEXT_LIMITS.text} caracteres).` })
   if (field === 'title') return nullable({ type: 'string', description: `Título do item (até ${TOOL_TEXT_LIMITS.title} caracteres).` })
   if (field === 'activity') return nullable({ type: 'string', description: `Texto do log de trabalho (até ${TOOL_TEXT_LIMITS.activity} caracteres; prefira textos curtos).` })
+  if (field === 'duration') return nullable({ type: 'string', description: `Duração humano-legível normalizada para minutos (ex.: 1h30, 90min, 1:30); alternativa a durationMin.` })
   if (field === 'name') return nullable({ type: 'string', description: `Nome (até ${TOOL_TEXT_LIMITS.name} caracteres).` })
   if (field === 'description') return nullable({ type: 'string', description: `Descrição em Markdown (até ${TOOL_TEXT_LIMITS.description} caracteres).` })
   if (field === 'ref') return nullable({ type: 'string', description: `Referência curta usada por parentRef (até ${TOOL_TEXT_LIMITS.ref} caracteres).` })
@@ -354,11 +361,12 @@ export function applyOptionalFields(inputSchema: ToolDefinition['inputSchema'], 
 const friendlyNames: Record<string, string> = {
   update_items: 'Atualizar itens', update_item: 'Atualizar item', batch: 'Cadastrar estrutura', batch_move: 'Mover itens em lote',
   list_projects: 'Listar projetos', get_project: 'Consultar projeto', get_board: 'Consultar board', get_tree: 'Consultar hierarquia', list_tasks: 'Listar itens',
-  get_screen_overview: 'Resumo do board',
+  get_screen_overview: 'Resumo do board', get_dashboard_metrics: 'Métricas do Dashboard',
   create_project: 'Criar projeto', create_project_structure: 'Criar projeto e estrutura', update_project: 'Atualizar projeto', delete_project: 'Excluir projeto', create_task: 'Criar item', delete_item: 'Excluir item',
   move_task: 'Mover item', complete_task: 'Concluir item', claim_task: 'Assumir item', release_task: 'Liberar item', archive_item: 'Arquivar item', unarchive_item: 'Desarquivar item',
   list_sprints: 'Listar sprints', create_sprint: 'Criar sprint', activate_sprint: 'Ativar sprint', close_sprint: 'Fechar sprint', list_members: 'Listar membros',
   list_modules: 'Listar módulos', create_module: 'Criar módulo', list_versions: 'Listar versões', create_version: 'Criar versão', list_columns: 'Listar colunas', create_column: 'Criar coluna',
+  create_item_log: 'Registrar trabalho', update_item_log: 'Atualizar apontamento',
 }
 
 export function friendlyToolName(name: string): string {
@@ -387,6 +395,7 @@ const toolDescriptions: Record<string, string> = {
   get_board: 'Retorna colunas, módulos e itens do board do projeto. As descrições longas vêm resumidas por padrão; includeDetails=true devolve os campos pesados e includeDescriptions=true o texto completo. Em projetos grandes, prefira list_tasks com filtros.',
   get_tree: 'Retorna a hierarquia de itens (EPIC > STORY > TASK/BUG), filtrável por moduleId, assigneeId e sprintId. Descrições resumidas por padrão; includeDetails=true devolve os campos pesados e includeDescriptions=true o texto completo.',
   get_screen_overview: 'Digest do board em um único passo: contagens por coluna (total, TASK, BUG), sprint/filtro ativo e amostra de referências. Prefira sobre get_board para perguntas de contagem/recorte; scope=SCREEN reflete o recorte capturado na tela do usuário, scope=PROJECT o estado atual do banco.',
+  get_dashboard_metrics: 'Métricas oficiais do Dashboard com os mesmos números e regras da tela: metric=snapshot (Progresso/Escopo, WIP, Bloqueados, Atrasados, Carga), burnup, aging, hours ou sprint. Aceita filtros (módulo, sprint, versão, squad, responsável, tipo) e período (from/to, AAAA-MM-DD); cycleId para sprint. Preserva avisos de cobertura parcial e rotula populações sobrepostas (WIP inclui Bloqueados; não somar). Quando não informados e a tela ativa é o Dashboard, usa os filtros da fotografia.',
   get_shadow_markdown: 'Retorna o board do projeto em Markdown (board.md) para leitura rápida.',
   list_tasks: 'Lista itens do projeto; onlyLeaves é true, includeDescriptions é false e limit é 50 por padrão. Filtros opcionais: type, status, assigneeId, sprintId, tagIds, parentId, columnId, moduleId, com projeção fields e paginação por limit/cursor. Omitir um filtro equivale a não filtrar.',
   list_modules: 'Lista os módulos do projeto.',
@@ -410,7 +419,7 @@ const toolDescriptions: Record<string, string> = {
   archive_item: 'Arquiva um item. confirm é true por padrão; suporta dryRun.',
   unarchive_item: 'Desarquiva um item.',
   set_item_tags: 'Substitui as tags do item pela lista tagIds informada.',
-  create_item_log: 'Registra um log de trabalho no item. activity é texto curto (até 20000 caracteres); durationMin é opcional, em minutos.',
+  create_item_log: 'Registra um apontamento de trabalho no item. activity é texto curto (até 20000 caracteres); durationMin é a duração em minutos (inteiro não negativo) e duration aceita formato humano-legível (ex.: 1h30), normalizado para minutos. A data do registro é o momento atual; não há suporte a data retroativa.',
   reorder_items: 'Reordena os itens de uma coluna conforme a lista order de IDs.',
   update_checklist: 'Atualiza nome/posição de uma checklist do item.',
   delete_checklist: 'Exclui uma checklist do item.',
@@ -472,7 +481,7 @@ export function searchSharedTools(query: string, names = SHARED_TOOL_NAMES): Too
 }
 
 export function selectSharedTools(intent: 'read' | 'status' | 'plan' | 'start' | 'update' | 'complete' | 'review' | 'unknown'): ToolDefinition[] {
-  if (intent === 'unknown') return getSharedToolDefinitions(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_screen_overview', 'list_tasks', 'get_current_sprint'])
+  if (intent === 'unknown') return getSharedToolDefinitions(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_screen_overview', 'get_dashboard_metrics', 'list_tasks', 'get_current_sprint'])
   if (intent === 'read' || intent === 'review' || intent === 'status') return getSharedToolDefinitions().filter(tool => tool.namespace === 'discovery')
   if (intent === 'plan') return getSharedToolDefinitions().filter(tool => tool.namespace !== 'mutation' || planning.has(tool.name))
   return getSharedToolDefinitions()

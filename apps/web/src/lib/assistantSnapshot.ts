@@ -5,6 +5,7 @@
 // em projetos com milhares de tickets); com filtro, o conjunto do resultado
 // viaja em displayedItemIds — limitado, com truncamento declarado.
 import type {
+  AssistantDashboardContext,
   AssistantScreen,
   AssistantScreenFilterValue,
   AssistantScreenPresentation,
@@ -55,10 +56,25 @@ export interface SnapshotCaptureInput {
   filters: ScreenFilterInput
   // Card T18 — estado de apresentação (não é filtro de população; não afeta o scope).
   presentation?: AssistantScreenPresentation
+  // Card T19 — foco da interface (pilha de modais, item em primeiro plano, aba
+  // ativa e objeto interno). Ausente degrada a resolução, sem erro.
+  focus?: AssistantScreenSnapshot['focus']
+  // Card T20 — filtros/período vigentes no Dashboard. Capturado apenas quando
+  // screen === 'project-dashboard'; não altera o escopo de mutação do board.
+  dashboard?: { filters: ScreenFilterInput; period: { from: string | null; to: string | null } }
   // IDs reais de cards de ação (TASK/BUG) representados no resultado.
   actionCardIds: string[]
   // Revisões (updatedAt) dos cards; ausente não bloqueia (verificação por item).
   revisions: Record<string, string>
+}
+
+function convertFilters(source: ScreenFilterInput): Record<string, AssistantScreenFilterValue> {
+  const filters: Record<string, AssistantScreenFilterValue> = {}
+  for (const [key, value] of Object.entries(source)) {
+    const converted = toFilterValue(value)
+    if (converted !== null) filters[key] = converted
+  }
+  return filters
 }
 
 export function buildScreenSnapshot(input: SnapshotCaptureInput): AssistantScreenSnapshot {
@@ -74,11 +90,10 @@ export function buildScreenSnapshot(input: SnapshotCaptureInput): AssistantScree
     if (inscopeRevisionIds.has(id) && revision) revisions[id] = revision
   }
 
-  const filters: Record<string, AssistantScreenFilterValue> = {}
-  for (const [key, value] of Object.entries(input.filters)) {
-    const converted = toFilterValue(value)
-    if (converted !== null) filters[key] = converted
-  }
+  const filters = convertFilters(input.filters)
+  const dashboard: AssistantDashboardContext | undefined = input.screen === 'project-dashboard' && input.dashboard
+    ? { filters: convertFilters(input.dashboard.filters), period: { from: input.dashboard.period.from || null, to: input.dashboard.period.to || null } }
+    : undefined
 
   return {
     schemaVersion: 1,
@@ -90,6 +105,7 @@ export function buildScreenSnapshot(input: SnapshotCaptureInput): AssistantScree
     projectName: input.projectName,
     view: { mode: input.viewMode, activeModuleId: input.activeModuleId, collapsedGroupIds: input.collapsedGroupIds, ...(input.presentation ? { presentation: input.presentation } : {}) },
     filters,
+    ...(dashboard ? { dashboard } : {}),
     scope: { mode: filtered ? 'FILTERED' : 'ALL' },
     results: {
       displayedItemIds,
@@ -98,6 +114,6 @@ export function buildScreenSnapshot(input: SnapshotCaptureInput): AssistantScree
       isComplete: !truncated,
       revisions,
     },
-    focus: { modalStack: 0, activeItemId: null, activeTab: null, hasUnsavedChanges: false },
+    focus: input.focus ?? { modalStack: 0, modalPath: [], activeItemId: null, activeTab: null, activeEntity: null, hasUnsavedChanges: false },
   }
 }

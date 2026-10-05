@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { and, eq } from 'drizzle-orm'
+import { coerceArgumentsBySchema, normalizeDurationArguments } from '@azy-board/tool-registry'
 
 process.env.DATABASE_URL = ':memory:'
 const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
@@ -168,6 +169,57 @@ describe('Azy Agent harness', () => {
       projectId: 'p1',
       filters: { parent: 'Dashboard Demo', column: 'A Fazer', types: ['TASK', 'BUG'], onlyLeaves: true, matchAll: false },
     })
+  })
+
+  test('gera prévia de apontamento com atividade e duração formatada', () => {
+    const createArgs = normalizeDurationArguments('create_item_log', coerceArgumentsBySchema('create_item_log', { projectId: 'p1', itemId: 'i1', activity: 'Revisão de código', duration: '1h30' }))
+    const preview = approvalPreview('create_item_log', createArgs, { userId, projectId: 'p1' })
+    expect(preview).toMatchObject({ summary: 'Registrar trabalho', activity: 'Revisão de código', durationMin: 90 })
+    expect(String(preview.markdown)).toContain('Revisão de código')
+    expect(String(preview.markdown)).toContain('90 min (1h30)')
+
+    const updatePreview = approvalPreview('update_item_log', { projectId: 'p1', itemId: 'i1', logId: 'l1', changes: { durationMin: 45 } }, { userId, projectId: 'p1' })
+    expect(updatePreview).toMatchObject({ summary: 'Atualizar apontamento', durationMin: 45 })
+    expect(String(updatePreview.markdown)).toContain('45 min')
+  })
+
+  test('representações equivalentes de duração geram a mesma assinatura de operação', () => {
+    const canonical = (args: Record<string, unknown>) => normalizeDurationArguments('create_item_log', coerceArgumentsBySchema('create_item_log', args))
+    const viaHuman = canonical({ projectId: 'p1', itemId: 'i1', activity: 'Revisão', duration: '1h30' })
+    const viaMinutes = canonical({ projectId: 'p1', itemId: 'i1', activity: 'Revisão', durationMin: 90 })
+    expect(viaHuman).toEqual(viaMinutes)
+    expect(operationHash('create_item_log', viaHuman)).toBe(operationHash('create_item_log', viaMinutes))
+    expect(viaHuman.durationMin).toBe(90)
+    expect(viaHuman).not.toHaveProperty('duration')
+  })
+
+  test('apontamento repetido não duplica aprovação nem registro', async () => {
+    class RepeatedLogProvider implements ModelProvider {
+      name = 'mock'
+      capabilities = { tools: true, streaming: false, cancellation: false } as const
+      async createRun(): Promise<ModelResponse> {
+        return { id: 'log', output: [
+          { type: 'function_call', name: 'create_item_log', callId: 'l1', arguments: JSON.stringify({ projectId: 'p1', itemId: 'i1', activity: 'Revisão', duration: '1h30' }) },
+          { type: 'function_call', name: 'create_item_log', callId: 'l2', arguments: JSON.stringify({ projectId: 'p1', itemId: 'i1', activity: 'Revisão', durationMin: 90 }) },
+        ] }
+      }
+      async *streamRun() {}
+    }
+    let executions = 0
+    const harness = new AssistantHarness({ provider: new RepeatedLogProvider(), executeTool: async () => { executions++; return { id: 'log-1', durationMin: 90 } }, authorize: async () => {} })
+    const result = await harness.run({ source: 'azy-agent', userId, tenantId, globalGroup: 'TEAM_MEMBER', conversationId }, 'model', 'registre 1h30', `log-${id()}`)
+    expect(result.status).toBe('WAITING_APPROVAL')
+    const approvals = await db.select().from(assistantApprovals).where(eq(assistantApprovals.runId, result.runId))
+    expect(approvals).toHaveLength(1)
+    await harness.approve(result.runId, tenantId, userId, approvals[0]!.operationHash)
+    await harness.executeApproved({ source: 'azy-agent', userId, tenantId, globalGroup: 'TEAM_MEMBER', conversationId, runId: result.runId })
+    expect(executions).toBe(1)
+  })
+
+  test('prompt orienta apontamento único e sem data retroativa', () => {
+    expect(AZY_AGENT_SYSTEM_PROMPT).toContain('create_item_log')
+    expect(AZY_AGENT_SYSTEM_PROMPT).toContain('no retroactive date support')
+    expect(AZY_AGENT_SYSTEM_PROMPT).toContain('never create a second log')
   })
 
   // Card T16 — escopo travado pela fotografia da tela: o servidor impõe o conjunto,

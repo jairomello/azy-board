@@ -11,6 +11,7 @@ import {
   toolCreateTask,
   toolGetCurrentSprint,
   toolGetBoard,
+  toolGetDashboardMetrics,
   toolGetScreenOverview,
   toolListChecklists,
   toolListModules,
@@ -541,5 +542,65 @@ describe('descoberta otimizada (get_screen_overview e modo summary)', () => {
     const items = Array.from({ length: 25 }, (_, index) => makeItem(`i${index}`, { sequenceCode: `T${index}` }))
     const overview = await toolGetScreenOverview(boardApi(items), { projectId: 'p1', scope: 'PROJECT' }) as { columns: Array<{ refs: string[] }> }
     expect(overview.columns[0]!.refs).toHaveLength(20)
+  })
+})
+
+// Card T20 — o adaptador reproduz as rotas /dashboard/* e normaliza cobertura,
+// critérios e populações sobrepostas sem recalcular os números.
+describe('get_dashboard_metrics (Card T20)', () => {
+  const snapshotPayload = {
+    coverage: { startedAt: '2026-10-01T00:00:00.000Z', partial: true },
+    filters: { applied: ['moduleId', 'sprintId', 'versionId', 'squadId', 'assigneeId', 'type'], inapplicable: ['from', 'to'] },
+    boxes: {
+      progressScope: { total: 3, done: 1, completionPercent: 33.3, points: 5, donePoints: 2, estimationCoverage: 66.6 },
+      wip: { total: 2, byStatus: { IN_PROGRESS: 1, BLOCKED: 1 }, byStatusPoints: { IN_PROGRESS: 2, BLOCKED: 1 }, pointsCoverage: 50, items: [{ id: 'i1' }, { id: 'i2' }] },
+      blocked: { total: 1, items: [{ id: 'i2', title: 'Bloqueado', blockedAgeDays: 3, minimumKnown: false }] },
+      overdue: { total: 1, items: [{ id: 'i3' }], remainingItems: [{ id: 'i1' }, { id: 'i2' }] },
+      teamLoad: { members: [], unassignedWip: 0 },
+    },
+  }
+  const calls: string[] = []
+  const dashApi = (payload: unknown) => (async (path: string) => { calls.push(path); return payload }) as ApiCall
+
+  test('monta a query dos filtros explícitos e preserva os números oficiais', async () => {
+    calls.length = 0
+    const result = await toolGetDashboardMetrics(dashApi(snapshotPayload), { projectId: 'p1', metric: 'snapshot', moduleId: 'm1', sprintId: 's1', type: 'BUG' })
+    expect(calls[0]).toBe('/projects/p1/dashboard/snapshot?moduleId=m1&sprintId=s1&type=BUG')
+    const typed = result as { metric: string; truncated: boolean; populations: Record<string, unknown>; data: { wip: { total: number }; blocked: { total: number }; overdue: { remainingCount: number } } }
+    expect(typed.metric).toBe('snapshot')
+    expect(typed.truncated).toBe(false)
+    expect(typed.data.wip.total).toBe(2)
+    expect(typed.data.blocked.total).toBe(1)
+    expect(typed.data.overdue.remainingCount).toBe(2)
+    expect(typed.populations).toMatchObject({ additive: false, wipIncludesBlocked: true, blockedSubsetOfWip: true, overdueOverlapsWip: true })
+  })
+
+  test('amostra itens de origem com truncamento explícito', async () => {
+    const many = { ...snapshotPayload, boxes: { ...snapshotPayload.boxes, blocked: { total: 25, items: Array.from({ length: 25 }, (_, index) => ({ id: `b${index}` })) } } }
+    const result = await toolGetDashboardMetrics(dashApi(many), { projectId: 'p1', metric: 'snapshot' }) as { items: unknown[]; truncated: boolean; data: { blocked: { items: unknown[] } } }
+    expect(result.items).toHaveLength(20)
+    expect(result.data.blocked.items).toHaveLength(20)
+    expect(result.truncated).toBe(true)
+  })
+
+  test('herda filtros e período da fotografia do Dashboard; filtro explícito prevalece', async () => {
+    calls.length = 0
+    const context = { screenSnapshot: { screen: 'project-dashboard', dashboard: { filters: { moduleId: 'm-context', sprintId: 's-context' }, period: { from: '2026-10-01', to: '2026-10-05' } } } }
+    await toolGetDashboardMetrics(dashApi({ partial: true, coverageStartedAt: '2026-10-01T00:00:00.000Z', series: [] }), { projectId: 'p1', metric: 'burnup', moduleId: 'm-explicit' }, context)
+    expect(calls[0]).toBe('/projects/p1/dashboard/burnup?moduleId=m-explicit&sprintId=s-context&from=2026-10-01&to=2026-10-05')
+  })
+
+  test('aging declara período inaplicável e sprint resolve por cycleId', async () => {
+    calls.length = 0
+    const aging = await toolGetDashboardMetrics(dashApi({ coverageStartedAt: null, items: [{ id: 'a' }] }), { projectId: 'p1', metric: 'aging', from: '2026-10-01', to: '2026-10-05' }) as { filters: { inapplicable: string[] } }
+    expect(aging.filters.inapplicable).toEqual(['from', 'to'])
+    await toolGetDashboardMetrics(dashApi({ cycle: { id: 'c1' } }), { projectId: 'p1', metric: 'sprint', cycleId: 'c1' })
+    expect(calls[1]).toBe('/projects/p1/dashboard/sprints/c1')
+    await toolGetDashboardMetrics(dashApi({ cycles: [] }), { projectId: 'p1', metric: 'sprint' })
+    expect(calls[2]).toBe('/projects/p1/dashboard/sprints')
+  })
+
+  test('metric inválido falha com mensagem acionável', async () => {
+    await expect(toolGetDashboardMetrics(dashApi({}), { projectId: 'p1', metric: 'nope' as never })).rejects.toThrow('metric inválido')
   })
 })

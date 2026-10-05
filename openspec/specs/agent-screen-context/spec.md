@@ -5,7 +5,7 @@ TBD - created by archiving change add-agent-screen-context. Update Purpose after
 ## Requirements
 ### Requirement: Fotografia do contexto da tela
 
-O frontend SHALL capturar e transportar, no envio de cada pedido ao Azy Agent, uma fotografia versionada do contexto de trabalho contendo: tela, projeto (id e nome), modo de visualização (Kanban ou árvore), aba de módulo ativa, grupos recolhidos, filtros ativos com semântica explícita de ausência de valor, o modo de escopo (`scope: 'ALL' | 'FILTERED'`) que determina se IDs viajam e o **estado de apresentação** necessário para explicar regras da visão (`showSubtasks`, `storyDisplay`, `moduleViewMode`, `hideEmptyEpics`, `hideEmptyStories`). IDs de agrupadores e histórias virtuais NÃO SHALL ser enviados como IDs persistidos de cards. O transporte é opcional: clientes sem fotografia continuam funcionando, e o estado de apresentação é opcional — sua ausência degrada a explicação de regras de visão, sem erro.
+O frontend SHALL capturar e transportar, no envio de cada pedido ao Azy Agent, uma fotografia versionada do contexto de trabalho contendo: tela, projeto (id e nome), modo de visualização (Kanban ou árvore), aba de módulo ativa, grupos recolhidos, filtros ativos com semântica explícita de ausência de valor, o modo de escopo (`scope: 'ALL' | 'FILTERED'`) que determina se IDs viajam, o **estado de apresentação** necessário para explicar regras da visão (`showSubtasks`, `storyDisplay`, `moduleViewMode`, `hideEmptyEpics`, `hideEmptyStories`) e o **foco** — a pilha ordenada de modais, o item em primeiro plano, a aba/área ativa do item e o objeto interno selecionado. IDs de agrupadores e histórias virtuais NÃO SHALL ser enviados como IDs persistidos de cards. O transporte é opcional: clientes sem fotografia continuam funcionando, e tanto o estado de apresentação quanto o foco são opcionais — sua ausência degrada a explicação/resolução, sem erro.
 
 #### Scenario: Sem filtro nenhum, a ação vale para todos sem enviar IDs
 
@@ -41,6 +41,21 @@ O frontend SHALL capturar e transportar, no envio de cada pedido ao Azy Agent, u
 
 - **WHEN** a fotografia é capturada sem os campos de apresentação
 - **THEN** o transporte continua válido e a explicação degrada para os motivos determináveis, sem erro
+
+#### Scenario: Foco com subtarefa aberta sobre o pai
+
+- **WHEN** o usuário abre uma subtarefa sobre a modal do pai e envia um pedido
+- **THEN** a fotografia carrega a pilha de modais com o pai e a subtarefa, e `activeItemId` aponta para a subtarefa (o item em primeiro plano)
+
+#### Scenario: Foco com aba ativa
+
+- **WHEN** o usuário está na aba Checklists (ou Atividade/Links) da modal do item
+- **THEN** a fotografia carrega a aba/área ativa e, quando houver seleção explícita, o objeto interno selecionado
+
+#### Scenario: Fotografia sem foco não falha
+
+- **WHEN** a fotografia é capturada sem os campos de foco
+- **THEN** o transporte continua válido e a resolução degrada para o item da mensagem, sem erro
 
 ### Requirement: Fixação do snapshot na execução e na aprovação
 O servidor SHALL validar a fotografia recebida e fixá-la na execução do run, persistindo-a junto do run e incluindo-a no contexto autoritativo do modelo. A execução enfileirada e a retomada do worker SHALL usar o mesmo snapshot. Navegar ou alterar filtros após o envio MUST NOT alterar o escopo pendente.
@@ -134,4 +149,28 @@ O sistema SHALL fornecer traduções em PT-BR, EN e ES para os rótulos de escop
 #### Scenario: Idioma do chat
 - **WHEN** usuário troca o idioma da interface
 - **THEN** os rótulos de escopo, prévia e conflito são exibidos no idioma selecionado
+
+### Requirement: Fotografia do contexto do Dashboard
+
+Quando a tela ativa é `project-dashboard`, o frontend SHALL capturar e transportar, junto da fotografia versionada, os filtros de população vigentes (módulo, sprint, versão, squad, responsável, tipo e demais filtros de população do Dashboard) e o período (`from`/`to`), com a mesma semântica de ausência de valor do restante da fotografia. O bloco SHALL ser opcional: sua ausência NÃO SHALL causar erro e a consulta degrada para os filtros explícitos do pedido. O bloco do Dashboard MUST NOT alterar o escopo de mutação em lote do board (`scope`/`results`/`view`).
+
+#### Scenario: Filtros do Dashboard viajam na fotografia
+
+- **WHEN** o usuário envia uma mensagem enquanto está no Dashboard com módulo e período selecionados
+- **THEN** a fotografia inclui os filtros de população e o período vigentes do Dashboard
+
+#### Scenario: Ausência de valor expressa por operador
+
+- **WHEN** o Dashboard está sem sprint ou sem versão selecionadas
+- **THEN** a fotografia expressa a ausência por operador tipado, e não como sentinela da interface ou nome de entidade
+
+#### Scenario: Bloco ausente não falha
+
+- **WHEN** a fotografia é capturada sem o bloco do Dashboard
+- **THEN** o transporte continua válido e a consulta usa apenas os filtros explícitos do pedido
+
+#### Scenario: Escopo de mutação do board permanece íntegro
+
+- **WHEN** a fotografia carrega o bloco do Dashboard
+- **THEN** o escopo de `scope`/`results`/`view` usado por mutações em lote do board não é alterado
 

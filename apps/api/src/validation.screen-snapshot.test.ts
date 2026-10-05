@@ -47,3 +47,42 @@ describe('assistantScreenSnapshotSchema — estado de apresentação (Card T18)'
     expect(parsed.success).toBe(false)
   })
 })
+
+describe('assistantScreenSnapshotSchema — foco (Card T19)', () => {
+  test('aceita foco com pilha de modais, aba ativa e objeto interno', () => {
+    const parsed = assistantScreenSnapshotSchema.safeParse({
+      ...baseSnapshot,
+      focus: {
+        modalStack: 2,
+        modalPath: [{ itemId: 'pai', type: 'TASK' }, { itemId: 'filho', type: 'BUG' }],
+        activeItemId: 'filho',
+        activeTab: 'checklists',
+        activeEntity: { kind: 'checklist_item', id: 'step-1', parentId: 'cl-1' },
+        hasUnsavedChanges: false,
+      },
+    })
+    expect(parsed.success).toBe(true)
+  })
+
+  test('aceita foco sem campos opcionais', () => {
+    expect(assistantScreenSnapshotSchema.safeParse(baseSnapshot).success).toBe(true)
+  })
+
+  test('rejeita aba ativa fora do enum', () => {
+    const parsed = assistantScreenSnapshotSchema.safeParse({ ...baseSnapshot, focus: { ...baseSnapshot.focus, activeTab: 'qualquer' } })
+    expect(parsed.success).toBe(false)
+  })
+
+  test('rejeita tipo de item inválido na pilha', () => {
+    const parsed = assistantScreenSnapshotSchema.safeParse({
+      ...baseSnapshot,
+      focus: { ...baseSnapshot.focus, modalPath: [{ itemId: 'x', type: 'FEATURE' }] },
+    })
+    expect(parsed.success).toBe(false)
+  })
+
+  test('rejeita chave desconhecida no foco', () => {
+    const parsed = assistantScreenSnapshotSchema.safeParse({ ...baseSnapshot, focus: { ...baseSnapshot.focus, extra: true } })
+    expect(parsed.success).toBe(false)
+  })
+})

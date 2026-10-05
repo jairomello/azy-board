@@ -127,5 +127,7 @@
     "COLLAPSED_GROUP": "The card is inside a collapsed group.",
     "UNKNOWN": "Could not determine the reason from the current state."
   },
-  "revealOffer": "Want me to show this card? The previous view can be restored."
+  "revealOffer": "Want me to show this card? The previous view can be restored.",
+  "focusAmbiguity": "There is more than one possible item (checklist, link or work log). Which one should I use?",
+  "focusFrontItem": "Using the front item: {{title}}"
 }

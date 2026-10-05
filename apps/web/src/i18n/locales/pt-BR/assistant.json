@@ -127,5 +127,7 @@
     "COLLAPSED_GROUP": "O card está em um grupo recolhido.",
     "UNKNOWN": "Não foi possível determinar o motivo com o estado atual."
   },
-  "revealOffer": "Quer que eu mostre este card? A visão anterior pode ser restaurada."
+  "revealOffer": "Quer que eu mostre este card? A visão anterior pode ser restaurada.",
+  "focusAmbiguity": "Há mais de um item possível (checklist, link ou apontamento). Qual deles devo usar?",
+  "focusFrontItem": "Usando o item em primeiro plano: {{title}}"
 }

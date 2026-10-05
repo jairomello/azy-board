@@ -127,5 +127,7 @@
     "COLLAPSED_GROUP": "El card está dentro de un grupo contraído.",
     "UNKNOWN": "No se pudo determinar el motivo con el estado actual."
   },
-  "revealOffer": "¿Quieres que muestre este card? La vista anterior se puede restaurar."
+  "revealOffer": "¿Quieres que muestre este card? La vista anterior se puede restaurar.",
+  "focusAmbiguity": "Hay más de un elemento posible (checklist, enlace o apunte). ¿Cuál debo usar?",
+  "focusFrontItem": "Usando el elemento en primer plano: {{title}}"
 }

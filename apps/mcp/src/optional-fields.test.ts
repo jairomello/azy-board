@@ -81,6 +81,16 @@ describe('contrato de campos opcionais do MCP', () => {
     expect(Object.keys(log.properties.changes.properties)).toEqual(['activity', 'durationMin'])
     expect(log.properties.changes.required).toEqual([])
   })
+
+  test('create_item_log expõe durationMin e duration opcionais', async () => {
+    const tool = (await exposedTools()).find(item => item.name === 'create_item_log')!
+    const schema = tool.inputSchema as { required: string[]; properties: Record<string, unknown> }
+    expect(new Set(schema.required)).toEqual(new Set(['projectId', 'itemId', 'activity']))
+    expect(schema.properties.durationMin).toBeDefined()
+    expect(schema.properties.duration).toBeDefined()
+    expect(schema.required).not.toContain('durationMin')
+    expect(schema.required).not.toContain('duration')
+  })
 })
 
 describe('validação aceita null e ausência em campos opcionais', () => {
@@ -188,6 +198,13 @@ describe('coerção de tipos e campos desconhecidos na fronteira de execução',
     await expect(executeSharedTool('list_tasks', { projectId: UUID, titleContains: 'x' }, { api, context }))
       .rejects.toThrow('Campo desconhecido: titleContains')
     expect(calls).toBe(0)
+  })
+
+  test('create_item_log normaliza duration legível e envia durationMin', async () => {
+    let body: unknown
+    const api: ApiCall = async (_path, _method, requestBody) => { body = requestBody; return { id: 'l1', durationMin: 90 } }
+    await executeSharedTool('create_item_log', { projectId: UUID, itemId: 'i1', activity: 'Revisão', duration: '1h30' }, { api, context })
+    expect(body).toEqual({ activity: 'Revisão', durationMin: 90 })
   })
 
   test('batch com atomic interno e booleano aninhado como string', async () => {

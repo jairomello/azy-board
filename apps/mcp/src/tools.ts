@@ -183,6 +183,182 @@ export async function toolGetScreenOverview(api: ApiCall, args: { projectId: str
   return overviewFromBoard(board, { contextId: null, capturedAt: null, target: 'PROJECT' })
 }
 
+// Card T20 — leitura das métricas oficiais do Dashboard. O adaptador reproduz a
+// consulta da tela (mesmas rotas /dashboard/*) para garantir paridade de regra e
+// número; a normalização expõe critérios, cobertura e populações sobrepostas.
+export type DashboardMetric = 'snapshot' | 'burnup' | 'aging' | 'hours' | 'sprint'
+
+export interface DashboardMetricsArgs {
+  projectId: string
+  metric: DashboardMetric
+  from?: string | null
+  to?: string | null
+  moduleId?: string | null
+  sprintId?: string | null
+  versionId?: string | null
+  squadId?: string | null
+  assigneeId?: string | null
+  type?: string | null
+  cycleId?: string | null
+  includeItems?: boolean | null
+}
+
+type DashboardToolContext = {
+  screenSnapshot?: {
+    screen?: string
+    dashboard?: { filters?: Record<string, unknown> | null; period?: { from?: unknown; to?: unknown } | null } | null
+  } | null
+} | undefined
+
+const DASHBOARD_ITEM_SAMPLE = 20
+const DASHBOARD_POPULATION_KEYS = ['moduleId', 'sprintId', 'versionId', 'squadId', 'assigneeId', 'type'] as const
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+}
+
+// Filtro explícito prevalece; na tela do Dashboard, herda os filtros da fotografia.
+function dashboardFilter(args: DashboardMetricsArgs, context: DashboardToolContext, key: (typeof DASHBOARD_POPULATION_KEYS)[number]): string | null {
+  const explicit = nonEmptyString(args[key])
+  if (explicit) return explicit
+  if (context?.screenSnapshot?.screen !== 'project-dashboard') return null
+  return nonEmptyString(context.screenSnapshot.dashboard?.filters?.[key])
+}
+
+function dashboardPeriod(args: DashboardMetricsArgs, context: DashboardToolContext): { from: string | null; to: string | null } {
+  const onDashboard = context?.screenSnapshot?.screen === 'project-dashboard'
+  return {
+    from: nonEmptyString(args.from) ?? (onDashboard ? nonEmptyString(context?.screenSnapshot?.dashboard?.period?.from) : null),
+    to: nonEmptyString(args.to) ?? (onDashboard ? nonEmptyString(context?.screenSnapshot?.dashboard?.period?.to) : null),
+  }
+}
+
+function sampleRows(rows: unknown): { rows: unknown[]; total: number; truncated: boolean } {
+  const list = Array.isArray(rows) ? rows : []
+  return { rows: list.slice(0, DASHBOARD_ITEM_SAMPLE), total: list.length, truncated: list.length > DASHBOARD_ITEM_SAMPLE }
+}
+
+function dashboardCriteria(metric: DashboardMetric): string[] {
+  if (metric === 'snapshot') return [
+    'Folhas TASK/BUG não arquivadas; a condição de folha é determinada antes dos filtros.',
+    'WIP reúne status IN_PROGRESS e BLOCKED; Bloqueados é subconjunto do WIP e Atrasados sobrepõe o WIP.',
+    'Progresso e Carga por pontos usam apenas itens estimados; a cobertura de estimativa é informada.',
+  ]
+  if (metric === 'burnup') return [
+    'Estado ao fim de cada dia UTC desde coverageStartedAt; escopo = folhas TASK/BUG não arquivadas e concluído = DONE.',
+    'Mudanças de escopo aparecem na linha total; período anterior à cobertura é parcial.',
+  ]
+  if (metric === 'aging') return [
+    'Idade do episódio ativo atual (entrada em IN_PROGRESS/BLOCKED); transição entre eles não zera o episódio.',
+    'Item já ativo no baseline sem início conhecido tem idade mínima desde coverageStartedAt.',
+  ]
+  if (metric === 'hours') return [
+    'Somente logs manuais com durationMin > 0; a data de registro é o createdAt.',
+    'Agrupamento pelo autor do log e pelo squad atual do autor; não inferir horas pelo responsável do item.',
+  ]
+  return [
+    'Compromisso = folhas do início do ciclo; escopo atual no corte min(agora, endedAt).',
+    'Ciclo MIGRATION é parcial; carry-over só é exibido quando a associação posterior é observada.',
+  ]
+}
+
+function dashboardPopulations(metric: DashboardMetric): Record<string, unknown> {
+  if (metric !== 'snapshot') return { additive: true, note: 'Indicador sem sobreposição com outros.' }
+  return {
+    additive: false,
+    note: 'Referem-se ao estado atual e se sobrepõem; não somar WIP, Bloqueados e Atrasados como populações distintas.',
+    wipIncludesBlocked: true,
+    blockedSubsetOfWip: true,
+    overdueOverlapsWip: true,
+    teamLoadBlockedSubsetOfWip: true,
+  }
+}
+
+function dashboardEnvelope(metric: DashboardMetric, payload: unknown, filters: Record<string, string>, period: { from: string | null; to: string | null }, includeItems: boolean): Record<string, unknown> {
+  const record = (payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {}) as Record<string, unknown>
+  const boxes = (record.boxes && typeof record.boxes === 'object' && !Array.isArray(record.boxes) ? record.boxes : {}) as Record<string, unknown>
+  let data: Record<string, unknown>
+  let items: unknown[] = []
+  let truncated = false
+
+  if (metric === 'snapshot') {
+    const wip = (boxes.wip ?? {}) as Record<string, unknown>
+    const blocked = (boxes.blocked ?? {}) as Record<string, unknown>
+    const overdue = (boxes.overdue ?? {}) as Record<string, unknown>
+    const blockedSample = sampleRows(blocked.items)
+    const overdueSample = sampleRows(overdue.items)
+    data = {
+      coverage: record.coverage ?? null,
+      progressScope: boxes.progressScope ?? null,
+      wip: { total: wip.total ?? null, byStatus: wip.byStatus ?? null, byStatusPoints: wip.byStatusPoints ?? null, pointsCoverage: wip.pointsCoverage ?? null },
+      blocked: { total: blocked.total ?? null, items: blockedSample.rows },
+      overdue: { total: overdue.total ?? null, items: overdueSample.rows, remainingCount: Array.isArray(overdue.remainingItems) ? overdue.remainingItems.length : null },
+      teamLoad: boxes.teamLoad ?? null,
+    }
+    items = includeItems ? blockedSample.rows : []
+    truncated = blockedSample.truncated || overdueSample.truncated
+  } else if (metric === 'aging') {
+    const sample = sampleRows(record.items)
+    data = { coverageStartedAt: record.coverageStartedAt ?? null, total: sample.total, items: includeItems ? sample.rows : [] }
+    items = includeItems ? sample.rows : []
+    truncated = sample.truncated
+  } else if (metric === 'burnup') {
+    data = { partial: record.partial ?? null, coverageStartedAt: record.coverageStartedAt ?? null, series: Array.isArray(record.series) ? record.series : [] }
+  } else if (metric === 'hours') {
+    const sample = sampleRows(record.rows)
+    data = { semantics: record.semantics ?? null, totalMinutes: record.totalMinutes ?? null, limit: record.limit ?? null, total: sample.total, rows: includeItems ? sample.rows : [] }
+    items = includeItems ? sample.rows : []
+    truncated = sample.truncated
+  } else {
+    data = record
+  }
+
+  const routeFilters = record.filters && typeof record.filters === 'object' && !Array.isArray(record.filters) ? record.filters as Record<string, unknown> : null
+  const routeApplied = Array.isArray(routeFilters?.applied) ? routeFilters!.applied as string[] : null
+  const routeInapplicable = Array.isArray(routeFilters?.inapplicable) ? routeFilters!.inapplicable as string[] : null
+  const inapplicable = routeInapplicable ?? (metric === 'snapshot' || metric === 'aging' ? ['from', 'to'] : [])
+  const coverage = metric === 'snapshot'
+    ? (record.coverage ?? null)
+    : metric === 'hours'
+      ? { semantics: record.semantics ?? null }
+      : { partial: record.partial ?? null, coverageStartedAt: record.coverageStartedAt ?? null }
+
+  return {
+    metric,
+    capturedAt: new Date().toISOString(),
+    filters: { applied: routeApplied ?? Object.keys(filters), inapplicable, period, values: filters },
+    criteria: dashboardCriteria(metric),
+    populations: dashboardPopulations(metric),
+    coverage,
+    data,
+    items,
+    truncated,
+  }
+}
+
+export async function toolGetDashboardMetrics(api: ApiCall, args: DashboardMetricsArgs, context?: DashboardToolContext): Promise<unknown> {
+  const projectId = nonEmptyString(args.projectId)
+  if (!projectId) throw new Error('projectId é obrigatório')
+  const metric = args.metric
+  if (!['snapshot', 'burnup', 'aging', 'hours', 'sprint'].includes(metric)) throw new Error(`metric inválido: ${String(metric)}`)
+  const filters = Object.fromEntries(
+    DASHBOARD_POPULATION_KEYS.map(key => [key, dashboardFilter(args, context, key)]).filter(([, value]) => value !== null),
+  ) as Record<string, string>
+  const period = dashboardPeriod(args, context)
+  if (metric === 'sprint') {
+    const cycleId = nonEmptyString(args.cycleId)
+    const payload = await api(cycleId ? `/projects/${projectId}/dashboard/sprints/${cycleId}` : `/projects/${projectId}/dashboard/sprints`)
+    return dashboardEnvelope(metric, payload, filters, period, args.includeItems !== false)
+  }
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(filters)) params.set(key, value)
+  if (period.from) params.set('from', period.from)
+  if (period.to) params.set('to', period.to)
+  const query = params.toString() ? `?${params.toString()}` : ''
+  const payload = await api(`/projects/${projectId}/dashboard/${metric}${query}`)
+  return dashboardEnvelope(metric, payload, filters, period, args.includeItems !== false)
+}
+
 export async function toolGetShadowMarkdown(api: ApiCall, projectId: string): Promise<unknown> {
   return api(`/projects/${projectId}/board.md`)
 }

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Check, Clock3, Pencil, Plus, RotateCcw, Trash2, X } from 'lucide-react'
 import { api } from '../lib/api'
 import type { WorkLog } from '@azy-board/ui-contracts'
+import type { AssistantFocusEntity } from '@azy-board/assistant-contracts'
 import { formatWorkDuration, parseWorkDuration } from '../lib/workLog'
 import { formatDateTime } from '../lib/formatters'
 
@@ -13,9 +14,11 @@ interface Props {
   currentUserRole: string
   onCountChange?: (count: number) => void
   onTotalChange?: (total: number | null) => void
+  // Card T19 — publica o apontamento em edição como objeto interno selecionado.
+  onEntityFocus?: (entity: AssistantFocusEntity | null) => void
 }
 
-export function WorkLogPanel({ itemId, projectId, currentUserId, currentUserRole, onCountChange, onTotalChange }: Props) {
+export function WorkLogPanel({ itemId, projectId, currentUserId, currentUserRole, onCountChange, onTotalChange, onEntityFocus }: Props) {
   const { t } = useTranslation()
   const [logs, setLogs] = useState<WorkLog[]>([])
   const [total, setTotal] = useState(0)
@@ -48,6 +51,7 @@ export function WorkLogPanel({ itemId, projectId, currentUserId, currentUserRole
 
   function resetEditor() {
     setShowForm(false); setActivity(''); setDuration(''); setEditing(null); setFormError('')
+    onEntityFocus?.(null)
   }
 
   function handleKeyDown(event: React.KeyboardEvent) {
@@ -56,6 +60,7 @@ export function WorkLogPanel({ itemId, projectId, currentUserId, currentUserRole
 
   function startEdit(log: WorkLog) {
     setEditing(log.id); setShowForm(false); setFormError(''); setActivity(log.activity); setDuration(log.durationMin == null ? '' : formatWorkDuration(log.durationMin))
+    onEntityFocus?.({ kind: 'work_log', id: log.id })
   }
 
   async function saveLog() {
