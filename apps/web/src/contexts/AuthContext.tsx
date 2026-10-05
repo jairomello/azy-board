@@ -3,6 +3,7 @@ import { api } from '../lib/api'
 import { queryClient } from '../lib/queryClient'
 import i18n from '../i18n'
 import { gravarMostrarProjetosOcultos, lerMostrarProjetosOcultos } from '../lib/sessionPreferences'
+import { gravarEmailLembrado, limparEmailLembrado } from '../lib/rememberedEmail'
 import { clearAllItemDrafts } from '../lib/itemDraft'
 import { applyTheme, getEffectiveTheme, persistAutoThemeByTime, readAutoThemeByTime, readManualTheme } from '../lib/theme'
 import type { GlobalGroup } from '@azy-board/domain'
@@ -34,7 +35,7 @@ function normalizeUser(user: User): User {
 interface AuthContextValue {
   user: User | null
   loading: boolean
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string, remember?: boolean) => Promise<void>
   logout: () => Promise<void>
   updatePreferences: (preferences: PreferenceUpdate) => Promise<void>
   updateAvatar: (file: Blob) => Promise<void>
@@ -110,8 +111,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false))
   }, [])
 
-  async function login(email: string, password: string) {
-    const data = await api.post<{ user: User }>('/auth/login', { email, password })
+  async function login(email: string, password: string, remember = false) {
+    const data = await api.post<{ user: User }>('/auth/login', { email, password, remember })
+    // Card T31: lembrar o e-mail só quando o usuário pede o dispositivo lembrado.
+    if (remember) gravarEmailLembrado(email)
+    else limparEmailLembrado()
     const normalized = normalizeUser(data.user)
     // Todo login começa sem mostrar projetos ocultos.
     resetarProjetosOcultos()

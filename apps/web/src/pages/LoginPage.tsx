@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
+import { lerEmailLembrado } from '../lib/rememberedEmail'
 import { CheckCircle2, Sparkles } from 'lucide-react'
 import { BrandLogo, BrandMark } from '../components/BrandLogo'
 
@@ -12,8 +13,9 @@ export default function LoginPage() {
   const { login } = useAuth()
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => lerEmailLembrado())
   const [password, setPassword] = useState('')
+  const [remember, setRemember] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -22,7 +24,7 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      await login(email, password)
+      await login(email, password, remember)
       navigate(params.get('redirect') ?? '/projects', { replace: true })
     } catch {
       setError(t('invalidCredentials'))
@@ -125,6 +127,17 @@ export default function LoginPage() {
               className="w-full h-11 rounded-lg border border-input bg-background px-4 text-sm text-foreground focus:border-primary transition"
             />
           </div>
+
+          <label className="flex items-center gap-2 text-sm text-muted-foreground select-none cursor-pointer">
+            <input
+              id="remember"
+              type="checkbox"
+              checked={remember}
+              onChange={e => setRemember(e.target.checked)}
+              className="h-4 w-4 rounded border-input accent-primary"
+            />
+            {t('rememberMe')}
+          </label>
 
           <button
             type="submit"

@@ -19,6 +19,8 @@ const optionalIconColor = z.string().refine(isIconColor, 'Cor não pertence à p
 export const loginSchema = z.object({
   email: z.string().trim().email().max(320),
   password: z.string().min(1).max(200),
+  // Dispositivo lembrado: sessão estendida + preenchimento do e-mail (card T31).
+  remember: z.boolean().optional(),
 }).strict()
 
 const projectFields = {

@@ -7,7 +7,7 @@ O sistema SHALL autenticar usuários humanos via e-mail e senha. A identidade do
 
 #### Scenario: Login bem-sucedido
 - **WHEN** usuário envia e-mail e senha corretos
-- **THEN** sistema emite JWT assinado (HS256) com TTL de 1 hora armazenado em cookie HttpOnly; Secure; SameSite=Strict
+- **THEN** sistema emite JWT assinado (HS256) com expiração configurável — no mínimo 24 horas na sessão padrão e duração estendida quando "lembrar-me" estiver ativo — armazenado em cookie HttpOnly; Secure (em produção); SameSite=Strict
 
 #### Scenario: Login determinístico por identidade global
 - **WHEN** usuário envia e-mail canônico que identifica exatamente um usuário no sistema
@@ -24,6 +24,10 @@ O sistema SHALL autenticar usuários humanos via e-mail e senha. A identidade do
 #### Scenario: Acesso sem autenticação
 - **WHEN** requisição chega sem token JWT válido
 - **THEN** API retorna 401; frontend redireciona para página de login
+
+#### Scenario: Token expirado ou além do limite absoluto
+- **WHEN** usuário faz requisição com JWT expirado ou com sessão além do limite absoluto de persistência
+- **THEN** sistema retorna 401 e frontend redireciona para login
 
 ---
 

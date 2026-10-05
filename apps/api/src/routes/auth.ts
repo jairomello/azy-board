@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { setCookie, deleteCookie } from 'hono/cookie'
-import { verifyPassword, signJwt } from '../services/auth'
+import { verifyPassword, signJwt, SESSION_COOKIE, sessionCookieOptions, sessionTtlSeconds } from '../services/auth'
 import { authMiddleware } from '../middleware/auth'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { loginSchema, parseJson } from '../validation'
@@ -55,6 +55,10 @@ authRouter.post('/login', async (c) => {
   await recordLoginAttempt(ip, emailCanonical, 'SUCCESS')
   await resetIdentityFailures(emailCanonical)
 
+  // [SESSION] "lembrar-me" escolhe a duração estendida e o claim rmb; o maxAge acompanha.
+  const remembered = body.remember === true
+  const ttlSeconds = sessionTtlSeconds(remembered)
+
   // [TENANT] JWT inclui tenantId — extraído pelo authMiddleware em todas as requisições
   const token = await signJwt({
     sub: user.id,
@@ -62,15 +66,9 @@ authRouter.post('/login', async (c) => {
     email: user.email,
     role: 'user',
     globalGroup: user.globalGroup,
-  })
+  }, { ttlSeconds, remembered })
 
-  setCookie(c, 'session', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'Strict',
-    maxAge: 60 * 60, // 1 hora
-    path: '/',
-  })
+  setCookie(c, SESSION_COOKIE, token, sessionCookieOptions(ttlSeconds))
 
   return c.json({
     user: {
@@ -99,6 +97,6 @@ authRouter.get('/me', authMiddleware, async (c) => {
 
 // POST /auth/logout
 authRouter.post('/logout', (c) => {
-  deleteCookie(c, 'session', { path: '/' })
+  deleteCookie(c, SESSION_COOKIE, { path: '/' })
   return c.json({ ok: true })
 })

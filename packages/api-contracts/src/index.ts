@@ -19,6 +19,8 @@ export interface JwtPayload {
   email: string
   role: 'user'
   globalGroup?: GlobalGroup
+  rmb?: boolean     // dispositivo lembrado ("lembrar-me")
+  authTime?: number // epoch do login original (base do limite absoluto)
   iat: number
   exp: number
 }

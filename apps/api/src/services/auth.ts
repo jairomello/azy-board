@@ -28,7 +28,72 @@ const JWT_SECRET = new TextEncoder().encode(
   configuredSecret ?? 'azy-board-dev-secret-change-in-production'
 )
 
-const JWT_TTL = '1h'
+// [SESSION] Nome do cookie de sessão compartilhado por login, renovação e logout.
+export const SESSION_COOKIE = 'session'
+
+const SECOND = 1
+const MINUTE = 60
+const HOUR = 60 * MINUTE
+const DAY = 24 * HOUR
+
+// [SESSION] Aceita durações curtas como "24h", "30d", "90m"; valor inválido cai no padrão.
+function parseDurationSeconds(input: string | undefined, fallback: number): number {
+  if (!input) return fallback
+  const match = /^\s*(\d+)\s*([smhd])\s*$/.exec(input)
+  if (!match) return fallback
+  const value = Number(match[1])
+  const unit = match[2]
+  const multiplier = unit === 's' ? SECOND : unit === 'm' ? MINUTE : unit === 'h' ? HOUR : DAY
+  const seconds = value * multiplier
+  return Number.isSafeInteger(seconds) && seconds > 0 ? seconds : fallback
+}
+
+// Duração padrão (>= 24h), duração do dispositivo lembrado e limite absoluto da sessão.
+export const SESSION_TTL_SECONDS = parseDurationSeconds(process.env.SESSION_TTL, DAY)
+export const SESSION_REMEMBER_TTL_SECONDS = parseDurationSeconds(process.env.SESSION_REMEMBER_TTL, 30 * DAY)
+export const SESSION_MAX_TTL_SECONDS = parseDurationSeconds(process.env.SESSION_MAX_TTL, 180 * DAY)
+
+export function sessionTtlSeconds(remembered: boolean): number {
+  return remembered ? SESSION_REMEMBER_TTL_SECONDS : SESSION_TTL_SECONDS
+}
+
+// Atributos do cookie de sessão: inalterados pelo "lembrar-me", que afeta só o maxAge.
+export function sessionCookieOptions(maxAgeSeconds: number) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'Strict' as const,
+    maxAge: maxAgeSeconds,
+    path: '/',
+  }
+}
+
+export interface SessionState {
+  expired: boolean
+  renew: boolean
+  remembered: boolean
+  authTime: number
+  ttlSeconds: number
+}
+
+// [SESSION] Decide renovação deslizante (metade da duração) e expiração absoluta.
+export function resolveSessionState(
+  payload: Pick<JwtPayload, 'iat' | 'rmb' | 'authTime'>,
+  nowSeconds: number,
+): SessionState {
+  const remembered = payload.rmb === true
+  const ttlSeconds = sessionTtlSeconds(remembered)
+  const authTime = payload.authTime ?? payload.iat
+  const expired = nowSeconds - authTime >= SESSION_MAX_TTL_SECONDS
+  const renew = !expired && nowSeconds - payload.iat >= Math.floor(ttlSeconds / 2)
+  return { expired, renew, remembered, authTime, ttlSeconds }
+}
+
+export interface SignJwtOptions {
+  ttlSeconds?: number
+  remembered?: boolean
+  authTime?: number
+}
 
 // Hash de senha com bcrypt (custo 12 para boa segurança sem lentidão excessiva)
 export async function hashPassword(password: string): Promise<string> {
@@ -41,11 +106,18 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 
 // Emite JWT com tenant_id no payload
 // [TENANT] tenant_id obrigatório no token — garante que toda requisição carrega o contexto de tenant
-export async function signJwt(payload: Omit<JwtPayload, 'iat' | 'exp'>): Promise<string> {
-  return new SignJWT({ ...payload })
+export async function signJwt(
+  payload: Omit<JwtPayload, 'iat' | 'exp'>,
+  options: SignJwtOptions = {},
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000)
+  const remembered = options.remembered === true
+  const ttlSeconds = options.ttlSeconds ?? sessionTtlSeconds(remembered)
+  const authTime = options.authTime ?? now
+  return new SignJWT({ ...payload, rmb: remembered, authTime })
     .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime(JWT_TTL)
+    .setIssuedAt(now)
+    .setExpirationTime(now + ttlSeconds)
     .sign(JWT_SECRET)
 }
 

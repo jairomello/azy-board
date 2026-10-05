@@ -1,7 +1,7 @@
 import type { Context, Next } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { getCookie } from 'hono/cookie'
-import { isGlobalGroup, verifyJwt } from '../services/auth'
+import { getCookie, setCookie } from 'hono/cookie'
+import { isGlobalGroup, verifyJwt, signJwt, SESSION_COOKIE, sessionCookieOptions, resolveSessionState } from '../services/auth'
 import { hasGlobalGroup, hasMemberRole, hasKeyPermission, isValidApiKeyPermissionScope, parseApiKeyScope } from '../services/authorization'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
@@ -15,15 +15,25 @@ export async function authMiddleware(c: Context<HonoEnv>, next: Next) {
   let ctx: RequestContext | null = null
 
   // Tentar autenticação por JWT (cookie HttpOnly)
-  const token = getCookie(c, 'session')
+  const token = getCookie(c, SESSION_COOKIE)
   if (token) {
     try {
       const payload = await verifyJwt(token)
-      const persisted = await persistence.identity.findUser({
-        tenantId: payload.tenantId, actorUserId: payload.sub, actorKind: 'SYSTEM',
-      }, payload.sub)
-      if (persisted && isGlobalGroup(persisted.globalGroup)) {
-        ctx = { userId: persisted.id, tenantId: persisted.tenantId, email: persisted.email, globalGroup: persisted.globalGroup }
+      // [SESSION] Renovação deslizante para sessão humana; expiração absoluta força 401.
+      const session = resolveSessionState(payload, Math.floor(Date.now() / 1000))
+      if (!session.expired) {
+        const persisted = await persistence.identity.findUser({
+          tenantId: payload.tenantId, actorUserId: payload.sub, actorKind: 'SYSTEM',
+        }, payload.sub)
+        if (persisted && isGlobalGroup(persisted.globalGroup)) {
+          ctx = { userId: persisted.id, tenantId: persisted.tenantId, email: persisted.email, globalGroup: persisted.globalGroup }
+          if (session.renew) {
+            const renewed = await signJwt({
+              sub: persisted.id, tenantId: persisted.tenantId, email: persisted.email, role: 'user', globalGroup: persisted.globalGroup,
+            }, { ttlSeconds: session.ttlSeconds, remembered: session.remembered, authTime: session.authTime })
+            setCookie(c, SESSION_COOKIE, renewed, sessionCookieOptions(session.ttlSeconds))
+          }
+        }
       }
     } catch {
       // Token inválido ou expirado
