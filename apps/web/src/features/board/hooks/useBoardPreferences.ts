@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BoardFilterState } from '../../../components/BoardFilters'
 import { DEFAULT_FILTERS } from '../model/types'
+import { hasViewSessionOverlay } from '../../../lib/assistantViewStore'
 
 // Mescla o estado persistido com os defaults. Preserva valores escalares como o
 // sentinela de valor vazio (EMPTY_FILTER_VALUE); apenas normaliza listas e remove
@@ -49,6 +50,9 @@ export function useBoardPreferences(projectId: string | undefined) {
 
   useEffect(() => {
     if (!projectId || filtersProjectIdRef.current !== projectId) return
+    // Card T17 — com overlay de sessão ativo (comando da conversa), o estado
+    // aplicado vive só na aba e não é gravado na preferência durável.
+    if (hasViewSessionOverlay(projectId)) return
     try { localStorage.setItem(`board-filters:${projectId}`, JSON.stringify(filters)) } catch {}
   }, [filters, projectId])
 

@@ -115,5 +115,6 @@
   "credentialUnavailable": "Credencial no disponible",
   "scopeAll": "Resultado actual: todas las tarjetas (sin filtro) — la acción vale para todas",
   "scopeAllCount": "{{count}} tarjetas en el resultado",
-  "scopeFiltered": "Resultado actual: {{count}} tarjetas mostradas (con filtro)"
+  "scopeFiltered": "Resultado actual: {{count}} tarjetas mostradas (con filtro)",
+  "viewCommandFailed": "No se pudo aplicar el comando de vista en esta pestaña."
 }

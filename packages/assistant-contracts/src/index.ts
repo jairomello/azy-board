@@ -178,3 +178,22 @@ export interface ScreenOverview {
   filters: Record<string, AssistantScreenFilterValue>
   columns: ScreenOverviewColumn[]
 }
+
+// Card T17 — comando de interface emitido pela conversa e aplicado pela aba que
+// iniciou o pedido. Filtros e IDs são referências a validar; nunca permissões.
+export const VIEW_COMMAND_SCHEMA_VERSION = 1
+
+export type AssistantViewCommandType = 'set_filters' | 'clear_filters' | 'set_view' | 'open_item' | 'restore_previous_view'
+
+export interface AssistantViewCommand {
+  schemaVersion: typeof VIEW_COMMAND_SCHEMA_VERSION
+  // Identificador opaco do comando (dedup de reconexão/replay).
+  commandId: string
+  type: AssistantViewCommandType
+  // Presente em set_filters: filtros normalizados (ausência = operador IS_EMPTY).
+  filters?: Record<string, AssistantScreenFilterValue>
+  // Presente em set_view.
+  view?: { mode: 'kanban' | 'tree'; activeModuleId: string | null }
+  // Presente em open_item.
+  itemId?: string
+}

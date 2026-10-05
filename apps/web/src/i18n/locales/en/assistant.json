@@ -115,5 +115,6 @@
   "credentialUnavailable": "Credential unavailable",
   "scopeAll": "Current result: all cards (no filter) — the action applies to everyone",
   "scopeAllCount": "{{count}} cards in the result",
-  "scopeFiltered": "Current result: {{count}} cards displayed (filtered)"
+  "scopeFiltered": "Current result: {{count}} cards displayed (filtered)",
+  "viewCommandFailed": "Could not apply the view command in this tab."
 }

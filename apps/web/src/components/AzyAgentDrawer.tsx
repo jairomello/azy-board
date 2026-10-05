@@ -13,7 +13,9 @@ import { api, ApiError } from "../lib/api";
 import { useAssistant } from "../contexts/AssistantContext";
 import { MarkdownText } from "./MarkdownText";
 import { notifyAssistantMutation } from "../lib/dataEvents";
+import { receiveViewCommand } from "../lib/assistantViewStore";
 import { MAX_MESSAGE_BYTES } from '@azy-board/assistant-contracts';
+import type { AssistantViewCommand } from '@azy-board/assistant-contracts';
 
 interface Conversation {
   id: string;
@@ -149,6 +151,7 @@ export function AzyAgentDrawer() {
         question?: string;
         tool?: string;
         error?: string;
+        command?: AssistantViewCommand;
       } = {};
       try {
         data = JSON.parse(event.data) as typeof data;
@@ -207,6 +210,19 @@ export function AzyAgentDrawer() {
           .get<Run>(`/assistant/runs/${runId}`)
           .then(setRun)
           .catch(() => {});
+      // Card T17 — comando de interface aplicado nesta aba.
+      if (event.type === "TOOL_COMPLETED" && data.command && projectId) {
+        const applied = receiveViewCommand(projectId, data.command);
+        if (!applied)
+          setMessages((current) => [
+            ...current,
+            {
+              id: `viewcmd-${data.command!.commandId}`,
+              role: "SYSTEM",
+              content: t("viewCommandFailed"),
+            },
+          ]);
+      }
       if (event.type === "RUN_FAILED" || event.type === "RUN_EXPIRED")
         setError(friendlyRunError(data.error, t));
       if (event.type === "RUN_COMPLETED" && conversation)
@@ -235,7 +251,7 @@ export function AzyAgentDrawer() {
         .catch(() => setError(t("runFailed")));
     };
     return () => source.close();
-  }, [conversation, reconcileTerminalRun, run?.id, run?.status, run?.cursor, t]);
+  }, [conversation, reconcileTerminalRun, run?.id, run?.status, run?.cursor, t, projectId]);
   useEffect(() => {
     const element = messagesRef.current;
     if (element) element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });

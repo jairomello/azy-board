@@ -38,6 +38,7 @@ import type { AncestorNode } from '@azy-board/ui-contracts'
 import type { Tag } from '../../components/TagSelector'
 import { useBoardPreferences } from './hooks/useBoardPreferences'
 import { useBoardData } from './hooks/useBoardData'
+import { subscribeViewSession, syncCurrentViewSession } from '../../lib/assistantViewStore'
 import { BoardLanes } from './components/BoardLanes'
 import { BoardModals } from './components/BoardModals'
 import { useBoardInteraction } from './hooks/useBoardInteraction'
@@ -138,6 +139,24 @@ export default function BoardPage() {
       .catch(() => { if (!cancelled) setItemModalData(null) })
     return () => { cancelled = true }
   }, [itemModalId, projectId])
+
+  // Card T17 — aplica comandos de interface emitidos pela conversa nesta aba.
+  useEffect(() => {
+    if (!projectId) return
+    return subscribeViewSession((session, pid) => {
+      if (pid !== projectId) return
+      setFilters(session.filters)
+      setView(session.mode)
+      setActiveModuleId(session.activeModuleId)
+      setItemModalId(session.openItemId)
+    })
+  }, [projectId, setFilters])
+
+  // Card T17 — publica o estado corrente como baseline do histórico da visão.
+  useEffect(() => {
+    if (!projectId) return
+    syncCurrentViewSession(projectId, { filters, mode: view, activeModuleId, openItemId: itemModalId })
+  }, [projectId, filters, view, activeModuleId, itemModalId])
 
   // Ref para preservar o over ID mais recente durante o drag (evita perder o alvo no momento do drop)
   const lastOverRef = useRef<string | null>(null)
