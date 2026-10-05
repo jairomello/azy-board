@@ -44,11 +44,17 @@ const filterProperties: Record<string, unknown> = Object.fromEntries([
   ['tag', nullable({ type: 'array', items: { type: 'string' } })],
 ])
 
-export const UI_TOOL_NAMES = ['set_board_filters', 'clear_board_filters', 'set_board_view', 'open_item', 'restore_previous_view'] as const
+export const UI_TOOL_NAMES = ['set_board_filters', 'clear_board_filters', 'set_board_view', 'open_item', 'reveal_item', 'explain_item_visibility', 'restore_previous_view'] as const
 const UI_TOOL_SET: ReadonlySet<string> = new Set(UI_TOOL_NAMES)
 
 export function isUiTool(name: string): boolean {
   return UI_TOOL_SET.has(name)
+}
+
+// Card T18 — ferramentas que exigem resolução server-side (explicação/revelação)
+// e não são comandos de visão puros.
+export function isVisibilityTool(name: string): boolean {
+  return name === 'explain_item_visibility' || name === 'reveal_item'
 }
 
 export function getUiToolModels(): ModelTool[] {
@@ -61,6 +67,13 @@ export function getUiToolModels(): ModelTool[] {
     }),
     strictTool('open_item', 'Abre a modal do card indicado no projeto atual.', {
       itemId: { type: 'string', description: 'ID do item a abrir.' },
+    }),
+    strictTool('reveal_item', 'Mostra um card que não aparece no board, neutralizando os motivos responsáveis e preservando a visão anterior. Use após explain_item_visibility.', {
+      itemId: { type: 'string', description: 'ID do item a revelar.' },
+    }),
+    strictTool('explain_item_visibility', 'Explica por que um card não aparece no board atual (filtros, módulo, grupo recolhido, regra de subtarefas, grupo vazio ou arquivamento). Somente leitura.', {
+      itemId: nullable({ type: 'string', description: 'ID do item (opcional se sequenceCode informado).' }),
+      sequenceCode: nullable({ type: 'string', description: 'Código amigável do item (ex.: T42).' }),
     }),
     strictTool('restore_previous_view', 'Volta à visão anterior do board (filtros, modo, módulo e item aberto).', {}),
   ]

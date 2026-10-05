@@ -36,6 +36,7 @@ import { BoardCommandBar } from '../../components/BoardCommandBar'
 import { BoardContextHeader, BoardStatusRail } from '../../components/BoardContext'
 import type { ItemType } from '@azy-board/domain'
 import type { AncestorNode } from '@azy-board/ui-contracts'
+import { populationFilterReasons, type ItemVisibilityInput, type VisibilityFilterState } from '@azy-board/ui-contracts'
 import type { Tag } from '../../components/TagSelector'
 import { useBoardPreferences } from './hooks/useBoardPreferences'
 import { useBoardData } from './hooks/useBoardData'
@@ -142,6 +143,7 @@ export default function BoardPage() {
   }, [itemModalId, projectId])
 
   // Card T17 — aplica comandos de interface emitidos pela conversa nesta aba.
+  // Card T18 — reveal_item expande os grupos responsáveis por esconder o item.
   useEffect(() => {
     if (!projectId) return
     return subscribeViewSession((session, pid) => {
@@ -150,8 +152,14 @@ export default function BoardPage() {
       setView(session.mode)
       setActiveModuleId(session.activeModuleId)
       setItemModalId(session.openItemId)
+      if (session.expandGroupIds?.length) {
+        const expand = new Set(session.expandGroupIds)
+        setCollapsedEpics(previous => new Set([...previous].filter(id => !expand.has(id))))
+        setCollapsedModules(previous => new Set([...previous].filter(id => !expand.has(id))))
+        setCollapsedStories(previous => new Set([...previous].filter(id => !expand.has(id))))
+      }
     })
-  }, [projectId, setFilters])
+  }, [projectId, setFilters, setCollapsedEpics, setCollapsedModules, setCollapsedStories])
 
   // Card T17 — publica o estado corrente como baseline do histórico da visão.
   useEffect(() => {
@@ -250,39 +258,26 @@ export default function BoardPage() {
       )
     }
 
-    if (filters.moduleId) {
-      const epicIds = new Set(epics.filter(e => e.moduleId === filters.moduleId).map(e => e.id))
-      result = result.filter(i => {
-        const epicId = getEpicIdFromPath(i.ancestryPath)
-        return epicId ? epicIds.has(epicId) : false
-      })
+    // Card T18 — filtros de população compartilhados com o avaliador de visibilidade
+    // (fonte única): os motivos de exclusão usam a mesma lógica do board.
+    const epicModuleById = new Map(epics.map(e => [e.id, e.moduleId ?? null]))
+    const visibilityFilters: VisibilityFilterState = {
+      moduleId: filters.moduleId, sprintId: filters.sprintId, assigneeId: filters.assigneeId,
+      squadId: filters.squadId, versionId: filters.versionId, priority: filters.priority,
+      status: filters.status, authorId: filters.authorId, costCenterId: filters.costCenterId,
+      types: filters.types, tagIds: filters.tagIds,
     }
-    if (filters.assigneeId) {
-      result = result.filter(i => matchesMemberFilter(i.assigneeId, i.assignee?.id, filters.assigneeId))
-    }
-    if (filters.squadId) {
-      const squadUsers = squadMembersMap.get(filters.squadId)
-      result = result.filter(i => {
-        const uid = i.assigneeId ?? i.assignee?.id
-        return uid != null && squadUsers?.has(uid)
-      })
-    }
-    if (filters.types.length > 0) {
-      result = result.filter(i => filters.types.includes(i.type as ItemType))
-    }
-    if (filters.tagIds.length > 0) {
-      result = result.filter(i =>
-        (i.itemTags ?? i.taskTags ?? []).some((it: { tag: Tag }) => filters.tagIds.includes(it.tag.id))
-      )
-    }
-    if (filters.sprintId) {
-      result = result.filter(i => matchesSprintFilter(i.itemSprints, filters.sprintId))
-    }
-    if (filters.versionId) result = result.filter(i => matchesScalarFilter(i.versionId, filters.versionId))
-    if (filters.priority) result = result.filter(i => i.priority === filters.priority)
-    if (filters.status) result = result.filter(i => i.status === filters.status)
-    if (filters.authorId) result = result.filter(i => matchesMemberFilter(i.authorId, i.author?.id, filters.authorId))
-    if (filters.costCenterId) result = result.filter(i => matchesScalarFilter(i.costCenterId, filters.costCenterId))
+    const toVisibilityInput = (item: ItemData): ItemVisibilityInput => ({
+      type: item.type, status: item.status, parentId: item.parentId ?? null,
+      moduleId: item.moduleId ?? null, versionId: item.versionId ?? null,
+      assigneeId: item.assigneeId ?? null, assigneeUserId: item.assignee?.id ?? null,
+      authorId: item.authorId ?? null, authorUserId: item.author?.id ?? null,
+      costCenterId: item.costCenterId ?? null, priority: item.priority,
+      itemSprints: item.itemSprints, tagIds: (item.itemTags ?? item.taskTags ?? []).map(it => it.tag.id),
+      epicModuleId: epicModuleById.get(getEpicIdFromPath(item.ancestryPath) ?? '') ?? null,
+      squadMemberIds: filters.squadId ? [...(squadMembersMap.get(filters.squadId) ?? [])] : undefined,
+    })
+    result = result.filter(i => populationFilterReasons(toVisibilityInput(i), visibilityFilters).length === 0)
 
     // Histórias folha (sem filhos) — aparecem como cards arrastáveis quando "Histórias no board" ativo
     if (!isSimpleBoard && filters.storyDisplay === 'cards' && columns.length > 0) {
@@ -868,6 +863,13 @@ export default function BoardPage() {
         priority: filters.priority,
         tagIds: filters.tagIds.length ? filters.tagIds : null,
         types: filters.types.length ? filters.types : null,
+      },
+      presentation: {
+        showSubtasks: filters.showSubtasks,
+        storyDisplay: filters.storyDisplay,
+        moduleViewMode: filters.moduleViewMode,
+        hideEmptyEpics: filters.hideEmptyEpics,
+        hideEmptyStories: filters.hideEmptyStories,
       },
       actionCardIds: actionCards.map(item => item.id),
       revisions,

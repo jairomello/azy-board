@@ -7,6 +7,7 @@ import { AssistantHarness, canonicalArguments, operationHash } from './assistant
 import { isCancelRequested } from './agentJobQueue'
 import { createWorkerToolApi, loadRunContext } from './workerContext'
 import { executeSharedTool } from './assistantTools'
+import { explainItemVisibility } from './itemVisibility'
 import { FallbackModelProvider, type FallbackModelCandidate } from './fallbackModelProvider'
 import { logger } from './logger'
 
@@ -134,6 +135,8 @@ export async function executeAssistantRun(runId: string, tenantId: string): Prom
     authorize: authorizeAssistantTool,
     // Card T16 — prévia com a população real do conjunto capturado.
     populationResolver: updateItemsPopulation,
+    // Card T18 — explicação/revelação de visibilidade resolvida no servidor.
+    explainItemVisibility,
     assertAvailable: async () => { if (!await available(tenantId)) throw new Error('ASSISTANT_UNAVAILABLE') },
     checkCancel: async currentRunId => await isCancelRequested(currentRunId, tenantId),
   })

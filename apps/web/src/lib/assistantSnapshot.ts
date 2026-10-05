@@ -7,6 +7,7 @@
 import type {
   AssistantScreen,
   AssistantScreenFilterValue,
+  AssistantScreenPresentation,
   AssistantScreenSnapshot,
 } from '@azy-board/assistant-contracts'
 
@@ -52,6 +53,8 @@ export interface SnapshotCaptureInput {
   activeModuleId: string | null
   collapsedGroupIds: string[]
   filters: ScreenFilterInput
+  // Card T18 — estado de apresentação (não é filtro de população; não afeta o scope).
+  presentation?: AssistantScreenPresentation
   // IDs reais de cards de ação (TASK/BUG) representados no resultado.
   actionCardIds: string[]
   // Revisões (updatedAt) dos cards; ausente não bloqueia (verificação por item).
@@ -85,7 +88,7 @@ export function buildScreenSnapshot(input: SnapshotCaptureInput): AssistantScree
     screen: input.screen,
     projectId: input.projectId,
     projectName: input.projectName,
-    view: { mode: input.viewMode, activeModuleId: input.activeModuleId, collapsedGroupIds: input.collapsedGroupIds },
+    view: { mode: input.viewMode, activeModuleId: input.activeModuleId, collapsedGroupIds: input.collapsedGroupIds, ...(input.presentation ? { presentation: input.presentation } : {}) },
     filters,
     scope: { mode: filtered ? 'FILTERED' : 'ALL' },
     results: {

@@ -116,5 +116,16 @@
   "scopeAll": "Current result: all cards (no filter) — the action applies to everyone",
   "scopeAllCount": "{{count}} cards in the result",
   "scopeFiltered": "Current result: {{count}} cards displayed (filtered)",
-  "viewCommandFailed": "Could not apply the view command in this tab."
+  "viewCommandFailed": "Could not apply the view command in this tab.",
+  "visibilityReasons": {
+    "ACCESS_DENIED": "You do not have access to this card.",
+    "ARCHIVED": "The card is archived.",
+    "FILTER": "The {{field}} filter excludes this card.",
+    "MODULE_TAB": "The card belongs to another module, outside the active tab.",
+    "SUBTASK_HIDDEN": "The current view hides subtasks.",
+    "EMPTY_GROUP_HIDDEN": "The card's group is hidden because it is empty after the filters.",
+    "COLLAPSED_GROUP": "The card is inside a collapsed group.",
+    "UNKNOWN": "Could not determine the reason from the current state."
+  },
+  "revealOffer": "Want me to show this card? The previous view can be restored."
 }

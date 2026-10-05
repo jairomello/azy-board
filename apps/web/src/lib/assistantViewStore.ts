@@ -5,7 +5,7 @@
 // `localStorage`, para não vazar para outras abas. O BoardScreen publica o estado
 // corrente (baseline) e assina as mudanças aplicadas.
 import { VIEW_COMMAND_SCHEMA_VERSION } from '@azy-board/assistant-contracts'
-import type { AssistantScreenFilterValue, AssistantViewCommand } from '@azy-board/assistant-contracts'
+import type { AssistantScreenFilterValue, AssistantViewCommand, AssistantViewRevealPlan } from '@azy-board/assistant-contracts'
 import type { BoardFilterState } from '../components/BoardFilters'
 import { DEFAULT_FILTERS, EMPTY_FILTER_VALUE } from '../features/board/model/types'
 
@@ -14,6 +14,8 @@ export interface AssistantViewSession {
   mode: 'kanban' | 'tree'
   activeModuleId: string | null
   openItemId: string | null
+  // Card T18 — grupos a expandir ao revelar um item (checkpoint preserva a visão).
+  expandGroupIds?: string[]
 }
 
 const HISTORY_LIMIT = 20
@@ -113,7 +115,28 @@ function applyToSession(current: AssistantViewSession, command: AssistantViewCom
   if (command.type === 'clear_filters') return { ...current, filters: DEFAULT_FILTERS }
   if (command.type === 'set_view' && command.view) return { ...current, mode: command.view.mode, activeModuleId: command.view.activeModuleId }
   if (command.type === 'open_item' && command.itemId) return { ...current, openItemId: command.itemId }
+  if (command.type === 'reveal_item' && command.reveal) return applyReveal(current, command.reveal)
   return current
+}
+
+// Card T18 — neutraliza apenas os motivos responsáveis, preservando o restante
+// da visão. Campos de filtro voltam ao neutro; apresentação e aba são ajustadas.
+function applyReveal(current: AssistantViewSession, plan: AssistantViewRevealPlan): AssistantViewSession {
+  const next: AssistantViewSession = { ...current, filters: { ...current.filters } }
+  for (const field of plan.clearFilterFields ?? []) {
+    const key = field as keyof BoardFilterState
+    if (!(key in next.filters)) continue
+    const value = next.filters[key]
+    ;(next.filters as unknown as Record<string, unknown>)[key] = Array.isArray(value) ? [] : typeof value === 'boolean' ? false : ''
+  }
+  for (const [field, value] of Object.entries(plan.setFilterFields ?? {})) {
+    const key = field as keyof BoardFilterState
+    if (key in next.filters) (next.filters as unknown as Record<string, unknown>)[key] = value
+  }
+  if (plan.activeModuleId !== undefined) next.activeModuleId = plan.activeModuleId
+  if (plan.expandGroupIds?.length) next.expandGroupIds = plan.expandGroupIds
+  if (plan.itemId) next.openItemId = plan.itemId
+  return next
 }
 
 // Recebe o comando do evento do run; deduplica por commandId e aplica na aba.

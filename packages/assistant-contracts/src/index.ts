@@ -22,6 +22,16 @@ export type AssistantScreenFilterValue = string | string[] | boolean | null | { 
 
 export type AssistantScreenScopeMode = 'ALL' | 'FILTERED'
 
+// Card T18 — estado de apresentação publicado pela tela, necessário para
+// explicar regras da visão (não conta como filtro de população).
+export interface AssistantScreenPresentation {
+  showSubtasks: boolean
+  storyDisplay: 'lanes' | 'cards'
+  moduleViewMode: 'hierarchy' | 'tabs'
+  hideEmptyEpics: boolean
+  hideEmptyStories: boolean
+}
+
 // Fotografia do contexto da tela capturada no envio do pedido e fixada na
 // execução/aprovação. IDs são referências a validar; nunca permissões.
 export interface AssistantScreenSnapshot {
@@ -37,6 +47,9 @@ export interface AssistantScreenSnapshot {
     mode: 'kanban' | 'tree'
     activeModuleId: string | null
     collapsedGroupIds: string[]
+    // Card T18 — estado de apresentação para explicar regras da visão. Opcional:
+    // a ausência degrada a explicação, sem erro.
+    presentation?: AssistantScreenPresentation
   }
   filters: Record<string, AssistantScreenFilterValue>
   // ALL = nenhum filtro aplicado (sem lista de IDs; ação vale para todos).
@@ -183,7 +196,7 @@ export interface ScreenOverview {
 // iniciou o pedido. Filtros e IDs são referências a validar; nunca permissões.
 export const VIEW_COMMAND_SCHEMA_VERSION = 1
 
-export type AssistantViewCommandType = 'set_filters' | 'clear_filters' | 'set_view' | 'open_item' | 'restore_previous_view'
+export type AssistantViewCommandType = 'set_filters' | 'clear_filters' | 'set_view' | 'open_item' | 'reveal_item' | 'restore_previous_view'
 
 export interface AssistantViewCommand {
   schemaVersion: typeof VIEW_COMMAND_SCHEMA_VERSION
@@ -194,6 +207,22 @@ export interface AssistantViewCommand {
   filters?: Record<string, AssistantScreenFilterValue>
   // Presente em set_view.
   view?: { mode: 'kanban' | 'tree'; activeModuleId: string | null }
-  // Presente em open_item.
+  // Presente em open_item e reveal_item.
   itemId?: string
+  // Presente em reveal_item: plano de neutralização dos motivos de visibilidade.
+  reveal?: AssistantViewRevealPlan
+}
+
+// Card T18 — plano de revelação de um item escondido. O cliente aplica sobre o
+// estado vivo da aba, registra checkpoint e abre o item.
+export interface AssistantViewRevealPlan {
+  itemId: string
+  // Campos de filtro/população a voltar ao estado neutro.
+  clearFilterFields?: string[]
+  // Campos de apresentação/filtro a definir (ex.: hideEmptyEpics = false).
+  setFilterFields?: Record<string, string | boolean | string[]>
+  // Aba de módulo a ativar (motivo MODULE_TAB).
+  activeModuleId?: string | null
+  // Grupos a expandir (motivo COLLAPSED_GROUP).
+  expandGroupIds?: string[]
 }

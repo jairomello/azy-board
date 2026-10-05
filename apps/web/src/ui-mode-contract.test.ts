@@ -82,7 +82,9 @@ describe('contratos de UI dos modos de board', () => {
   test('filtro de centro combina com outros filtros nos dois modos do board', async () => {
     const board = await source('./features/board/BoardScreen.tsx')
     const lanes = await source('./features/board/components/BoardLanes.tsx')
-    contains(board, 'if (filters.costCenterId) result = result.filter')
+    // Card T18 — os cards usam o avaliador compartilhado; as histórias-folha seguem inline.
+    contains(board, 'populationFilterReasons')
+    contains(board, 'costCenterId: filters.costCenterId')
     contains(board, 'if (filters.costCenterId) leafStories = leafStories.filter')
     contains(board, 'filters.sprintId')
     contains(board, 'filters.tagIds')

@@ -116,5 +116,16 @@
   "scopeAll": "Resultado atual: todos os cards (sem filtro) — a ação vale para todos",
   "scopeAllCount": "{{count}} cards no resultado",
   "scopeFiltered": "Resultado atual: {{count}} cards exibidos (com filtro)",
-  "viewCommandFailed": "Não foi possível aplicar o comando de visualização nesta aba."
+  "viewCommandFailed": "Não foi possível aplicar o comando de visualização nesta aba.",
+  "visibilityReasons": {
+    "ACCESS_DENIED": "Você não tem acesso a este card.",
+    "ARCHIVED": "O card está arquivado.",
+    "FILTER": "O filtro {{field}} exclui este card.",
+    "MODULE_TAB": "O card pertence a outro módulo, fora da aba ativa.",
+    "SUBTASK_HIDDEN": "A visão atual esconde subtarefas.",
+    "EMPTY_GROUP_HIDDEN": "O grupo do card está oculto por estar vazio após os filtros.",
+    "COLLAPSED_GROUP": "O card está em um grupo recolhido.",
+    "UNKNOWN": "Não foi possível determinar o motivo com o estado atual."
+  },
+  "revealOffer": "Quer que eu mostre este card? A visão anterior pode ser restaurada."
 }

@@ -43,4 +43,24 @@ describe('contexto de tela do Azy Agent', () => {
     expect(drawer.includes('scopeChipLabels')).toBe(true)
     expect(drawer.includes('context: pageContext?.screenSnapshot ?? null')).toBe(true)
   })
+
+  test('explicação de visibilidade (Card T18)', async () => {
+    const contracts = await source('../../../packages/assistant-contracts/src/index.ts')
+    // Estado de apresentação no snapshot e comando de revelação.
+    expect(contracts.includes('AssistantScreenPresentation')).toBe(true)
+    expect(contracts.includes("'reveal_item'")).toBe(true)
+    expect(contracts.includes('AssistantViewRevealPlan')).toBe(true)
+
+    const snapshot = await source('./lib/assistantSnapshot.ts')
+    expect(snapshot.includes('presentation')).toBe(true)
+
+    const board = await source('./features/board/BoardScreen.tsx')
+    expect(board.includes('populationFilterReasons')).toBe(true)
+    expect(board.includes('presentation: {')).toBe(true)
+    expect(board.includes('expandGroupIds')).toBe(true)
+
+    const store = await source('./lib/assistantViewStore.ts')
+    expect(store.includes('reveal_item')).toBe(true)
+    expect(store.includes('applyReveal')).toBe(true)
+  })
 })
