@@ -179,7 +179,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
 
       {/* ── Conteúdo: clique abre modal (exceto na área do título) ── */}
       <div
-        className={`flex-1 py-2.5 space-y-2 min-w-0 pr-3 ${onOpenDetail ? 'cursor-pointer' : ''}`}
+        className={`kanban-card-content flex-1 flex flex-col py-2.5 gap-2 min-w-0 pr-3 ${onOpenDetail ? 'cursor-pointer' : ''}`}
         onClick={openDetail}
       >
         {/* Topo: ícone do item + código curto à esquerda, área reservada às ações à direita */}

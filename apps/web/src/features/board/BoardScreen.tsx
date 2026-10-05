@@ -27,6 +27,7 @@ import type { FullItemData } from '../../components/ItemModal'
 import type { EpicData } from '../../components/EpicModal'
 import type { StoryData } from '../../components/StoryModal'
 import { ActiveFilterChips, removeActiveBoardFilter, type ActiveFilterKey } from '../../components/ActiveFilterChips'
+import { CompactFilterSummary } from '../../components/CompactFilterSummary'
 import { useToast } from '../../components/Toast'
 import { TreeViewPage, type TreeActionContext } from '../../pages/TreeViewPage'
 import { useAuth } from '../../contexts/AuthContext'
@@ -1020,24 +1021,38 @@ export default function BoardPage() {
           }}
           onOpenArchived={openArchivedModal}
           onCreate={openCreation}
+          progress={{ completed: sprintCompleted, total: sprintItems.length }}
+          compactFilters={density === 'compact' ? (
+            <CompactFilterSummary
+              filters={filters}
+              catalogs={{ modules, sprints, versions: projectVersions, squads: projectSquads, members, tags: projectTags, costCenters: projectCostCenters }}
+              labels={activeFilterLabels}
+              visualContext={{ isSimpleBoard, view }}
+              onRemove={(key: ActiveFilterKey, value) => setFilters(previous => removeActiveBoardFilter(previous, key, value))}
+            />
+          ) : undefined}
         />
       )}
       statusRail={<BoardStatusRail syncState={syncState} visibleItems={allDisplayed.length} />}
       contentClassName="overflow-hidden"
     >
-      <div className="h-full min-h-0 flex flex-col gap-3">
-        <ActiveFilterChips
-          filters={filters}
-          catalogs={{ modules, sprints, versions: projectVersions, squads: projectSquads, members, tags: projectTags, costCenters: projectCostCenters }}
-          labels={activeFilterLabels}
-          visualContext={{ isSimpleBoard, view }}
-          onRemove={(key: ActiveFilterKey, value) => setFilters(previous => removeActiveBoardFilter(previous, key, value))}
-        />
-        <BoardContextHeader
-          sprintName={activeSprint?.name}
-          completed={sprintCompleted}
-          total={sprintItems.length}
-        />
+      <div className={`h-full min-h-0 flex flex-col ${density === 'compact' ? 'gap-2' : 'gap-3'}`}>
+        {density !== 'compact' && (
+          <ActiveFilterChips
+            filters={filters}
+            catalogs={{ modules, sprints, versions: projectVersions, squads: projectSquads, members, tags: projectTags, costCenters: projectCostCenters }}
+            labels={activeFilterLabels}
+            visualContext={{ isSimpleBoard, view }}
+            onRemove={(key: ActiveFilterKey, value) => setFilters(previous => removeActiveBoardFilter(previous, key, value))}
+          />
+        )}
+        {density !== 'compact' && (
+          <BoardContextHeader
+            sprintName={activeSprint?.name}
+            completed={sprintCompleted}
+            total={sprintItems.length}
+          />
+        )}
         <div className={`min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-border/80 bg-canvas ${density === 'compact' ? 'density-compact' : ''}`}>
         {view === 'tree' && projectId && (
            <TreeViewPage

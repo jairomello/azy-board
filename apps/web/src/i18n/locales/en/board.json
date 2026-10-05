@@ -255,5 +255,6 @@
   "properties": "Properties",
   "planning": "Planning",
   "information": "Information",
-  "saveChanges": "Save changes"
+  "saveChanges": "Save changes",
+  "filtersSummary": "Filters ({{count}})"
 }

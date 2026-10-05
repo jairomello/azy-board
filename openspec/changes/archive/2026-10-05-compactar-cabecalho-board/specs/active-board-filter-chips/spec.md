@@ -1,7 +1,5 @@
-## Purpose
+## MODIFIED Requirements
 
-Definir a visualização e a remoção individual dos filtros ativos no Board.
-## Requirements
 ### Requirement: Exibir filtros ativos
 O Board SHALL exibir os filtros ativos que alteram a visualização de forma legível e removível individualmente. No layout de cabeçalho completo, SHALL exibir uma linha de tags compactas entre a barra de controles e o conteúdo do Board. No modo de cabeçalho compacto, SHALL resumir os filtros ativos em um controle na barra de controles que, ao ser acionado, apresenta a lista completa com a mesma remoção individual.
 

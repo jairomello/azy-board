@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Archive,
@@ -13,6 +13,7 @@ import {
   Package,
   SlidersHorizontal,
   Plus,
+  Target,
 } from 'lucide-react'
 import type { BoardMode, ItemType } from '@azy-board/domain'
 import type { Tag } from './TagSelector'
@@ -42,6 +43,9 @@ interface Props {
   onCollapseAll: () => void
   onOpenArchived: () => void
   onCreate: (type: ItemType | 'MODULE') => void
+  // Card T33 — no modo compacto: resumo de filtros e indicador fino de progresso.
+  compactFilters?: ReactNode
+  progress?: { completed: number; total: number }
 }
 
 export function BoardCommandBar({
@@ -63,6 +67,8 @@ export function BoardCommandBar({
   onCollapseAll,
   onOpenArchived,
   onCreate,
+  compactFilters,
+  progress,
 }: Props) {
   const { t } = useTranslation('board')
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -106,7 +112,7 @@ export function BoardCommandBar({
   const controlClass = 'h-9 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-foreground hover:bg-muted transition-colors'
 
   return (
-    <div className="h-[54px] px-2.5 flex items-center gap-2 overflow-visible">
+    <div className={`${density === 'compact' ? 'min-h-10 py-1' : 'h-[54px]'} px-2.5 flex items-center gap-2 overflow-visible`}>
         <div className="flex items-center rounded-lg bg-muted p-1 flex-shrink-0" aria-label={t('display')}>
         <button
           onClick={() => onViewChange('kanban')}
@@ -195,6 +201,8 @@ export function BoardCommandBar({
          )}
        </div>
 
+       {compactFilters}
+
        {view === 'kanban' && (
          <div ref={optionsRef} className="relative flex-shrink-0">
            <button
@@ -252,6 +260,13 @@ export function BoardCommandBar({
       )}
 
       <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+        {density === 'compact' && progress && progress.total > 0 && (
+          <span className="hidden md:inline-flex items-center gap-2 text-[11px] text-muted-foreground" title={t('generalProgress')}>
+            <Target className="w-3.5 h-3.5 text-status-done" />
+            <span className="tabular-nums font-semibold text-foreground">{Math.round((progress.completed / progress.total) * 100)}%</span>
+            <span className="tabular-nums">{progress.completed}/{progress.total}</span>
+          </span>
+        )}
         <button
           onClick={() => onDensityChange(density === 'comfortable' ? 'compact' : 'comfortable')}
            title={`${t('density')}: ${density === 'comfortable' ? t('comfortable') : t('compact')}`}

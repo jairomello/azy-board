@@ -255,5 +255,6 @@
   "properties": "Propiedades",
   "planning": "Planificación",
   "information": "Información",
-  "saveChanges": "Guardar cambios"
+  "saveChanges": "Guardar cambios",
+  "filtersSummary": "Filtros ({{count}})"
 }
