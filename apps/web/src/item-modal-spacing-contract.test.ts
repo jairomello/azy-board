@@ -34,8 +34,8 @@ describe('contrato estrutural do layout da ItemModal', () => {
     expect(header.includes('min-w-0 flex-1 items-start gap-2')).toBe(true)
     // O InlineEdit não fixa mais o tamanho da fonte: herda o h2 (text-base sm:text-lg).
     expect(inline.includes('text-sm')).toBe(false)
-    // O card do Kanban mantém o tamanho compacto explicitamente.
-    expect(card.includes('className="text-sm"')).toBe(true)
+    // O card do Kanban mantém o tamanho compacto explicitamente (com peso semibold do T32).
+    expect(card.includes('className="text-sm font-semibold"')).toBe(true)
   })
 
   test('preserva controles, payload e edição rica do item', async () => {
