@@ -11,8 +11,18 @@ describe('contrato da densidade compacta do Board (card T33)', () => {
     const css = await source('./styles/globals.css')
     const card = await source('./components/KanbanCard.tsx')
     expect(css.includes('.density-compact .kanban-card-content')).toBe(true)
-    expect(css.includes('gap: 0.3rem')).toBe(true)
+    expect(css.includes('gap: 0.25rem')).toBe(true)
     expect(card.includes('kanban-card-content')).toBe(true)
+  })
+
+  test('o compacto oculta o breadcrumb e limita o título a uma linha', async () => {
+    const css = await source('./styles/globals.css')
+    const card = await source('./components/KanbanCard.tsx')
+    expect(css.includes('.density-compact .kanban-card-breadcrumb')).toBe(true)
+    expect(css.includes('.density-compact .kanban-card-title p')).toBe(true)
+    expect(card.includes('kanban-card-breadcrumb')).toBe(true)
+    expect(card.includes('kanban-card-title')).toBe(true)
+    expect(card.includes('title={card.title}')).toBe(true)
   })
 
   test('a barra de controles compacta o topo e expõe progresso/resumo', async () => {

@@ -241,7 +241,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
         {ancestry.length > 0 && (
           <div
             ref={breadcrumbRef}
-            className="text-xs text-muted-foreground select-none min-w-0 truncate"
+            className="kanban-card-breadcrumb text-xs text-muted-foreground select-none min-w-0 truncate"
             onMouseEnter={handleBreadcrumbEnter}
             onMouseLeave={() => setBreadcrumbOpen(false)}
           >
@@ -266,6 +266,8 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
 
         {/* Título em destaque — stopPropagation para NÃO abrir modal ao clicar; duplo clique = editar */}
         <div
+          className="kanban-card-title"
+          title={card.title}
           onClick={e => { e.stopPropagation(); scheduleOpenDetail() }}
           onDoubleClick={e => { e.stopPropagation(); cancelScheduledOpen() }}
         >
