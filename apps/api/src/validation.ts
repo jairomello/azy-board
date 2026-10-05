@@ -232,6 +232,14 @@ export const assistantScreenSnapshotSchema = z.object({
     mode: z.enum(['kanban', 'tree']),
     activeModuleId: screenIdSchema.nullable(),
     collapsedGroupIds: z.array(screenIdSchema).max(500),
+    // Card T18 — estado de apresentação (opcional; ausência degrada a explicação).
+    presentation: z.object({
+      showSubtasks: z.boolean(),
+      storyDisplay: z.enum(['lanes', 'cards']),
+      moduleViewMode: z.enum(['hierarchy', 'tabs']),
+      hideEmptyEpics: z.boolean(),
+      hideEmptyStories: z.boolean(),
+    }).strict().optional(),
   }).strict(),
   filters: z.record(z.string().max(64), screenFilterValueSchema),
   scope: z.object({ mode: z.enum(['ALL', 'FILTERED']) }).strict(),
