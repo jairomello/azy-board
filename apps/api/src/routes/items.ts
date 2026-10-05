@@ -6,7 +6,8 @@ import { broadcast } from '../services/websocket'
 import { addTreeProgress, type TreeProgressNode } from '../services/treeProgress'
 import type { RequestContext } from '@azy-board/api-contracts'
 import type { ActivityActorType, ActivitySource, ItemType } from '@azy-board/domain'
-import { parseWorkDuration } from '@azy-board/ui-contracts'
+import { DEFAULT_ITEM_ICON, parseWorkDuration } from '@azy-board/ui-contracts'
+import { isWorkCard, resolveActiveSprint, resolveActiveVersion } from '../services/creationDefaults'
 import { PROJECTION_FIELDS } from '@azy-board/tool-registry'
 import { nextSequenceCode as computeNextSequenceCode } from '../utils/sequenceCode'
 import { getIdempotent, saveIdempotent } from '../services/idempotency'
@@ -527,11 +528,27 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   if (body.costCenterId && !costCenter) return c.json({ error: 'Centro de custo não encontrado neste projeto' }, 400)
   if (body.assigneeId && !assignee) return c.json({ error: 'Responsável não é membro deste projeto' }, 400)
 
-  const sprint = body.sprintId
-    ? await persistence.planning.getSprint(projectContext, projectId, body.sprintId)
-    : null
-  if (body.sprintId && !sprint) return c.json({ error: 'Sprint não encontrada neste projeto' }, 400)
-  if (sprint?.status === 'CLOSED') return c.json({ error: 'Não é possível associar itens a uma sprint fechada' }, 409)
+  // Card T35 — defaults determinísticos na criação (apenas cards TASK/BUG):
+  // sprint vigente e versão vigente quando o campo é omitido; ícone default.
+  const workCard = isWorkCard(type)
+  let effectiveSprintId: string | null = body.sprintId ?? null
+  if (body.sprintId === undefined && workCard) {
+    // [TENANT] sprint vigente resolvida no projeto do tenant autenticado.
+    effectiveSprintId = (await resolveActiveSprint(projectContext, projectId))?.id ?? null
+  }
+  if (effectiveSprintId) {
+    const sprint = await persistence.planning.getSprint(projectContext, projectId, effectiveSprintId)
+    if (!sprint) return c.json({ error: 'Sprint não encontrada neste projeto' }, 400)
+    if (sprint.status === 'CLOSED') return c.json({ error: 'Não é possível associar itens a uma sprint fechada' }, 409)
+  }
+
+  let effectiveVersionId: string | null = body.versionId ?? null
+  if (body.versionId === undefined && workCard) {
+    // [TENANT] versão vigente (próximo lançamento) resolvida no projeto do tenant.
+    effectiveVersionId = (await resolveActiveVersion(projectContext, projectId))?.id ?? null
+  }
+
+  const effectiveIcon = body.icon === undefined ? (workCard ? DEFAULT_ITEM_ICON : null) : body.icon
 
   // Para TASK/BUG sem coluna: buscar primeira coluna do projeto
   let columnId = body.columnId ?? null
@@ -593,16 +610,16 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
       points: body.points ?? null,
       assigneeId: body.assigneeId ?? null,
       authorId: ctx.userId,
-      versionId: body.versionId ?? null,
+      versionId: effectiveVersionId,
       costCenterId,
       startDate: body.startDate ?? null,
       dueDate: body.dueDate ?? null,
-      icon: body.icon ?? null,
+      icon: effectiveIcon,
       color: body.color ?? null,
       position: 0,
     }, {
       tagIds,
-      ...(body.sprintId ? { sprintIds: [body.sprintId] } : {}),
+      ...(effectiveSprintId ? { sprintIds: [effectiveSprintId] } : {}),
       activity: `Card criado: ${normalizeAuditText(body.title)}`,
     })
     id = createdRecord.id

@@ -484,6 +484,10 @@ export interface BatchItemCreateOperation {
   priority?: Priority
   points?: number | null
   assignToCurrentUser?: boolean
+  // Card T35 — defaults determinísticos de criação (apenas TASK/BUG).
+  sprintIds?: string[]
+  versionId?: string | null
+  icon?: string | null
 }
 
 export interface BatchItemCreateResult {
@@ -501,6 +505,9 @@ export interface BatchItemCreateResult {
   points: number | null
   assigneeId: string | null
   status: 'NOT_STARTED'
+  versionId: string | null
+  icon: string | null
+  sprintIds: string[]
 }
 
 /**

@@ -383,10 +383,16 @@ function createBatchItemInsideTransaction(database: Database, context: MutationC
   const sequenceCode = nextBatchSequenceCode(database, context.tenantId, projectId, type)
   database.query(`INSERT INTO items
     (id, tenant_id, project_id, type, sequence_code, parent_id, module_id, column_id, ancestry_path, title, description,
-     status, priority, points, assignee_id, author_id, position, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NOT_STARTED', ?, ?, ?, ?, 0, ?, ?)`)
+     status, priority, points, assignee_id, author_id, version_id, icon, position, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NOT_STARTED', ?, ?, ?, ?, ?, ?, 0, ?, ?)`)
     .run(id, context.tenantId, projectId, type, sequenceCode, parentId, moduleId, firstColumn, JSON.stringify(ancestryPath), title,
-      operation.description ?? null, priority, operation.points ?? null, assigneeId, context.actorUserId, now, now)
+      operation.description ?? null, priority, operation.points ?? null, assigneeId, context.actorUserId,
+      operation.versionId ?? null, operation.icon ?? null, now, now)
+
+  // Card T35 — vínculo automático de sprint no lote (antes inexistente).
+  if (operation.sprintIds !== undefined) {
+    replaceRelations(database, 'item_sprints', 'sprint_id', context.tenantId, projectId, id, operation.sprintIds)
+  }
 
   const after = readItemSnapshot(database, context.tenantId, projectId, id)
   recordItemEvent(database, context, { projectId, itemId: id, eventType: 'ITEM_CREATED', correlationId: id, after })
@@ -394,6 +400,7 @@ function createBatchItemInsideTransaction(database: Database, context: MutationC
     id, title, type, projectId, parentId, moduleId, columnId: firstColumn, sequenceCode,
     ancestryPath: JSON.stringify(ancestryPath), description: operation.description ?? null,
     priority, points: operation.points ?? null, assigneeId, status: 'NOT_STARTED',
+    versionId: operation.versionId ?? null, icon: operation.icon ?? null, sprintIds: operation.sprintIds ?? [],
   }
 }
 

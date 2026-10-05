@@ -6,8 +6,10 @@ import { getIdempotent, saveIdempotent } from '../services/idempotency'
 import { broadcast } from '../services/websocket'
 import { batchSchema, batchUpdateSchema, parseJson } from '../validation'
 import { persistence } from '../persistence/runtime'
-import { userMutationContext } from '../persistence/context'
+import { userMutationContext, userPersistenceContext } from '../persistence/context'
 import type { BatchItemCreateOperation, BatchItemUpdate, ItemPatch } from '../persistence/ports'
+import { DEFAULT_ITEM_ICON } from '@azy-board/ui-contracts'
+import { isWorkCard, resolveActiveSprint, resolveActiveVersion } from '../services/creationDefaults'
 
 export const batchRouter = new Hono<HonoEnv>()
 batchRouter.use('*', authMiddleware)
@@ -331,6 +333,16 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
     }
   }
 
+  // Card T35 — defaults determinísticos na criação em lote (apenas TASK/BUG).
+  // Resolve uma vez no projeto do tenant e injeta nas operações que omitirem.
+  const hasWorkCard = input.operations.some(operation => {
+    const body = operation.args ?? operation.body ?? {}
+    return body.type === 'TASK' || body.type === 'BUG'
+  })
+  const projectContext = userPersistenceContext(ctx)
+  const activeSprintId = hasWorkCard ? (await resolveActiveSprint(projectContext, projectId))?.id ?? null : null
+  const activeVersionId = hasWorkCard ? (await resolveActiveVersion(projectContext, projectId))?.id ?? null : null
+
   const operations: BatchItemCreateOperation[] = input.operations.map(operation => {
     const body = operation.args ?? operation.body ?? {}
     const tool = operation.tool ?? (operation.method === 'POST' && operation.path === '/items' ? 'create_task' : '')
@@ -340,6 +352,14 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
     const priority = rawPriority === 'LOW' || rawPriority === 'MEDIUM' || rawPriority === 'HIGH' || rawPriority === 'CRITICAL'
       ? rawPriority
       : undefined
+    const isWork = validType && (rawType === 'TASK' || rawType === 'BUG')
+    const explicitSprintIds = Array.isArray(body.sprintIds)
+      ? (body.sprintIds as unknown[]).filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+      : body.sprintId === null
+        ? []
+        : typeof body.sprintId === 'string'
+          ? [body.sprintId]
+          : undefined
     return {
       tool,
       title: typeof body.title === 'string' ? body.title : null,
@@ -353,6 +373,9 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
       priority,
       points: typeof body.points === 'number' ? body.points : null,
       assignToCurrentUser: body.assignToCurrentUser === true,
+      sprintIds: isWork ? (explicitSprintIds ?? (activeSprintId ? [activeSprintId] : [])) : undefined,
+      versionId: isWork ? ('versionId' in body ? (typeof body.versionId === 'string' ? body.versionId : null) : activeVersionId) : undefined,
+      icon: isWork ? ('icon' in body ? (typeof body.icon === 'string' ? body.icon : null) : DEFAULT_ITEM_ICON) : undefined,
     }
   })
 
