@@ -97,15 +97,15 @@ O sistema SHALL exibir uma seção "Checklists" na `ItemModal` (e nas demais mod
 ---
 
 ### Requirement: Indicador de progresso de checklist no KanbanCard
-O sistema SHALL exibir um indicador compacto de progresso de checklists no rodapé do `KanbanCard` quando o card possui ao menos um checklist com ao menos um item.
+O sistema SHALL exibir um indicador compacto de progresso de checklists no `KanbanCard` quando o card possui ao menos um checklist com ao menos um item. O indicador SHALL ocupar região própria entre a linha de etiquetas e o rodapé.
 
 #### Scenario: Card com checklists no board
 - **WHEN** card possui checklists e é exibido no board
-- **THEN** rodapé exibe ícone de checklist + texto `checked/total` (ex: `✓ 3/7`); barra de progresso pequena abaixo do texto
+- **THEN** região própria entre etiquetas e rodapé exibe ícone de checklist + texto `checked/total` (ex: `✓ 3/7`); barra de progresso pequena abaixo do texto
 
 #### Scenario: Card sem checklists no board
 - **WHEN** card não possui nenhum checklist
-- **THEN** nenhum indicador de checklist é exibido no rodapé do card
+- **THEN** nenhuma região de indicador de checklist é renderizada e o rodapé sucede diretamente as etiquetas
 
 ---
 

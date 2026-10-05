@@ -42,7 +42,7 @@ O sistema SHALL permitir criar, visualizar, editar e excluir cards. Apenas tasks
 - **THEN** o sistema persiste os valores, o ícone do item aparece no card do Kanban com a cor definida e a mudança é propagada em tempo real
 
 ### Requirement: Breadcrumb dinâmico exibido no card
-O sistema SHALL exibir em cada card o caminho hierárquico completo abaixo do título: `Projeto > Módulo > Épico > Story > Task Pai > ... > Task Atual`.
+O sistema SHALL exibir em cada card o caminho hierárquico completo acima do título, entre a linha de topo e o título: `Projeto > Módulo > Épico > Story > Task Pai > ... > Task Atual`.
 
 #### Scenario: Breadcrumb truncado por espaço
 - **WHEN** breadcrumb completo ultrapassa o espaço disponível no card
@@ -187,15 +187,15 @@ O sistema SHALL gerar um log automático quando uma task é movida para outra co
 - **THEN** log automático é criado com `activity = "Movido de '[Nome Coluna Origem]' para '[Nome Coluna Destino]'"`
 
 ### Requirement: Exibição do sequenceCode no card do Kanban
-O sistema SHALL exibir o `sequenceCode` do item no card do Kanban, substituindo o UUID truncado quando disponível.
+O sistema SHALL exibir o `sequenceCode` do item no card do Kanban, na linha de topo ao lado do ícone do item. Quando o item não possuir `sequenceCode`, o sistema SHALL NOT exibir conteúdo substituto (como UUID truncado), mantendo o alinhamento da linha de topo.
 
 #### Scenario: Card com sequenceCode exibe o código
 - **WHEN** card possui `sequenceCode` não nulo (ex: "T3")
-- **THEN** o código é exibido na área de identificação do card (ao lado do badge de tipo), substituindo o UUID truncado
+- **THEN** o código é exibido na linha de topo, ao lado do ícone do item, sem exibir UUID truncado
 
-#### Scenario: Card sem sequenceCode exibe UUID truncado
+#### Scenario: Card sem sequenceCode não exibe conteúdo substituto
 - **WHEN** card possui `sequenceCode` nulo
-- **THEN** o card exibe o UUID truncado (primeiros 8 caracteres) como fallback, mantendo o comportamento atual
+- **THEN** o card não exibe UUID truncado nem marcador no lugar do código, e o alinhamento do topo é preservado
 
 #### Scenario: Código atualizado em tempo real
 - **WHEN** um item tem seu `sequenceCode` alterado via API

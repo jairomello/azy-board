@@ -111,7 +111,7 @@ O sistema SHALL exibir o caminho hierárquico completo em cards de projetos `HIE
 
 #### Scenario: Breadcrumb truncado no card
 - **WHEN** card é exibido no Kanban
-- **THEN** breadcrumb aparece abaixo do título, truncado com reticências se ultrapassar o espaço disponível
+- **THEN** breadcrumb aparece acima do título (entre a linha de topo e o título), truncado com reticências se ultrapassar o espaço disponível
 
 #### Scenario: Expansão do breadcrumb ao hover
 - **WHEN** usuário passa o mouse sobre o breadcrumb truncado
