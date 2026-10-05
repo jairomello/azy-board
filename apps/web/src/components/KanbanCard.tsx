@@ -322,12 +322,14 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
                   {checked}/{total}
                 </span>
               </div>
-              <div className="h-0.5 w-full rounded-full bg-muted overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${done ? 'bg-emerald-500' : 'bg-primary/60'}`}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
+              {checked > 0 && (
+                <div className="h-0.5 w-full rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${done ? 'bg-emerald-500' : 'bg-primary/60'}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              )}
             </div>
           )
         })()}
