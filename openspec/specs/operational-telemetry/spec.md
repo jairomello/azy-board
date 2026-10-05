@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir a telemetria opcional (tracing e métricas via OTLP), ativada somente com endpoint configurado e no-op no perfil SIMPLE.
+
+## Requirements
 
 ### Requirement: Telemetria opcional por configuração
 

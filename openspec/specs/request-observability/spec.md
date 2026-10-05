@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir a observabilidade de requisições da API: request ID, log JSON estruturado, redação de dados sensíveis e exceções registradas de forma estruturada.
+
+## Requirements
 
 ### Requirement: Request ID em toda requisição
 

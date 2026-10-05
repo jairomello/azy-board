@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir o envio opcional de erros a um provedor externo, com captura no backend e no frontend e redação de dados sensíveis, ativado apenas quando houver DSN configurado.
+
+## Requirements
 
 ### Requirement: Provedor de error tracking opcional
 

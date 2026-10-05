@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os headers de segurança obrigatórios nas respostas da API e do web servido, incluindo CSP, HSTS em HTTPS e paridade entre ambientes.
+
+## Requirements
 
 ### Requirement: Headers de segurança em toda resposta da API
 

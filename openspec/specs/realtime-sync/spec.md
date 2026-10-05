@@ -98,5 +98,3 @@ O web SHALL distinguir visualmente "conectado" de "dados reconciliados": o estad
 #### Scenario: Queda mostra estado offline sem alarme de erro
 - **WHEN** a conexão cai e a reconexão automática entra em andamento
 - **THEN** a UI reflete offline/conectando sem tratar a situação como falha de aplicação
-
-## MODIFIED Requirements

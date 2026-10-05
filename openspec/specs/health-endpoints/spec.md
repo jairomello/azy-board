@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Definir os endpoints de saúde da API (liveness e readiness) usados por smoke, healthchecks de deploy e monitoramento.
+
+## Requirements
 
 ### Requirement: Liveness público
 
