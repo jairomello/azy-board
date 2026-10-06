@@ -6,16 +6,17 @@
 import {
   toolAddChecklistItem, toolAddMember, toolActivateSprint, toolArchiveItem, toolBatch, toolBatchMove,
   toolCheckItem, toolCheckItems, toolClaimTask, toolCloseSprint, toolCompleteTask, toolCreateChecklist, toolAddChecklistItemToTask,
-  toolCreateColumn, toolCreateCostCenter, toolCreateItemLog, toolCreateModule, toolCreateProject, toolCreateProjectStructure,
+  toolCreateColumn, toolCreateCostCenter, toolCreateItemLink, toolCreateItemLog, toolCreateModule, toolCreateProject, toolCreateProjectStructure,
   toolCreateSprint, toolCreateSquad, toolCreateTag, toolCreateTask, toolCreateVersion,
-  toolDeleteChecklist, toolDeleteChecklistItem, toolDeleteItem, toolDeleteProject,
+  toolDeleteChecklist, toolDeleteChecklistItem, toolDeleteItem, toolDeleteItemLink, toolDeleteProject,
   toolGetBoard, toolGetCurrentSprint, toolGetDashboardMetrics, toolGetProject, toolGetScreenOverview, toolGetShadowMarkdown, toolGetTree,
-  toolListAttachments, toolListChecklists, toolListColumns, toolListCostCenters, toolListItemLogs,
+  toolListAttachments, toolListChecklists, toolListColumns, toolListCostCenters, toolListItemLinks, toolListItemLogs,
+  toolReadAttachment,
   toolListMembers, toolListModules, toolListProjects, toolListSprints, toolListSquads,
   toolListTags, toolListTasks, toolListVersions, toolMoveTask, toolReorderColumns,
   toolReorderItems, toolReleaseTask, toolRemoveMember, toolSetItemTags, toolUnarchiveItem,
-  toolUpdateChecklist, toolUpdateChecklistItem, toolUpdateItem, toolUpdateItemLog,
-  toolUpdateMember, toolUpdateProject, toolUpdateItems,
+  toolUpdateChecklist, toolUpdateChecklistItem, toolUpdateItem, toolUpdateItemLink, toolUpdateItemLog,
+  toolUpdateMember, toolUpdateProject, toolUpdateSprint, toolUpdateItems, toolUpdateVersion,
   type ApiCall,
 } from './tools.js'
 import {
@@ -95,6 +96,8 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'list_item_logs': return toolListItemLogs(api, args.projectId as string, args.itemId as string)
     case 'list_cost_centers': return toolListCostCenters(api, args.projectId as string)
     case 'list_attachments': return toolListAttachments(api, args.projectId as string, args.itemId as string)
+    case 'read_attachment': return toolReadAttachment(api, args.projectId as string, args.itemId as string, args.attachmentId as string, args.offset as number | null | undefined)
+    case 'list_item_links': return toolListItemLinks(api, args.projectId as string, args.itemId as string)
     case 'list_checklists': return toolListChecklists(api, args.projectId as string, args.itemId as string)
     case 'claim_task': return toolClaimTask(api, args.projectId as string, args.taskId as string)
     case 'move_task': return toolMoveTask(api, args.projectId as string, args.taskId as string, args.columnName as string)
@@ -109,17 +112,20 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'update_item': return toolUpdateItem(api, args.projectId as string, args.itemId as string, args.changes as Parameters<typeof toolUpdateItem>[3], execution.context.runId)
     case 'release_task': return toolReleaseTask(api, args.projectId as string, args.taskId as string)
     case 'delete_item': return toolDeleteItem(api, args.projectId as string, args.itemId as string, args.dryRun as boolean | undefined)
+    case 'delete_item_link': return toolDeleteItemLink(api, args.projectId as string, args.itemId as string, args.linkId as string)
     case 'delete_project': return toolDeleteProject(api, args.projectId as string, args.dryRun as boolean | undefined)
     case 'archive_item': return toolArchiveItem(api, args.projectId as string, args.itemId as string, args.confirm as boolean | undefined, args.dryRun as boolean | undefined)
     case 'unarchive_item': return toolUnarchiveItem(api, args.projectId as string, args.itemId as string)
     case 'set_item_tags': return toolSetItemTags(api, args.projectId as string, args.itemId as string, args.tagIds as string[])
     case 'create_item_log': return toolCreateItemLog(api, args.projectId as string, args.itemId as string, args.activity as string, args.durationMin as number | null | undefined)
+    case 'create_item_link': return toolCreateItemLink(api, args.projectId as string, args.itemId as string, args.name as string, args.url as string, args.description as string | null | undefined)
     case 'reorder_items': return toolReorderItems(api, args.projectId as string, args.columnId as string, args.order as string[])
     case 'update_checklist': return toolUpdateChecklist(api, args.projectId as string, args.itemId as string, args.checklistId as string, pruneNullValues(args.changes as Record<string, unknown>))
     case 'delete_checklist': return toolDeleteChecklist(api, args.projectId as string, args.itemId as string, args.checklistId as string)
     case 'update_checklist_item': return toolUpdateChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string | undefined, args.checklistItemId as string | undefined, pruneNullValues(args.changes as Record<string, unknown>), { checklistName: args.checklistName as string | undefined, text: args.text as string | undefined, position: args.position as number | undefined })
     case 'delete_checklist_item': return toolDeleteChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string)
     case 'update_item_log': return toolUpdateItemLog(api, args.projectId as string, args.itemId as string, args.logId as string, pruneNullValues(args.changes as Record<string, unknown>))
+    case 'update_item_link': return toolUpdateItemLink(api, args.projectId as string, args.itemId as string, args.linkId as string, pruneNullValues({ name: args.name, url: args.url, description: args.description }))
     case 'batch': return toolBatch(api, args as Parameters<typeof toolBatch>[1])
     case 'update_items': {
       // Card T16 — injeta as revisões capturadas na fotografia para a checagem
@@ -137,10 +143,12 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'create_column': return toolCreateColumn(api, args.projectId as string, args as Parameters<typeof toolCreateColumn>[2])
     case 'reorder_columns': return toolReorderColumns(api, args.projectId as string, args.order as string[])
     case 'create_sprint': return toolCreateSprint(api, args.projectId as string, args as Parameters<typeof toolCreateSprint>[2])
+    case 'update_sprint': return toolUpdateSprint(api, args.projectId as string, args.sprintId as string, args.changes as Parameters<typeof toolUpdateSprint>[3])
     case 'activate_sprint': return toolActivateSprint(api, args.projectId as string, args.sprintId as string)
     case 'close_sprint': return toolCloseSprint(api, args.projectId as string, args.sprintId as string)
     case 'create_tag': return toolCreateTag(api, args.projectId as string, args.name as string, args.color as string | undefined)
     case 'create_version': { const { projectId, ...version } = args; return toolCreateVersion(api, projectId as string, version) }
+    case 'update_version': return toolUpdateVersion(api, args.projectId as string, args.versionId as string, args.changes as Parameters<typeof toolUpdateVersion>[3])
     case 'add_member': return toolAddMember(api, args.projectId as string, args.email as string, args.role as string, args.squadId as string | undefined)
     case 'update_member': return toolUpdateMember(api, args.projectId as string, args.userId as string, args.role as string, args.squadId as string | undefined)
     case 'remove_member': return toolRemoveMember(api, args.projectId as string, args.userId as string)

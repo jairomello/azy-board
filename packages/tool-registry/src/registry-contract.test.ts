@@ -110,6 +110,42 @@ describe('contrato de fonte única do catálogo MCP', () => {
     expect(() => validateToolArguments('create_sprint', { projectId: 'p', name: 'S' })).toThrow()
   })
 
+  test('update_sprint e update_version expõem changes próprio, policy admin e routing de atualização', () => {
+    expect(new Set(requiredFieldsFor('update_sprint'))).toEqual(new Set(['projectId', 'sprintId', 'changes']))
+    expect(new Set(requiredFieldsFor('update_version'))).toEqual(new Set(['projectId', 'versionId', 'changes']))
+    expect(byName.get('update_sprint')!.policy).toEqual({ globalGroup: 'MANAGER', localRole: 'ADMIN' })
+    expect(byName.get('update_version')!.policy).toEqual({ globalGroup: 'MANAGER', localRole: 'ADMIN' })
+    expect(byName.get('update_sprint')!.routing).toMatchObject({ domain: 'planning', scope: 'project', operation: 'update' })
+    expect(byName.get('update_version')!.routing).toMatchObject({ domain: 'planning', scope: 'project', operation: 'update' })
+    const sprintChanges = byName.get('update_sprint')!.inputSchema.properties.changes as { items: { properties: { field: { enum: string[] } } } }
+    const versionChanges = byName.get('update_version')!.inputSchema.properties.changes as { items: { properties: { field: { enum: string[] } } } }
+    expect(sprintChanges.items.properties.field.enum).toEqual(['name', 'startDate', 'endDate'])
+    expect(versionChanges.items.properties.field.enum).toEqual(['name', 'releaseDate', 'description', 'status'])
+  })
+
+  test('update_sprint/update_version validam changes, CLEAR por campo e formato de data', () => {
+    expect(() => validateToolArguments('update_sprint', { projectId: 'p', sprintId: 's', changes: [{ field: 'endDate', operation: 'SET', value: '2026-11-14' }] })).not.toThrow()
+    expect(() => validateToolArguments('update_version', { projectId: 'p', versionId: 'v', changes: [{ field: 'releaseDate', operation: 'CLEAR' }] })).not.toThrow()
+    expect(() => validateToolArguments('update_sprint', { projectId: 'p', sprintId: 's', changes: [] })).toThrow('entre 1 e 20')
+    expect(() => validateToolArguments('update_sprint', { projectId: 'p', sprintId: 's', changes: [{ field: 'name', operation: 'CLEAR' }] })).toThrow('não pode ser limpo')
+    expect(() => validateToolArguments('update_sprint', { projectId: 'p', sprintId: 's', changes: [{ field: 'status', operation: 'SET', value: 'OPEN' }] })).toThrow('campos aceitos')
+    expect(() => validateToolArguments('update_version', { projectId: 'p', versionId: 'v', changes: [{ field: 'status', operation: 'SET', value: 'OPEN' }] })).toThrow('status inválido')
+    expect(() => validateToolArguments('update_sprint', { projectId: 'p', sprintId: 's', changes: [{ field: 'endDate', operation: 'SET', value: '14/11/2026' }] })).toThrow('AAAA-MM-DD')
+    expect(() => validateToolArguments('update_version', { projectId: 'p', versionId: 'v', changes: [{ field: 'name', operation: 'SET', value: 'x' }, { field: 'name', operation: 'SET', value: 'y' }] })).toThrow('duplicado')
+  })
+
+  test('create_version aceita campos opcionais e mantém name obrigatório', () => {
+    expect(new Set(requiredFieldsFor('create_version'))).toEqual(new Set(['projectId', 'name']))
+    const properties = byName.get('create_version')!.inputSchema.properties
+    expect(properties.releaseDate).toBeDefined()
+    expect(properties.description).toBeDefined()
+    expect(properties.status).toBeDefined()
+    expect(() => validateToolArguments('create_version', { projectId: 'p', name: 'v1' })).not.toThrow()
+    expect(() => validateToolArguments('create_version', { projectId: 'p', name: 'v1', releaseDate: '2026-12-01', description: 'notas', status: 'IN_DEV' })).not.toThrow()
+    expect(() => validateToolArguments('create_version', { projectId: 'p', name: 'v1', status: 'OPEN' })).toThrow('status inválido')
+    expect(() => validateToolArguments('create_version', { projectId: 'p', name: 'v1', releaseDate: '01/12/2026' })).toThrow('AAAA-MM-DD')
+  })
+
   test('add_checklist_item_to_task exige checklistName e text', () => {
     expect(new Set(requiredFieldsFor('add_checklist_item_to_task'))).toEqual(new Set(['projectId', 'itemId', 'checklistName', 'text']))
     expect(() => validateToolArguments('add_checklist_item_to_task', { projectId: 'p', itemId: 'i' })).toThrow()
@@ -187,6 +223,46 @@ describe('contrato de fonte única do catálogo MCP', () => {
     expect(new Set(requiredFieldsFor('get_dashboard_metrics'))).toEqual(new Set(['metric']))
     expect(() => validateToolArguments('get_dashboard_metrics', { metric: 'snapshot' })).not.toThrow()
     expect(() => validateToolArguments('get_dashboard_metrics', { metric: 'inválida' })).toThrow()
+  })
+
+  test('ferramentas de link expõem campos, policy, classificação e discovery coerentes', () => {
+    expect(new Set(requiredFieldsFor('list_item_links'))).toEqual(new Set(['projectId', 'itemId']))
+    expect(new Set(requiredFieldsFor('create_item_link'))).toEqual(new Set(['projectId', 'itemId', 'name', 'url']))
+    expect(new Set(requiredFieldsFor('update_item_link'))).toEqual(new Set(['projectId', 'itemId', 'linkId']))
+    expect(new Set(requiredFieldsFor('delete_item_link'))).toEqual(new Set(['projectId', 'itemId', 'linkId']))
+    expect(byName.get('list_item_links')!.routing).toMatchObject({ domain: 'evidence', scope: 'item', operation: 'read' })
+    expect(byName.get('create_item_link')!.routing).toMatchObject({ domain: 'evidence', scope: 'item', operation: 'create' })
+    expect(byName.get('update_item_link')!.routing).toMatchObject({ domain: 'evidence', scope: 'item', operation: 'update' })
+    expect(byName.get('delete_item_link')!.routing).toMatchObject({ domain: 'evidence', scope: 'item', operation: 'delete' })
+    expect(byName.get('list_item_links')!.namespace).toBe('discovery')
+    expect(byName.get('list_item_links')!.policy).toEqual({ globalGroup: 'TEAM_MEMBER', localRole: 'VIEWER' })
+    expect(byName.get('create_item_link')!.policy).toEqual({ globalGroup: 'TEAM_MEMBER', localRole: 'MEMBER' })
+    expect(byName.get('update_item_link')!.policy).toEqual({ globalGroup: 'TEAM_MEMBER', localRole: 'MEMBER' })
+    expect(byName.get('delete_item_link')!.policy).toEqual({ globalGroup: 'TEAM_MEMBER', localRole: 'MEMBER' })
+  })
+
+  test('create_item_link valida URL HTTP/HTTPS e update_item_link exige ao menos um campo', () => {
+    expect(() => validateToolArguments('create_item_link', { projectId: 'p', itemId: 'i', name: 'Figma', url: 'https://figma.com/file' })).not.toThrow()
+    expect(() => validateToolArguments('create_item_link', { projectId: 'p', itemId: 'i', name: 'X', url: 'ftp://figma.com' })).toThrow('URL HTTP ou HTTPS')
+    expect(() => validateToolArguments('create_item_link', { projectId: 'p', itemId: 'i', name: 'X', url: 'https://user:pass@figma.com' })).toThrow('sem credenciais')
+    expect(() => validateToolArguments('create_item_link', { projectId: 'p', itemId: 'i', name: 'X' })).toThrow('Campo obrigatório ausente: url')
+    expect(() => validateToolArguments('update_item_link', { projectId: 'p', itemId: 'i', linkId: 'l' })).toThrow('ao menos um de name, url ou description')
+    expect(() => validateToolArguments('update_item_link', { projectId: 'p', itemId: 'i', linkId: 'l', url: 'https://figma.com/file' })).not.toThrow()
+    expect(() => validateToolArguments('delete_item_link', { projectId: 'p', itemId: 'i', linkId: '' })).toThrow('Campo obrigatório ausente: linkId')
+  })
+
+  test('read_attachment expõe schema, policy, classificação de leitura e resposta declarada', () => {
+    const definition = byName.get('read_attachment')!
+    expect(definition).toBeDefined()
+    expect(new Set(requiredFieldsFor('read_attachment'))).toEqual(new Set(['projectId', 'itemId', 'attachmentId']))
+    expect(definition.policy).toEqual({ globalGroup: 'TEAM_MEMBER', localRole: 'VIEWER' })
+    expect(definition.routing).toMatchObject({ domain: 'evidence', scope: 'item', operation: 'read' })
+    expect(definition.namespace).toBe('discovery')
+    expect(definition.responseSchema).toBeDefined()
+    expect(definition.inputSchema.properties.attachmentId).toBeDefined()
+    expect(() => validateToolArguments('read_attachment', { projectId: 'p', itemId: 'i', attachmentId: 'a' })).not.toThrow()
+    expect(() => validateToolArguments('read_attachment', { projectId: 'p', itemId: 'i' })).toThrow('attachmentId')
+    expect(() => validateToolArguments('read_attachment', { projectId: 'p', itemId: 'i', attachmentId: 'a', path: '/etc/passwd' })).toThrow('Campo desconhecido: path')
   })
 })
 

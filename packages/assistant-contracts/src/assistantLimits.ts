@@ -77,3 +77,9 @@ export const HARNESS_LIMITS = {
 
 export const MAX_MESSAGE_BYTES = 30_000
 export const MAX_ASSISTANT_ACTIONS = 40
+
+// Leitura de conteúdo de anexo (Card T23). O teto de caracteres fica abaixo de
+// HARNESS_LIMITS.toolOutputChars para que o JSON do resultado (texto + metadados)
+// não seja cortado de forma silenciosa pelo limite genérico do transcript.
+export const ATTACHMENT_READ_MAX_BYTES = 512 * 1024
+export const ATTACHMENT_READ_MAX_CHARS = 16_000

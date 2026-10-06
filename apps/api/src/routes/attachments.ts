@@ -3,6 +3,7 @@ import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { createConfiguredStorageAdapter } from '../services/storage'
 import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
+import { buildAttachmentReadResult, readLimitedBytes } from '../services/attachmentContent'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
@@ -337,6 +338,57 @@ attachmentsRouter.get('/:attachmentId/download', requireRole('VIEWER'), async (c
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'private, no-store',
     },
+  })
+})
+
+// GET /projects/:projectId/items/:itemId/attachments/:attachmentId/content
+// Card T23 — leitura autorizada de conteúdo para o agente. Mesma autorização e
+// ancoragem do download; a leitura é preservada mesmo com anexos desabilitados
+// (desabilitar bloqueia upload/edição/remoção, não a leitura). Nunca expõe o
+// caminho físico e sempre reporta limites (`truncated`/`reason`/`nextOffset`).
+attachmentsRouter.get('/:attachmentId/content', requireRole('VIEWER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const { projectId, itemId, attachmentId } = c.req.param()
+
+  // [TENANT] Anti-IDOR: o item ancora o anexo no projeto informado.
+  const projectContext = userPersistenceContext(ctx)
+  const item = await persistence.items.getItem(projectContext, projectId, itemId)
+  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
+
+  const attachment = await persistence.files.getAttachment(projectContext, projectId, itemId, attachmentId)
+  if (!attachment) return c.json({ error: 'Anexo não encontrado' }, 404)
+
+  let body: BodyInit | null
+  try {
+    body = await (await storageAdapterForTenant(ctx.tenantId, attachment.storageProvider)).download(attachment.storagePath)
+  } catch {
+    return c.json({ error: 'O armazenamento deste anexo está indisponível' }, 503)
+  }
+  if (!body) return c.json({ error: 'Arquivo não encontrado' }, 404)
+
+  const { bytes, truncated } = await readLimitedBytes(body)
+  const rawOffset = Number(c.req.query('offset'))
+  const result = buildAttachmentReadResult({
+    mimeType: attachment.mimeType,
+    bytes,
+    bytesTruncated: truncated,
+    offset: Number.isFinite(rawOffset) ? rawOffset : 0,
+  })
+
+  // [SECURITY] Só o conteúdo extraído e metadados seguros — nunca o storagePath.
+  return c.json({
+    attachmentId: attachment.id,
+    attachmentName: attachment.originalName,
+    mimeType: attachment.mimeType,
+    format: result.format,
+    text: result.text,
+    encoding: result.encoding,
+    totalBytes: attachment.sizeBytes,
+    readBytes: bytes.byteLength,
+    charCount: result.charCount,
+    truncated: result.truncated,
+    reason: result.reason,
+    nextOffset: result.nextOffset,
   })
 })
 

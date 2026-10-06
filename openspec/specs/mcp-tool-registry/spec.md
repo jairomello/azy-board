@@ -234,3 +234,113 @@ O descritor de `create_item_log` SHALL declarar `durationMin` (inteiro não-nega
 - **WHEN** `bun test packages/tool-registry` e `bun run test:mcp-catalog` executam
 - **THEN** schema exposto, validação, campos declarados e dispatcher concordam sobre `durationMin`/`duration` em `create_item_log`
 
+### Requirement: Descritor da ferramenta read_attachment
+
+O catálogo compartilhado SHALL declarar a ferramenta `read_attachment` no mesmo descritor único usado por schema, validação, routing, policy e executor, exigindo `projectId`, `itemId` e `attachmentId`, com policy de leitura (`VIEWER`) e classificação `{ domain: 'evidence', scope: 'item', operation: 'read' }`. A descrição SHALL deixar explícitos os formatos textuais suportados, a existência de limites de leitura e a regra de que formatos não interpretáveis são declarados como não suportados.
+
+#### Scenario: Campos e obrigatoriedade coerentes
+
+- **WHEN** o schema exposto e a validação de `read_attachment` são inspecionados
+- **THEN** `projectId`, `itemId` e `attachmentId` aparecem como obrigatórios e não há campos paralelos fora do descritor
+
+#### Scenario: Classificação de leitura
+
+- **WHEN** o routing consulta `read_attachment`
+- **THEN** obtém domínio Evidence, escopo item, operação read e risco derivado de leitura, sem exigir aprovação de mutação
+
+#### Scenario: Formato não suportado é declarado
+
+- **WHEN** a descrição e o schema de resposta de `read_attachment` são documentados no catálogo
+- **THEN** fica explícito que formatos não interpretáveis retornam `unsupported` e que a leitura é limitada, sem prometer OCR ou leitura de qualquer arquivo
+
+### Requirement: Schema de resposta da leitura de anexo
+
+O descritor de `read_attachment` SHALL declarar a forma da resposta de leitura, contendo a identificação do anexo, `format`, `text`, `encoding`, `totalBytes`, `readBytes`, `charCount`, `truncated`, `reason` e `nextOffset` quando aplicável, e SHALL ser verificado pelo contrato do catálogo junto das demais ferramentas.
+
+#### Scenario: Contrato do catálogo cobre a nova ferramenta
+
+- **WHEN** `bun test packages/tool-registry` e `bun run test:mcp-catalog` executam
+- **THEN** `read_attachment` possui descritor, policy, routing, campos e shape de resposta consistentes, sem descritor órfão nem executor sem definição
+
+#### Scenario: Forma mínima aceita
+
+- **WHEN** o teste de paridade monta o payload mínimo de `read_attachment`
+- **THEN** a validação aceita exatamente `projectId`, `itemId` e `attachmentId` e o schema marca apenas esses três como obrigatórios
+
+### Requirement: Ferramentas de links do item no catálogo
+
+O catálogo compartilhado SHALL declarar as ferramentas `list_item_links`, `create_item_link`, `update_item_link` e `delete_item_link` como fonte única de campos, schema, validação, policy, classificação e descrição. `list_item_links` e `delete_item_link` SHALL exigir `projectId` e `itemId` (e `linkId` em delete); `create_item_link` SHALL exigir `name` e `url` e aceitar `description` opcional; `update_item_link` SHALL exigir `linkId` e pelo menos um de `name`/`url`/`description`. A validação SHALL aceitar apenas URL `http`/`https` sem credenciais embutidas, com nome ≤ 200, URL ≤ 2048 e descrição ≤ 20000, e SHALL rejeitar `linkId` vazio. As ferramentas SHALL ser classificadas como `domain: 'evidence'`, `scope: 'item'`, com operação `read`/`create`/`update`/`delete`, e `list_item_links` SHALL integrar o conjunto de descoberta. A documentação gerada SHALL listar as quatro ferramentas.
+
+#### Scenario: Campos obrigatórios e opcionais declarados
+
+- **WHEN** os schemas expostos das quatro ferramentas de link são inspecionados
+- **THEN** a forma mínima exige exatamente `projectId`/`itemId` em `list_item_links` e `delete_item_link`, `projectId`/`itemId`/`name`/`url` em `create_item_link` e `projectId`/`itemId`/`linkId` em `update_item_link`, com `description`, `name` e `url` opcionais onde aplicável
+
+#### Scenario: URL válida é aceita e inválida é rejeitada de forma acionável
+
+- **WHEN** `create_item_link` recebe uma URL `http`/`https` sem usuário/senha
+- **THEN** a validação aceita a chamada; quando a URL é inválida, usa outro esquema ou contém credenciais, a validação rejeita citando valor recebido e formato aceito, sem executar a mutação
+
+#### Scenario: Edição sem nenhum campo é rejeitada
+
+- **WHEN** `update_item_link` é chamado apenas com `projectId`, `itemId` e `linkId`
+- **THEN** a validação rejeita exigindo ao menos um de `name`, `url` ou `description`
+
+#### Scenario: `linkId` inválido é rejeitado
+
+- **WHEN** `update_item_link` ou `delete_item_link` recebe `linkId` vazio ou não textual
+- **THEN** a validação rejeita antes da execução
+
+#### Scenario: Classificação e policy coerentes
+
+- **WHEN** as quatro ferramentas são carregadas do registry
+- **THEN** `list_item_links` é leitura com policy `read`, as demais são escrita com policy `write`, e todas têm domínio `evidence`, escopo `item` e operação correspondente
+
+#### Scenario: Paridade entre schema, validação e dispatcher
+
+- **WHEN** `bun test packages/tool-registry` e `bun run test:mcp-catalog` executam
+- **THEN** schema exposto, validação, campos declarados, classificação e dispatcher concordam sobre as quatro ferramentas de link, e o README gerado as documenta
+
+### Requirement: Descritores de edição de sprint e versão no catálogo
+
+O catálogo compartilhado SHALL declarar as ferramentas `update_sprint` e `update_version` como fonte única de campos, schema, validação, routing, classificação e policy. Cada uma SHALL receber `projectId`, o identificador da entidade (`sprintId`/`versionId`) e `changes`, um array de alterações `{ field, operation, value }` com operação `SET` ou `CLEAR`. O schema de `changes` SHALL ser próprio de cada ferramenta: `update_sprint` aceita `name`, `startDate` e `endDate`; `update_version` aceita `name`, `releaseDate`, `description` e `status`. A classificação SHALL ser domínio `planning`, escopo `project`, operação `update` e a policy `ADMIN`, coerente com as rotas de edição. A validação SHALL rejeitar `changes` vazio, `operation` desconhecida, `CLEAR` em campo não anulável e `status` fora do enum, sem persistência parcial.
+
+#### Scenario: Ferramenta de edição exposta com forma mínima
+
+- **WHEN** o schema exposto de `update_sprint` ou `update_version` é inspecionado
+- **THEN** `projectId`, o identificador da entidade e `changes` aparecem como obrigatórios, e cada item de `changes` exige `field` e `operation`
+
+#### Scenario: Campos permitidos por ferramenta
+
+- **WHEN** `update_version` recebe `changes` com `field` igual a `releaseDate` e `update_sprint` recebe `field` igual a `endDate`
+- **THEN** a validação aceita as alterações e o schema declarado reflete exatamente esses campos por ferramenta
+
+#### Scenario: CLEAR em campo não anulável é rejeitado
+
+- **WHEN** `update_sprint` recebe `changes` com `operation: CLEAR` para `name`, `startDate` ou `endDate`
+- **THEN** a validação rejeita com erro acionável citando o campo e a operação aceita, sem alterar a sprint
+
+#### Scenario: Alteração vazia é rejeitada
+
+- **WHEN** `update_sprint` ou `update_version` é chamada com `changes` vazio
+- **THEN** a validação rejeita a chamada informando a forma mínima aceita, sem executar a edição
+
+#### Scenario: Paridade entre schema, validação e executor
+
+- **WHEN** `bun test packages/tool-registry` e `bun run test:mcp-catalog` executam
+- **THEN** schema exposto, validação, campos declarados e dispatcher concordam sobre `update_sprint` e `update_version`
+
+### Requirement: Criação de versão com campos completos no catálogo
+
+O descritor de `create_version` SHALL aceitar, além de `name` obrigatório, os campos opcionais `releaseDate`, `description` e `status`, alinhado ao que `POST /projects/:id/versions` já aceita. `status` SHALL ser restrito ao enum `PLANNED`, `IN_DEV`, `RELEASED` e `CANCELLED`. A criação informando apenas `name` SHALL continuar válida e inalterada.
+
+#### Scenario: Campos opcionais de criação expostos
+
+- **WHEN** o schema exposto de `create_version` é inspecionado
+- **THEN** `releaseDate`, `description` e `status` aparecem como opcionais e a forma mínima continua exigindo apenas `projectId` e `name`
+
+#### Scenario: Criação só com nome permanece válida
+
+- **WHEN** `create_version` é chamada apenas com `projectId` e `name`
+- **THEN** a validação aceita a chamada e a versão é criada com os defaults da API
+

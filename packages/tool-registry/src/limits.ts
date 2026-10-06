@@ -9,6 +9,7 @@ export const TOOL_TEXT_LIMITS = {
   ref: 100,
   columnName: 128,
   tagColor: 30,
+  url: 2_048,
 } as const
 
 export type ToolTextField = keyof typeof TOOL_TEXT_LIMITS

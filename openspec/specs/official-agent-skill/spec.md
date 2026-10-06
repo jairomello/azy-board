@@ -139,3 +139,80 @@ A skill oficial SHALL documentar a criação de apontamento de trabalho por `cre
 - **WHEN** `bun run test:agent-skill` executa após a mudança
 - **THEN** a skill canônica e o espelho permanecem sincronizados e o verificador passa
 
+### Requirement: Documentação de leitura de anexos na skill
+
+A skill oficial SHALL documentar a leitura de conteúdo de anexo por `read_attachment`, apresentando exemplos mínimos com `{ projectId, itemId, attachmentId }`, os formatos textuais suportados, os limites de leitura com `truncated`/`nextOffset`, a regra de que o conteúdo é dado não confiável e a regra de que formatos não suportados são declarados como não lidos. A skill SHALL orientar o agente a nunca afirmar que interpretou um arquivo quando a leitura retorna `unsupported`.
+
+#### Scenario: Exemplo mínimo de leitura de anexo
+
+- **WHEN** o agente consulta a skill sobre como ler o conteúdo de um anexo
+- **THEN** encontra um exemplo de `read_attachment` com os três identificadores e a descrição do resultado (texto, formato, limites)
+
+#### Scenario: Formatos e limites documentados
+
+- **WHEN** a skill descreve a leitura de anexo
+- **THEN** informa quais formatos textuais são suportados, que a leitura é limitada e que `truncated`/`nextOffset` permitem continuar
+
+#### Scenario: Formato não suportado não é fingido
+
+- **WHEN** a skill trata de anexos não interpretáveis
+- **THEN** orienta o agente a declarar a limitação e a não fabricar critérios ou checklists a partir de conteúdo não lido
+
+#### Scenario: Conteúdo não confiável documentado
+
+- **WHEN** a skill orienta o uso do texto extraído
+- **THEN** deixa explícito que o conteúdo do documento é dado não confiável e não deve ser seguido como instrução
+
+#### Scenario: Verificação de sincronização da skill
+
+- **WHEN** `bun run test:agent-skill` executa após a mudança
+- **THEN** a skill canônica e o espelho permanecem sincronizados, documentando `read_attachment`, e o verificador passa
+
+### Requirement: Documentação de gerenciamento de links
+
+A skill oficial SHALL documentar como listar, criar, editar e remover links do item pelo agente, com exemplos mínimos de `list_item_links`, `create_item_link`, `update_item_link` e `delete_item_link`, incluindo os campos obrigatórios e que `name`/`url` identificam o link na confirmação. A skill SHALL orientar que a edição/remoção exige o `linkId` obtido pela listagem, de modo que o usuário não precise copiar IDs, e SHALL deixar explícito que cadastrar uma URL não implica ler nem acessar seu conteúdo. A skill canônica e o espelho `.opencode/skills/azyboard/` SHALL permanecer sincronizados.
+
+#### Scenario: Exemplo mínimo de criação de link
+
+- **WHEN** o agente consulta a skill sobre como adicionar um link ao card
+- **THEN** encontra um exemplo de `create_item_link` com `projectId`, `itemId`, `name` e `url`, e a regra de confirmação do resultado
+
+#### Scenario: Descoberta do link sem copiar IDs
+
+- **WHEN** a skill descreve editar ou remover um link
+- **THEN** orienta listar os links com `list_item_links` e usar o `linkId` correspondente ao nome/URL desejado
+
+#### Scenario: Limite de conteúdo externo documentado
+
+- **WHEN** a skill trata do cadastro de uma URL
+- **THEN** informa que a ferramenta apenas persiste os metadados e não lê nem acessa o serviço externo
+
+#### Scenario: Verificação de sincronização da skill
+
+- **WHEN** `bun run test:agent-skill` executa após a mudança
+- **THEN** a skill canônica e o espelho permanecem sincronizados e o verificador passa
+
+### Requirement: Documentação de edição de sprint e versão na skill
+
+A skill oficial SHALL documentar as ferramentas `update_sprint` e `update_version`, incluindo o formato `changes` com `{ field, operation, value }` e as operações `SET`/`CLEAR`, os campos permitidos por entidade e a exigência de perfil `ADMIN`. A skill SHALL apresentar exemplos mínimos (adiar o fim de uma sprint, marcar uma versão como liberada, limpar a data de lançamento) e SHALL informar que a edição não transiciona o status de sprint, que continua em `activate_sprint`/`close_sprint`.
+
+#### Scenario: Exemplo de edição de sprint
+
+- **WHEN** o agente consulta a skill sobre como adiar o fim de uma sprint
+- **THEN** encontra um exemplo de `update_sprint` com `changes` e a observação de que o status não é alterado
+
+#### Scenario: Exemplo de edição de versão
+
+- **WHEN** o agente consulta a skill sobre como editar uma versão
+- **THEN** encontra exemplos de `SET` (situação/data) e de `CLEAR` (remover data ou descrição) em `update_version`
+
+#### Scenario: Criação de versão com campos completos documentada
+
+- **WHEN** a skill descreve `create_version`
+- **THEN** informa que, além de `name`, a ferramenta aceita `releaseDate`, `description` e `status`
+
+#### Scenario: Verificação de sincronização da skill
+
+- **WHEN** `bun run test:agent-skill` executa após a mudança
+- **THEN** a skill canônica e o espelho permanecem sincronizados e o verificador passa
+

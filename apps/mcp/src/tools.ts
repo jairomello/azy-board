@@ -440,6 +440,19 @@ export async function toolCreateSprint(api: ApiCall, projectId: string, args: { 
   return api(`/projects/${projectId}/sprints`, 'POST', { ...args, name: args.name.trim() }) as Promise<Resource>
 }
 
+// Card T24 — traduz `changes` (SET/CLEAR) para o corpo plano das rotas PATCH.
+type PlanningChange = { field: string; operation: string; value?: unknown }
+
+function changesToFlatBody(changes: PlanningChange[]): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+  for (const change of changes) body[change.field] = change.operation === 'CLEAR' ? null : change.value
+  return body
+}
+
+export async function toolUpdateSprint(api: ApiCall, projectId: string, sprintId: string, changes: PlanningChange[]): Promise<Resource> {
+  return api(`/projects/${projectId}/sprints/${sprintId}`, 'PATCH', changesToFlatBody(changes)) as Promise<Resource>
+}
+
 export async function toolActivateSprint(api: ApiCall, projectId: string, sprintId: string): Promise<unknown> {
   return api(`/projects/${projectId}/sprints/${sprintId}/activate`, 'PATCH')
 }
@@ -467,7 +480,13 @@ export async function toolListVersions(api: ApiCall, projectId: string): Promise
 
 export async function toolCreateVersion(api: ApiCall, projectId: string, args: Record<string, unknown>): Promise<Resource> {
   if (typeof args.name !== 'string' || !args.name.trim()) throw new Error('name é obrigatório')
-  return api(`/projects/${projectId}/versions`, 'POST', { ...args, name: args.name.trim() }) as Promise<Resource>
+  const { name, ...rest } = args
+  const body = Object.fromEntries(Object.entries(rest).filter(([, value]) => value !== null && value !== undefined))
+  return api(`/projects/${projectId}/versions`, 'POST', { ...body, name: name.trim() }) as Promise<Resource>
+}
+
+export async function toolUpdateVersion(api: ApiCall, projectId: string, versionId: string, changes: PlanningChange[]): Promise<Resource> {
+  return api(`/projects/${projectId}/versions/${versionId}`, 'PATCH', changesToFlatBody(changes)) as Promise<Resource>
 }
 
 export async function toolListMembers(api: ApiCall, projectId: string): Promise<Resource[]> {
@@ -523,6 +542,45 @@ export async function toolReorderItems(api: ApiCall, projectId: string, columnId
 
 export async function toolListAttachments(api: ApiCall, projectId: string, itemId: string): Promise<Resource[]> {
   return api(`/projects/${projectId}/items/${itemId}/attachments`) as Promise<Resource[]>
+}
+
+// Card T23 — leitura autorizada de conteúdo de anexo. `offset` (caractere) permite
+// continuar a leitura quando o resultado vier truncado por limite de caracteres.
+export async function toolReadAttachment(api: ApiCall, projectId: string, itemId: string, attachmentId: string, offset?: number | null): Promise<unknown> {
+  if (!attachmentId?.trim()) throw new Error('attachmentId é obrigatório')
+  const query = typeof offset === 'number' && Number.isInteger(offset) && offset > 0 ? `?offset=${offset}` : ''
+  return api(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/content${query}`)
+}
+
+// Card T22 — links externos do item. As mutações ecoam itemId/projectId no
+// resultado para confirmação autoexplicativa e invalidação de cache no cliente.
+function withLinkTarget(result: unknown, projectId: string, itemId: string): unknown {
+  return result && typeof result === 'object' && !Array.isArray(result)
+    ? { ...(result as Record<string, unknown>), projectId, itemId }
+    : result
+}
+
+export async function toolListItemLinks(api: ApiCall, projectId: string, itemId: string): Promise<unknown> {
+  return api(`/projects/${projectId}/items/${itemId}/links`)
+}
+
+export async function toolCreateItemLink(api: ApiCall, projectId: string, itemId: string, name: string, url: string, description?: string | null): Promise<unknown> {
+  if (!name?.trim()) throw new Error('name é obrigatório')
+  if (!url?.trim()) throw new Error('url é obrigatório')
+  const created = await api(`/projects/${projectId}/items/${itemId}/links`, 'POST', { name: name.trim(), url: url.trim(), description })
+  return withLinkTarget(created, projectId, itemId)
+}
+
+export async function toolUpdateItemLink(api: ApiCall, projectId: string, itemId: string, linkId: string, changes: Record<string, unknown>): Promise<unknown> {
+  if (!linkId?.trim()) throw new Error('linkId é obrigatório')
+  const updated = await api(`/projects/${projectId}/items/${itemId}/links/${linkId}`, 'PATCH', changes)
+  return withLinkTarget(updated, projectId, itemId)
+}
+
+export async function toolDeleteItemLink(api: ApiCall, projectId: string, itemId: string, linkId: string): Promise<unknown> {
+  if (!linkId?.trim()) throw new Error('linkId é obrigatório')
+  await api(`/projects/${projectId}/items/${itemId}/links/${linkId}`, 'DELETE')
+  return { ok: true, linkId, itemId, projectId }
 }
 
 export async function toolUpdateChecklist(api: ApiCall, projectId: string, itemId: string, checklistId: string, changes: Record<string, unknown>): Promise<unknown> {

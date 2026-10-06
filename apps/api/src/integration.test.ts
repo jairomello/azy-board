@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from 'bun:test'
 import { and, eq } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
 import { toolCreateTask, toolListTasks } from '../../mcp/src/tools'
+import { ATTACHMENT_READ_MAX_BYTES, ATTACHMENT_READ_MAX_CHARS } from '@azy-board/assistant-contracts'
 
 process.env.DATABASE_URL = ':memory:'
 // [SECURITY] Habilita a leitura de X-Forwarded-For nos testes e remove o atraso
@@ -1655,6 +1656,78 @@ describe('segurança de anexos', () => {
 
     await db.update(tenantAttachmentSettings).set({ enabled: true })
       .where(eq(tenantAttachmentSettings.tenantId, tenantId))
+  })
+
+  test('lê conteúdo textual de anexo suportado com metadados e limites', async () => {
+    const attachmentId = await inserirAnexo('text/markdown', 'requisitos.md', '# Requisitos\n- login\n- logout')
+    const response = await request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/content`, memberToken)
+    expect(response.status).toBe(200)
+    const body = await response.json() as Record<string, unknown>
+    expect(body).toMatchObject({ attachmentId, attachmentName: 'requisitos.md', mimeType: 'text/markdown', format: 'markdown', truncated: false, reason: 'none', nextOffset: null })
+    expect(body.text).toContain('Requisitos')
+    // [SECURITY] Nunca expõe caminho físico nem tenant.
+    expect(JSON.stringify(body)).not.toContain('storagePath')
+    expect(JSON.stringify(body)).not.toContain(tenantId)
+  })
+
+  test('declara formato não interpretável sem fingir leitura', async () => {
+    const attachmentId = await inserirAnexo('application/pdf', 'contrato.pdf', '%PDF-1.4 fake')
+    const response = await request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/content`, memberToken)
+    expect(response.status).toBe(200)
+    const body = await response.json() as Record<string, unknown>
+    expect(body).toMatchObject({ format: 'unsupported', text: null, truncated: false, reason: 'unsupported_format' })
+  })
+
+  test('trunca por limite de caracteres e permite continuar com nextOffset', async () => {
+    const attachmentId = await inserirAnexo('text/plain', 'longo.txt', 'a'.repeat(ATTACHMENT_READ_MAX_CHARS + 500))
+    const first = await request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/content`, memberToken)
+    const firstBody = await first.json() as Record<string, unknown>
+    expect(firstBody.truncated).toBe(true)
+    expect(firstBody.reason).toBe('char_limit')
+    expect(firstBody.nextOffset).toBe(ATTACHMENT_READ_MAX_CHARS)
+    const second = await request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/content?offset=${firstBody.nextOffset}`, memberToken)
+    const secondBody = await second.json() as Record<string, unknown>
+    expect(String(secondBody.text).length).toBe(500)
+    expect(secondBody.truncated).toBe(false)
+  })
+
+  test('interrompe no teto de bytes e informa byte_limit', async () => {
+    const attachmentId = await inserirAnexo('text/plain', 'enorme.txt', 'b'.repeat(ATTACHMENT_READ_MAX_BYTES + 1024))
+    const response = await request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/content`, memberToken)
+    const body = await response.json() as Record<string, unknown>
+    expect(body.truncated).toBe(true)
+    expect(body.reason).toBe('byte_limit')
+    expect(body.readBytes as number).toBeLessThanOrEqual(ATTACHMENT_READ_MAX_BYTES)
+  })
+
+  test('leitura de conteúdo é preservada com anexos desabilitados e bloqueada para não-membro', async () => {
+    const attachmentId = await inserirAnexo('application/json', 'dados.json', JSON.stringify({ ok: true }))
+    await db.update(tenantAttachmentSettings).set({ enabled: false }).where(eq(tenantAttachmentSettings.tenantId, tenantId))
+    const allowed = await request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/content`, memberToken)
+    expect(allowed.status).toBe(200)
+    const denied = await request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/content`, outsiderToken)
+    expect(denied.status).toBe(404)
+    await db.update(tenantAttachmentSettings).set({ enabled: true }).where(eq(tenantAttachmentSettings.tenantId, tenantId))
+  })
+
+  test('leitura de conteúdo não cruza projeto nem tenant', async () => {
+    const attachmentId = await inserirAnexo('text/plain', 'isolado.txt', 'x')
+    const outroProjeto = generateId()
+    await db.insert(projects).values({
+      id: outroProjeto, tenantId, name: 'Projeto leitura', description: null,
+      boardMode: 'HIERARCHICAL', simpleStoryId: null, managerUserId: null,
+      isRestricted: false, isHidden: false, createdAt: new Date().toISOString(),
+    })
+    await db.insert(memberships).values({ id: generateId(), tenantId, userId: member.id, projectId: outroProjeto, role: 'MEMBER', createdAt: new Date().toISOString() })
+    const crossProject = await request(`/projects/${outroProjeto}/items/${itemId}/attachments/${attachmentId}/content`, memberToken)
+    expect(crossProject.status).toBe(404)
+
+    const outroTenant = generateId()
+    await db.insert(tenants).values({ id: outroTenant, name: 'Tenant leitura', slug: `leitura-${outroTenant}`, createdAt: new Date().toISOString() })
+    const intruso = await createUser(outroTenant, `leitura-${outroTenant}@test.local`, 'Intruso Leitura', 'ADMIN')
+    const intrusoToken = await token(intruso.id, outroTenant, intruso.email)
+    const crossTenant = await request(`/projects/${projectId}/items/${itemId}/attachments/${attachmentId}/content`, intrusoToken)
+    expect([403, 404]).toContain(crossTenant.status)
   })
 
   test('configuração de anexos exige perfil MIN e não devolve segredo', async () => {

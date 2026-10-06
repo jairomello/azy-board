@@ -29,7 +29,7 @@ O servidor resolve Owner, tenant, grupo global, membership, papel local e escopo
 
 ## Limites
 
-- Upload de arquivos não está disponível pelo MCP; `list_attachments` retorna apenas metadados.
+- Upload de arquivos não está disponível pelo MCP; `list_attachments` retorna apenas metadados e `read_attachment` lê o conteúdo textual de formatos suportados (sem OCR/visão e com limites explícitos).
 - Não assuma que nomes de colunas, sprint ativa ou módulos existem; consulte-os.
 - Não revele recursos que retornarem erro de autorização ou fora do escopo.
 - Para excluir projeto/item ou arquivar em cascata, faça preview quando suportado e confirme explicitamente.

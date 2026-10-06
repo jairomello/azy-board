@@ -45,6 +45,50 @@ export function assertIsoDate(value: unknown, field: string): void {
   }
 }
 
+// Link externo: mesma regra da API (itemLinkUrlSchema) — HTTP/HTTPS sem
+// credenciais embutidas, dentro do limite de tamanho.
+export function assertHttpUrl(value: unknown, field: string): void {
+  assertNonEmptyString(value, field, TOOL_TEXT_LIMITS.url)
+  try {
+    const parsed = new URL(value as string)
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('invalid')
+  } catch {
+    throw new Error(`${field} deve ser uma URL HTTP ou HTTPS válida, sem credenciais`)
+  }
+}
+
+// Card T24 — edição de sprint/versão por `changes` (SET/CLEAR), com campos
+// permitidos e campos anuláveis por entidade.
+const SPRINT_EDIT_FIELDS = ['name', 'startDate', 'endDate'] as const
+const VERSION_EDIT_FIELDS = ['name', 'releaseDate', 'description', 'status'] as const
+const VERSION_CLEARABLE_FIELDS = ['releaseDate', 'description'] as const
+const VERSION_STATUSES = ['PLANNED', 'IN_DEV', 'RELEASED', 'CANCELLED'] as const
+
+function assertIsoDay(value: unknown, field: string): void {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error(`${field} deve ser uma data no formato AAAA-MM-DD`)
+}
+
+function validatePlanningChanges(changes: unknown, allowedFields: readonly string[], clearableFields: readonly string[]): void {
+  if (!Array.isArray(changes) || changes.length < 1 || changes.length > 20) throw new Error('changes deve conter entre 1 e 20 alterações')
+  const seen = new Set<string>()
+  for (const raw of changes as Array<Record<string, unknown>>) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || typeof raw.field !== 'string' || !allowedFields.includes(raw.field)) throw new Error(`changes[] deve conter field e operation (campos aceitos: ${allowedFields.join(', ')})`)
+    if (seen.has(raw.field)) throw new Error(`Campo duplicado em changes: ${raw.field}`)
+    seen.add(raw.field)
+    const operation = String(raw.operation)
+    if (!['SET', 'CLEAR'].includes(operation)) throw new Error(`changes[] deve informar operation para ${raw.field} (SET ou CLEAR)`)
+    if (operation === 'CLEAR') {
+      if (!clearableFields.includes(raw.field)) throw new Error(`${raw.field} não pode ser limpo`)
+      continue
+    }
+    if (typeof raw.value !== 'string' || !raw.value.trim()) throw new Error(`Valor obrigatório para ${raw.field}`)
+    if (raw.field === 'name') assertNonEmptyString(raw.value, 'name', TOOL_TEXT_LIMITS.name)
+    if (raw.field === 'description' && raw.value.length > TOOL_TEXT_LIMITS.description) throw new Error(`description excede o limite de ${TOOL_TEXT_LIMITS.description} caracteres`)
+    if (raw.field === 'status') assertEnum(raw.value, 'status', VERSION_STATUSES)
+    if (raw.field === 'startDate' || raw.field === 'endDate' || raw.field === 'releaseDate') assertIsoDay(raw.value, raw.field)
+  }
+}
+
 export function validateToolArguments(name: string, args: Record<string, unknown> | undefined): void {
   // Fonte única: os obrigatórios vêm do registry (mesma definição que gera o
   // schema exposto), eliminando a tabela paralela que já divergiu no passado.
@@ -64,7 +108,7 @@ export function validateToolArguments(name: string, args: Record<string, unknown
       throw new Error(`Campo desconhecido: ${key} em ${name}; campos aceitos: ${declaredFields.join(', ')}`)
     }
   }
-  for (const field of ['projectId', 'itemId', 'taskId', 'sprintId', 'tagId', 'versionId', 'userId', 'columnId', 'moduleId', 'checklistId', 'checklistItemId', 'assigneeId']) if (field in input && input[field] != null) assertNonEmptyString(input[field], field, 128)
+  for (const field of ['projectId', 'itemId', 'taskId', 'sprintId', 'tagId', 'versionId', 'userId', 'columnId', 'moduleId', 'checklistId', 'checklistItemId', 'assigneeId', 'linkId']) if (field in input && input[field] != null) assertNonEmptyString(input[field], field, 128)
   // null é tratado como "não informado" (clients strict enviam todos os campos).
   if (input.name != null) assertNonEmptyString(input.name, 'name', TOOL_TEXT_LIMITS.name)
   if (input.title != null) assertNonEmptyString(input.title, 'title', TOOL_TEXT_LIMITS.title)
@@ -75,12 +119,16 @@ export function validateToolArguments(name: string, args: Record<string, unknown
   if (input.advancedChecklists != null && typeof input.advancedChecklists !== 'boolean') throw new Error('advancedChecklists deve ser booleano')
   if (input.ref != null) assertNonEmptyString(input.ref, 'ref', TOOL_TEXT_LIMITS.ref)
   if (input.columnName != null) assertNonEmptyString(input.columnName, 'columnName', TOOL_TEXT_LIMITS.columnName)
+  if (input.url != null) assertHttpUrl(input.url, 'url')
   if (input.tagIds != null) assertStringArray(input.tagIds, 'tagIds')
   if (input.order != null) assertStringArray(input.order, 'order')
   if (input.durationMin != null && name !== 'create_item_log') assertNonNegativeNumber(input.durationMin, 'durationMin')
   if (name === 'create_item_log') normalizeDurationArguments(name, input)
   if (input.limit != null && (typeof input.limit !== 'number' || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)) {
     throw new Error('limit, quando informado, deve ser um inteiro entre 1 e 100 (omita ou envie null para o padrão)')
+  }
+  if (input.offset != null && (typeof input.offset !== 'number' || !Number.isInteger(input.offset) || input.offset < 0)) {
+    throw new Error('offset, quando informado, deve ser um inteiro não negativo')
   }
   if (name === 'list_tasks' && input.fields != null) {
     if (!Array.isArray(input.fields) || input.fields.length > 30 || input.fields.some(field => typeof field !== 'string' || !field.trim())) throw new Error('fields deve ser uma lista de até 30 nomes não vazios')
@@ -158,6 +206,10 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     for (const key of Object.keys(value)) if (!['activity', 'durationMin'].includes(key)) throw new Error(`Campo de alteração inválido: ${key}`)
     if (value.activity !== undefined && value.activity !== null) assertNonEmptyString(value.activity, 'activity', TOOL_TEXT_LIMITS.activity)
     if (value.durationMin !== undefined && value.durationMin !== null) assertNonNegativeNumber(value.durationMin, 'durationMin')
+  } else if (name === 'update_sprint') {
+    validatePlanningChanges(input.changes, SPRINT_EDIT_FIELDS, [])
+  } else if (name === 'update_version') {
+    validatePlanningChanges(input.changes, VERSION_EDIT_FIELDS, VERSION_CLEARABLE_FIELDS)
   } else if ('changes' in input && (typeof input.changes !== 'object' || input.changes === null || Array.isArray(input.changes))) throw new Error('changes deve ser um objeto')
   if (name === 'update_items') {
     const filters = input.filters
@@ -174,6 +226,14 @@ export function validateToolArguments(name: string, args: Record<string, unknown
       assertStringArray(value.statuses, 'statuses', 5)
       for (const status of value.statuses) assertEnum(status, 'status', ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'])
     }
+  }
+  if (name === 'update_item_link') {
+    const hasChange = ['name', 'url', 'description'].some(field => input[field] !== undefined && input[field] !== null)
+    if (!hasChange) throw new Error('update_item_link exige ao menos um de name, url ou description')
+  }
+  if (name === 'create_version') {
+    if (input.status != null) assertEnum(input.status, 'status', VERSION_STATUSES)
+    if (input.releaseDate != null) assertIsoDay(input.releaseDate, 'releaseDate')
   }
   if (name === 'get_dashboard_metrics') {
     assertEnum(input.metric, 'metric', ['snapshot', 'burnup', 'aging', 'hours', 'sprint'])

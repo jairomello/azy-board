@@ -8,15 +8,21 @@ import {
   toolClaimTask,
   toolCompleteTask,
   toolCreateChecklist,
+  toolCreateItemLink,
   toolCreateTask,
+  toolDeleteItemLink,
   toolGetCurrentSprint,
   toolGetBoard,
   toolGetDashboardMetrics,
   toolGetScreenOverview,
   toolListChecklists,
+  toolListItemLinks,
   toolListModules,
   toolListTasks,
   toolMoveTask,
+  toolUpdateItemLink,
+  toolUpdateSprint,
+  toolUpdateVersion,
 } from './tools'
 
 interface Column {
@@ -602,5 +608,57 @@ describe('get_dashboard_metrics (Card T20)', () => {
 
   test('metric inválido falha com mensagem acionável', async () => {
     await expect(toolGetDashboardMetrics(dashApi({}), { projectId: 'p1', metric: 'nope' as never })).rejects.toThrow('metric inválido')
+  })
+})
+
+describe('ferramentas de link do item (T22)', () => {
+  test('lista, cria, atualiza e remove links pelas rotas do item', async () => {
+    const linkCalls: Array<{ path: string; method: string; body?: unknown }> = []
+    const api: ApiCall = async (path, method = 'GET', body) => {
+      linkCalls.push({ path, method, body })
+      if (method === 'GET') return [{ id: 'l1', name: 'Figma', url: 'https://figma.com/a' }]
+      if (method === 'POST') return { id: 'l2', name: 'Doc', url: 'https://docs.example.com' }
+      if (method === 'PATCH') return { id: 'l1', name: 'Figma 2', url: 'https://figma.com/a' }
+      return { ok: true }
+    }
+
+    expect(await toolListItemLinks(api, 'p1', 'i1')).toEqual([{ id: 'l1', name: 'Figma', url: 'https://figma.com/a' }])
+    const created = await toolCreateItemLink(api, 'p1', 'i1', 'Doc', 'https://docs.example.com') as Record<string, unknown>
+    expect(created).toMatchObject({ id: 'l2', itemId: 'i1', projectId: 'p1' })
+    const updated = await toolUpdateItemLink(api, 'p1', 'i1', 'l1', { name: 'Figma 2' }) as Record<string, unknown>
+    expect(updated).toMatchObject({ id: 'l1', itemId: 'i1', projectId: 'p1' })
+    expect(await toolDeleteItemLink(api, 'p1', 'i1', 'l1')).toEqual({ ok: true, linkId: 'l1', itemId: 'i1', projectId: 'p1' })
+    expect(linkCalls.map(call => `${call.method} ${call.path}`)).toEqual([
+      'GET /projects/p1/items/i1/links',
+      'POST /projects/p1/items/i1/links',
+      'PATCH /projects/p1/items/i1/links/l1',
+      'DELETE /projects/p1/items/i1/links/l1',
+    ])
+  })
+
+  test('create_item_link exige nome e URL e delete exige linkId', async () => {
+    const api: ApiCall = async () => ({})
+    await expect(toolCreateItemLink(api, 'p1', 'i1', '', 'https://x.com')).rejects.toThrow('name é obrigatório')
+    await expect(toolCreateItemLink(api, 'p1', 'i1', 'Doc', '')).rejects.toThrow('url é obrigatório')
+    await expect(toolDeleteItemLink(api, 'p1', 'i1', '')).rejects.toThrow('linkId é obrigatório')
+  })
+})
+
+describe('edição de sprint e versão (T24)', () => {
+  test('traduz changes em corpo plano com CLEAR para null', async () => {
+    const calls: Array<{ path: string; method: string; body?: unknown }> = []
+    const api: ApiCall = async (path, method = 'GET', body) => {
+      calls.push({ path, method, body })
+      return { id: 'x' }
+    }
+
+    await toolUpdateSprint(api, 'p1', 's1', [{ field: 'endDate', operation: 'SET', value: '2026-11-14' }])
+    expect(calls[0]).toEqual({ path: '/projects/p1/sprints/s1', method: 'PATCH', body: { endDate: '2026-11-14' } })
+
+    await toolUpdateVersion(api, 'p1', 'v1', [
+      { field: 'status', operation: 'SET', value: 'RELEASED' },
+      { field: 'releaseDate', operation: 'CLEAR' },
+    ])
+    expect(calls[1]).toEqual({ path: '/projects/p1/versions/v1', method: 'PATCH', body: { status: 'RELEASED', releaseDate: null } })
   })
 })

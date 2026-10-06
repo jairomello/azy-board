@@ -4,6 +4,7 @@ import { ExternalLink, Link2, Loader2, Pencil, Plus, Trash2, X, Check } from 'lu
 import type { ItemLink } from '@azy-board/ui-contracts'
 import type { AssistantFocusEntity } from '@azy-board/assistant-contracts'
 import { api } from '../lib/api'
+import { onAssistantMutation } from '../lib/dataEvents'
 import { MarkdownText } from './MarkdownText'
 import { useToast } from './Toast'
 
@@ -21,6 +22,7 @@ export function ItemLinksArea({ itemId, projectId, canEdit, onEntityFocus }: Pro
   const [editingId, setEditingId] = useState<string | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [draft, setDraft] = useState<Draft>(emptyDraft)
+  const [revision, setRevision] = useState(0)
   const baseUrl = `/projects/${projectId}/items/${itemId}/links`
 
   const load = useCallback(async (signal?: AbortSignal) => {
@@ -34,7 +36,17 @@ export function ItemLinksArea({ itemId, projectId, canEdit, onEntityFocus }: Pro
     const controller = new AbortController()
     void load(controller.signal)
     return () => controller.abort()
-  }, [load])
+  }, [load, revision])
+
+  // Card T22 — mutação de link concluída pelo assistente recarrega a aba sem
+  // recarregamento manual. Filtra pelo item/projeto quando o resultado os expõe.
+  useEffect(() => onAssistantMutation(({ toolName, result }) => {
+    if (!/_item_link$/.test(toolName)) return
+    const payload = result && typeof result === 'object' ? result as Record<string, unknown> : null
+    if (typeof payload?.projectId === 'string' && payload.projectId !== projectId) return
+    if (typeof payload?.itemId === 'string' && payload.itemId !== itemId) return
+    setRevision(previous => previous + 1)
+  }), [itemId, projectId])
 
   async function save() {
     setSaving(true)

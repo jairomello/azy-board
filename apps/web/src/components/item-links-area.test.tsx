@@ -1,8 +1,9 @@
 import { screen } from '../test/setup'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { render, waitFor } from '@testing-library/react'
+import { act, render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18n from '../i18n'
+import { notifyAssistantMutation } from '../lib/dataEvents'
 import type { ItemLink } from '@azy-board/ui-contracts'
 
 interface ApiCall { method: string; path: string; body?: Record<string, unknown> }
@@ -140,5 +141,34 @@ describe('ItemLinksArea', () => {
     await waitFor(() => expect(screen.getByText('Nenhum link neste item.')).toBeInTheDocument())
     expect(calls.find(call => call.method === 'DELETE')).toMatchObject({ path: '/projects/project-1/items/item-1/links/link-1' })
     globalThis.confirm = confirmOriginal
+  })
+
+  test('recarrega a lista quando o assistente conclui uma mutação de link do item', async () => {
+    storedLinks = [makeLink('link-1', 'Wiki', 'https://wiki.example.com')]
+    render(<ItemLinksArea itemId="item-1" projectId="project-1" canEdit />)
+    await screen.findByRole('link', { name: /Wiki/ })
+    const before = calls.filter(call => call.method === 'GET').length
+
+    storedLinks = [...storedLinks, makeLink('link-2', 'Figma', 'https://figma.example.com/file')]
+    await act(async () => {
+      notifyAssistantMutation({ toolName: 'create_item_link', result: { id: 'link-2', itemId: 'item-1', projectId: 'project-1' } })
+    })
+
+    await screen.findByRole('link', { name: /Figma/ })
+    expect(calls.filter(call => call.method === 'GET').length).toBeGreaterThan(before)
+  })
+
+  test('ignora mutação de link de outro item', async () => {
+    storedLinks = [makeLink('link-1', 'Wiki', 'https://wiki.example.com')]
+    render(<ItemLinksArea itemId="item-1" projectId="project-1" canEdit />)
+    await screen.findByRole('link', { name: /Wiki/ })
+    const before = calls.filter(call => call.method === 'GET').length
+
+    await act(async () => {
+      notifyAssistantMutation({ toolName: 'update_item_link', result: { id: 'link-9', itemId: 'item-2', projectId: 'project-1' } })
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(calls.filter(call => call.method === 'GET').length).toBe(before)
   })
 })

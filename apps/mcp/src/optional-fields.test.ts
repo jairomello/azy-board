@@ -91,6 +91,45 @@ describe('contrato de campos opcionais do MCP', () => {
     expect(schema.required).not.toContain('durationMin')
     expect(schema.required).not.toContain('duration')
   })
+
+  test('update_sprint e update_version expõem changes como array próprio', async () => {
+    const tools = await exposedTools()
+    const sprint = tools.find(item => item.name === 'update_sprint')!.inputSchema as unknown as { required: string[]; properties: { changes: { type: string; items: { required?: string[]; properties: Record<string, unknown> } } } }
+    const version = tools.find(item => item.name === 'update_version')!.inputSchema as unknown as { required: string[]; properties: { changes: { type: string; items: { required?: string[]; properties: Record<string, unknown> } } } }
+    expect(new Set(sprint.required)).toEqual(new Set(['projectId', 'sprintId', 'changes']))
+    expect(new Set(version.required)).toEqual(new Set(['projectId', 'versionId', 'changes']))
+    expect(sprint.properties.changes.type).toBe('array')
+    expect(sprint.properties.changes.items.required).toEqual(['field', 'operation'])
+    expect(Object.keys(sprint.properties.changes.items.properties)).toEqual(['field', 'operation', 'value'])
+    expect(version.properties.changes.items.required).toEqual(['field', 'operation'])
+  })
+
+  test('create_version expõe releaseDate, description e status opcionais', async () => {
+    const tool = (await exposedTools()).find(item => item.name === 'create_version')!
+    const schema = tool.inputSchema as { required: string[]; properties: Record<string, unknown> }
+    expect(new Set(schema.required)).toEqual(new Set(['projectId', 'name']))
+    expect(schema.properties.releaseDate).toBeDefined()
+    expect(schema.properties.description).toBeDefined()
+    expect(schema.properties.status).toBeDefined()
+    expect(schema.required).not.toContain('releaseDate')
+    expect(schema.required).not.toContain('status')
+  })
+
+  test('ferramentas de link expõem apenas o mínimo obrigatório e description opcional', async () => {
+    const tools = await exposedTools()
+    const list = tools.find(item => item.name === 'list_item_links')!.inputSchema as { required: string[]; properties: Record<string, unknown> }
+    const create = tools.find(item => item.name === 'create_item_link')!.inputSchema as { required: string[]; properties: Record<string, unknown> }
+    const update = tools.find(item => item.name === 'update_item_link')!.inputSchema as { required: string[]; properties: Record<string, unknown> }
+    const remove = tools.find(item => item.name === 'delete_item_link')!.inputSchema as { required: string[]; properties: Record<string, unknown> }
+    expect(new Set(list.required)).toEqual(new Set(['projectId', 'itemId']))
+    expect(new Set(create.required)).toEqual(new Set(['projectId', 'itemId', 'name', 'url']))
+    expect(new Set(update.required)).toEqual(new Set(['projectId', 'itemId', 'linkId']))
+    expect(new Set(remove.required)).toEqual(new Set(['projectId', 'itemId', 'linkId']))
+    expect(create.properties.description).toBeDefined()
+    expect(create.properties.url).toBeDefined()
+    expect(update.properties.name).toBeDefined()
+    expect(update.required).not.toContain('url')
+  })
 })
 
 describe('validação aceita null e ausência em campos opcionais', () => {

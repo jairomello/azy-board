@@ -1502,12 +1502,23 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
     // -----------------------------------------------------------------------
     files: {
       async listAttachments(context: PersistenceContext, projectId: string, itemId: string): Promise<AttachmentRecord[]> {
-        const rows = await q('SELECT * FROM attachments WHERE tenant_id = $1 AND item_id = $2', [context.tenantId, itemId])
+        // [TENANT] Ancoragem defensiva por projeto: o item precisa pertencer ao
+        // projeto informado (mesma garantia do adapter SQLite).
+        const rows = await q(
+          `SELECT a.* FROM attachments a
+           JOIN items i ON i.tenant_id = a.tenant_id AND i.id = a.item_id
+           WHERE a.tenant_id = $1 AND i.project_id = $2 AND a.item_id = $3`,
+          [context.tenantId, projectId, itemId],
+        )
         return rows.map(mapAttachment)
       },
       async getAttachment(context: PersistenceContext, projectId: string, itemId: string, attachmentId: string): Promise<AttachmentRecord | null> {
-        const row = await q1('SELECT * FROM attachments WHERE tenant_id = $1 AND item_id = $2 AND id = $3',
-          [context.tenantId, itemId, attachmentId])
+        const row = await q1(
+          `SELECT a.* FROM attachments a
+           JOIN items i ON i.tenant_id = a.tenant_id AND i.id = a.item_id
+           WHERE a.tenant_id = $1 AND i.project_id = $2 AND a.item_id = $3 AND a.id = $4`,
+          [context.tenantId, projectId, itemId, attachmentId],
+        )
         return row ? mapAttachment(row) : null
       },
       async createAttachment(context: PersistenceContext, projectId: string, itemId: string, input: NewAttachmentRecord): Promise<AttachmentRecord> {

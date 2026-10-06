@@ -374,3 +374,114 @@ O sistema SHALL expor a criação de apontamento de trabalho com `activity` obri
 - **WHEN** agente invoca `create_item_log` com duração negativa ou fora dos formatos aceitos
 - **THEN** o servidor retorna erro de validação acionável e não cria o registro
 
+### Requirement: Ferramenta MCP read_attachment
+
+O servidor MCP SHALL expor a ferramenta `read_attachment`, que lê o conteúdo autorizado de um anexo por `{ projectId, itemId, attachmentId }` através da API, reaproveitando a definição única do catálogo, e SHALL devolver o texto extraído com os metadados do arquivo e a indicação explícita de limites (`truncated`/`reason`) e de formato não suportado. A ferramenta NÃO SHALL expor caminho físico, credenciais de armazenamento nem conteúdo fora do escopo autorizado.
+
+#### Scenario: Ler anexo textual pelo MCP
+
+- **WHEN** um agente invoca `read_attachment` com `{ projectId, itemId, attachmentId }` de um anexo textual autorizado
+- **THEN** o servidor lê o conteúdo pela rota autorizada e retorna o texto extraído, o formato e os metadados de leitura
+
+#### Scenario: Formato não suportado retorna declaração explícita
+
+- **WHEN** o agente lê um anexo cujo formato o sistema não interpreta
+- **THEN** a ferramenta retorna `format: unsupported` com o motivo, sem texto e sem afirmar leitura
+
+#### Scenario: Leitura não autorizada
+
+- **WHEN** o agente invoca `read_attachment` para um anexo de projeto sem membership ou de outro tenant
+- **THEN** o servidor retorna 403/404 normalizado sem conteúdo nem caminho físico
+
+#### Scenario: Limite de leitura comunicado
+
+- **WHEN** o conteúdo excede o teto de caracteres por chamada
+- **THEN** a resposta MCP informa `truncated: true`, o motivo e `nextOffset`, permitindo uma leitura segmentada
+
+#### Scenario: Catálogo e limites em sincronia
+
+- **WHEN** `bun run test:mcp-catalog` é executado após a mudança
+- **THEN** `read_attachment` está documentada no README gerado, com schema completo, `case` no dispatcher e limites coerentes com o catálogo
+
+### Requirement: Ferramentas MCP de links do item
+
+O servidor MCP SHALL expor `list_item_links`, `create_item_link`, `update_item_link` e `delete_item_link`, reaproveitando o CRUD de links da API sob `/projects/:projectId/items/:itemId/links`. A listagem SHALL retornar apenas os links do item no tenant/projeto autorizados; a criação SHALL persistir nome, URL e descrição opcional; a edição SHALL alterar somente os campos enviados; e a remoção SHALL excluir o link indicado. Leitura SHALL exigir acesso de leitura ao projeto e mutações SHALL exigir permissão de escrita, com isolamento por tenant/projeto/item. As respostas de mutação SHALL permitir confirmar o link afetado por `id`, `name` e `url`, e erros SHALL seguir o envelope normalizado. As ferramentas NÃO SHALL ler, baixar ou interpretar o conteúdo da URL.
+
+#### Scenario: Listar links do item
+
+- **WHEN** o agente invoca `list_item_links` com `{ projectId, itemId }` sobre um item acessível
+- **THEN** o servidor retorna somente os links daquele item, com `id`, `name`, `url` e `description`
+
+#### Scenario: Criar link
+
+- **WHEN** o agente invoca `create_item_link` com `{ projectId, itemId, name, url }` e, opcionalmente, `description`
+- **THEN** o link é persistido e a resposta permite confirmar nome e URL sem releitura pesada
+
+#### Scenario: Editar link
+
+- **WHEN** o agente invoca `update_item_link` com `{ projectId, itemId, linkId }` e um ou mais de `name`/`url`/`description`
+- **THEN** somente os campos enviados são alterados e a resposta devolve o link atualizado
+
+#### Scenario: Remover link
+
+- **WHEN** o agente invoca `delete_item_link` com `{ projectId, itemId, linkId }`
+- **THEN** o link é excluído e deixa de aparecer em `list_item_links`
+
+#### Scenario: URL inválida não persiste
+
+- **WHEN** o agente invoca `create_item_link` com URL inválida ou esquema diferente de HTTP/HTTPS
+- **THEN** o servidor retorna erro de validação acionável e nenhum link é criado
+
+#### Scenario: Permissão e isolamento
+
+- **WHEN** um agente sem permissão de escrita tenta criar/editar/remover, ou tenta acessar link de outro tenant/projeto/item
+- **THEN** a operação é rejeitada sem revelar dados nem alterar registros
+
+#### Scenario: Cadastrar URL não acessa o serviço externo
+
+- **WHEN** o agente cria um link para uma URL externa
+- **THEN** a operação apenas persiste os metadados e não requisita nem interpreta o conteúdo da URL
+
+### Requirement: Ferramentas MCP de edição de sprint e versão
+
+O servidor MCP SHALL expor as ferramentas `update_sprint` e `update_version`, traduzindo `changes` para o corpo plano das rotas `PATCH /projects/:id/sprints/:sprintId` e `PATCH /projects/:id/versions/:versionId`. Em `update_version`, a operação `CLEAR` SHALL ser traduzida para `null` no campo correspondente. As ferramentas SHALL reutilizar o mesmo catálogo, validação e policy das demais, exigindo `ADMIN`, e SHALL repassar erros normalizados da API sem conversão semântica própria. As edições SHALL emitir os mesmos eventos de atualização das rotas, de modo que a tela reflita a mudança em tempo real.
+
+#### Scenario: Editar datas de sprint pela ferramenta
+
+- **WHEN** agente invoca `update_sprint` com `{ projectId, sprintId, changes: [{ field: "endDate", operation: "SET", value: "2026-11-14" }] }`
+- **THEN** a rota de edição é chamada com `endDate` atualizado, o status e os ciclos da sprint são preservados e o evento de atualização é emitido
+
+#### Scenario: Marcar versão como liberada
+
+- **WHEN** agente invoca `update_version` com `{ projectId, versionId, changes: [{ field: "status", operation: "SET", value: "RELEASED" }] }`
+- **THEN** a versão passa a `RELEASED` via API e a resposta permite confirmar o novo estado
+
+#### Scenario: Limpar data de lançamento da versão
+
+- **WHEN** agente invoca `update_version` com `changes` contendo `{ field: "releaseDate", operation: "CLEAR" }`
+- **THEN** o executor envia `releaseDate: null` à API e a versão fica sem data de lançamento
+
+#### Scenario: Edição inválida não persiste
+
+- **WHEN** a API rejeita a edição por data de sprint invertida ou recurso inexistente
+- **THEN** o servidor retorna o erro normalizado correspondente e nenhuma alteração é persistida
+
+#### Scenario: Paridade schema-validator-executor
+
+- **WHEN** o gate de paridade do catálogo monta o payload mínimo de `update_sprint` e `update_version`
+- **THEN** a validação aceita o payload e o schema expõe exatamente os campos exigidos
+
+### Requirement: Criação de versão com campos completos via MCP
+
+A ferramenta `create_version` SHALL repassar à API os campos opcionais `releaseDate`, `description` e `status` quando informados, mantendo `name` obrigatório e o comportamento anterior quando apenas `name` é enviado.
+
+#### Scenario: Criar versão com data e situação
+
+- **WHEN** agente invoca `create_version` com `{ projectId, name: "v1.0.0", releaseDate: "2026-12-01", status: "IN_DEV" }`
+- **THEN** a API cria a versão com os campos informados e a resposta permite confirmar nome e situação
+
+#### Scenario: Criar versão só com nome
+
+- **WHEN** agente invoca `create_version` com `{ projectId, name: "v1.0.0" }`
+- **THEN** a versão é criada com os defaults da API, como antes
+
