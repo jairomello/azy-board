@@ -2,11 +2,13 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
-import { broadcast } from '../services/websocket'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { checklistItemSchema, checklistSchema, parseJson, updateChecklistItemSchema, updateChecklistSchema } from '../validation'
 import { persistence } from '../persistence/runtime'
-import { userPersistenceContext } from '../persistence/context'
+import { userMutationContext, userPersistenceContext } from '../persistence/context'
+import { findOperationId } from '../services/domainEventOutbox'
+import { IDEMPOTENCY_RETENTION_MS, payloadHash } from '../services/idempotency'
+import { COMMAND_NAMESPACES, isIdempotencyConflict, isIdempotentReplay, parseEnvelope } from '../persistence/idempotency'
 import type { ChecklistItemRecord, ChecklistRecord } from '../persistence/models'
 
 export const checklistsRouter = new Hono<HonoEnv>()
@@ -87,12 +89,36 @@ checklistsRouter.post('/', requireRole('MEMBER'), async (c) => {
   const item = await persistence.items.getItem(projectContext, projectId, itemId)
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
-  const created = await persistence.checklists.createChecklist(projectContext, projectId, itemId, body.name.trim())
-
-  const progress = await persistence.checklists.getChecklistProgress(projectContext, itemId)
-  broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, progress } })
-
-  return c.json({ id: created.id, name: created.name, position: created.position, items: [] }, 201)
+  // [T38] Chave idempotente opcional (agente envia Idempotency-Key estável).
+  const idempotencyKey = c.req.header('Idempotency-Key')
+  const name = body.name.trim()
+  const commandHash = idempotencyKey ? await payloadHash({ projectId, itemId, name }) : null
+  const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  if (idempotencyKey && commandHash) {
+    mutationContext.idempotency = {
+      namespace: COMMAND_NAMESPACES.createChecklist, projectScope: projectId, key: idempotencyKey,
+      payloadHash: commandHash, expiresAt: new Date(Date.now() + IDEMPOTENCY_RETENTION_MS).toISOString(),
+    }
+  }
+  try {
+    const created = await persistence.checklists.createChecklist(mutationContext, projectId, itemId, name)
+    if (idempotencyKey) {
+      const operationId = await findOperationId(ctx.tenantId, ctx.userId, COMMAND_NAMESPACES.createChecklist, idempotencyKey, projectId)
+      if (operationId) c.header('X-Operation-Id', operationId)
+    }
+    return c.json({ id: created.id, name: created.name, position: created.position, items: [] }, 201)
+  } catch (error) {
+    if (isIdempotencyConflict(error)) return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
+    if (isIdempotentReplay(error)) {
+      const envelope = parseEnvelope(error.record.responseJson)
+      const replay = envelope?.body as ChecklistRecord | null | undefined
+      if (replay == null) return c.json({ error: 'Resultado idempotente indisponível.' }, 409)
+      const replayOperationId = await findOperationId(ctx.tenantId, ctx.userId, COMMAND_NAMESPACES.createChecklist, idempotencyKey!, projectId)
+      if (replayOperationId) c.header('X-Operation-Id', replayOperationId)
+      return c.json({ id: replay.id, name: replay.name, position: replay.position, items: [] }, 201)
+    }
+    throw error
+  }
 })
 
 // PATCH /projects/:projectId/items/:itemId/checklists/:checklistId
@@ -116,8 +142,6 @@ checklistsRouter.patch('/:checklistId', requireRole('MEMBER'), async (c) => {
   })
   if (!updated) return c.json({ error: 'Checklist não encontrado' }, 404)
 
-  const progress = await persistence.checklists.getChecklistProgress(projectContext, itemId)
-  broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, checklistId, progress } })
 
   return c.json({ ...updated, items: undefined })
 })
@@ -133,8 +157,6 @@ checklistsRouter.delete('/:checklistId', requireRole('MEMBER'), async (c) => {
 
   await persistence.checklists.deleteChecklist(projectContext, projectId, itemId, checklistId)
 
-  const progress = await persistence.checklists.getChecklistProgress(projectContext, itemId)
-  broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, progress } })
 
   return c.body(null, 204)
 })
@@ -165,17 +187,36 @@ checklistsRouter.post('/:checklistId/items', requireRole('MEMBER'), async (c) =>
   const checklist = await persistence.checklists.getChecklist(projectContext, projectId, itemId, checklistId)
   if (!checklist) return c.json({ error: 'Checklist não encontrado' }, 404)
 
+  const itemInput = {
+    text: body.text.trim(),
+    checked: false,
+    dueDate: advanced ? body.dueDate ?? null : null,
+    assigneeId: advanced ? body.assigneeId ?? null : null,
+    description: advanced ? body.description ?? null : null,
+  }
+  const idempotencyKey = c.req.header('Idempotency-Key')
+  const commandHash = idempotencyKey ? await payloadHash({ projectId, itemId, checklistId, ...itemInput }) : null
+  const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  if (idempotencyKey && commandHash) {
+    mutationContext.idempotency = {
+      namespace: COMMAND_NAMESPACES.createChecklistItem, projectScope: projectId, key: idempotencyKey,
+      payloadHash: commandHash, expiresAt: new Date(Date.now() + IDEMPOTENCY_RETENTION_MS).toISOString(),
+    }
+  }
   let created: ChecklistItemRecord
   try {
-    created = await persistence.checklists.createChecklistItem(projectContext, projectId, itemId, checklistId, {
-      text: body.text.trim(),
-      checked: false,
-      dueDate: advanced ? body.dueDate ?? null : null,
-      assigneeId: advanced ? body.assigneeId ?? null : null,
-      description: advanced ? body.description ?? null : null,
-    })
+    created = await persistence.checklists.createChecklistItem(mutationContext, projectId, itemId, checklistId, itemInput)
   } catch (error) {
     if (error instanceof Error && error.message === 'CHECKLIST_NOT_FOUND') return c.json({ error: 'Checklist não encontrado' }, 404)
+    if (isIdempotencyConflict(error)) return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
+    if (isIdempotentReplay(error)) {
+      const envelope = parseEnvelope(error.record.responseJson)
+      const replay = envelope?.body as ChecklistItemRecord | null | undefined
+      if (replay == null) return c.json({ error: 'Resultado idempotente indisponível.' }, 409)
+      const replayOperationId = await findOperationId(ctx.tenantId, ctx.userId, COMMAND_NAMESPACES.createChecklistItem, idempotencyKey!, projectId)
+      if (replayOperationId) c.header('X-Operation-Id', replayOperationId)
+      return c.json(mapChecklistItem(replay, advanced, advanced ? await resolveChecklistAssignee(ctx.tenantId, replay.assigneeId) : null), 201)
+    }
     throw error
   }
 
@@ -184,8 +225,10 @@ checklistsRouter.post('/:checklistId/items', requireRole('MEMBER'), async (c) =>
     advanced,
     advanced ? await resolveChecklistAssignee(ctx.tenantId, created.assigneeId) : null,
   )
-  const progress = await persistence.checklists.getChecklistProgress(projectContext, itemId)
-  broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, checklistId, progress } })
+  if (idempotencyKey) {
+    const operationId = await findOperationId(ctx.tenantId, ctx.userId, COMMAND_NAMESPACES.createChecklistItem, idempotencyKey, projectId)
+    if (operationId) c.header('X-Operation-Id', operationId)
+  }
 
   return c.json(newItem, 201)
 })
@@ -226,8 +269,6 @@ checklistsRouter.patch('/:checklistId/items/:checklistItemId', requireRole('MEMB
   })
   if (!updated) return c.json({ error: 'Item de checklist não encontrado' }, 404)
 
-  const progress = await persistence.checklists.getChecklistProgress(projectContext, itemId)
-  broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, checklistId, progress } })
 
   return c.json(mapChecklistItem(
     updated,
@@ -250,8 +291,6 @@ checklistsRouter.delete('/:checklistId/items/:checklistItemId', requireRole('MEM
 
   await persistence.checklists.deleteChecklistItem(projectContext, projectId, itemId, checklistId, checklistItemId)
 
-  const progress = await persistence.checklists.getChecklistProgress(projectContext, itemId)
-  broadcast(projectId, { type: 'CHECKLIST_UPDATED', projectId, payload: { itemId, checklistId, progress } })
 
   return c.body(null, 204)
 })

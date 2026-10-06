@@ -216,7 +216,12 @@ jobs:
       AZYBOARD_INSTANCE_DIR: /tmp/azy-ci-advanced-state
       JWT_SECRET: ci-advanced-secret-not-for-production
       NODE_ENV: test
-      TEST_PG_URL: postgresql://azyboard:ci-password@localhost:5432/azyboard
+      TEST_PG_URL: postgresql://azyboard:ci-password@localhost:5432/azyboard_test
+      PORT: "3002"
+      UPLOADS_DIR: /tmp/azy-ci-advanced-uploads
+      FRONTEND_URL: http://localhost:5173
+      AZYBOARD_API_TARGET: http://localhost:3002
+      SMOKE_URL: http://localhost:5173
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -230,26 +235,79 @@ jobs:
           restore-keys: ${{ runner.os }}-bun-
       - name: Instalar dependências
         run: bun install --frozen-lockfile
-      - name: Migrations PostgreSQL
-        run: |
-          bun run --cwd apps/api -e "
-            const { readFileSync } = require('fs')
-            const { join } = require('path')
-            const { Pool } = require('pg')
-            const pool = new Pool({ connectionString: process.env.DATABASE_URL })
-            const dir = join('apps/api/src/db/postgres/migrations')
-            for (const f of ['0000_pale_warlock.sql', '0001_composite_fks.sql']) {
-              await pool.query(readFileSync(join(dir, f), 'utf8'))
-            }
-            await pool.end()
-            console.log('Migrations PostgreSQL aplicadas.')
-          "
+      - name: Criar banco de testes isolado
+        run: PGPASSWORD=ci-password createdb -h localhost -U azyboard azyboard_test
+      - name: Testes de boot/import por perfil
+        run: bun test apps/api/src/boot/boot-profile.test.ts
       - name: Testes de migrations PostgreSQL
         run: bun test apps/api/src/db/postgres/migrations.test.ts
+      - name: Migrations legadas (dados pré-T37 preservados)
+        run: bun test apps/api/src/db/postgres/legacy-migrations.test.ts
       - name: Testes de paridade SIMPLE ↔ ADVANCED
         run: bun test apps/api/src/db/postgres/parity.test.ts
+      - name: Jornada HTTP ADVANCED (dois tenants, RBAC)
+        run: bun test apps/api/src/advanced-http.test.ts
+      - name: Agente ADVANCED (provider determinístico, tool/aprovação/SSE)
+        run: bun test apps/api/src/advanced-agent.test.ts
+      - name: Worker ADVANCED fenced (dois workers reais, lease expirado)
+        run: bun test apps/api/src/advanced-worker-fence.test.ts
+      - name: Rollout/rollback ADVANCED (redeploy e marcador)
+        run: bun test apps/api/src/advanced-rollout.test.ts
       - name: Testes de coordenação (local)
         run: bun test apps/api/src/coordination/local.test.ts
+      - name: Migrations PostgreSQL da instalação (runner do perfil)
+        run: bun run --cwd apps/api db:migrate:pg
+      - name: Reexecutar migrations (ensaio de rollout idempotente)
+        run: bun run --cwd apps/api db:migrate:pg
+      - name: Setup CLI ADVANCED (tenant/admin)
+        run: |
+          bun run --cwd apps/api src/scripts/setup.ts \
+            "CI Advanced" "ci-advanced" "admin@ci-advanced.test" "SenhaForte123!" "CI Admin"
+      - name: Subir API ADVANCED real
+        run: |
+          mkdir -p tmp/ci "$UPLOADS_DIR"
+          bun run --cwd apps/api src/index.ts > tmp/ci/advanced-api.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -s -o /dev/null http://localhost:3002/health/ready; then
+              echo "API ADVANCED respondeu na tentativa $i"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API ADVANCED não respondeu em 60s"
+          cat tmp/ci/advanced-api.log
+          exit 1
+      - name: Subir Web real
+        run: |
+          bun run dev:web > tmp/ci/advanced-web.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -s -o /dev/null http://localhost:5173; then
+              echo "Web respondeu na tentativa $i"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Web não respondeu em 60s"
+          cat tmp/ci/advanced-web.log
+          exit 1
+      - name: Smoke ADVANCED (web + API PostgreSQL/Valkey)
+        run: bun run test:smoke
+      - name: Publicar logs sanitizados
+        if: failure()
+        run: |
+          echo "=== API ADVANCED ==="
+          cat tmp/ci/advanced-api.log || true
+          echo "=== WEB ==="
+          cat tmp/ci/advanced-web.log || true
+      - name: Publicar artefatos de diagnóstico
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: advanced-logs
+          if-no-files-found: ignore
+          path: |
+            tmp/ci/advanced-api.log
+            tmp/ci/advanced-web.log
 
   image:
     name: image (deploy reproduzível)

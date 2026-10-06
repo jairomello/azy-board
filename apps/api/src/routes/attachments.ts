@@ -9,7 +9,6 @@ import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
 import type { AttachmentPatch, AttachmentRecord } from '../persistence/models'
 import { attachmentMetadataSchema } from '../validation'
-import { broadcast } from '../services/websocket'
 import { decryptAssistantSecret, encryptAssistantSecret } from '../services/assistantEncryption'
 import { hasGlobalGroup } from '../services/auth'
 
@@ -277,7 +276,6 @@ attachmentsRouter.post('/', requireRole('MEMBER'), async (c) => {
     description: metadata.data.description ?? null,
   })
 
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
   return c.json({
     id: created.id,
     url: attachmentUrl(projectId, itemId, created.id),
@@ -427,7 +425,6 @@ attachmentsRouter.patch('/:attachmentId', requireRole('MEMBER'), async (c) => {
   const updated = await persistence.files.updateAttachment(projectContext, projectId, itemId, attachmentId, patch)
   if (!updated) return c.json({ error: 'Anexo não encontrado' }, 404)
 
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
   return c.json(serializeAttachment(projectId, itemId, updated))
 })
 
@@ -447,7 +444,6 @@ attachmentsRouter.delete('/:attachmentId', requireRole('MEMBER'), async (c) => {
   // pós-commit via outbox de limpeza (idempotente, com retry).
   const removed = await persistence.files.deleteAttachmentWithCleanup(projectContext, projectId, itemId, attachmentId)
   if (!removed) return c.json({ error: 'Anexo não encontrado' }, 404)
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
 
   triggerStorageCleanupAfterCommit()
 

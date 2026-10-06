@@ -67,13 +67,28 @@ async function updateItemsPopulation(context: HarnessContext, name: string, args
   return { displayedCount: lockedIds?.length ?? null, matchedCount, conflictingCount }
 }
 
-/** Executa uma run reivindicada, reconstruindo identidade, configuração e tools do tenant. */
-export async function executeAssistantRun(runId: string, tenantId: string): Promise<void> {
+/**
+ * Executa uma run reivindicada, reconstruindo identidade, configuração e tools do tenant.
+ * [T37] Recebe o contexto de posse (geração + AbortSignal) para abortar coopera-
+ * tivamente quando o lease é perdido; efeitos terminais não são confirmados após abort.
+ */
+export async function executeAssistantRun(
+  runId: string,
+  tenantId: string,
+  _workerId?: string,
+  fence?: { generation: number; signal: AbortSignal },
+): Promise<void> {
   const loaded = await loadRunContext(runId, tenantId)
   const systemScope = { tenantId, actorUserId: null, actorKind: 'SYSTEM' as const }
   const run = await persistence.agent.getRun(systemScope, runId)
   if (!run) return
+  if (fence?.signal.aborted) {
+    logger.warn('assistant-run: abortado antes de iniciar (posse perdida)', { runId, tenantId })
+    throw new Error('LEASE_LOST')
+  }
   const fail = async (code: string) => {
+    // [T37] Após perda de posse, não confirma estado terminal da geração antiga.
+    if (fence?.signal.aborted) return
     const now = new Date().toISOString()
     await persistence.agent.updateRun(runId, tenantId, { status: 'FAILED', errorCode: code, finishedAt: now })
     logger.warn('assistant-run: execution context unavailable', { runId, tenantId, errorCode: code })
@@ -129,16 +144,33 @@ export async function executeAssistantRun(runId: string, tenantId: string): Prom
   const harness = new AssistantHarness({
     provider,
     limits: harnessLimits(loaded.governance),
-    executeTool: async (name, args, toolContext) => executeSharedTool(name, args, {
-      api: workerApi, context: toolContext, authorize: authorizeAssistantTool,
-    }),
+    executeTool: async (name, args, toolContext) => {
+      // [T37] Bloqueia novos dispatch de tool após perda de posse/abort.
+      if (fence?.signal.aborted) throw new Error('LEASE_LOST')
+      // [T37] Chave estável por run/tool/argumentos: a rota T38 retorna o
+      // resultado original em retomada, sem repetir a mutação após crash.
+      const operationId = `${runId}:${operationHash(name, args)}`
+      const api = (path: string, method = 'GET', body?: unknown) =>
+        workerApi(path, method, body, method === 'GET' ? undefined : { 'Idempotency-Key': operationId })
+      return executeSharedTool(name, args, {
+        api, context: toolContext, authorize: authorizeAssistantTool, operationId,
+      })
+    },
     authorize: authorizeAssistantTool,
     // Card T16 — prévia com a população real do conjunto capturado.
     populationResolver: updateItemsPopulation,
     // Card T18 — explicação/revelação de visibilidade resolvida no servidor.
     explainItemVisibility,
-    assertAvailable: async () => { if (!await available(tenantId)) throw new Error('ASSISTANT_UNAVAILABLE') },
-    checkCancel: async currentRunId => await isCancelRequested(currentRunId, tenantId),
+    assertAvailable: async () => {
+      // [T37] Posse perdida bloqueia novos efeitos antes de qualquer novo dispatch.
+      if (fence?.signal.aborted) throw new Error('LEASE_LOST')
+      if (!await available(tenantId)) throw new Error('ASSISTANT_UNAVAILABLE')
+    },
+    checkCancel: async currentRunId => fence?.signal.aborted === true || await isCancelRequested(currentRunId, tenantId),
+    // [T37] Toda escrita de estado da run passa a validar posse/geração no commit.
+    fence: fence ? { workerId: _workerId ?? 'agent-worker', generation: fence.generation } : undefined,
+    // [T37] Aborta a chamada ao provider quando a posse é perdida.
+    signal: fence?.signal,
   })
 
   const executionState = loaded.executionState
@@ -169,10 +201,15 @@ export async function executeAssistantRun(runId: string, tenantId: string): Prom
     context, loaded.model, runId, executionState, loaded.toolAllowlist, completedTools,
   )
   if (result.status === 'COMPLETED' && result.text?.trim()) {
-    await persistence.agent.createMessage(userScope, {
-      conversationId: loaded.conversationId, userId: loaded.userId, role: 'ASSISTANT', content: result.text,
-      metadataJson: JSON.stringify({ runId }), createdAt: new Date().toISOString(),
-    })
-    await persistence.agent.touchConversation(userScope, loaded.userId, loaded.conversationId, new Date().toISOString())
+    // [T37] Dedup de mensagem terminal: se já persistida para a run (crash após
+    // commit antes do checkpoint), não duplica a conversa.
+    const existing = await persistence.agent.findMessageByRunId(userScope, runId)
+    if (!existing) {
+      await persistence.agent.createMessage(userScope, {
+        conversationId: loaded.conversationId, userId: loaded.userId, role: 'ASSISTANT', content: result.text,
+        metadataJson: JSON.stringify({ runId }), createdAt: new Date().toISOString(),
+      })
+      await persistence.agent.touchConversation(userScope, loaded.userId, loaded.conversationId, new Date().toISOString())
+    }
   }
 }

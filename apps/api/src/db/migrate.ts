@@ -3,7 +3,8 @@ import { Database as BunDatabase } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import * as schema from './schema'
 import { resolveInstallProfile } from './installProfile'
-import { ensureInstallationMarkers, preflightInstallationMarkers, preflightVolumeMarker, sqliteInstallationMarkerStore } from './installationMarkers'
+import { ensureInstallationMarkers, preflightVolumeMarker } from './installationMarkers'
+import { preflightInstallationMarkers, sqliteInstallationMarkerStore } from './sqlite/installationMarkers'
 
 const install = resolveInstallProfile()
 if (install.profile !== 'SIMPLE') {

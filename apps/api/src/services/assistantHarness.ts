@@ -62,7 +62,7 @@ export type RiskLevel = 'READ' | 'LOW' | 'MEDIUM' | 'HIGH' | 'DESTRUCTIVE'
 export type HarnessContext = HumanToolContext & { conversationId: string; runId: string; itemTypeScope?: Array<'EPIC' | 'STORY' | 'TASK' | 'BUG'>; screenSnapshot?: AssistantScreenSnapshot }
 type HarnessLimits = { [Key in keyof typeof HARNESS_LIMITS]: number }
 export type PreviewPopulation = { displayedCount: number | null; matchedCount: number; conflictingCount: number | null }
-export type HarnessOptions = { agent?: AgentPort; provider: ModelProvider; executeTool: (name: string, args: Record<string, unknown>, context: HarnessContext) => Promise<unknown>; authorize?: (context: HarnessContext, name: string, args: Record<string, unknown>) => Promise<void>; assertAvailable?: (context: HarnessContext) => Promise<void>; limits?: Partial<HarnessLimits>; checkCancel?: (runId: string) => Promise<boolean>; populationResolver?: (context: HarnessContext, name: string, args: Record<string, unknown>) => Promise<PreviewPopulation | null>; explainItemVisibility?: (context: HarnessContext, args: { itemId?: string; sequenceCode?: string }) => Promise<VisibilityExplanation | VisibilityExplanationError> }
+export type HarnessOptions = { agent?: AgentPort; provider: ModelProvider; executeTool: (name: string, args: Record<string, unknown>, context: HarnessContext) => Promise<unknown>; authorize?: (context: HarnessContext, name: string, args: Record<string, unknown>) => Promise<void>; assertAvailable?: (context: HarnessContext) => Promise<void>; limits?: Partial<HarnessLimits>; checkCancel?: (runId: string) => Promise<boolean>; populationResolver?: (context: HarnessContext, name: string, args: Record<string, unknown>) => Promise<PreviewPopulation | null>; explainItemVisibility?: (context: HarnessContext, args: { itemId?: string; sequenceCode?: string }) => Promise<VisibilityExplanation | VisibilityExplanationError>; fence?: { workerId: string; generation: number }; signal?: AbortSignal }
 
 const mutationNames = new Set(getSharedToolDefinitions().filter(tool => tool.routing.operation !== 'read').map(tool => tool.name))
 const destructiveNames = new Set(['delete_item', 'delete_project', 'archive_item', 'delete_checklist', 'delete_checklist_item', 'remove_member'])
@@ -201,6 +201,20 @@ export class AssistantHarness {
     return { tenantId, actorUserId: userId ?? null, actorKind: 'USER' }
   }
 
+  // [T37] Escrita de estado da run fenced quando executada sob posse de worker.
+  // Sem fence (rotas/CLI), delega ao updateRun tradicional. Sob fence, uma
+  // transição rejeitada (proprietário/geração obsoletos) aborta a execução com
+  // LEASE_LOST — sem máquina de estados paralela nem continuação indevida.
+  private async writeRun(runId: string, tenantId: string, patch: Parameters<AgentPort['updateRun']>[2]): Promise<boolean> {
+    if (this.options.fence) {
+      const applied = await this.agent.updateRunFenced(runId, tenantId, this.options.fence.workerId, this.options.fence.generation, patch)
+      if (!applied) throw new Error('LEASE_LOST')
+      return true
+    }
+    await this.agent.updateRun(runId, tenantId, patch)
+    return true
+  }
+
   async createRun(context: Omit<HarnessContext, 'runId'>, model: string, idempotencyKey: string, executionContextJson: string | null = null): Promise<string> {
     const existing = await this.agent.findRunByIdempotencyKey(this.scope(context.tenantId, context.userId), context.userId, idempotencyKey)
     if (existing) return existing.id
@@ -233,7 +247,7 @@ export class AssistantHarness {
     const toolAllowlist = allowlist ?? (Array.isArray(executionState.toolAllowlist) ? executionState.toolAllowlist as string[] : undefined)
     if (JSON.stringify(executionState).length > this.limits.payloadBytes) throw new Error('PAYLOAD_LIMIT')
     const fullContext = { ...context, runId }
-    await this.agent.updateRun(runId, context.tenantId, { status: 'RUNNING', startedAt: new Date().toISOString() })
+    await this.writeRun(runId, context.tenantId, { status: 'RUNNING', startedAt: new Date().toISOString() })
     await this.event(runId, context.tenantId, 'RUN_STARTED', { resumed: true })
     try {
       const persistedCounters = executionState.counters && typeof executionState.counters === 'object' ? executionState.counters as Record<string, unknown> : {}
@@ -261,7 +275,7 @@ export class AssistantHarness {
         executionState.counters = counts
         const serialized = JSON.stringify(executionState)
         if (serialized.length > this.limits.payloadBytes) throw new Error('PAYLOAD_LIMIT')
-        await this.agent.updateRun(runId, context.tenantId, { executionContextJson: serialized })
+        await this.writeRun(runId, context.tenantId, { executionContextJson: serialized })
       }
       let current: ModelResponse = await this.callModel({ model, input: transcript, tools: toolsForModel(fullContext, toolAllowlist), userId: context.userId }, runId)
       let text = ''
@@ -276,7 +290,7 @@ export class AssistantHarness {
         counts.outputTokens += current.usage?.outputTokens ?? 0
         counts.inputTokens += current.usage?.inputTokens ?? 0
         counts.costMicros += current.usage?.costMicros ?? 0
-        await this.agent.updateRun(runId, context.tenantId, {
+        await this.writeRun(runId, context.tenantId, {
           ...(current.providerName && current.modelName ? { model: `${current.providerName}/${current.modelName}` } : {}),
           inputTokens: counts.inputTokens, outputTokens: counts.outputTokens, costMicros: counts.costMicros,
         })
@@ -382,7 +396,7 @@ export class AssistantHarness {
                 transcript.push(...assistantTurn.slice(0, pendingIndex + 1), ...turnOutputs)
                 await persistTranscript()
               }
-              await this.agent.updateRun(runId, context.tenantId, { status: 'WAITING_APPROVAL' })
+              await this.writeRun(runId, context.tenantId, { status: 'WAITING_APPROVAL' })
               return { runId, status: 'WAITING_APPROVAL' }
             }
             await this.event(runId, context.tenantId, 'TOOL_STARTED', { tool: name, domain: tool.routing.domain, expanded: Boolean(allowlist && !allowlist.includes(name)), catalogCount: allowlist?.length ?? null })
@@ -415,39 +429,56 @@ export class AssistantHarness {
         current = await this.callModel({ model, input: transcript, tools: toolsForModel(fullContext, toolAllowlist), userId: context.userId }, runId)
       }
     } catch (error) {
-      await this.agent.updateRun(runId, context.tenantId, { status: 'FAILED', errorCode: safeError(error), finishedAt: new Date().toISOString() })
-      await this.event(runId, context.tenantId, 'RUN_FAILED', { error: safeError(error) })
+      await this.writeRun(runId, context.tenantId, { status: 'FAILED', errorCode: safeError(error), finishedAt: new Date().toISOString() })
+      await this.eventOnce(runId, context.tenantId, 'RUN_FAILED', { error: safeError(error) })
       return { runId, status: 'FAILED' }
     }
   }
 
+  // [T37] Decisão de aprovação é CAS transacional por run/operação (hash)/status.
+  // Repetição compatível (já decidida no mesmo sentido) devolve sem efeito;
+  // divergência/inexistência gera conflito APPROVAL_INVALID; expirada é recusada.
   async approve(runId: string, tenantId: string, userId: string, operation: string): Promise<void> {
     const scope = this.scope(tenantId, userId)
     const approval = await this.agent.findApproval(scope, runId, operation, 'PENDING')
-    if (!approval || approval.expiresAt <= new Date().toISOString()) throw new Error('APPROVAL_EXPIRED')
+    if (!approval) {
+      if (await this.agent.findApproval(scope, runId, operation, 'APPROVED')) return
+      throw new Error('APPROVAL_INVALID')
+    }
+    if (approval.expiresAt <= new Date().toISOString()) throw new Error('APPROVAL_EXPIRED')
     const decided = await this.agent.updateApprovalInStatuses(runId, tenantId, operation, ['PENDING'], { status: 'APPROVED', decidedBy: userId, decidedAt: new Date().toISOString() })
-    if (!decided) throw new Error('APPROVAL_INVALID')
-    await this.agent.updateRun(runId, tenantId, { status: 'QUEUED' })
+    if (!decided) {
+      if (await this.agent.findApproval(scope, runId, operation, 'APPROVED')) return
+      throw new Error('APPROVAL_INVALID')
+    }
+    await this.writeRun(runId, tenantId, { status: 'QUEUED' })
     await this.event(runId, tenantId, 'APPROVAL_DECIDED', { approved: true })
   }
 
   async reject(runId: string, tenantId: string, userId: string, operation: string): Promise<void> {
     const scope = this.scope(tenantId, userId)
     const approval = await this.agent.findApproval(scope, runId, operation, 'PENDING')
-    if (!approval || approval.expiresAt <= new Date().toISOString()) throw new Error('APPROVAL_EXPIRED')
+    if (!approval) {
+      if (await this.agent.findApproval(scope, runId, operation, 'REJECTED')) return
+      throw new Error('APPROVAL_INVALID')
+    }
+    if (approval.expiresAt <= new Date().toISOString()) throw new Error('APPROVAL_EXPIRED')
     const decided = await this.agent.updateApprovalInStatuses(runId, tenantId, operation, ['PENDING'], { status: 'REJECTED', decidedBy: userId, decidedAt: new Date().toISOString() })
-    if (!decided) throw new Error('APPROVAL_INVALID')
-    await this.agent.updateRun(runId, tenantId, { status: 'COMPLETED', finishedAt: new Date().toISOString() })
+    if (!decided) {
+      if (await this.agent.findApproval(scope, runId, operation, 'REJECTED')) return
+      throw new Error('APPROVAL_INVALID')
+    }
+    await this.writeRun(runId, tenantId, { status: 'COMPLETED', finishedAt: new Date().toISOString() })
     await this.event(runId, tenantId, 'APPROVAL_DECIDED', { approved: false })
   }
 
   async waitForUser(runId: string, tenantId: string, question: string): Promise<void> {
-    await this.agent.updateRun(runId, tenantId, { status: 'WAITING_USER' })
+    await this.writeRun(runId, tenantId, { status: 'WAITING_USER' })
     await this.event(runId, tenantId, 'QUESTION', { question: question.slice(0, 500) })
   }
 
   async expire(runId: string, tenantId: string): Promise<void> {
-    await this.agent.updateRun(runId, tenantId, { status: 'EXPIRED', finishedAt: new Date().toISOString(), errorCode: 'RUN_EXPIRED' })
+    await this.writeRun(runId, tenantId, { status: 'EXPIRED', finishedAt: new Date().toISOString(), errorCode: 'RUN_EXPIRED' })
   }
 
   async executeApproved(context: HarnessContext): Promise<unknown> {
@@ -464,7 +495,7 @@ export class AssistantHarness {
     const result = sanitizeToolOutput(await this.options.executeTool(call.toolName, args, context))
     await this.agent.updateToolCallInStatuses(call.id, context.tenantId, ['RUNNING'], { status: 'COMPLETED', resultSummary: JSON.stringify(summary(result)), finishedAt: new Date().toISOString() })
     await this.agent.updateApproval(approval.id, { status: 'APPROVED' })
-    await this.agent.updateRun(context.runId, context.tenantId, { status: 'RUNNING' })
+    await this.writeRun(context.runId, context.tenantId, { status: 'RUNNING' })
     return result
   }
 
@@ -473,11 +504,35 @@ export class AssistantHarness {
   private async callModel(request: Parameters<ModelProvider['createRun']>[0], runId: string): Promise<ModelResponse> {
     const provider = this.provider()
     const controller = new AbortController()
+    // [T37] Propaga a perda de posse (AbortSignal externo) para a chamada ao
+    // provider: aborta o request e rejeita imediatamente com LEASE_LOST.
+    const external = this.options.signal
+    const onAbort = () => controller.abort()
+    if (external) {
+      if (external.aborted) controller.abort()
+      else external.addEventListener('abort', onAbort, { once: true })
+    }
     const requestWithSignal = { ...request, signal: controller.signal }
-    const operation = provider.handlesRetries
-      ? provider.createRun(requestWithSignal)
-      : this.retryTransient(() => provider.createRun(requestWithSignal), runId)
-    return this.withTimeout(operation, runId, controller)
+    try {
+      const operation = provider.handlesRetries
+        ? provider.createRun(requestWithSignal)
+        : this.retryTransient(() => provider.createRun(requestWithSignal), runId)
+      const timed = this.withTimeout(operation, runId, controller)
+      if (!external) return await timed
+      let abortHandler: (() => void) | null = null
+      const aborted = new Promise<never>((_, reject) => {
+        abortHandler = () => reject(new Error('LEASE_LOST'))
+        if (external.aborted) abortHandler()
+        else external.addEventListener('abort', abortHandler, { once: true })
+      })
+      try {
+        return await Promise.race([timed, aborted])
+      } finally {
+        if (abortHandler) external.removeEventListener('abort', abortHandler)
+      }
+    } finally {
+      external?.removeEventListener('abort', onAbort)
+    }
   }
   private async retryTransient<T>(operation: () => Promise<T>, runId: string): Promise<T> {
     for (let attempt = 0; ; attempt++) {
@@ -508,12 +563,17 @@ export class AssistantHarness {
       runCostHistogram?.record(counts.costMicros)
     }
 
-    await this.agent.updateRun(runId, tenantId, { status, finishedAt: new Date().toISOString() })
+    await this.writeRun(runId, tenantId, { status, finishedAt: new Date().toISOString() })
     if (text) await this.event(runId, tenantId, 'TEXT_DELTA', { text })
-    await this.event(runId, tenantId, status === 'COMPLETED' ? 'RUN_COMPLETED' : 'RUN_CANCELLED', {})
+    await this.eventOnce(runId, tenantId, status === 'COMPLETED' ? 'RUN_COMPLETED' : 'RUN_CANCELLED', {})
     return { runId, status, ...(text ? { text } : {}) }
   }
   private async event(runId: string, tenantId: string, eventType: AssistantEventTypeName, payload: Record<string, unknown>) { await this.agent.insertEvent(this.scope(tenantId, null), runId, eventType, JSON.stringify(redact(payload)), new Date().toISOString()) }
+  // [T37] Evento terminal idempotente: retomada após crash não duplica o fato.
+  private async eventOnce(runId: string, tenantId: string, eventType: AssistantEventTypeName, payload: Record<string, unknown>): Promise<void> {
+    if (await this.agent.hasRunEvent(tenantId, runId, eventType)) return
+    await this.event(runId, tenantId, eventType, payload)
+  }
 }
 
 function parseArguments(value?: string): Record<string, unknown> { if (!value) throw new Error('INVALID_TOOL_ARGUMENTS'); try { const parsed = JSON.parse(value); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error(); return Object.fromEntries(Object.entries(parsed as Record<string, unknown>).filter(([, item]) => item !== null && item !== 'null' && item !== '')) } catch { throw new Error('INVALID_TOOL_ARGUMENTS') } }

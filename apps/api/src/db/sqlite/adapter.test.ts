@@ -345,7 +345,7 @@ describe('adapter SQLite dos ports', () => {
 
     // Checklist escopado por tenant: checklist de outro tenant não é encontrado.
     const itemB = await ports.items.createItem({ ...context, tenantId: 'tenant-b' }, { projectId: projectB.id, type: 'TASK', title: 'Item B', parentId: projectB.simpleStoryId })
-    const checklistB = await ports.checklists.createChecklist({ ...context, tenantId: 'tenant-b' }, projectB.id, itemB.id, 'Checklist B')
+    const checklistB = await ports.checklists.createChecklist({ ...context, tenantId: 'tenant-b', mutation: { origin: 'TEST', actorType: 'SYSTEM', actorSource: 'SYSTEM', actorLabel: null } }, projectB.id, itemB.id, 'Checklist B')
     expect(await ports.checklists.getChecklist(context, projectA.id, itemA.id, checklistB.id)).toBeNull()
     sqlite.close()
   })

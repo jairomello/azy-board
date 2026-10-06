@@ -15,21 +15,15 @@ import type { RequestContext } from '@azy-board/api-contracts'
 import { hasGlobalGroup } from '../services/authorization'
 import { MCP_TOOL_POLICIES } from '@azy-board/tool-registry'
 import { assistantAdjustSchema, assistantAnswerSchema, assistantApprovalSchema, assistantAvailabilitySchema, assistantGovernanceSchema, assistantMessageSchema, assistantModelConfigSchema, assistantModelConfigTestSchema, assistantModelConfigUpdateSchema, assistantModelConfigsReorderSchema, assistantProviderSchema, conversationSchema, parseJson } from '../validation'
-import { persistence } from '../persistence/runtime'
+import { getCoordination, persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
 import type { AssistantSettingsRecord, ColumnRecord, ItemRecord, PersistenceContext } from '../persistence/models'
 import type { ScreenOverview } from '@azy-board/assistant-contracts'
 import { isOtelInitialized, getOtelMeter } from '../services/telemetry'
-import { createCoordination, type CoordinationPort } from '../coordination'
-import { resolveInstallProfile } from '../db/installProfile'
 import { focusFirstItemIds } from '../services/focusResolution'
 
-// Job queue: rate limiting via CoordinationPort (local for SIMPLE, Redis for ADVANCED)
-let coordination: CoordinationPort | null = null
-function getCoordination(): CoordinationPort {
-  if (!coordination) coordination = createCoordination(resolveInstallProfile())
-  return coordination
-}
+// Job queue: rate limiting via a coordenação única do processo (SIMPLE local,
+// ADVANCED Redis). A readiness usa a mesma instância.
 
 // Métricas OTel para rejeições de quota
 let quotaRejectionCounter: import('@opentelemetry/api').Counter | null = null

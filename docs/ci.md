@@ -40,13 +40,26 @@ Sobe a API na porta `3001` e o Web na `5173` e roda `bun run test:smoke`
 Gate do perfil ADVANCED com serviços efêmeros:
 
 - **PostgreSQL 16** e **Valkey 8** como serviços do GitHub Actions.
-- Migrations PostgreSQL (schema + FKs compostas).
+- Migrations pelo runner do perfil (`bun run db:migrate:pg`), sem lista fixa de
+  arquivos; schema + FKs compostas e reexecução idempotente.
+- Setup CLI (`src/scripts/setup.ts`) criando tenant/admin por marcadores do
+  dialect, sem endpoint HTTP de tenant.
+- Teste de boot/import por perfil em processo isolado: ADVANCED não pode
+  resolver `bun:sqlite`; SIMPLE não exige PostgreSQL/Valkey.
 - Testes de migrations (banco vazio, idempotência, tenant-composite, e-mail
   global, CHECKs, timestamps).
 - Testes de paridade SIMPLE ↔ ADVANCED (tenant, usuário, projeto, item).
 - Testes de coordenação local (rate limiter, pub/sub, isolamento).
+- Jornada HTTP real de dois tenants, RBAC, API keys e autorização de WebSocket.
+- Jornada determinística do agente (run/tool/aprovação/SSE) contra PostgreSQL,
+  com `bun test apps/api/src/advanced-agent.test.ts`.
+- Ensaio de rollout/rollback (`advanced-rollout.test.ts`): redeploy do mesmo
+  schema mantém marcador/volume/dados e estado incompatível é recusado.
+- API e Web reais sobem contra os serviços e o smoke autenticado
+  (`bun run test:smoke`) é executado; logs são publicados sanitizados em falha.
 
-O gate avançado é obrigatório para considerar o perfil ADVANCED pronto.
+O gate avançado é obrigatório para considerar o perfil ADVANCED pronto e prova
+apenas boot/smoke de instância única — não habilita réplicas.
 O `bun run check` local continua sem serviços externos.
 
 ### `image` (deploy reproduzível)

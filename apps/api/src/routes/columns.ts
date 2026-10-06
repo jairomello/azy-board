@@ -5,7 +5,7 @@ import type { RequestContext } from '@azy-board/api-contracts'
 import { columnSchema, deleteColumnSchema, parseJson, reorderSchema, updateColumnSchema } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
-import { emitProjectMetadata } from '../services/websocket'
+
 
 export const columnsRouter = new Hono<HonoEnv>()
 columnsRouter.use('*', authMiddleware)
@@ -32,7 +32,6 @@ columnsRouter.post('/', requireRole('ADMIN'), async (c) => {
     name: body.name, baseStatus: body.baseStatus,
   })
 
-  emitProjectMetadata(projectId, 'columns')
   return c.json({ id: created.id, name: created.name, baseStatus: created.baseStatus }, 201)
 })
 
@@ -46,7 +45,6 @@ columnsRouter.patch('/reorder', requireRole('MEMBER'), async (c) => {
 
   await persistence.projects.reorderColumns(userPersistenceContext(ctx), projectId, body.order)
 
-  emitProjectMetadata(projectId, 'columns')
   return c.json({ ok: true })
 })
 
@@ -66,7 +64,6 @@ columnsRouter.patch('/:colId', requireRole('ADMIN'), async (c) => {
     ...(body.name !== undefined ? { name: body.name } : {}),
     ...(body.baseStatus !== undefined ? { baseStatus: body.baseStatus } : {}),
   })
-  emitProjectMetadata(projectId, 'columns')
   return c.json({ column: updated })
 })
 
@@ -88,6 +85,5 @@ columnsRouter.delete('/:colId', requireRole('ADMIN'), async (c) => {
 
   await persistence.projects.deleteColumn(userPersistenceContext(ctx), projectId, colId, body.moveToColumnId ?? undefined)
 
-  emitProjectMetadata(projectId, 'columns')
   return c.json({ ok: true })
 })

@@ -32,9 +32,12 @@ COPY . .
 WORKDIR /app/apps/api
 # index.js é o servidor; migrate.js e migrate-pg.js são os runners de migration
 # dos perfis SIMPLE e ADVANCED, usados pelo subcomando `migrate` do entrypoint.
+# worker.js é a entrada dedicada do worker de runs (T37, perfil ADVANCED/SEPARATE),
+# sem listener HTTP.
 RUN bun run build \
   && bun build src/db/migrate.ts --outfile dist/migrate.js --target bun \
-  && bun build src/db/postgres/migrate.ts --outfile dist/migrate-pg.js --target bun
+  && bun build src/db/postgres/migrate.ts --outfile dist/migrate-pg.js --target bun \
+  && bun build src/worker.ts --outfile dist/worker.js --target bun
 
 # --- Apenas dependências de produção (sharp e demais externas do bundle) ---
 FROM deps AS prod-deps

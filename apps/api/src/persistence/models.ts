@@ -22,6 +22,39 @@ export interface MutationMetadata {
 
 export interface MutationContext extends PersistenceContext {
   mutation: MutationMetadata
+  /**
+   * [T38] Journal idempotente transacional. Quando presente, o comando reserva
+   * a chave, grava a resposta/estado e os efeitos no MESMO commit. Ausente =
+   * pedido sem chave: os efeitos continuam atômicos, mas sem replay/dedup.
+   */
+  idempotency?: CommandIdempotency
+  /**
+   * [T38] Eventos de domínio gravados na MESMA transação do comando. O payload
+   * é mínimo (delta factual ou invalidação); a sequência durável é alocada pelo
+   * adapter no commit e publicada pelo dispatcher após o commit.
+   */
+  domainEvents?: CommandDomainEvent[]
+}
+
+export interface CommandDomainEvent {
+  type: string
+  payload: unknown
+  operationId?: string | null
+  correlationId?: string | null
+  schemaVersion?: number
+}
+
+export type IdempotencyStatus = 'PENDING' | 'COMMITTED'
+
+/** Chave versionada do journal: namespace + escopo explícito de projeto + chave. */
+export interface CommandIdempotency {
+  /** Namespace do comando versionado (ex.: `create_item.v1`). */
+  namespace: string
+  /** Id do projeto ou sentinela (ex.: `__global__`) para operação sem projeto. */
+  projectScope: string
+  key: string
+  payloadHash: string
+  expiresAt: string
 }
 
 export interface UserCredentialRecord {
@@ -596,6 +629,10 @@ export interface AssistantRunDetailRecord {
   attempts: number
   nextAttemptAt: string | null
   cancelRequested: boolean
+  /** [T37] Geração monotônica de lease (fencing). */
+  leaseGeneration: number
+  /** [T37] Tentativas de recuperação desde o último checkpoint confirmado. */
+  recoveryAttempts: number
 }
 
 export interface AssistantToolCallRecord {

@@ -2,7 +2,6 @@ import { Hono, type Context } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
-import { broadcast } from '../services/websocket'
 import { addTreeProgress, type TreeProgressNode } from '../services/treeProgress'
 import type { RequestContext } from '@azy-board/api-contracts'
 import type { ActivityActorType, ActivitySource, ItemType } from '@azy-board/domain'
@@ -10,7 +9,8 @@ import { DEFAULT_ITEM_ICON, parseWorkDuration } from '@azy-board/ui-contracts'
 import { isWorkCard, resolveActiveSprint, resolveActiveVersion } from '../services/creationDefaults'
 import { PROJECTION_FIELDS } from '@azy-board/tool-registry'
 import { nextSequenceCode as computeNextSequenceCode } from '../utils/sequenceCode'
-import { getIdempotent, saveIdempotent } from '../services/idempotency'
+import { IDEMPOTENCY_RETENTION_MS, payloadHash } from '../services/idempotency'
+import { COMMAND_NAMESPACES, isIdempotencyConflict, isIdempotentReplay, isPendingBody, parseEnvelope } from '../persistence/idempotency'
 import { claimItem, moveItem, releaseItem } from '../services/itemMutations'
 import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
 import { confirmationSchema, createItemSchema, itemLogSchema, itemSprintSchema, itemTagsSchema, moveItemSchema, parseJson, parseOptionalJson, reorderItemsSchema, updateItemLogSchema, updateItemSchema, updateWorkLogSchema, workLogSchema } from '../validation'
@@ -18,6 +18,7 @@ import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
 import type { ItemPatch } from '../persistence/ports'
 import type { ItemLogRecord, ItemRecord } from '../persistence/models'
+import { emitDomainEvent, findOperationId } from '../services/domainEventOutbox'
 
 export const itemsRouter = new Hono<HonoEnv>()
 itemsRouter.use('*', authMiddleware)
@@ -155,7 +156,7 @@ itemsRouter.patch('/reorder', requireRole('MEMBER'), async (c) => {
 
   await persistence.items.reorderItems(userPersistenceContext(ctx), projectId, body.columnId, body.order)
 
-  broadcast(projectId, { type: 'CARD_UPDATED', projectId, payload: { reordered: true, columnId: body.columnId, itemIds: body.order } })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'CARD_UPDATED', payload: { reordered: true, columnId: body.columnId, itemIds: body.order } })
   return c.json({ ok: true })
 })
 
@@ -482,14 +483,9 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   const body = parsed.data
   const idempotencyKey = c.req.header('Idempotency-Key') ?? (body as { idempotencyKey?: string }).idempotencyKey
   const idempotencyPayload = { projectId, body: { ...body, idempotencyKey: undefined } }
-  if (idempotencyKey) {
-    try {
-      const cached = await getIdempotent(ctx, 'create_item', idempotencyKey, idempotencyPayload)
-      if (cached) return c.json(cached)
-    } catch {
-      return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
-    }
-  }
+  // [T38] Hash canônico calculado ANTES da transação; a reserva/replay acontece
+  // dentro do commit da mutação (UnitOfWork), não mais em find/save separados.
+  const commandHash = idempotencyKey ? await payloadHash(idempotencyPayload) : null
 
   const type: ItemType = body.type ?? 'TASK'
   const projectContext = userPersistenceContext(ctx)
@@ -590,6 +586,15 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     mutationContext.mutation.actorType = audit.actorType
     mutationContext.mutation.actorSource = audit.source
     mutationContext.mutation.actorLabel = audit.actorLabel
+    if (idempotencyKey && commandHash) {
+      mutationContext.idempotency = {
+        namespace: COMMAND_NAMESPACES.createItem,
+        projectScope: projectId,
+        key: idempotencyKey,
+        payloadHash: commandHash,
+        expiresAt: new Date(Date.now() + IDEMPOTENCY_RETENTION_MS).toISOString(),
+      }
+    }
     const createdRecord = await persistence.unitOfWork.createItemWithRelations(mutationContext, {
       projectId,
       type,
@@ -624,6 +629,27 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
     })
     id = createdRecord.id
   } catch (error) {
+    if (isIdempotencyConflict(error)) return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
+    if (isIdempotentReplay(error)) {
+      const envelope = parseEnvelope(error.record.responseJson)
+      let replayBody = envelope?.body
+      if (isPendingBody(replayBody)) {
+        // Crash entre commit e corpo final: reconstrói pelo recurso persistido.
+        const rebuilt = await loadItemWithRelations(ctx.tenantId, projectId, replayBody.__pendingOperationId)
+        if (!rebuilt) return c.json({ error: 'Operação já confirmada, mas o recurso não está acessível.' }, 409)
+        replayBody = { ...rebuilt, isLeaf: true, childrenCount: 0, checklistProgress: null }
+        if (idempotencyKey) {
+          await persistence.idempotency.complete(userPersistenceContext(ctx), {
+            tool: COMMAND_NAMESPACES.createItem, key: idempotencyKey, projectScope: projectId,
+            responseJson: JSON.stringify({ status: 201, body: replayBody }),
+          })
+        }
+      }
+      if (!envelope || replayBody == null) return c.json({ error: 'Resultado idempotente indisponível.' }, 409)
+      const replayOperationId = await findOperationId(ctx.tenantId, ctx.userId, COMMAND_NAMESPACES.createItem, idempotencyKey!, projectId)
+      if (replayOperationId) c.header('X-Operation-Id', replayOperationId)
+      return c.json(replayBody, 201)
+    }
     if (error instanceof Error && error.message.includes('sprint')) return c.json({ error: error.message }, 409)
     throw error
   }
@@ -633,13 +659,21 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   if (!created) return c.json({ error: 'Item não encontrado após criação' }, 500)
   const payload = { ...created, isLeaf: true, childrenCount: 0, checklistProgress: null }
 
-  if (effectiveParentId) {
-    broadcast(projectId, { type: 'SUBTASK_CREATED', projectId, payload: { parentId: effectiveParentId, item: payload } })
-  } else {
-    broadcast(projectId, { type: 'ITEM_CREATED', projectId, payload })
+  // Corpo final no journal após o commit; crash antes disso é retomável pela
+  // referência PENDING gravada na mesma transação.
+  if (idempotencyKey) {
+    await persistence.idempotency.complete(userPersistenceContext(ctx), {
+      tool: COMMAND_NAMESPACES.createItem, key: idempotencyKey, projectScope: projectId,
+      responseJson: JSON.stringify({ status: 201, body: payload }),
+    })
   }
 
-  if (idempotencyKey) await saveIdempotent(ctx, 'create_item', idempotencyKey, idempotencyPayload, payload)
+  // [T38] Metadado aditivo de operação (commit/publicação pendente consultáveis).
+  if (idempotencyKey) {
+    const operationId = await findOperationId(ctx.tenantId, ctx.userId, COMMAND_NAMESPACES.createItem, idempotencyKey, projectId)
+    if (operationId) c.header('X-Operation-Id', operationId)
+  }
+  // [T38] O evento de criação é gravado pelo adapter no mesmo commit (item.created).
   return c.json(payload, 201)
 })
 
@@ -679,15 +713,38 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
     fromColName = fromCol?.name ?? fromColName
   }
 
+  // [T38] Chave idempotente opcional (agente envia Idempotency-Key estável).
+  const idempotencyKey = c.req.header('Idempotency-Key')
+  const commandHash = idempotencyKey ? await payloadHash({ projectId, itemId, columnId: body.columnId }) : null
   const audit = auditContext(c)
-  await moveItem({ tenantId: ctx.tenantId, projectId, itemId, userId: ctx.userId, apiKeyId: c.get('apiKeyId') as string | undefined, actor: audit, columnId: body.columnId, columnName: col.name, baseStatus: col.baseStatus, fromColumnName: fromColName })
+  try {
+    await moveItem({
+      tenantId: ctx.tenantId, projectId, itemId, userId: ctx.userId, apiKeyId: c.get('apiKeyId') as string | undefined,
+      actor: audit, columnId: body.columnId, columnName: col.name, baseStatus: col.baseStatus, fromColumnName: fromColName,
+      ...(idempotencyKey && commandHash
+        ? { idempotency: { key: idempotencyKey, payloadHash: commandHash, expiresAt: new Date(Date.now() + IDEMPOTENCY_RETENTION_MS).toISOString() } }
+        : {}),
+    })
+  } catch (error) {
+    if (isIdempotencyConflict(error)) return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
+    if (isIdempotentReplay(error)) {
+      const envelope = parseEnvelope(error.record.responseJson)
+      const replayBody = envelope?.body as { itemId: string; columnId: string; status: string } | null | undefined
+      if (replayBody == null) return c.json({ error: 'Resultado idempotente indisponível.' }, 409)
+      const replayItem = await persistence.items.getItem(projectContext, projectId, itemId)
+      const replayOperationId = await findOperationId(ctx.tenantId, ctx.userId, COMMAND_NAMESPACES.moveItem, idempotencyKey!, projectId)
+      if (replayOperationId) c.header('X-Operation-Id', replayOperationId)
+      return c.json({ item: replayItem, status: replayBody.status })
+    }
+    throw error
+  }
 
-  broadcast(projectId, {
-    type: 'CARD_MOVED',
-    projectId,
-    payload: { itemId, columnId: body.columnId, status: col.baseStatus },
-  })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId, type: 'CARD_MOVED', payload: { itemId, columnId: body.columnId, status: col.baseStatus } })
 
+  if (idempotencyKey) {
+    const operationId = await findOperationId(ctx.tenantId, ctx.userId, COMMAND_NAMESPACES.moveItem, idempotencyKey, projectId)
+    if (operationId) c.header('X-Operation-Id', operationId)
+  }
   const updated = await persistence.items.getItem(projectContext, projectId, itemId)
   return c.json({ item: updated, status: col.baseStatus })
 })
@@ -709,7 +766,7 @@ itemsRouter.patch('/:itemId/claim', requireRole('MEMBER'), async (c) => {
   const claimed = await claimItem({ tenantId: ctx.tenantId, projectId, itemId, userId: ctx.userId, apiKeyId, actor: audit, columnId: progressColumn?.id ?? item.columnId })
   if (!claimed) return c.json({ error: 'Item já está sendo trabalhado por outro usuário' }, 409)
 
-  broadcast(projectId, { type: 'TASK_CLAIMED', projectId, payload: { itemId, assigneeId: ctx.userId, apiKeyId } })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'TASK_CLAIMED', payload: { itemId, assigneeId: ctx.userId, apiKeyId } })
   const updated = await persistence.items.getItem(projectContext, projectId, itemId)
   return c.json({ item: updated })
 })
@@ -726,7 +783,7 @@ itemsRouter.patch('/:itemId/release', requireRole('MEMBER'), async (c) => {
   const audit = auditContext(c)
   await releaseItem({ tenantId: ctx.tenantId, projectId, itemId, userId: ctx.userId, apiKeyId: c.get('apiKeyId') as string | undefined, actor: audit })
 
-  broadcast(projectId, { type: 'CARD_UPDATED', projectId, payload: { itemId, assigneeId: null } })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'CARD_UPDATED', payload: { itemId, assigneeId: null } })
   const updated = await persistence.items.getItem(projectContext, projectId, itemId)
   return c.json({ item: updated })
 })
@@ -878,11 +935,7 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
   if (!updatedRecord) return c.json({ error: 'Item não encontrado' }, 404)
 
   const updated = await loadItemWithRelations(ctx.tenantId, projectId, itemId)
-  broadcast(projectId, {
-    type: 'ITEM_UPDATED',
-    projectId,
-    payload: { itemId, ...safeBody, updatedAt: updatedRecord.updatedAt, ...(tagIds !== undefined ? { itemTags: updated?.itemTags ?? [] } : {}) },
-  })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId, type: 'ITEM_UPDATED', payload: { itemId, ...safeBody, updatedAt: updatedRecord.updatedAt, ...(tagIds !== undefined ? { itemTags: updated?.itemTags ?? [] } : {}) } })
   return c.json({ item: updated })
 })
 
@@ -912,7 +965,7 @@ itemsRouter.delete('/:itemId', requireRole('MEMBER'), async (c) => {
   // Pós-commit: limpeza dos objetos físicos de anexos via outbox (Item 12)
   triggerStorageCleanupAfterCommit()
 
-  broadcast(projectId, { type: 'ITEM_DELETED', projectId, payload: { itemId } })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'ITEM_DELETED', payload: { itemId } })
   return c.json({ deleted: allIds.length })
 })
 
@@ -933,7 +986,7 @@ itemsRouter.post('/:itemId/tags', requireRole('MEMBER'), async (c) => {
     throw error
   }
 
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'ITEM_UPDATED', payload: { itemIds: [itemId] } })
   return c.json({ ok: true })
 })
 
@@ -954,8 +1007,8 @@ itemsRouter.post('/:itemId/sprint', requireRole('MEMBER'), async (c) => {
     throw error
   }
 
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
-  broadcast(projectId, { type: 'SPRINT_CHANGED', projectId, payload: { itemId, sprintId: body.sprintId } })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'ITEM_UPDATED', payload: { itemIds: [itemId] } })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'SPRINT_CHANGED', payload: { itemId, sprintId: body.sprintId } })
   return c.json({ ok: true })
 })
 
@@ -1044,7 +1097,7 @@ itemsRouter.post('/:itemId/work-log', requireRole('MEMBER'), async (c) => {
     if (error instanceof Error && error.message === 'ITEM_NOT_FOUND') return c.json({ error: 'Item não encontrado' }, 404)
     throw error
   }
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'ITEM_UPDATED', payload: { itemIds: [itemId] } })
   return c.json({ id: created.id, durationMin: created.durationMin }, 201)
 })
 
@@ -1074,7 +1127,7 @@ itemsRouter.patch('/:itemId/work-log/:logId', requireRole('MEMBER'), async (c) =
     updates.durationMin = durationMin
   }
   await persistence.workLogs.updateItemLog(projectContext, projectId, itemId, logId, updates)
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'ITEM_UPDATED', payload: { itemIds: [itemId] } })
   return c.json({ ok: true })
 })
 
@@ -1090,7 +1143,7 @@ itemsRouter.delete('/:itemId/work-log/:logId', requireRole('MEMBER'), async (c) 
   if (!log || log.type !== 'manual') return c.json({ error: 'Registro de trabalho não encontrado' }, 404)
   if (log.authorId !== ctx.userId && memberRole !== 'ADMIN') return c.json({ error: 'Sem permissão para excluir este registro' }, 403)
   await persistence.workLogs.deleteItemLog(projectContext, projectId, itemId, logId)
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'ITEM_UPDATED', payload: { itemIds: [itemId] } })
   return c.json({ ok: true })
 })
 
@@ -1122,7 +1175,18 @@ itemsRouter.post('/:itemId/logs', requireRole('MEMBER'), async (c) => {
 
   if (!body.activity?.trim()) return c.json({ error: 'activity é obrigatório' }, 400)
 
+  const idempotencyKey = c.req.header('Idempotency-Key')
+  const commandHash = idempotencyKey ? await payloadHash({ projectId, itemId, activity: body.activity.trim(), durationMin: body.durationMin ?? null }) : null
   const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  if (idempotencyKey && commandHash) {
+    mutationContext.idempotency = {
+      namespace: COMMAND_NAMESPACES.createItemLog,
+      projectScope: projectId,
+      key: idempotencyKey,
+      payloadHash: commandHash,
+      expiresAt: new Date(Date.now() + IDEMPOTENCY_RETENTION_MS).toISOString(),
+    }
+  }
   let created: ItemLogRecord
   try {
     created = await persistence.workLogs.createItemLog(mutationContext, projectId, itemId, {
@@ -1130,10 +1194,23 @@ itemsRouter.post('/:itemId/logs', requireRole('MEMBER'), async (c) => {
     })
   } catch (error) {
     if (error instanceof Error && error.message === 'ITEM_NOT_FOUND') return c.json({ error: 'Item não encontrado' }, 404)
+    if (isIdempotencyConflict(error)) return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
+    if (isIdempotentReplay(error)) {
+      const envelope = parseEnvelope(error.record.responseJson)
+      const replayBody = envelope?.body as { id: string; durationMin: number | null } | null | undefined
+      if (replayBody == null) return c.json({ error: 'Resultado idempotente indisponível.' }, 409)
+      const replayOperationId = await findOperationId(ctx.tenantId, ctx.userId, COMMAND_NAMESPACES.createItemLog, idempotencyKey!, projectId)
+      if (replayOperationId) c.header('X-Operation-Id', replayOperationId)
+      return c.json({ id: replayBody.id }, 201)
+    }
     throw error
   }
 
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'ITEM_UPDATED', payload: { itemIds: [itemId] } })
+  if (idempotencyKey) {
+    const operationId = await findOperationId(ctx.tenantId, ctx.userId, COMMAND_NAMESPACES.createItemLog, idempotencyKey, projectId)
+    if (operationId) c.header('X-Operation-Id', operationId)
+  }
   return c.json({ id: created.id }, 201)
 })
 
@@ -1163,7 +1240,7 @@ itemsRouter.patch('/:itemId/logs/:logId', requireRole('MEMBER'), async (c) => {
 
   await persistence.workLogs.updateItemLog(projectContext, projectId, itemId, logId, updates)
 
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemIds: [itemId] } })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'ITEM_UPDATED', payload: { itemIds: [itemId] } })
   return c.json({ ok: true })
 })
 
@@ -1217,7 +1294,7 @@ itemsRouter.post('/:itemId/archive', requireRole('MEMBER'), async (c) => {
   mutationContext.mutation.actorLabel = audit.actorLabel
   await persistence.unitOfWork.archiveItemSubtree(mutationContext, projectId, itemId)
 
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { archived: true, itemIds: allIds } })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'ITEM_UPDATED', payload: { archived: true, itemIds: allIds } })
   return c.json({ ok: true, archivedCount: allIds.length })
 })
 
@@ -1258,6 +1335,6 @@ itemsRouter.post('/:itemId/unarchive', requireRole('MEMBER'), async (c) => {
   mutationContext.mutation.actorLabel = audit.actorLabel
   await persistence.unitOfWork.unarchiveItemSubtree(mutationContext, projectId, itemId)
 
-  broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { unarchived: true, itemIds: allIds } })
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'ITEM_UPDATED', payload: { unarchived: true, itemIds: allIds } })
   return c.json({ ok: true, restoredCount: allIds.length })
 })

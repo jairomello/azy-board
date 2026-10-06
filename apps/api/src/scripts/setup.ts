@@ -7,18 +7,18 @@
  * Para novos tenants adicionais (clientes futuros), rodar este script novamente.
  */
 
-import { installProfile, sqlite } from '../db/index'
-import { ensureInstallationMarkers, sqliteInstallationMarkerStore } from '../db/installationMarkers'
+import { ensureInstallationMarkers } from '../db/installationMarkers'
 import { hashPassword } from '../services/auth'
 import { normalizeEmail } from '../utils/email'
 import { assertPasswordPolicy } from '../services/passwordPolicy'
-import { persistence } from '../persistence/runtime'
+import { closeRuntime, createMarkerStore, installProfile, persistence } from '../persistence/runtime'
 
 const args = Bun.argv.slice(2)
 
-// [DB-SWAP] Setup só provisiona dados depois que o perfil SIMPLE foi validado
-// e o banco/volume foram vinculados por marcadores persistentes.
-await ensureInstallationMarkers(installProfile, sqliteInstallationMarkerStore(sqlite))
+// [DB-SWAP] Setup usa o store do dialect selecionado e só provisiona dados
+// depois que o perfil foi validado e o banco/volume foram vinculados por
+// marcadores persistentes. Sem endpoint de tenant: operação exclusiva de CLI.
+await ensureInstallationMarkers(installProfile, createMarkerStore())
 
 const tenantName = args[0] ?? 'Minha Empresa'
 const tenantSlug = args[1] ?? 'minha-empresa'
@@ -62,3 +62,6 @@ console.log(`   E-mail:  ${adminEmail}`)
 console.log(`   Senha:   ${adminPassword}`)
 console.log('\n⚠️  Guarde essas credenciais com segurança.')
 console.log('   Para produção, altere a senha após o primeiro login.\n')
+
+// Libera pool/conexões do processo de setup (não mantém a CLI aberta).
+await closeRuntime()

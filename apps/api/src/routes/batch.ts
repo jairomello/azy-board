@@ -2,14 +2,16 @@ import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import type { RequestContext } from '@azy-board/api-contracts'
-import { getIdempotent, saveIdempotent } from '../services/idempotency'
-import { broadcast } from '../services/websocket'
+import { IDEMPOTENCY_RETENTION_MS, payloadHash } from '../services/idempotency'
+import { COMMAND_NAMESPACES, isIdempotencyConflict, isIdempotentReplay, parseEnvelope } from '../persistence/idempotency'
+import { buildBatchUpdateResponse } from '../persistence/commandResponses'
 import { batchSchema, batchUpdateSchema, parseJson } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
 import type { BatchItemCreateOperation, BatchItemUpdate, ItemPatch } from '../persistence/ports'
 import { DEFAULT_ITEM_ICON } from '@azy-board/ui-contracts'
 import { isWorkCard, resolveActiveSprint, resolveActiveVersion } from '../services/creationDefaults'
+import { emitDomainEvent, findOperationId } from '../services/domainEventOutbox'
 
 export const batchRouter = new Hono<HonoEnv>()
 batchRouter.use('*', authMiddleware)
@@ -43,14 +45,8 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
   const body = parsed.data
   const agentRunId = typeof body.agentRunId === 'string' ? body.agentRunId : undefined
   const payload = { projectId, filters: body.filters, changes: body.changes }
-  if (agentRunId) {
-    try {
-      const cached = await getIdempotent(ctx, 'update-items', agentRunId, payload)
-      if (cached) return c.json(cached)
-    } catch {
-      return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
-    }
-  }
+  // [T38] Chave estável do agente; reserva/replay no commit do update em lote.
+  const commandHash = agentRunId ? await payloadHash(payload) : null
 
   const snapshot = await persistence.batch.loadItemUpdateSnapshot(userMutationContext(ctx, 'MCP'), projectId)
   if (!snapshot) return c.json({ code: 'PROJECT_NOT_FOUND', error: 'Projeto não encontrado' }, 404)
@@ -299,14 +295,30 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
       mutationContext.mutation.actorType = 'AGENT'
       mutationContext.mutation.actorLabel = 'Azy Agent'
     }
+    if (agentRunId && commandHash) {
+      mutationContext.idempotency = {
+        namespace: COMMAND_NAMESPACES.updateItems,
+        projectScope: projectId,
+        key: agentRunId,
+        payloadHash: commandHash,
+        expiresAt: new Date(Date.now() + IDEMPOTENCY_RETENTION_MS).toISOString(),
+      }
+    }
     const resultItems = await persistence.unitOfWork.applyItemBatch(mutationContext, projectId, batchUpdates)
-    const firstChanges = resultItems[0]?.changes
-    const hasCommonApplied = firstChanges && resultItems.every(item => JSON.stringify(item.changes) === JSON.stringify(firstChanges))
-    const result = { matchedCount: matched.length, updatedCount: resultItems.length, ...(hasCommonApplied ? { applied: firstChanges } : {}), items: resultItems }
-    if (agentRunId) await saveIdempotent(ctx, 'update-items', agentRunId, payload, result)
-    for (const item of resultItems) broadcast(projectId, { type: 'ITEM_UPDATED', projectId, payload: { itemId: item.id, ...item.changes } })
+    const result = buildBatchUpdateResponse(resultItems)
+    // [T38] O evento item.updated é gravado pelo adapter no mesmo commit.
+    if (agentRunId) {
+      const operationId = await findOperationId(ctx.tenantId, ctx.userId, COMMAND_NAMESPACES.updateItems, agentRunId, projectId)
+      if (operationId) c.header('X-Operation-Id', operationId)
+    }
     return c.json(result)
   } catch (error) {
+    if (isIdempotencyConflict(error)) return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
+    if (isIdempotentReplay(error)) {
+      const envelope = parseEnvelope(error.record.responseJson)
+      if (!envelope) return c.json({ code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', error: 'Resultado idempotente indisponível.' }, 409)
+      return c.json(envelope.body as object, 200)
+    }
     const code = error instanceof Error ? error.message : 'BULK_UPDATE_FAILED'
     if (code === 'SEQUENCE_CODE_DUPLICATED') return c.json({ code, error: 'O sequenceCode informado já existe neste projeto.' }, 409)
     if (code === 'INVALID_SEQUENCE_CODE') return c.json({ code, error: 'sequenceCode deve seguir o padrão [ESTB]\\d+ (ex.: T12).' }, 422)
@@ -324,14 +336,8 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
   const atomic = input.atomic === true
   const key = input.idempotencyKey
   const payload = { projectId, operations: input.operations, atomic }
-  if (key) {
-    try {
-      const cached = await getIdempotent(ctx, 'batch', key, payload)
-      if (cached) return c.json(cached)
-    } catch {
-      return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
-    }
-  }
+  // [T38] Hash canônico calculado antes da transação; reserva/replay no commit.
+  const commandHash = key ? await payloadHash(payload) : null
 
   // Card T35 — defaults determinísticos na criação em lote (apenas TASK/BUG).
   // Resolve uma vez no projeto do tenant e injeta nas operações que omitirem.
@@ -386,21 +392,35 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
       mutationContext.mutation.actorSource = 'MCP'
       mutationContext.mutation.actorLabel = 'Azy Agent'
     }
+    if (key && commandHash) {
+      // [T38] Reserva/replay e resultado integral gravados no MESMO commit do lote.
+      mutationContext.idempotency = {
+        namespace: COMMAND_NAMESPACES.batch,
+        projectScope: projectId,
+        key,
+        payloadHash: commandHash,
+        expiresAt: new Date(Date.now() + IDEMPOTENCY_RETENTION_MS).toISOString(),
+      }
+    }
     const result = await persistence.unitOfWork.createItemsBatch(mutationContext, projectId, operations, {
       atomic, agentRunId: input.agentRunId ?? null,
     })
     const response = { atomic: result.atomic, agentRunId: result.agentRunId, results: result.results }
-    if (key) await saveIdempotent(ctx, 'batch', key, payload, response)
-    for (const module of result.createdModules) broadcast(projectId, { type: 'MODULE_CREATED', projectId, payload: module })
-    for (const entry of result.results) {
-      if (!entry.ok || !entry.data) continue
-      broadcast(projectId, {
-        type: entry.data.parentId ? 'SUBTASK_CREATED' : 'ITEM_CREATED', projectId,
-        payload: entry.data.parentId ? { parentId: entry.data.parentId, item: entry.data } : entry.data,
-      })
+    // Módulos criados no lote não têm evento próprio no adapter; itens criados
+    // já são cobertos por `item.created` gravado no mesmo commit.
+    for (const module of result.createdModules) void emitDomainEvent({ tenantId: ctx.tenantId, projectId, type: 'MODULE_CREATED', payload: module })
+    if (key) {
+      const operationId = await findOperationId(ctx.tenantId, ctx.userId, COMMAND_NAMESPACES.batch, key, projectId)
+      if (operationId) c.header('X-Operation-Id', operationId)
     }
     return c.json(response, 200)
   } catch (error) {
+    if (isIdempotencyConflict(error)) return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
+    if (isIdempotentReplay(error)) {
+      const envelope = parseEnvelope(error.record.responseJson)
+      if (!envelope) return c.json({ code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', error: 'Resultado idempotente indisponível.' }, 409)
+      return c.json(envelope.body as object, 200)
+    }
     const message = error instanceof Error ? error.message : 'INTERNAL_ERROR'
     const match = message.match(/^BATCH_ITEM:(\d+):(.*)$/)
     const failedAt = match ? Number(match[1]) : -1

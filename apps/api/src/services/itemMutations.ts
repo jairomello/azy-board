@@ -1,6 +1,7 @@
 import type { ActivityActorType, ActivitySource } from '@azy-board/domain'
 import type { MutationContext } from '../persistence/models'
 import { persistence } from '../persistence/runtime'
+import { COMMAND_NAMESPACES } from '../persistence/idempotency'
 
 type MutationActor = {
   actorType: ActivityActorType
@@ -42,8 +43,18 @@ export async function releaseItem(input: ItemMutationInput): Promise<void> {
   await persistence.unitOfWork.releaseItem(persistenceMutationContext(input), input.projectId, input.itemId)
 }
 
-export async function moveItem(input: ItemMutationInput & { columnId: string; columnName: string; baseStatus: string; fromColumnName: string }): Promise<void> {
-  await persistence.unitOfWork.moveItem(persistenceMutationContext(input), input.projectId, input.itemId, {
+export async function moveItem(input: ItemMutationInput & { columnId: string; columnName: string; baseStatus: string; fromColumnName: string; idempotency?: { key: string; payloadHash: string; expiresAt: string } }): Promise<void> {
+  const context = persistenceMutationContext(input)
+  if (input.idempotency) {
+    context.idempotency = {
+      namespace: COMMAND_NAMESPACES.moveItem,
+      projectScope: input.projectId,
+      key: input.idempotency.key,
+      payloadHash: input.idempotency.payloadHash,
+      expiresAt: input.idempotency.expiresAt,
+    }
+  }
+  await persistence.unitOfWork.moveItem(context, input.projectId, input.itemId, {
     id: input.columnId,
     name: input.columnName,
     baseStatus: input.baseStatus as 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE',

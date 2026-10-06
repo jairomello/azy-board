@@ -48,8 +48,8 @@ single source of truth — without friction.
   audit trail for every AI action.
 - **Installation profiles** — SIMPLE (SQLite, zero external services) for
   small teams and quick evaluation; ADVANCED (PostgreSQL + Valkey) for larger
-  deployments. The choice is permanent per installation; data is not migrated
-  between profiles.
+  deployments, verified end-to-end in CI against real services. The choice is
+  permanent per installation; data is not migrated between profiles.
 
 ### A guided look
 
@@ -196,7 +196,7 @@ SSE.
 | **Frontend** | React 18, Vite 5, TypeScript 5, Tailwind CSS 3, Radix UI |
 | **UI Primitives** | Lucide React, dnd-kit, Tiptap (rich text), i18next |
 | **Backend** | Bun, Hono 4, TypeScript 5 |
-| **Data** | Drizzle ORM — SQLite (runtime atual; migração para PostgreSQL planejada) |
+| **Data** | Drizzle ORM — SQLite no perfil SIMPLE; PostgreSQL (pg) no perfil ADVANCED |
 | **AI Protocol** | MCP SDK (`@modelcontextprotocol/sdk`), Shadow Markdown |
 | **Shared Types** | `@azy-board/types` (monorepo workspace package) |
 | **Realtime** | WebSocket (Bun native) |
@@ -232,9 +232,10 @@ Agent lives inside the API as an assistant harness: it calls LLM providers
 (OpenAI/OpenRouter) with encrypted tenant credentials and executes tools
 through the same shared registry, with guardrails, budgets and a human
 approval gate for every non-read operation. All paths converge on the
-multi-tenant database (SQLite at runtime; PostgreSQL is a planned migration)
-accessed via Drizzle ORM, inside a tenant isolation boundary — every
-server-side component scopes every query by `tenant_id`.
+multi-tenant database (SQLite in the SIMPLE profile or PostgreSQL in the
+ADVANCED profile, selected per installation) accessed via typed persistence
+ports, inside a tenant isolation boundary — every server-side component scopes
+every query by `tenant_id`.
 
 ### Intelligence tooling pipeline
 

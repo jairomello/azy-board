@@ -116,6 +116,28 @@ preciso uma nova instalação com banco e volume novos.
   SIMPLE; PostgreSQL/Valkey publicados nas portas padrão, configuráveis via
   `AZYBOARD_PG_PORT`/`AZYBOARD_VALKEY_PORT`).
 
+#### Instalação e migrations do ADVANCED (CLI)
+
+O boot da API **não** aplica migrations nem cria tenant. A ordem suportada em
+uma instalação nova é:
+
+```bash
+# 1. Aplica o schema PostgreSQL (runner idempotente, com histórico em schema_migrations)
+AZYBOARD_INSTALL_PROFILE=ADVANCED DATABASE_URL=postgresql://... bun run db:migrate:pg
+
+# 2. Cria tenant e administrador (sem endpoint HTTP de tenant)
+AZYBOARD_INSTALL_PROFILE=ADVANCED DATABASE_URL=postgresql://... \
+  REDIS_URL=redis://... AZYBOARD_INSTANCE_DIR=/var/lib/azyboard \
+  bun run --cwd apps/api src/scripts/setup.ts "Minha Empresa" minha-empresa admin@exemplo.com "SenhaForte" "Admin"
+
+# 3. Sobe a API (valida marcadores, compõe persistência/coordenação e só então aceita tráfego)
+```
+
+O runner `db/postgres/migrate.ts` aplica **todos** os arquivos `.sql` do
+diretório de migrations em ordem, não uma lista fixa, e pode ser reexecutado sem
+alterar dados válidos. O setup usa o store de marcadores do próprio dialect e
+recusa marcador divergente, revisão incompatível ou troca de perfil.
+
 #### Limites operacionais do ADVANCED
 
 - **Instância única de API:** múltiplas instâncias/HA não são suportadas até
@@ -125,6 +147,52 @@ preciso uma nova instalação com banco e volume novos.
   Não é uma restrição de conta nem uma promessa de desempenho.
 - **Valkey é a referência comunitária** Redis-compatível (licença BSD). O
   cliente `ioredis` (MIT) funciona com qualquer servidor Redis-compatível.
+- **Lifecycle por processo (T36/T37):** o boot compõe persistência e coordenação
+  por perfil e expõe um `close()` que encerra apenas os recursos daquele
+  processo (pool/arquivo + coordenação + timers/listeners). Em ADVANCED a API
+  **não** consome mais a fila de runs: o consumo ocorre no processo dedicado
+  `agent-worker` (ver **Worker do agente (T37)**). Journal/outbox (**T38**) e
+  transporte distribuído (**T39**) continuam dependentes e não são pré-requisitos
+  para o boot de instância única.
+
+#### Worker do agente (T37)
+
+O consumo da fila de runs do agente é escolhido por perfil e validado no boot
+(configuração cruzada é recusada):
+
+- **SIMPLE → `IN_PROCESS` (padrão):** a API inicia o worker no próprio processo.
+- **ADVANCED → `SEPARATE` (padrão):** a API apenas enfileira/consulta/aprova/
+  cancela; o consumo fica no processo dedicado.
+- **`AZYBOARD_AGENT_WORKER_MODE`** pode forçar `IN_PROCESS`, `SEPARATE` ou
+  `DISABLED`; valores incompatíveis com o perfil falham o boot.
+
+Comandos do entrypoint da imagem (`docker/entrypoint-api.sh`):
+
+```bash
+api      # sobe o servidor HTTP (sem aplicar migrations)
+migrate  # aplica migrations do perfil e encerra
+worker   # sobe o consumidor dedicado de runs (ADVANCED/SEPARATE), sem HTTP
+```
+
+No compose ADVANCED o serviço `agent-worker` usa a **mesma imagem/schema/segredos**
+da API, sem porta publicada, com `restart` próprio e `depends_on` de
+`migrate`/`valkey`. `SIGTERM` para de buscar runs, drena a execução corrente e
+aborta com prazo; o release é sempre fenced pela geração de lease.
+
+**Diagnóstico e alertas:**
+
+- **Fila sem consumidor:** profundidade (`agent.queue.depth`, agregação real) > 0
+  sem claims (`agent.queue.claim_latency_ms` sem amostras) — verifique se o
+  serviço `agent-worker` está de pé e no modo `SEPARATE` em ADVANCED.
+- **Lease churn:** `agent.worker.lease_expirations` e `agent.worker.aborts`
+  crescendo indicam workers morrendo/pausando antes do fim da execução.
+- **Fence rejeitado:** `agent.worker.fence_rejected` > 0 indica que uma geração
+  antiga tentou finalizar/escrever após recuperação — esperado durante takeover,
+  anômalo se persistente.
+- **Efeitos externos incertos:** abort **não** desfaz chamada já aceita por
+  fornecedor; não há promessa de exactly-once. Resultado ambíguo deve ser
+  reconciliado pelo destino antes de qualquer retry.
+- Logs correlacionam `runId`/`workerId`/`generation` sem credenciais.
 
 #### Migração de dados entre perfis
 
@@ -140,8 +208,11 @@ dentro do perfil escolhido continuam existindo normalmente.
 
 Todo push de branch e pull request passa pelo CI
 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) com os jobs `check`,
-`contracts` e `smoke`. Não publique uma versão com gate reprovado. Para
-reproduzir localmente e para configurar os required checks, veja
+`contracts`, `smoke` e `advanced`. O job **`advanced`** sobe PostgreSQL 16 e
+Valkey 8 reais, aplica as migrations pelo runner do perfil, executa o setup CLI,
+inicia API e web de verdade e roda o smoke autenticado — nenhuma prova de
+multi-instância é inferida desse boot. Não publique uma versão com gate
+reprovado. Para reproduzir localmente e para configurar os required checks, veja
 [`docs/ci.md`](docs/ci.md).
 
 ## Rollout, rollback e backup
@@ -167,6 +238,25 @@ Com os compose files versionados, o `docker compose up -d` já executa o job
 `migrate` antes de subir a API (`depends_on: condition:
 service_completed_successfully`); os passos explícitos acima são o rollout
 controlado de produção.
+
+### Cutover do worker do agente (T37)
+
+A separação do worker é **breaking operacional** no ADVANCED: a API deixa de
+consumir a fila. Não conviva com uma versão antiga (worker in-process, sem
+fence) e uma nova ao mesmo tempo.
+
+1. **Parar consumidores antigos**: escale/parar a API anterior (ou o worker
+   in-process) para que não haja dois consumidores sem fence. Drene o lease
+   vigente (`SIGTERM` respeita drain/abort com prazo).
+2. **Migrations**: `docker compose run --rm migrate` (adiciona
+   `lease_generation`/`recovery_attempts`; aditivo, sem perda de dados).
+3. **Subir API não consumidora + worker fenced**: `docker compose up -d`, que
+   sobe `azyboard` (API, modo `SEPARATE` por padrão) e `agent-worker` (processo
+   dedicado). Valide `/health/ready` e a fila (`agent.queue.depth` caindo).
+4. **Rollback**: pare o `agent-worker` novo e volte a imagem anterior. Como o
+   fence é do banco, uma versão antiga **sem fence** só é aceitável com restauração
+   verificada do mesmo perfil; nunca rolling misto entre gerações incompatíveis.
+   Em SIMPLE o modo `IN_PROCESS` é mantido; nenhum serviço novo é necessário.
 
 ### Backup e restore
 
@@ -197,6 +287,45 @@ controlado de produção.
 3. Sem backup válido, não há rollback de dados — por isso o backup é etapa
    obrigatória do rollout.
 
+## Idempotência e operações (T38)
+
+- **Chave de idempotência**: `POST` de item e `POST /batch` aceitam `Idempotency-Key`
+  (ou `idempotencyKey` no corpo); `update_items` usa o `agentRunId` como chave. A
+  mesma chave com **payload divergente** retorna **409 `IDEMPOTENCY_CONFLICT`**.
+- **Mesma transação**: a chave, o corpo da resposta, a auditoria, o analytics e o
+  evento de domínio são gravados **no mesmo commit** da mutação. Um crash após o
+  commit e antes da resposta é recuperável: o retry devolve o resultado original
+  (status/body/IDs) sem repetir efeitos.
+- **`X-Operation-Id`**: comandos com chave devolvem esse header aditivo. Consulte
+  `GET /api/operations/:operationId` para obter `status` (`PENDING`/`COMMITTED`),
+  `httpStatus`, `body` e `publication.pending` (evento já confirmado, mas ainda
+  não despachado). A consulta **revalida o acesso atual** ao projeto/tenant.
+- **Retenção**: resultados públicos ficam disponíveis por **≥ 24 h** para replay.
+  A outbox só remove eventos **confirmados e publicados** com mais de 24 h; o
+  contador de sequência e as pendências nunca são apagados. Commits legados sem
+  chave **não** têm garantia retroativa.
+- **Eventos duráveis**: cada mutação confirmada entra numa outbox com sequência
+  monotônica por projeto; um dispatcher publica no WebSocket após o commit
+  (entrega at-least-once, dedupe por `eventId`/sequência). O replay do WS por
+  cursor usa a outbox (retenção/limite de 1.000 exigem refetch).
+
+### Cutover da idempotência/outbox (T38)
+
+As migrations T38 (`0039/0040` no SQLite; `0010/0011` no PostgreSQL) são
+**aditivas**. Cutover coordenado sem perder pendências:
+
+1. **Parar writers** durante a janela de migration (nenhuma mutação concorrente
+   enquanto a outbox/contador são criados).
+2. **Migrations** pelo job separado (`migrate` / `db:migrate:pg`). Não alteram
+   dados existentes.
+3. **Subir a API nova**: o dispatcher da outbox passa a publicar eventos
+   confirmados no WebSocket. Commits **legados sem chave não têm garantia
+   retroativa** — não recalcule nem reenvie por conta própria.
+4. **Rollback**: a poda só remove eventos `PUBLISHED` com mais de 24 h; o
+   contador de sequência e as pendências **nunca** são apagados. Ao reverter a
+   imagem, mantenha as tabelas de journal/outbox para preservar pendências e
+   evitar republicação cega.
+
 ## Health endpoints
 
 A API expõe dois endpoints públicos de health (sem autenticação):
@@ -204,8 +333,11 @@ A API expõe dois endpoints públicos de health (sem autenticação):
 - `GET /health/live` — retorna 200 enquanto o processo está ativo. Use para
   liveness probes.
 - `GET /health/ready` — retorna 200 quando banco, storage e (no ADVANCED)
-  coordenação estão disponíveis; 503 com lista de dependências falhas caso
-  contrário. Use para readiness probes.
+  coordenação estão disponíveis; 503 com `{"status":"error","dependencies":[...]}`
+  caso contrário. As probes são consultas limitadas (sem replay/backfill por
+  requisição). Coordenação ausente ou Valkey indisponível em ADVANCED reprova
+  readiness mesmo com o banco saudável; o liveness permanece 200. Use para
+  readiness probes.
 
 ### Healthchecks de deploy
 

@@ -13,9 +13,10 @@ describe('contrato de auditoria e diário', () => {
     expect(items.includes("itemsRouter.post('/:itemId/work-log'")).toBe(true)
     // A separação auditoria/diário agora é resolvida pelo port de logs por `type`.
     expect(items.includes('persistence.workLogs.listItemLogs')).toBe(true)
-    // A origem do executor é preservada no adapter SIMPLE a partir do MutationContext.
-    expect(adapter.includes('actorType: context.mutation.actorType')).toBe(true)
-    expect(adapter.includes('source: context.mutation.actorSource')).toBe(true)
+    // A origem do executor é preservada no adapter SIMPLE a partir do MutationContext
+    // (gravada via SQL bruto na transação do comando, T38).
+    expect(adapter.includes('context.mutation.actorType')).toBe(true)
+    expect(adapter.includes('context.mutation.actorSource')).toBe(true)
   })
 
   test('auditoria normaliza texto e diário valida duração', async () => {

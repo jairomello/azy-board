@@ -6,7 +6,7 @@ import * as schema from '../schema'
 import { createSqlitePersistencePorts } from '../sqlite/adapter'
 import { createPostgresPersistencePorts } from './adapter'
 import { runPgMigrations } from './index'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { PersistencePorts } from '../../persistence/ports'
 import type { MutationContext, PersistenceContext } from '../../persistence/models'
@@ -46,7 +46,9 @@ async function setupPostgres(): Promise<{ ports: PersistencePorts; pool: Pool; c
   const setupPool = new Pool({ connectionString: PG_URL })
   await setupPool.query('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;')
   const migrationsDir = join(import.meta.dir, 'migrations')
-  for (const file of ['0000_pale_warlock.sql', '0001_composite_fks.sql', '0003_items_tenant_project_parent_index.sql', '0004_assistant_model_configs.sql', '0005_assistant_run_context.sql', '0008_item_links.sql', '0009_project_and_item_icons.sql']) {
+  // Aplica TODAS as migrations do dialect, em ordem, para não manter lista fixa.
+  const migrationFiles = readdirSync(migrationsDir).filter(name => name.endsWith('.sql')).sort()
+  for (const file of migrationFiles) {
     await runPgMigrations(setupPool, [readFileSync(join(migrationsDir, file), 'utf8')])
   }
   await setupPool.end()

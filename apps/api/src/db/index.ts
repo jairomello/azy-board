@@ -2,7 +2,8 @@ import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { Database as BunDatabase } from 'bun:sqlite'
 import * as schema from './schema'
 import { resolveInstallProfile } from './installProfile'
-import { preflightInstallationMarkers, preflightVolumeMarker } from './installationMarkers'
+import { preflightVolumeMarker } from './installationMarkers'
+import { preflightInstallationMarkers } from './sqlite/installationMarkers'
 
 // [DB-SWAP] Este módulo é somente o adapter SIMPLE (SQLite). ADVANCED precisa
 // de imports, schema, pool, migrations e auditoria PostgreSQL próprios; não é

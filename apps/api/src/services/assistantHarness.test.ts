@@ -242,6 +242,63 @@ describe('Azy Agent harness', () => {
     expect(executions).toBe(1)
   })
 
+  test('[T37] transição de run sob fence obsoleto aborta (LEASE_LOST)', async () => {
+    class MsgProvider implements ModelProvider {
+      name = 'mock'
+      capabilities = { tools: true, streaming: false, cancellation: false } as const
+      async createRun(): Promise<ModelResponse> { return { id: 'm', output: [{ type: 'message', text: 'ok' }] } }
+      async *streamRun() {}
+    }
+    const harness = new AssistantHarness({
+      provider: new MsgProvider(), executeTool: async () => ({}), authorize: async () => {},
+      fence: { workerId: 'w-stale', generation: 999 },
+    })
+    await expect(harness.run(
+      { source: 'azy-agent', userId, tenantId, globalGroup: 'TEAM_MEMBER', conversationId },
+      'model', 'oi', `fence-${id()}`,
+    )).rejects.toThrow('LEASE_LOST')
+  })
+
+  test('[T37] sinal de posse perdido aborta a chamada ao provider', async () => {
+    class HangingProvider implements ModelProvider {
+      name = 'mock'
+      capabilities = { tools: true, streaming: false, cancellation: true } as const
+      async createRun(): Promise<ModelResponse> {
+        return await new Promise<ModelResponse>(() => {}) // nunca resolve
+      }
+      async *streamRun() {}
+    }
+    const controller = new AbortController()
+    const harness = new AssistantHarness({ provider: new HangingProvider(), executeTool: async () => ({}), authorize: async () => {}, signal: controller.signal })
+    setTimeout(() => controller.abort(), 20)
+    const result = await harness.run({ source: 'azy-agent', userId, tenantId, globalGroup: 'TEAM_MEMBER', conversationId }, 'model', 'oi', `lease-${id()}`)
+    expect(result.status).toBe('FAILED')
+  })
+
+  test('[T37] aprovação repetida é compatível e decisão divergente gera conflito', async () => {
+    class SingleLogProvider implements ModelProvider {
+      name = 'mock'
+      capabilities = { tools: true, streaming: false, cancellation: false } as const
+      async createRun(): Promise<ModelResponse> {
+        return { id: 'log', output: [
+          { type: 'function_call', name: 'create_item_log', callId: 'l1', arguments: JSON.stringify({ projectId: 'p1', itemId: 'i1', activity: 'Revisão', duration: '1h30' }) },
+        ] }
+      }
+      async *streamRun() {}
+    }
+    const harness = new AssistantHarness({ provider: new SingleLogProvider(), executeTool: async () => ({ id: 'log-1' }), authorize: async () => {} })
+    const result = await harness.run({ source: 'azy-agent', userId, tenantId, globalGroup: 'TEAM_MEMBER', conversationId }, 'model', 'registre', `approval-${id()}`)
+    expect(result.status).toBe('WAITING_APPROVAL')
+    const approvals = await db.select().from(assistantApprovals).where(eq(assistantApprovals.runId, result.runId))
+    const hash = approvals[0]!.operationHash
+
+    await harness.approve(result.runId, tenantId, userId, hash)
+    // Repetição compatível: não lança e não cria segunda decisão.
+    await harness.approve(result.runId, tenantId, userId, hash)
+    // Divergente: rejeitar após aprovar falha sem efeito.
+    await expect(harness.reject(result.runId, tenantId, userId, hash)).rejects.toThrow('APPROVAL_INVALID')
+  })
+
   test('prompt orienta apontamento único e sem data retroativa', () => {
     expect(AZY_AGENT_SYSTEM_PROMPT).toContain('create_item_log')
     expect(AZY_AGENT_SYSTEM_PROMPT).toContain('no retroactive date support')

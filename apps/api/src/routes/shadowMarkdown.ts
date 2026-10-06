@@ -1,10 +1,10 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
-import { broadcast } from '../services/websocket'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
+import { emitDomainEvent } from '../services/domainEventOutbox'
 
 export const shadowMarkdownRouter = new Hono<HonoEnv>()
 shadowMarkdownRouter.use('*', authMiddleware)
@@ -113,11 +113,7 @@ shadowMarkdownRouter.patch('/', requireRole('MEMBER'), async (c) => {
       id: col.id, name: col.name, baseStatus: col.baseStatus,
     }, fromColumnName)
 
-    broadcast(projectId, {
-      type: 'CARD_MOVED',
-      projectId,
-      payload: { itemId: move.itemId, columnId: move.columnId, status: col.baseStatus },
-    })
+    void emitDomainEvent({ tenantId: ctx.tenantId, projectId, type: 'CARD_MOVED', payload: { itemId: move.itemId, columnId: move.columnId, status: col.baseStatus } })
   }
 
   return c.json({ moved: moves.length })

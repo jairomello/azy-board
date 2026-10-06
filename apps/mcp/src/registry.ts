@@ -27,7 +27,7 @@ import {
 // Re-exporta tudo do package para compatibilidade com consumidores existentes.
 export * from '@azy-board/tool-registry'
 
-export type ToolExecution = { api: ApiCall; context: HumanToolContext; authorize?: (context: HumanToolContext, name: string, args: Record<string, unknown>) => Promise<void> }
+export type ToolExecution = { api: ApiCall; context: HumanToolContext; authorize?: (context: HumanToolContext, name: string, args: Record<string, unknown>) => Promise<void>; operationId?: string }
 
 const PROJECT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -101,7 +101,7 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'list_checklists': return toolListChecklists(api, args.projectId as string, args.itemId as string)
     case 'claim_task': return toolClaimTask(api, args.projectId as string, args.taskId as string)
     case 'move_task': return toolMoveTask(api, args.projectId as string, args.taskId as string, args.columnName as string)
-    case 'batch_move': return toolBatchMove(api, args as Parameters<typeof toolBatchMove>[1], execution.context.runId)
+    case 'batch_move': return toolBatchMove(api, args as Parameters<typeof toolBatchMove>[1], (execution.operationId ?? execution.context.runId))
     case 'complete_task': return toolCompleteTask(api, args.projectId as string, args.taskId as string)
     case 'create_task': return toolCreateTask(api, args as Parameters<typeof toolCreateTask>[1])
     case 'create_checklist': return toolCreateChecklist(api, args.projectId as string, args.itemId as string, args.name as string)
@@ -109,7 +109,7 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'add_checklist_item_to_task': return toolAddChecklistItemToTask(api, args.projectId as string, args.itemId as string, args.checklistName as string, args.text as string, { dueDate: args.dueDate as string | null | undefined, assigneeId: args.assigneeId as string | null | undefined, description: args.description as string | null | undefined })
     case 'check_item': return toolCheckItem(api, args.projectId as string, args.itemId as string, args.checklistId as string | undefined, args.checklistItemId as string | undefined, args.checked as boolean, { checklistName: args.checklistName as string | undefined, text: args.text as string | undefined, position: args.position as number | undefined })
     case 'check_items': return toolCheckItems(api, args.projectId as string, args.items as Parameters<typeof toolCheckItems>[2])
-    case 'update_item': return toolUpdateItem(api, args.projectId as string, args.itemId as string, args.changes as Parameters<typeof toolUpdateItem>[3], execution.context.runId)
+    case 'update_item': return toolUpdateItem(api, args.projectId as string, args.itemId as string, args.changes as Parameters<typeof toolUpdateItem>[3], (execution.operationId ?? execution.context.runId))
     case 'release_task': return toolReleaseTask(api, args.projectId as string, args.taskId as string)
     case 'delete_item': return toolDeleteItem(api, args.projectId as string, args.itemId as string, args.dryRun as boolean | undefined)
     case 'delete_item_link': return toolDeleteItemLink(api, args.projectId as string, args.itemId as string, args.linkId as string)
@@ -126,7 +126,11 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'delete_checklist_item': return toolDeleteChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string)
     case 'update_item_log': return toolUpdateItemLog(api, args.projectId as string, args.itemId as string, args.logId as string, pruneNullValues(args.changes as Record<string, unknown>))
     case 'update_item_link': return toolUpdateItemLink(api, args.projectId as string, args.itemId as string, args.linkId as string, pruneNullValues({ name: args.name, url: args.url, description: args.description }))
-    case 'batch': return toolBatch(api, args as Parameters<typeof toolBatch>[1])
+    case 'batch': {
+      // [T37] Chave estável por tool (run:hash) como agentRunId, quando disponível.
+      const batchArgs = args as Parameters<typeof toolBatch>[1]
+      return toolBatch(api, execution.operationId ? { ...batchArgs, agentRunId: execution.operationId } : batchArgs)
+    }
     case 'update_items': {
       // Card T16 — injeta as revisões capturadas na fotografia para a checagem
       // de concorrência na rota de lote (após validação; campo interno server-side).
@@ -134,7 +138,7 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
       const withRevisions = revisions && Object.keys(revisions).length
         ? { ...args, filters: { ...(args.filters as Record<string, unknown> | null ?? {}), expectedRevisions: revisions } }
         : args
-      return toolUpdateItems(api, withRevisions as Parameters<typeof toolUpdateItems>[1], execution.context.runId)
+      return toolUpdateItems(api, withRevisions as Parameters<typeof toolUpdateItems>[1], (execution.operationId ?? execution.context.runId))
     }
     case 'create_project': return toolCreateProject(api, args as Parameters<typeof toolCreateProject>[1])
     case 'create_project_structure': return toolCreateProjectStructure(api, args as Parameters<typeof toolCreateProjectStructure>[1])

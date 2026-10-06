@@ -124,9 +124,21 @@ export interface LoginAttemptPort {
   pruneBefore(createdBefore: string): Promise<void>
 }
 
+export interface IdempotencyRecordRef {
+  id: string
+  payloadHash: string
+  responseJson: string
+  status: 'PENDING' | 'COMMITTED'
+  projectScope: string
+}
+
 export interface IdempotencyPort {
-  find(context: PersistenceContext, tool: string, key: string): Promise<{ payloadHash: string; responseJson: string } | null>
-  save(context: PersistenceContext, input: { tool: string; key: string; payloadHash: string; responseJson: string; createdAt: string; expiresAt: string }): Promise<void>
+  find(context: PersistenceContext, tool: string, key: string, projectScope?: string): Promise<IdempotencyRecordRef | null>
+  /** Consulta de operação escopada por tenant: id do journal = operationId. */
+  findById(context: PersistenceContext, operationId: string): Promise<IdempotencyRecordRef | null>
+  save(context: PersistenceContext, input: { tool: string; key: string; projectScope?: string; payloadHash: string; responseJson: string; status?: 'PENDING' | 'COMMITTED'; createdAt: string; expiresAt: string }): Promise<void>
+  /** Substitui o corpo de uma reserva PENDING pela resposta final (pós-commit). */
+  complete(context: PersistenceContext, input: { tool: string; key: string; projectScope?: string; responseJson: string }): Promise<void>
   pruneExpired(nowIso: string): Promise<void>
 }
 
@@ -207,10 +219,10 @@ export interface PlanningPort {
 export interface ChecklistPort {
   listChecklists(context: PersistenceContext, projectId: string, itemId: string): Promise<ChecklistRecord[]>
   getChecklist(context: PersistenceContext, projectId: string, itemId: string, checklistId: string): Promise<ChecklistRecord | null>
-  createChecklist(context: PersistenceContext, projectId: string, itemId: string, name: string): Promise<ChecklistRecord>
+  createChecklist(context: MutationContext, projectId: string, itemId: string, name: string): Promise<ChecklistRecord>
   updateChecklist(context: PersistenceContext, projectId: string, itemId: string, checklistId: string, patch: { name?: string; position?: number }): Promise<ChecklistRecord | null>
   deleteChecklist(context: PersistenceContext, projectId: string, itemId: string, checklistId: string): Promise<boolean>
-  createChecklistItem(context: PersistenceContext, projectId: string, itemId: string, checklistId: string, input: NewChecklistItemRecord): Promise<ChecklistItemRecord>
+  createChecklistItem(context: MutationContext, projectId: string, itemId: string, checklistId: string, input: NewChecklistItemRecord): Promise<ChecklistItemRecord>
   updateChecklistItem(context: PersistenceContext, projectId: string, itemId: string, checklistId: string, checklistItemId: string, patch: ChecklistItemPatch): Promise<ChecklistItemRecord | null>
   deleteChecklistItem(context: PersistenceContext, projectId: string, itemId: string, checklistId: string, checklistItemId: string): Promise<boolean>
   getChecklistProgress(context: PersistenceContext, itemId: string): Promise<ChecklistProgressRecord>
@@ -236,7 +248,8 @@ export interface FilePort {
 
 export interface ItemLinkPort {
   list(context: PersistenceContext, projectId: string, itemId: string): Promise<ItemLinkRecord[]>
-  create(context: PersistenceContext, projectId: string, itemId: string, input: NewItemLinkRecord): Promise<ItemLinkRecord>
+  // [T38] create recebe MutationContext para reserva/replay idempotente no commit.
+  create(context: MutationContext, projectId: string, itemId: string, input: NewItemLinkRecord): Promise<ItemLinkRecord>
   update(context: PersistenceContext, projectId: string, itemId: string, linkId: string, patch: ItemLinkPatch): Promise<ItemLinkRecord | null>
   delete(context: PersistenceContext, projectId: string, itemId: string, linkId: string): Promise<boolean>
 }
@@ -385,6 +398,10 @@ export interface AgentPort {
   listMessages(context: PersistenceContext, conversationId: string): Promise<AssistantMessageRecord[]>
   listRecentMessages(context: PersistenceContext, conversationId: string, limit: number): Promise<AssistantMessageRecord[]>
   createMessage(context: PersistenceContext, input: NewAssistantMessage): Promise<void>
+  // [T37] Dedup de mensagem terminal: localiza mensagem já persistida para a run.
+  findMessageByRunId(context: PersistenceContext, runId: string): Promise<AssistantMessageRecord | null>
+  // [T37] Dedup de evento terminal por identidade lógica (run + tipo).
+  hasRunEvent(tenantId: string, runId: string, eventType: string): Promise<boolean>
   touchConversation(context: PersistenceContext, userId: string, conversationId: string, now: string): Promise<void>
 
   listRuns(context: PersistenceContext, conversationId: string): Promise<AssistantRunDetailRecord[]>
@@ -399,12 +416,35 @@ export interface AgentPort {
   countActiveRuns(tenantId: string, userId?: string): Promise<number>
   sumDailyCostMicros(tenantId: string, userId: string | null, since: string): Promise<number>
 
-  // Job queue: lease/claim methods for persistent worker execution
-  claimRun(runId: string, tenantId: string, workerId: string, leaseExpiresAt: string, now: string): Promise<boolean>
-  heartbeatRun(runId: string, tenantId: string, workerId: string, leaseExpiresAt: string): Promise<boolean>
-  releaseRun(runId: string, tenantId: string, workerId: string, nextAttemptAt: string | null, incrementAttempts: boolean): Promise<boolean>
+  // Job queue: lease/claim methods for persistent worker execution (T37 fencing)
+  // claimRun incrementa leaseGeneration de forma atômica e devolve a nova geração
+  // (null quando a run não é elegível / já possui proprietário vigente).
+  claimRun(runId: string, tenantId: string, workerId: string, leaseExpiresAt: string, now: string): Promise<number | null>
+  // heartbeat/release comparam proprietário E geração vigente (CAS), sem renovar lease vencido.
+  heartbeatRun(runId: string, tenantId: string, workerId: string, generation: number, leaseExpiresAt: string): Promise<boolean>
+  releaseRun(runId: string, tenantId: string, workerId: string, generation: number, nextAttemptAt: string | null, incrementAttempts: boolean): Promise<boolean>
+  // [T37] Finalização terminal fenced por proprietário+geração+status RUNNING.
+  // requireCancelRequested=true exige cancelamento presente (CANCELLED);
+  // =false exige ausência (efeitos/conclusão normal); ausente não filtra.
+  finishRunFenced(
+    runId: string, tenantId: string, workerId: string, generation: number,
+    patch: Partial<Pick<AssistantRunDetailRecord, 'status' | 'errorCode' | 'finishedAt'>>,
+    options?: { requireCancelRequested?: boolean },
+  ): Promise<boolean>
+  // [T37] Escrita não-terminal da execução fenced por proprietário+geração
+  // (checkpoint, status de progresso, tokens/custo, cursor, modelo). Rejeita
+  // gerações obsoletas sob o mesmo CAS do efeito.
+  updateRunFenced(
+    runId: string, tenantId: string, workerId: string, generation: number,
+    patch: Partial<Pick<AssistantRunDetailRecord, 'status' | 'model' | 'currentCursor' | 'inputTokens' | 'outputTokens' | 'costMicros' | 'errorCode' | 'executionContextJson' | 'startedAt' | 'finishedAt' | 'cancelRequested'>>,
+    options?: { requireCancelRequested?: boolean },
+  ): Promise<boolean>
   requestCancel(runId: string, tenantId: string, now: string): Promise<boolean>
   listDueRuns(tenantId: string | null, now: string, limit: number): Promise<AssistantRunDetailRecord[]>
+  // [T37] Profundidade real da fila (agregação), independente do limite de polling.
+  countQueuedRuns(tenantId: string | null, now: string): Promise<number>
+  // [T37] Instante da run elegível mais antiga (idade agregada da fila).
+  oldestQueuedAt(tenantId: string | null, now: string): Promise<string | null>
 
   insertToolCall(context: PersistenceContext, input: NewAssistantToolCall): Promise<void>
   updateToolCall(toolCallId: string, tenantId: string, patch: Partial<Pick<AssistantToolCallRecord, 'status' | 'resultSummary' | 'startedAt' | 'finishedAt'>>): Promise<void>
@@ -425,6 +465,58 @@ export interface AgentPort {
   insertEvent(context: PersistenceContext, runId: string, eventType: AssistantEventTypeName, payloadJson: string, now: string): Promise<number>
   listModuleNames(context: PersistenceContext, projectId: string): Promise<string[]>
   countProjectConversations(context: PersistenceContext, projectId: string): Promise<number>
+}
+
+/** Probe limitada de banco para readiness; nunca varre histórico nem reaplica backfill. */
+export interface HealthPort {
+  ping(): Promise<void>
+}
+
+/** [T38] Evento de domínio confirmado e durável na outbox. */
+export interface DomainEventRecord {
+  id: string
+  tenantId: string
+  projectId: string
+  sequence: number
+  type: string
+  payload: unknown
+  schemaVersion: number
+  operationId: string | null
+  correlationId: string | null
+  status: 'PENDING' | 'PUBLISHED'
+  attempts: number
+  availableAt: string
+  createdAt: string
+  publishedAt: string | null
+}
+
+export interface DomainEventInput {
+  tenantId: string
+  projectId: string
+  type: string
+  payload: unknown
+  operationId?: string | null
+  correlationId?: string | null
+  schemaVersion?: number
+  createdAt?: string
+}
+
+export interface DomainEventPort {
+  /** Grava o evento e aloca a sequência durável (append standalone). */
+  append(input: DomainEventInput): Promise<DomainEventRecord>
+  /** Replay paginado por cursor, tenant/projeto escopados. */
+  listAfter(input: { tenantId: string; projectId: string; cursor: number; limit: number }): Promise<DomainEventRecord[]>
+  watermark(tenantId: string, projectId: string): Promise<number>
+  /** Dispatcher: reivindica lote due com lease. */
+  claimDue(input: { now: string; limit: number; workerId: string; leaseMs: number }): Promise<DomainEventRecord[]>
+  markPublished(eventId: string, tenantId: string, now: string): Promise<void>
+  markRetry(eventId: string, tenantId: string, input: { attempts: number; availableAt: string }): Promise<void>
+  /** Poda somente eventos publicados antes do cutoff; nunca remove pendências. */
+  prunePublishedBefore(cutoff: string): Promise<number>
+  /** Observabilidade: pendências, idade do mais antigo e maior nº de tentativas. */
+  pendingStats(): Promise<{ pending: number; oldestAvailableAt: string | null; maxAttempts: number }>
+  /** Publicação pendente (evento não despachado) para uma operação. */
+  hasPendingForOperation(tenantId: string, operationId: string): Promise<boolean>
 }
 
 export interface PersistenceTransaction {
@@ -534,6 +626,8 @@ export interface UnitOfWork {
 }
 
 export interface PersistencePorts extends PersistenceTransaction {
+  health: HealthPort
+  domainEvents: DomainEventPort
   attachmentSettings: TenantAttachmentSettingsPort
   tenants: TenantPort
   apiKeys: ApiKeyPort

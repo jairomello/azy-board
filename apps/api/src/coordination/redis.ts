@@ -8,23 +8,13 @@ import type { CoordinationPort, RateLimitDecision } from './ports'
  * Redis indisponível → falha fechado (não libera mutação protegida).
  */
 export function createRedisCoordination(redisUrl: string): CoordinationPort {
-  const client = new Redis(redisUrl, {
-    maxRetriesPerRequest: 3,
-    retryStrategy(times) {
-      if (times > 10) return null // Para de tentar após 10 falhas
-      return Math.min(times * 100, 2000)
-    },
-    lazyConnect: false,
-  })
+  // [OPS] Reconexão contínua com backoff limitado: se o Valkey cair após o
+  // boot, readiness retorna 503 e volta a ficar pronta quando o serviço retorna.
+  const retryStrategy = (times: number) => Math.min(times * 100, 2_000)
 
-  const subscriber = new Redis(redisUrl, {
-    maxRetriesPerRequest: 3,
-    retryStrategy(times) {
-      if (times > 10) return null
-      return Math.min(times * 100, 2000)
-    },
-    lazyConnect: false,
-  })
+  const client = new Redis(redisUrl, { maxRetriesPerRequest: 3, retryStrategy, lazyConnect: false })
+
+  const subscriber = new Redis(redisUrl, { maxRetriesPerRequest: 3, retryStrategy, lazyConnect: false })
 
   const handlers = new Map<string, Set<(message: string) => void>>()
 

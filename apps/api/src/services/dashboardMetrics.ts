@@ -1,12 +1,12 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm'
-import { db } from '../db/index'
+import type { DrizzleDb } from '../db/index'
 import { itemEvents, projectAnalyticsCoverage, projectMetricsDaily } from '../db/schema'
 
 // [TENANT] Todas as funções escopam por tenantId + projectId.
 // [DB-SWAP] Em PostgreSQL: manter a tabela (ou substituir por materialized view
 // com REFRESH); a semantica de deltas permanece válida.
 
-export type RollupExec = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0]
+export type RollupExec = DrizzleDb | Parameters<Parameters<DrizzleDb['transaction']>[0]>[0]
 
 export interface RollupCounters {
   total: number
@@ -186,6 +186,9 @@ function chunk<T>(values: T[], size: number): T[][] {
 // Backfill tardio: preenche o rollup de projetos com cobertura e sem rollup
 // (replay completo por projeto). Idempotente por projeto.
 export async function ensureDashboardRollupsBackfill(): Promise<void> {
+  // [DB-SWAP] Caminho legado exclusivo de SIMPLE/testes; o runtime usa o port
+  // `analytics.backfillRollups()`. Import dinâmico evita abrir SQLite no import.
+  const { db } = await import('../db/index')
   const covered = await db.select({ tenantId: projectAnalyticsCoverage.tenantId, projectId: projectAnalyticsCoverage.projectId })
     .from(projectAnalyticsCoverage)
   for (const coverage of covered) {
@@ -220,6 +223,7 @@ export async function readDailyRollupSeries(exec: RollupExec, tenantId: string, 
 // Gate anti-drift: comparativo entre rollup persistido e replay dos eventos
 // sobre a mesma base. Usado nos testes de paridade e disponível para auditoria.
 export async function rollupMatchesReplay(tenantId: string, projectId: string, from: string, to: string): Promise<boolean> {
+  const { db } = await import('../db/index')
   const coverage = await db.query.projectAnalyticsCoverage.findFirst({ where: (row) => and(eq(row.tenantId, tenantId), eq(row.projectId, projectId)) })
   if (!coverage) return true
   const events = await db.select()

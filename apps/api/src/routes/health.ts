@@ -5,6 +5,62 @@ import { createStorageAdapter } from '../services/storage'
 
 const profile = resolveInstallProfile()
 
+/** Probes tipados e limitados injetados pelo composition root. */
+export interface ReadinessProbes {
+  database(): Promise<void>
+  storage(): Promise<void>
+  coordination(): Promise<void>
+}
+
+let injectedProbes: ReadinessProbes | null = null
+
+/**
+ * Registra as dependências reais compostas no boot. Em ADVANCED a coordenação
+ * é obrigatória; um probe ausente reprova readiness.
+ */
+export function configureReadinessProbes(next: ReadinessProbes | null): void {
+  injectedProbes = next
+}
+
+const PROBE_TIMEOUT_MS = 3_000
+
+async function runProbe(probe: (() => Promise<void>) | undefined): Promise<boolean> {
+  if (!probe) return false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      probe(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('probe timeout')), PROBE_TIMEOUT_MS)
+      }),
+    ])
+    return true
+  } catch {
+    return false
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+/** Probes do runtime já composto (persistência + coordenação do processo). */
+export async function runtimeReadinessProbes(): Promise<ReadinessProbes> {
+  const { persistence, getCoordination } = await import('../persistence/runtime')
+  return {
+    // [DB-SWAP] Consulta limitada; nunca dispara cutover/backfill por requisição.
+    database: () => persistence.health.ping(),
+    storage: async () => {
+      const { access } = await import('node:fs/promises')
+      const adapter = createStorageAdapter()
+      const baseDir = (adapter as unknown as { baseDir: string }).baseDir || './uploads'
+      await access(baseDir)
+    },
+    coordination: async () => {
+      const ready = await getCoordination().isReady()
+      if (!ready) throw new Error('coordination unavailable')
+    },
+  }
+}
+
 export const healthRouter = new Hono<HonoEnv>()
 
 // GET /health/live — público, sem autenticação
@@ -20,37 +76,21 @@ healthRouter.get('/live', (c) => {
 healthRouter.get('/ready', async (c) => {
   const failures: string[] = []
 
-  // Verificar banco de dados via persistence
-  // [DB-SWAP] Consulta trivial — driver importado em runtime pelo perfil.
-  try {
-    const { persistence } = await import('../persistence/runtime')
-    await persistence.analytics.assertCutoverReady()
-  } catch {
-    failures.push('database')
-  }
-
-  // Verificar acesso ao diretório de storage
-  try {
-    const { access } = await import('fs/promises')
-    const adapter = createStorageAdapter()
-    const baseDir = (adapter as unknown as { baseDir: string }).baseDir || './uploads'
-    await access(baseDir)
-  } catch {
-    failures.push('storage')
-  }
-
-  // No perfil ADVANCED, verificar coordenação
-  if (profile.profile === 'ADVANCED') {
+  let probes: ReadinessProbes | null = injectedProbes
+  if (!probes) {
     try {
-      const { persistence } = await import('../persistence/runtime')
-      if ('coordination' in persistence) {
-        const coord = (persistence as { coordination: { isReady(): Promise<boolean> } }).coordination
-        const ready = await coord.isReady()
-        if (!ready) failures.push('coordination')
-      }
+      probes = await runtimeReadinessProbes()
     } catch {
-      failures.push('coordination')
+      probes = null
     }
+  }
+
+  if (!(await runProbe(probes?.database))) failures.push('database')
+  if (!(await runProbe(probes?.storage))) failures.push('storage')
+  // [DB-SWAP] Coordenação ausente/indisponível em ADVANCED é falha, não sucesso
+  // opcional; SIMPLE não depende de coordenação externa.
+  if (profile.profile === 'ADVANCED' && !(await runProbe(probes?.coordination))) {
+    failures.push('coordination')
   }
 
   if (failures.length > 0) {

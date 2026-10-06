@@ -2,9 +2,13 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import type { Database } from 'bun:sqlite'
 import type { InstallProfile, InstallProfileConfig } from './installProfile'
-import { auditIntegrity } from './integrity'
+
+// [DB-SWAP] Contrato genérico de marcadores de instalação, independente de
+// driver: tipos, fingerprint, leitura/gravação do marcador de volume e o fluxo
+// `ensureInstallationMarkers`. Helpers SQLite (store + auditoria) vivem em
+// `db/sqlite/installationMarkers.ts`; o store PostgreSQL em `db/postgres/index.ts`.
+// Nenhum módulo comum abre banco como efeito de import.
 
 export const INSTALLATION_SCHEMA_REVISION = 1
 export const INSTALLATION_MARKER_FILENAME = '.azyboard-installation.json'
@@ -26,7 +30,8 @@ export interface InstallationMarkerStore {
   auditLegacySimple(): Promise<void>
 }
 
-const APP_TABLES = [
+/** Tabelas de aplicação usadas para classificar uma base sem marcador. */
+export const APP_TABLES = [
   'tenants', 'users', 'user_avatars', 'login_attempts', 'api_keys',
   'assistant_credentials', 'assistant_settings', 'assistant_conversations', 'assistant_messages', 'assistant_runs',
   'assistant_events', 'assistant_tool_calls', 'assistant_approvals', 'idempotency_records', 'projects', 'squads',
@@ -52,7 +57,7 @@ function defaultPort(protocol: string): string {
   return protocol === 'postgres:' || protocol === 'postgresql:' ? '5432' : ''
 }
 
-function isMarker(value: unknown): value is InstallationMarker {
+export function isInstallationMarker(value: unknown): value is InstallationMarker {
   if (!value || typeof value !== 'object') return false
   const marker = value as Partial<InstallationMarker>
   return marker.formatVersion === 1
@@ -62,7 +67,7 @@ function isMarker(value: unknown): value is InstallationMarker {
     && typeof marker.schemaRevision === 'number'
 }
 
-function sameMarker(a: InstallationMarker, b: InstallationMarker): boolean {
+export function sameInstallationMarker(a: InstallationMarker, b: InstallationMarker): boolean {
   return a.formatVersion === b.formatVersion
     && a.instanceId === b.instanceId
     && a.profile === b.profile
@@ -70,7 +75,7 @@ function sameMarker(a: InstallationMarker, b: InstallationMarker): boolean {
     && a.schemaRevision === b.schemaRevision
 }
 
-function assertMarkerMatchesConfig(marker: InstallationMarker, config: InstallProfileConfig) {
+export function assertInstallationMarkerMatchesConfig(marker: InstallationMarker, config: InstallProfileConfig): void {
   if (marker.profile !== config.profile) {
     throw new Error('INSTALL_PROFILE_MISMATCH: o perfil desta instalação é imutável; use uma nova instância para escolher outro perfil.')
   }
@@ -97,11 +102,11 @@ async function readVolumeMarker(config: InstallProfileConfig): Promise<Installat
   } catch {
     throw new Error('INSTALLATION_MARKER_INVALID: marcador do volume inválido; recupere-o a partir do backup da instalação.')
   }
-  if (!isMarker(value)) throw new Error('INSTALLATION_MARKER_INVALID: formato de marcador do volume não reconhecido.')
+  if (!isInstallationMarker(value)) throw new Error('INSTALLATION_MARKER_INVALID: formato de marcador do volume não reconhecido.')
   return value
 }
 
-function readVolumeMarkerSync(config: InstallProfileConfig): InstallationMarker | null {
+export function readVolumeMarkerSync(config: InstallProfileConfig): InstallationMarker | null {
   const path = join(config.instanceDir, INSTALLATION_MARKER_FILENAME)
   if (!existsSync(path)) return null
   let value: unknown
@@ -110,36 +115,14 @@ function readVolumeMarkerSync(config: InstallProfileConfig): InstallationMarker 
   } catch {
     throw new Error('INSTALLATION_MARKER_INVALID: marcador do volume inválido; recupere-o a partir do backup da instalação.')
   }
-  if (!isMarker(value)) throw new Error('INSTALLATION_MARKER_INVALID: formato de marcador do volume não reconhecido.')
+  if (!isInstallationMarker(value)) throw new Error('INSTALLATION_MARKER_INVALID: formato de marcador do volume não reconhecido.')
   return value
 }
 
 /** Check persistent identity before migrations/PRAGMAs can modify the target database. */
 export function preflightVolumeMarker(config: InstallProfileConfig): void {
   const marker = readVolumeMarkerSync(config)
-  if (marker) assertMarkerMatchesConfig(marker, config)
-}
-
-/** Check existing DB marker synchronously before migration or any application write. */
-export function preflightInstallationMarkers(config: InstallProfileConfig, sqlite: Database): void {
-  const volumeMarker = readVolumeMarkerSync(config)
-  if (volumeMarker) assertMarkerMatchesConfig(volumeMarker, config)
-
-  const metadataTable = sqlite.query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'installation_metadata'`).get()
-  if (!metadataTable) return // Fresh/legacy DB; full classification follows after migrations.
-  const row = sqlite.query(`
-    SELECT instance_id AS instanceId, profile, database_fingerprint AS databaseFingerprint, schema_revision AS schemaRevision
-    FROM installation_metadata WHERE id = 1
-  `).get() as Omit<InstallationMarker, 'formatVersion'> | null
-  const databaseMarker = row ? { formatVersion: 1 as const, ...row } : null
-
-  if (databaseMarker && !isMarker(databaseMarker)) throw new Error('INSTALLATION_DATABASE_MARKER_INVALID: marcador do banco inválido.')
-  if (databaseMarker && !volumeMarker) {
-    throw new Error('INSTALLATION_VOLUME_MARKER_MISSING: restaure o marcador do volume a partir do backup; não inicialize como instalação nova.')
-  }
-  if (databaseMarker && volumeMarker && !sameMarker(databaseMarker, volumeMarker)) {
-    throw new Error('INSTALLATION_MARKER_MISMATCH: o marcador do volume não corresponde ao do banco.')
-  }
+  if (marker) assertInstallationMarkerMatchesConfig(marker, config)
 }
 
 async function writeVolumeMarker(config: InstallProfileConfig, marker: InstallationMarker) {
@@ -150,7 +133,7 @@ async function writeVolumeMarker(config: InstallProfileConfig, marker: Installat
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
       const existing = await readVolumeMarker(config)
-      if (existing && sameMarker(existing, marker)) return
+      if (existing && sameInstallationMarker(existing, marker)) return
       throw new Error('INSTALLATION_MARKER_RACE: outro processo inicializou esta instalação com marcadores diferentes.')
     }
     throw error
@@ -173,8 +156,8 @@ export async function ensureInstallationMarkers(config: InstallProfileConfig, st
   const databaseMarker = await store.read()
 
   if (volumeMarker && databaseMarker) {
-    assertMarkerMatchesConfig(volumeMarker, config)
-    if (!sameMarker(volumeMarker, databaseMarker)) {
+    assertInstallationMarkerMatchesConfig(volumeMarker, config)
+    if (!sameInstallationMarker(volumeMarker, databaseMarker)) {
       throw new Error('INSTALLATION_MARKER_MISMATCH: o marcador do volume não corresponde ao do banco.')
     }
     return volumeMarker
@@ -185,7 +168,7 @@ export async function ensureInstallationMarkers(config: InstallProfileConfig, st
   }
 
   if (volumeMarker) {
-    assertMarkerMatchesConfig(volumeMarker, config)
+    assertInstallationMarkerMatchesConfig(volumeMarker, config)
     const state = await store.inspectUnmarked()
     if (state === 'UNCLASSIFIED_DATA') {
       throw new Error('INSTALLATION_DATABASE_MARKER_MISSING: o banco contém dados sem marcador reconhecível; interrompa e faça recuperação manual.')
@@ -217,47 +200,4 @@ export async function ensureInstallationMarkers(config: InstallProfileConfig, st
   await writeVolumeMarker(config, marker)
   await store.write(marker)
   return marker
-}
-
-/** Adapter SQLite para SIMPLE e reconhecimento auditado de bases SQLite legadas. */
-export function sqliteInstallationMarkerStore(sqlite: Database): InstallationMarkerStore {
-  return {
-    async read() {
-      try {
-        const row = sqlite.query(`SELECT instance_id AS instanceId, profile, database_fingerprint AS databaseFingerprint, schema_revision AS schemaRevision FROM installation_metadata WHERE id = 1`).get() as Omit<InstallationMarker, 'formatVersion'> | null
-        return row ? { formatVersion: 1, ...row } : null
-      } catch {
-        throw new Error('INSTALLATION_METADATA_MISSING: execute as migrations do perfil SIMPLE antes do setup/runtime.')
-      }
-    },
-    async write(marker) {
-      sqlite.query(`INSERT INTO installation_metadata (id, instance_id, profile, database_fingerprint, schema_revision) VALUES (1, ?, ?, ?, ?)`)
-        .run(marker.instanceId, marker.profile, marker.databaseFingerprint, marker.schemaRevision)
-    },
-    async inspectUnmarked() {
-      let tables: Array<{ name: string }>
-      try {
-        tables = sqlite.query(`SELECT name FROM sqlite_master WHERE type = 'table'`).all() as Array<{ name: string }>
-      } catch {
-        throw new Error('INSTALLATION_METADATA_MISSING: execute as migrations antes de inspecionar o perfil.')
-      }
-      const available = new Set(tables.map(table => table.name))
-      const populated: string[] = []
-      for (const table of APP_TABLES) {
-        if (!available.has(table)) continue
-        if (sqlite.query(`SELECT 1 FROM "${table}" LIMIT 1`).get()) populated.push(table)
-      }
-      if (populated.length === 0) return 'EMPTY'
-      const hasTenant = populated.includes('tenants')
-      return hasTenant ? 'LEGACY_SIMPLE' : 'UNCLASSIFIED_DATA'
-    },
-    async auditLegacySimple() {
-      const foreignKeyViolations = sqlite.query('PRAGMA foreign_key_check').all()
-      const domainViolations = auditIntegrity(sqlite)
-      if (foreignKeyViolations.length || domainViolations.length) {
-        const checks = domainViolations.map(violation => `${violation.check}:${violation.count}`).join(', ')
-        throw new Error(`LEGACY_SQLITE_AUDIT_FAILED: foreign keys=${foreignKeyViolations.length}; checks=${checks || 'none'}`)
-      }
-    },
-  }
 }

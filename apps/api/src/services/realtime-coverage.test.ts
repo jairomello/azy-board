@@ -22,6 +22,46 @@ const EXEMPT = [
   "sprintsRouter.patch('/:sprintId/open',",                 // delega a transition()
   "sprintsRouter.patch('/:sprintId/close',",                // delega a transition()
   "attachmentSettingsRouter.put('/',",                      // configuração do tenant, fora da sala de projeto
+  // [T38] Evento gravado pelo adapter no MESMO commit do comando (outbox):
+  "itemsRouter.post('/',",                                  // item.created no createItemWithRelations
+  "batchRouter.post('/items/update',",                      // item.updated no applyItemBatch
+  "columnsRouter.post('/',",                                // project.metadata.changed no adapter
+  "columnsRouter.patch('/reorder',",
+  "columnsRouter.patch('/:colId',",
+  "columnsRouter.delete('/:colId',",
+  "tagsRouter.post('/',",
+  "tagsRouter.patch('/:tagId',",
+  "tagsRouter.delete('/:tagId',",
+  "versionsRouter.post('/',",
+  "versionsRouter.patch('/:versionId',",
+  "versionsRouter.delete('/:versionId',",
+  "projectsRouter.post('/:id/cost-centers',",
+  "projectsRouter.patch('/:id/cost-centers/:ccId',",
+  "projectsRouter.delete('/:id/cost-centers/:ccId',",
+  "projectsRouter.post('/:id/modules',",
+  "projectsRouter.patch('/:id/modules/:moduleId',",
+  "projectsRouter.delete('/:id/modules/:moduleId',",
+  "projectsRouter.post('/:id/squads',",
+  "projectsRouter.post('/:id/squads/:squadId/members',",
+  "projectsRouter.patch('/:id/members/:userId',",
+  "projectsRouter.delete('/:id/squads/:squadId/members/:userId',",
+  "projectsRouter.patch('/:id/squads/:squadId',",
+  "projectsRouter.delete('/:id/squads/:squadId',",
+  "projectsRouter.post('/:id/members',",
+  "projectsRouter.delete('/:id/members/:userId',",
+  "projectsRouter.delete('/:id',",
+  "projectsRouter.patch('/:id',",
+  "sprintsRouter.post('/',",
+  "sprintsRouter.patch('/:sprintId',",
+  "attachmentsRouter.post('/',",
+  "attachmentsRouter.patch('/:attachmentId',",
+  "attachmentsRouter.delete('/:attachmentId',",
+  "checklistsRouter.post('/',",
+  "checklistsRouter.patch('/:checklistId',",
+  "checklistsRouter.delete('/:checklistId',",
+  "checklistsRouter.post('/:checklistId/items',",
+  "checklistsRouter.patch('/:checklistId/items/:checklistItemId',",
+  "checklistsRouter.delete('/:checklistId/items/:checklistItemId',",
 ]
 
 function routeSources(): Array<{ file: string; text: string }> {
@@ -54,7 +94,8 @@ describe('cobertura de eventos por mutação', () => {
     for (const { file, text } of routeSources()) {
       for (const block of mutationBlocks(text)) {
         if (EXEMPT.some(prefix => block.header.startsWith(prefix))) continue
-        const emits = block.body.includes('broadcast(') || block.body.includes('emitProjectMetadata(')
+        // [T38] Emissão via outbox de domínio (emitDomainEvent) ou broadcast legado.
+        const emits = block.body.includes('emitDomainEvent(') || block.body.includes('broadcast(') || block.body.includes('emitProjectMetadata(')
         if (!emits) missing.push(`${file}: ${block.header}`)
       }
     }
@@ -66,12 +107,15 @@ describe('cobertura de eventos por mutação', () => {
     const domainTypes = [...contract.matchAll(/'([A-Z_]+)'/g)]
       .map(match => match[1]!)
       .filter(name => !['REPLAY_COMPLETE', 'RESYNC_REQUIRED', 'HEARTBEAT'].includes(name))
-    const apiSources = readdirSync(routesDir)
-      .map(name => readFileSync(join(routesDir, name), 'utf8'))
-      .join('\n')
+    // Fontes emissoras: rotas + mapper de eventos de domínio (T38), que produz
+    // os tipos de invalidação (ITEM_CREATED/SUBTASK_CREATED/ITEM_UPDATED/...).
+    const apiSources = [
+      ...readdirSync(routesDir).map(name => readFileSync(join(routesDir, name), 'utf8')),
+      readFileSync(join(import.meta.dir, '../persistence/domainEvents.ts'), 'utf8'),
+    ].join('\n')
     for (const type of new Set(domainTypes)) {
-      const emitted = apiSources.includes(`type: '${type}'`)
-        || (type === 'PROJECT_METADATA_CHANGED' && apiSources.includes('emitProjectMetadata('))
+      const emitted = apiSources.includes(`'${type}'`)
+        || (type === 'PROJECT_METADATA_CHANGED' && apiSources.includes("'project.metadata.changed'"))
       expect(emitted).toBe(true)
     }
   })

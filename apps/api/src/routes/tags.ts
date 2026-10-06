@@ -5,7 +5,7 @@ import type { RequestContext } from '@azy-board/api-contracts'
 import { parseJson, tagSchema, updateTagSchema } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
-import { emitProjectMetadata } from '../services/websocket'
+
 
 export const tagsRouter = new Hono<HonoEnv>()
 tagsRouter.use('*', authMiddleware)
@@ -22,7 +22,6 @@ tagsRouter.post('/', requireRole('MEMBER'), async (c) => {
     name: body.name, color: body.color ?? '#6366f1',
   })
 
-  emitProjectMetadata(projectId, 'tags')
   return c.json({ id: tag.id, name: tag.name, color: tag.color }, 201)
 })
 
@@ -51,7 +50,6 @@ tagsRouter.patch('/:tagId', requireRole('MEMBER'), async (c) => {
     ...(body.name !== undefined ? { name: body.name } : {}),
     ...(body.color !== undefined ? { color: body.color } : {}),
   })
-  emitProjectMetadata(projectId, 'tags')
   return c.json({ tag: updated })
 })
 
@@ -63,6 +61,5 @@ tagsRouter.delete('/:tagId', requireRole('ADMIN'), async (c) => {
   const deleted = await persistence.planning.deleteTag(userPersistenceContext(ctx), projectId, tagId)
   if (!deleted) return c.json({ error: 'Tag não encontrada' }, 404)
 
-  emitProjectMetadata(projectId, 'tags')
   return c.json({ ok: true })
 })

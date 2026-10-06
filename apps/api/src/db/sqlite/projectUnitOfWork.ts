@@ -4,6 +4,8 @@ import type { MutationContext, ProjectRecord } from '../../persistence/models'
 import type { CreateProjectAggregateInput, ProjectPatch } from '../../persistence/ports'
 import { generateId } from '../../utils/id'
 import { runSqliteAtomic } from './atomicTransaction'
+import { appendDomainEventSync } from './domainEventOutbox'
+import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
 import { deleteSqliteItemsInsideTransaction } from './itemUnitOfWork'
 import { readItemSnapshot, recordItemEvent } from './itemAnalytics'
 
@@ -230,7 +232,9 @@ export function createSqliteProjectUnitOfWork(database: Database) {
         const updated = database.query<ProjectRow, [string, string]>(
           'SELECT * FROM projects WHERE tenant_id = ? AND id = ?',
         ).get(context.tenantId, projectId)
-        return updated ? mapProject(updated) : null
+        if (!updated) return null
+        appendDomainEventSync(database, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.projectMetadataChanged, payload: { section: 'project' } })
+        return mapProject(updated)
       })
     },
   }

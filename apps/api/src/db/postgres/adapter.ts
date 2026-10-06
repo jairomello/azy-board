@@ -46,13 +46,18 @@ import type {
   TenantAttachmentSettingsRecord,
 } from '../../persistence/models'
 import type {
+  BatchItemCreateOperation,
+  BatchItemCreateResult,
+  BatchItemUpdate,
   ChecklistItemPatch,
   ColumnPatch,
   CostCenterPatch,
+  DomainEventRecord,
   IdempotencyPort,
   IdentityPort,
   ItemLogPatch,
   ItemLinkPatch,
+  ItemPatch,
   LoginAttemptPort,
   ModulePatch,
   NewApiKeyRecord,
@@ -91,6 +96,10 @@ import type {
   UnitOfWork,
 } from '../../persistence/ports'
 import { generateId } from '../../utils/id'
+import { nextSequenceCode as computeNextSequenceCode, sequencePrefix } from '../../utils/sequenceCode'
+import { IdempotencyConflictError, IdempotentReplaySignal } from '../../persistence/idempotency'
+import { buildBatchUpdateResponse } from '../../persistence/commandResponses'
+import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
 import { readItemSnapshot, readItemSnapshots, recordDeletedItemEventsBatch, recordItemEvent } from './itemAnalytics'
 
 // ---------------------------------------------------------------------------
@@ -394,7 +403,9 @@ function mapAssistantRun(row: PgRow) {
     finishedAt: row.finished_at as string | null, expiresAt: row.expires_at as string | null,
     claimedBy: row.claimed_by as string | null, claimExpiresAt: row.claim_expires_at as string | null,
     attempts: (row.attempts as number | null) ?? 0, nextAttemptAt: row.next_attempt_at as string | null,
-    cancelRequested: (row.cancel_requested as number | null) === 1,
+    cancelRequested: Boolean(row.cancel_requested),
+    leaseGeneration: (row.lease_generation as number | null) ?? 0,
+    recoveryAttempts: (row.recovery_attempts as number | null) ?? 0,
   }
 }
 
@@ -567,7 +578,393 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // [T38] Helpers transacionais do journal e do lote (PostgreSQL).
+  // -------------------------------------------------------------------------
+  const ITEM_FIELD_COLUMNS: Record<string, string> = {
+    type: 'type', sequenceCode: 'sequence_code', parentId: 'parent_id', moduleId: 'module_id',
+    columnId: 'column_id', ancestryPath: 'ancestry_path', title: 'title', description: 'description',
+    persona: 'persona', goal: 'goal', benefit: 'benefit', acceptanceCriteria: 'acceptance_criteria',
+    notes: 'notes', status: 'status', statusBeforeArchive: 'status_before_archive',
+    costCenterId: 'cost_center_id', priority: 'priority', points: 'points',
+    assigneeId: 'assignee_id', assigneeApiKeyId: 'assignee_api_key_id', blockedReason: 'blocked_reason',
+    position: 'position', startDate: 'start_date', dueDate: 'due_date', versionId: 'version_id',
+    icon: 'icon', color: 'color',
+  }
+
+  function mapDomainEventRow(row: PgRow): DomainEventRecord {
+    let payload: unknown = null
+    try { payload = JSON.parse(row.payload_json as string) } catch { payload = null }
+    return {
+      id: row.id as string, tenantId: row.tenant_id as string, projectId: row.project_id as string,
+      sequence: row.sequence as number, type: row.type as string, payload,
+      schemaVersion: row.schema_version as number, operationId: row.operation_id as string | null,
+      correlationId: row.correlation_id as string | null, status: row.status as 'PENDING' | 'PUBLISHED',
+      attempts: row.attempts as number, availableAt: row.available_at as string,
+      createdAt: row.created_at as string, publishedAt: row.published_at as string | null,
+    }
+  }
+
+  async function appendDomainEventPg(
+    client: PoolClient,
+    input: { tenantId: string; projectId: string; type: string; payload: unknown; correlationId?: string | null; operationId?: string | null },
+  ): Promise<void> {
+    const now = new Date().toISOString()
+    const seqRow = await client.query(
+      `INSERT INTO domain_event_counters (tenant_id, project_id, last_sequence)
+       VALUES ($1, $2, 1)
+       ON CONFLICT (tenant_id, project_id) DO UPDATE SET last_sequence = domain_event_counters.last_sequence + 1
+       RETURNING last_sequence`,
+      [input.tenantId, input.projectId],
+    )
+    const sequence = (seqRow.rows[0] as { last_sequence: number }).last_sequence
+    await client.query(
+      `INSERT INTO domain_event_outbox
+         (id, tenant_id, project_id, sequence, type, payload_json, schema_version, operation_id, correlation_id, status, attempts, available_at, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8, 'PENDING', 0, $9, $10)`,
+      [generateId(), input.tenantId, input.projectId, sequence, input.type, JSON.stringify(input.payload ?? null),
+       input.operationId ?? null, input.correlationId ?? null, now, now],
+    )
+  }
+
+  /** [T38] Evento de metadados gravado na transação do comando. */
+  async function emitMetadataEventPg(client: PoolClient, tenantId: string, projectId: string, section: string): Promise<void> {
+    await appendDomainEventPg(client, { tenantId, projectId, type: DOMAIN_EVENT_TYPES.projectMetadataChanged, payload: { section } })
+  }
+
+  /** [T38] Progresso de checklist calculado dentro da transação do comando. */
+  async function checklistProgressPg(client: PoolClient, tenantId: string, itemId: string): Promise<ChecklistProgressRecord> {
+    const row = await client.query(
+      `SELECT count(*)::int AS total, count(*) FILTER (WHERE ci.checked)::int AS done
+       FROM checklist_items ci JOIN checklists c ON c.id = ci.checklist_id
+       WHERE ci.tenant_id = $1 AND c.item_id = $2`,
+      [tenantId, itemId],
+    )
+    return { checked: (row.rows[0]?.done as number) ?? 0, total: (row.rows[0]?.total as number) ?? 0 }
+  }
+
+  /** [T38] CHECKLIST_UPDATED com progresso consolidado, na transação do comando. */
+  async function emitChecklistUpdatedPg(client: PoolClient, tenantId: string, projectId: string, itemId: string, checklistId: string): Promise<void> {
+    await appendDomainEventPg(client, {
+      tenantId, projectId, type: 'CHECKLIST_UPDATED',
+      payload: { itemId, checklistId, progress: await checklistProgressPg(client, tenantId, itemId) },
+    })
+  }
+
+  async function appendDomainEventsInTx(client: PoolClient, context: MutationContext, projectId: string): Promise<void> {
+    for (const event of context.domainEvents ?? []) {
+      await appendDomainEventPg(client, {
+        tenantId: context.tenantId, projectId, type: event.type, payload: event.payload,
+        correlationId: event.correlationId ?? null, operationId: event.operationId ?? null,
+      })
+    }
+  }
+
+  async function assertJournalAvailablePg(client: PoolClient, context: MutationContext): Promise<void> {
+    const command = context.idempotency
+    if (!command) return
+    const existing = await client.query(
+      'SELECT payload_hash, response_json, status FROM idempotency_records WHERE tenant_id = $1 AND owner_id = $2 AND tool = $3 AND project_scope = $4 AND idempotency_key = $5',
+      [context.tenantId, context.actorUserId ?? '', command.namespace, command.projectScope, command.key],
+    )
+    const row = existing.rows[0] as { payload_hash: string; response_json: string; status: 'PENDING' | 'COMMITTED' } | undefined
+    if (!row) return
+    if (row.payload_hash !== command.payloadHash) throw new IdempotencyConflictError()
+    throw new IdempotentReplaySignal({ responseJson: row.response_json, status: row.status })
+  }
+
+  /**
+   * Insere a reserva do journal tratando a corrida entre processos: se outra
+   * transação venceu a chave (unique violation 23505), relê o vencedor e
+   * converge para replay (mesmo hash) ou conflito (hash divergente). Nunca
+   * deixa reserva órfã nem duplica a operação.
+   */
+  async function insertIdempotencyOrSignal(client: PoolClient, context: MutationContext, command: NonNullable<MutationContext['idempotency']>, responseJson: string): Promise<string> {
+    const operationId = generateId()
+    // SAVEPOINT para que um unique violation (corrida) não aborte a transação:
+    // assim podemos reler o vencedor e convergir para replay/conflito.
+    await client.query('SAVEPOINT idem_reserve')
+    try {
+      await client.query(
+        `INSERT INTO idempotency_records
+           (id, tenant_id, owner_id, tool, idempotency_key, project_scope, payload_hash, response_json, status, created_at, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING', $9, $10)`,
+        [operationId, context.tenantId, context.actorUserId ?? '', command.namespace, command.key, command.projectScope,
+         command.payloadHash, responseJson, new Date().toISOString(), command.expiresAt],
+      )
+      await client.query('RELEASE SAVEPOINT idem_reserve')
+      return operationId
+    } catch (error) {
+      await client.query('ROLLBACK TO SAVEPOINT idem_reserve')
+      await client.query('RELEASE SAVEPOINT idem_reserve')
+      if ((error as { code?: string }).code === '23505') {
+        const winner = await client.query(
+          'SELECT payload_hash, response_json, status FROM idempotency_records WHERE tenant_id = $1 AND owner_id = $2 AND tool = $3 AND project_scope = $4 AND idempotency_key = $5',
+          [context.tenantId, context.actorUserId ?? '', command.namespace, command.key, command.projectScope],
+        )
+        const row = winner.rows[0] as { payload_hash: string; response_json: string; status: 'PENDING' | 'COMMITTED' } | undefined
+        if (row) {
+          if (row.payload_hash !== command.payloadHash) throw new IdempotencyConflictError()
+          throw new IdempotentReplaySignal({ responseJson: row.response_json, status: row.status })
+        }
+      }
+      throw error
+    }
+  }
+
+  async function reserveJournalPg(client: PoolClient, context: MutationContext, responseJson: string): Promise<string | null> {
+    const command = context.idempotency
+    if (!command) return null
+    return insertIdempotencyOrSignal(client, context, command, responseJson)
+  }
+
+  async function nextBatchSequenceCodePg(client: PoolClient, tenantId: string, projectId: string, type: string): Promise<string> {
+    const prefix = sequencePrefix(type)
+    const rows = await client.query('SELECT sequence_code FROM items WHERE tenant_id = $1 AND project_id = $2 AND sequence_code LIKE $3',
+      [tenantId, projectId, `${prefix}%`])
+    return computeNextSequenceCode(rows.rows.map(row => (row as { sequence_code: string | null }).sequence_code), type)
+  }
+
+  async function replaceItemSprintsPg(client: PoolClient, tenantId: string, projectId: string, itemId: string, sprintIds: string[]): Promise<void> {
+    await client.query('DELETE FROM item_sprints WHERE tenant_id = $1 AND item_id = $2', [tenantId, itemId])
+    for (const sprintId of [...new Set(sprintIds)]) {
+      await client.query(
+        `INSERT INTO item_sprints (tenant_id, item_id, sprint_id)
+         SELECT $1, $2, $3 WHERE EXISTS (SELECT 1 FROM sprints WHERE tenant_id = $1 AND project_id = $4 AND id = $3)
+         ON CONFLICT DO NOTHING`,
+        [tenantId, itemId, sprintId, projectId],
+      )
+    }
+  }
+
+  async function insertItemActivityPg(client: PoolClient, context: MutationContext, itemId: string, activity: string, now: string): Promise<void> {
+    await client.query(
+      `INSERT INTO item_logs (id, tenant_id, item_id, author_id, type, actor_type, actor_label, source, activity, duration_min, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'auto', $5, $6, $7, $8, NULL, $9, $10)`,
+      [generateId(), context.tenantId, itemId, context.actorUserId, context.mutation.actorType,
+       context.mutation.actorLabel, context.mutation.actorSource, activity, now, now],
+    )
+  }
+
+  async function createBatchItemInsideTx(
+    client: PoolClient, context: MutationContext, projectId: string,
+    operation: BatchItemCreateOperation,
+    moduleCreates: Array<{ id: string; name: string; position: number; description: string | null }>,
+  ): Promise<BatchItemCreateResult> {
+    if (operation.tool !== 'create_task' && operation.tool !== 'create_item') throw new Error('VALIDATION_ERROR')
+    if (!operation.title?.trim()) throw new Error('VALIDATION_ERROR')
+    if (operation.invalidType) throw new Error('INTERNAL_ERROR')
+    const projectRow = (await client.query('SELECT board_mode, simple_story_id FROM projects WHERE tenant_id = $1 AND id = $2',
+      [context.tenantId, projectId])).rows[0] as { board_mode: 'SIMPLE' | 'HIERARCHICAL'; simple_story_id: string | null } | undefined
+    if (!projectRow) throw new Error('VALIDATION_ERROR')
+
+    const type = operation.type ?? 'TASK'
+    const parentId = projectRow.board_mode === 'SIMPLE' && (type === 'TASK' || type === 'BUG')
+      ? projectRow.simple_story_id
+      : operation.parentId ?? null
+    if (type === 'STORY' && !parentId) throw new Error('VALIDATION_ERROR')
+    if ((type === 'TASK' || type === 'BUG') && !parentId) throw new Error('HIERARCHY_REQUIRED')
+    if (type === 'EPIC' && (parentId || (!operation.moduleId && !operation.moduleName))) throw new Error('VALIDATION_ERROR')
+
+    let moduleId = operation.moduleId ?? null
+    const moduleRows = (await client.query('SELECT id, name FROM modules WHERE tenant_id = $1 AND project_id = $2 ORDER BY position',
+      [context.tenantId, projectId])).rows as Array<{ id: string; name: string }>
+    const projectModules = [...moduleRows]
+    if (operation.moduleName) {
+      const name = operation.moduleName.trim()
+      if (!name) throw new Error('VALIDATION_ERROR')
+      const existing = projectModules.find(module => module.name.localeCompare(name, undefined, { sensitivity: 'accent' }) === 0)
+      if (existing) moduleId = existing.id
+      else {
+        const id = generateId()
+        const position = projectModules.length
+        await client.query('INSERT INTO modules (id, tenant_id, project_id, name, description, position) VALUES ($1, $2, $3, $4, NULL, $5)',
+          [id, context.tenantId, projectId, name, position])
+        moduleId = id
+        projectModules.push({ id, name })
+        moduleCreates.push({ id, name, position, description: null })
+      }
+    }
+    if (moduleId && !projectModules.some(module => module.id === moduleId)) throw new Error('RELATION_OUT_OF_SCOPE')
+
+    let ancestryPath: Array<{ id: string; title: string; type: string }> = []
+    if (parentId) {
+      const parentRow = (await client.query('SELECT id, type, title, ancestry_path FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+        [context.tenantId, projectId, parentId])).rows[0] as { id: string; type: string; title: string; ancestry_path: string } | undefined
+      if (!parentRow) throw new Error('RELATION_OUT_OF_SCOPE')
+      if (type === 'STORY' && parentRow.type !== 'EPIC') throw new Error('VALIDATION_ERROR')
+      if ((type === 'TASK' || type === 'BUG') && !['STORY', 'TASK', 'BUG'].includes(parentRow.type)) throw new Error('VALIDATION_ERROR')
+      ancestryPath = [...(JSON.parse(parentRow.ancestry_path) as Array<{ id: string; title: string; type: string }>), { id: parentRow.id, title: parentRow.title, type: parentRow.type }]
+    }
+
+    const firstColumn = (type === 'TASK' || type === 'BUG')
+      ? (await client.query('SELECT id FROM columns WHERE tenant_id = $1 AND project_id = $2 ORDER BY position LIMIT 1',
+        [context.tenantId, projectId])).rows[0] as { id: string } | undefined
+      : undefined
+    const columnId = firstColumn?.id ?? null
+    const id = generateId()
+    const now = new Date().toISOString()
+    const title = operation.title.trim()
+    const priority = operation.priority ?? 'MEDIUM'
+    const assigneeId = operation.assignToCurrentUser ? context.actorUserId : null
+    const sequenceCode = await nextBatchSequenceCodePg(client, context.tenantId, projectId, type)
+    await client.query(
+      `INSERT INTO items (id, tenant_id, project_id, type, sequence_code, parent_id, module_id, column_id, ancestry_path, title, description,
+         status, priority, points, assignee_id, author_id, version_id, icon, position, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'NOT_STARTED', $12, $13, $14, $15, $16, $17, 0, $18, $19)`,
+      [id, context.tenantId, projectId, type, sequenceCode, parentId, moduleId, columnId, JSON.stringify(ancestryPath), title,
+       operation.description ?? null, priority, operation.points ?? null, assigneeId, context.actorUserId ?? null,
+       operation.versionId ?? null, operation.icon ?? null, now, now],
+    )
+    if (operation.sprintIds !== undefined) {
+      await replaceItemSprintsPg(client, context.tenantId, projectId, id, operation.sprintIds)
+    }
+    const after = await readItemSnapshot(client, context.tenantId, projectId, id)
+    await recordItemEvent(client, context, { projectId, itemId: id, eventType: 'ITEM_CREATED', correlationId: id, after })
+    return {
+      id, title, type, projectId, parentId, moduleId, columnId, sequenceCode,
+      ancestryPath: JSON.stringify(ancestryPath), description: operation.description ?? null,
+      priority, points: operation.points ?? null, assigneeId, status: 'NOT_STARTED',
+      versionId: operation.versionId ?? null, icon: operation.icon ?? null, sprintIds: operation.sprintIds ?? [],
+    }
+  }
+
+  async function applyItemBatchTx(
+    client: PoolClient, context: MutationContext, projectId: string, updates: BatchItemUpdate[],
+  ): Promise<Array<{ id: string; identity: Record<string, unknown>; changes: Record<string, unknown> }>> {
+    const output: Array<{ id: string; identity: Record<string, unknown>; changes: Record<string, unknown> }> = []
+    for (const operation of updates) {
+      const exists = await client.query('SELECT id FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+        [context.tenantId, projectId, operation.itemId])
+      if (!exists.rows[0]) throw new Error('ITEM_NOT_FOUND')
+      const before = await readItemSnapshot(client, context.tenantId, projectId, operation.itemId)
+      const now = new Date().toISOString()
+      const sets: string[] = []
+      const params: unknown[] = [context.tenantId, projectId, operation.itemId]
+      let idx = 4
+      for (const [property, column] of Object.entries(ITEM_FIELD_COLUMNS)) {
+        const value = operation.patch[property as keyof ItemPatch]
+        if (value !== undefined) { sets.push(`${column} = $${idx++}`); params.push(value) }
+      }
+      sets.push(`updated_at = $${idx++}`)
+      params.push(now)
+      await client.query(`UPDATE items SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3`, params)
+      if (operation.sprintIds !== undefined) {
+        await replaceItemSprintsPg(client, context.tenantId, projectId, operation.itemId, operation.sprintIds)
+      }
+      if (operation.activity) await insertItemActivityPg(client, context, operation.itemId, operation.activity, now)
+      const after = await readItemSnapshot(client, context.tenantId, projectId, operation.itemId)
+      if (before && after) {
+        const eventFields: Array<[string, string]> = [
+          ['status', 'STATUS_CHANGED'], ['points', 'POINTS_CHANGED'], ['type', 'TYPE_CHANGED'],
+          ['sprint', 'SPRINT_CHANGED'], ['version', 'VERSION_CHANGED'],
+          ['parent', 'ITEM_REPARENTED'], ['module', 'MODULE_CHANGED'],
+        ]
+        for (const [field, eventType] of eventFields) {
+          if (operation.changedFields?.includes(field)) {
+            await recordItemEvent(client, context, { projectId, itemId: operation.itemId, eventType, before, after })
+          }
+        }
+      }
+      if (operation.responseChanges) {
+        output.push({ id: operation.itemId, identity: operation.responseIdentity ?? { id: operation.itemId }, changes: operation.responseChanges })
+      }
+    }
+    return output
+  }
+
   return {
+    // -----------------------------------------------------------------------
+    // HealthPort
+    // -----------------------------------------------------------------------
+    health: {
+      // [DB-SWAP] Consulta trivial; sem varredura de histórico/backfill por req.
+      async ping(): Promise<void> {
+        await pool.query('SELECT 1')
+      },
+    },
+
+    // -----------------------------------------------------------------------
+    // DomainEventPort [T38]
+    // -----------------------------------------------------------------------
+    domainEvents: {
+      async append(input) {
+        const now = input.createdAt ?? new Date().toISOString()
+        const id = generateId()
+        const seqRow = await q1(
+          `INSERT INTO domain_event_counters (tenant_id, project_id, last_sequence)
+           VALUES ($1, $2, 1)
+           ON CONFLICT (tenant_id, project_id) DO UPDATE SET last_sequence = domain_event_counters.last_sequence + 1
+           RETURNING last_sequence`,
+          [input.tenantId, input.projectId],
+        )
+        const sequence = (seqRow?.last_sequence as number) ?? 1
+        await q(
+          `INSERT INTO domain_event_outbox
+             (id, tenant_id, project_id, sequence, type, payload_json, schema_version, operation_id, correlation_id, status, attempts, available_at, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'PENDING', 0, $10, $11)`,
+          [id, input.tenantId, input.projectId, sequence, input.type, JSON.stringify(input.payload ?? null),
+           input.schemaVersion ?? 1, input.operationId ?? null, input.correlationId ?? null, now, now],
+        )
+        return {
+          id, tenantId: input.tenantId, projectId: input.projectId, sequence, type: input.type,
+          payload: input.payload ?? null, schemaVersion: input.schemaVersion ?? 1,
+          operationId: input.operationId ?? null, correlationId: input.correlationId ?? null,
+          status: 'PENDING', attempts: 0, availableAt: now, createdAt: now, publishedAt: null,
+        }
+      },
+      async listAfter({ tenantId, projectId, cursor, limit }) {
+        const rows = await q(
+          'SELECT * FROM domain_event_outbox WHERE tenant_id = $1 AND project_id = $2 AND sequence > $3 ORDER BY sequence LIMIT $4',
+          [tenantId, projectId, cursor, limit],
+        )
+        return rows.map(mapDomainEventRow)
+      },
+      async watermark(tenantId, projectId) {
+        const row = await q1('SELECT last_sequence FROM domain_event_counters WHERE tenant_id = $1 AND project_id = $2', [tenantId, projectId])
+        return (row?.last_sequence as number) ?? 0
+      },
+      async claimDue({ now, limit, workerId, leaseMs }) {
+        const leaseExpiresAt = new Date(Date.parse(now) + leaseMs).toISOString()
+        const rows = await q(
+          `WITH due AS (
+             SELECT id FROM domain_event_outbox
+             WHERE status = 'PENDING' AND available_at <= $1 AND (lease_expires_at IS NULL OR lease_expires_at < $1)
+             ORDER BY sequence LIMIT $2 FOR UPDATE SKIP LOCKED
+           )
+           UPDATE domain_event_outbox o SET lease_owner = $3, lease_expires_at = $4
+           WHERE o.id IN (SELECT id FROM due) RETURNING o.*`,
+          [now, limit, workerId, leaseExpiresAt],
+        )
+        return rows.map(mapDomainEventRow)
+      },
+      async markPublished(eventId, tenantId, now) {
+        await q("UPDATE domain_event_outbox SET status = 'PUBLISHED', published_at = $1, lease_owner = NULL, lease_expires_at = NULL WHERE id = $2 AND tenant_id = $3", [now, eventId, tenantId])
+      },
+      async markRetry(eventId, tenantId, { attempts, availableAt }) {
+        await q('UPDATE domain_event_outbox SET attempts = $1, available_at = $2, lease_owner = NULL, lease_expires_at = NULL WHERE id = $3 AND tenant_id = $4', [attempts, availableAt, eventId, tenantId])
+      },
+      async prunePublishedBefore(cutoff) {
+        const result = await pool.query("DELETE FROM domain_event_outbox WHERE status = 'PUBLISHED' AND published_at < $1", [cutoff])
+        return result.rowCount ?? 0
+      },
+      async pendingStats() {
+        const row = await q1(
+          `SELECT count(*)::int AS pending, min(available_at) AS oldest, coalesce(max(attempts), 0)::int AS "maxAttempts"
+           FROM domain_event_outbox WHERE status = 'PENDING'`,
+        )
+        return {
+          pending: (row?.pending as number) ?? 0,
+          oldestAvailableAt: (row?.oldest as string | null) ?? null,
+          maxAttempts: (row?.maxAttempts as number) ?? 0,
+        }
+      },
+      async hasPendingForOperation(tenantId, operationId) {
+        const row = await q1("SELECT 1 AS present FROM domain_event_outbox WHERE tenant_id = $1 AND operation_id = $2 AND status = 'PENDING' LIMIT 1", [tenantId, operationId])
+        return Boolean(row)
+      },
+    },
+
     // -----------------------------------------------------------------------
     // IdentityPort
     // -----------------------------------------------------------------------
@@ -746,23 +1143,42 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
     // IdempotencyPort
     // -----------------------------------------------------------------------
     idempotency: {
-      async find(context: PersistenceContext, tool: string, key: string) {
+      async find(context: PersistenceContext, tool: string, key: string, projectScope = '') {
         const row = await q1(
-          'SELECT payload_hash, response_json FROM idempotency_records WHERE tenant_id = $1 AND owner_id = $2 AND tool = $3 AND idempotency_key = $4',
-          [context.tenantId, context.actorUserId ?? '', tool, key],
+          'SELECT id, payload_hash, response_json, status, project_scope FROM idempotency_records WHERE tenant_id = $1 AND owner_id = $2 AND tool = $3 AND project_scope = $4 AND idempotency_key = $5',
+          [context.tenantId, context.actorUserId ?? '', tool, projectScope, key],
         )
-        return row ? { payloadHash: row.payload_hash as string, responseJson: row.response_json as string } : null
+        return row
+          ? { id: row.id as string, payloadHash: row.payload_hash as string, responseJson: row.response_json as string, status: row.status as 'PENDING' | 'COMMITTED', projectScope: row.project_scope as string }
+          : null
       },
-      async save(context: PersistenceContext, input: { tool: string; key: string; payloadHash: string; responseJson: string; createdAt: string; expiresAt: string }): Promise<void> {
+      async findById(context: PersistenceContext, operationId: string) {
+        const row = await q1(
+          'SELECT id, payload_hash, response_json, status, project_scope FROM idempotency_records WHERE tenant_id = $1 AND id = $2',
+          [context.tenantId, operationId],
+        )
+        return row
+          ? { id: row.id as string, payloadHash: row.payload_hash as string, responseJson: row.response_json as string, status: row.status as 'PENDING' | 'COMMITTED', projectScope: row.project_scope as string }
+          : null
+      },
+      async save(context: PersistenceContext, input: { tool: string; key: string; projectScope?: string; payloadHash: string; responseJson: string; status?: 'PENDING' | 'COMMITTED'; createdAt: string; expiresAt: string }): Promise<void> {
         await q(
-          `INSERT INTO idempotency_records (id, tenant_id, owner_id, tool, idempotency_key, payload_hash, response_json, created_at, expires_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-           ON CONFLICT (tenant_id, owner_id, tool, idempotency_key) DO NOTHING`,
-          [generateId(), context.tenantId, context.actorUserId ?? '', input.tool, input.key, input.payloadHash, input.responseJson, input.createdAt, input.expiresAt],
+          `INSERT INTO idempotency_records (id, tenant_id, owner_id, tool, idempotency_key, project_scope, payload_hash, response_json, status, created_at, expires_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           ON CONFLICT (tenant_id, owner_id, tool, project_scope, idempotency_key) DO NOTHING`,
+          [generateId(), context.tenantId, context.actorUserId ?? '', input.tool, input.key, input.projectScope ?? '', input.payloadHash, input.responseJson, input.status ?? 'COMMITTED', input.createdAt, input.expiresAt],
+        )
+      },
+      async complete(context: PersistenceContext, input: { tool: string; key: string; projectScope?: string; responseJson: string }): Promise<void> {
+        await q(
+          `UPDATE idempotency_records SET response_json = $1, status = 'COMMITTED'
+           WHERE tenant_id = $2 AND owner_id = $3 AND tool = $4 AND project_scope = $5 AND idempotency_key = $6`,
+          [input.responseJson, context.tenantId, context.actorUserId ?? '', input.tool, input.projectScope ?? '', input.key],
         )
       },
       async pruneExpired(nowIso: string): Promise<void> {
-        await q('DELETE FROM idempotency_records WHERE expires_at < $1', [nowIso])
+        // [T38] Nunca poda reservas PENDING (retomáveis).
+        await q("DELETE FROM idempotency_records WHERE expires_at < $1 AND status = 'COMMITTED'", [nowIso])
       },
     },
 
@@ -813,8 +1229,12 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           if (key in patch) { sets.push(`${col} = $${idx++}`); params.push((patch as Record<string, unknown>)[key]) }
         }
         if (!sets.length) return null
-        const row = await q1(`UPDATE projects SET ${sets.join(', ')} WHERE tenant_id = $1 AND id = $2 RETURNING *`, params)
-        return row ? mapProject(row) : null
+        return tx(async (client) => {
+          const result = await client.query(`UPDATE projects SET ${sets.join(', ')} WHERE tenant_id = $1 AND id = $2 RETURNING *`, params)
+          if (!result.rows[0]) return null
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'project')
+          return mapProject(result.rows[0] as PgRow)
+        })
       },
       async getMembership(context: PersistenceContext, projectId: string, userId: string): Promise<MembershipRecord | null> {
         const row = await q1('SELECT * FROM memberships WHERE tenant_id = $1 AND project_id = $2 AND user_id = $3',
@@ -842,6 +1262,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             [id, context.tenantId, projectId, input.name, input.baseStatus, position],
           )
           if (!result.rows[0]) throw new Error('Falha ao criar coluna no adapter PostgreSQL.')
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'columns')
           return mapColumn(result.rows[0] as PgRow)
         })
       },
@@ -852,8 +1273,12 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         if (patch.name !== undefined) { sets.push(`name = $${idx++}`); params.push(patch.name) }
         if (patch.baseStatus !== undefined) { sets.push(`base_status = $${idx++}`); params.push(patch.baseStatus) }
         if (!sets.length) return null
-        const row = await q1(`UPDATE columns SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING *`, params)
-        return row ? mapColumn(row) : null
+        return tx(async (client) => {
+          const result = await client.query(`UPDATE columns SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING *`, params)
+          if (!result.rows[0]) return null
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'columns')
+          return mapColumn(result.rows[0] as PgRow)
+        })
       },
       async reorderColumns(context: PersistenceContext, projectId: string, columnIds: string[]): Promise<void> {
         await tx(async (client) => {
@@ -866,6 +1291,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             )
             if (result.rowCount !== 1) throw new Error('COLUMN_NOT_IN_PROJECT')
           }
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'columns')
         })
       },
       async deleteColumn(context: PersistenceContext, projectId: string, columnId: string, moveItemsToColumnId?: string): Promise<boolean> {
@@ -882,6 +1308,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           }
           const result = await client.query('DELETE FROM columns WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
             [context.tenantId, projectId, columnId])
+          if (result.rowCount === 1) await emitMetadataEventPg(client, context.tenantId, projectId, 'columns')
           return result.rowCount === 1
         })
       },
@@ -904,14 +1331,17 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return row ? mapModule(row) : null
       },
       async createModule(context: PersistenceContext, projectId: string, input: NewModuleRecord): Promise<ModuleRecord> {
-        const existing = await q('SELECT id FROM modules WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
-        const id = generateId()
-        const row = await q1(
-          'INSERT INTO modules (id, tenant_id, project_id, name, description, position) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-          [id, context.tenantId, projectId, input.name, input.description ?? null, input.position ?? existing.length],
-        )
-        if (!row) throw new Error('Falha ao criar módulo no adapter PostgreSQL.')
-        return mapModule(row)
+        return tx(async (client) => {
+          const existing = await client.query('SELECT id FROM modules WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
+          const result = await client.query(
+            'INSERT INTO modules (id, tenant_id, project_id, name, description, position) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+            [generateId(), context.tenantId, projectId, input.name, input.description ?? null, input.position ?? existing.rows.length],
+          )
+          if (!result.rows[0]) throw new Error('Falha ao criar módulo no adapter PostgreSQL.')
+          const module = mapModule(result.rows[0] as PgRow)
+          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: 'MODULE_CREATED', payload: module })
+          return module
+        })
       },
       async updateModule(context: PersistenceContext, projectId: string, moduleId: string, patch: ModulePatch): Promise<boolean> {
         const sets: string[] = []
@@ -921,8 +1351,12 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         if (patch.description !== undefined) { sets.push(`description = $${idx++}`); params.push(patch.description) }
         if (patch.position !== undefined) { sets.push(`position = $${idx++}`); params.push(patch.position) }
         if (!sets.length) return false
-        const rows = await q(`UPDATE modules SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING id`, params)
-        return rows.length > 0
+        return tx(async (client) => {
+          const result = await client.query(`UPDATE modules SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING id`, params)
+          if ((result.rowCount ?? 0) === 0) return false
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'modules')
+          return true
+        })
       },
       async listSquads(context: PersistenceContext, projectId: string): Promise<SquadSummaryRecord[]> {
         const rows = await q(
@@ -939,11 +1373,13 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         }))
       },
       async createSquad(context: PersistenceContext, projectId: string, input: NewSquadRecord): Promise<SquadRecord> {
-        const id = generateId()
-        const row = await q1('INSERT INTO squads (id, tenant_id, project_id, name, created_at) VALUES ($1, $2, $3, $4, now()) RETURNING *',
-          [id, context.tenantId, projectId, input.name])
-        if (!row) throw new Error('Falha ao criar squad no adapter PostgreSQL.')
-        return mapSquad(row)
+        return tx(async (client) => {
+          const result = await client.query('INSERT INTO squads (id, tenant_id, project_id, name, created_at) VALUES ($1, $2, $3, $4, now()) RETURNING *',
+            [generateId(), context.tenantId, projectId, input.name])
+          if (!result.rows[0]) throw new Error('Falha ao criar squad no adapter PostgreSQL.')
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'squads')
+          return mapSquad(result.rows[0] as PgRow)
+        })
       },
       async getSquad(context: PersistenceContext, projectId: string, squadId: string): Promise<SquadRecord | null> {
         const row = await q1('SELECT * FROM squads WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
@@ -951,9 +1387,13 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return row ? mapSquad(row) : null
       },
       async updateSquad(context: PersistenceContext, projectId: string, squadId: string, name: string): Promise<boolean> {
-        const rows = await q('UPDATE squads SET name = $1 WHERE tenant_id = $2 AND project_id = $3 AND id = $4 RETURNING id',
-          [name, context.tenantId, projectId, squadId])
-        return rows.length > 0
+        return tx(async (client) => {
+          const result = await client.query('UPDATE squads SET name = $1 WHERE tenant_id = $2 AND project_id = $3 AND id = $4 RETURNING id',
+            [name, context.tenantId, projectId, squadId])
+          if ((result.rowCount ?? 0) === 0) return false
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'squads')
+          return true
+        })
       },
       async deleteSquad(context: PersistenceContext, projectId: string, squadId: string): Promise<boolean> {
         return tx(async (client) => {
@@ -964,7 +1404,10 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             [context.tenantId, projectId, squadId])
           const result = await client.query('DELETE FROM squads WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
             [context.tenantId, projectId, squadId])
-          return result.rowCount === 1
+          if ((result.rowCount ?? 0) !== 1) return false
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'squads')
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'members')
+          return true
         })
       },
       async addProjectMember(context: PersistenceContext, projectId: string, input: NewProjectMembership): Promise<MembershipRecord> {
@@ -980,6 +1423,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             'INSERT INTO memberships (id, tenant_id, user_id, project_id, squad_id, role, created_at) VALUES ($1, $2, $3, $4, $5, $6, now())',
             [membershipId, context.tenantId, input.userId, projectId, squadId, input.role],
           )
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'members')
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'squads')
           return membershipId
         })
         const row = await q1('SELECT * FROM memberships WHERE id = $1', [id])
@@ -1000,21 +1445,34 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           if (patch.squadId !== undefined) { sets.push(`squad_id = $${idx++}`); params.push(patch.squadId || null) }
           if (!sets.length) return false
           const result = await client.query(`UPDATE memberships SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND user_id = $3`, params)
-          return (result.rowCount ?? 0) > 0
+          if ((result.rowCount ?? 0) === 0) return false
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'members')
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'squads')
+          return true
         })
       },
       async removeProjectMember(context: PersistenceContext, projectId: string, userId: string): Promise<boolean> {
-        const rows = await q('DELETE FROM memberships WHERE tenant_id = $1 AND project_id = $2 AND user_id = $3 RETURNING id',
-          [context.tenantId, projectId, userId])
-        return rows.length > 0
+        return tx(async (client) => {
+          const result = await client.query('DELETE FROM memberships WHERE tenant_id = $1 AND project_id = $2 AND user_id = $3 RETURNING id',
+            [context.tenantId, projectId, userId])
+          if ((result.rowCount ?? 0) === 0) return false
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'members')
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'squads')
+          return true
+        })
       },
       async addSquadMember(context: PersistenceContext, projectId: string, squadId: string, input: NewProjectMembership): Promise<MembershipRecord> {
         return this.addProjectMember(context, projectId, { ...input, squadId })
       },
       async removeSquadMember(context: PersistenceContext, projectId: string, squadId: string, userId: string): Promise<boolean> {
-        const rows = await q('UPDATE memberships SET squad_id = NULL WHERE tenant_id = $1 AND project_id = $2 AND squad_id = $3 AND user_id = $4 RETURNING id',
-          [context.tenantId, projectId, squadId, userId])
-        return rows.length > 0
+        return tx(async (client) => {
+          const result = await client.query('UPDATE memberships SET squad_id = NULL WHERE tenant_id = $1 AND project_id = $2 AND squad_id = $3 AND user_id = $4 RETURNING id',
+            [context.tenantId, projectId, squadId, userId])
+          if ((result.rowCount ?? 0) === 0) return false
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'squads')
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'members')
+          return true
+        })
       },
       async listProjectMembers(context: PersistenceContext, projectId: string): Promise<ProjectMemberDetails[]> {
         const rows = await q(
@@ -1134,14 +1592,17 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return row ? mapSprint(row) : null
       },
       async createSprint(context: PersistenceContext, projectId: string, input: Record<string, unknown>): Promise<SprintRecord> {
-        const id = generateId()
-        const row = await q1(
-          `INSERT INTO sprints (id, tenant_id, project_id, name, status, start_date, end_date, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, now()) RETURNING *`,
-          [id, context.tenantId, projectId, input.name, input.status ?? 'PROPOSED', input.startDate, input.endDate],
-        )
-        if (!row) throw new Error('Falha ao criar sprint no adapter PostgreSQL.')
-        return mapSprint(row)
+        return tx(async (client) => {
+          const result = await client.query(
+            `INSERT INTO sprints (id, tenant_id, project_id, name, status, start_date, end_date, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, now()) RETURNING *`,
+            [generateId(), context.tenantId, projectId, input.name, input.status ?? 'PROPOSED', input.startDate, input.endDate],
+          )
+          if (!result.rows[0]) throw new Error('Falha ao criar sprint no adapter PostgreSQL.')
+          const sprint = mapSprint(result.rows[0] as PgRow)
+          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: 'SPRINT_CHANGED', payload: { action: 'created', sprintId: sprint.id } })
+          return sprint
+        })
       },
       async updateSprint(context: PersistenceContext, projectId: string, sprintId: string, patch: Record<string, unknown>): Promise<SprintRecord | null> {
         const sets: string[] = []
@@ -1151,8 +1612,12 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         if (patch.startDate !== undefined) { sets.push(`start_date = $${idx++}`); params.push(patch.startDate) }
         if (patch.endDate !== undefined) { sets.push(`end_date = $${idx++}`); params.push(patch.endDate) }
         if (!sets.length) return null
-        const row = await q1(`UPDATE sprints SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING *`, params)
-        return row ? mapSprint(row) : null
+        return tx(async (client) => {
+          const result = await client.query(`UPDATE sprints SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING *`, params)
+          if (!result.rows[0]) return null
+          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: 'SPRINT_CHANGED', payload: { action: 'updated', sprintId } })
+          return mapSprint(result.rows[0] as PgRow)
+        })
       },
       async transitionSprint(context: PersistenceContext, projectId: string, sprintId: string, targetStatus: string): Promise<SprintRecord | null> {
         return tx(async client => {
@@ -1208,7 +1673,9 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           }
           const row = await client.query('SELECT * FROM sprints WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
             [context.tenantId, projectId, sprintId])
-          return row.rows[0] ? mapSprint(row.rows[0] as PgRow) : null
+          if (!row.rows[0]) return null
+          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: 'SPRINT_CHANGED', payload: { action: targetStatus === 'OPEN' ? 'opened' : targetStatus === 'CLOSED' ? 'closed' : 'updated', sprintId } })
+          return mapSprint(row.rows[0] as PgRow)
         })
       },
       async listTags(context: PersistenceContext, projectId: string): Promise<TagRecord[]> {
@@ -1216,11 +1683,13 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return rows.map(mapTag)
       },
       async createTag(context: PersistenceContext, projectId: string, input: { name: string; color?: string | null }): Promise<TagRecord> {
-        const id = generateId()
-        const row = await q1('INSERT INTO tags (id, tenant_id, project_id, name, color) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-          [id, context.tenantId, projectId, input.name, input.color ?? '#6366f1'])
-        if (!row) throw new Error('Falha ao criar tag no adapter PostgreSQL.')
-        return mapTag(row)
+        return tx(async (client) => {
+          const result = await client.query('INSERT INTO tags (id, tenant_id, project_id, name, color) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [generateId(), context.tenantId, projectId, input.name, input.color ?? '#6366f1'])
+          if (!result.rows[0]) throw new Error('Falha ao criar tag no adapter PostgreSQL.')
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'tags')
+          return mapTag(result.rows[0] as PgRow)
+        })
       },
       async updateTag(context: PersistenceContext, projectId: string, tagId: string, patch: { name?: string; color?: string }): Promise<TagRecord | null> {
         const sets: string[] = []
@@ -1229,13 +1698,20 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         if (patch.name !== undefined) { sets.push(`name = $${idx++}`); params.push(patch.name) }
         if (patch.color !== undefined) { sets.push(`color = $${idx++}`); params.push(patch.color) }
         if (!sets.length) return null
-        const row = await q1(`UPDATE tags SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING *`, params)
-        return row ? mapTag(row) : null
+        return tx(async (client) => {
+          const result = await client.query(`UPDATE tags SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING *`, params)
+          if (!result.rows[0]) return null
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'tags')
+          return mapTag(result.rows[0] as PgRow)
+        })
       },
       async deleteTag(context: PersistenceContext, projectId: string, tagId: string): Promise<boolean> {
-        const rows = await q('DELETE FROM tags WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING id',
-          [context.tenantId, projectId, tagId])
-        return rows.length > 0
+        return tx(async (client) => {
+          const result = await client.query('DELETE FROM tags WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING id',
+            [context.tenantId, projectId, tagId])
+          if (result.rowCount && result.rowCount > 0) await emitMetadataEventPg(client, context.tenantId, projectId, 'tags')
+          return (result.rowCount ?? 0) > 0
+        })
       },
       async setItemTags(context: PersistenceContext, projectId: string, itemId: string, tagIds: string[]): Promise<void> {
         await tx(async (client) => {
@@ -1270,15 +1746,17 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return row ? mapVersion(row) : null
       },
       async createVersion(context: PersistenceContext, projectId: string, input: Record<string, unknown>): Promise<ProjectVersionRecord> {
-        const id = generateId()
-        const row = await q1(
-          `INSERT INTO project_versions (id, tenant_id, project_id, name, release_date, description, status, position, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now()) RETURNING *`,
-          [id, context.tenantId, projectId, input.name, input.releaseDate ?? null, input.description ?? null,
-           input.status ?? 'PLANNED', input.position ?? 0],
-        )
-        if (!row) throw new Error('Falha ao criar versão no adapter PostgreSQL.')
-        return mapVersion(row)
+        return tx(async (client) => {
+          const result = await client.query(
+            `INSERT INTO project_versions (id, tenant_id, project_id, name, release_date, description, status, position, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now()) RETURNING *`,
+            [generateId(), context.tenantId, projectId, input.name, input.releaseDate ?? null, input.description ?? null,
+             input.status ?? 'PLANNED', input.position ?? 0],
+          )
+          if (!result.rows[0]) throw new Error('Falha ao criar versão no adapter PostgreSQL.')
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'versions')
+          return mapVersion(result.rows[0] as PgRow)
+        })
       },
       async updateVersion(context: PersistenceContext, projectId: string, versionId: string, patch: Record<string, unknown>): Promise<ProjectVersionRecord | null> {
         const sets: string[] = []
@@ -1289,13 +1767,20 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           if (key in patch) { sets.push(`${col} = $${idx++}`); params.push((patch as Record<string, unknown>)[key]) }
         }
         if (!sets.length) return null
-        const row = await q1(`UPDATE project_versions SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING *`, params)
-        return row ? mapVersion(row) : null
+        return tx(async (client) => {
+          const result = await client.query(`UPDATE project_versions SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING *`, params)
+          if (!result.rows[0]) return null
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'versions')
+          return mapVersion(result.rows[0] as PgRow)
+        })
       },
       async deleteVersion(context: PersistenceContext, projectId: string, versionId: string): Promise<boolean> {
-        const rows = await q('DELETE FROM project_versions WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING id',
-          [context.tenantId, projectId, versionId])
-        return rows.length > 0
+        return tx(async (client) => {
+          const result = await client.query('DELETE FROM project_versions WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING id',
+            [context.tenantId, projectId, versionId])
+          if ((result.rowCount ?? 0) > 0) await emitMetadataEventPg(client, context.tenantId, projectId, 'versions')
+          return (result.rowCount ?? 0) > 0
+        })
       },
       async listVersionItems(context: PersistenceContext, projectId: string, versionId: string, options: { page: number; limit: number }) {
         const offset = (options.page - 1) * options.limit
@@ -1321,14 +1806,16 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return row ? mapCostCenter(row) : null
       },
       async createCostCenter(context: PersistenceContext, projectId: string, input: Record<string, unknown>): Promise<CostCenterRecord> {
-        const id = generateId()
-        const row = await q1(
-          `INSERT INTO project_cost_centers (id, tenant_id, project_id, code, description, sort_order, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING *`,
-          [id, context.tenantId, projectId, input.code, input.description ?? null, input.sortOrder ?? 0],
-        )
-        if (!row) throw new Error('Falha ao criar centro de custo no adapter PostgreSQL.')
-        return mapCostCenter(row)
+        return tx(async (client) => {
+          const result = await client.query(
+            `INSERT INTO project_cost_centers (id, tenant_id, project_id, code, description, sort_order, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING *`,
+            [generateId(), context.tenantId, projectId, input.code, input.description ?? null, input.sortOrder ?? 0],
+          )
+          if (!result.rows[0]) throw new Error('Falha ao criar centro de custo no adapter PostgreSQL.')
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'costCenters')
+          return mapCostCenter(result.rows[0] as PgRow)
+        })
       },
       async updateCostCenter(context: PersistenceContext, projectId: string, costCenterId: string, patch: Record<string, unknown>): Promise<CostCenterRecord | null> {
         const sets: string[] = []
@@ -1339,13 +1826,20 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           if (key in patch) { sets.push(`${col} = $${idx++}`); params.push((patch as Record<string, unknown>)[key]) }
         }
         if (!sets.length) return null
-        const row = await q1(`UPDATE project_cost_centers SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING *`, params)
-        return row ? mapCostCenter(row) : null
+        return tx(async (client) => {
+          const result = await client.query(`UPDATE project_cost_centers SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING *`, params)
+          if (!result.rows[0]) return null
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'costCenters')
+          return mapCostCenter(result.rows[0] as PgRow)
+        })
       },
       async deleteCostCenter(context: PersistenceContext, projectId: string, costCenterId: string): Promise<boolean> {
-        const rows = await q('DELETE FROM project_cost_centers WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING id',
-          [context.tenantId, projectId, costCenterId])
-        return rows.length > 0
+        return tx(async (client) => {
+          const result = await client.query('DELETE FROM project_cost_centers WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING id',
+            [context.tenantId, projectId, costCenterId])
+          if ((result.rowCount ?? 0) > 0) await emitMetadataEventPg(client, context.tenantId, projectId, 'costCenters')
+          return (result.rowCount ?? 0) > 0
+        })
       },
     },
 
@@ -1372,14 +1866,19 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           [context.tenantId, checklistId])
         return mapChecklist(row, items.map(mapChecklistItem))
       },
-      async createChecklist(context: PersistenceContext, projectId: string, itemId: string, name: string): Promise<ChecklistRecord> {
-        const id = generateId()
-        const row = await q1(
-          'INSERT INTO checklists (id, tenant_id, item_id, name, position, created_at) VALUES ($1, $2, $3, $4, 0, now()) RETURNING *',
-          [id, context.tenantId, itemId, name],
-        )
-        if (!row) throw new Error('Falha ao criar checklist no adapter PostgreSQL.')
-        return mapChecklist(row, [])
+      async createChecklist(context: MutationContext, projectId: string, itemId: string, name: string): Promise<ChecklistRecord> {
+        return tx(async (client) => {
+          await assertJournalAvailablePg(client, context)
+          const result = await client.query(
+            'INSERT INTO checklists (id, tenant_id, item_id, name, position, created_at) VALUES ($1, $2, $3, $4, 0, now()) RETURNING *',
+            [generateId(), context.tenantId, itemId, name],
+          )
+          if (!result.rows[0]) throw new Error('Falha ao criar checklist no adapter PostgreSQL.')
+          const checklist = mapChecklist(result.rows[0] as PgRow, [])
+          await emitChecklistUpdatedPg(client, context.tenantId, projectId, itemId, checklist.id)
+          await reserveJournalPg(client, context, JSON.stringify({ status: 201, body: checklist }))
+          return checklist
+        })
       },
       async updateChecklist(context: PersistenceContext, projectId: string, itemId: string, checklistId: string, patch: { name?: string; position?: number }): Promise<ChecklistRecord | null> {
         const sets: string[] = []
@@ -1388,27 +1887,39 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         if (patch.name !== undefined) { sets.push(`name = $${idx++}`); params.push(patch.name) }
         if (patch.position !== undefined) { sets.push(`position = $${idx++}`); params.push(patch.position) }
         if (!sets.length) return null
-        const row = await q1(`UPDATE checklists SET ${sets.join(', ')} WHERE tenant_id = $1 AND item_id = $2 AND id = $3 RETURNING *`, params)
-        if (!row) return null
-        const items = await q('SELECT * FROM checklist_items WHERE tenant_id = $1 AND checklist_id = $2 ORDER BY position',
-          [context.tenantId, checklistId])
-        return mapChecklist(row, items.map(mapChecklistItem))
+        return tx(async (client) => {
+          const result = await client.query(`UPDATE checklists SET ${sets.join(', ')} WHERE tenant_id = $1 AND item_id = $2 AND id = $3 RETURNING *`, params)
+          if (!result.rows[0]) return null
+          const items = await client.query('SELECT * FROM checklist_items WHERE tenant_id = $1 AND checklist_id = $2 ORDER BY position',
+            [context.tenantId, checklistId])
+          await emitChecklistUpdatedPg(client, context.tenantId, projectId, itemId, checklistId)
+          return mapChecklist(result.rows[0] as PgRow, items.rows.map(r => mapChecklistItem(r as PgRow)))
+        })
       },
       async deleteChecklist(context: PersistenceContext, projectId: string, itemId: string, checklistId: string): Promise<boolean> {
-        const rows = await q('DELETE FROM checklists WHERE tenant_id = $1 AND item_id = $2 AND id = $3 RETURNING id',
-          [context.tenantId, itemId, checklistId])
-        return rows.length > 0
+        return tx(async (client) => {
+          const result = await client.query('DELETE FROM checklists WHERE tenant_id = $1 AND item_id = $2 AND id = $3 RETURNING id',
+            [context.tenantId, itemId, checklistId])
+          if ((result.rowCount ?? 0) === 0) return false
+          await emitChecklistUpdatedPg(client, context.tenantId, projectId, itemId, checklistId)
+          return true
+        })
       },
-      async createChecklistItem(context: PersistenceContext, projectId: string, itemId: string, checklistId: string, input: Record<string, unknown>): Promise<ChecklistItemRecord> {
-        const id = generateId()
-        const row = await q1(
-          `INSERT INTO checklist_items (id, tenant_id, checklist_id, text, checked, position, due_date, assignee_id, description)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-          [id, context.tenantId, checklistId, input.text, input.checked ?? false, input.position ?? 0,
-           input.dueDate ?? null, input.assigneeId ?? null, input.description ?? null],
-        )
-        if (!row) throw new Error('Falha ao criar item de checklist no adapter PostgreSQL.')
-        return mapChecklistItem(row)
+      async createChecklistItem(context: MutationContext, projectId: string, itemId: string, checklistId: string, input: Record<string, unknown>): Promise<ChecklistItemRecord> {
+        return tx(async (client) => {
+          await assertJournalAvailablePg(client, context)
+          const result = await client.query(
+            `INSERT INTO checklist_items (id, tenant_id, checklist_id, text, checked, position, due_date, assignee_id, description)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+            [generateId(), context.tenantId, checklistId, input.text, input.checked ?? false, input.position ?? 0,
+             input.dueDate ?? null, input.assigneeId ?? null, input.description ?? null],
+          )
+          if (!result.rows[0]) throw new Error('Falha ao criar item de checklist no adapter PostgreSQL.')
+          await emitChecklistUpdatedPg(client, context.tenantId, projectId, itemId, checklistId)
+          const created = mapChecklistItem(result.rows[0] as PgRow)
+          await reserveJournalPg(client, context, JSON.stringify({ status: 201, body: created }))
+          return created
+        })
       },
       async updateChecklistItem(context: PersistenceContext, projectId: string, itemId: string, checklistId: string, checklistItemId: string, patch: ChecklistItemPatch): Promise<ChecklistItemRecord | null> {
         const sets: string[] = []
@@ -1421,13 +1932,21 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         if (patch.assigneeId !== undefined) { sets.push(`assignee_id = $${idx++}`); params.push(patch.assigneeId) }
         if (patch.description !== undefined) { sets.push(`description = $${idx++}`); params.push(patch.description) }
         if (!sets.length) return null
-        const row = await q1(`UPDATE checklist_items SET ${sets.join(', ')} WHERE tenant_id = $1 AND checklist_id = $2 AND id = $3 RETURNING *`, params)
-        return row ? mapChecklistItem(row) : null
+        return tx(async (client) => {
+          const result = await client.query(`UPDATE checklist_items SET ${sets.join(', ')} WHERE tenant_id = $1 AND checklist_id = $2 AND id = $3 RETURNING *`, params)
+          if (!result.rows[0]) return null
+          await emitChecklistUpdatedPg(client, context.tenantId, projectId, itemId, checklistId)
+          return mapChecklistItem(result.rows[0] as PgRow)
+        })
       },
       async deleteChecklistItem(context: PersistenceContext, projectId: string, itemId: string, checklistId: string, checklistItemId: string): Promise<boolean> {
-        const rows = await q('DELETE FROM checklist_items WHERE tenant_id = $1 AND checklist_id = $2 AND id = $3 RETURNING id',
-          [context.tenantId, checklistId, checklistItemId])
-        return rows.length > 0
+        return tx(async (client) => {
+          const result = await client.query('DELETE FROM checklist_items WHERE tenant_id = $1 AND checklist_id = $2 AND id = $3 RETURNING id',
+            [context.tenantId, checklistId, checklistItemId])
+          if ((result.rowCount ?? 0) === 0) return false
+          await emitChecklistUpdatedPg(client, context.tenantId, projectId, itemId, checklistId)
+          return true
+        })
       },
       async getChecklistProgress(context: PersistenceContext, itemId: string): Promise<ChecklistProgressRecord> {
         const row = await q1(
@@ -1467,17 +1986,24 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return row ? mapItemLog(row) : null
       },
       async createItemLog(context: MutationContext, projectId: string, itemId: string, input: Record<string, unknown>): Promise<ItemLogRecord> {
-        const id = generateId()
-        const now = new Date().toISOString()
-        const row = await q1(
-          `INSERT INTO item_logs (id, tenant_id, item_id, author_id, type, actor_type, actor_label, source, activity, duration_min, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
-          [id, context.tenantId, itemId, context.actorUserId, input.type ?? 'auto',
-           context.mutation.actorType, context.mutation.actorLabel, context.mutation.actorSource,
-           input.activity, input.durationMin ?? null, now, now],
-        )
-        if (!row) throw new Error('Falha ao criar log no adapter PostgreSQL.')
-        return mapItemLog(row)
+        void projectId
+        return tx(async (client) => {
+          // [T38] Reserva/replay idempotente na MESMA transação do log.
+          await assertJournalAvailablePg(client, context)
+          const id = generateId()
+          const now = new Date().toISOString()
+          const result = await client.query(
+            `INSERT INTO item_logs (id, tenant_id, item_id, author_id, type, actor_type, actor_label, source, activity, duration_min, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
+            [id, context.tenantId, itemId, context.actorUserId, input.type ?? 'auto',
+             context.mutation.actorType, context.mutation.actorLabel, context.mutation.actorSource,
+             input.activity, input.durationMin ?? null, now, now],
+          )
+          if (!result.rows[0]) throw new Error('Falha ao criar log no adapter PostgreSQL.')
+          const log = mapItemLog(result.rows[0] as PgRow)
+          await reserveJournalPg(client, context, JSON.stringify({ status: 201, body: { id: log.id, durationMin: log.durationMin } }))
+          return log
+        })
       },
       async updateItemLog(context: PersistenceContext, projectId: string, itemId: string, logId: string, patch: ItemLogPatch): Promise<ItemLogRecord | null> {
         const sets: string[] = []
@@ -1522,14 +2048,16 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return row ? mapAttachment(row) : null
       },
       async createAttachment(context: PersistenceContext, projectId: string, itemId: string, input: NewAttachmentRecord): Promise<AttachmentRecord> {
-        const id = generateId()
-        const row = await q1(
-          `INSERT INTO attachments (id, tenant_id, item_id, filename, original_name, mime_type, size, storage_path, storage_provider, label, reference_date, description, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now()) RETURNING *`,
-          [id, context.tenantId, itemId, input.fileName, input.originalName, input.mimeType, input.sizeBytes, input.storagePath, input.storageProvider ?? 'local', input.label ?? null, input.referenceDate ?? null, input.description ?? null],
-        )
-        if (!row) throw new Error('Falha ao criar anexo no adapter PostgreSQL.')
-        return mapAttachment(row)
+        return tx(async (client) => {
+          const result = await client.query(
+            `INSERT INTO attachments (id, tenant_id, item_id, filename, original_name, mime_type, size, storage_path, storage_provider, label, reference_date, description, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now()) RETURNING *`,
+            [generateId(), context.tenantId, itemId, input.fileName, input.originalName, input.mimeType, input.sizeBytes, input.storagePath, input.storageProvider ?? 'local', input.label ?? null, input.referenceDate ?? null, input.description ?? null],
+          )
+          if (!result.rows[0]) throw new Error('Falha ao criar anexo no adapter PostgreSQL.')
+          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          return mapAttachment(result.rows[0] as PgRow)
+        })
       },
       async updateAttachment(context: PersistenceContext, projectId: string, itemId: string, attachmentId: string, patch: AttachmentPatch): Promise<AttachmentRecord | null> {
         const sets: string[] = []
@@ -1538,15 +2066,23 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         if ('referenceDate' in patch) { values.push(patch.referenceDate ?? null); sets.push(`reference_date = $${values.length}`) }
         if ('description' in patch) { values.push(patch.description ?? null); sets.push(`description = $${values.length}`) }
         if (sets.length === 0) {
-          const existing = await q1('SELECT * FROM attachments WHERE tenant_id = $1 AND item_id = $2 AND id = $3', [context.tenantId, itemId, attachmentId])
-          return existing ? mapAttachment(existing) : null
+          return tx(async (client) => {
+            const existing = await client.query('SELECT * FROM attachments WHERE tenant_id = $1 AND item_id = $2 AND id = $3', [context.tenantId, itemId, attachmentId])
+            if (!existing.rows[0]) return null
+            await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+            return mapAttachment(existing.rows[0] as PgRow)
+          })
         }
         values.push(context.tenantId, itemId, attachmentId)
-        const row = await q1(
-          `UPDATE attachments SET ${sets.join(', ')} WHERE tenant_id = $${values.length - 2} AND item_id = $${values.length - 1} AND id = $${values.length} RETURNING *`,
-          values,
-        )
-        return row ? mapAttachment(row) : null
+        return tx(async (client) => {
+          const result = await client.query(
+            `UPDATE attachments SET ${sets.join(', ')} WHERE tenant_id = $${values.length - 2} AND item_id = $${values.length - 1} AND id = $${values.length} RETURNING *`,
+            values,
+          )
+          if (!result.rows[0]) return null
+          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          return mapAttachment(result.rows[0] as PgRow)
+        })
       },
       async deleteAttachmentWithCleanup(context: PersistenceContext, projectId: string, itemId: string, attachmentId: string): Promise<AttachmentRecord | null> {
         return tx(async (client) => {
@@ -1560,6 +2096,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
              ON CONFLICT (tenant_id, storage_path) WHERE status = 'PENDING' DO NOTHING`,
             [generateId(), context.tenantId, attachment.storagePath],
           )
+          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
           return attachment
         })
       },
@@ -1575,15 +2112,22 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         )
         return rows.map(mapItemLink)
       },
-      async create(context: PersistenceContext, projectId: string, itemId: string, input: NewItemLinkRecord): Promise<ItemLinkRecord> {
-        const row = await q1(
-          `INSERT INTO item_links (id, tenant_id, project_id, item_id, name, url, description, created_at, updated_at)
-           SELECT $1, $2, $3, $4, $5, $6, $7, now(), now()
-           WHERE EXISTS (SELECT 1 FROM items WHERE tenant_id = $2 AND project_id = $3 AND id = $4) RETURNING *`,
-          [generateId(), context.tenantId, projectId, itemId, input.name, input.url, input.description ?? null],
-        )
-        if (!row) throw new Error('ITEM_NOT_FOUND')
-        return mapItemLink(row)
+      async create(context: MutationContext, projectId: string, itemId: string, input: NewItemLinkRecord): Promise<ItemLinkRecord> {
+        return tx(async (client) => {
+          // [T38] Reserva/replay idempotente na MESMA transação do link.
+          await assertJournalAvailablePg(client, context)
+          const result = await client.query(
+            `INSERT INTO item_links (id, tenant_id, project_id, item_id, name, url, description, created_at, updated_at)
+             SELECT $1, $2, $3, $4, $5, $6, $7, now(), now()
+             WHERE EXISTS (SELECT 1 FROM items WHERE tenant_id = $2 AND project_id = $3 AND id = $4) RETURNING *`,
+            [generateId(), context.tenantId, projectId, itemId, input.name, input.url, input.description ?? null],
+          )
+          if (!result.rows[0]) throw new Error('ITEM_NOT_FOUND')
+          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          const link = mapItemLink(result.rows[0] as PgRow)
+          await reserveJournalPg(client, context, JSON.stringify({ status: 201, body: link }))
+          return link
+        })
       },
       async update(context: PersistenceContext, projectId: string, itemId: string, linkId: string, patch: ItemLinkPatch): Promise<ItemLinkRecord | null> {
         const sets: string[] = []
@@ -1594,15 +2138,23 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         if (!sets.length) return null
         values.push(new Date().toISOString()); sets.push(`updated_at = $${values.length}`)
         values.push(context.tenantId, projectId, itemId, linkId)
-        const row = await q1(
-          `UPDATE item_links SET ${sets.join(', ')} WHERE tenant_id = $${values.length - 3} AND project_id = $${values.length - 2} AND item_id = $${values.length - 1} AND id = $${values.length} RETURNING *`,
-          values,
-        )
-        return row ? mapItemLink(row) : null
+        return tx(async (client) => {
+          const result = await client.query(
+            `UPDATE item_links SET ${sets.join(', ')} WHERE tenant_id = $${values.length - 3} AND project_id = $${values.length - 2} AND item_id = $${values.length - 1} AND id = $${values.length} RETURNING *`,
+            values,
+          )
+          if (!result.rows[0]) return null
+          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          return mapItemLink(result.rows[0] as PgRow)
+        })
       },
       async delete(context: PersistenceContext, projectId: string, itemId: string, linkId: string): Promise<boolean> {
-        const rows = await q('DELETE FROM item_links WHERE tenant_id = $1 AND project_id = $2 AND item_id = $3 AND id = $4 RETURNING id', [context.tenantId, projectId, itemId, linkId])
-        return rows.length > 0
+        return tx(async (client) => {
+          const result = await client.query('DELETE FROM item_links WHERE tenant_id = $1 AND project_id = $2 AND item_id = $3 AND id = $4 RETURNING id', [context.tenantId, projectId, itemId, linkId])
+          if ((result.rowCount ?? 0) === 0) return false
+          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          return true
+        })
       },
     },
 
@@ -2067,6 +2619,20 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           [generateId(), context.tenantId, input.conversationId, input.userId, input.role, input.content, input.metadataJson, input.createdAt],
         )
       },
+      async findMessageByRunId(context, runId) {
+        const row = await q1(
+          'SELECT * FROM assistant_messages WHERE tenant_id = $1 AND metadata_json LIKE $2 LIMIT 1',
+          [context.tenantId, `%"runId":"${runId}"%`],
+        )
+        return row ? mapAssistantMessage(row as PgRow) : null
+      },
+      async hasRunEvent(tenantId, runId, eventType) {
+        const row = await q1(
+          'SELECT 1 AS present FROM assistant_events WHERE tenant_id = $1 AND run_id = $2 AND event_type = $3 LIMIT 1',
+          [tenantId, runId, eventType],
+        )
+        return Boolean(row)
+      },
       async touchConversation(context, userId, conversationId, now) {
         await q('UPDATE assistant_conversations SET updated_at = $1 WHERE id = $2 AND tenant_id = $3 AND user_id = $4',
           [now, conversationId, context.tenantId, userId])
@@ -2126,6 +2692,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         const params: unknown[] = [runId, tenantId, userId]
         let idx = 4
         const ph = statuses.map(() => `$${idx++}`).join(', ')
+        params.push(...statuses)
         const fields: Record<string, string> = { status: 'status', errorCode: 'error_code', finishedAt: 'finished_at' }
         for (const [key, col] of Object.entries(fields)) {
           if (key in patch) { sets.push(`${col} = $${idx++}`); params.push((patch as Record<string, unknown>)[key]) }
@@ -2162,35 +2729,100 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       // Job queue: lease/claim methods
       async claimRun(runId, tenantId, workerId, leaseExpiresAt, now) {
         const rows = await q(
-          `UPDATE assistant_runs SET claimed_by = $1, claim_expires_at = $2, status = 'RUNNING', started_at = $3, attempts = attempts + 1
+          `UPDATE assistant_runs SET claimed_by = $1, claim_expires_at = $2, status = 'RUNNING', started_at = $3,
+             attempts = attempts + 1, lease_generation = lease_generation + 1,
+             recovery_attempts = recovery_attempts + 1
            WHERE id = $4 AND tenant_id = $5 AND status = 'QUEUED' AND (claimed_by IS NULL OR claim_expires_at < $3)
-           RETURNING id`,
+           RETURNING lease_generation`,
           [workerId, leaseExpiresAt, now, runId, tenantId],
         )
-        return rows.length > 0
+        return rows.length > 0 ? (rows[0]!.lease_generation as number) : null
       },
-      async heartbeatRun(runId, tenantId, workerId, leaseExpiresAt) {
+      async heartbeatRun(runId, tenantId, workerId, generation, leaseExpiresAt) {
+        const now = new Date().toISOString()
         const rows = await q(
-          `UPDATE assistant_runs SET claim_expires_at = $1 WHERE id = $2 AND tenant_id = $3 AND claimed_by = $4 RETURNING id`,
-          [leaseExpiresAt, runId, tenantId, workerId],
+          `UPDATE assistant_runs SET claim_expires_at = $1
+           WHERE id = $2 AND tenant_id = $3 AND claimed_by = $4 AND lease_generation = $5
+             AND status = 'RUNNING' AND claim_expires_at IS NOT NULL AND claim_expires_at >= $6
+           RETURNING id`,
+          [leaseExpiresAt, runId, tenantId, workerId, generation, now],
         )
         return rows.length > 0
       },
-      async releaseRun(runId, tenantId, workerId, nextAttemptAt, incrementAttempts) {
+      async releaseRun(runId, tenantId, workerId, generation, nextAttemptAt, incrementAttempts) {
         const sets = ['claimed_by = NULL', 'claim_expires_at = NULL', 'status = \'QUEUED\'']
-        const params: unknown[] = [runId, tenantId, workerId]
-        let idx = 4
+        const params: unknown[] = [runId, tenantId, workerId, generation]
+        let idx = 5
         if (nextAttemptAt) { sets.push(`next_attempt_at = $${idx++}`); params.push(nextAttemptAt) }
         if (incrementAttempts) sets.push('attempts = attempts + 1')
-        const rows = await q(`UPDATE assistant_runs SET ${sets.join(', ')} WHERE id = $1 AND tenant_id = $2 AND claimed_by = $3 RETURNING id`, params)
+        const rows = await q(
+          `UPDATE assistant_runs SET ${sets.join(', ')}
+           WHERE id = $1 AND tenant_id = $2 AND claimed_by = $3 AND lease_generation = $4 AND status = 'RUNNING' RETURNING id`,
+          params,
+        )
+        return rows.length > 0
+      },
+      async finishRunFenced(runId, tenantId, workerId, generation, patch, options) {
+        const sets: string[] = []
+        const params: unknown[] = []
+        if (patch.status !== undefined) { params.push(patch.status); sets.push(`status = $${params.length}`) }
+        if (patch.errorCode !== undefined) { params.push(patch.errorCode); sets.push(`error_code = $${params.length}`) }
+        if (patch.finishedAt !== undefined) { params.push(patch.finishedAt); sets.push(`finished_at = $${params.length}`) }
+        if (!sets.length) return false
+        sets.push('claimed_by = NULL', 'claim_expires_at = NULL')
+        params.push(runId, tenantId, workerId, generation)
+        const cancelClause = options?.requireCancelRequested === true
+          ? ' AND cancel_requested = 1'
+          : options?.requireCancelRequested === false ? ' AND cancel_requested = 0' : ''
+        const rows = await q(
+          `UPDATE assistant_runs SET ${sets.join(', ')}
+           WHERE id = $${params.length - 3} AND tenant_id = $${params.length - 2} AND claimed_by = $${params.length - 1} AND lease_generation = $${params.length} AND status = 'RUNNING'${cancelClause} RETURNING id`,
+          params,
+        )
+        return rows.length > 0
+      },
+      async updateRunFenced(runId, tenantId, workerId, generation, patch, options) {
+        const fields: Array<[keyof typeof patch, string]> = [
+          ['status', 'status'], ['model', 'model'], ['currentCursor', 'current_cursor'],
+          ['inputTokens', 'input_tokens'], ['outputTokens', 'output_tokens'], ['costMicros', 'cost_micros'],
+          ['errorCode', 'error_code'], ['executionContextJson', 'execution_context_json'],
+          ['startedAt', 'started_at'], ['finishedAt', 'finished_at'], ['cancelRequested', 'cancel_requested'],
+        ]
+        const sets: string[] = []
+        const params: unknown[] = []
+        for (const [key, column] of fields) {
+          const value = patch[key]
+          if (value === undefined) continue
+          const stored = key === 'cancelRequested' ? (value ? 1 : 0) : value
+          params.push(stored); sets.push(`${column} = $${params.length}`)
+        }
+        if (!sets.length) return false
+        // [T37] Checkpoint confirmado reinicia o budget de recuperação.
+        if (patch.executionContextJson !== undefined) sets.push('recovery_attempts = 0')
+        params.push(runId, tenantId, workerId, generation)
+        const cancelClause = options?.requireCancelRequested === true
+          ? ' AND cancel_requested = 1'
+          : options?.requireCancelRequested === false ? ' AND cancel_requested = 0' : ''
+        const rows = await q(
+          `UPDATE assistant_runs SET ${sets.join(', ')}
+           WHERE id = $${params.length - 3} AND tenant_id = $${params.length - 2} AND claimed_by = $${params.length - 1} AND lease_generation = $${params.length} AND status = 'RUNNING'${cancelClause} RETURNING id`,
+          params,
+        )
         return rows.length > 0
       },
       async requestCancel(runId, tenantId, now) {
-        const rows = await q(
-          `UPDATE assistant_runs SET cancel_requested = 1 WHERE id = $1 AND tenant_id = $2 AND status IN ('QUEUED', 'RUNNING', 'WAITING_USER', 'WAITING_APPROVAL') RETURNING id`,
-          [runId, tenantId],
-        )
-        return rows.length > 0
+        void now
+        // [T37] CAS repetível: run já cancelada → true coerente; terminal recusada.
+        return tx(async (client) => {
+          const current = await client.query('SELECT status, cancel_requested FROM assistant_runs WHERE id = $1 AND tenant_id = $2',
+            [runId, tenantId])
+          const row = current.rows[0] as { status: string; cancel_requested: number | boolean } | undefined
+          if (!row) return false
+          if (Boolean(row.cancel_requested) || row.status === 'CANCELLED') return true
+          if (!['QUEUED', 'RUNNING', 'WAITING_USER', 'WAITING_APPROVAL'].includes(row.status)) return false
+          await client.query('UPDATE assistant_runs SET cancel_requested = 1 WHERE id = $1 AND tenant_id = $2', [runId, tenantId])
+          return true
+        })
       },
       async listDueRuns(tenantId, now, limit) {
         const params: unknown[] = [now, limit]
@@ -2199,6 +2831,22 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         sql += ' ORDER BY created_at ASC LIMIT $2 FOR UPDATE SKIP LOCKED'
         const rows = await q(sql, params)
         return rows.map(mapAssistantRun)
+      },
+      async countQueuedRuns(tenantId, now) {
+        const params: unknown[] = [now]
+        let sql = `SELECT count(*)::int AS count FROM assistant_runs
+          WHERE status = 'QUEUED' AND (next_attempt_at IS NULL OR next_attempt_at <= $1) AND (claimed_by IS NULL OR claim_expires_at < $1)`
+        if (tenantId) { sql += ' AND tenant_id = $2'; params.push(tenantId) }
+        const row = await q1(sql, params)
+        return (row?.count as number | undefined) ?? 0
+      },
+      async oldestQueuedAt(tenantId, now) {
+        const params: unknown[] = [now]
+        let sql = `SELECT min(created_at) AS oldest FROM assistant_runs
+          WHERE status = 'QUEUED' AND (next_attempt_at IS NULL OR next_attempt_at <= $1) AND (claimed_by IS NULL OR claim_expires_at < $1)`
+        if (tenantId) { sql += ' AND tenant_id = $2'; params.push(tenantId) }
+        const row = await q1(sql, params)
+        return (row?.oldest as string | null | undefined) ?? null
       },
 
       async insertToolCall(context, input) {
@@ -2224,6 +2872,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         const params: unknown[] = [toolCallId, tenantId]
         let idx = 3
         const ph = statuses.map(() => `$${idx++}`).join(', ')
+        params.push(...statuses)
         const fields: Record<string, string> = { status: 'status', resultSummary: 'result_summary', startedAt: 'started_at', finishedAt: 'finished_at' }
         for (const [key, col] of Object.entries(fields)) {
           if (key in patch) { sets.push(`${col} = $${idx++}`); params.push((patch as Record<string, unknown>)[key]) }
@@ -2279,6 +2928,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         const params: unknown[] = [runId, tenantId, operationHash]
         let idx = 4
         const ph = statuses.map(() => `$${idx++}`).join(', ')
+        params.push(...statuses)
         const fields: Record<string, string> = { status: 'status', decidedBy: 'decided_by', decidedAt: 'decided_at' }
         for (const [key, col] of Object.entries(fields)) {
           if (key in patch) { sets.push(`${col} = $${idx++}`); params.push((patch as Record<string, unknown>)[key]) }
@@ -2357,12 +3007,12 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           q('SELECT id, name FROM tags WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId]),
           q('SELECT user_id FROM memberships WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId]),
           q('SELECT id, name, email FROM users WHERE tenant_id = $1', [context.tenantId]),
-          q(`SELECT is.item_id, is.sprint_id AS related_id FROM item_sprints is
-             INNER JOIN items i ON i.id = is.item_id AND i.tenant_id = is.tenant_id
-             WHERE is.tenant_id = $1 AND i.project_id = $2`, [context.tenantId, projectId]),
-          q(`SELECT it.item_id, it.tag_id AS related_id FROM item_tags it
-             INNER JOIN items i ON i.id = it.item_id AND i.tenant_id = it.tenant_id
-             WHERE it.tenant_id = $1 AND i.project_id = $2`, [context.tenantId, projectId]),
+          q(`SELECT spr.item_id, spr.sprint_id AS related_id FROM item_sprints spr
+             INNER JOIN items i ON i.id = spr.item_id AND i.tenant_id = spr.tenant_id
+             WHERE spr.tenant_id = $1 AND i.project_id = $2`, [context.tenantId, projectId]),
+          q(`SELECT tag.item_id, tag.tag_id AS related_id FROM item_tags tag
+             INNER JOIN items i ON i.id = tag.item_id AND i.tenant_id = tag.tenant_id
+             WHERE tag.tenant_id = $1 AND i.project_id = $2`, [context.tenantId, projectId]),
         ])
         if (!project) return null
         return {
@@ -2431,6 +3081,19 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return tx(async (client) => {
           const now = new Date().toISOString()
           const id = generateId()
+          // [T38] Reserva/replay da chave no MESMO commit da mutação.
+          const command = context.idempotency
+          if (command) {
+            const existing = await client.query(
+              'SELECT payload_hash, response_json, status FROM idempotency_records WHERE tenant_id = $1 AND owner_id = $2 AND tool = $3 AND project_scope = $4 AND idempotency_key = $5',
+              [context.tenantId, context.actorUserId ?? '', command.namespace, command.projectScope, command.key],
+            )
+            const row = existing.rows[0] as { payload_hash: string; response_json: string; status: 'PENDING' | 'COMMITTED' } | undefined
+            if (row) {
+              if (row.payload_hash !== command.payloadHash) throw new IdempotencyConflictError()
+              throw new IdempotentReplaySignal({ responseJson: row.response_json, status: row.status })
+            }
+          }
           let ancestryPath = '[]'
           if (input.parentId) {
             const parent = await client.query('SELECT ancestry_path, title, type FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
@@ -2475,6 +3138,15 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           }
           const after = await readItemSnapshot(client, context.tenantId, input.projectId, id)
           await recordItemEvent(client, context, { projectId: input.projectId, itemId: id, eventType: 'ITEM_CREATED', before: null, after })
+          const operationId = command
+            ? await insertIdempotencyOrSignal(client, context, command, JSON.stringify({ status: 201, body: { __pendingOperationId: id } }))
+            : null
+          // [T38] Evento de domínio durável no MESMO commit (invalidação).
+          await appendDomainEventPg(client, {
+            tenantId: context.tenantId, projectId: input.projectId, type: DOMAIN_EVENT_TYPES.itemCreated,
+            payload: { itemIds: [id], parentId: input.parentId ?? null },
+            correlationId: context.mutation.correlationId ?? null, operationId,
+          })
           const row = await client.query('SELECT * FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
             [context.tenantId, input.projectId, id])
           return mapItem(row.rows[0] as PgRow)
@@ -2484,10 +3156,15 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return tx(async (client) => {
           const before = await readItemSnapshot(client, context.tenantId, projectId, itemId)
           const currentResult = await client.query(
-            'SELECT parent_id FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+            'SELECT parent_id, updated_at FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
             [context.tenantId, projectId, itemId],
           )
-          const oldParentId = (currentResult.rows[0] as { parent_id: string | null } | undefined)?.parent_id ?? null
+          // Concorrência otimista: mesma semântica do adapter SQLite.
+          const currentRow = currentResult.rows[0] as { parent_id: string | null; updated_at: string } | undefined
+          if (relations?.expectedUpdatedAt !== undefined && currentRow?.updated_at !== relations.expectedUpdatedAt) {
+            throw new Error('PERSISTENCE_CONFLICT: o item foi alterado por outra operação.')
+          }
+          const oldParentId = currentRow?.parent_id ?? null
           const newParentId = patch.parentId !== undefined ? patch.parentId : oldParentId
           const parentChanged = newParentId !== oldParentId
           const oldParentBefore = parentChanged && oldParentId
@@ -2688,6 +3365,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       },
       async moveItem(context, projectId, itemId, column, fromColumnName) {
         await tx(async (client) => {
+          // [T38] Reserva/replay idempotente na MESMA transação do movimento.
+          await assertJournalAvailablePg(client, context)
           const before = await readItemSnapshot(client, context.tenantId, projectId, itemId)
           await client.query('UPDATE items SET column_id = $1, updated_at = now() WHERE tenant_id = $2 AND project_id = $3 AND id = $4',
             [column.id, context.tenantId, projectId, itemId])
@@ -2701,6 +3380,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           )
           const after = await readItemSnapshot(client, context.tenantId, projectId, itemId)
           if (before && after) await recordItemEvent(client, context, { projectId, itemId, eventType: 'STATUS_CHANGED', before, after })
+          await reserveJournalPg(client, context, JSON.stringify({ status: 200, body: { itemId, columnId: column.id, status: column.baseStatus } }))
         })
       },
       async deleteItemSubtree(context, projectId, itemId, options) {
@@ -2799,10 +3479,82 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         throw new Error('NOT_IMPLEMENTED: unarchiveItemSubtree')
       },
       async applyItemBatch(context, projectId, updates) {
-        throw new Error('NOT_IMPLEMENTED: applyItemBatch')
+        return tx(async (client) => {
+          // [T38] Reserva/replay e resultado integral no mesmo commit.
+          await assertJournalAvailablePg(client, context)
+          const output = await applyItemBatchTx(client, context, projectId, updates)
+          const operationId = await reserveJournalPg(client, context, JSON.stringify({ status: 200, body: buildBatchUpdateResponse(output) }))
+          if (output.length) {
+            await appendDomainEventPg(client, {
+              tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated,
+              payload: { itemIds: output.map(entry => entry.id) }, operationId,
+            })
+          }
+          return output
+        })
       },
       async createItemsBatch(context, projectId, operations, options) {
-        throw new Error('NOT_IMPLEMENTED: createItemsBatch')
+        const agentRunId = options.agentRunId ?? null
+        const envelope = (results: Array<{ ok: boolean; data?: BatchItemCreateResult; code?: string }>, atomic: boolean) =>
+          JSON.stringify({ status: 200, body: { atomic, agentRunId, results } })
+        return tx(async (client) => {
+          await assertJournalAvailablePg(client, context)
+          const refs = new Map<string, string>()
+          const createdModules: Array<{ id: string; name: string; position: number; description: string | null }> = []
+          const resolveOperation = (operation: BatchItemCreateOperation) => {
+            const parentId = operation.parentRef ? refs.get(operation.parentRef) : operation.parentId
+            if (operation.parentRef && !parentId) throw new Error('RELATION_OUT_OF_SCOPE')
+            if (operation.ref && refs.has(operation.ref)) throw new Error('VALIDATION_ERROR')
+            return { ...operation, parentId: parentId ?? null }
+          }
+          const results: Array<{ ok: boolean; data?: BatchItemCreateResult; code?: string }> = []
+
+          if (options.atomic) {
+            for (let index = 0; index < operations.length; index += 1) {
+              const operation = operations[index]!
+              const moduleCreates: typeof createdModules = []
+              try {
+                const resolved = resolveOperation(operation)
+                const data = await createBatchItemInsideTx(client, context, projectId, resolved, moduleCreates)
+                if (operation.ref) refs.set(operation.ref, data.id)
+                createdModules.push(...moduleCreates)
+                results.push({ ok: true, data })
+              } catch (error) {
+                const reason = error instanceof Error ? error.message : 'INTERNAL_ERROR'
+                throw new Error(`BATCH_ITEM:${index}:${reason}`)
+              }
+            }
+          } else {
+            for (let index = 0; index < operations.length; index += 1) {
+              const operation = operations[index]!
+              const savepoint = `batch_op_${index}`
+              await client.query(`SAVEPOINT ${savepoint}`)
+              const moduleCreates: typeof createdModules = []
+              try {
+                const resolved = resolveOperation(operation)
+                const data = await createBatchItemInsideTx(client, context, projectId, resolved, moduleCreates)
+                if (operation.ref) refs.set(operation.ref, data.id)
+                createdModules.push(...moduleCreates)
+                results.push({ ok: true, data })
+                await client.query(`RELEASE SAVEPOINT ${savepoint}`)
+              } catch (error) {
+                await client.query(`ROLLBACK TO SAVEPOINT ${savepoint}`)
+                await client.query(`RELEASE SAVEPOINT ${savepoint}`)
+                const code = error instanceof Error && ['VALIDATION_ERROR', 'RELATION_OUT_OF_SCOPE', 'HIERARCHY_REQUIRED'].includes(error.message)
+                  ? error.message
+                  : 'INTERNAL_ERROR'
+                results.push({ ok: false, code })
+              }
+            }
+          }
+
+          const operationId = await reserveJournalPg(client, context, envelope(results, options.atomic))
+          const okIds = results.filter(entry => entry.ok && entry.data).map(entry => entry.data!.id)
+          if (okIds.length) {
+            await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemCreated, payload: { itemIds: okIds }, operationId })
+          }
+          return { atomic: options.atomic, agentRunId, results, createdModules }
+        })
       },
     },
   }

@@ -101,6 +101,32 @@ services:
       timeout: 5s
       retries: 3
 
+  # [T37] Consumidor dedicado da fila de runs do agente (ADVANCED/SEPARATE).
+  # Sem listener HTTP; a API `azyboard` apenas enfileira/consulta/aprova/cancela.
+  # Mesma imagem/schema/segredos da API, com lifecycle e restart próprios.
+  agent-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: azyboard-api:local
+    command: ["worker"]
+    restart: unless-stopped
+    environment:
+      - AZYBOARD_INSTALL_PROFILE=ADVANCED
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-azyboard}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-azyboard}
+      - REDIS_URL=redis://:${VALKEY_PASSWORD:-change-me}@valkey:6379
+      - AZYBOARD_INSTANCE_DIR=/data
+      - JWT_SECRET=${JWT_SECRET:-change-me-use-a-long-random-secret}
+      - NODE_ENV=production
+    volumes:
+      - azyboard-instance:/data
+      - azyboard-uploads:/app/uploads
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+
   web:
     build:
       context: .

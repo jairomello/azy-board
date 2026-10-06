@@ -88,6 +88,9 @@ function databaseErrorCode(error: unknown): string | null {
 
 export async function errorResponseMiddleware(c: Context, next: Next) {
   await next()
+  // [OPS] Liveness/readiness expõem estado operacional (nomes de dependências),
+  // não o envelope de erro de negócio; não normalizar essas respostas.
+  if (c.req.path.startsWith('/health')) return
   if (c.res.status < 400 || !c.res.headers.get('content-type')?.includes('application/json')) return
   const body = await c.res.json().catch(() => null)
   const normalized = normalizeErrorPayload(body, c.res.status)

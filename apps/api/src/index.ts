@@ -14,12 +14,10 @@ import { apiKeysRouter, userApiKeysRouter } from './routes/apiKeys'
 import { versionsRouter } from './routes/versions'
 import { usersRouter } from './routes/users'
 import { batchRouter } from './routes/batch'
-import { startHeartbeat, wsHandler } from './services/websocket'
+import { startHeartbeat, stopHeartbeat, wsHandler } from './services/websocket'
 import type { WsClientData } from './services/websocket'
-import { hasGlobalGroup, verifyJwt } from './services/auth'
-import { db, installProfile, sqlite } from './db/index'
-import { ensureInstallationMarkers, sqliteInstallationMarkerStore } from './db/installationMarkers'
-import { and, eq } from 'drizzle-orm'
+import { verifyJwt } from './services/auth'
+import { authorizeProjectSubscription } from './services/wsAuthorization'
 import { serve } from 'bun'
 import { agentResponseMiddleware } from './middleware/agentResponse'
 import { dashboardRouter } from './routes/dashboard'
@@ -30,12 +28,15 @@ import { clientIpMiddleware } from './middleware/clientIp'
 import { requestObservabilityMiddleware } from './middleware/requestObservability'
 import { securityHeadersMiddleware } from './middleware/securityHeaders'
 import { otelMiddleware } from './middleware/otel'
-import { healthRouter } from './routes/health'
+import { configureReadinessProbes, healthRouter, runtimeReadinessProbes } from './routes/health'
+import { operationsRouter } from './routes/operations'
 import type { HonoEnv } from './types/hono'
 import { startStorageCleanupWorker } from './services/storageCleanup'
 import { startAgentWorker } from './services/agentWorker'
 import { executeAssistantRun } from './services/assistantRunExecutor'
-import { persistence } from './persistence/runtime'
+import { startDomainEventDispatcher, websocketDomainEventTransport } from './services/domainEventDispatcher'
+import { bootstrapRuntime } from './persistence/runtime'
+import { resolveAgentWorkerMode } from './config/workerMode'
 import { resolveObservabilityConfig } from './config/observability'
 import { configureLogger, logger } from './services/logger'
 import { initOpenTelemetry } from './services/telemetry'
@@ -49,7 +50,11 @@ configureLogger(obsConfig)
 
 // Error tracker — inicializado em startServer
 export let errorTracker: ErrorTracker = createErrorTracker(obsConfig)
-let stopAgentWorker: (() => void) | null = null
+let stopAgentWorker: (() => Promise<void>) | null = null
+let stopStorageCleanup: (() => void) | null = null
+let stopDomainEventDispatcher: (() => void) | null = null
+let runtime: Awaited<ReturnType<typeof bootstrapRuntime>> | null = null
+let serverHandle: ReturnType<typeof serve> | null = null
 
 app.onError((error, c) => {
   // [INTEGRIDADE] Conflitos de constraint são erros de domínio, não erro interno.
@@ -109,6 +114,7 @@ api.route('/projects/:projectId/versions', versionsRouter)
 api.route('/users', usersRouter)
 api.route('/projects/:projectId/dashboard', dashboardRouter)
 api.route('/assistant', assistantRouter)
+api.route('/operations', operationsRouter)
 
 // [DB-SWAP] Para servir uploads em produção com S3, gerar URLs pré-assinadas no
 // adapter e remover a rota de download local.
@@ -127,23 +133,46 @@ export async function startServer() {
   errorTracker = createErrorTracker(obsConfig)
   await errorTracker.init()
 
-  await ensureInstallationMarkers(installProfile, sqliteInstallationMarkerStore(sqlite))
-  await persistence.analytics.assertCutoverReady()
+  // Composition root: valida configuração, marcadores e compõe persistência,
+  // storage e coordenação ANTES de aceitar tráfego. Falha aqui não liga listener.
+  runtime = await bootstrapRuntime()
+
+  // [T38] Poda somente resultados idempotentes expirados (nunca PENDING).
+  await runtime.persistence.idempotency.pruneExpired(new Date().toISOString())
+  // [T38] Retenção de replay da outbox: remove apenas eventos confirmados com
+  // mais de 24 h; contador durável e pendências são preservados.
+  await runtime.persistence.domainEvents.prunePublishedBefore(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+  await runtime.persistence.analytics.assertCutoverReady()
   // [TENANT] Backfill determinístico do rollup por projeto (idempotente: só
   // preenche projetos com cobertura e sem linhas). [DB-SWAP] PostgreSQL:
   // mover para job separado com refresh/materialized view.
-  await persistence.analytics.backfillRollups()
+  await runtime.persistence.analytics.backfillRollups()
+
+  // Probes reais: banco limitado + storage + coordenação (obrigatória em ADVANCED).
+  configureReadinessProbes(await runtimeReadinessProbes())
+
+  // [T38] Dispatcher da outbox de domínio: publica eventos confirmados com a
+  // sequência durável (transporte local WebSocket; T39 troca o barramento).
+  stopDomainEventDispatcher = startDomainEventDispatcher({ transport: websocketDomainEventTransport, workerId: `api-${process.pid}` })
+
   // Item 12: drena a fila de limpeza de storage no startup e em ciclo periódico
   // (backoff e FAILED são persistidos; index de intervalo é com unref, não
   // impede o processo de encerrar).
-  startStorageCleanupWorker()
-  if (!stopAgentWorker) stopAgentWorker = startAgentWorker({ executeRun: executeAssistantRun })
+  stopStorageCleanup = startStorageCleanupWorker()
+  // [T37] Consumo de runs por perfil: SIMPLE in-process; ADVANCED só via worker
+  // SEPARATE (a API não consome). Configuração cruzada é recusada aqui.
+  const workerMode = resolveAgentWorkerMode(runtime.config.profile)
+  if (workerMode === 'IN_PROCESS') {
+    if (!stopAgentWorker) stopAgentWorker = startAgentWorker({ executeRun: executeAssistantRun })
+  } else {
+    logger.info('agent-worker: consumo in-process desativado na API', { profile: runtime.config.profile, mode: workerMode })
+  }
   const PORT = parseInt(process.env.PORT ?? '3000', 10)
 
   // WebSocket server nativo do Bun — sem dependências extras
   // [DB-SWAP] Em produção com múltiplas instâncias, substituir o mapa em memória
   // por Redis Pub/Sub para broadcast entre instâncias
-  const server = serve<WsClientData>({
+  serverHandle = serve<WsClientData>({
     port: PORT,
     fetch: async (req, server) => {
       // Upgrade para WebSocket se solicitado
@@ -162,22 +191,12 @@ export async function startServer() {
 
         try {
           const payload = await verifyJwt(token)
-          const [project, membership] = await Promise.all([
-            db.query.projects.findFirst({
-              where: (project) => and(eq(project.id, projectId), eq(project.tenantId, payload.tenantId)),
-              columns: { id: true, isRestricted: true, managerUserId: true },
-            }),
-            db.query.memberships.findFirst({
-              where: (m) => and(eq(m.projectId, projectId), eq(m.userId, payload.sub), eq(m.tenantId, payload.tenantId)),
-              columns: { id: true },
-            }),
-          ])
-          if (!project) return new Response('Projeto não encontrado', { status: 404 })
-          // [TENANT] Projeto restrito exige vínculo/gerência; projeto público também
-          // permite os grupos administrativos, em paridade com a API REST.
-          const isManager = project.managerUserId === payload.sub
-          const isGlobalAdmin = payload.globalGroup ? hasGlobalGroup(payload.globalGroup, 'ADMIN') : false
-          if (!membership && !isManager && (project.isRestricted || !isGlobalAdmin)) return new Response('Projeto não encontrado', { status: 404 })
+          // [TENANT] Autorização de upgrade via ports, com tenant/ator explícitos.
+          const decision = await authorizeProjectSubscription(
+            { tenantId: payload.tenantId, userId: payload.sub, globalGroup: payload.globalGroup },
+            projectId,
+          )
+          if (!decision.ok) return new Response(decision.message, { status: decision.status })
           // [TENANT] tenantId armazenado na conexão WebSocket para isolamento de broadcast
           server.upgrade(req, {
             data: { projectId, tenantId: payload.tenantId, userId: payload.sub, sinceCursor } satisfies WsClientData,
@@ -197,7 +216,34 @@ export async function startServer() {
   startHeartbeat()
 
   logger.info(`Azy Board API rodando em http://localhost:${PORT}`)
-  return server
+  return serverHandle
 }
 
-if (import.meta.main) startServer()
+/**
+ * Shutdown idempotente: para timers/listeners/workers do processo e fecha
+ * coordenação/pool. Não afeta processos independentes (worker T37).
+ */
+export async function stopServer(): Promise<void> {
+  stopHeartbeat()
+  await stopAgentWorker?.()
+  stopAgentWorker = null
+  stopStorageCleanup?.()
+  stopStorageCleanup = null
+  stopDomainEventDispatcher?.()
+  stopDomainEventDispatcher = null
+  const current = serverHandle
+  serverHandle = null
+  await current?.stop(true)
+  await runtime?.close()
+  runtime = null
+}
+
+if (import.meta.main) {
+  // Shutdown gracioso: para listener/timers/workers e fecha pool/coordenação.
+  const shutdown = () => {
+    void stopServer().finally(() => process.exit(0))
+  }
+  process.on('SIGTERM', shutdown)
+  process.on('SIGINT', shutdown)
+  void startServer()
+}

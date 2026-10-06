@@ -247,6 +247,11 @@ export const assistantRuns = sqliteTable('assistant_runs', {
   attempts: integer('attempts').notNull().default(0),
   nextAttemptAt: text('next_attempt_at'),
   cancelRequested: integer('cancel_requested', { mode: 'boolean' }).notNull().default(false),
+  // [T37] Geração monotônica de lease (fencing): incrementa a cada aquisição.
+  leaseGeneration: integer('lease_generation').notNull().default(0),
+  // [T37] Tentativas de recuperação desde o último checkpoint confirmado
+  // (budget de 3), separadas do contador histórico `attempts`.
+  recoveryAttempts: integer('recovery_attempts').notNull().default(0),
 }, (table) => ({
   conversationStatus: index('assistant_runs_tenant_conversation_status_idx').on(table.tenantId, table.conversationId, table.status),
   idempotency: uniqueIndex('assistant_runs_tenant_user_idempotency_unique').on(table.tenantId, table.userId, table.idempotencyKey),
@@ -302,11 +307,49 @@ export const idempotencyRecords = sqliteTable('idempotency_records', {
   ownerId: text('owner_id').notNull().references(() => users.id),
   tool: text('tool').notNull(),
   idempotencyKey: text('idempotency_key').notNull(),
+  // [TENANT] Sentinela de escopo: id do projeto ou '' (operação global).
+  projectScope: text('project_scope').notNull().default(''),
   payloadHash: text('payload_hash').notNull(),
   responseJson: text('response_json').notNull(),
+  // 'PENDING' = dados confirmados sem corpo final (retomável); 'COMMITTED' = resultado completo.
+  status: text('status').notNull().default('COMMITTED'),
   createdAt: text('created_at').notNull(),
   expiresAt: text('expires_at').notNull(),
 })
+
+// ---------------------------------------------------------------------------
+// [T38] Outbox de eventos de domínio durável
+// Sequência monotônica por tenant/projeto alocada no commit da mutação.
+// ---------------------------------------------------------------------------
+export const domainEventCounters = sqliteTable('domain_event_counters', {
+  tenantId: text('tenant_id').notNull(),
+  projectId: text('project_id').notNull(),
+  lastSequence: integer('last_sequence').notNull().default(0),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.tenantId, table.projectId] }),
+}))
+
+export const domainEventOutbox = sqliteTable('domain_event_outbox', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull(),
+  projectId: text('project_id').notNull(),
+  sequence: integer('sequence').notNull(),
+  type: text('type').notNull(),
+  payloadJson: text('payload_json').notNull(),
+  schemaVersion: integer('schema_version').notNull().default(1),
+  operationId: text('operation_id'),
+  correlationId: text('correlation_id'),
+  status: text('status').notNull().default('PENDING'),
+  attempts: integer('attempts').notNull().default(0),
+  availableAt: text('available_at').notNull(),
+  leaseOwner: text('lease_owner'),
+  leaseExpiresAt: text('lease_expires_at'),
+  createdAt: text('created_at').notNull(),
+  publishedAt: text('published_at'),
+}, (table) => ({
+  sequenceUnique: uniqueIndex('domain_event_outbox_tenant_project_sequence_unique').on(table.tenantId, table.projectId, table.sequence),
+  pendingIdx: index('domain_event_outbox_pending_idx').on(table.status, table.availableAt),
+}))
 
 // ---------------------------------------------------------------------------
 // PROJECTS

@@ -4,6 +4,10 @@ import type { BatchItemCreateOperation, BatchItemCreateResult, BatchItemUpdate, 
 import { generateId } from '../../utils/id'
 import { nextSequenceCode as computeNextSequenceCode, sequencePrefix } from '../../utils/sequenceCode'
 import { runSqliteAtomic } from './atomicTransaction'
+import { assertJournalAvailable, reserveJournal } from './idempotencyJournal'
+import { appendDomainEventSync } from './domainEventOutbox'
+import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
+import { buildBatchUpdateResponse } from '../../persistence/commandResponses'
 import { readItemSnapshot, readItemSnapshots, recordDeletedItemEventsBatch, recordItemEvent } from './itemAnalytics'
 
 interface ItemRow {
@@ -411,6 +415,8 @@ export function createSqliteItemUnitOfWork(database: Database) {
       const now = new Date().toISOString()
       const id = generateId()
       return runSqliteAtomic(database, () => {
+        // [T38] Reserva/replay da chave no MESMO commit da mutação.
+        assertJournalAvailable(database, context)
         const parentBefore = input.parentId
           ? readItemSnapshot(database, context.tenantId, input.projectId, input.parentId)
           : null
@@ -452,6 +458,17 @@ export function createSqliteItemUnitOfWork(database: Database) {
             after: readItemSnapshot(database, context.tenantId, input.projectId, input.parentId),
           })
         }
+        // Reserva PENDING com referência ao item; o corpo final é completado
+        // após o commit. Crash antes disso é recuperável pela referência.
+        const operationId = reserveJournal(database, context, JSON.stringify({ status: 201, body: { __pendingOperationId: id } }))
+        // [T38] Evento de domínio durável no MESMO commit (invalidação).
+        appendDomainEventSync(database, {
+          tenantId: context.tenantId, projectId: input.projectId,
+          type: DOMAIN_EVENT_TYPES.itemCreated,
+          payload: { itemIds: [id], parentId: input.parentId ?? null },
+          correlationId: context.mutation.correlationId ?? null,
+          operationId,
+        })
         return toItem(inserted)
       })
     },
@@ -614,6 +631,8 @@ export function createSqliteItemUnitOfWork(database: Database) {
 
     moveItem(context: MutationContext, projectId: string, itemId: string, column: { id: string; name: string; baseStatus: string }, fromColumnName: string): void {
       runSqliteAtomic(database, () => {
+        // [T38] Reserva/replay idempotente na MESMA transação do movimento.
+        assertJournalAvailable(database, context)
         const before = readItemSnapshot(database, context.tenantId, projectId, itemId)
         database.query('UPDATE items SET column_id = ?, status = ?, updated_at = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
           .run(column.id, column.baseStatus, new Date().toISOString(), context.tenantId, projectId, itemId)
@@ -621,6 +640,7 @@ export function createSqliteItemUnitOfWork(database: Database) {
           insertActivity(database, context, itemId, context.mutation.activity ?? `Movido de '${fromColumnName}' para '${column.name}'`)
           recordItemEvent(database, context, { projectId, itemId, eventType: 'STATUS_CHANGED', before, after: readItemSnapshot(database, context.tenantId, projectId, itemId) })
         }
+        reserveJournal(database, context, JSON.stringify({ status: 200, body: { itemId, columnId: column.id, status: column.baseStatus } }))
       })
     },
 
@@ -655,6 +675,7 @@ export function createSqliteItemUnitOfWork(database: Database) {
         database.query('DELETE FROM squads WHERE tenant_id = ? AND project_id = ?').run(context.tenantId, projectId)
         database.query('DELETE FROM assistant_conversations WHERE tenant_id = ? AND project_id = ?').run(context.tenantId, projectId)
         database.query('DELETE FROM projects WHERE tenant_id = ? AND id = ?').run(context.tenantId, projectId)
+        appendDomainEventSync(database, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.projectMetadataChanged, payload: { section: 'project' } })
       })
     },
 
@@ -686,6 +707,7 @@ export function createSqliteItemUnitOfWork(database: Database) {
 
         const deleted = database.query('DELETE FROM modules WHERE tenant_id = ? AND project_id = ? AND id = ?')
           .run(context.tenantId, projectId, moduleId).changes === 1
+        if (deleted) appendDomainEventSync(database, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.projectMetadataChanged, payload: { section: 'modules' } })
         return { deleted, epicCount: epics.length, deletedItemCount }
       })
     },
@@ -761,6 +783,7 @@ export function createSqliteItemUnitOfWork(database: Database) {
 
     applyItemBatch(context: MutationContext, projectId: string, updates: BatchItemUpdate[]): Array<{ id: string; identity: Record<string, unknown>; changes: Record<string, unknown> }> {
       return runSqliteAtomic(database, () => {
+        assertJournalAvailable(database, context)
         const output: Array<{ id: string; identity: Record<string, unknown>; changes: Record<string, unknown> }> = []
         for (const operation of updates) {
           const current = itemById(database, context.tenantId, projectId, operation.itemId)
@@ -794,6 +817,16 @@ export function createSqliteItemUnitOfWork(database: Database) {
           }
           if (operation.responseChanges) output.push({ id: operation.itemId, identity: operation.responseIdentity ?? { id: operation.itemId }, changes: operation.responseChanges })
         }
+        // [T38] Resultado integral do update em lote no MESMO commit.
+        const operationId = reserveJournal(database, context, JSON.stringify({ status: 200, body: buildBatchUpdateResponse(output) }))
+        if (output.length) {
+          appendDomainEventSync(database, {
+            tenantId: context.tenantId, projectId,
+            type: DOMAIN_EVENT_TYPES.itemUpdated,
+            payload: { itemIds: output.map(entry => entry.id) },
+            operationId,
+          })
+        }
         return output
       })
     },
@@ -808,40 +841,76 @@ export function createSqliteItemUnitOfWork(database: Database) {
         return { ...operation, parentId: parentId ?? null }
       }
 
+      const agentRunId = options.agentRunId ?? null
+      const envelope = (results: Array<{ ok: boolean; data?: BatchItemCreateResult; code?: string }>, atomic: boolean) =>
+        JSON.stringify({ status: 200, body: { atomic, agentRunId, results } })
+
       if (options.atomic) {
-        const results = runSqliteAtomic(database, () => operations.map((operation, index) => {
+        // atomic=true: uma transação para o lote inteiro; qualquer falha reverte
+        // domínio/auditoria/analytics/journal juntos (sem gravação parcial).
+        const results = runSqliteAtomic(database, () => {
+          assertJournalAvailable(database, context)
+          const mapped = operations.map((operation, index) => {
+            const moduleCreates: typeof createdModules = []
+            try {
+              const resolved = resolveOperation(operation)
+              const data = createBatchItemInsideTransaction(database, context, projectId, resolved, moduleCreates)
+              if (operation.ref) refs.set(operation.ref, data.id)
+              createdModules.push(...moduleCreates)
+              return { ok: true, data }
+            } catch (error) {
+              const reason = error instanceof Error ? error.message : 'INTERNAL_ERROR'
+              throw new Error(`BATCH_ITEM:${index}:${reason}`)
+            }
+          })
+          const operationId = reserveJournal(database, context, envelope(mapped, true))
+          appendDomainEventSync(database, {
+            tenantId: context.tenantId, projectId,
+            type: DOMAIN_EVENT_TYPES.itemCreated,
+            payload: { itemIds: mapped.filter(entry => entry.ok && entry.data).map(entry => entry.data!.id) },
+            operationId,
+          })
+          return mapped
+        })
+        return { atomic: true, agentRunId, results, createdModules }
+      }
+
+      // atomic=false: transação única do pedido com savepoints por operação;
+      // itens válidos persistem, inválidos são revertidos ao savepoint, e o
+      // resultado integral é gravado no MESMO commit do pedido.
+      const results = runSqliteAtomic(database, () => {
+        assertJournalAvailable(database, context)
+        const collected: Array<{ ok: boolean; data?: BatchItemCreateResult; code?: string }> = []
+        operations.forEach((operation, index) => {
+          const savepoint = `batch_op_${index}`
+          database.exec(`SAVEPOINT ${savepoint}`)
           const moduleCreates: typeof createdModules = []
           try {
             const resolved = resolveOperation(operation)
             const data = createBatchItemInsideTransaction(database, context, projectId, resolved, moduleCreates)
             if (operation.ref) refs.set(operation.ref, data.id)
             createdModules.push(...moduleCreates)
-            return { ok: true, data }
+            collected.push({ ok: true, data })
+            database.exec(`RELEASE ${savepoint}`)
           } catch (error) {
-            const reason = error instanceof Error ? error.message : 'INTERNAL_ERROR'
-            throw new Error(`BATCH_ITEM:${index}:${reason}`)
+            database.exec(`ROLLBACK TO ${savepoint}`)
+            database.exec(`RELEASE ${savepoint}`)
+            const code = error instanceof Error && ['VALIDATION_ERROR', 'RELATION_OUT_OF_SCOPE', 'HIERARCHY_REQUIRED'].includes(error.message)
+              ? error.message
+              : 'INTERNAL_ERROR'
+            collected.push({ ok: false, code })
           }
-        }))
-        return { atomic: true, agentRunId: options.agentRunId ?? null, results, createdModules }
-      }
-
-      const results: Array<{ ok: boolean; data?: BatchItemCreateResult; code?: string }> = []
-      for (const operation of operations) {
-        const moduleCreates: typeof createdModules = []
-        try {
-          const resolved = resolveOperation(operation)
-          const data = runSqliteAtomic(database, () => createBatchItemInsideTransaction(database, context, projectId, resolved, moduleCreates))
-          if (operation.ref) refs.set(operation.ref, data.id)
-          createdModules.push(...moduleCreates)
-          results.push({ ok: true, data })
-        } catch (error) {
-          const code = error instanceof Error && ['VALIDATION_ERROR', 'RELATION_OUT_OF_SCOPE', 'HIERARCHY_REQUIRED'].includes(error.message)
-            ? error.message
-            : 'INTERNAL_ERROR'
-          results.push({ ok: false, code })
-        }
-      }
-      return { atomic: false, agentRunId: options.agentRunId ?? null, results, createdModules }
+        })
+        const operationId = reserveJournal(database, context, envelope(collected, false))
+        appendDomainEventSync(database, {
+          tenantId: context.tenantId, projectId,
+          type: DOMAIN_EVENT_TYPES.itemCreated,
+          payload: { itemIds: collected.filter(entry => entry.ok && entry.data).map(entry => entry.data!.id) },
+          operationId,
+        })
+        return collected
+      })
+      return { atomic: false, agentRunId, results, createdModules }
     },
   }
 }

@@ -7,6 +7,7 @@ const { db } = await import('../db/index')
 const { tenants, users, assistantConversations, assistantRuns } = await import('../db/schema')
 const { claimNextRun, heartbeatRun, releaseRun, isCancelRequested, requestCancel } = await import('./agentJobQueue')
 const { AgentWorker } = await import('./agentWorker')
+const { persistence } = await import('../persistence/runtime')
 
 const id = () => crypto.randomUUID()
 
@@ -32,6 +33,7 @@ async function createRun(overrides: Partial<{
   attempts: number
   nextAttemptAt: string | null
   cancelRequested: boolean
+  recoveryAttempts: number
 }> = {}) {
   const runId = id()
   const now = new Date().toISOString()
@@ -43,6 +45,7 @@ async function createRun(overrides: Partial<{
     attempts: overrides.attempts ?? 0,
     nextAttemptAt: overrides.nextAttemptAt ?? null,
     cancelRequested: overrides.cancelRequested ?? false,
+    recoveryAttempts: overrides.recoveryAttempts ?? 0,
     createdAt: now,
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
   })
@@ -63,7 +66,7 @@ describe('Agent job queue', () => {
       } })
       worker.start()
     })
-    try { expect(await executed).toBe(runId) } finally { worker.stop() }
+    try { expect(await executed).toBe(runId) } finally { await worker.stop() }
     expect((await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) }))?.status).toBe('COMPLETED')
   })
 
@@ -101,14 +104,14 @@ describe('Agent job queue', () => {
     const claimed = await claimNextRun(worker, tenantId)
     expect(claimed).not.toBeNull()
 
-    // Release with retry (simulating transient error)
-    const result = await releaseRun(runId, tenantId, worker, true)
+    // Release with retry (simulating transient error), fenced pela geração obtida.
+    const result = await releaseRun(runId, tenantId, worker, claimed!.generation, true)
     expect(result).toBe('released')
 
     // Run should be back in QUEUED with nextAttemptAt in the future
     const run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
     expect(run!.status).toBe('QUEUED')
-    expect(run!.attempts).toBe(2) // 1 from claim + 1 from release
+    expect(run!.attempts).toBe(1) // [T37] attempts só incrementa no claim
     expect(run!.nextAttemptAt).not.toBeNull()
   })
 
@@ -157,27 +160,208 @@ describe('Agent job queue', () => {
     const claimed = await claimNextRun(worker, tenantId)
     expect(claimed).not.toBeNull()
 
-    // Extend lease
-    const extended = await heartbeatRun(runId, tenantId, worker)
+    // Extend lease (fenced pela geração vigente)
+    const extended = await heartbeatRun(runId, tenantId, worker, claimed!.generation)
     expect(extended).toBe(true)
   })
 
-  test('releaseRun: falha após max tentativas → FAILED WORKER_LOST', async () => {
+  test('releaseRun: falha após max recuperações sem progresso → FAILED WORKER_LOST', async () => {
     const worker = 'worker-max'
-    // Create run with attempts already at MAX_ATTEMPTS - 1
-    const runId = await createRun({ attempts: 2 })
+    // [T37] budget de recuperação usa recoveryAttempts (não o histórico attempts)
+    const runId = await createRun({ recoveryAttempts: 2 })
 
-    // Claim the run (increments attempts to 3)
+    // Claim increda recoveryAttempts para 3
     const claimed = await claimNextRun(worker, tenantId)
     expect(claimed).not.toBeNull()
 
-    // Release with retry (should fail because attempts >= MAX_ATTEMPTS)
-    const result = await releaseRun(runId, tenantId, worker, true)
+    const result = await releaseRun(runId, tenantId, worker, claimed!.generation, true)
     expect(result).toBe('failed')
 
     const run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
     expect(run!.status).toBe('FAILED')
     expect(run!.errorCode).toBe('WORKER_LOST')
+  })
+
+  test('[T37] checkpoint confirmado reinicia o budget de recuperação', async () => {
+    const worker = 'worker-checkpoint-reset'
+    const runId = await createRun()
+    const claimed = await claimNextRun(worker, tenantId)
+    let run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
+    expect(run!.recoveryAttempts).toBe(1)
+
+    // Persistir checkpoint (executionContextJson) reseta o contador.
+    expect(await persistence.agent.updateRunFenced(runId, tenantId, worker, claimed!.generation, { executionContextJson: '{"step":1}' })).toBe(true)
+    run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
+    expect(run!.recoveryAttempts).toBe(0)
+  })
+
+  test('[T37] heartbeat de geração obsoleta é rejeitado', async () => {
+    const worker = 'worker-fence'
+    const runId = await createRun()
+    const claimed = await claimNextRun(worker, tenantId)
+    expect(claimed!.generation).toBe(1)
+
+    // Geração errada não renova o lease.
+    expect(await heartbeatRun(runId, tenantId, worker, claimed!.generation + 1)).toBe(false)
+    // Geração vigente renova.
+    expect(await heartbeatRun(runId, tenantId, worker, claimed!.generation)).toBe(true)
+  })
+
+  test('[T37] release de proprietário substituído não repõe a run', async () => {
+    const worker1 = 'worker-old'
+    const worker2 = 'worker-new'
+    const runId = await createRun()
+    const first = await claimNextRun(worker1, tenantId)
+    expect(first!.generation).toBe(1)
+
+    // Simula lease vencido + run devolvida à fila (recuperação): worker2 assume nova geração.
+    await db.update(assistantRuns).set({ status: 'QUEUED', claimExpiresAt: new Date(Date.now() - 120_000).toISOString() }).where(eq(assistantRuns.id, runId))
+    const second = await claimNextRun(worker2, tenantId)
+    expect(second!.runId).toBe(runId)
+    expect(second!.generation).toBe(2)
+
+    // Release/heartbeat da geração antiga são rejeitados sem alterar a run vigente.
+    expect(await releaseRun(runId, tenantId, worker1, first!.generation, true)).toBe('lost')
+    expect(await heartbeatRun(runId, tenantId, worker1, first!.generation)).toBe(false)
+
+    const run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
+    expect(run!.status).toBe('RUNNING')
+    expect(run!.claimedBy).toBe(worker2)
+    expect(run!.leaseGeneration).toBe(2)
+  })
+
+  test('[T37] finishRunFenced exige geração vigente e cancelamento para CANCELLED', async () => {
+    const worker = 'worker-finish'
+    const runId = await createRun()
+    const claimed = await claimNextRun(worker, tenantId)
+    expect(claimed!.generation).toBe(1)
+
+    // Geração obsoleta não finaliza.
+    expect(await persistence.agent.finishRunFenced(runId, tenantId, worker, claimed!.generation + 1, { status: 'COMPLETED', finishedAt: new Date().toISOString() })).toBe(false)
+    // CANCELLED sem cancelRequested é rejeitado.
+    expect(await persistence.agent.finishRunFenced(runId, tenantId, worker, claimed!.generation, { status: 'CANCELLED', finishedAt: new Date().toISOString() }, { requireCancelRequested: true })).toBe(false)
+
+    await requestCancel(runId, tenantId)
+    // CANCELLED com cancelamento presente e geração vigente é aceito.
+    expect(await persistence.agent.finishRunFenced(runId, tenantId, worker, claimed!.generation, { status: 'CANCELLED', finishedAt: new Date().toISOString() }, { requireCancelRequested: true })).toBe(true)
+
+    const run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
+    expect(run!.status).toBe('CANCELLED')
+    expect(run!.claimedBy).toBeNull()
+  })
+
+  test('[T37] updateRunFenced rejeita geração obsoleta e aceita a vigente', async () => {
+    const worker = 'worker-checkpoint'
+    const runId = await createRun()
+    const claimed = await claimNextRun(worker, tenantId)
+
+    // Geração obsoleta não escreve checkpoint.
+    expect(await persistence.agent.updateRunFenced(runId, tenantId, worker, claimed!.generation + 1, { currentCursor: 5 })).toBe(false)
+    // Geração vigente grava.
+    expect(await persistence.agent.updateRunFenced(runId, tenantId, worker, claimed!.generation, { currentCursor: 5 })).toBe(true)
+
+    const run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
+    expect(run!.currentCursor).toBe(5)
+  })
+
+  test('[T37] requestCancel é repetível e recusa run terminal', async () => {
+    const queued = await createRun()
+    expect(await requestCancel(queued, tenantId)).toBe(true)
+    // Repetido: estado coerente, sem alterar a run.
+    expect(await requestCancel(queued, tenantId)).toBe(true)
+    const cancelled = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, queued) })
+    expect(cancelled!.status).toBe('CANCELLED')
+
+    const completed = await createRun({ status: 'COMPLETED' })
+    expect(await requestCancel(completed, tenantId)).toBe(false)
+  })
+
+  test('[T37] findMessageByRunId deduplica a mensagem terminal', async () => {
+    const runId = await createRun()
+    const scope = { tenantId, actorUserId: userId, actorKind: 'USER' as const }
+    expect(await persistence.agent.findMessageByRunId(scope, runId)).toBeNull()
+    await persistence.agent.createMessage(scope, {
+      conversationId, userId, role: 'ASSISTANT', content: 'pronto',
+      metadataJson: JSON.stringify({ runId }), createdAt: new Date().toISOString(),
+    })
+    const found = await persistence.agent.findMessageByRunId(scope, runId)
+    expect(found?.content).toBe('pronto')
+  })
+
+  test('[T37] countQueuedRuns reflete a profundidade real da fila', async () => {
+    const now = new Date().toISOString()
+    await createRun()
+    await createRun()
+    expect(await persistence.agent.countQueuedRuns(tenantId, now)).toBe(2)
+    await claimNextRun('worker-depth', tenantId)
+    expect(await persistence.agent.countQueuedRuns(tenantId, now)).toBe(1)
+  })
+
+  test('[T37] hasRunEvent permite dedup do evento terminal', async () => {
+    const runId = await createRun()
+    const scope = { tenantId, actorUserId: null, actorKind: 'SYSTEM' as const }
+    expect(await persistence.agent.hasRunEvent(tenantId, runId, 'RUN_COMPLETED')).toBe(false)
+    await persistence.agent.insertEvent(scope, runId, 'RUN_COMPLETED', '{}', new Date().toISOString())
+    expect(await persistence.agent.hasRunEvent(tenantId, runId, 'RUN_COMPLETED')).toBe(true)
+    expect(await persistence.agent.hasRunEvent(tenantId, runId, 'RUN_FAILED')).toBe(false)
+  })
+
+  test('[T37] stop drena execução ativa antes do prazo', async () => {
+    const runId = await createRun()
+    let aborted = false
+    let finished = false
+    const worker = new AgentWorker({ tenantId, executeRun: async (_id, _t, _w, ctx) => {
+      ctx.signal.addEventListener('abort', () => { aborted = true })
+      await new Promise(resolve => setTimeout(resolve, 40))
+      finished = true
+      await db.update(assistantRuns).set({ status: 'COMPLETED' }).where(eq(assistantRuns.id, runId))
+    } })
+    worker.start()
+    for (let i = 0; i < 100; i++) {
+      const run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
+      if (run?.startedAt) break
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+    await worker.stop(2_000)
+    expect(finished).toBe(true)
+    expect(aborted).toBe(false)
+  })
+
+  test('[T37] stop aborta execução que excede o prazo', async () => {
+    const runId = await createRun()
+    let aborted = false
+    const worker = new AgentWorker({ tenantId, executeRun: async (_id, _t, _w, ctx) => {
+      await new Promise<void>((resolve) => {
+        ctx.signal.addEventListener('abort', () => { aborted = true; resolve() })
+      })
+    } })
+    worker.start()
+    for (let i = 0; i < 100; i++) {
+      const run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
+      if (run?.startedAt) break
+      await new Promise(resolve => setTimeout(resolve, 5))
+    }
+    await worker.stop(20)
+    expect(aborted).toBe(true)
+  })
+
+  test('[T37] oldestQueuedAt reflete a idade da fila', async () => {
+    const now = new Date().toISOString()
+    expect(await persistence.agent.oldestQueuedAt(tenantId, now)).toBeNull()
+    await createRun()
+    const oldest = await persistence.agent.oldestQueuedAt(tenantId, new Date().toISOString())
+    expect(oldest).not.toBeNull()
+    expect(oldest! <= new Date().toISOString()).toBe(true)
+  })
+
+  test('[T37] sinal abortado impede início da execução (LEASE_LOST)', async () => {
+    const { executeAssistantRun } = await import('./assistantRunExecutor')
+    const runId = await createRun()
+    const controller = new AbortController()
+    controller.abort()
+    await expect(
+      executeAssistantRun(runId, tenantId, 'worker-abort', { generation: 1, signal: controller.signal }),
+    ).rejects.toThrow('LEASE_LOST')
   })
 })
 

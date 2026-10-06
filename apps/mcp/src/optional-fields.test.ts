@@ -197,6 +197,20 @@ describe('null vira omitido antes da execução', () => {
     }, { api, context: { source: 'mcp', userId: 'u1', tenantId: 't1', globalGroup: 'TEAM_MEMBER' } })
     expect((body as { operations: Array<{ args: { parentRef: null } }> }).operations[0]!.args.parentRef).toBeNull()
   })
+
+  test('[T37] operationId por tool é propagado como agentRunId no update_items', async () => {
+    let body: unknown
+    const api: ApiCall = async (_path, _method, requestBody) => {
+      body = requestBody
+      return { results: [] }
+    }
+    await executeSharedTool('update_items', {
+      projectId: UUID,
+      filters: { itemIds: ['i1'] },
+      changes: [{ field: 'title', operation: 'SET', value: 'x' }],
+    }, { api, context: { source: 'mcp', userId: 'u1', tenantId: 't1', globalGroup: 'TEAM_MEMBER' }, operationId: 'run-1:hash-1' })
+    expect((body as { agentRunId: string }).agentRunId).toBe('run-1:hash-1')
+  })
 })
 
 describe('get_board reduz o payload por padrão', () => {

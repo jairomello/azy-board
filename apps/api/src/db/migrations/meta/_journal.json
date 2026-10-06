@@ -274,6 +274,34 @@
       "when": 1791100000000,
       "tag": "0038_polite_albert_cleary",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "6",
+      "when": 1791101000000,
+      "tag": "0039_transactional-idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1791102000000,
+      "tag": "0040_domain_event_outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1791103000000,
+      "tag": "0041_agent_lease_generation",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1791104000000,
+      "tag": "0042_agent_recovery_attempts",
+      "breakpoints": true
     }
   ]
 }

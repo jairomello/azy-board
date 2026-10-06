@@ -137,13 +137,14 @@ export async function loadRunContext(runId: string, tenantId: string): Promise<W
 export async function createWorkerToolApi(tenantId: string, userId: string) {
   const { signJwt } = await import('../services/auth')
   const session = await signJwt({ sub: userId, tenantId, email: '', role: 'user' })
-  return async (path: string, method = 'GET', body?: unknown) => {
+  return async (path: string, method = 'GET', body?: unknown, extraHeaders?: Record<string, string>) => {
     const { app } = await import('../index')
     const response = await app.fetch(new Request(`http://azyboard.internal/api${path}`, {
       method,
       headers: {
         'Content-Type': 'application/json',
         cookie: `session=${session}`,
+        ...(extraHeaders ?? {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     }), {})

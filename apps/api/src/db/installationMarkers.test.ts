@@ -2,20 +2,19 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   databaseFingerprint,
   ensureInstallationMarkers,
   INSTALLATION_MARKER_FILENAME,
-  preflightInstallationMarkers,
   preflightVolumeMarker,
-  sqliteInstallationMarkerStore,
   type InstallationMarker,
   type InstallationMarkerStore,
   type UnmarkedDatabaseState,
 } from './installationMarkers'
+import { preflightInstallationMarkers, sqliteInstallationMarkerStore } from './sqlite/installationMarkers'
 import type { InstallProfileConfig } from './installProfile'
 import * as schema from './schema'
 
@@ -177,5 +176,33 @@ describe('marcadores de perfil por instalação', () => {
     } finally {
       sqlite.close()
     }
+  })
+
+  test('recusa marcador de volume corrompido (JSON inválido)', async () => {
+    const context = await setup()
+    await writeFile(join(context.config.instanceDir, INSTALLATION_MARKER_FILENAME), '{ not-json', 'utf8')
+    expect(() => preflightVolumeMarker(context.config)).toThrow('INSTALLATION_MARKER_INVALID')
+    await expect(ensureInstallationMarkers(context.config, context.store)).rejects.toThrow('INSTALLATION_MARKER_INVALID')
+    expect(context.stored).toBeNull()
+  })
+
+  test('recusa marcador de volume com formato não reconhecido', async () => {
+    const context = await setup()
+    await writeFile(join(context.config.instanceDir, INSTALLATION_MARKER_FILENAME), JSON.stringify({ formatVersion: 2, instanceId: 'x' }), 'utf8')
+    expect(() => preflightVolumeMarker(context.config)).toThrow('INSTALLATION_MARKER_INVALID')
+  })
+
+  test('recusa revisão de marcador mais nova que a aplicação suporta', async () => {
+    const context = await setup()
+    const marker = {
+      formatVersion: 1 as const,
+      instanceId: 'instance-new',
+      profile: 'SIMPLE' as const,
+      databaseFingerprint: databaseFingerprint('SIMPLE', context.config.databaseUrl),
+      schemaRevision: 2,
+    }
+    await writeFile(join(context.config.instanceDir, INSTALLATION_MARKER_FILENAME), JSON.stringify(marker), 'utf8')
+    expect(() => preflightVolumeMarker(context.config)).toThrow('INSTALLATION_MARKER_TOO_NEW')
+    await expect(ensureInstallationMarkers(context.config, context.store)).rejects.toThrow('INSTALLATION_MARKER_TOO_NEW')
   })
 })

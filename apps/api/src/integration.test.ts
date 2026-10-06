@@ -12,7 +12,7 @@ process.env.LOGIN_PROGRESSIVE_DELAY_MS = '0'
 
 const { app } = await import('./index')
 const { db } = await import('./db/index')
-const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, itemLinks, tenantAttachmentSettings, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys, assistantConversations, assistantMessages, assistantRuns, assistantEvents, loginAttempts } = await import('./db/schema')
+const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, itemLinks, tenantAttachmentSettings, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys, assistantConversations, assistantMessages, assistantRuns, assistantEvents, loginAttempts, idempotencyRecords, domainEventOutbox, domainEventCounters } = await import('./db/schema')
 const { signJwt, generateApiKey, hashPassword } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 const { appendAnalyticsEvent, assertAnalyticsCutoverReady, createSprintCycle, ensureCoverage } = await import('./services/analytics')
@@ -630,12 +630,138 @@ describe('batch e idempotencia', () => {
     const first = await request(`/projects/${projectId}/items`, session, init)
     const second = await request(`/projects/${projectId}/items`, session, init)
     expect(first.status).toBe(201)
-    expect(second.status).toBe(200)
+    // [T38] Replay preserva o status/body originais (201), sem nova mutação.
+    expect(second.status).toBe(201)
     expect((await db.select().from(items)).filter(item => item.title === 'Uma vez')).toHaveLength(1)
     const repeatedItem = (await db.select().from(items)).find(item => item.title === 'Uma vez')!
     const repeatedEvents = await db.select().from(itemEvents).where(and(eq(itemEvents.itemId, repeatedItem.id), eq(itemEvents.tenantId, tenantId)))
     expect(repeatedEvents.filter(event => event.eventType === 'ITEM_CREATED')).toHaveLength(1)
     expect(repeatedEvents.map(event => event.sequence)).toEqual([...repeatedEvents].sort((a, b) => a.sequence - b.sequence).map(event => event.sequence))
+  })
+
+  test('move com Idempotency-Key não duplica o movimento no replay', async () => {
+    const task = await request(`/projects/${projectId}/items`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Mover', type: 'TASK', parentId: storyId }) })
+    const taskId = (await task.json() as { id: string }).id
+    const cols = await db.select().from(columns).where(eq(columns.projectId, projectId))
+    const target = cols.find(column => column.baseStatus === 'IN_PROGRESS') ?? cols.find(column => column.baseStatus === 'DONE') ?? cols[0]!
+    const init = { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'move-replay' }, body: JSON.stringify({ columnId: target.id }) }
+    const first = await request(`/projects/${projectId}/items/${taskId}/move`, session, init)
+    expect(first.status).toBe(200)
+    const second = await request(`/projects/${projectId}/items/${taskId}/move`, session, init)
+    expect(second.status).toBe(200)
+    const statusEvents = await db.select().from(itemEvents).where(and(eq(itemEvents.itemId, taskId), eq(itemEvents.eventType, 'STATUS_CHANGED')))
+    expect(statusEvents).toHaveLength(1)
+  })
+
+  test('create_item_log com Idempotency-Key não duplica no replay', async () => {
+    const task = await request(`/projects/${projectId}/items`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Log', type: 'TASK', parentId: storyId }) })
+    const taskId = (await task.json() as { id: string }).id
+    const init = { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'log-replay' }, body: JSON.stringify({ activity: 'Revisão', durationMin: 30 }) }
+    const first = await request(`/projects/${projectId}/items/${taskId}/logs`, session, init)
+    expect(first.status).toBe(201)
+    const second = await request(`/projects/${projectId}/items/${taskId}/logs`, session, init)
+    expect(second.status).toBe(201)
+    const logs = await db.select().from(itemLogs).where(and(eq(itemLogs.itemId, taskId), eq(itemLogs.type, 'manual')))
+    expect(logs).toHaveLength(1)
+  })
+
+  test('create_item_link com Idempotency-Key não duplica no replay', async () => {
+    const task = await request(`/projects/${projectId}/items`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Link', type: 'TASK', parentId: storyId }) })
+    const taskId = (await task.json() as { id: string }).id
+    const init = { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'link-replay' }, body: JSON.stringify({ name: 'Doc', url: 'https://example.com/doc' }) }
+    const first = await request(`/projects/${projectId}/items/${taskId}/links`, session, init)
+    expect(first.status).toBe(201)
+    const second = await request(`/projects/${projectId}/items/${taskId}/links`, session, init)
+    expect(second.status).toBe(201)
+    const links = await db.select().from(itemLinks).where(eq(itemLinks.itemId, taskId))
+    expect(links).toHaveLength(1)
+  })
+
+  test('checklist com Idempotency-Key não duplica no replay', async () => {
+    const task = await request(`/projects/${projectId}/items`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Check', type: 'TASK', parentId: storyId }) })
+    const taskId = (await task.json() as { id: string }).id
+    const init = { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'checklist-replay' }, body: JSON.stringify({ name: 'Passos' }) }
+    const first = await request(`/projects/${projectId}/items/${taskId}/checklists`, session, init)
+    expect(first.status).toBe(201)
+    const second = await request(`/projects/${projectId}/items/${taskId}/checklists`, session, init)
+    expect(second.status).toBe(201)
+    const rows = await db.select().from(checklists).where(eq(checklists.itemId, taskId))
+    expect(rows).toHaveLength(1)
+  })
+
+  test('consulta de operação revalida acesso (não-membro e tenant divergente → 404)', async () => {
+    const res = await request(`/projects/${projectId}/items`, session, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'op-access' }, body: JSON.stringify({ title: 'Operação escopada', type: 'TASK', parentId: storyId }) })
+    expect(res.status).toBe(201)
+    const operationId = res.headers.get('X-Operation-Id')
+    expect(operationId).toBeTruthy()
+
+    const own = await request(`/operations/${operationId}`, session)
+    expect(own.status).toBe(200)
+
+    // Mesmo tenant, mas não-membro do projeto e sem admin global: não vaza.
+    const outsider = await createUser(tenantId, `outsider-${generateId()}@test.local`, 'Outsider', 'TEAM_MEMBER')
+    const outsiderSession = await token(outsider.id, tenantId, outsider.email)
+    expect((await request(`/operations/${operationId}`, outsiderSession)).status).toBe(404)
+
+    // Tenant divergente: consulta escopada por tenant não encontra a operação.
+    const otherTenantId = generateId()
+    await db.insert(tenants).values({ id: otherTenantId, name: 'Outro', slug: `outro-${otherTenantId}`, createdAt: new Date().toISOString() })
+    const foreign = await createUser(otherTenantId, `foreign-${generateId()}@test.local`, 'Foreign', 'ADMIN')
+    const foreignSession = await token(foreign.id, otherTenantId, foreign.email)
+    expect((await request(`/operations/${operationId}`, foreignSession)).status).toBe(404)
+  })
+
+  test('claim concorrente do mesmo item tem um único vencedor (CAS)', async () => {
+    const task = await request(`/projects/${projectId}/items`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Disputa', type: 'TASK', parentId: storyId }) })
+    const taskId = (await task.json() as { id: string }).id
+    const [a, b] = await Promise.all([
+      request(`/projects/${projectId}/items/${taskId}/claim`, session, { method: 'PATCH' }),
+      request(`/projects/${projectId}/items/${taskId}/claim`, session, { method: 'PATCH' }),
+    ])
+    const statuses = [a.status, b.status].sort()
+    expect(statuses).toEqual([200, 409])
+    const row = await db.select().from(items).where(eq(items.id, taskId))
+    expect(row[0]!.assigneeId).toBe(userId)
+  })
+
+  test('mesma chave com payload distinto retorna 409 sem efeitos', async () => {
+    const headers = { 'Content-Type': 'application/json', 'Idempotency-Key': 'conflict-create' }
+    const first = await request(`/projects/${projectId}/items`, session, { method: 'POST', headers, body: JSON.stringify({ title: 'Conflito A', type: 'TASK', parentId: storyId }) })
+    expect(first.status).toBe(201)
+    const before = (await db.select().from(items)).filter(item => item.projectId === projectId).length
+    const second = await request(`/projects/${projectId}/items`, session, { method: 'POST', headers, body: JSON.stringify({ title: 'Conflito B', type: 'TASK', parentId: storyId }) })
+    expect(second.status).toBe(409)
+    expect(await second.json()).toMatchObject({ error: { code: 'IDEMPOTENCY_CONFLICT' } })
+    expect((await db.select().from(items)).filter(item => item.projectId === projectId)).toHaveLength(before)
+  })
+
+  test('crash entre commit e resposta é retomável pela referência PENDING', async () => {
+    const headers = { 'Content-Type': 'application/json', 'Idempotency-Key': 'crash-create' }
+    const body = JSON.stringify({ title: 'Crash retomável', type: 'TASK', parentId: storyId })
+    const first = await request(`/projects/${projectId}/items`, session, { method: 'POST', headers, body })
+    expect(first.status).toBe(201)
+    const created = (await db.select().from(items)).find(item => item.title === 'Crash retomável')!
+    // Simula queda após o commit e antes de gravar o corpo final.
+    await db.update(idempotencyRecords)
+      .set({ status: 'PENDING', responseJson: JSON.stringify({ status: 201, body: { __pendingOperationId: created.id } }) })
+      .where(and(
+        eq(idempotencyRecords.tenantId, tenantId), eq(idempotencyRecords.tool, 'create_item.v1'),
+        eq(idempotencyRecords.idempotencyKey, 'crash-create'),
+      ))
+    const second = await request(`/projects/${projectId}/items`, session, { method: 'POST', headers, body })
+    expect(second.status).toBe(201)
+    expect((await second.json() as { id: string }).id).toBe(created.id)
+    expect((await db.select().from(items)).filter(item => item.title === 'Crash retomável')).toHaveLength(1)
+    const journal = (await db.select().from(idempotencyRecords).where(and(eq(idempotencyRecords.tenantId, tenantId), eq(idempotencyRecords.idempotencyKey, 'crash-create'))))[0]!
+    expect(journal.status).toBe('COMMITTED')
+  })
+
+  test('mesma chave em escopos de projeto distintos tem identidade própria', async () => {
+    const simpleProject = await request('/projects', session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Escopo simples', boardMode: 'SIMPLE' }) })
+    const simpleId = (await simpleProject.json() as { id: string }).id
+    await request(`/projects/${projectId}/items`, session, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'shared-scope' }, body: JSON.stringify({ title: 'Escopo A', type: 'TASK', parentId: storyId }) })
+    const other = await request(`/projects/${simpleId}/items`, session, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'shared-scope' }, body: JSON.stringify({ title: 'Escopo B', type: 'TASK' }) })
+    expect(other.status).toBe(201)
   })
 
   test('retorna sucesso e erro por item no batch parcial', async () => {
@@ -649,6 +775,104 @@ describe('batch e idempotencia', () => {
     const response = await request(`/projects/${projectId}/batch`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ atomic: true, operations: [{ tool: 'create_task', args: { title: 'Rollback', parentId: storyId } }, { tool: 'create_task', args: { title: '' } }] }) })
     expect(response.status).toBe(422)
     expect((await db.select().from(items)).filter(item => item.projectId === projectId)).toHaveLength(before)
+  })
+
+  test('batch não atômico com chave devolve o mesmo resultado integral no replay', async () => {
+    const operations = [
+      { tool: 'create_task', args: { title: 'Replay ok', parentId: storyId } },
+      { tool: 'create_task', args: { title: '' } },
+    ]
+    const init = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idempotencyKey: 'batch-replay', operations }) }
+    const first = await request(`/projects/${projectId}/batch`, session, init)
+    expect(first.status).toBe(200)
+    const firstBody = await first.json() as { results: Array<{ ok: boolean; data?: { id: string } }> }
+    expect(firstBody.results.map(result => result.ok)).toEqual([true, false])
+    const createdId = firstBody.results[0]!.data!.id
+    expect((await db.select().from(items)).filter(item => item.title === 'Replay ok')).toHaveLength(1)
+
+    const second = await request(`/projects/${projectId}/batch`, session, init)
+    expect(second.status).toBe(200)
+    const secondBody = await second.json() as { results: Array<{ ok: boolean; data?: { id: string } }> }
+    expect(secondBody).toEqual(firstBody)
+    expect(secondBody.results[0]!.data!.id).toBe(createdId)
+    expect((await db.select().from(items)).filter(item => item.title === 'Replay ok')).toHaveLength(1)
+  })
+
+  test('batch com mesma chave e payload distinto retorna 409', async () => {
+    const first = await request(`/projects/${projectId}/batch`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idempotencyKey: 'batch-conflict', operations: [{ tool: 'create_task', args: { title: 'Batch A', parentId: storyId } }] }) })
+    expect(first.status).toBe(200)
+    const second = await request(`/projects/${projectId}/batch`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idempotencyKey: 'batch-conflict', operations: [{ tool: 'create_task', args: { title: 'Batch B', parentId: storyId } }] }) })
+    expect(second.status).toBe(409)
+    expect(await second.json()).toMatchObject({ error: { code: 'IDEMPOTENCY_CONFLICT' } })
+  })
+
+  test('batch atômico com falha reverte domínio e journal (mesma chave retomável)', async () => {
+    const before = (await db.select().from(items)).filter(item => item.projectId === projectId).length
+    const failing = await request(`/projects/${projectId}/batch`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idempotencyKey: 'batch-atomic-fail', atomic: true, operations: [{ tool: 'create_task', args: { title: 'Atomic ok', parentId: storyId } }, { tool: 'create_task', args: { title: '' } }] }) })
+    expect(failing.status).toBe(422)
+    expect((await db.select().from(items)).filter(item => item.projectId === projectId)).toHaveLength(before)
+    // Reserva revertida junto do lote: a mesma chave pode ser reutilizada.
+    const retry = await request(`/projects/${projectId}/batch`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idempotencyKey: 'batch-atomic-fail', atomic: true, operations: [{ tool: 'create_task', args: { title: 'Retomado', parentId: storyId } }] }) })
+    expect(retry.status).toBe(200)
+    expect((await db.select().from(items)).filter(item => item.title === 'Retomado')).toHaveLength(1)
+  })
+
+  test('[T38] evento de domínio é gravado no mesmo commit da criação', async () => {
+    const before = (await db.select().from(domainEventOutbox).where(eq(domainEventOutbox.projectId, projectId))).length
+    const response = await request(`/projects/${projectId}/items`, session, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'dom-event-1' }, body: JSON.stringify({ title: 'Evento domínio', type: 'TASK', parentId: storyId }) })
+    expect(response.status).toBe(201)
+    const created = await response.json() as { id: string }
+    const rows = await db.select().from(domainEventOutbox).where(eq(domainEventOutbox.projectId, projectId))
+    expect(rows).toHaveLength(before + 1)
+    const events = rows.filter(row => row.type === 'item.created' && row.payloadJson.includes(created.id))
+    expect(events).toHaveLength(1)
+  })
+
+  test('[T38] operação é consultável por operationId com status/body/publicação', async () => {
+    const response = await request(`/projects/${projectId}/items`, session, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'op-consult-1' }, body: JSON.stringify({ title: 'Operação consultável', type: 'TASK', parentId: storyId }) })
+    expect(response.status).toBe(201)
+    const operationId = response.headers.get('x-operation-id')
+    expect(operationId).toBeTruthy()
+    const op = await request(`/operations/${operationId}`, session)
+    expect(op.status).toBe(200)
+    const body = await op.json() as { status: string; httpStatus: number; body: { id: string }; publication: { pending: boolean } }
+    expect(body.status).toBe('COMMITTED')
+    expect(body.httpStatus).toBe(201)
+    expect(body.body.id).toBeTruthy()
+    // Sem dispatcher rodando no teste, o evento permanece pendente de publicação.
+    expect(body.publication.pending).toBe(true)
+    expect((await request('/operations/nao-existe', session)).status).toBe(404)
+  })
+
+  test('[T38] metadados de colunas gravam evento na transação do comando', async () => {
+    const before = (await db.select().from(domainEventOutbox).where(eq(domainEventOutbox.projectId, projectId))).length
+    const response = await request(`/projects/${projectId}/columns`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Coluna T38', baseStatus: 'NOT_STARTED' }) })
+    expect(response.status).toBeLessThan(300)
+    const rows = await db.select().from(domainEventOutbox).where(eq(domainEventOutbox.projectId, projectId))
+    expect(rows).toHaveLength(before + 1)
+    expect(rows.some(row => row.type === 'project.metadata.changed' && row.payloadJson.includes('columns'))).toBe(true)
+  })
+
+  test('[T38] rollback do batch atômico não deixa evento fantasma', async () => {
+    const before = (await db.select().from(domainEventOutbox).where(eq(domainEventOutbox.projectId, projectId))).length
+    const response = await request(`/projects/${projectId}/batch`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ atomic: true, operations: [{ tool: 'create_task', args: { title: 'Fantasma', parentId: storyId } }, { tool: 'create_task', args: { title: '' } }] }) })
+    expect(response.status).toBe(422)
+    expect((await db.select().from(domainEventOutbox).where(eq(domainEventOutbox.projectId, projectId))).length).toBe(before)
+  })
+
+  test('[T38] sequência durável é monotônica e o replay paginado usa o cursor', async () => {
+    const { persistence } = await import('./persistence/runtime')
+    const port = persistence.domainEvents
+    const watermark = await port.watermark(tenantId, projectId)
+    expect(watermark).toBeGreaterThan(0)
+    const claimed = await port.claimDue({ now: new Date().toISOString(), limit: 100, workerId: 'test-worker', leaseMs: 60_000 })
+    expect(claimed.length).toBeGreaterThan(0)
+    for (const event of claimed) await port.markPublished(event.id, event.tenantId, new Date().toISOString())
+    const counters = await db.select().from(domainEventCounters).where(and(eq(domainEventCounters.tenantId, tenantId), eq(domainEventCounters.projectId, projectId)))
+    expect(counters[0]?.lastSequence).toBe(watermark)
+    const replay = await port.listAfter({ tenantId, projectId, cursor: 0, limit: 1000 })
+    const sequences = replay.map(event => event.sequence)
+    expect(sequences).toEqual([...sequences].sort((a, b) => a - b))
   })
 
   test('atualiza campos por filtros com valores calculados em uma única operação idempotente', async () => {

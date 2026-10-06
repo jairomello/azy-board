@@ -41,6 +41,7 @@ import type {
   SprintRecord,
   StorageCleanupJobRecord,
   StoredAvatarRecord,
+  TagRecord,
   TenantAttachmentSettingsRecord,
   UserCredentialRecord,
 } from '../../persistence/models'
@@ -54,8 +55,11 @@ import {
 } from '../schema'
 import { generateId } from '../../utils/id'
 import { runSqliteAtomic } from './atomicTransaction'
+import { assertJournalAvailable, reserveJournal } from './idempotencyJournal'
 import { createSqliteItemUnitOfWork } from './itemUnitOfWork'
 import { createSqliteProjectUnitOfWork } from './projectUnitOfWork'
+import { createSqliteDomainEventPort, appendDomainEventSync } from './domainEventOutbox'
+import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
 
 function asMutation(context: PersistenceContext): MutationContext {
   return {
@@ -169,6 +173,22 @@ function mapChecklist(row: typeof checklists.$inferSelect, items: ChecklistItemR
   return { id: row.id, tenantId: row.tenantId, itemId: row.itemId, name: row.name, position: row.position, createdAt: row.createdAt, items }
 }
 
+function checklistProgressInTx(sqlite: Database, tenantId: string, itemId: string): ChecklistProgressRecord {
+  const row = sqlite.query<{ total: number; checked: number | null }, [string, string]>(
+    `SELECT count(ci.id) AS total, sum(case when ci.checked = 1 then 1 else 0 end) AS checked
+     FROM checklist_items ci JOIN checklists c ON c.id = ci.checklist_id
+     WHERE ci.tenant_id = ? AND c.item_id = ?`,
+  ).get(tenantId, itemId)
+  return { checked: Number(row?.checked ?? 0), total: Number(row?.total ?? 0) }
+}
+
+function emitChecklistUpdated(sqlite: Database, tenantId: string, projectId: string, itemId: string, checklistId: string): void {
+  appendDomainEventSync(sqlite, {
+    tenantId, projectId, type: 'CHECKLIST_UPDATED',
+    payload: { itemId, checklistId, progress: checklistProgressInTx(sqlite, tenantId, itemId) },
+  })
+}
+
 function mapItemLog(row: typeof itemLogs.$inferSelect, author: { id: string; name: string; avatarUrl: string | null } | null = null): ItemLogRecord {
   return {
     id: row.id, tenantId: row.tenantId, itemId: row.itemId, authorId: row.authorId, type: row.type,
@@ -222,6 +242,7 @@ function mapAssistantRun(row: typeof assistantRuns.$inferSelect): AssistantRunDe
     createdAt: row.createdAt, startedAt: row.startedAt, finishedAt: row.finishedAt, expiresAt: row.expiresAt,
     claimedBy: row.claimedBy, claimExpiresAt: row.claimExpiresAt,
     attempts: row.attempts, nextAttemptAt: row.nextAttemptAt, cancelRequested: row.cancelRequested,
+    leaseGeneration: row.leaseGeneration, recoveryAttempts: row.recoveryAttempts,
   }
 }
 
@@ -290,6 +311,20 @@ async function replaysProjectRollup(database: DrizzleDb, sqlite: Database, tenan
   })
 }
 
+/** [T38] Evento de metadados de projeto gravado na transação do comando. */
+function emitMetadataEvent(sqlite: Database, tenantId: string, projectId: string, section: string): void {
+  appendDomainEventSync(sqlite, {
+    tenantId, projectId, type: DOMAIN_EVENT_TYPES.projectMetadataChanged, payload: { section },
+  })
+}
+
+function mapTagRow(row: Record<string, unknown>): TagRecord {
+  return {
+    id: row.id as string, tenantId: row.tenant_id as string, projectId: row.project_id as string,
+    name: row.name as string, color: row.color as string,
+  }
+}
+
 /** Factory SIMPLE: ambos handles são explícitos e pertencem à mesma instalação. */
 export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Database): PersistencePorts {
   const itemCommands = createSqliteItemUnitOfWork(sqlite)
@@ -337,6 +372,13 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
 
   return {
     unitOfWork,
+    health: {
+      // [DB-SWAP] Consulta trivial; não toca rollups nem histórico de eventos.
+      async ping() {
+        sqlite.query('SELECT 1').get()
+      },
+    },
+    domainEvents: createSqliteDomainEventPort(sqlite),
     batch: {
       async loadItemUpdateSnapshot(context, projectId) {
         const [project, projectItems, projectModules, projectSprints, versions, projectColumns, costCenters, projectTags, projectMemberships, tenantUsers, sprintLinks, tagLinks] = await Promise.all([
@@ -466,22 +508,38 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
       },
     },
     idempotency: {
-      async find(context, tool, key) {
+      async find(context, tool, key, projectScope = '') {
         const row = await database.query.idempotencyRecords.findFirst({ where: and(
           eq(idempotencyRecords.tenantId, context.tenantId), eq(idempotencyRecords.ownerId, context.actorUserId ?? ''),
-          eq(idempotencyRecords.tool, tool), eq(idempotencyRecords.idempotencyKey, key),
+          eq(idempotencyRecords.tool, tool), eq(idempotencyRecords.projectScope, projectScope),
+          eq(idempotencyRecords.idempotencyKey, key),
         ) })
-        return row ? { payloadHash: row.payloadHash, responseJson: row.responseJson } : null
+        return row ? { id: row.id, payloadHash: row.payloadHash, responseJson: row.responseJson, status: row.status as 'PENDING' | 'COMMITTED', projectScope: row.projectScope } : null
+      },
+      async findById(context, operationId) {
+        const row = await database.query.idempotencyRecords.findFirst({ where: and(
+          eq(idempotencyRecords.tenantId, context.tenantId), eq(idempotencyRecords.id, operationId),
+        ) })
+        return row ? { id: row.id, payloadHash: row.payloadHash, responseJson: row.responseJson, status: row.status as 'PENDING' | 'COMMITTED', projectScope: row.projectScope } : null
       },
       async save(context, input) {
         await database.insert(idempotencyRecords).values({
           id: generateId(), tenantId: context.tenantId, ownerId: context.actorUserId ?? '',
-          tool: input.tool, idempotencyKey: input.key, payloadHash: input.payloadHash,
-          responseJson: input.responseJson, createdAt: input.createdAt, expiresAt: input.expiresAt,
+          tool: input.tool, idempotencyKey: input.key, projectScope: input.projectScope ?? '',
+          payloadHash: input.payloadHash, responseJson: input.responseJson,
+          status: input.status ?? 'COMMITTED', createdAt: input.createdAt, expiresAt: input.expiresAt,
         }).onConflictDoNothing()
       },
+      async complete(context, input) {
+        await database.update(idempotencyRecords).set({ responseJson: input.responseJson, status: 'COMMITTED' }).where(and(
+          eq(idempotencyRecords.tenantId, context.tenantId), eq(idempotencyRecords.ownerId, context.actorUserId ?? ''),
+          eq(idempotencyRecords.tool, input.tool), eq(idempotencyRecords.projectScope, input.projectScope ?? ''),
+          eq(idempotencyRecords.idempotencyKey, input.key),
+        ))
+      },
       async pruneExpired(nowIso) {
-        await database.delete(idempotencyRecords).where(lt(idempotencyRecords.expiresAt, nowIso))
+        // [T38] Nunca poda reservas PENDING (retomáveis).
+        await database.delete(idempotencyRecords).where(and(lt(idempotencyRecords.expiresAt, nowIso), eq(idempotencyRecords.status, 'COMMITTED')))
       },
     },
     loginAttempts: {
@@ -532,10 +590,29 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return mapProject(row)
       },
       async updateProject(context, projectId, patch: ProjectPatch) {
-        const result = await database.update(projects).set(patch).where(and(
-          eq(projects.tenantId, context.tenantId), eq(projects.id, projectId),
-        )).returning()
-        return result[0] ? mapProject(result[0]) : null
+        return runSqliteAtomic(sqlite, () => {
+          const fields: Array<[keyof ProjectPatch, string]> = [
+            ['name', 'name'], ['description', 'description'], ['boardMode', 'board_mode'],
+            ['simpleStoryId', 'simple_story_id'], ['managerUserId', 'manager_user_id'],
+            ['isRestricted', 'is_restricted'], ['isHidden', 'is_hidden'], ['advancedChecklists', 'advanced_checklists'],
+            ['startDate', 'start_date'], ['plannedEndDate', 'planned_end_date'], ['plannedPoints', 'planned_points'],
+            ['plannedHours', 'planned_hours'], ['scope', 'scope'], ['icon', 'icon'], ['color', 'color'],
+          ]
+          const sets: string[] = []
+          const params: Array<string | number | boolean | null> = []
+          for (const [key, column] of fields) {
+            const value = patch[key]
+            if (value !== undefined) { sets.push(`${column} = ?`); params.push(value as string | number | boolean | null) }
+          }
+          if (!sets.length) return null
+          const row = sqlite.query<never, Array<string | number | boolean | null>>(
+            `UPDATE projects SET ${sets.join(', ')} WHERE tenant_id = ? AND id = ? RETURNING id, tenant_id AS tenantId, name, description, board_mode AS boardMode, simple_story_id AS simpleStoryId, manager_user_id AS managerUserId, is_restricted AS isRestricted, is_hidden AS isHidden, advanced_checklists AS advancedChecklists, start_date AS startDate, planned_end_date AS plannedEndDate, planned_points AS plannedPoints, planned_hours AS plannedHours, scope, icon, color, created_at AS createdAt`,
+          ).get(...params, context.tenantId, projectId)
+          if (!row) return null
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'project')
+          const mapped = mapProject(row)
+          return { ...mapped, isRestricted: Boolean(mapped.isRestricted), isHidden: Boolean(mapped.isHidden), advancedChecklists: Boolean(mapped.advancedChecklists) }
+        })
       },
       async getMembership(context, projectId, userId) {
         const row = await database.query.memberships.findFirst({ where: and(
@@ -562,6 +639,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           const id = generateId()
           sqlite.query('INSERT INTO columns (id, tenant_id, project_id, name, base_status, position) VALUES (?, ?, ?, ?, ?, ?)')
             .run(id, context.tenantId, projectId, input.name, input.baseStatus, position)
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'columns')
           return id
         })
         const row = await database.query.columns.findFirst({ where: eq(columns.id, result) })
@@ -569,10 +647,21 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return mapColumn(row)
       },
       async updateColumn(context, projectId, columnId, patch: ColumnPatch) {
-        const result = await database.update(columns).set(patch).where(and(
-          eq(columns.tenantId, context.tenantId), eq(columns.projectId, projectId), eq(columns.id, columnId),
-        )).returning()
-        return result[0] ? mapColumn(result[0]) : null
+        return runSqliteAtomic(sqlite, () => {
+          const row = sqlite.query<{ id: string }, [string, string, string]>(
+            'SELECT id FROM columns WHERE tenant_id = ? AND project_id = ? AND id = ?',
+          ).get(context.tenantId, projectId, columnId)
+          if (!row) return null
+          if (patch.name !== undefined || patch.baseStatus !== undefined) {
+            sqlite.query('UPDATE columns SET name = COALESCE(?, name), base_status = COALESCE(?, base_status) WHERE tenant_id = ? AND project_id = ? AND id = ?')
+              .run(patch.name ?? null, patch.baseStatus ?? null, context.tenantId, projectId, columnId)
+          }
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'columns')
+          const updated = sqlite.query<Record<string, unknown>, [string, string, string]>(
+            'SELECT * FROM columns WHERE tenant_id = ? AND project_id = ? AND id = ?',
+          ).get(context.tenantId, projectId, columnId)
+          return updated ? mapColumn(updated as never) : null
+        })
       },
       async reorderColumns(context, projectId, columnIds) {
         runSqliteAtomic(sqlite, () => {
@@ -583,6 +672,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
               .run(position, context.tenantId, projectId, columnId)
             if (result.changes !== 1) throw new Error('COLUMN_NOT_IN_PROJECT')
           }
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'columns')
         })
       },
       async deleteColumn(context, projectId, columnId, moveItemsToColumnId) {
@@ -601,6 +691,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           }
           const result = sqlite.query('DELETE FROM columns WHERE tenant_id = ? AND project_id = ? AND id = ?')
             .run(context.tenantId, projectId, columnId)
+          if (result.changes === 1) emitMetadataEvent(sqlite, context.tenantId, projectId, 'columns')
           return result.changes === 1
         })
       },
@@ -623,21 +714,36 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return row ? mapModule(row) : null
       },
       async createModule(context, projectId, input: NewModuleRecord) {
-        const existing = await database.select({ id: modules.id }).from(modules).where(and(
-          eq(modules.tenantId, context.tenantId), eq(modules.projectId, projectId),
-        ))
-        const [row] = await database.insert(modules).values({
-          id: generateId(), tenantId: context.tenantId, projectId, name: input.name,
-          description: input.description ?? null, position: input.position ?? existing.length,
-        }).returning()
-        if (!row) throw new Error('Falha ao criar módulo no adapter SQLite.')
-        return mapModule(row)
+        return runSqliteAtomic(sqlite, () => {
+          const count = (sqlite.query<{ id: string }, [string, string]>(
+            'SELECT id FROM modules WHERE tenant_id = ? AND project_id = ?',
+          ).all(context.tenantId, projectId)).length
+          const id = generateId()
+          sqlite.query('INSERT INTO modules (id, tenant_id, project_id, name, description, position) VALUES (?, ?, ?, ?, ?, ?)')
+            .run(id, context.tenantId, projectId, input.name, input.description ?? null, input.position ?? count)
+          const module = mapModule(sqlite.query<never, [string]>(`SELECT id, tenant_id AS tenantId, project_id AS projectId, name, description, position FROM modules WHERE id = ?`).get(id)!)
+          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: 'MODULE_CREATED', payload: module })
+          return module
+        })
       },
       async updateModule(context, projectId, moduleId, patch: ModulePatch) {
-        const result = await database.update(modules).set(patch).where(and(
-          eq(modules.tenantId, context.tenantId), eq(modules.projectId, projectId), eq(modules.id, moduleId),
-        )).returning({ id: modules.id })
-        return result.length > 0
+        return runSqliteAtomic(sqlite, () => {
+          const existing = sqlite.query<{ id: string }, [string, string, string]>(
+            'SELECT id FROM modules WHERE tenant_id = ? AND project_id = ? AND id = ?',
+          ).get(context.tenantId, projectId, moduleId)
+          if (!existing) return false
+          const sets: string[] = []
+          const params: Array<string | number | null> = []
+          const map: Array<[keyof ModulePatch, string]> = [['name', 'name'], ['description', 'description'], ['position', 'position']]
+          for (const [field, column] of map) {
+            const value = patch[field]
+            if (value !== undefined) { sets.push(`${column} = ?`); params.push(value as string | number | null) }
+          }
+          if (sets.length) sqlite.query(`UPDATE modules SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND id = ?`)
+            .run(...params, context.tenantId, projectId, moduleId)
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'modules')
+          return true
+        })
       },
       async listSquads(context, projectId) {
         return database.select({
@@ -649,11 +755,14 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           .groupBy(squads.id).orderBy(squads.createdAt)
       },
       async createSquad(context, projectId, input: NewSquadRecord) {
-        const [row] = await database.insert(squads).values({
-          id: generateId(), tenantId: context.tenantId, projectId, name: input.name,
-        }).returning()
-        if (!row) throw new Error('Falha ao criar squad no adapter SQLite.')
-        return mapSquad(row)
+        return runSqliteAtomic(sqlite, () => {
+          const id = generateId()
+          sqlite.query('INSERT INTO squads (id, tenant_id, project_id, name) VALUES (?, ?, ?, ?)')
+            .run(id, context.tenantId, projectId, input.name)
+          const squad = mapSquad(sqlite.query<never, [string]>('SELECT id, tenant_id AS tenantId, project_id AS projectId, name, created_at AS createdAt FROM squads WHERE id = ?').get(id)!)
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'squads')
+          return squad
+        })
       },
       async getSquad(context, projectId, squadId) {
         const row = await database.query.squads.findFirst({ where: and(
@@ -662,10 +771,13 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return row ? mapSquad(row) : null
       },
       async updateSquad(context, projectId, squadId, name) {
-        const result = await database.update(squads).set({ name }).where(and(
-          eq(squads.tenantId, context.tenantId), eq(squads.projectId, projectId), eq(squads.id, squadId),
-        )).returning({ id: squads.id })
-        return result.length > 0
+        return runSqliteAtomic(sqlite, () => {
+          const result = sqlite.query('UPDATE squads SET name = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
+            .run(name, context.tenantId, projectId, squadId)
+          if (result.changes === 0) return false
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'squads')
+          return true
+        })
       },
       async deleteSquad(context, projectId, squadId) {
         return runSqliteAtomic(sqlite, () => {
@@ -675,8 +787,13 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           if (!squad) return false
           sqlite.query('UPDATE memberships SET squad_id = NULL WHERE tenant_id = ? AND project_id = ? AND squad_id = ?')
             .run(context.tenantId, projectId, squadId)
-          return sqlite.query('DELETE FROM squads WHERE tenant_id = ? AND project_id = ? AND id = ?')
+          const deleted = sqlite.query('DELETE FROM squads WHERE tenant_id = ? AND project_id = ? AND id = ?')
             .run(context.tenantId, projectId, squadId).changes === 1
+          if (deleted) {
+            emitMetadataEvent(sqlite, context.tenantId, projectId, 'squads')
+            emitMetadataEvent(sqlite, context.tenantId, projectId, 'members')
+          }
+          return deleted
         })
       },
       async addProjectMember(context, projectId, input: NewProjectMembership) {
@@ -691,6 +808,8 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           const membershipId = generateId()
           sqlite.query('INSERT INTO memberships (id, tenant_id, user_id, project_id, squad_id, role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
             .run(membershipId, context.tenantId, input.userId, projectId, squadId, input.role, new Date().toISOString())
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'members')
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'squads')
           return membershipId
         })
         const row = await database.query.memberships.findFirst({ where: eq(memberships.id, id) })
@@ -712,24 +831,36 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           if (!columnsToUpdate.length) return false
           const result = sqlite.query(`UPDATE memberships SET ${columnsToUpdate.join(', ')} WHERE tenant_id = ? AND project_id = ? AND user_id = ?`)
             .run(...values, context.tenantId, projectId, userId)
-          return result.changes > 0
+          if (result.changes > 0) {
+            emitMetadataEvent(sqlite, context.tenantId, projectId, 'members')
+            emitMetadataEvent(sqlite, context.tenantId, projectId, 'squads')
+            return true
+          }
+          return false
         })
       },
       async removeProjectMember(context, projectId, userId) {
-        const result = await database.delete(memberships).where(and(
-          eq(memberships.tenantId, context.tenantId), eq(memberships.projectId, projectId), eq(memberships.userId, userId),
-        )).returning({ id: memberships.id })
-        return result.length > 0
+        return runSqliteAtomic(sqlite, () => {
+          const result = sqlite.query('DELETE FROM memberships WHERE tenant_id = ? AND project_id = ? AND user_id = ?')
+            .run(context.tenantId, projectId, userId)
+          if (result.changes === 0) return false
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'members')
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'squads')
+          return true
+        })
       },
       async addSquadMember(context, projectId, squadId, input: NewProjectMembership) {
         return this.addProjectMember(context, projectId, { ...input, squadId })
       },
       async removeSquadMember(context, projectId, squadId, userId) {
-        const result = await database.update(memberships).set({ squadId: null }).where(and(
-          eq(memberships.tenantId, context.tenantId), eq(memberships.projectId, projectId),
-          eq(memberships.squadId, squadId), eq(memberships.userId, userId),
-        )).returning({ id: memberships.id })
-        return result.length > 0
+        return runSqliteAtomic(sqlite, () => {
+          const result = sqlite.query('UPDATE memberships SET squad_id = NULL WHERE tenant_id = ? AND project_id = ? AND squad_id = ? AND user_id = ?')
+            .run(context.tenantId, projectId, squadId, userId)
+          if (result.changes === 0) return false
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'squads')
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'members')
+          return true
+        })
       },
       async listProjectMembers(context, projectId) {
         return database.select({
@@ -865,15 +996,29 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return row ? mapSprint(row) : null
       },
       async createSprint(context, projectId, input) {
-        const [row] = await database.insert(sprints).values({ id: generateId(), tenantId: context.tenantId, projectId, ...input }).returning()
-        if (!row) throw new Error('Falha ao criar sprint no adapter SQLite.')
-        return mapSprint(row)
+        return runSqliteAtomic(sqlite, () => {
+          const id = generateId()
+          sqlite.query('INSERT INTO sprints (id, tenant_id, project_id, name, status, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .run(id, context.tenantId, projectId, input.name, input.status, input.startDate, input.endDate)
+          const sprint = mapSprint(sqlite.query<never, [string]>('SELECT id, tenant_id AS tenantId, project_id AS projectId, name, status, start_date AS startDate, end_date AS endDate, created_at AS createdAt FROM sprints WHERE id = ?').get(id)!)
+          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: 'SPRINT_CHANGED', payload: { action: 'created', sprintId: id } })
+          return sprint
+        })
       },
       async updateSprint(context, projectId, sprintId, patch) {
-        const result = await database.update(sprints).set(patch).where(and(
-          eq(sprints.tenantId, context.tenantId), eq(sprints.projectId, projectId), eq(sprints.id, sprintId),
-        )).returning()
-        return result[0] ? mapSprint(result[0]) : null
+        return runSqliteAtomic(sqlite, () => {
+          const sets: string[] = []
+          const params: Array<string | null> = []
+          if (patch.name !== undefined) { sets.push('name = ?'); params.push(patch.name) }
+          if (patch.startDate !== undefined) { sets.push('start_date = ?'); params.push(patch.startDate) }
+          if (patch.endDate !== undefined) { sets.push('end_date = ?'); params.push(patch.endDate) }
+          if (!sets.length) return null
+          const row = sqlite.query<never, Array<string | null>>(`UPDATE sprints SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND id = ? RETURNING id, tenant_id AS tenantId, project_id AS projectId, name, status, start_date AS startDate, end_date AS endDate, created_at AS createdAt`)
+            .get(...params, context.tenantId, projectId, sprintId)
+          if (!row) return null
+          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: 'SPRINT_CHANGED', payload: { action: 'updated', sprintId } })
+          return mapSprint(row)
+        })
       },
       async transitionSprint(context, projectId, sprintId, targetStatus) {
         return runSqliteAtomic(sqlite, () => {
@@ -928,6 +1073,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           const current = sqlite.query<{ id: string; tenant_id: string; project_id: string; name: string; status: SprintRecord['status']; start_date: string; end_date: string; created_at: string }, [string, string, string]>(
             'SELECT id, tenant_id, project_id, name, status, start_date, end_date, created_at FROM sprints WHERE tenant_id = ? AND project_id = ? AND id = ?',
           ).get(context.tenantId, projectId, sprintId)
+          if (current) appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: 'SPRINT_CHANGED', payload: { action: targetStatus === 'OPEN' ? 'opened' : targetStatus === 'CLOSED' ? 'closed' : 'updated', sprintId } })
           return current ? {
             id: current.id, tenantId: current.tenant_id, projectId: current.project_id, name: current.name,
             status: current.status, startDate: current.start_date, endDate: current.end_date, createdAt: current.created_at,
@@ -938,17 +1084,27 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return database.select().from(tags).where(and(eq(tags.tenantId, context.tenantId), eq(tags.projectId, projectId)))
       },
       async createTag(context, projectId, input) {
-        const [row] = await database.insert(tags).values({
-          id: generateId(), tenantId: context.tenantId, projectId, name: input.name, color: input.color ?? '#6366f1',
-        }).returning()
-        if (!row) throw new Error('Falha ao criar tag no adapter SQLite.')
-        return row
+        return runSqliteAtomic(sqlite, () => {
+          const id = generateId()
+          sqlite.query('INSERT INTO tags (id, tenant_id, project_id, name, color) VALUES (?, ?, ?, ?, ?)')
+            .run(id, context.tenantId, projectId, input.name, input.color ?? '#6366f1')
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'tags')
+          return mapTagRow(sqlite.query<Record<string, unknown>, [string]>('SELECT * FROM tags WHERE id = ?').get(id)!)
+        })
       },
       async updateTag(context, projectId, tagId, patch) {
-        const result = await database.update(tags).set(patch).where(and(
-          eq(tags.tenantId, context.tenantId), eq(tags.projectId, projectId), eq(tags.id, tagId),
-        )).returning()
-        return result[0] ?? null
+        return runSqliteAtomic(sqlite, () => {
+          const existing = sqlite.query<{ id: string }, [string, string, string]>(
+            'SELECT id FROM tags WHERE tenant_id = ? AND project_id = ? AND id = ?',
+          ).get(context.tenantId, projectId, tagId)
+          if (!existing) return null
+          if (patch.name !== undefined) sqlite.query('UPDATE tags SET name = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
+            .run(patch.name, context.tenantId, projectId, tagId)
+          if (patch.color !== undefined) sqlite.query('UPDATE tags SET color = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
+            .run(patch.color, context.tenantId, projectId, tagId)
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'tags')
+          return mapTagRow(sqlite.query<Record<string, unknown>, [string]>('SELECT * FROM tags WHERE id = ?').get(tagId)!)
+        })
       },
       async deleteTag(context, projectId, tagId) {
         return runSqliteAtomic(sqlite, () => {
@@ -957,8 +1113,10 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           ).get(context.tenantId, projectId, tagId)
           if (!tag) return false
           sqlite.query('DELETE FROM item_tags WHERE tenant_id = ? AND tag_id = ?').run(context.tenantId, tagId)
-          return sqlite.query('DELETE FROM tags WHERE tenant_id = ? AND project_id = ? AND id = ?')
+          const deleted = sqlite.query('DELETE FROM tags WHERE tenant_id = ? AND project_id = ? AND id = ?')
             .run(context.tenantId, projectId, tagId).changes === 1
+          if (deleted) emitMetadataEvent(sqlite, context.tenantId, projectId, 'tags')
+          return deleted
         })
       },
       async setItemTags(context, projectId, itemId, tagIds) {
@@ -1022,22 +1180,35 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return row ? mapVersion(row) : null
       },
       async createVersion(context, projectId, input: NewVersionRecord) {
-        const existing = await database.select({ id: projectVersions.id }).from(projectVersions).where(and(
-          eq(projectVersions.tenantId, context.tenantId), eq(projectVersions.projectId, projectId),
-        ))
-        const [row] = await database.insert(projectVersions).values({
-          id: generateId(), tenantId: context.tenantId, projectId, name: input.name,
-          releaseDate: input.releaseDate ?? null, description: input.description ?? null,
-          status: input.status ?? 'PLANNED', position: input.position ?? existing.length, createdAt: new Date().toISOString(),
-        }).returning()
-        if (!row) throw new Error('Falha ao criar versão no adapter SQLite.')
-        return mapVersion(row)
+        return runSqliteAtomic(sqlite, () => {
+          const count = sqlite.query<{ count: number }, [string, string]>(
+            'SELECT count(*) AS count FROM project_versions WHERE tenant_id = ? AND project_id = ?',
+          ).get(context.tenantId, projectId)?.count ?? 0
+          const id = generateId()
+          sqlite.query('INSERT INTO project_versions (id, tenant_id, project_id, name, release_date, description, status, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(id, context.tenantId, projectId, input.name, input.releaseDate ?? null, input.description ?? null, input.status ?? 'PLANNED', input.position ?? count, new Date().toISOString())
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'versions')
+          return mapVersion(sqlite.query<never, [string]>(`SELECT id, tenant_id AS tenantId, project_id AS projectId, name, release_date AS releaseDate, description, status, position, created_at AS createdAt FROM project_versions WHERE id = ?`).get(id)!)
+        })
       },
       async updateVersion(context, projectId, versionId, patch: VersionPatch) {
-        const result = await database.update(projectVersions).set(patch).where(and(
-          eq(projectVersions.tenantId, context.tenantId), eq(projectVersions.projectId, projectId), eq(projectVersions.id, versionId),
-        )).returning()
-        return result[0] ? mapVersion(result[0]) : null
+        return runSqliteAtomic(sqlite, () => {
+          const existing = sqlite.query<{ id: string }, [string, string, string]>(
+            'SELECT id FROM project_versions WHERE tenant_id = ? AND project_id = ? AND id = ?',
+          ).get(context.tenantId, projectId, versionId)
+          if (!existing) return null
+          const sets: string[] = []
+          const params: Array<string | number | null> = []
+          const map: Array<[keyof VersionPatch, string]> = [['name', 'name'], ['releaseDate', 'release_date'], ['description', 'description'], ['status', 'status'], ['position', 'position']]
+          for (const [field, column] of map) {
+            const value = patch[field]
+            if (value !== undefined) { sets.push(`${column} = ?`); params.push(value as string | number | null) }
+          }
+          if (sets.length) sqlite.query(`UPDATE project_versions SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND id = ?`)
+            .run(...params, context.tenantId, projectId, versionId)
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'versions')
+          return mapVersion(sqlite.query<never, [string]>(`SELECT id, tenant_id AS tenantId, project_id AS projectId, name, release_date AS releaseDate, description, status, position, created_at AS createdAt FROM project_versions WHERE id = ?`).get(versionId)!)
+        })
       },
       async deleteVersion(context, projectId, versionId) {
         return runSqliteAtomic(sqlite, () => {
@@ -1047,8 +1218,10 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           if (!version) return false
           sqlite.query('UPDATE items SET version_id = NULL WHERE tenant_id = ? AND project_id = ? AND version_id = ?')
             .run(context.tenantId, projectId, versionId)
-          return sqlite.query('DELETE FROM project_versions WHERE tenant_id = ? AND project_id = ? AND id = ?')
+          const deleted = sqlite.query('DELETE FROM project_versions WHERE tenant_id = ? AND project_id = ? AND id = ?')
             .run(context.tenantId, projectId, versionId).changes === 1
+          if (deleted) emitMetadataEvent(sqlite, context.tenantId, projectId, 'versions')
+          return deleted
         })
       },
       async listVersionItems(context, projectId, versionId, options) {
@@ -1085,22 +1258,36 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return row ? mapCostCenter(row) : null
       },
       async createCostCenter(context, projectId, input: NewCostCenterRecord) {
-        const existing = await database.select({ sortOrder: projectCostCenters.sortOrder }).from(projectCostCenters).where(and(
-          eq(projectCostCenters.tenantId, context.tenantId), eq(projectCostCenters.projectId, projectId),
-        )).orderBy(projectCostCenters.sortOrder)
-        const nextOrder = existing.length > 0 ? (existing[existing.length - 1]!.sortOrder + 1) : 0
-        const [row] = await database.insert(projectCostCenters).values({
-          id: generateId(), tenantId: context.tenantId, projectId, code: input.code,
-          description: input.description ?? null, sortOrder: input.sortOrder ?? nextOrder, createdAt: new Date().toISOString(),
-        }).returning()
-        if (!row) throw new Error('Falha ao criar centro de custo no adapter SQLite.')
-        return mapCostCenter(row)
+        return runSqliteAtomic(sqlite, () => {
+          const rows = sqlite.query<{ sort_order: number }, [string, string]>(
+            'SELECT sort_order FROM project_cost_centers WHERE tenant_id = ? AND project_id = ? ORDER BY sort_order',
+          ).all(context.tenantId, projectId)
+          const nextOrder = rows.length > 0 ? rows[rows.length - 1]!.sort_order + 1 : 0
+          const id = generateId()
+          sqlite.query('INSERT INTO project_cost_centers (id, tenant_id, project_id, code, description, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .run(id, context.tenantId, projectId, input.code, input.description ?? null, input.sortOrder ?? nextOrder, new Date().toISOString())
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'costCenters')
+          return mapCostCenter(sqlite.query<never, [string]>(`SELECT id, tenant_id AS tenantId, project_id AS projectId, code, description, sort_order AS sortOrder, created_at AS createdAt FROM project_cost_centers WHERE id = ?`).get(id)!)
+        })
       },
       async updateCostCenter(context, projectId, costCenterId, patch: CostCenterPatch) {
-        const result = await database.update(projectCostCenters).set(patch).where(and(
-          eq(projectCostCenters.tenantId, context.tenantId), eq(projectCostCenters.projectId, projectId), eq(projectCostCenters.id, costCenterId),
-        )).returning()
-        return result[0] ? mapCostCenter(result[0]) : null
+        return runSqliteAtomic(sqlite, () => {
+          const existing = sqlite.query<{ id: string }, [string, string, string]>(
+            'SELECT id FROM project_cost_centers WHERE tenant_id = ? AND project_id = ? AND id = ?',
+          ).get(context.tenantId, projectId, costCenterId)
+          if (!existing) return null
+          const sets: string[] = []
+          const params: Array<string | number | null> = []
+          const map: Array<[keyof CostCenterPatch, string]> = [['code', 'code'], ['description', 'description'], ['sortOrder', 'sort_order']]
+          for (const [field, column] of map) {
+            const value = patch[field]
+            if (value !== undefined) { sets.push(`${column} = ?`); params.push(value as string | number | null) }
+          }
+          if (sets.length) sqlite.query(`UPDATE project_cost_centers SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND id = ?`)
+            .run(...params, context.tenantId, projectId, costCenterId)
+          emitMetadataEvent(sqlite, context.tenantId, projectId, 'costCenters')
+          return mapCostCenter(sqlite.query<never, [string]>(`SELECT id, tenant_id AS tenantId, project_id AS projectId, code, description, sort_order AS sortOrder, created_at AS createdAt FROM project_cost_centers WHERE id = ?`).get(costCenterId)!)
+        })
       },
       async deleteCostCenter(context, projectId, costCenterId) {
         return runSqliteAtomic(sqlite, () => {
@@ -1110,8 +1297,10 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           if (!costCenter) return false
           sqlite.query('UPDATE items SET cost_center_id = NULL WHERE tenant_id = ? AND project_id = ? AND cost_center_id = ?')
             .run(context.tenantId, projectId, costCenterId)
-          return sqlite.query('DELETE FROM project_cost_centers WHERE tenant_id = ? AND project_id = ? AND id = ?')
+          const deleted = sqlite.query('DELETE FROM project_cost_centers WHERE tenant_id = ? AND project_id = ? AND id = ?')
             .run(context.tenantId, projectId, costCenterId).changes === 1
+          if (deleted) emitMetadataEvent(sqlite, context.tenantId, projectId, 'costCenters')
+          return deleted
         })
       },
     },
@@ -1134,73 +1323,105 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return row ? mapChecklist(row, row.checklistItems.map(mapChecklistItem)) : null
       },
       async createChecklist(context, projectId, itemId, name) {
-        void projectId
-        const id = generateId()
-        const maxPos = await database.select({ pos: sql<number | null>`max(${checklists.position})` }).from(checklists).where(and(
-          eq(checklists.tenantId, context.tenantId), eq(checklists.itemId, itemId),
-        ))
-        const position = (maxPos[0]?.pos ?? -1) + 1
-        const [row] = await database.insert(checklists).values({
-          id, tenantId: context.tenantId, itemId, name, position, createdAt: new Date().toISOString(),
-        }).returning()
-        if (!row) throw new Error('Falha ao criar checklist no adapter SQLite.')
-        return mapChecklist(row, [])
+        return runSqliteAtomic(sqlite, () => {
+          assertJournalAvailable(sqlite, context)
+          const maxRow = sqlite.query<{ pos: number | null }, [string, string]>(
+            'SELECT max(position) AS pos FROM checklists WHERE tenant_id = ? AND item_id = ?',
+          ).get(context.tenantId, itemId)
+          const position = (maxRow?.pos ?? -1) + 1
+          const id = generateId()
+          const now = new Date().toISOString()
+          sqlite.query('INSERT INTO checklists (id, tenant_id, item_id, name, position, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+            .run(id, context.tenantId, itemId, name, position, now)
+          emitChecklistUpdated(sqlite, context.tenantId, projectId, itemId, id)
+          const created = { id, tenantId: context.tenantId, itemId, name, position, createdAt: now, items: [] as never[] }
+          reserveJournal(sqlite, context, JSON.stringify({ status: 201, body: created }))
+          return created
+        })
       },
       async updateChecklist(context, projectId, itemId, checklistId, patch) {
-        void projectId
-        const result = await database.update(checklists).set(patch).where(and(
-          eq(checklists.tenantId, context.tenantId), eq(checklists.itemId, itemId), eq(checklists.id, checklistId),
-        )).returning()
-        if (!result[0]) return null
-        const items = await database.select().from(checklistItems).where(and(
-          eq(checklistItems.tenantId, context.tenantId), eq(checklistItems.checklistId, checklistId),
-        )).orderBy(checklistItems.position)
-        return mapChecklist(result[0], items.map(mapChecklistItem))
+        return runSqliteAtomic(sqlite, () => {
+          const sets: string[] = []
+          const params: Array<string | number> = []
+          if (patch.name !== undefined) { sets.push('name = ?'); params.push(patch.name) }
+          if (patch.position !== undefined) { sets.push('position = ?'); params.push(patch.position) }
+          if (!sets.length) return null
+          const result = sqlite.query(`UPDATE checklists SET ${sets.join(', ')} WHERE tenant_id = ? AND item_id = ? AND id = ?`)
+            .run(...params, context.tenantId, itemId, checklistId)
+          if (result.changes === 0) return null
+          const row = sqlite.query<{ id: string; tenantId: string; itemId: string; name: string; position: number; createdAt: string }, [string]>(
+            'SELECT id, tenant_id AS tenantId, item_id AS itemId, name, position, created_at AS createdAt FROM checklists WHERE id = ?',
+          ).get(checklistId)!
+          const items = sqlite.query<ChecklistItemRecord, [string, string]>(
+            'SELECT id, tenant_id AS tenantId, checklist_id AS checklistId, text, checked, position, due_date AS dueDate, assignee_id AS assigneeId, description FROM checklist_items WHERE tenant_id = ? AND checklist_id = ? ORDER BY position',
+          ).all(context.tenantId, checklistId)
+          emitChecklistUpdated(sqlite, context.tenantId, projectId, itemId, checklistId)
+          return { ...row, items: items.map(item => ({ ...item, checked: Boolean(item.checked) })) }
+        })
       },
       async deleteChecklist(context, projectId, itemId, checklistId) {
-        void projectId
         return runSqliteAtomic(sqlite, () => {
           const checklist = sqlite.query<{ id: string }, [string, string, string]>(
             'SELECT id FROM checklists WHERE tenant_id = ? AND item_id = ? AND id = ?',
           ).get(context.tenantId, itemId, checklistId)
           if (!checklist) return false
           sqlite.query('DELETE FROM checklist_items WHERE tenant_id = ? AND checklist_id = ?').run(context.tenantId, checklistId)
-          return sqlite.query('DELETE FROM checklists WHERE tenant_id = ? AND item_id = ? AND id = ?')
+          const deleted = sqlite.query('DELETE FROM checklists WHERE tenant_id = ? AND item_id = ? AND id = ?')
             .run(context.tenantId, itemId, checklistId).changes === 1
+          if (deleted) emitChecklistUpdated(sqlite, context.tenantId, projectId, itemId, checklistId)
+          return deleted
         })
       },
       async createChecklistItem(context, projectId, itemId, checklistId, input: NewChecklistItemRecord) {
-        void projectId
-        const checklist = await database.query.checklists.findFirst({ where: and(
-          eq(checklists.tenantId, context.tenantId), eq(checklists.itemId, itemId), eq(checklists.id, checklistId),
-        ), columns: { id: true } })
-        if (!checklist) throw new Error('CHECKLIST_NOT_FOUND')
-        const maxPos = await database.select({ pos: sql<number | null>`max(${checklistItems.position})` }).from(checklistItems).where(and(
-          eq(checklistItems.tenantId, context.tenantId), eq(checklistItems.checklistId, checklistId),
-        ))
-        const [row] = await database.insert(checklistItems).values({
-          id: generateId(), tenantId: context.tenantId, checklistId, text: input.text, checked: input.checked ?? false,
-          position: (maxPos[0]?.pos ?? -1) + 1, dueDate: input.dueDate ?? null,
-          assigneeId: input.assigneeId ?? null, description: input.description ?? null,
-        }).returning()
-        if (!row) throw new Error('Falha ao criar passo no adapter SQLite.')
-        return mapChecklistItem(row)
+        return runSqliteAtomic(sqlite, () => {
+          assertJournalAvailable(sqlite, context)
+          const checklist = sqlite.query<{ id: string }, [string, string, string]>(
+            'SELECT id FROM checklists WHERE tenant_id = ? AND item_id = ? AND id = ?',
+          ).get(context.tenantId, itemId, checklistId)
+          if (!checklist) throw new Error('CHECKLIST_NOT_FOUND')
+          const maxRow = sqlite.query<{ pos: number | null }, [string, string]>(
+            'SELECT max(position) AS pos FROM checklist_items WHERE tenant_id = ? AND checklist_id = ?',
+          ).get(context.tenantId, checklistId)
+          const position = (maxRow?.pos ?? -1) + 1
+          const id = generateId()
+          const checked = input.checked ?? false
+          sqlite.query('INSERT INTO checklist_items (id, tenant_id, checklist_id, text, checked, position, due_date, assignee_id, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(id, context.tenantId, checklistId, input.text, checked ? 1 : 0, position, input.dueDate ?? null, input.assigneeId ?? null, input.description ?? null)
+          emitChecklistUpdated(sqlite, context.tenantId, projectId, itemId, checklistId)
+          const created = { id, tenantId: context.tenantId, checklistId, text: input.text, checked, position, dueDate: input.dueDate ?? null, assigneeId: input.assigneeId ?? null, description: input.description ?? null }
+          reserveJournal(sqlite, context, JSON.stringify({ status: 201, body: created }))
+          return created
+        })
       },
       async updateChecklistItem(context, projectId, itemId, checklistId, checklistItemId, patch: ChecklistItemPatch) {
-        void projectId
-        const result = await database.update(checklistItems).set(patch).where(and(
-          eq(checklistItems.tenantId, context.tenantId), eq(checklistItems.checklistId, checklistId), eq(checklistItems.id, checklistItemId),
-        )).returning()
-        void itemId
-        return result[0] ? mapChecklistItem(result[0]) : null
+        return runSqliteAtomic(sqlite, () => {
+          const sets: string[] = []
+          const params: Array<string | number | null> = []
+          if (patch.text !== undefined) { sets.push('text = ?'); params.push(patch.text) }
+          if (patch.checked !== undefined) { sets.push('checked = ?'); params.push(patch.checked ? 1 : 0) }
+          if (patch.position !== undefined) { sets.push('position = ?'); params.push(patch.position) }
+          if (patch.dueDate !== undefined) { sets.push('due_date = ?'); params.push(patch.dueDate) }
+          if (patch.assigneeId !== undefined) { sets.push('assignee_id = ?'); params.push(patch.assigneeId) }
+          if (patch.description !== undefined) { sets.push('description = ?'); params.push(patch.description) }
+          if (!sets.length) return null
+          const result = sqlite.query(`UPDATE checklist_items SET ${sets.join(', ')} WHERE tenant_id = ? AND checklist_id = ? AND id = ?`)
+            .run(...params, context.tenantId, checklistId, checklistItemId)
+          if (result.changes === 0) return null
+          const row = sqlite.query<ChecklistItemRecord, [string, string, string]>(
+            'SELECT id, tenant_id AS tenantId, checklist_id AS checklistId, text, checked, position, due_date AS dueDate, assignee_id AS assigneeId, description FROM checklist_items WHERE tenant_id = ? AND checklist_id = ? AND id = ?',
+          ).get(context.tenantId, checklistId, checklistItemId)!
+          emitChecklistUpdated(sqlite, context.tenantId, projectId, itemId, checklistId)
+          return { ...row, checked: Boolean(row.checked) }
+        })
       },
       async deleteChecklistItem(context, projectId, itemId, checklistId, checklistItemId) {
-        void projectId
-        void itemId
-        const result = await database.delete(checklistItems).where(and(
-          eq(checklistItems.tenantId, context.tenantId), eq(checklistItems.checklistId, checklistId), eq(checklistItems.id, checklistItemId),
-        )).returning({ id: checklistItems.id })
-        return result.length > 0
+        return runSqliteAtomic(sqlite, () => {
+          const result = sqlite.query('DELETE FROM checklist_items WHERE tenant_id = ? AND checklist_id = ? AND id = ?')
+            .run(context.tenantId, checklistId, checklistItemId)
+          if (result.changes === 0) return false
+          emitChecklistUpdated(sqlite, context.tenantId, projectId, itemId, checklistId)
+          return true
+        })
       },
       async getChecklistProgress(context, itemId): Promise<ChecklistProgressRecord> {
         const rows = await database.select({
@@ -1242,18 +1463,24 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
       },
       async createItemLog(context: MutationContext, projectId, itemId, input: NewItemLogRecord) {
         void projectId
-        const item = await database.query.items.findFirst({ where: and(
-          eq(items.tenantId, context.tenantId), eq(items.id, itemId),
-        ), columns: { id: true } })
-        if (!item) throw new Error('ITEM_NOT_FOUND')
-        const now = new Date().toISOString()
-        const [row] = await database.insert(itemLogs).values({
-          id: generateId(), tenantId: context.tenantId, itemId, authorId: context.actorUserId, type: input.type,
-          actorType: context.mutation.actorType, actorLabel: context.mutation.actorLabel, source: context.mutation.actorSource,
-          activity: input.activity, durationMin: input.durationMin ?? null, createdAt: now, updatedAt: now,
-        }).returning()
-        if (!row) throw new Error('Falha ao criar log no adapter SQLite.')
-        return mapItemLog(row)
+        return runSqliteAtomic(sqlite, () => {
+          // [T38] Reserva/replay idempotente na MESMA transação do log.
+          assertJournalAvailable(sqlite, context)
+          const item = sqlite.query<{ id: string }, [string, string]>(
+            'SELECT id FROM items WHERE tenant_id = ? AND id = ?',
+          ).get(context.tenantId, itemId)
+          if (!item) throw new Error('ITEM_NOT_FOUND')
+          const id = generateId()
+          const now = new Date().toISOString()
+          sqlite.query('INSERT INTO item_logs (id, tenant_id, item_id, author_id, type, actor_type, actor_label, source, activity, duration_min, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(id, context.tenantId, itemId, context.actorUserId, input.type, context.mutation.actorType,
+              context.mutation.actorLabel, context.mutation.actorSource, input.activity, input.durationMin ?? null, now, now)
+          const log = mapItemLog(sqlite.query<never, [string]>(
+            'SELECT id, tenant_id AS tenantId, item_id AS itemId, author_id AS authorId, type, actor_type AS actorType, actor_label AS actorLabel, source, activity, duration_min AS durationMin, created_at AS createdAt, updated_at AS updatedAt FROM item_logs WHERE id = ?',
+          ).get(id)!)
+          reserveJournal(sqlite, context, JSON.stringify({ status: 201, body: { id: log.id, durationMin: log.durationMin } }))
+          return log
+        })
       },
       async updateItemLog(context, projectId, itemId, logId, patch: ItemLogPatch) {
         void projectId
@@ -1283,30 +1510,43 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return row[0] ? mapAttachment(row[0].attachment) : null
       },
       async createAttachment(context, projectId, itemId, input: NewAttachmentRecord) {
-        void projectId
-        const [row] = await database.insert(attachments).values({
-          id: generateId(), tenantId: context.tenantId, itemId, filename: input.fileName,
-          originalName: input.originalName, mimeType: input.mimeType, size: input.sizeBytes,
-          storagePath: input.storagePath, storageProvider: input.storageProvider ?? 'local',
-          label: input.label ?? null, referenceDate: input.referenceDate ?? null, description: input.description ?? null,
-          createdAt: new Date().toISOString(),
-        }).returning()
-        if (!row) throw new Error('Falha ao criar anexo no adapter SQLite.')
-        return mapAttachment(row)
+        return runSqliteAtomic(sqlite, () => {
+          const id = generateId()
+          const now = new Date().toISOString()
+          sqlite.query('INSERT INTO attachments (id, tenant_id, item_id, filename, original_name, mime_type, size, storage_path, storage_provider, label, reference_date, description, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(id, context.tenantId, itemId, input.fileName, input.originalName, input.mimeType, input.sizeBytes,
+              input.storagePath, input.storageProvider ?? 'local', input.label ?? null, input.referenceDate ?? null,
+              input.description ?? null, now)
+          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          return {
+            id, tenantId: context.tenantId, itemId, fileName: input.fileName, originalName: input.originalName,
+            mimeType: input.mimeType, sizeBytes: input.sizeBytes, storagePath: input.storagePath,
+            storageProvider: (input.storageProvider ?? 'local') as 'local' | 's3',
+            label: input.label ?? null, referenceDate: input.referenceDate ?? null,
+            description: input.description ?? null, createdAt: now,
+          } satisfies AttachmentRecord
+        })
       },
       async updateAttachment(context, projectId, itemId, attachmentId, patch) {
-        void projectId
-        const changes: { label?: string | null; referenceDate?: string | null; description?: string | null } = {}
-        if ('label' in patch) changes.label = patch.label ?? null
-        if ('referenceDate' in patch) changes.referenceDate = patch.referenceDate ?? null
-        if ('description' in patch) changes.description = patch.description ?? null
-        const scope = and(eq(attachments.tenantId, context.tenantId), eq(attachments.itemId, itemId), eq(attachments.id, attachmentId))
-        if (Object.keys(changes).length === 0) {
-          const [existing] = await database.select({ attachment: attachments }).from(attachments).where(scope).limit(1)
-          return existing ? mapAttachment(existing.attachment) : null
-        }
-        const [row] = await database.update(attachments).set(changes).where(scope).returning()
-        return row ? mapAttachment(row) : null
+        return runSqliteAtomic(sqlite, () => {
+          const cols = 'id, tenant_id AS tenantId, item_id AS itemId, filename, original_name AS originalName, mime_type AS mimeType, size, storage_path AS storagePath, storage_provider AS storageProvider, label, reference_date AS referenceDate, description, created_at AS createdAt'
+          type AttachmentRow = typeof attachments.$inferSelect
+          let row = sqlite.query<AttachmentRow, [string, string, string]>(`SELECT ${cols} FROM attachments WHERE tenant_id = ? AND item_id = ? AND id = ?`)
+            .get(context.tenantId, itemId, attachmentId) as AttachmentRow | null
+          if (!row) return null
+          const sets: string[] = []
+          const params: Array<string | null> = []
+          if ('label' in patch) { sets.push('label = ?'); params.push(patch.label ?? null) }
+          if ('referenceDate' in patch) { sets.push('reference_date = ?'); params.push(patch.referenceDate ?? null) }
+          if ('description' in patch) { sets.push('description = ?'); params.push(patch.description ?? null) }
+          if (sets.length) {
+            row = sqlite.query<AttachmentRow, Array<string | null>>(`UPDATE attachments SET ${sets.join(', ')} WHERE tenant_id = ? AND item_id = ? AND id = ? RETURNING ${cols}`)
+              .get(...params, context.tenantId, itemId, attachmentId) as AttachmentRow | null
+            if (!row) return null
+          }
+          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          return mapAttachment(row)
+        })
       },
       async deleteAttachmentWithCleanup(context, projectId, itemId, attachmentId) {
         void projectId
@@ -1322,6 +1562,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
             (id, tenant_id, storage_path, resource_type, status, attempts, available_at, created_at, updated_at)
             VALUES (?, ?, ?, 'ATTACHMENT', 'PENDING', 0, ?, ?, ?)`)
             .run(generateId(), context.tenantId, row.storage_path, now, now, now)
+          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
           return {
             id: row.id, tenantId: row.tenant_id, itemId: row.item_id, fileName: row.filename,
             originalName: row.original_name, mimeType: row.mime_type, sizeBytes: row.size,
@@ -1340,26 +1581,41 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return rows.map(({ link }) => ({ ...link }))
       },
       async create(context, projectId, itemId, input: NewItemLinkRecord): Promise<ItemLinkRecord> {
-        const now = new Date().toISOString()
-        const [row] = await database.insert(itemLinks).values({
-          id: generateId(), tenantId: context.tenantId, projectId, itemId,
-          name: input.name, url: input.url, description: input.description ?? null, createdAt: now, updatedAt: now,
-        }).returning()
-        if (!row) throw new Error('Falha ao criar link no adapter SQLite.')
-        return { ...row }
+        return runSqliteAtomic(sqlite, () => {
+          // [T38] Reserva/replay idempotente na MESMA transação do link.
+          assertJournalAvailable(sqlite, context)
+          const now = new Date().toISOString()
+          const id = generateId()
+          sqlite.query('INSERT INTO item_links (id, tenant_id, project_id, item_id, name, url, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(id, context.tenantId, projectId, itemId, input.name, input.url, input.description ?? null, now, now)
+          const row = sqlite.query<ItemLinkRecord, [string]>('SELECT id, tenant_id AS tenantId, project_id AS projectId, item_id AS itemId, name, url, description, created_at AS createdAt, updated_at AS updatedAt FROM item_links WHERE id = ?').get(id)!
+          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          reserveJournal(sqlite, context, JSON.stringify({ status: 201, body: row }))
+          return { ...row }
+        })
       },
       async update(context, projectId, itemId, linkId, patch: ItemLinkPatch): Promise<ItemLinkRecord | null> {
-        const changes: ItemLinkPatch & { updatedAt?: string } = { ...patch, updatedAt: new Date().toISOString() }
-        const [row] = await database.update(itemLinks).set(changes).where(and(
-          eq(itemLinks.tenantId, context.tenantId), eq(itemLinks.projectId, projectId), eq(itemLinks.itemId, itemId), eq(itemLinks.id, linkId),
-        )).returning()
-        return row ? { ...row } : null
+        return runSqliteAtomic(sqlite, () => {
+          const sets: string[] = ['updated_at = ?']
+          const params: Array<string | null> = [new Date().toISOString()]
+          if (patch.name !== undefined) { sets.push('name = ?'); params.push(patch.name) }
+          if (patch.url !== undefined) { sets.push('url = ?'); params.push(patch.url) }
+          if (patch.description !== undefined) { sets.push('description = ?'); params.push(patch.description) }
+          const row = sqlite.query<ItemLinkRecord, Array<string | null>>(`UPDATE item_links SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND item_id = ? AND id = ? RETURNING id, tenant_id AS tenantId, project_id AS projectId, item_id AS itemId, name, url, description, created_at AS createdAt, updated_at AS updatedAt`)
+            .get(...params, context.tenantId, projectId, itemId, linkId)
+          if (!row) return null
+          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          return { ...row }
+        })
       },
       async delete(context, projectId, itemId, linkId): Promise<boolean> {
-        const rows = await database.delete(itemLinks).where(and(
-          eq(itemLinks.tenantId, context.tenantId), eq(itemLinks.projectId, projectId), eq(itemLinks.itemId, itemId), eq(itemLinks.id, linkId),
-        )).returning({ id: itemLinks.id })
-        return rows.length > 0
+        return runSqliteAtomic(sqlite, () => {
+          const result = sqlite.query('DELETE FROM item_links WHERE tenant_id = ? AND project_id = ? AND item_id = ? AND id = ?')
+            .run(context.tenantId, projectId, itemId, linkId)
+          if (result.changes === 0) return false
+          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          return true
+        })
       },
     },
     avatars: {
@@ -1803,6 +2059,18 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           role: input.role, content: input.content, metadataJson: input.metadataJson, createdAt: input.createdAt,
         })
       },
+      async findMessageByRunId(context, runId) {
+        const row = sqlite.query<typeof assistantMessages.$inferSelect, [string, string]>(
+          'SELECT id, tenant_id AS tenantId, conversation_id AS conversationId, user_id AS userId, role, content, metadata_json AS metadataJson, created_at AS createdAt FROM assistant_messages WHERE tenant_id = ? AND metadata_json LIKE ? LIMIT 1',
+        ).get(context.tenantId, `%"runId":"${runId}"%`)
+        return row ? mapAssistantMessage(row) : null
+      },
+      async hasRunEvent(tenantId, runId, eventType) {
+        const row = sqlite.query<{ present: number }, [string, string, string]>(
+          'SELECT 1 AS present FROM assistant_events WHERE tenant_id = ? AND run_id = ? AND event_type = ? LIMIT 1',
+        ).get(tenantId, runId, eventType)
+        return Boolean(row)
+      },
       async touchConversation(context, userId, conversationId, now) {
         await database.update(assistantConversations).set({ updatedAt: now }).where(and(
           eq(assistantConversations.id, conversationId), eq(assistantConversations.tenantId, context.tenantId), eq(assistantConversations.userId, userId),
@@ -1902,46 +2170,103 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
 
       // Job queue: lease/claim methods
       async claimRun(runId, tenantId, workerId, leaseExpiresAt, now) {
-        const result = await database.update(assistantRuns).set({
-          claimedBy: workerId, claimExpiresAt: leaseExpiresAt, status: 'RUNNING', startedAt: now,
-          attempts: sql`${assistantRuns.attempts} + 1`,
-        }).where(and(
-          eq(assistantRuns.id, runId),
-          eq(assistantRuns.tenantId, tenantId),
-          eq(assistantRuns.status, 'QUEUED'),
-          or(
-            isNull(assistantRuns.claimedBy),
-            lt(assistantRuns.claimExpiresAt, now),
-          ),
-        )).returning({ id: assistantRuns.id })
-        return result.length > 0
+        return runSqliteAtomic(sqlite, () => {
+          const row = sqlite.query<{ lease_generation: number }, [string, string, string, string, string, string]>(
+            `UPDATE assistant_runs
+             SET claimed_by = ?, claim_expires_at = ?, status = 'RUNNING', started_at = ?,
+                 attempts = attempts + 1, lease_generation = lease_generation + 1,
+                 recovery_attempts = recovery_attempts + 1
+             WHERE id = ? AND tenant_id = ? AND status = 'QUEUED'
+               AND (claimed_by IS NULL OR claim_expires_at < ?)
+             RETURNING lease_generation`,
+          ).get(workerId, leaseExpiresAt, now, runId, tenantId, now)
+          return row ? row.lease_generation : null
+        })
       },
-      async heartbeatRun(runId, tenantId, workerId, leaseExpiresAt) {
-        const result = await database.update(assistantRuns).set({ claimExpiresAt: leaseExpiresAt }).where(and(
-          eq(assistantRuns.id, runId),
-          eq(assistantRuns.tenantId, tenantId),
-          eq(assistantRuns.claimedBy, workerId),
-        )).returning({ id: assistantRuns.id })
-        return result.length > 0
+      async heartbeatRun(runId, tenantId, workerId, generation, leaseExpiresAt) {
+        return runSqliteAtomic(sqlite, () => {
+          const nowIso = new Date().toISOString()
+          const result = sqlite.query(
+            `UPDATE assistant_runs SET claim_expires_at = ?
+             WHERE id = ? AND tenant_id = ? AND claimed_by = ? AND lease_generation = ?
+               AND status = 'RUNNING' AND claim_expires_at IS NOT NULL AND claim_expires_at >= ?`,
+          ).run(leaseExpiresAt, runId, tenantId, workerId, generation, nowIso)
+          return result.changes > 0
+        })
       },
-      async releaseRun(runId, tenantId, workerId, nextAttemptAt, incrementAttempts) {
-        const patch: Record<string, unknown> = { claimedBy: null, claimExpiresAt: null, status: 'QUEUED' }
-        if (nextAttemptAt) patch.nextAttemptAt = nextAttemptAt
-        if (incrementAttempts) patch.attempts = sql`${assistantRuns.attempts} + 1`
-        const result = await database.update(assistantRuns).set(patch).where(and(
-          eq(assistantRuns.id, runId),
-          eq(assistantRuns.tenantId, tenantId),
-          eq(assistantRuns.claimedBy, workerId),
-        )).returning({ id: assistantRuns.id })
-        return result.length > 0
+      async releaseRun(runId, tenantId, workerId, generation, nextAttemptAt, incrementAttempts) {
+        return runSqliteAtomic(sqlite, () => {
+          const sets: string[] = ["claimed_by = NULL", "claim_expires_at = NULL", "status = 'QUEUED'"]
+          const params: Array<string> = []
+          if (nextAttemptAt) { sets.push('next_attempt_at = ?'); params.push(nextAttemptAt) }
+          if (incrementAttempts) sets.push('attempts = attempts + 1')
+          const result = sqlite.query(
+            `UPDATE assistant_runs SET ${sets.join(', ')}
+             WHERE id = ? AND tenant_id = ? AND claimed_by = ? AND lease_generation = ? AND status = 'RUNNING'`,
+          ).run(...params, runId, tenantId, workerId, generation)
+          return result.changes > 0
+        })
+      },
+      async finishRunFenced(runId, tenantId, workerId, generation, patch, options) {
+        return runSqliteAtomic(sqlite, () => {
+          const sets: string[] = []
+          const params: Array<string | null> = []
+          if (patch.status !== undefined) { sets.push('status = ?'); params.push(patch.status) }
+          if (patch.errorCode !== undefined) { sets.push('error_code = ?'); params.push(patch.errorCode) }
+          if (patch.finishedAt !== undefined) { sets.push('finished_at = ?'); params.push(patch.finishedAt) }
+          if (!sets.length) return false
+          sets.push('claimed_by = NULL', 'claim_expires_at = NULL')
+          const cancelClause = options?.requireCancelRequested === true
+            ? ' AND cancel_requested = 1'
+            : options?.requireCancelRequested === false ? ' AND cancel_requested = 0' : ''
+          const result = sqlite.query(
+            `UPDATE assistant_runs SET ${sets.join(', ')}
+             WHERE id = ? AND tenant_id = ? AND claimed_by = ? AND lease_generation = ? AND status = 'RUNNING'${cancelClause}`,
+          ).run(...params, runId, tenantId, workerId, generation)
+          return result.changes > 0
+        })
+      },
+      async updateRunFenced(runId, tenantId, workerId, generation, patch, options) {
+        return runSqliteAtomic(sqlite, () => {
+          const fields: Array<[keyof typeof patch, string]> = [
+            ['status', 'status'], ['model', 'model'], ['currentCursor', 'current_cursor'],
+            ['inputTokens', 'input_tokens'], ['outputTokens', 'output_tokens'], ['costMicros', 'cost_micros'],
+            ['errorCode', 'error_code'], ['executionContextJson', 'execution_context_json'],
+            ['startedAt', 'started_at'], ['finishedAt', 'finished_at'], ['cancelRequested', 'cancel_requested'],
+          ]
+          const sets: string[] = []
+          const params: Array<string | number | boolean | null> = []
+          for (const [key, column] of fields) {
+            const value = patch[key]
+            if (value !== undefined) { sets.push(`${column} = ?`); params.push(value as string | number | boolean | null) }
+          }
+          if (!sets.length) return false
+          // [T37] Checkpoint confirmado reinicia o budget de recuperação.
+          if (patch.executionContextJson !== undefined) sets.push('recovery_attempts = 0')
+          const cancelClause = options?.requireCancelRequested === true
+            ? ' AND cancel_requested = 1'
+            : options?.requireCancelRequested === false ? ' AND cancel_requested = 0' : ''
+          const result = sqlite.query(
+            `UPDATE assistant_runs SET ${sets.join(', ')}
+             WHERE id = ? AND tenant_id = ? AND claimed_by = ? AND lease_generation = ? AND status = 'RUNNING'${cancelClause}`,
+          ).run(...params, runId, tenantId, workerId, generation)
+          return result.changes > 0
+        })
       },
       async requestCancel(runId, tenantId, now) {
-        const result = await database.update(assistantRuns).set({ cancelRequested: true }).where(and(
-          eq(assistantRuns.id, runId),
-          eq(assistantRuns.tenantId, tenantId),
-          inArray(assistantRuns.status, ['QUEUED', 'RUNNING', 'WAITING_USER', 'WAITING_APPROVAL']),
-        )).returning({ id: assistantRuns.id })
-        return result.length > 0
+        void now
+        // [T37] Comando CAS repetível: cancelar run já cancelada devolve estado
+        // coerente (true) sem efeito; run terminal não-cancelada é recusada.
+        return runSqliteAtomic(sqlite, () => {
+          const row = sqlite.query<{ status: string; cancel_requested: number }, [string, string]>(
+            'SELECT status, cancel_requested FROM assistant_runs WHERE id = ? AND tenant_id = ?',
+          ).get(runId, tenantId)
+          if (!row) return false
+          if (row.cancel_requested === 1 || row.status === 'CANCELLED') return true
+          if (!['QUEUED', 'RUNNING', 'WAITING_USER', 'WAITING_APPROVAL'].includes(row.status)) return false
+          sqlite.query('UPDATE assistant_runs SET cancel_requested = 1 WHERE id = ? AND tenant_id = ?').run(runId, tenantId)
+          return true
+        })
       },
       async listDueRuns(tenantId, now, limit) {
         const rows = await database.select().from(assistantRuns).where(and(
@@ -1951,6 +2276,30 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           or(isNull(assistantRuns.claimedBy), lt(assistantRuns.claimExpiresAt, now)),
         )).orderBy(asc(assistantRuns.createdAt)).limit(limit)
         return rows.map(mapAssistantRun)
+      },
+      async countQueuedRuns(tenantId, now) {
+        const params: string[] = [now, now]
+        if (tenantId) params.push(tenantId)
+        const row = sqlite.query<{ count: number }, string[]>(
+          `SELECT count(*) AS count FROM assistant_runs
+           WHERE status = 'QUEUED'
+             AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+             AND (claimed_by IS NULL OR claim_expires_at < ?)
+             ${tenantId ? 'AND tenant_id = ?' : ''}`,
+        ).get(...params)
+        return Number(row?.count ?? 0)
+      },
+      async oldestQueuedAt(tenantId, now) {
+        const params: string[] = [now, now]
+        if (tenantId) params.push(tenantId)
+        const row = sqlite.query<{ oldest: string | null }, string[]>(
+          `SELECT min(created_at) AS oldest FROM assistant_runs
+           WHERE status = 'QUEUED'
+             AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+             AND (claimed_by IS NULL OR claim_expires_at < ?)
+             ${tenantId ? 'AND tenant_id = ?' : ''}`,
+        ).get(...params)
+        return row?.oldest ?? null
       },
 
       async insertToolCall(context, input) {

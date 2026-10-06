@@ -1,10 +1,10 @@
 import { and, eq, desc, inArray, sql } from 'drizzle-orm'
-import { db } from '../db/index'
+import type { DrizzleDb } from '../db/index'
 import { itemEvents, items, projectAnalyticsCoverage, sprintCycleItems, sprintCycles, itemSprints, projects } from '../db/schema'
 import { generateId } from '../utils/id'
 import { applyEventToDailyRollup } from './dashboardMetrics'
 
-export type AnalyticsDb = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0]
+export type AnalyticsDb = DrizzleDb | Parameters<Parameters<DrizzleDb['transaction']>[0]>[0]
 export type AnalyticsEventType = 'ANALYTICS_BASELINE' | 'ITEM_CREATED' | 'STATUS_CHANGED' | 'POINTS_CHANGED' | 'TYPE_CHANGED' | 'SPRINT_CHANGED' | 'VERSION_CHANGED' | 'ITEM_REPARENTED' | 'MODULE_CHANGED' | 'LEAF_CHANGED' | 'ITEM_ARCHIVED' | 'ITEM_UNARCHIVED' | 'ITEM_DELETED'
 export type ItemAnalyticsSnapshot = {
   parentId: string | null
@@ -110,6 +110,10 @@ export async function closeSprintCycle(tx: AnalyticsDb, tenantId: string, projec
 // [DB-SWAP] Em PostgreSQL, esta validação deve ocorrer sob o advisory lock do deploy.
 // O processo só aceita writers quando a migration/baseline já cobriu todos os projetos.
 export async function assertAnalyticsCutoverReady() {
+  // [DB-SWAP] Caminho legado exclusivo de SIMPLE/testes: o runtime ADVANCED usa
+  // `persistence.analytics.assertCutoverReady()`. Import dinâmico evita abrir
+  // SQLite ao carregar o módulo.
+  const { db } = await import('../db/index')
   const projectRows = await db.select({ id: projects.id }).from(projects)
   const coverageRows = await db.select({ projectId: projectAnalyticsCoverage.projectId }).from(projectAnalyticsCoverage)
   const covered = new Set(coverageRows.map(row => row.projectId))

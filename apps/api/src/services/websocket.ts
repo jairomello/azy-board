@@ -9,6 +9,7 @@ import {
   type WsEventInput,
   type WsServerMessage,
 } from '@azy-board/realtime-contracts'
+import { mapDomainEventToWs } from '../persistence/domainEvents'
 
 // Mapa de conexões WebSocket agrupadas por projectId
 // [TENANT] As conexões já chegam autenticadas com tenantId — isolamento garantido pelo authMiddleware
@@ -76,9 +77,38 @@ export function planReplay(projectId: string, since: number | null): ReplayPlan 
 }
 
 // Envia o handshake de replay/resincronização para um cliente recém-conectado.
-function sendReplayPlan(ws: ServerWebSocket<WsClientData>): void {
-  const { projectId, sinceCursor } = ws.data
-  const plan = planReplay(projectId, sinceCursor)
+// [T38] Replay DURÁVEL a partir da outbox: sobrevive a restart e usa a sequência
+// confirmada; gap/retenção excedida exige RESYNC (refetch do cliente).
+export async function durableReplayPlan(tenantId: string, projectId: string, since: number | null): Promise<ReplayPlan> {
+  const { persistence } = await import('../persistence/runtime')
+  const watermark = await persistence.domainEvents.watermark(tenantId, projectId)
+  if (since === null) return { kind: 'replay', messages: [], currentSequence: watermark }
+  if (!Number.isInteger(since) || since < 0) return { kind: 'resync', reason: 'invalid' }
+  if (since > watermark) return { kind: 'resync', reason: 'cursor-ahead' }
+  if (since === watermark) return { kind: 'replay', messages: [], currentSequence: watermark }
+
+  // Limite de reconciliação: mais de 1.000 eventos exige refetch, sem truncar.
+  const events = await persistence.domainEvents.listAfter({ tenantId, projectId, cursor: since, limit: 1001 })
+  if (events.length > 1000) return { kind: 'resync', reason: 'gap' }
+  if (events.length === 0 || events[0]!.sequence > since + 1) return { kind: 'resync', reason: 'gap' }
+
+  const messages: string[] = []
+  for (const event of events) {
+    const mapped = mapDomainEventToWs(event.type, event.payload)
+    if (!mapped) return { kind: 'resync', reason: 'gap' }
+    messages.push(JSON.stringify({ projectId, sequence: event.sequence, type: mapped.type, payload: mapped.payload }))
+  }
+  return { kind: 'replay', messages, currentSequence: watermark }
+}
+
+async function sendReplayPlan(ws: ServerWebSocket<WsClientData>): Promise<void> {
+  const { projectId, tenantId, sinceCursor } = ws.data
+  let plan: ReplayPlan
+  try {
+    plan = await durableReplayPlan(tenantId, projectId, sinceCursor)
+  } catch {
+    plan = { kind: 'resync', reason: 'gap' }
+  }
   if (plan.kind === 'resync') {
     ws.send(JSON.stringify(controlMessage(projectId, 'RESYNC_REQUIRED')))
     return
@@ -89,12 +119,12 @@ function sendReplayPlan(ws: ServerWebSocket<WsClientData>): void {
 
 export function wsHandler() {
   return {
-    open(ws: ServerWebSocket<WsClientData>) {
+    async open(ws: ServerWebSocket<WsClientData>) {
       const { projectId } = ws.data
       if (!rooms.has(projectId)) rooms.set(projectId, new Set())
       rooms.get(projectId)!.add(ws)
       // Handshake de replay: cursor vindo do query param `since` do upgrade.
-      sendReplayPlan(ws)
+      await sendReplayPlan(ws)
     },
 
     close(ws: ServerWebSocket<WsClientData>) {
@@ -139,6 +169,29 @@ export function broadcast<T>(projectId: string, event: WsEventInput<T>): void {
       client.send(message)
     } catch {
       // Cliente morto — descartar imediatamente
+      try { client.close() } catch { /* já fechado */ }
+      clients.delete(client)
+    }
+  }
+  if (clients.size === 0) rooms.delete(projectId)
+}
+
+// [T38] Publica um evento já confirmado na outbox, usando a SEQUÊNCIA DURÁVEL
+// alocada no commit. É o único caminho de publicação após o cutover; não aloca
+// sequência local. Mantém o ring buffer de replay coerente com o watermark.
+export function publishDurableEvent<T>(projectId: string, sequence: number, event: WsEventInput<T>): void {
+  const state = stateOf(projectId)
+  state.sequence = Math.max(state.sequence, sequence)
+  const ordered: WsEvent<T> = { ...event, projectId, sequence }
+  const message = JSON.stringify(ordered)
+  state.buffer.push({ sequence, message })
+  if (state.buffer.length > WS_REPLAY_BUFFER_SIZE) {
+    state.buffer.splice(0, state.buffer.length - WS_REPLAY_BUFFER_SIZE)
+  }
+  const clients = rooms.get(projectId)
+  if (!clients || clients.size === 0) return
+  for (const client of clients) {
+    try { client.send(message) } catch {
       try { client.close() } catch { /* já fechado */ }
       clients.delete(client)
     }
