@@ -39,10 +39,37 @@ export interface BoardData {
   projectColor: string | null
 }
 
-export type BoardItemsResponse = ItemData[] | { data: ItemData[] }
+export interface BoardItemsPage {
+  data: ItemData[]
+  hasMore?: boolean
+  nextCursor?: string | null
+}
+
+export type BoardItemsResponse = ItemData[] | BoardItemsPage
 
 export function normalizeBoardItemsResponse(response: BoardItemsResponse): ItemData[] {
   return Array.isArray(response) ? response : response.data
+}
+
+export async function loadAllBoardItems(
+  loadPage: (cursor?: string) => Promise<BoardItemsResponse>,
+): Promise<ItemData[]> {
+  const firstPage = await loadPage()
+  if (Array.isArray(firstPage)) return firstPage
+
+  const items = [...firstPage.data]
+  let page = firstPage
+  while (page.hasMore) {
+    if (!page.nextCursor) throw new Error('A paginação dos itens do board não retornou o próximo cursor')
+    const nextPage = await loadPage(page.nextCursor)
+    if (Array.isArray(nextPage)) {
+      items.push(...nextPage)
+      break
+    }
+    page = nextPage
+    items.push(...page.data)
+  }
+  return items
 }
 
 const EMPTY_BOARD: BoardData = {
@@ -140,7 +167,11 @@ export function useBoardData(projectId: string | undefined) {
       const pid = projectId as string
       const [cols, its, mods, tags, sprs, mbrs, vers, ccs, sqs, proj] = await Promise.all([
         api.get<Column[]>(`/projects/${pid}/columns`, { signal }),
-        api.get<BoardItemsResponse>(`/projects/${pid}/items`, { signal }),
+        loadAllBoardItems((cursor) => {
+          const params = new URLSearchParams({ limit: '100' })
+          if (cursor) params.set('cursor', cursor)
+          return api.get<BoardItemsResponse>(`/projects/${pid}/items?${params.toString()}`, { signal })
+        }),
         api.get<Module[]>(`/projects/${pid}/modules`, { signal }),
         api.get<Tag[]>(`/projects/${pid}/tags`, { signal }),
         api.get<Sprint[]>(`/projects/${pid}/sprints`, { signal }).catch(() => [] as Sprint[]),
@@ -152,7 +183,7 @@ export function useBoardData(projectId: string | undefined) {
       ])
       return {
         columns: cols,
-         allItems: computeIsLeaf(normalizeBoardItemsResponse(its)),
+         allItems: computeIsLeaf(its),
         modules: mods,
         sprints: sprs,
         members: mbrs,
