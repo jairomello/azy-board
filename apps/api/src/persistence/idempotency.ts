@@ -18,6 +18,10 @@ export const COMMAND_NAMESPACES = {
   updateModule: 'update_module.v1',
   updateTag: 'update_tag.v1',
   updateCostCenter: 'update_cost_center.v1',
+  // Card T28 — cópia de estrutura de trabalho como modelo novo.
+  duplicateStructure: 'duplicate_structure.v1',
+  // Card T27 — transição revisável de sprint (carry-over + fechamento).
+  applySprintTransition: 'apply_sprint_transition.v1',
 } as const
 
 /** Sentinela para operações sem projeto (ex.: criação de projeto/tenant). */

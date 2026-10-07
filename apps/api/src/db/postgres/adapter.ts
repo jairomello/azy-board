@@ -10,6 +10,10 @@ import type {
   MembershipRecord,
   PlanningGapQueryRequest,
   PlanningGapSnapshotRecord,
+  StructureDuplicationResult,
+  SprintTransitionCandidate,
+  SprintTransitionPlan,
+  SprintTransitionResult,
   ModuleRecord,
   MutationContext,
   PersistenceContext,
@@ -111,6 +115,8 @@ import { IdempotencyConflictError, IdempotentReplaySignal } from '../../persiste
 import { buildBatchUpdateResponse } from '../../persistence/commandResponses'
 import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
 import { applyDimensionProjectionBackfill, applyDimensionProjectionBaselineBackfill, readItemSnapshot, readItemSnapshots, recordDeletedItemEventsBatch, recordItemEvent, type PgItemSnapshot } from './itemAnalytics'
+import { fingerprintSource, validateDuplicationDestination, StructureDuplicationError, type SourceChecklistFact, type SourceFacts, type SourceLinkFact } from '../../services/structureDuplication'
+import { fingerprintTransition } from '../../services/sprintTransition'
 import { buildPlanningGapSnapshot, planningGapPage, type PlanningGapCandidate } from '../../services/planningGaps'
 
 // ---------------------------------------------------------------------------
@@ -1628,9 +1634,51 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return child !== null
       },
       async listItemsWithRelations(context: PersistenceContext, projectId: string): Promise<ItemWithRelationsRecord[]> {
+        // [TENANT] Relações carregadas em lote por tenant/projeto (sem N+1).
         const rows = await q('SELECT * FROM items WHERE tenant_id = $1 AND project_id = $2 ORDER BY position',
           [context.tenantId, projectId])
-        return rows.map(row => ({ ...mapItem(row), itemTags: [], itemSprints: [], assignee: null, assigneeApiKey: null, author: null, version: null }))
+        if (rows.length === 0) return []
+        const ids = rows.map(row => String(row.id))
+        const [tagLinks, sprintLinks, userRows, apiKeyRows, versionRows] = await Promise.all([
+          q(`SELECT it.item_id, t.id, t.tenant_id, t.project_id, t.name, t.color
+             FROM item_tags it JOIN tags t ON t.tenant_id = it.tenant_id AND t.id = it.tag_id
+             WHERE it.tenant_id = $1 AND it.item_id = ANY($2::text[])`, [context.tenantId, ids]),
+          q('SELECT item_id, sprint_id FROM item_sprints WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, ids]),
+          q('SELECT id, name, avatar_url FROM users WHERE tenant_id = $1', [context.tenantId]),
+          q('SELECT id, name, ai_model_name FROM api_keys WHERE tenant_id = $1', [context.tenantId]),
+          q('SELECT id, name, status FROM project_versions WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId]),
+        ])
+        const tagsByItem = new Map<string, ItemWithRelationsRecord['itemTags']>()
+        for (const link of tagLinks) {
+          const list = tagsByItem.get(String(link.item_id)) ?? []
+          list.push({ tag: { id: String(link.id), tenantId: String(link.tenant_id), projectId: String(link.project_id), name: String(link.name), color: String(link.color ?? '') } })
+          tagsByItem.set(String(link.item_id), list)
+        }
+        const sprintsByItem = new Map<string, ItemWithRelationsRecord['itemSprints']>()
+        for (const link of sprintLinks) {
+          const list = sprintsByItem.get(String(link.item_id)) ?? []
+          list.push({ sprintId: String(link.sprint_id) })
+          sprintsByItem.set(String(link.item_id), list)
+        }
+        const usersById = new Map(userRows.map(row => [String(row.id), row]))
+        const apiKeysById = new Map(apiKeyRows.map(row => [String(row.id), row]))
+        const versionsById = new Map(versionRows.map(row => [String(row.id), row]))
+        return rows.map(row => {
+          const item = mapItem(row)
+          const assignee = item.assigneeId ? usersById.get(item.assigneeId) : undefined
+          const apiKey = item.assigneeApiKeyId ? apiKeysById.get(item.assigneeApiKeyId) : undefined
+          const author = item.authorId ? usersById.get(item.authorId) : undefined
+          const version = item.versionId ? versionsById.get(item.versionId) : undefined
+          return {
+            ...item,
+            itemTags: tagsByItem.get(item.id) ?? [],
+            itemSprints: sprintsByItem.get(item.id) ?? [],
+            assignee: assignee ? { id: String(assignee.id), name: String(assignee.name), avatarUrl: (assignee.avatar_url as string | null) ?? null } : null,
+            assigneeApiKey: apiKey ? { id: String(apiKey.id), name: String(apiKey.name), aiModelName: (apiKey.ai_model_name as string | null) ?? null } : null,
+            author: author ? { id: String(author.id), name: String(author.name), avatarUrl: (author.avatar_url as string | null) ?? null } : null,
+            version: version ? { id: String(version.id), name: String(version.name), status: String(version.status) } : null,
+          }
+        })
       },
       async createItem(context: PersistenceContext, input: Record<string, unknown>): Promise<ItemRecord> {
         throw new Error('NOT_IMPLEMENTED: createItem completo em 4.6')
@@ -3992,6 +4040,204 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           return { atomic: options.atomic, agentRunId, results, createdModules }
         })
       },
+
+      // Card T28 — cópia atômica e idempotente de estrutura como modelo novo.
+      // [TENANT] leitura/escrita restritas ao tenant/projeto do plano.
+      // [DB-SWAP] uma transação cobre itens, relações, checklists/passos e links.
+      async duplicateStructure(context, plan) {
+        return tx(async (client) => {
+          await assertJournalAvailablePg(client, context)
+          const tenantId = context.tenantId
+          const projectId = plan.projectId
+          const projectRow = (await client.query('SELECT board_mode, simple_story_id FROM projects WHERE tenant_id = $1 AND id = $2', [tenantId, projectId])).rows[0] as { board_mode: 'SIMPLE' | 'HIERARCHICAL'; simple_story_id: string | null } | undefined
+          if (!projectRow) throw new StructureDuplicationError('PROJECT_NOT_FOUND')
+
+          const subtree = (await client.query(`
+            WITH RECURSIVE subtree(id, depth) AS (
+              SELECT id, 0 FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3
+              UNION ALL
+              SELECT child.id, subtree.depth + 1 FROM items AS child
+              INNER JOIN subtree ON child.parent_id = subtree.id
+              WHERE child.tenant_id = $1 AND child.project_id = $2 AND subtree.depth <= 50
+            )
+            SELECT items.* FROM subtree INNER JOIN items ON items.tenant_id = $1 AND items.project_id = $2 AND items.id = subtree.id
+            ORDER BY subtree.depth, subtree.id`, [tenantId, projectId, plan.sourceRootId])).rows as PgRow[]
+          if (subtree.length === 0) throw new StructureDuplicationError('SOURCE_NOT_FOUND')
+          const byId = new Map(subtree.map(row => [row.id as string, row]))
+          const sourceIds = plan.items.map(item => item.sourceId)
+          for (const id of sourceIds) if (!byId.has(id)) throw new StructureDuplicationError('DUPLICATION_SOURCE_CHANGED')
+
+          const checklistFacts: SourceChecklistFact[] = []
+          if (sourceIds.length) {
+            const lists = (await client.query('SELECT id, item_id, name, position FROM checklists WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [tenantId, sourceIds])).rows as PgRow[]
+            for (const list of lists) {
+              const steps = (await client.query('SELECT text, checked, position, description FROM checklist_items WHERE tenant_id = $1 AND checklist_id = $2 ORDER BY position, id', [tenantId, list.id])).rows as PgRow[]
+              checklistFacts.push({ itemId: list.item_id as string, name: list.name as string, position: Number(list.position), steps: steps.map(step => ({ text: step.text as string, checked: step.checked === true, position: Number(step.position), description: step.description as string | null })) })
+            }
+          }
+          const linkFacts: SourceLinkFact[] = plan.policies.links === 'COPY' && sourceIds.length
+            ? ((await client.query('SELECT item_id, name, url, description FROM item_links WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [tenantId, sourceIds])).rows as PgRow[]).map(link => ({ itemId: link.item_id as string, name: link.name as string, url: link.url as string, description: link.description as string | null }))
+            : []
+          const facts: SourceFacts = { items: sourceIds.map(id => factsFromPgItemRow(byId.get(id)!)), checklists: checklistFacts, links: linkFacts }
+          if (fingerprintSource(facts) !== plan.fingerprint) throw new StructureDuplicationError('DUPLICATION_SOURCE_CHANGED')
+
+          const sourceRoot = byId.get(plan.sourceRootId)!
+          const destinationRow = plan.destinationParentId
+            ? ((await client.query('SELECT id, type, title, ancestry_path FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3', [tenantId, projectId, plan.destinationParentId])).rows[0] as PgRow | undefined) ?? null
+            : null
+          validateDuplicationDestination({
+            project: { boardMode: projectRow.board_mode, simpleStoryId: projectRow.simple_story_id },
+            sourceRoot: { id: sourceRoot.id as string, type: sourceRoot.type as ItemRecord['type'] },
+            destinationParent: destinationRow ? { id: destinationRow.id as string, type: destinationRow.type as ItemRecord['type'] } as ItemRecord : null,
+          })
+
+          const firstColumn = (await client.query('SELECT id FROM columns WHERE tenant_id = $1 AND project_id = $2 ORDER BY position LIMIT 1', [tenantId, projectId])).rows[0] as { id: string } | undefined
+          const columnId = firstColumn?.id ?? null
+          const now = new Date().toISOString()
+          const map = new Map<string, string>()
+          const createdItemIds: string[] = []
+          let createdChecklistCount = 0
+          let createdStepCount = 0
+          let createdLinkCount = 0
+
+          for (const planItem of plan.items) {
+            const newId = generateId()
+            map.set(planItem.sourceId, newId)
+            const parentCopyId = planItem.parentSourceId ? (map.get(planItem.parentSourceId) ?? plan.destinationParentId) : plan.destinationParentId
+            let ancestryPath: Array<{ id: string; title: string; type: string }> = []
+            if (parentCopyId) {
+              const parent = (await client.query('SELECT id, type, title, ancestry_path FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3', [tenantId, projectId, parentCopyId])).rows[0] as PgRow | undefined
+              if (parent) ancestryPath = [...(JSON.parse(parent.ancestry_path as string) as Array<{ id: string; title: string; type: string }>), { id: parent.id as string, title: parent.title as string, type: parent.type as string }]
+            }
+            const sequenceCode = await nextBatchSequenceCodePg(client, tenantId, projectId, planItem.type)
+            await client.query(
+              `INSERT INTO items (id, tenant_id, project_id, type, sequence_code, parent_id, module_id, column_id, ancestry_path, title, description, persona, goal, benefit,
+                 acceptance_criteria, notes, status, priority, points, assignee_id, author_id, version_id, icon, color, cost_center_id, position, created_at, updated_at)
+               VALUES ($1,$2,$3,$4,$5,$6,NULL,$7,$8,$9,$10,$11,$12,$13,$14,$15,'NOT_STARTED',$16,$17,$18,$19,$20,$21,$22,$23,0,$24,$24)`,
+              [newId, tenantId, projectId, planItem.type, sequenceCode, parentCopyId, columnId, JSON.stringify(ancestryPath), planItem.title, planItem.description,
+                planItem.persona, planItem.goal, planItem.benefit, planItem.acceptanceCriteria, planItem.notes, planItem.priority, planItem.points, planItem.assigneeId,
+                context.actorUserId, planItem.versionId, planItem.icon, planItem.color, planItem.costCenterId, now],
+            )
+            await replaceItemSprintsPg(client, tenantId, projectId, newId, planItem.sprintIds)
+            if (planItem.tagIds.length) {
+              await client.query('DELETE FROM item_tags WHERE tenant_id = $1 AND item_id = $2', [tenantId, newId])
+              await client.query(`INSERT INTO item_tags (tenant_id, item_id, tag_id)
+                SELECT $1, $2, tag_id FROM unnest($3::text[]) AS tag_id
+                WHERE EXISTS (SELECT 1 FROM tags WHERE tenant_id = $1 AND project_id = $4 AND id = tag_id)
+                ON CONFLICT DO NOTHING`, [tenantId, newId, [...new Set(planItem.tagIds)], projectId])
+            }
+            for (const checklist of planItem.checklists) {
+              const checklistId = generateId()
+              await client.query('INSERT INTO checklists (id, tenant_id, item_id, name, position, created_at) VALUES ($1,$2,$3,$4,$5,$6)', [checklistId, tenantId, newId, checklist.name, createdChecklistCount, now])
+              createdChecklistCount += 1
+              for (const [index, step] of checklist.steps.entries()) {
+                await client.query(`INSERT INTO checklist_items (id, tenant_id, checklist_id, text, checked, position, due_date, assignee_id, description)
+                  VALUES ($1,$2,$3,$4,false,$5,NULL,$6,$7)`, [generateId(), tenantId, checklistId, step.text, index, step.assigneeId, step.description])
+                createdStepCount += 1
+              }
+            }
+            for (const link of planItem.links) {
+              await client.query('INSERT INTO item_links (id, tenant_id, project_id, item_id, name, url, description, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)',
+                [generateId(), tenantId, projectId, newId, link.name, link.url, link.description, now])
+              createdLinkCount += 1
+            }
+            await recordItemEvent(client, context, { projectId, itemId: newId, eventType: 'ITEM_CREATED', correlationId: newId, after: await readItemSnapshot(client, tenantId, projectId, newId) })
+            createdItemIds.push(newId)
+          }
+
+          if (destinationRow) {
+            const before = await readItemSnapshot(client, tenantId, projectId, destinationRow.id as string)
+            if (before?.isLeaf) await recordItemEvent(client, context, { projectId, itemId: destinationRow.id as string, eventType: 'LEAF_CHANGED', before, after: { ...before, isLeaf: false } })
+          }
+
+          const result: StructureDuplicationResult = {
+            planVersion: 1,
+            sourceRootId: plan.sourceRootId,
+            rootCopyId: map.get(plan.sourceRootId) ?? createdItemIds[0] ?? '',
+            createdItemIds,
+            itemMap: [...map.entries()].map(([sourceId, copyId]) => ({ sourceId, copyId })),
+            createdChecklistCount,
+            createdStepCount,
+            createdLinkCount,
+            effectsPending: false,
+          }
+          const operationId = await reserveJournalPg(client, context, JSON.stringify({ status: 200, body: result }))
+          await appendDomainEventPg(client, { tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemCreated, payload: { itemIds: createdItemIds, parentId: plan.destinationParentId ?? null }, correlationId: result.rootCopyId, operationId })
+          return result
+        })
+      },
+
+      // Card T27 — carry-over revisável + fechamento atômico da origem.
+      // [TENANT] sprints/ciclos/vínculos restritos ao tenant/projeto do plano.
+      // [DB-SWAP] transação única com serialização implícita da linha de origem.
+      async applySprintTransition(context, plan) {
+        return tx(async (client) => {
+          await assertJournalAvailablePg(client, context)
+          const tenantId = context.tenantId
+          const projectId = plan.projectId
+          const source = (await client.query('SELECT id, status FROM sprints WHERE tenant_id = $1 AND project_id = $2 AND id = $3', [tenantId, projectId, plan.sourceSprintId])).rows[0] as { id: string; status: string } | undefined
+          if (!source || source.status !== 'OPEN') throw new Error('SOURCE_NOT_OPEN')
+          const cycle = (await client.query('SELECT id FROM sprint_cycles WHERE tenant_id = $1 AND project_id = $2 AND sprint_id = $3 AND ended_at IS NULL', [tenantId, projectId, plan.sourceSprintId])).rows[0] as { id: string } | undefined
+          if (!cycle || cycle.id !== plan.sourceCycleId) throw new Error('SOURCE_CYCLE_CHANGED')
+          const destination = (await client.query('SELECT id, status FROM sprints WHERE tenant_id = $1 AND project_id = $2 AND id = $3', [tenantId, projectId, plan.destinationSprintId])).rows[0] as { id: string; status: string } | undefined
+          if (!destination) throw new Error('DESTINATION_NOT_FOUND')
+          if (destination.status === 'CLOSED') throw new Error('DESTINATION_CLOSED')
+
+          const candidateRows = (await client.query(`
+            SELECT i.id, i.updated_at AS revision, i.status, i.points,
+              COALESCE((SELECT string_agg(s.sprint_id, ',' ORDER BY s.sprint_id) FROM item_sprints s WHERE s.tenant_id = i.tenant_id AND s.item_id = i.id), '') AS sprint_ids
+            FROM items i
+            WHERE i.tenant_id = $1 AND i.project_id = $2
+              AND i.type IN ('TASK', 'BUG') AND i.status IN ('NOT_STARTED', 'IN_PROGRESS', 'BLOCKED')
+              AND NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id)
+              AND EXISTS (SELECT 1 FROM item_sprints link WHERE link.tenant_id = i.tenant_id AND link.item_id = i.id AND link.sprint_id = $3)
+            ORDER BY i.id`, [tenantId, projectId, plan.sourceSprintId])).rows as PgRow[]
+          const candidates: SprintTransitionCandidate[] = candidateRows.map(row => ({
+            itemId: row.id as string, revision: row.revision as string, status: row.status as SprintTransitionCandidate['status'],
+            points: row.points as number | null, sprintIds: row.sprint_ids ? String(row.sprint_ids).split(',').sort() : [],
+          }))
+          const fingerprint = fingerprintTransition({
+            sourceSprintId: plan.sourceSprintId, sourceCycleId: plan.sourceCycleId, sourceRevision: source.status,
+            destinationSprintId: plan.destinationSprintId, destinationStatus: destination.status as SprintTransitionResult['destinationStatus'], candidates,
+          })
+          if (fingerprint !== plan.fingerprint) throw new Error('TRANSITION_SOURCE_CHANGED')
+
+          const now = new Date().toISOString()
+          const appliedItemIds: string[] = []
+          for (const candidate of plan.candidates) {
+            const before = await readItemSnapshot(client, tenantId, projectId, candidate.itemId)
+            // Acréscimo aditivo: preserva origem e demais vínculos, sem duplicar.
+            await client.query(`INSERT INTO item_sprints (tenant_id, item_id, sprint_id)
+              SELECT $1, $2, $3 WHERE NOT EXISTS (SELECT 1 FROM item_sprints WHERE tenant_id = $1 AND item_id = $2 AND sprint_id = $3)`,
+              [tenantId, candidate.itemId, plan.destinationSprintId])
+            const after = await readItemSnapshot(client, tenantId, projectId, candidate.itemId)
+            if (before && after) await recordItemEvent(client, context, { projectId, itemId: candidate.itemId, eventType: 'SPRINT_CHANGED', before, after })
+            appliedItemIds.push(candidate.itemId)
+          }
+          await client.query("UPDATE sprints SET status = 'CLOSED' WHERE tenant_id = $1 AND project_id = $2 AND id = $3", [tenantId, projectId, plan.sourceSprintId])
+          await client.query("UPDATE sprint_cycles SET ended_at = $1, end_reason = 'CLOSED' WHERE tenant_id = $2 AND project_id = $3 AND sprint_id = $4 AND ended_at IS NULL", [now, tenantId, projectId, plan.sourceSprintId])
+
+          const result: SprintTransitionResult = {
+            planVersion: 1, sourceSprintId: plan.sourceSprintId, destinationSprintId: plan.destinationSprintId,
+            appliedItemIds, closedCycleId: plan.sourceCycleId, sourceStatus: 'CLOSED',
+            destinationStatus: destination.status as SprintTransitionResult['destinationStatus'], effectsPending: false,
+          }
+          const operationId = await reserveJournalPg(client, context, JSON.stringify({ status: 200, body: result }))
+          await appendDomainEventPg(client, { tenantId, projectId, type: 'SPRINT_CHANGED', payload: { action: 'closed', sprintId: plan.sourceSprintId, carriedTo: plan.destinationSprintId, itemIds: appliedItemIds }, operationId })
+          return result
+        })
+      },
     },
+  }
+}
+
+function factsFromPgItemRow(row: PgRow): SourceFacts['items'][number] {
+  return {
+    id: row.id as string, parentId: row.parent_id as string | null, type: row.type as ItemRecord['type'],
+    title: row.title as string, description: row.description as string | null, persona: row.persona as string | null,
+    goal: row.goal as string | null, benefit: row.benefit as string | null, acceptanceCriteria: row.acceptance_criteria as string | null,
+    notes: row.notes as string | null, priority: row.priority as ItemRecord['priority'], points: row.points as number | null,
+    icon: row.icon as string | null, color: row.color as string | null, costCenterId: row.cost_center_id as string | null,
+    versionId: row.version_id as string | null, assigneeId: row.assignee_id as string | null, status: row.status as ItemRecord['status'],
   }
 }

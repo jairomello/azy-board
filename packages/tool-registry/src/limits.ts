@@ -12,6 +12,12 @@ export const TOOL_TEXT_LIMITS = {
   url: 2_048,
 } as const
 
+// Card T28 — limites da duplicação de estrutura de trabalho.
+export const STRUCTURE_DUPLICATION_LIMITS = {
+  maxItems: 50,
+  maxSteps: 1_000,
+} as const
+
 // Card T26 — limites compartilhados do contrato de consulta de lacunas.
 export const PLANNING_GAP_LIMITS = {
   maxDepth: 3,

@@ -690,6 +690,28 @@ export async function toolListTasks(
   return api(`/projects/${projectId}/items?${params}`) as Promise<Item[] | Page<Item>>
 }
 
+// Card T28 — preparação somente-leitura e aplicação da cópia de estrutura.
+export async function toolPrepareStructureDuplication(api: ApiCall, args: { projectId: string } & Record<string, unknown>): Promise<unknown> {
+  const { projectId, ...body } = args
+  return api(`/projects/${projectId}/structure-duplication/prepare`, 'POST', body)
+}
+
+export async function toolDuplicateStructure(api: ApiCall, args: { projectId: string } & Record<string, unknown>): Promise<unknown> {
+  const { projectId, ...body } = args
+  return api(`/projects/${projectId}/structure-duplication/apply`, 'POST', body)
+}
+
+// Card T27 — preparação somente-leitura e aplicação da transição de sprint.
+export async function toolPrepareSprintTransition(api: ApiCall, args: { projectId: string } & Record<string, unknown>): Promise<unknown> {
+  const { projectId, ...body } = args
+  return api(`/projects/${projectId}/sprint-transition/prepare`, 'POST', body)
+}
+
+export async function toolApplySprintTransition(api: ApiCall, args: { projectId: string } & Record<string, unknown>): Promise<unknown> {
+  const { projectId, ...body } = args
+  return api(`/projects/${projectId}/sprint-transition/apply`, 'POST', body)
+}
+
 // Card T26 — consulta somente-leitura de lacunas; a população é fixada no servidor.
 export async function toolQueryPlanningGaps(
   api: ApiCall,

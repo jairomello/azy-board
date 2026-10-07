@@ -251,6 +251,128 @@ export interface PlanningGapSnapshotRecord {
   exclusiveCombinations: Array<{ fields: string[]; count: number }>
 }
 
+// Card T28 — plano de duplicação de estrutura de trabalho como modelo novo.
+export type DuplicationAssignablePolicy =
+  | { mode: 'CLEAR' }
+  | { mode: 'COPY' }
+  | { mode: 'SET'; userId: string }
+export type DuplicationSprintPolicy =
+  | { mode: 'CLEAR' }
+  | { mode: 'COPY' }
+  | { mode: 'SET'; sprintIds: string[] }
+export type DuplicationVersionPolicy =
+  | { mode: 'CLEAR' }
+  | { mode: 'COPY' }
+  | { mode: 'SET'; versionId: string | null }
+export interface StructureDuplicationPolicy {
+  points: 'CLEAR' | 'COPY'
+  assignee: DuplicationAssignablePolicy
+  sprint: DuplicationSprintPolicy
+  version: DuplicationVersionPolicy
+  links: 'EXCLUDE' | 'COPY'
+  attachments: 'EXCLUDE'
+}
+export interface StructureDuplicationChecklistStep {
+  text: string
+  description: string | null
+  // Responsável do passo copiado apenas sob advancedChecklists e política COPY.
+  assigneeId: string | null
+}
+export interface StructureDuplicationChecklist {
+  name: string
+  steps: StructureDuplicationChecklistStep[]
+}
+export interface StructureDuplicationLink {
+  name: string
+  url: string
+  description: string | null
+}
+export interface StructureDuplicationPlanItem {
+  sourceId: string
+  parentSourceId: string | null
+  type: ItemType
+  title: string
+  description: string | null
+  persona: string | null
+  goal: string | null
+  benefit: string | null
+  acceptanceCriteria: string | null
+  notes: string | null
+  priority: Priority
+  points: number | null
+  icon: string | null
+  color: string | null
+  costCenterId: string | null
+  tagIds: string[]
+  sprintIds: string[]
+  versionId: string | null
+  assigneeId: string | null
+  assigneeApiKeyId: string | null
+  checklists: StructureDuplicationChecklist[]
+  links: StructureDuplicationLink[]
+}
+export interface StructureDuplicationPlan {
+  planVersion: 1
+  projectId: string
+  sourceRootId: string
+  sourceRootType: ItemType
+  destinationParentId: string | null
+  destinationMode: 'SIMPLE' | 'HIERARCHICAL'
+  hierarchy: 'STORY' | 'SUBTREE'
+  policies: StructureDuplicationPolicy
+  fingerprint: string
+  items: StructureDuplicationPlanItem[]
+  totalSteps: number
+  excluded: { attachments: number; hours: number; history: true }
+}
+export interface StructureDuplicationResult {
+  planVersion: 1
+  sourceRootId: string
+  rootCopyId: string
+  createdItemIds: string[]
+  itemMap: Array<{ sourceId: string; copyId: string }>
+  createdChecklistCount: number
+  createdStepCount: number
+  createdLinkCount: number
+  effectsPending: boolean
+}
+
+// Card T27 — plano e resultado da transição revisável de sprint.
+export interface SprintTransitionCandidate {
+  itemId: string
+  revision: string
+  status: TaskStatus
+  points: number | null
+  sprintIds: string[]
+}
+export interface SprintTransitionPlan {
+  planVersion: 1
+  projectId: string
+  sourceSprintId: string
+  sourceSprintName: string
+  sourceCycleId: string
+  sourceRevision: string
+  destinationSprintId: string
+  destinationSprintName: string
+  destinationStatus: SprintStatus
+  candidates: SprintTransitionCandidate[]
+  excluded: { done: number; cancelled: number; archived: number; aggregators: number }
+  knownPoints: number
+  unknownPointsCount: number
+  totalCandidates: number
+  fingerprint: string
+}
+export interface SprintTransitionResult {
+  planVersion: 1
+  sourceSprintId: string
+  destinationSprintId: string
+  appliedItemIds: string[]
+  closedCycleId: string
+  sourceStatus: 'CLOSED'
+  destinationStatus: SprintStatus
+  effectsPending: boolean
+}
+
 export type PlanningGapQueryOperator = 'ALL' | 'ANY' | 'IS_EMPTY' | 'IS_NOT_EMPTY' | 'EQ' | 'LT' | 'LTE' | 'GT' | 'GTE'
 export interface PlanningGapQueryNode {
   field: 'dueDate' | 'points' | 'sprint' | 'version' | 'assignee' | null

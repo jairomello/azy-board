@@ -26,6 +26,9 @@ import type {
   DashboardTransitionRecord,
   PlanningGapQueryRequest,
   PlanningGapSnapshotRecord,
+  SprintTransitionCandidate,
+  SprintTransitionPlan,
+  SprintTransitionResult,
   ItemEventRecord,
   AssistantApprovalDetailRecord,
   AssistantConversationRecord,
@@ -69,7 +72,8 @@ import { createSqliteItemUnitOfWork } from './itemUnitOfWork'
 import { createSqliteProjectUnitOfWork } from './projectUnitOfWork'
 import { createSqliteDomainEventPort, appendDomainEventSync } from './domainEventOutbox'
 import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
-import { applyDimensionProjectionBackfill, applyDimensionProjectionBaselineBackfill, type SqliteItemSnapshot } from './itemAnalytics'
+import { applyDimensionProjectionBackfill, applyDimensionProjectionBaselineBackfill, readItemSnapshot as readAnalyticsSnapshot, recordItemEvent as recordAnalyticsEvent, type SqliteItemSnapshot } from './itemAnalytics'
+import { fingerprintTransition } from '../../services/sprintTransition'
 import { buildPlanningGapSnapshot, planningGapPage, type PlanningGapCandidate } from '../../services/planningGaps'
 
 function asMutation(context: PersistenceContext): MutationContext {
@@ -336,6 +340,23 @@ function mapTagRow(row: Record<string, unknown>): TagRecord {
   }
 }
 
+// Card T27 — candidatos elegíveis (TASK/BUG folhas ativos ligados à origem).
+function readTransitionCandidatesSqlite(sqlite: Database, tenantId: string, projectId: string, sourceSprintId: string): SprintTransitionCandidate[] {
+  const rows = sqlite.query<{ id: string; revision: string; status: SprintTransitionCandidate['status']; points: number | null; sprint_ids: string | null }, [string, string, string]>(`
+    SELECT i.id, i.updated_at AS revision, i.status, i.points,
+      (SELECT group_concat(s.sprint_id, ',') FROM item_sprints s WHERE s.tenant_id = i.tenant_id AND s.item_id = i.id) AS sprint_ids
+    FROM items i
+    WHERE i.tenant_id = ? AND i.project_id = ?
+      AND i.type IN ('TASK', 'BUG') AND i.status IN ('NOT_STARTED', 'IN_PROGRESS', 'BLOCKED')
+      AND NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id)
+      AND EXISTS (SELECT 1 FROM item_sprints link WHERE link.tenant_id = i.tenant_id AND link.item_id = i.id AND link.sprint_id = ?)
+  `).all(tenantId, projectId, sourceSprintId)
+  return rows.map(row => ({
+    itemId: row.id, revision: row.revision, status: row.status, points: row.points,
+    sprintIds: row.sprint_ids ? row.sprint_ids.split(',').sort() : [],
+  })).sort((a, b) => a.itemId.localeCompare(b.itemId))
+}
+
 /** Factory SIMPLE: ambos handles são explícitos e pertencem à mesma instalação. */
 export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Database): PersistencePorts {
   const itemCommands = createSqliteItemUnitOfWork(sqlite)
@@ -379,6 +400,63 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
     unarchiveItemSubtree: async (...args) => itemCommands.unarchiveItemSubtree(...args),
     applyItemBatch: async (...args) => itemCommands.applyItemBatch(...args),
     createItemsBatch: async (...args) => itemCommands.createItemsBatch(...args),
+    duplicateStructure: async (...args) => itemCommands.duplicateStructure(...args),
+    // Card T27 — carry-over revisável + fechamento atômico da origem.
+    // [TENANT] sprints/ciclos/vínculos restritos ao tenant/projeto do plano.
+    // [DB-SWAP] toda a transição (vínculos, analytics e ciclo) em uma transação.
+    applySprintTransition: async (context: MutationContext, plan: SprintTransitionPlan): Promise<SprintTransitionResult> => {
+      return runSqliteAtomic(sqlite, () => {
+        assertJournalAvailable(sqlite, context)
+        const tenantId = context.tenantId
+        const projectId = plan.projectId
+        const source = sqlite.query<{ id: string; status: string }, [string, string, string]>(
+          'SELECT id, status FROM sprints WHERE tenant_id = ? AND project_id = ? AND id = ?',
+        ).get(tenantId, projectId, plan.sourceSprintId)
+        if (!source || source.status !== 'OPEN') throw new Error('SOURCE_NOT_OPEN')
+        const cycle = sqlite.query<{ id: string }, [string, string, string]>(
+          "SELECT id FROM sprint_cycles WHERE tenant_id = ? AND project_id = ? AND sprint_id = ? AND ended_at IS NULL",
+        ).get(tenantId, projectId, plan.sourceSprintId)
+        if (!cycle || cycle.id !== plan.sourceCycleId) throw new Error('SOURCE_CYCLE_CHANGED')
+        const destination = sqlite.query<{ id: string; status: string }, [string, string, string]>(
+          'SELECT id, status FROM sprints WHERE tenant_id = ? AND project_id = ? AND id = ?',
+        ).get(tenantId, projectId, plan.destinationSprintId)
+        if (!destination) throw new Error('DESTINATION_NOT_FOUND')
+        if (destination.status === 'CLOSED') throw new Error('DESTINATION_CLOSED')
+        const candidates = readTransitionCandidatesSqlite(sqlite, tenantId, projectId, plan.sourceSprintId)
+        const fingerprint = fingerprintTransition({
+          sourceSprintId: plan.sourceSprintId, sourceCycleId: plan.sourceCycleId, sourceRevision: source.status,
+          destinationSprintId: plan.destinationSprintId, destinationStatus: destination.status as SprintTransitionResult['destinationStatus'], candidates,
+        })
+        if (fingerprint !== plan.fingerprint) throw new Error('TRANSITION_SOURCE_CHANGED')
+        const now = new Date().toISOString()
+        const appliedItemIds: string[] = []
+        for (const candidate of plan.candidates) {
+          const before = readAnalyticsSnapshot(sqlite, tenantId, projectId, candidate.itemId)
+          // Acréscimo aditivo: preserva origem e demais vínculos, sem duplicar.
+          sqlite.query('INSERT OR IGNORE INTO item_sprints (tenant_id, item_id, sprint_id) VALUES (?, ?, ?)')
+            .run(tenantId, candidate.itemId, plan.destinationSprintId)
+          const after = readAnalyticsSnapshot(sqlite, tenantId, projectId, candidate.itemId)
+          if (before && after) recordAnalyticsEvent(sqlite, context, { projectId, itemId: candidate.itemId, eventType: 'SPRINT_CHANGED', before, after })
+          appliedItemIds.push(candidate.itemId)
+        }
+        sqlite.query("UPDATE sprints SET status = 'CLOSED' WHERE tenant_id = ? AND project_id = ? AND id = ?")
+          .run(tenantId, projectId, plan.sourceSprintId)
+        sqlite.query("UPDATE sprint_cycles SET ended_at = ?, end_reason = 'CLOSED' WHERE tenant_id = ? AND project_id = ? AND sprint_id = ? AND ended_at IS NULL")
+          .run(now, tenantId, projectId, plan.sourceSprintId)
+        const result: SprintTransitionResult = {
+          planVersion: 1, sourceSprintId: plan.sourceSprintId, destinationSprintId: plan.destinationSprintId,
+          appliedItemIds, closedCycleId: plan.sourceCycleId, sourceStatus: 'CLOSED',
+          destinationStatus: destination.status as SprintTransitionResult['destinationStatus'], effectsPending: false,
+        }
+        const operationId = reserveJournal(sqlite, context, JSON.stringify({ status: 200, body: result }))
+        appendDomainEventSync(sqlite, {
+          tenantId, projectId, type: 'SPRINT_CHANGED',
+          payload: { action: 'closed', sprintId: plan.sourceSprintId, carriedTo: plan.destinationSprintId, itemIds: appliedItemIds },
+          operationId,
+        })
+        return result
+      })
+    },
   }
 
   const dashboardLeafConditions = (context: PersistenceContext, projectId: string, filter?: DashboardPopulationFilter) => {

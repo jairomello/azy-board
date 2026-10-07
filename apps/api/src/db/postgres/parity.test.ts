@@ -11,6 +11,10 @@ import { join } from 'node:path'
 import type { PersistencePorts } from '../../persistence/ports'
 import type { MutationContext, PersistenceContext } from '../../persistence/models'
 import { shouldRunPostgresTests } from './pgTestSupport'
+import { buildDuplicationPlan, buildPlanItem, DEFAULT_DUPLICATION_POLICY, itemFacts } from '../../services/structureDuplication'
+import { COMMAND_NAMESPACES, isIdempotentReplay, parseEnvelope } from '../../persistence/idempotency'
+import { buildSprintTransitionPlan, candidateFromItem, isEligibleCandidate } from '../../services/sprintTransition'
+import type { ItemRecord, ProjectRecord, StructureDuplicationPolicy } from '../../persistence/models'
 
 const PG_URL = process.env.TEST_PG_URL ?? 'postgresql://postgres:postgres@localhost:5432/azyboard_parity'
 const runPostgres = await shouldRunPostgresTests(PG_URL)
@@ -23,6 +27,89 @@ function makeMutationContext(tenantId: string): MutationContext {
   return {
     ...makeContext(tenantId),
     mutation: { origin: 'REST', actorType: 'HUMAN', actorSource: 'REST', actorLabel: null },
+  }
+}
+
+async function buildDuplicationPlanForTest(
+  ports: PersistencePorts, ctx: PersistenceContext, project: ProjectRecord,
+  sourceRootId: string, destinationParentId: string | null, override: Partial<StructureDuplicationPolicy> = {},
+) {
+  const policy: StructureDuplicationPolicy = { ...DEFAULT_DUPLICATION_POLICY, points: 'COPY', links: 'COPY', ...override }
+  const subtree = await ports.items.listSubtree(ctx, project.id, sourceRootId)
+  const relations = new Map((await ports.items.listItemsWithRelations(ctx, project.id)).map(row => [row.id, row]))
+  const leafIds = new Set(subtree.map(item => item.id).filter(id => !subtree.some(child => child.parentId === id)))
+  const items = []
+  const checklistFacts = []
+  const linkFacts = []
+  for (const item of subtree) {
+    const lists = await ports.checklists.listChecklists(ctx, project.id, item.id)
+    const links = await ports.itemLinks.list(ctx, project.id, item.id)
+    items.push(buildPlanItem({ item, relations: relations.get(item.id), policy, checklists: lists, links, advancedChecklists: project.advancedChecklists, rootSourceId: sourceRootId, rootTitle: null, isLeaf: leafIds.has(item.id) }))
+    for (const list of lists) checklistFacts.push({ itemId: item.id, name: list.name, position: list.position, steps: list.items.map(step => ({ text: step.text, checked: step.checked, position: step.position, description: step.description })) })
+    for (const link of links) linkFacts.push({ itemId: item.id, name: link.name, url: link.url, description: link.description })
+  }
+  const destinationParent = destinationParentId ? await ports.items.getItem(ctx, project.id, destinationParentId) : null
+  return buildDuplicationPlan({
+    project: { id: project.id, boardMode: project.boardMode, simpleStoryId: project.simpleStoryId },
+    sourceRoot: subtree[0]!, destinationParent, policies: policy, items,
+    facts: { items: subtree.map(itemFacts), checklists: checklistFacts, links: linkFacts },
+    excluded: { attachments: 0, hours: 0 },
+  })
+}
+
+async function seedDuplication(ports: PersistencePorts, mode: 'HIERARCHICAL' | 'SIMPLE') {
+  const tenant = await ports.tenants.createTenant({ name: `Dup ${mode}`, slug: `dup-${mode}-${crypto.randomUUID()}` })
+  const ctx: PersistenceContext = { tenantId: tenant.id, actorUserId: null, actorKind: 'SYSTEM', globalGroup: 'ADMIN' }
+  const user = await ports.identity.createUser(ctx, { email: `dup-${crypto.randomUUID()}@test.local`, passwordHash: 'h', name: 'Dup', globalGroup: 'ADMIN' })
+  const scope: PersistenceContext = { tenantId: tenant.id, actorUserId: user.id, actorKind: 'USER', globalGroup: 'ADMIN' }
+  const mut = { ...scope, mutation: { origin: 'REST', actorType: 'HUMAN' as const, actorSource: 'REST' as const, actorLabel: null } }
+  const project = await ports.unitOfWork.createProjectAggregate(mut, {
+    project: { name: `Dup ${mode}`, boardMode: mode }, defaultColumns: [{ name: 'Backlog', baseStatus: 'NOT_STARTED' }], defaultModuleName: 'G', simpleStoryTitle: 'Fixada',
+  })
+  const operations = mode === 'SIMPLE'
+    ? [
+        { tool: 'create_task' as const, ref: 'task', title: 'Task', type: 'TASK' as const, points: 3 },
+        { tool: 'create_task' as const, ref: 'sub', title: 'Sub', type: 'BUG' as const, parentRef: 'task' },
+      ]
+    : [
+        { tool: 'create_task' as const, ref: 'epic', title: 'Epic', type: 'EPIC' as const, moduleName: 'G' },
+        { tool: 'create_task' as const, ref: 'story', title: 'Story', type: 'STORY' as const, parentRef: 'epic' },
+        { tool: 'create_task' as const, ref: 'task', title: 'Task', type: 'TASK' as const, parentRef: 'story', points: 3 },
+        { tool: 'create_task' as const, ref: 'sub', title: 'Sub', type: 'BUG' as const, parentRef: 'task' },
+      ]
+  const batch = await ports.unitOfWork.createItemsBatch(mut, project.id, operations, { atomic: true })
+  const refs = ['epic', 'story', 'task', 'sub']
+  const ids: Record<string, string> = {}
+  batch.results.forEach((result, index) => { if (result.data) ids[refs[mode === 'SIMPLE' ? index + 2 : index]!] = result.data.id })
+  const sourceRootId = mode === 'SIMPLE' ? project.simpleStoryId! : ids.story!
+  const destinationParentId = mode === 'SIMPLE' ? project.simpleStoryId! : ids.epic!
+  const checklist = await ports.checklists.createChecklist(mut, project.id, ids.task!, 'L')
+  await ports.checklists.createChecklistItem(mut, project.id, ids.task!, checklist.id, { text: 'done', checked: true, dueDate: '2026-10-20', description: 'd' })
+  await ports.itemLinks.create(mut, project.id, ids.story ?? sourceRootId, { name: 'ref', url: 'https://x.test/a' })
+  const sprint = await ports.planning.createSprint(scope, project.id, { name: 'S', startDate: '2026-10-01', endDate: '2026-10-31', status: 'OPEN' })
+  await ports.planning.addItemSprint(scope, project.id, ids.task!, sprint.id)
+  const projectRecord = await ports.projects.getProject(scope, project.id)
+  const plan = await buildDuplicationPlanForTest(ports, scope, projectRecord!, sourceRootId, destinationParentId)
+  const idempotent = { ...mut, idempotency: { namespace: COMMAND_NAMESPACES.duplicateStructure, projectScope: project.id, key: `k-${tenant.id}`, payloadHash: 'hash', expiresAt: new Date(Date.now() + 3_600_000).toISOString() } }
+  const result = await ports.unitOfWork.duplicateStructure(idempotent, plan)
+  let replay: unknown = null
+  try { await ports.unitOfWork.duplicateStructure(idempotent, plan) } catch (error) { if (isIdempotentReplay(error)) replay = parseEnvelope(error.record.responseJson)?.body ?? null }
+  const copies = await Promise.all(result.createdItemIds.map(id => ports.items.getItem(scope, project.id, id)))
+  const copiedTaskId = result.itemMap.find(entry => entry.sourceId === ids.task!)?.copyId
+  const copiedStoryId = result.itemMap.find(entry => entry.sourceId === (mode === 'SIMPLE' ? sourceRootId : ids.story!))?.copyId
+  const copiedChecklists = copiedTaskId ? await ports.checklists.listChecklists(scope, project.id, copiedTaskId) : []
+  const copiedLinks = copiedStoryId ? await ports.itemLinks.list(scope, project.id, copiedStoryId) : []
+  const copiedTaskLogs = copiedTaskId ? await ports.workLogs.listItemLogs(scope, project.id, copiedTaskId, { page: 1, limit: 10 }) : { total: 0 }
+  const relationsAfter = new Map((await ports.items.listItemsWithRelations(scope, project.id)).map(row => [row.id, row]))
+  return {
+    mode, project, sourceRootId, destinationParentId, ids, result, replay, scope, mut,
+    copiedSprintCount: result.createdItemIds.reduce((count, id) => count + (relationsAfter.get(id)?.itemSprints.length ?? 0), 0),
+    // Sem IDs físicos: a comparação entre adapters usa forma, não identidade.
+    copies: copies.map(item => item && ({ type: item.type, status: item.status, points: item.points, versionId: item.versionId, assigneeId: item.assigneeId, hasColumn: item.columnId !== null, hasParent: item.parentId !== null })),
+    copiedChecklists: copiedChecklists.map(list => ({ name: list.name, steps: list.items.map(step => ({ text: step.text, checked: step.checked, dueDate: step.dueDate, description: step.description })) })),
+    copiedLinks: copiedLinks.map(link => ({ name: link.name, url: link.url })),
+    copiedTaskLogCount: copiedTaskLogs.total,
+    copyIds: result.createdItemIds,
   }
 }
 
@@ -404,4 +491,140 @@ describe.skipIf(!runPostgres)('Paridade SIMPLE ↔ ADVANCED', () => {
       await pg.cleanup()
     }
   })
+
+  test('duplicação HIERARCHICAL copia a subárvore limpa, sem defaults, e replay devolve os mesmos IDs', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const left = await seedDuplication(sqlite.ports, 'HIERARCHICAL')
+      const right = await seedDuplication(pg.ports, 'HIERARCHICAL')
+      // Equivalência de forma entre adapters (IDs diferem por natureza).
+      expect(left.copies).toEqual(right.copies)
+      expect(left.copiedChecklists).toEqual(right.copiedChecklists)
+      expect(left.copiedLinks).toEqual(right.copiedLinks)
+      expect(left.result.createdItemIds).toHaveLength(3)
+      expect(left.copies.every(copy => copy?.status === 'NOT_STARTED')).toBe(true)
+      expect(left.copies.every(copy => copy?.hasColumn === true)).toBe(true)
+      expect(left.copiedTaskLogCount).toBe(0)
+      // Sprint CLEAR: nenhum vínculo de sprint foi copiado mesmo com sprint vigente.
+      expect(left.copiedSprintCount).toBe(0)
+      // Checklist reiniciada, mantendo descrição e limpando data/estado.
+      expect(left.copiedChecklists[0]?.steps[0]).toEqual({ text: 'done', checked: false, dueDate: null, description: 'd' })
+      // Links copiados como metadados.
+      expect(left.copiedLinks).toEqual([{ name: 'ref', url: 'https://x.test/a' }])
+      // Replay idempotente devolve o mesmo mapa sem criar estrutura nova.
+      expect((left.replay as typeof left.result).itemMap).toEqual(left.result.itemMap)
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+
+  test('duplicação SIMPLE copia descendentes para a STORY fixa sem criar nova história', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const left = await seedDuplication(sqlite.ports, 'SIMPLE')
+      const right = await seedDuplication(pg.ports, 'SIMPLE')
+      expect(left.copies).toEqual(right.copies)
+      expect(left.result.createdItemIds).toHaveLength(2)
+      expect(left.copies.every(copy => copy?.type !== 'STORY' && copy?.type !== 'EPIC')).toBe(true)
+      expect(left.copies.every(copy => copy?.hasParent === true)).toBe(true)
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+
+  test('transição de sprint é equivalente entre adapters (carry-over aditivo + fechamento)', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const run = async (ports: PersistencePorts) => {
+        const tenant = await ports.tenants.createTenant({ name: 'Tr', slug: `tr-${crypto.randomUUID()}` })
+        const system: PersistenceContext = { tenantId: tenant.id, actorUserId: null, actorKind: 'SYSTEM', globalGroup: 'ADMIN' }
+        const user = await ports.identity.createUser(system, { email: `tr-${crypto.randomUUID()}@test.local`, passwordHash: 'h', name: 'T', globalGroup: 'ADMIN' })
+        const scope: PersistenceContext = { tenantId: tenant.id, actorUserId: user.id, actorKind: 'USER', globalGroup: 'ADMIN' }
+        const mut = { ...scope, mutation: { origin: 'REST', actorType: 'HUMAN' as const, actorSource: 'REST' as const, actorLabel: null } }
+        const project = await ports.unitOfWork.createProjectAggregate(mut, { project: { name: 'Tr', boardMode: 'SIMPLE' }, defaultColumns: [{ name: 'Backlog', baseStatus: 'NOT_STARTED' }], defaultModuleName: 'G', simpleStoryTitle: 'S' })
+        let source = await ports.planning.createSprint(scope, project.id, { name: 'Atual', startDate: '2026-10-01', endDate: '2026-10-14', status: 'PROPOSED' })
+        const destination = await ports.planning.createSprint(scope, project.id, { name: 'Próxima', startDate: '2026-10-15', endDate: '2026-10-28', status: 'PROPOSED' })
+        const third = await ports.planning.createSprint(scope, project.id, { name: 'Terceira', startDate: '2026-11-01', endDate: '2026-11-14', status: 'PROPOSED' })
+        await ports.planning.transitionSprint(scope, project.id, source.id, 'OPEN')
+        source = (await ports.planning.listSprints(scope, project.id)).find(candidate => candidate.id === source.id)!
+        const batch = await ports.unitOfWork.createItemsBatch(mut, project.id, [
+          { tool: 'create_task', ref: 'blocked', title: 'Bloqueado', type: 'TASK', points: 3 },
+          { tool: 'create_task', ref: 'done', title: 'Concluído', type: 'TASK', points: 5 },
+        ], { atomic: true })
+        const blocked = batch.results[0]!.data!.id
+        const done = batch.results[1]!.data!.id
+        await ports.planning.addItemSprint(scope, project.id, blocked, source.id)
+        await ports.planning.addItemSprint(scope, project.id, blocked, third.id)
+        await ports.planning.addItemSprint(scope, project.id, done, source.id)
+        await ports.unitOfWork.updateItemWithRelations(mut, project.id, blocked, { status: 'BLOCKED' })
+        await ports.unitOfWork.updateItemWithRelations(mut, project.id, done, { status: 'DONE' })
+        const items = await ports.items.listItemsWithRelations(scope, project.id)
+        const parentIds = new Set(items.map(item => item.parentId).filter(Boolean) as string[])
+        const candidates = items.filter(item => item.itemSprints.some(link => link.sprintId === source.id)).filter(item => isEligibleCandidate(item, !parentIds.has(item.id), true)).map(candidateFromItem).sort((a, b) => a.itemId.localeCompare(b.itemId))
+        const cycle = (await ports.dashboard.listSprintCycles(scope, project.id)).find(item => item.sprintId === source.id && item.endedAt === null)!
+        const plan = buildSprintTransitionPlan({ projectId: project.id, source, sourceCycleId: cycle.id, destination, candidates, excluded: { done: 1, cancelled: 0, archived: 0, aggregators: 0 } })
+        const result = await ports.unitOfWork.applySprintTransition(mut, plan)
+        const relations = new Map((await ports.items.listItemsWithRelations(scope, project.id)).map(row => [row.id, row]))
+        const sprints = await ports.planning.listSprints(scope, project.id)
+        return {
+          appliedCount: result.appliedItemIds.length,
+          blockedLinks: relations.get(blocked)!.itemSprints.map(link => link.sprintId).sort(),
+          doneLinks: relations.get(done)!.itemSprints.map(link => link.sprintId),
+          sourceStatus: sprints.find(s => s.id === source.id)!.status,
+          destinationStatus: sprints.find(s => s.id === destination.id)!.status,
+          activeCycle: (await ports.dashboard.listSprintCycles(scope, project.id)).some(c => c.sprintId === source.id && c.endedAt === null),
+        }
+      }
+      const left = await run(sqlite.ports)
+      const right = await run(pg.ports)
+      expect(left.appliedCount).toBe(1)
+      expect(left.blockedLinks).toHaveLength(3)
+      expect(left.doneLinks).toHaveLength(1)
+      expect(left.sourceStatus).toBe('CLOSED')
+      expect(left.destinationStatus).toBe('PROPOSED')
+      expect(left.activeCycle).toBe(false)
+      expect({ ...left, blockedLinks: left.blockedLinks.length, doneLinks: left.doneLinks.length }).toEqual({ ...right, blockedLinks: right.blockedLinks.length, doneLinks: right.doneLinks.length })
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+
+  test('mudança na origem após a prévia retorna conflito sem criar itens', async () => {
+    const sqlite = await setupSqlite()
+    try {
+      const scenario = await seedDuplicationPlanOnly(sqlite.ports)
+      await sqlite.ports.unitOfWork.updateItemWithRelations(scenario.mut, scenario.project.id, scenario.ids.task!, { title: 'Alterado' })
+      await expect(sqlite.ports.unitOfWork.duplicateStructure(scenario.mut, scenario.plan)).rejects.toThrow('DUPLICATION_SOURCE_CHANGED')
+      const items = await sqlite.ports.items.listItems(scenario.scope, scenario.project.id)
+      expect(items.filter(item => item.title === 'Alterado')).toHaveLength(1)
+    } finally {
+      sqlite.cleanup()
+    }
+  })
 })
+
+async function seedDuplicationPlanOnly(ports: PersistencePorts) {
+  const tenant = await ports.tenants.createTenant({ name: 'Plan only', slug: `plan-${crypto.randomUUID()}` })
+  const ctx: PersistenceContext = { tenantId: tenant.id, actorUserId: null, actorKind: 'SYSTEM', globalGroup: 'ADMIN' }
+  const user = await ports.identity.createUser(ctx, { email: `plan-${crypto.randomUUID()}@test.local`, passwordHash: 'h', name: 'P', globalGroup: 'ADMIN' })
+  const scope: PersistenceContext = { tenantId: tenant.id, actorUserId: user.id, actorKind: 'USER', globalGroup: 'ADMIN' }
+  const mut = { ...scope, mutation: { origin: 'REST', actorType: 'HUMAN' as const, actorSource: 'REST' as const, actorLabel: null } }
+  const project = await ports.unitOfWork.createProjectAggregate(mut, {
+    project: { name: 'Plan only', boardMode: 'HIERARCHICAL' }, defaultColumns: [{ name: 'Backlog', baseStatus: 'NOT_STARTED' }], defaultModuleName: 'G', simpleStoryTitle: 'S',
+  })
+  const batch = await ports.unitOfWork.createItemsBatch(mut, project.id, [
+    { tool: 'create_task', ref: 'epic', title: 'Epic', type: 'EPIC', moduleName: 'G' },
+    { tool: 'create_task', ref: 'story', title: 'Story', type: 'STORY', parentRef: 'epic' },
+    { tool: 'create_task', ref: 'task', title: 'Task', type: 'TASK', parentRef: 'story' },
+  ], { atomic: true })
+  const ids = { epic: batch.results[0]!.data!.id, story: batch.results[1]!.data!.id, task: batch.results[2]!.data!.id }
+  const projectRecord = await ports.projects.getProject(scope, project.id)
+  const plan = await buildDuplicationPlanForTest(ports, scope, projectRecord!, ids.story, ids.epic)
+  return { scope, mut, project, ids, plan }
+}

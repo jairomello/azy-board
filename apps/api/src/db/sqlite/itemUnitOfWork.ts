@@ -1,8 +1,9 @@
 import type { Database } from 'bun:sqlite'
-import type { ItemRecord, MutationContext } from '../../persistence/models'
+import type { ItemRecord, MutationContext, StructureDuplicationPlan, StructureDuplicationResult } from '../../persistence/models'
 import type { BatchItemCreateOperation, BatchItemCreateResult, BatchItemUpdate, ItemPatch, ItemRelationsMutation, NewItemRecord } from '../../persistence/ports'
 import { generateId } from '../../utils/id'
 import { nextSequenceCode as computeNextSequenceCode, sequencePrefix } from '../../utils/sequenceCode'
+import { fingerprintSource, validateDuplicationDestination, StructureDuplicationError, type SourceChecklistFact, type SourceFacts, type SourceLinkFact } from '../../services/structureDuplication'
 import { runSqliteAtomic } from './atomicTransaction'
 import { assertJournalAvailable, reserveJournal } from './idempotencyJournal'
 import { appendDomainEventSync } from './domainEventOutbox'
@@ -325,6 +326,148 @@ function nextBatchSequenceCode(database: Database, tenantId: string, projectId: 
     'SELECT sequence_code FROM items WHERE tenant_id = ? AND project_id = ? AND sequence_code LIKE ?',
   ).all(tenantId, projectId, `${prefix}%`)
   return computeNextSequenceCode(rows.map(row => row.sequence_code), type)
+}
+
+function factsFromItemRow(row: ItemRow): SourceFacts['items'][number] {
+  return {
+    id: row.id, parentId: row.parent_id, type: row.type, title: row.title, description: row.description,
+    persona: row.persona, goal: row.goal, benefit: row.benefit, acceptanceCriteria: row.acceptance_criteria,
+    notes: row.notes, priority: row.priority, points: row.points, icon: row.icon, color: row.color,
+    costCenterId: row.cost_center_id, versionId: row.version_id, assigneeId: row.assignee_id, status: row.status,
+  }
+}
+
+function readChecklistFacts(database: Database, tenantId: string, itemIds: string[]): SourceChecklistFact[] {
+  if (itemIds.length === 0) return []
+  const placeholders = itemIds.map(() => '?').join(', ')
+  const lists = database.query<{ id: string; item_id: string; name: string; position: number }, string[]>(
+    `SELECT id, item_id, name, position FROM checklists WHERE tenant_id = ? AND item_id IN (${placeholders})`,
+  ).all(tenantId, ...itemIds)
+  const facts: SourceChecklistFact[] = []
+  for (const list of lists) {
+    const steps = database.query<{ text: string; checked: number; position: number; description: string | null }, string[]>(
+      'SELECT text, checked, position, description FROM checklist_items WHERE tenant_id = ? AND checklist_id = ? ORDER BY position, id',
+    ).all(tenantId, list.id)
+    facts.push({ itemId: list.item_id, name: list.name, position: list.position, steps: steps.map(step => ({ text: step.text, checked: step.checked === 1, position: step.position, description: step.description })) })
+  }
+  return facts
+}
+
+function readLinkFacts(database: Database, tenantId: string, itemIds: string[]): SourceLinkFact[] {
+  if (itemIds.length === 0) return []
+  const placeholders = itemIds.map(() => '?').join(', ')
+  return database.query<{ item_id: string; name: string; url: string; description: string | null }, string[]>(
+    `SELECT item_id, name, url, description FROM item_links WHERE tenant_id = ? AND item_id IN (${placeholders})`,
+  ).all(tenantId, ...itemIds).map(link => ({ itemId: link.item_id, name: link.name, url: link.url, description: link.description }))
+}
+
+// [TENANT] Toda leitura/escrita da cópia é restrita ao tenant/projeto do plano;
+// [DB-SWAP] itens/relações/checklists/links são inseridos na mesma transação do
+// adapter, com rollback integral em qualquer falha (sem órfãos).
+function duplicateStructureInsideTransaction(database: Database, context: MutationContext, plan: StructureDuplicationPlan): StructureDuplicationResult {
+  assertJournalAvailable(database, context)
+  const tenantId = context.tenantId
+  const projectId = plan.projectId
+  const project = database.query<{ board_mode: 'SIMPLE' | 'HIERARCHICAL'; simple_story_id: string | null; advanced_checklists: number }, [string, string]>(
+    'SELECT board_mode, simple_story_id, advanced_checklists FROM projects WHERE tenant_id = ? AND id = ?',
+  ).get(tenantId, projectId)
+  if (!project) throw new StructureDuplicationError('PROJECT_NOT_FOUND')
+
+  const rows = readSubtreeRows(database, tenantId, projectId, plan.sourceRootId)
+  if (rows.length === 0) throw new StructureDuplicationError('SOURCE_NOT_FOUND')
+  const byId = new Map(rows.map(row => [row.id, row]))
+  const sourceIds = plan.items.map(item => item.sourceId)
+  for (const id of sourceIds) if (!byId.has(id)) throw new StructureDuplicationError('DUPLICATION_SOURCE_CHANGED')
+
+  // Revalida o fingerprint da origem (árvore/conteúdo/checklists/links escolhidos).
+  const checklists = readChecklistFacts(database, tenantId, sourceIds)
+  const links = plan.policies.links === 'COPY' ? readLinkFacts(database, tenantId, sourceIds) : []
+  const fingerprint = fingerprintSource({ items: sourceIds.map(id => factsFromItemRow(byId.get(id)!)), checklists, links })
+  if (fingerprint !== plan.fingerprint) throw new StructureDuplicationError('DUPLICATION_SOURCE_CHANGED')
+
+  const sourceRoot = byId.get(plan.sourceRootId)!
+  const destinationRow = plan.destinationParentId ? itemById(database, tenantId, projectId, plan.destinationParentId) : null
+  validateDuplicationDestination({
+    project: { boardMode: project.board_mode, simpleStoryId: project.simple_story_id },
+    sourceRoot: { id: sourceRoot.id, type: sourceRoot.type },
+    destinationParent: destinationRow ? { ...toItem(destinationRow) } : null,
+  })
+
+  const firstColumn = database.query<{ id: string }, [string, string]>(
+    'SELECT id FROM columns WHERE tenant_id = ? AND project_id = ? ORDER BY position LIMIT 1',
+  ).get(tenantId, projectId)?.id ?? null
+  const now = new Date().toISOString()
+  const map = new Map<string, string>()
+  const createdItemIds: string[] = []
+  let createdChecklistCount = 0
+  let createdStepCount = 0
+  let createdLinkCount = 0
+
+  for (const planItem of plan.items) {
+    const newId = generateId()
+    map.set(planItem.sourceId, newId)
+    const parentCopyId = planItem.parentSourceId ? (map.get(planItem.parentSourceId) ?? plan.destinationParentId) : plan.destinationParentId
+    const parentRow = parentCopyId ? itemById(database, tenantId, projectId, parentCopyId) : null
+    const ancestryPath = parentRow ? [...JSON.parse(parentRow.ancestry_path) as AncestryNode[], { id: parentRow.id, title: parentRow.title, type: parentRow.type }] : []
+    const sequenceCode = nextBatchSequenceCode(database, tenantId, projectId, planItem.type)
+    database.query(`INSERT INTO items
+      (id, tenant_id, project_id, type, sequence_code, parent_id, module_id, column_id, ancestry_path, title, description, persona, goal, benefit,
+       acceptance_criteria, notes, status, priority, points, assignee_id, author_id, version_id, icon, color, cost_center_id, position, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NOT_STARTED', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`)
+      .run(newId, tenantId, projectId, planItem.type, sequenceCode, parentCopyId, firstColumn,
+        JSON.stringify(ancestryPath), planItem.title, planItem.description, planItem.persona, planItem.goal, planItem.benefit,
+        planItem.acceptanceCriteria, planItem.notes, planItem.priority, planItem.points, planItem.assigneeId, context.actorUserId,
+        planItem.versionId, planItem.icon, planItem.color, planItem.costCenterId, now, now)
+    replaceRelations(database, 'item_tags', 'tag_id', tenantId, projectId, newId, planItem.tagIds)
+    replaceRelations(database, 'item_sprints', 'sprint_id', tenantId, projectId, newId, planItem.sprintIds)
+
+    for (const checklist of planItem.checklists) {
+      const checklistId = generateId()
+      database.query('INSERT INTO checklists (id, tenant_id, item_id, name, position, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(checklistId, tenantId, newId, checklist.name, createdChecklistCount, now)
+      createdChecklistCount += 1
+      checklist.steps.forEach((step, index) => {
+        database.query(`INSERT INTO checklist_items (id, tenant_id, checklist_id, text, checked, position, due_date, assignee_id, description)
+          VALUES (?, ?, ?, ?, 0, ?, NULL, ?, ?)`)
+          .run(generateId(), tenantId, checklistId, step.text, index, step.assigneeId, step.description)
+        createdStepCount += 1
+      })
+    }
+    for (const link of planItem.links) {
+      database.query('INSERT INTO item_links (id, tenant_id, project_id, item_id, name, url, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(generateId(), tenantId, projectId, newId, link.name, link.url, link.description, now, now)
+      createdLinkCount += 1
+    }
+    recordItemEvent(database, context, { projectId, itemId: newId, eventType: 'ITEM_CREATED', correlationId: newId, after: readItemSnapshot(database, tenantId, projectId, newId) })
+    createdItemIds.push(newId)
+  }
+
+  if (destinationRow) {
+    const before = readItemSnapshot(database, tenantId, projectId, destinationRow.id)
+    if (before?.isLeaf) {
+      recordItemEvent(database, context, { projectId, itemId: destinationRow.id, eventType: 'LEAF_CHANGED', before, after: { ...before, isLeaf: false } })
+    }
+  }
+
+  const result: StructureDuplicationResult = {
+    planVersion: 1,
+    sourceRootId: plan.sourceRootId,
+    rootCopyId: map.get(plan.sourceRootId) ?? createdItemIds[0] ?? '',
+    createdItemIds,
+    itemMap: [...map.entries()].map(([sourceId, copyId]) => ({ sourceId, copyId })),
+    createdChecklistCount,
+    createdStepCount,
+    createdLinkCount,
+    effectsPending: false,
+  }
+  const operationId = reserveJournal(database, context, JSON.stringify({ status: 200, body: result }))
+  appendDomainEventSync(database, {
+    tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemCreated,
+    payload: { itemIds: createdItemIds, parentId: plan.destinationParentId ?? null },
+    correlationId: result.rootCopyId,
+    operationId,
+  })
+  return result
 }
 
 function createBatchItemInsideTransaction(database: Database, context: MutationContext, projectId: string, operation: BatchItemCreateOperation, moduleCreates: Array<{ id: string; name: string; position: number; description: string | null }>): BatchItemCreateResult {
@@ -920,6 +1063,11 @@ export function createSqliteItemUnitOfWork(database: Database) {
         return collected
       })
       return { atomic: false, agentRunId, results, createdModules }
+    },
+
+    // Card T28 — cópia atômica de estrutura de trabalho como modelo novo.
+    duplicateStructure(context: MutationContext, plan: StructureDuplicationPlan): StructureDuplicationResult {
+      return runSqliteAtomic(database, () => duplicateStructureInsideTransaction(database, context, plan))
     },
   }
 }

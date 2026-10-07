@@ -52,6 +52,18 @@ Fluxo recomendado: `list_tasks` para obter o `itemId`, `list_checklists` para ob
 
 Para marcar vários passos, prefira `check_items` com no máximo 100 entradas. Cada entrada aceita os três IDs ou `checklistName` + `text`/`position`; a operação é atômica dentro de cada card, e `failures` informa o índice de cada entrada rejeitada. A busca semântica normaliza espaços externos/internos e caixa, mas nunca escolhe entre candidatos duplicados.
 
+### Transição revisável de sprint
+
+`prepare_sprint_transition` (ADMIN, somente-leitura) monta o plano de carry-over; `apply_sprint_transition` (ADMIN) aplica o plano aprovado atomicamente e de forma idempotente (T38). O plano acrescenta a sprint de destino aos pendentes elegíveis (TASK/BUG folhas `NOT_STARTED`/`IN_PROGRESS`/`BLOCKED`) preservando a origem e demais vínculos, e fecha o ciclo da origem como `CLOSED` sem ativar o destino. Concluídos (`DONE`/`CANCELLED`), pais, arquivados e itens fora da origem permanecem intactos.
+
+Carry-over é **acréscimo de vínculo**, não `SET sprint`: o card passa a aparecer nos filtros das duas sprints. Resolva "próxima" pelo menor `startDate` posterior à origem entre `PROPOSED`/`OPEN`; empate, homônimo, destino igual/`CLOSED`/externo ou origem sem ciclo exigem nova prévia ou esclarecimento. O servidor revalida população, ciclos e destino no commit; alteração após a prévia retorna conflito. Nunca crie sprint com datas inventadas nem reabra uma sprint `CLOSED`.
+
+### Duplicar estrutura de trabalho como modelo
+
+`prepare_structure_duplication` monta um plano somente-leitura de uma STORY ou subárvore TASK/BUG do mesmo projeto; `duplicate_structure` aplica o plano aprovado de forma atômica e idempotente (T38). O servidor revalida o fingerprint da origem no commit: fonte alterada após a prévia retorna conflito e exige nova prévia.
+
+Políticas padrão (seguras): pontos, responsável, sprint e versão em `CLEAR`; links em `EXCLUDE`; anexos sempre `EXCLUDE`. A cópia reinicia status (`NOT_STARTED`), desmarca passos, limpa datas operacionais e bloqueios, e nunca copia horas, logs, eventos antigos, aprovações, ciclos nem bytes de anexos. Use `COPY`/`SET` por campo apenas quando o usuário pedir explicitamente; sprint `COPY` com sprint `CLOSED` é rejeitada. Em projetos SIMPLE a STORY fixa não é duplicada: os descendentes vão para a STORY fixa existente, sem nova STORY/EPIC.
+
 ### Consulta de lacunas de planejamento
 
 `query_planning_gaps` encontra itens sem prazo, estimativa, sprint, versão ou responsável usando uma árvore tipada ALL/ANY. Use `IS_EMPTY` para ausência: `null` no envelope nunca significa ausência. Para `hoje`/`amanhã`, informe `referenceDate` (YYYY-MM-DD) e `timeZone` IANA. A resposta traz `resultId`, total distinto e grupos sobrepostos identificados; nunca some grupos para obter o total. Abra a população exata no board com `open_planning_result` usando o `resultId` (e, opcionalmente, um grupo), preservando a visão anterior.

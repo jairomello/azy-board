@@ -60,7 +60,7 @@ export type ItemMutationResponse = {
 
 export { toolFields, requiredFieldsFor, nestedRequiredFieldsFor, isRegisteredTool, OPERATION_ARGS_REQUIRED, SHARED_TOOL_NAMES }
 
-const discovery = new Set(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_screen_overview', 'get_dashboard_metrics', 'query_planning_gaps', 'get_shadow_markdown', 'list_tasks', 'list_modules', 'get_current_sprint', 'list_columns', 'list_sprints', 'list_tags', 'list_versions', 'list_members', 'list_squads', 'list_item_logs', 'list_cost_centers', 'list_attachments', 'read_attachment', 'list_item_links', 'list_checklists'])
+const discovery = new Set(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_screen_overview', 'get_dashboard_metrics', 'query_planning_gaps', 'prepare_structure_duplication', 'prepare_sprint_transition', 'get_shadow_markdown', 'list_tasks', 'list_modules', 'get_current_sprint', 'list_columns', 'list_sprints', 'list_tags', 'list_versions', 'list_members', 'list_squads', 'list_item_logs', 'list_cost_centers', 'list_attachments', 'read_attachment', 'list_item_links', 'list_checklists'])
 const planning = new Set(['claim_task', 'list_tasks', 'list_checklists', 'create_checklist', 'add_checklist_item', 'add_checklist_item_to_task', 'check_item', 'get_shadow_markdown'])
 
 type ToolClassification = {
@@ -86,6 +86,10 @@ const classifications: Record<string, ToolClassification> = {
   // Card T20 — métricas oficiais do Dashboard (paridade com as rotas /dashboard/*).
   get_dashboard_metrics: { domain: 'board', scope: 'project', operation: 'read' },
   query_planning_gaps: { domain: 'planning', scope: 'project', operation: 'read' },
+  prepare_structure_duplication: { domain: 'items', scope: 'project', operation: 'read' },
+  duplicate_structure: { domain: 'items', scope: 'item', operation: 'create', dependencyTools: ['list_tasks'] },
+  prepare_sprint_transition: { domain: 'planning', scope: 'project', operation: 'read' },
+  apply_sprint_transition: { domain: 'planning', scope: 'project', operation: 'update', dependencyTools: ['list_sprints'] },
   get_shadow_markdown: { domain: 'board', scope: 'project', operation: 'read' },
   list_columns: { domain: 'board', scope: 'project', operation: 'read' },
   create_column: { domain: 'board', scope: 'project', operation: 'create' },
@@ -371,6 +375,10 @@ function schemaFor(field: string, isRequired: boolean, toolName?: string): Recor
   if (field === 'filters') return itemFiltersSchema
   if (toolName === 'query_planning_gaps' && field === 'scope') return planningGapScopeSchema
   if (toolName === 'query_planning_gaps' && field === 'where') return planningGapWhereSchema
+  // Card T28 — o plano é validado estritamente no servidor; aqui trafega opaco.
+  if (toolName === 'prepare_structure_duplication' && field === 'policies') return { type: ['object', 'null'], additionalProperties: true, description: 'Políticas por campo (CLEAR/COPY/SET); omitir aplica os padrões seguros.' }
+  if (toolName === 'duplicate_structure' && field === 'plan') return { type: 'object', additionalProperties: true, description: 'Plano retornado por prepare_structure_duplication, revalidado no commit.' }
+  if (toolName === 'apply_sprint_transition' && field === 'plan') return { type: 'object', additionalProperties: true, description: 'Plano retornado por prepare_sprint_transition, revalidado no commit.' }
   if (field === 'changes') return itemChangeSchema
   if (field === 'itemId') return nullable({ type: 'string', description: 'Board item/card ID. For checklist tools, this is the parent card that owns the checklist; never use checklistId or checklistItemId.' })
   if (field === 'linkId') return nullable({ type: 'string', description: 'ID do link externo pertencente ao item identificado por itemId.' })
@@ -447,6 +455,37 @@ const attachmentReadResponseSchema: SchemaNode = {
   },
 }
 
+const structureDuplicationResultSchema: SchemaNode = {
+  type: 'object', additionalProperties: false,
+  required: ['planVersion', 'sourceRootId', 'rootCopyId', 'createdItemIds', 'itemMap', 'createdChecklistCount', 'createdStepCount', 'createdLinkCount', 'effectsPending'],
+  properties: {
+    planVersion: { type: 'number' },
+    sourceRootId: { type: 'string' },
+    rootCopyId: { type: 'string' },
+    createdItemIds: { type: 'array', items: { type: 'string' } },
+    itemMap: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['sourceId', 'copyId'], properties: { sourceId: { type: 'string' }, copyId: { type: 'string' } } } },
+    createdChecklistCount: { type: 'number' },
+    createdStepCount: { type: 'number' },
+    createdLinkCount: { type: 'number' },
+    effectsPending: { type: 'boolean' },
+  },
+}
+
+const sprintTransitionResultSchema: SchemaNode = {
+  type: 'object', additionalProperties: false,
+  required: ['planVersion', 'sourceSprintId', 'destinationSprintId', 'appliedItemIds', 'closedCycleId', 'sourceStatus', 'destinationStatus', 'effectsPending'],
+  properties: {
+    planVersion: { type: 'number' },
+    sourceSprintId: { type: 'string' },
+    destinationSprintId: { type: 'string' },
+    appliedItemIds: { type: 'array', items: { type: 'string' } },
+    closedCycleId: { type: 'string' },
+    sourceStatus: { type: 'string', enum: ['CLOSED'] },
+    destinationStatus: { type: 'string', enum: ['PROPOSED', 'OPEN', 'CLOSED'] },
+    effectsPending: { type: 'boolean' },
+  },
+}
+
 export function applyOptionalFields(inputSchema: ToolDefinition['inputSchema'], toolName: string): ToolDefinition['inputSchema'] {
   const nested = nestedRequiredFieldsFor(toolName)
   const matched = new Set<string>()
@@ -479,6 +518,8 @@ const friendlyNames: Record<string, string> = {
   update_items: 'Atualizar itens', update_item: 'Atualizar item', batch: 'Cadastrar estrutura', batch_move: 'Mover itens em lote',
   list_projects: 'Listar projetos', get_project: 'Consultar projeto', get_board: 'Consultar board', get_tree: 'Consultar hierarquia', list_tasks: 'Listar itens',
   get_screen_overview: 'Resumo do board', get_dashboard_metrics: 'Métricas do Dashboard', query_planning_gaps: 'Consultar lacunas de planejamento',
+  prepare_structure_duplication: 'Preparar duplicação', duplicate_structure: 'Duplicar estrutura',
+  prepare_sprint_transition: 'Preparar transição de sprint', apply_sprint_transition: 'Aplicar transição de sprint',
   create_project: 'Criar projeto', create_project_structure: 'Criar projeto e estrutura', update_project: 'Atualizar projeto', delete_project: 'Excluir projeto', create_task: 'Criar item', delete_item: 'Excluir item',
   move_task: 'Mover item', complete_task: 'Concluir item', claim_task: 'Assumir item', release_task: 'Liberar item', archive_item: 'Arquivar item', unarchive_item: 'Desarquivar item',
   list_sprints: 'Listar sprints', create_sprint: 'Criar sprint', update_sprint: 'Editar sprint', activate_sprint: 'Ativar sprint', close_sprint: 'Fechar sprint', list_members: 'Listar membros',
@@ -517,6 +558,10 @@ const toolDescriptions: Record<string, string> = {
   get_screen_overview: 'Digest do board em um único passo: contagens por coluna (total, TASK, BUG), sprint/filtro ativo e amostra de referências. Prefira sobre get_board para perguntas de contagem/recorte; scope=SCREEN reflete o recorte capturado na tela do usuário, scope=PROJECT o estado atual do banco.',
   get_dashboard_metrics: 'Métricas oficiais do Dashboard com os mesmos números e regras da tela: metric=snapshot (Progresso/Escopo, WIP, Bloqueados, Atrasados, Carga), burnup, aging, hours ou sprint. Aceita filtros e período; limit (padrão 50, máximo 100), cursor opaco e detail para continuar páginas de detalhe. Preserva totais completos, avisos de truncamento/cobertura parcial e populações sobrepostas. Quando os filtros não são informados e a tela ativa é o Dashboard, usa os filtros da fotografia.',
   query_planning_gaps: 'Consulta itens por lacunas de planejamento com condições tipadas ALL/ANY. Retorna total distinto, grupos sobrepostos identificados e resultado paginado fixado ao ator/projeto.',
+  prepare_structure_duplication: 'Prepara um plano somente-leitura para duplicar uma STORY ou subárvore TASK/BUG do mesmo projeto como trabalho novo, listando contagens, campos copiados e exclusões (anexos, horas e histórico nunca são copiados). Não escreve nada; aplique com duplicate_structure usando o plano retornado.',
+  duplicate_structure: 'Aplica um plano de prepare_structure_duplication criando itens, relações, checklists/passos e links em uma transação idempotente (T38). Revalida o fingerprint da origem, reinicia status/passos e exige MEMBER. Retorna o mapa origem→cópia.',
+  prepare_sprint_transition: 'Prepara um plano somente-leitura (ADMIN) para transição de sprint: acrescenta a sprint de destino aos pendentes elegíveis (TASK/BUG folhas NOT_STARTED/IN_PROGRESS/BLOCKED) preservando vínculos anteriores e fecha a origem sem ativar o destino. Não escreve nada; aplique com apply_sprint_transition.',
+  apply_sprint_transition: 'Aplica um plano de prepare_sprint_transition em transação atômica e idempotente (T38): une o destino aos candidatos, registra analytics e fecha origem/ciclo. Revalida população e ciclo no commit; exige ADMIN.',
   get_shadow_markdown: 'Retorna o board do projeto em Markdown (board.md) para leitura rápida.',
   list_tasks: 'Lista itens do projeto; onlyLeaves é true, includeDescriptions é false e limit é 50 por padrão. Filtros opcionais: type, status, assigneeId, sprintId, tagIds, parentId, columnId, moduleId, com projeção fields e paginação por limit/cursor. Omitir um filtro equivale a não filtrar.',
   list_modules: 'Lista os módulos do projeto.',
@@ -595,7 +640,7 @@ export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinit
     policy: MCP_TOOL_POLICIES[name]!,
     namespace: discovery.has(name) ? 'discovery' : planning.has(name) ? 'planning' : 'mutation',
     routing: routingFor(name),
-     ...(['update_item', 'update_items'].includes(name) ? { responseSchema: itemMutationResponseSchema } : name === 'check_items' ? { responseSchema: checkItemsResponseSchema } : name === 'read_attachment' ? { responseSchema: attachmentReadResponseSchema } : name === 'query_planning_gaps' ? { responseSchema: planningGapQueryResponseSchema } : {}),
+     ...(['update_item', 'update_items'].includes(name) ? { responseSchema: itemMutationResponseSchema } : name === 'check_items' ? { responseSchema: checkItemsResponseSchema } : name === 'read_attachment' ? { responseSchema: attachmentReadResponseSchema } : name === 'query_planning_gaps' ? { responseSchema: planningGapQueryResponseSchema } : name === 'duplicate_structure' ? { responseSchema: structureDuplicationResultSchema } : name === 'apply_sprint_transition' ? { responseSchema: sprintTransitionResultSchema } : {}),
   }))
 }
 

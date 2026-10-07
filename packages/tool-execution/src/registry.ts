@@ -11,7 +11,7 @@ import {
   toolListAttachments, toolListChecklists, toolListColumns, toolListCostCenters, toolListItemLinks, toolListItemLogs,
   toolReadAttachment,
   toolListMembers, toolListModules, toolListProjects, toolListSprints, toolListSquads,
-  toolListTags, toolListTasks, toolListVersions, toolMoveTask, toolQueryPlanningGaps, toolReorderColumns,
+  toolListTags, toolListTasks, toolListVersions, toolMoveTask, toolPrepareStructureDuplication, toolDuplicateStructure, toolPrepareSprintTransition, toolApplySprintTransition, toolQueryPlanningGaps, toolReorderColumns,
   toolReorderItems, toolReleaseTask, toolRemoveMember, toolSetItemTags, toolUnarchiveItem,
   toolUpdateChecklist, toolUpdateChecklistItem, toolUpdateItem, toolUpdateItemLink, toolUpdateItemLog,
   toolUpdateMember, toolUpdateProject, toolUpdateSprint, toolUpdateItems, toolUpdateVersion,
@@ -167,6 +167,10 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'get_shadow_markdown': return toolGetShadowMarkdown(api, args.projectId as string)
     case 'list_tasks': return toolListTasks(api, args as Parameters<typeof toolListTasks>[1])
     case 'query_planning_gaps': return toolQueryPlanningGaps(api, args as Parameters<typeof toolQueryPlanningGaps>[1])
+    case 'prepare_structure_duplication': return toolPrepareStructureDuplication(api, args as Parameters<typeof toolPrepareStructureDuplication>[1])
+    case 'duplicate_structure': return toolDuplicateStructure(api, args as Parameters<typeof toolDuplicateStructure>[1])
+    case 'prepare_sprint_transition': return toolPrepareSprintTransition(api, args as Parameters<typeof toolPrepareSprintTransition>[1])
+    case 'apply_sprint_transition': return toolApplySprintTransition(api, args as Parameters<typeof toolApplySprintTransition>[1])
     case 'list_modules': return toolListModules(api, args.projectId as string)
     case 'get_current_sprint': return toolGetCurrentSprint(api, args.projectId as string)
     case 'list_columns': return toolListColumns(api, args.projectId as string)

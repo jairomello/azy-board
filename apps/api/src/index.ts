@@ -22,6 +22,8 @@ import { serve } from 'bun'
 import { agentResponseMiddleware } from './middleware/agentResponse'
 import { dashboardRouter } from './routes/dashboard'
 import { planningGapsRouter } from './routes/planningGaps'
+import { structureDuplicationRouter } from './routes/structureDuplication'
+import { sprintTransitionRouter } from './routes/sprintTransition'
 import { assistantRouter } from './routes/assistant'
 import { openApiDocument } from './validation'
 import { classifyDatabaseError, errorResponseMiddleware, normalizeErrorPayload } from './middleware/errorResponse'
@@ -117,6 +119,8 @@ api.route('/projects/:projectId/versions', versionsRouter)
 api.route('/users', usersRouter)
 api.route('/projects/:projectId/dashboard', dashboardRouter)
 api.route('/projects/:projectId/planning-gaps', planningGapsRouter)
+api.route('/projects/:projectId/structure-duplication', structureDuplicationRouter)
+api.route('/projects/:projectId/sprint-transition', sprintTransitionRouter)
 api.route('/assistant', assistantRouter)
 api.route('/operations', operationsRouter)
 

@@ -39,6 +39,10 @@ import type {
   DashboardTransitionRecord,
   PlanningGapQueryRequest,
   PlanningGapSnapshotRecord,
+  StructureDuplicationPlan,
+  StructureDuplicationResult,
+  SprintTransitionPlan,
+  SprintTransitionResult,
   ItemEventRecord,
   ItemLogRecord,
   ItemLinkRecord,
@@ -671,6 +675,10 @@ export interface UnitOfWork {
   unarchiveItemSubtree(context: MutationContext, projectId: string, itemId: string): Promise<string[]>
   applyItemBatch(context: MutationContext, projectId: string, updates: BatchItemUpdate[]): Promise<Array<{ id: string; identity: Record<string, unknown>; changes: Record<string, unknown> }>>
   createItemsBatch(context: MutationContext, projectId: string, operations: BatchItemCreateOperation[], options: { atomic: boolean; agentRunId?: string | null }): Promise<{ atomic: boolean; agentRunId: string | null; results: Array<{ ok: boolean; data?: BatchItemCreateResult; code?: string }>; createdModules: Array<{ id: string; name: string; position: number; description: string | null }> }>
+  /** Card T28 — cópia atômica e idempotente de estrutura como modelo novo. */
+  duplicateStructure(context: MutationContext, plan: StructureDuplicationPlan): Promise<StructureDuplicationResult>
+  /** Card T27 — carry-over revisável e fechamento atômico da sprint de origem. */
+  applySprintTransition(context: MutationContext, plan: SprintTransitionPlan): Promise<SprintTransitionResult>
 }
 
 export interface PersistencePorts extends PersistenceTransaction {

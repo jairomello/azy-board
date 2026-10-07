@@ -22,6 +22,12 @@ export const toolFields: Record<string, ToolFields> = {
   get_dashboard_metrics: { fields: ['projectId', 'metric', 'from', 'to', 'moduleId', 'sprintId', 'versionId', 'squadId', 'assigneeId', 'type', 'cycleId', 'includeItems', 'limit', 'cursor', 'detail'], required: ['metric'] },
   // Card T26 — consulta tipada de lacunas sem alterar o contrato de list_tasks.
   query_planning_gaps: { fields: ['projectId', 'scope', 'where', 'limit', 'cursor', 'resultId', 'referenceDate', 'timeZone'], required: ['projectId', 'where'], nested: { scope: [], where: ['operator', 'conditions'], 'where.conditions[]': ['field', 'operator', 'value', 'conditions'], 'where.conditions[].conditions[]': ['field', 'operator', 'value', 'conditions'], 'where.conditions[].conditions[].conditions[]': ['field', 'operator', 'value', 'conditions'] } },
+  // Card T28 — plano somente-leitura e aplicação MEMBER aprovada da cópia.
+  prepare_structure_duplication: { fields: ['projectId', 'sourceRootId', 'destinationParentId', 'rootTitle', 'policies'], required: ['projectId', 'sourceRootId'] },
+  duplicate_structure: { fields: ['projectId', 'plan', 'idempotencyKey'], required: ['projectId', 'plan'] },
+  // Card T27 — plano somente-leitura ADMIN e aplicação ADMIN da transição.
+  prepare_sprint_transition: { fields: ['projectId', 'sourceSprintId', 'destinationSprintId', 'destinationName', 'next'], required: ['projectId'] },
+  apply_sprint_transition: { fields: ['projectId', 'plan', 'idempotencyKey'], required: ['projectId', 'plan'] },
   get_shadow_markdown: { fields: ['projectId'], required: ['projectId'] },
   get_current_sprint: { fields: ['projectId'], required: ['projectId'] },
   list_tasks: { fields: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'onlyLeaves', 'includeDescriptions', 'fields', 'limit', 'cursor'], required: ['projectId'] },
