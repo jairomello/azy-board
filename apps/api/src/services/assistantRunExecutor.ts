@@ -8,6 +8,7 @@ import { isCancelRequested } from './agentJobQueue'
 import { createWorkerToolApi, loadRunContext } from './workerContext'
 import { executeSharedTool } from './assistantTools'
 import { explainItemVisibility } from './itemVisibility'
+import { openPlanningResult } from './planningGapCommand'
 import { FallbackModelProvider, type FallbackModelCandidate } from './fallbackModelProvider'
 import { logger } from './logger'
 
@@ -162,6 +163,8 @@ export async function executeAssistantRun(
     populationResolver: updateItemsPopulation,
     // Card T18 — explicação/revelação de visibilidade resolvida no servidor.
     explainItemVisibility,
+    // Card T26 — abertura da população fixada do resultado de lacunas.
+    openPlanningResult,
     assertAvailable: async () => {
       // [T37] Posse perdida bloqueia novos efeitos antes de qualquer novo dispatch.
       if (fence?.signal.aborted) throw new Error('LEASE_LOST')

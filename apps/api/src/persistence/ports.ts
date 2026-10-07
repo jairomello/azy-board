@@ -37,6 +37,8 @@ import type {
   DashboardPopulationFilter,
   DashboardSnapshotAggregateRow,
   DashboardTransitionRecord,
+  PlanningGapQueryRequest,
+  PlanningGapSnapshotRecord,
   ItemEventRecord,
   ItemLogRecord,
   ItemLinkRecord,
@@ -165,6 +167,19 @@ export interface IdempotencyPort {
 
 export interface BatchMutationPort {
   loadItemUpdateSnapshot(context: PersistenceContext, projectId: string): Promise<BatchUpdateReadSnapshot | null>
+}
+
+/**
+ * Persistência da população de leitura fixada; nunca reserva idempotency/outbox.
+ * capture rejeita mais de 10.000 IDs e persiste expiração de 30 minutos;
+ * o contexto do chamador vincula o resultado a tenant, projeto e ator.
+ */
+export interface PlanningGapSnapshotPort {
+  /** Avalia e grava no mesmo snapshot transacional, sem lacuna entre leitura e captura. */
+  capture(context: PersistenceContext, input: PlanningGapQueryRequest): Promise<PlanningGapSnapshotRecord>
+  get(context: PersistenceContext, projectId: string, resultId: string): Promise<PlanningGapSnapshotRecord | null>
+  page(context: PersistenceContext, projectId: string, resultId: string, cursor: string | null, limit: number): Promise<{ items: PlanningGapSnapshotRecord['items']; nextCursor: string | null } | null>
+  pruneExpired(nowIso: string): Promise<number>
 }
 
 export interface ProjectTeamPort {
@@ -667,6 +682,7 @@ export interface PersistencePorts extends PersistenceTransaction {
   loginAttempts: LoginAttemptPort
   idempotency: IdempotencyPort
   batch: BatchMutationPort
+  planningGapSnapshots: PlanningGapSnapshotPort
   unitOfWork: UnitOfWork
 }
 

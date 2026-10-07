@@ -301,9 +301,23 @@ interface Props {
   onEdit?: (itemId: string) => void
   // Card T16 — publica a fotografia do contexto da árvore (população apresentada).
   onSnapshotChange?: (snapshot: AssistantScreenSnapshot | null) => void
+  // Card T26 — população fixada do resultado; ancestrais são mantidos apenas
+  // como contêineres de navegação, fora da população do resultado.
+  pinnedItemIds?: string[] | null
 }
 
-export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, canEdit = true, onCreate, onEdit, onSnapshotChange }: Props) {
+// Card T26 — poda a árvore ao conjunto exato: mantém a folha que pertence ao
+// resultado e os ancestrais necessários para navegar até ela.
+function pruneTreeToIds(nodes: TreeNode[], allowed: Set<string>): TreeNode[] {
+  const result: TreeNode[] = []
+  for (const node of nodes) {
+    const children = pruneTreeToIds(node.children ?? [], allowed)
+    if (allowed.has(node.id) || children.length > 0) result.push({ ...node, children })
+  }
+  return result
+}
+
+export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, canEdit = true, onCreate, onEdit, onSnapshotChange, pinnedItemIds }: Props) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const queryClient = useQueryClient()
@@ -338,10 +352,12 @@ export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, 
     })
   }, [query.data])
 
+  // Card T26 — recorte fixado antes do filtro de epics vazios.
+  const scopedTree = pinnedItemIds ? pruneTreeToIds(tree, new Set(pinnedItemIds)) : tree
   // Tarefa 11.5 — aplicar filtro hideEmptyEpics na árvore
   const displayTree = filters?.hideEmptyEpics
-    ? tree.map(filterHideEmptyEpics).filter((n): n is TreeNode => n !== null)
-    : tree
+    ? scopedTree.map(filterHideEmptyEpics).filter((n): n is TreeNode => n !== null)
+    : scopedTree
 
   // Card T16 — fotografia do contexto da árvore: população apresentada pela
   // mesma árvore renderizada (nós de agrupamento excluídos do conjunto).

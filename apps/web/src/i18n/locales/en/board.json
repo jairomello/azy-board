@@ -269,5 +269,17 @@
   "itemDeleted": "Item deleted",
   "itemDeleteError": "Error deleting item",
   "moduleCreated": "Module created",
-  "moduleCreateError": "Error creating module"
+  "moduleCreateError": "Error creating module",
+  "planningGapTotal": "{{count}} items · captured at {{capturedAt}}",
+  "planningGapHidden": "{{count}} items do not appear on the Kanban",
+  "planningGapViewTree": "View in tree",
+  "planningGapRestore": "Back to previous view",
+  "planningGapLabel": {
+    "planning-gap-query": "Planning gaps",
+    "planning-gap:dueDate": "No due date",
+    "planning-gap:points": "No estimate",
+    "planning-gap:sprint": "No sprint",
+    "planning-gap:version": "No version",
+    "planning-gap:assignee": "Unassigned"
+  }
 }

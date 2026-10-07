@@ -690,6 +690,15 @@ export async function toolListTasks(
   return api(`/projects/${projectId}/items?${params}`) as Promise<Item[] | Page<Item>>
 }
 
+// Card T26 — consulta somente-leitura de lacunas; a população é fixada no servidor.
+export async function toolQueryPlanningGaps(
+  api: ApiCall,
+  args: { projectId: string; scope?: unknown; where: unknown; limit?: number; cursor?: string | null; resultId?: string | null; referenceDate?: string | null; timeZone?: string | null },
+): Promise<unknown> {
+  const { projectId, ...body } = args
+  return api(`/projects/${projectId}/planning-gaps/query`, 'POST', body)
+}
+
 export async function toolListModules(api: ApiCall, projectId: string): Promise<Module[]> {
   return api(`/projects/${projectId}/modules`) as Promise<Module[]>
 }

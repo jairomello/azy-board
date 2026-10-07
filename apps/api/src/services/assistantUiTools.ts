@@ -44,7 +44,7 @@ const filterProperties: Record<string, unknown> = Object.fromEntries([
   ['tag', nullable({ type: 'array', items: { type: 'string' } })],
 ])
 
-export const UI_TOOL_NAMES = ['set_board_filters', 'clear_board_filters', 'set_board_view', 'open_item', 'reveal_item', 'explain_item_visibility', 'restore_previous_view'] as const
+export const UI_TOOL_NAMES = ['set_board_filters', 'clear_board_filters', 'set_board_view', 'open_item', 'reveal_item', 'explain_item_visibility', 'open_planning_result', 'restore_previous_view'] as const
 const UI_TOOL_SET: ReadonlySet<string> = new Set(UI_TOOL_NAMES)
 
 export function isUiTool(name: string): boolean {
@@ -56,6 +56,16 @@ export function isUiTool(name: string): boolean {
 export function isVisibilityTool(name: string): boolean {
   return name === 'explain_item_visibility' || name === 'reveal_item'
 }
+
+// Card T26 — resolve a população fixada do resultado no servidor antes de
+// entregar o comando; o cliente nunca reconstrói o recorte a partir de filtros.
+export function isPlanningResultTool(name: string): boolean {
+  return name === 'open_planning_result'
+}
+
+export type PlanningResultResolution =
+  | { ok: true; command: AssistantViewCommand }
+  | { ok: false; code: 'RESULT_NOT_FOUND' | 'RESULT_EXPIRED' | 'ITEM_NOT_ACCESSIBLE' }
 
 export function getUiToolModels(): ModelTool[] {
   return [
@@ -74,6 +84,10 @@ export function getUiToolModels(): ModelTool[] {
     strictTool('explain_item_visibility', 'Explica por que um card não aparece no board atual (filtros, módulo, grupo recolhido, regra de subtarefas, grupo vazio ou arquivamento). Somente leitura.', {
       itemId: nullable({ type: 'string', description: 'ID do item (opcional se sequenceCode informado).' }),
       sequenceCode: nullable({ type: 'string', description: 'Código amigável do item (ex.: T42).' }),
+    }),
+    strictTool('open_planning_result', 'Abre no board a população exata de um resultado de query_planning_gaps (inclusive condições OR e lacunas que o toolbar não representa). Use o resultId retornado pela consulta; opcionalmente foque um grupo. Somente leitura, preserva a visão anterior.', {
+      resultId: { type: 'string', description: 'ID do resultado retornado por query_planning_gaps.' },
+      group: nullable({ type: 'string', enum: ['dueDate', 'points', 'sprint', 'version', 'assignee'], description: 'Grupo de lacuna a focar (opcional).' }),
     }),
     strictTool('restore_previous_view', 'Volta à visão anterior do board (filtros, modo, módulo e item aberto).', {}),
   ]

@@ -358,4 +358,50 @@ describe.skipIf(!runPostgres)('Paridade SIMPLE ↔ ADVANCED', () => {
       await pg.cleanup()
     }
   })
+
+  test('consulta de lacunas produz o mesmo total e grupos nos dois adapters e isola o resultado por ator', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const where = { field: null, operator: 'ANY' as const, value: null, conditions: [
+        { field: 'dueDate' as const, operator: 'IS_EMPTY' as const, value: null, conditions: null },
+        { field: 'points' as const, operator: 'IS_EMPTY' as const, value: null, conditions: null },
+      ] }
+      const seed = async (ports: PersistencePorts, tenantId: string, userId: string, suffix: string) => {
+        const ctx = { tenantId, actorUserId: userId, actorKind: 'USER' as const }
+        const mut = { ...ctx, mutation: { origin: 'REST', actorType: 'HUMAN' as const, actorSource: 'REST' as const, actorLabel: null } }
+        const project = await ports.unitOfWork.createProjectAggregate(mut, {
+          project: { name: `P-${suffix}`, boardMode: 'SIMPLE' }, defaultColumns: [{ name: 'To Do', baseStatus: 'NOT_STARTED' }], defaultModuleName: 'G', simpleStoryTitle: 'S',
+        })
+        const empty = await ports.unitOfWork.createItemWithRelations(mut, { projectId: project.id, type: 'TASK', title: 'empty' })
+        const zero = await ports.unitOfWork.createItemWithRelations(mut, { projectId: project.id, type: 'TASK', title: 'zero', points: 0 })
+        await ports.unitOfWork.updateItemWithRelations(mut, project.id, zero.id, { dueDate: '2026-10-20' })
+        const half = await ports.unitOfWork.createItemWithRelations(mut, { projectId: project.id, type: 'BUG', title: 'half' })
+        await ports.unitOfWork.updateItemWithRelations(mut, project.id, half.id, { dueDate: '2026-10-20' })
+        const snapshot = await ports.planningGapSnapshots.capture(ctx, { projectId: project.id, scope: null, where, limit: 50, referenceDate: null, timeZone: null })
+        return { ctx, project, snapshot, ids: [empty.id, zero.id, half.id].sort() }
+      }
+      const tenantSqlite = await sqlite.ports.tenants.createTenant({ name: 'T', slug: `t-${crypto.randomUUID()}` })
+      const tenantPg = await pg.ports.tenants.createTenant({ name: 'T', slug: `t-${crypto.randomUUID()}` })
+      const userSqlite = await sqlite.ports.identity.createUser({ tenantId: tenantSqlite.id, actorUserId: null, actorKind: 'SYSTEM' }, { email: 'gaps@test.local', passwordHash: 'h', name: 'A', globalGroup: 'ADMIN' })
+      const userPg = await pg.ports.identity.createUser({ tenantId: tenantPg.id, actorUserId: null, actorKind: 'SYSTEM' }, { email: 'gaps@test.local', passwordHash: 'h', name: 'A', globalGroup: 'ADMIN' })
+      const left = await seed(sqlite.ports, tenantSqlite.id, userSqlite.id, 'sqlite')
+      const right = await seed(pg.ports, tenantPg.id, userPg.id, 'pg')
+
+      expect(left.snapshot.totalDistinct).toBe(2)
+      expect(right.snapshot.totalDistinct).toBe(2)
+      expect(left.snapshot.groups).toEqual(right.snapshot.groups)
+      expect(left.snapshot.items.map(item => item.title).sort()).toEqual(right.snapshot.items.map(item => item.title).sort())
+
+      // O resultado é vinculado ao ator: outro usuário não o acessa.
+      const other = await pg.ports.identity.createUser({ tenantId: tenantPg.id, actorUserId: null, actorKind: 'SYSTEM' }, { email: 'other@test.local', passwordHash: 'h', name: 'B', globalGroup: 'ADMIN' })
+      const otherCtx = { tenantId: tenantPg.id, actorUserId: other.id, actorKind: 'USER' as const }
+      expect(await pg.ports.planningGapSnapshots.get(otherCtx, right.project.id, right.snapshot.resultId)).toBeNull()
+      // E o acesso revogado de tenant distinto também não expõe o resultado.
+      expect(await pg.ports.planningGapSnapshots.get({ ...otherCtx, tenantId: 'other-tenant' }, right.project.id, right.snapshot.resultId)).toBeNull()
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
 })

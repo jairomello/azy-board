@@ -2,7 +2,7 @@ import '../test/setup'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { VIEW_COMMAND_SCHEMA_VERSION, type AssistantViewCommand } from '@azy-board/assistant-contracts'
 import { DEFAULT_FILTERS, EMPTY_FILTER_VALUE } from '../features/board/model/types'
-import { applyViewCommand, defaultViewSession, receiveViewCommand, subscribeViewSession, syncCurrentViewSession, type AssistantViewSession } from './assistantViewStore'
+import { applyViewCommand, defaultViewSession, readPinnedResult, receiveViewCommand, subscribeViewSession, syncCurrentViewSession, type AssistantViewSession } from './assistantViewStore'
 
 function command(partial: Partial<AssistantViewCommand> & Pick<AssistantViewCommand, 'type'>): AssistantViewCommand {
   return { schemaVersion: VIEW_COMMAND_SCHEMA_VERSION, commandId: partial.commandId ?? crypto.randomUUID(), ...partial }
@@ -90,5 +90,29 @@ describe('assistantViewStore (card T17)', () => {
   test('recusa comando de versão desconhecida', () => {
     const invalid = { ...command({ type: 'set_view', view: { mode: 'tree', activeModuleId: null } }), schemaVersion: 99 } as unknown as AssistantViewCommand
     expect(receiveViewCommand('p1', invalid)).toBe(false)
+  })
+
+  test('abre recorte de lacunas preservando a população exata e a visão anterior', () => {
+    const { sessions, unsubscribe } = capture()
+    applyViewCommand('p1', command({ type: 'open_planning_result', planningResult: {
+      resultId: 'r1', itemIds: ['a', 'b'], ancestorIds: ['epic-1'], hiddenCount: 1,
+      totalDistinct: 3, capturedAt: '2026-10-07T12:00:00.000Z', labelKey: 'planning-gap:points', group: 'points',
+    } }))
+    expect(sessions[0].pinnedResult?.itemIds).toEqual(['a', 'b'])
+    expect(sessions[0].pinnedResult?.hiddenCount).toBe(1)
+    expect(readPinnedResult('p1')?.resultId).toBe('r1')
+
+    applyViewCommand('p1', command({ type: 'restore_previous_view' }))
+    unsubscribe()
+    expect(sessions[1].pinnedResult ?? null).toBeNull()
+  })
+
+  test('aplicar filtros limpa o recorte fixado', () => {
+    applyViewCommand('p1', command({ type: 'open_planning_result', planningResult: {
+      resultId: 'r1', itemIds: ['a'], ancestorIds: [], hiddenCount: 0,
+      totalDistinct: 1, capturedAt: '2026-10-07T12:00:00.000Z', labelKey: 'planning-gap-query', group: null,
+    } }))
+    applyViewCommand('p1', command({ type: 'set_filters', filters: { types: ['BUG'] } }))
+    expect(readPinnedResult('p1')).toBeNull()
   })
 })

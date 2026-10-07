@@ -5,7 +5,7 @@
 // `localStorage`, para não vazar para outras abas. O BoardScreen publica o estado
 // corrente (baseline) e assina as mudanças aplicadas.
 import { VIEW_COMMAND_SCHEMA_VERSION } from '@azy-board/assistant-contracts'
-import type { AssistantScreenFilterValue, AssistantViewCommand, AssistantViewRevealPlan } from '@azy-board/assistant-contracts'
+import type { AssistantPlanningResult, AssistantScreenFilterValue, AssistantViewCommand, AssistantViewRevealPlan } from '@azy-board/assistant-contracts'
 import type { BoardFilterState } from '../components/BoardFilters'
 import { DEFAULT_FILTERS, EMPTY_FILTER_VALUE } from '../features/board/model/types'
 
@@ -16,6 +16,9 @@ export interface AssistantViewSession {
   openItemId: string | null
   // Card T18 — grupos a expandir ao revelar um item (checkpoint preserva a visão).
   expandGroupIds?: string[]
+  // Card T26 — recorte fixado do resultado de lacunas (população exata, sem
+  // reconverter OR em filtros AND do toolbar).
+  pinnedResult?: AssistantPlanningResult | null
 }
 
 const HISTORY_LIMIT = 20
@@ -111,12 +114,24 @@ function filtersFromCommand(command: AssistantViewCommand): BoardFilterState {
 }
 
 function applyToSession(current: AssistantViewSession, command: AssistantViewCommand): AssistantViewSession {
-  if (command.type === 'set_filters') return { ...current, filters: filtersFromCommand(command) }
-  if (command.type === 'clear_filters') return { ...current, filters: DEFAULT_FILTERS }
+  if (command.type === 'set_filters') return { ...current, filters: filtersFromCommand(command), pinnedResult: null }
+  if (command.type === 'clear_filters') return { ...current, filters: DEFAULT_FILTERS, pinnedResult: null }
   if (command.type === 'set_view' && command.view) return { ...current, mode: command.view.mode, activeModuleId: command.view.activeModuleId }
   if (command.type === 'open_item' && command.itemId) return { ...current, openItemId: command.itemId }
   if (command.type === 'reveal_item' && command.reveal) return applyReveal(current, command.reveal)
+  // Card T26 — o recorte fixado substitui os filtros do toolbar pela população
+  // exata do resultado e preserva a visão anterior no histórico para voltar.
+  if (command.type === 'open_planning_result' && command.planningResult) {
+    return { ...current, filters: DEFAULT_FILTERS, pinnedResult: command.planningResult }
+  }
   return current
+}
+
+// Leitura do recorte fixado vigente (usada pelo board para escopar a exibição).
+export function readPinnedResult(projectId: string): AssistantPlanningResult | null {
+  const stored = readRaw(projectId)
+  if (stored) return stored.current.pinnedResult ?? null
+  return currentByProject.get(projectId)?.pinnedResult ?? null
 }
 
 // Card T18 — neutraliza apenas os motivos responsáveis, preservando o restante

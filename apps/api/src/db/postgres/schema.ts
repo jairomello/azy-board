@@ -129,6 +129,20 @@ export const idempotencyRecords = pgTable('idempotency_records', {
   scopeUnique: uniqueIndex('idempotency_records_tenant_owner_tool_key_unique').on(table.tenantId, table.ownerId, table.tool, table.idempotencyKey),
 }))
 
+// [T26] Captura de leitura paginada; não participa do journal/outbox de mutações.
+export const planningGapSnapshots = pgTable('planning_gap_snapshots', {
+  resultId: text('result_id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id),
+  projectId: text('project_id').notNull(),
+  actorUserId: text('actor_user_id').notNull().references(() => users.id),
+  capturedAt: text('captured_at').notNull(),
+  expiresAt: text('expires_at').notNull(),
+  snapshotJson: text('snapshot_json').notNull(),
+}, (table) => ({
+  ownerLookup: index('planning_gap_snapshots_owner_idx').on(table.tenantId, table.projectId, table.actorUserId, table.resultId),
+  expiry: index('planning_gap_snapshots_expiry_idx').on(table.expiresAt),
+}))
+
 // ---------------------------------------------------------------------------
 // PROJECTS
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { isRegisteredTool, PROJECTION_FIELDS, requiredFieldsFor, toolFields } from './fields.js'
 import { normalizeDurationArguments } from './duration.js'
-import { TOOL_TEXT_LIMITS } from './limits.js'
+import { PLANNING_GAP_LIMITS, TOOL_TEXT_LIMITS } from './limits.js'
 
 // Campos internos injetados por harness/executores que não fazem parte do schema
 // exposto (ex.: assistantHarness adiciona atomic: true em batch; T25 injeta as
@@ -67,6 +67,94 @@ const VERSION_STATUSES = ['PLANNED', 'IN_DEV', 'RELEASED', 'CANCELLED'] as const
 
 function assertIsoDay(value: unknown, field: string): void {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error(`${field} deve ser uma data no formato AAAA-MM-DD`)
+}
+
+function isValidIsoDay(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00.000Z`)
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
+
+function addCalendarDays(day: string, count: number): string {
+  const date = new Date(`${day}T00:00:00.000Z`)
+  date.setUTCDate(date.getUTCDate() + count)
+  return date.toISOString().slice(0, 10)
+}
+
+/** Normaliza somente a ferramenta nova; list_tasks mantém seu contrato intacto. */
+export function normalizePlanningGapArguments(args: Record<string, unknown>, actorUserId?: string): Record<string, unknown> {
+  const referenceDate = args.referenceDate
+  const timeZone = args.timeZone
+  const hasReference = referenceDate !== undefined && referenceDate !== null
+  const hasTimeZone = timeZone !== undefined && timeZone !== null
+  if (hasReference !== hasTimeZone) throw new Error('referenceDate e timeZone devem ser informados juntos')
+  if (hasReference && !isValidIsoDay(referenceDate)) throw new Error('referenceDate deve ser uma data válida no formato AAAA-MM-DD')
+  if (hasTimeZone) {
+    if (typeof timeZone !== 'string' || !timeZone.trim()) throw new Error('timeZone deve ser um fuso IANA válido')
+    try { new Intl.DateTimeFormat('en', { timeZone }).format(0) } catch { throw new Error('timeZone deve ser um fuso IANA válido') }
+  }
+
+  const visit = (node: unknown, depth: number): unknown => {
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return node
+    const current = node as Record<string, unknown>
+    if (current.operator === 'ALL' || current.operator === 'ANY') {
+      if (!Array.isArray(current.conditions)) return node
+      return { ...current, conditions: current.conditions.map(child => visit(child, depth + 1)) }
+    }
+    if (current.field === 'assignee' && current.operator === 'EQ' && current.value === 'me') {
+      if (!actorUserId) throw new Error('O filtro assignee=me requer o ator autenticado')
+      return { ...current, value: actorUserId }
+    }
+    if (current.field === 'dueDate' && ['EQ', 'LT', 'LTE', 'GT', 'GTE'].includes(String(current.operator))) {
+      if (current.value === 'hoje' || current.value === 'amanhã') {
+        if (!hasReference || !hasTimeZone) throw new Error('Datas relativas exigem referenceDate e timeZone explícitos')
+        return { ...current, value: addCalendarDays(referenceDate as string, current.value === 'amanhã' ? 1 : 0) }
+      }
+    }
+    return { ...current }
+  }
+  return { ...args, where: visit(args.where, 1) }
+}
+
+function validatePlanningGapWhere(where: unknown): void {
+  let count = 0
+  const fields = ['dueDate', 'points', 'sprint', 'version', 'assignee'] as const
+  const dateOperators = ['EQ', 'LT', 'LTE', 'GT', 'GTE']
+  const visit = (raw: unknown, depth: number): void => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('where.conditions[] deve ser um grupo ou condição tipada')
+    count += 1
+    if (count > PLANNING_GAP_LIMITS.maxConditions) throw new Error(`where excede o limite de ${PLANNING_GAP_LIMITS.maxConditions} condições`)
+    const node = raw as Record<string, unknown>
+    if (node.operator === 'ALL' || node.operator === 'ANY') {
+      if (depth > PLANNING_GAP_LIMITS.maxDepth) throw new Error(`where excede a profundidade máxima de ${PLANNING_GAP_LIMITS.maxDepth}`)
+      if (node.field != null || node.value != null || !Array.isArray(node.conditions) || node.conditions.length < 1) throw new Error('Grupos ALL/ANY exigem conditions não vazias e field/value nulos')
+      for (const child of node.conditions) {
+        const childOperator = child && typeof child === 'object' && !Array.isArray(child) ? (child as Record<string, unknown>).operator : null
+        visit(child, childOperator === 'ALL' || childOperator === 'ANY' ? depth + 1 : depth)
+      }
+      return
+    }
+    if (typeof node.field !== 'string' || !fields.includes(node.field as typeof fields[number])) throw new Error(`field inválido; valores aceitos: ${fields.join(', ')}`)
+    if (node.conditions != null) throw new Error('Condições folha não aceitam conditions aninhadas')
+    if (node.operator === 'IS_EMPTY' || node.operator === 'IS_NOT_EMPTY') {
+      if (node.value != null) throw new Error(`${node.operator} não recebe value; use null, e não um valor inferido`)
+      return
+    }
+    if (node.value == null) throw new Error('value null não significa IS_EMPTY; use operator IS_EMPTY explicitamente')
+    if (node.field === 'dueDate') {
+      if (!dateOperators.includes(String(node.operator))) throw new Error('dueDate aceita EQ ou comparações de data LT/LTE/GT/GTE')
+      if (!isValidIsoDay(node.value)) throw new Error('dueDate deve ser YYYY-MM-DD, hoje ou amanhã')
+    } else {
+      if (node.operator !== 'EQ') throw new Error(`${node.field} aceita apenas EQ, IS_EMPTY ou IS_NOT_EMPTY`)
+      if (node.field === 'points' ? typeof node.value !== 'number' || !Number.isFinite(node.value) || node.value < 0 : typeof node.value !== 'string' || !node.value.trim()) {
+        throw new Error(`value inválido para ${node.field}`)
+      }
+    }
+  }
+  if (!where || typeof where !== 'object' || Array.isArray(where)) throw new Error('where deve ser um grupo ALL/ANY tipado')
+  const rootOperator = (where as Record<string, unknown>).operator
+  if (rootOperator !== 'ALL' && rootOperator !== 'ANY') throw new Error('where raiz deve usar operator ALL ou ANY')
+  visit(where, 1)
 }
 
 // Card T25 — cor de tag no mesmo formato aceito pela UI/rotas (#RRGGBB).
@@ -136,6 +224,7 @@ export function validateToolArguments(name: string, args: Record<string, unknown
   if (input.limit != null && (typeof input.limit !== 'number' || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)) {
     throw new Error('limit, quando informado, deve ser um inteiro entre 1 e 100 (omita ou envie null para o padrão)')
   }
+  if (name === 'query_planning_gaps') validatePlanningGapWhere(input.where)
   if (input.offset != null && (typeof input.offset !== 'number' || !Number.isInteger(input.offset) || input.offset < 0)) {
     throw new Error('offset, quando informado, deve ser um inteiro não negativo')
   }

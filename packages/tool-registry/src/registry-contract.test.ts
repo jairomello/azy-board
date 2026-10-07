@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { applyOptionalFields, getSharedToolDefinitions, nestedRequiredFieldsFor, requiredFieldsFor, SHARED_TOOL_NAMES, toolFields } from './registry.js'
-import { validateToolArguments } from './validation.js'
+import { normalizePlanningGapArguments, validateToolArguments } from './validation.js'
 import { TOOL_TEXT_LIMITS } from './limits.js'
 
 // Fonte única: o schema exposto, a lista de obrigatórios e o validador devem
@@ -144,6 +144,53 @@ describe('contrato de fonte única do catálogo MCP', () => {
     expect(() => validateToolArguments('create_version', { projectId: 'p', name: 'v1', releaseDate: '2026-12-01', description: 'notas', status: 'IN_DEV' })).not.toThrow()
     expect(() => validateToolArguments('create_version', { projectId: 'p', name: 'v1', status: 'OPEN' })).toThrow('status inválido')
     expect(() => validateToolArguments('create_version', { projectId: 'p', name: 'v1', releaseDate: '01/12/2026' })).toThrow('AAAA-MM-DD')
+  })
+
+  test('query_planning_gaps publica contrato somente-leitura tipado e limites de paginação', () => {
+    const tool = byName.get('query_planning_gaps')!
+    expect(requiredFieldsFor('query_planning_gaps')).toEqual(['projectId', 'where'])
+    expect(tool.namespace).toBe('discovery')
+    expect(tool.policy).toEqual({ globalGroup: 'TEAM_MEMBER', localRole: 'VIEWER' })
+    expect(tool.routing).toMatchObject({ domain: 'planning', operation: 'read' })
+    expect(tool.responseSchema).toBeDefined()
+    const where = tool.inputSchema.properties.where as { properties: { operator: { enum: string[] }; conditions: { minItems: number; maxItems: number; items: { properties: { field: { enum: Array<string | null> }; operator: { enum: string[] } } } } } }
+    expect(where.properties.operator.enum).toContain('ALL')
+    expect(where.properties.operator.enum).toContain('ANY')
+    expect(where.properties.conditions.maxItems).toBe(20)
+    expect(where.properties.conditions.minItems).toBe(1)
+    expect(where.properties.conditions.items.properties.field.enum).toEqual(['dueDate', 'points', 'sprint', 'version', 'assignee', null])
+    for (const operator of ['IS_EMPTY', 'IS_NOT_EMPTY', 'EQ', 'LT', 'LTE', 'GT', 'GTE']) expect(where.properties.conditions.items.properties.operator.enum).toContain(operator)
+    const limit = tool.inputSchema.properties.limit as { maximum: number; description: string }
+    expect(limit.maximum).toBe(100)
+    expect(limit.description).toContain('padrão 50')
+  })
+
+  test('o schema de scope do projeto continua sendo texto', () => {
+    expect(byName.get('create_project')!.inputSchema.properties.scope).toMatchObject({ type: ['string', 'null'] })
+  })
+
+  test('normaliza hoje/amanhã com referência/fuso explícitos e assignee me', () => {
+    const normalized = normalizePlanningGapArguments({
+      projectId: 'p', referenceDate: '2026-10-07', timeZone: 'America/Sao_Paulo',
+      where: { field: null, operator: 'ALL', value: null, conditions: [
+        { field: 'dueDate', operator: 'GTE', value: 'hoje', conditions: null },
+        { field: 'assignee', operator: 'EQ', value: 'me', conditions: null },
+      ] },
+    }, 'user-123')
+    expect(normalized.where).toMatchObject({ conditions: [
+      { field: 'dueDate', operator: 'GTE', value: '2026-10-07' },
+      { field: 'assignee', operator: 'EQ', value: 'user-123' },
+    ] })
+    expect(() => normalizePlanningGapArguments({ where: { operator: 'ALL', conditions: [{ field: 'dueDate', operator: 'EQ', value: 'amanhã', conditions: null }] } })).toThrow('referenceDate e timeZone')
+    expect(() => normalizePlanningGapArguments({ referenceDate: '2026-10-07', timeZone: 'Mars/Olympus', where: {} })).toThrow('fuso IANA')
+  })
+
+  test('valida árvore ALL/ANY limitada e não interpreta null como ausência', () => {
+    const group = (operator: string, conditions: unknown[]) => ({ field: null, operator, value: null, conditions })
+    const leaf = { field: 'points', operator: 'IS_EMPTY', value: null, conditions: null }
+    expect(() => validateToolArguments('query_planning_gaps', { projectId: 'p', where: group('ANY', [leaf]) })).not.toThrow()
+    expect(() => validateToolArguments('query_planning_gaps', { projectId: 'p', where: group('ALL', [{ field: 'points', operator: 'EQ', value: null, conditions: null }]) })).toThrow('null não significa IS_EMPTY')
+    expect(() => validateToolArguments('query_planning_gaps', { projectId: 'p', where: group('ALL', [group('ALL', [group('ANY', [group('ALL', [leaf])])])]) })).toThrow('profundidade máxima')
   })
 
   test('add_checklist_item_to_task exige checklistName e text', () => {

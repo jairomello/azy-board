@@ -335,6 +335,31 @@ export const addProjectMemberSchema = z.object({ email: z.string().trim().email(
 export const costCenterSchema = z.object({ code: z.string().trim().min(1).max(100), description: optionalText(2_000).nullable().optional() }).strict()
 export const updateCostCenterSchema = costCenterSchema.partial().extend({ expectedCode: z.string().trim().min(1).max(100).optional() }).strict()
 
+// Card T26 — árvore ALL/ANY tipada. Profundidade e allowlist são revalidadas
+// pelo catálogo compartilhado (validateToolArguments) antes da captura.
+export const planningGapOperatorSchema = z.enum(['ALL', 'ANY', 'IS_EMPTY', 'IS_NOT_EMPTY', 'EQ', 'LT', 'LTE', 'GT', 'GTE'])
+const planningGapNodeSchema: z.ZodType = z.lazy(() => z.object({
+  field: z.enum(['dueDate', 'points', 'sprint', 'version', 'assignee']).nullable().optional(),
+  operator: planningGapOperatorSchema,
+  value: z.union([z.string().max(200), z.number().finite()]).nullable().optional(),
+  conditions: z.array(planningGapNodeSchema).min(1).max(20).nullable().optional(),
+}).strict())
+export const planningGapQuerySchema = z.object({
+  scope: z.object({
+    types: z.array(z.enum(['TASK', 'BUG'])).min(1).max(2).nullable().optional(),
+    statuses: z.array(z.enum(['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED', 'ARCHIVED'])).min(1).max(6).nullable().optional(),
+    moduleId: z.string().min(1).max(128).nullable().optional(),
+    assignee: z.string().min(1).max(200).nullable().optional(),
+    includeArchived: z.boolean().nullable().optional(),
+  }).strict().nullable().optional(),
+  where: planningGapNodeSchema,
+  limit: z.number().int().min(1).max(100).optional(),
+  cursor: z.string().min(1).max(500).nullable().optional(),
+  resultId: z.string().min(1).max(100).nullable().optional(),
+  referenceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  timeZone: z.string().min(1).max(100).nullable().optional(),
+}).strict()
+
 const openApiSchemaMap = {
   LoginRequest: loginSchema,
   CreateProjectRequest: createProjectSchema,

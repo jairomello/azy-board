@@ -65,6 +65,7 @@ describe('migration de rollup diário do dashboard (Item 13)', () => {
     expect(tables.map(table => table.name)).toContain('project_analytics_dimension_state')
     expect(tables.map(table => table.name)).toContain('project_analytics_dimension_snapshots')
     expect(tables.map(table => table.name)).toContain('project_analytics_dimension_meta')
+    expect(tables.map(table => table.name)).toContain('planning_gap_snapshots')
     expect((sqlite.query('SELECT COUNT(*) AS count FROM project_metrics_daily').get() as { count: number }).count).toBe(0)
     const indexes = sqlite.query("SELECT name FROM sqlite_master WHERE type = 'index'").all() as Array<{ name: string }>
     expect(indexes.map(index => index.name)).toContain('item_events_item_occurrence_idx')

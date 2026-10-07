@@ -269,5 +269,17 @@
   "itemDeleted": "Elemento eliminado",
   "itemDeleteError": "Error al eliminar el elemento",
   "moduleCreated": "Módulo creado",
-  "moduleCreateError": "Error al crear el módulo"
+  "moduleCreateError": "Error al crear el módulo",
+  "planningGapTotal": "{{count}} elementos · capturado el {{capturedAt}}",
+  "planningGapHidden": "{{count}} elementos no aparecen en el Kanban",
+  "planningGapViewTree": "Ver en árbol",
+  "planningGapRestore": "Volver a la vista anterior",
+  "planningGapLabel": {
+    "planning-gap-query": "Faltantes de planificación",
+    "planning-gap:dueDate": "Sin fecha límite",
+    "planning-gap:points": "Sin estimación",
+    "planning-gap:sprint": "Sin sprint",
+    "planning-gap:version": "Sin versión",
+    "planning-gap:assignee": "Sin responsable"
+  }
 }

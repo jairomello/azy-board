@@ -52,6 +52,12 @@ Fluxo recomendado: `list_tasks` para obter o `itemId`, `list_checklists` para ob
 
 Para marcar vários passos, prefira `check_items` com no máximo 100 entradas. Cada entrada aceita os três IDs ou `checklistName` + `text`/`position`; a operação é atômica dentro de cada card, e `failures` informa o índice de cada entrada rejeitada. A busca semântica normaliza espaços externos/internos e caixa, mas nunca escolhe entre candidatos duplicados.
 
+### Consulta de lacunas de planejamento
+
+`query_planning_gaps` encontra itens sem prazo, estimativa, sprint, versão ou responsável usando uma árvore tipada ALL/ANY. Use `IS_EMPTY` para ausência: `null` no envelope nunca significa ausência. Para `hoje`/`amanhã`, informe `referenceDate` (YYYY-MM-DD) e `timeZone` IANA. A resposta traz `resultId`, total distinto e grupos sobrepostos identificados; nunca some grupos para obter o total. Abra a população exata no board com `open_planning_result` usando o `resultId` (e, opcionalmente, um grupo), preservando a visão anterior.
+
+Ao corrigir lacunas, use apenas valores que o usuário informou explicitamente e `update_items` com os `itemIds` do grupo aberto. Nunca invente prazo, pontos, sprint, versão ou responsável; não use `matchAll` nem reconsulte a população após a aprovação.
+
 ### Apontamentos de trabalho com duração
 
 `create_item_log` registra trabalho em uma única operação, com `activity` e duração opcional:

@@ -213,6 +213,62 @@ export interface BatchUpdateReadSnapshot {
   tagLinks: ItemRelationLinkRecord[]
 }
 
+/** Captura de leitura para T26; não reutiliza o journal T38 de mutações. */
+export interface PlanningGapSnapshotItemRecord {
+  itemId: string
+  revision: string
+  type: ItemType
+  status: TaskStatus
+  isLeaf: boolean
+  dueDate: string | null
+  points: number | null
+  sprintIds: string[]
+  versionId: string | null
+  assigneeId: string | null
+  assigneeApiKeyId: string | null
+  title: string
+  columnId: string | null
+  parentId: string | null
+  moduleId: string | null
+  sequenceCode: string | null
+  position: number
+}
+
+export interface PlanningGapSnapshotRecord {
+  resultId: string
+  tenantId: string
+  projectId: string
+  actorUserId: string
+  capturedAt: string
+  expiresAt: string
+  referenceDate: string | null
+  timeZone: string | null
+  scopeJson: string
+  expressionJson: string
+  items: PlanningGapSnapshotItemRecord[]
+  totalDistinct: number
+  groups: Array<{ field: 'dueDate' | 'points' | 'sprint' | 'version' | 'assignee'; count: number; overlapping: true }>
+  exclusiveCombinations: Array<{ fields: string[]; count: number }>
+}
+
+export type PlanningGapQueryOperator = 'ALL' | 'ANY' | 'IS_EMPTY' | 'IS_NOT_EMPTY' | 'EQ' | 'LT' | 'LTE' | 'GT' | 'GTE'
+export interface PlanningGapQueryNode {
+  field: 'dueDate' | 'points' | 'sprint' | 'version' | 'assignee' | null
+  operator: PlanningGapQueryOperator
+  value: string | number | null
+  conditions: PlanningGapQueryNode[] | null
+}
+export interface PlanningGapQueryRequest {
+  projectId: string
+  scope: { types?: ItemType[] | null; statuses?: TaskStatus[] | null; moduleId?: string | null; assignee?: string | null; includeArchived?: boolean | null } | null
+  where: PlanningGapQueryNode
+  limit: number
+  cursor?: string | null
+  resultId?: string | null
+  referenceDate?: string | null
+  timeZone?: string | null
+}
+
 export interface MembershipRecord {
   id: string
   tenantId: string

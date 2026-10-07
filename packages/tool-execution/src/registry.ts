@@ -11,7 +11,7 @@ import {
   toolListAttachments, toolListChecklists, toolListColumns, toolListCostCenters, toolListItemLinks, toolListItemLogs,
   toolReadAttachment,
   toolListMembers, toolListModules, toolListProjects, toolListSprints, toolListSquads,
-  toolListTags, toolListTasks, toolListVersions, toolMoveTask, toolReorderColumns,
+  toolListTags, toolListTasks, toolListVersions, toolMoveTask, toolQueryPlanningGaps, toolReorderColumns,
   toolReorderItems, toolReleaseTask, toolRemoveMember, toolSetItemTags, toolUnarchiveItem,
   toolUpdateChecklist, toolUpdateChecklistItem, toolUpdateItem, toolUpdateItemLink, toolUpdateItemLog,
   toolUpdateMember, toolUpdateProject, toolUpdateSprint, toolUpdateItems, toolUpdateVersion,
@@ -19,7 +19,7 @@ import {
   type ApiCall,
 } from './http-adapter.js'
 import {
-  coerceArgumentsBySchema, getSharedToolDefinitions, normalizeDurationArguments, validateToolArguments,
+  coerceArgumentsBySchema, getSharedToolDefinitions, normalizeDurationArguments, normalizePlanningGapArguments, validateToolArguments,
   type HumanToolContext,
 } from '@azy-board/tool-registry'
 
@@ -127,6 +127,7 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
   const pruned = name === 'set_member_squad' ? args : pruneNullArguments(args)
   args = coerceArgumentsBySchema(name, pruned)
   args = normalizeDurationArguments(name, args)
+  if (name === 'query_planning_gaps') args = normalizePlanningGapArguments(args, execution.context.userId)
   validateToolArguments(name, args)
   // [PROJECT RESOLUTION] projectId aceita ID ou nome exato; resolução só chama a API para nomes.
   if (typeof args.projectId === 'string' && args.projectId.trim()) {
@@ -165,6 +166,7 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'get_dashboard_metrics': return toolGetDashboardMetrics(api, args as unknown as Parameters<typeof toolGetDashboardMetrics>[1], execution.context)
     case 'get_shadow_markdown': return toolGetShadowMarkdown(api, args.projectId as string)
     case 'list_tasks': return toolListTasks(api, args as Parameters<typeof toolListTasks>[1])
+    case 'query_planning_gaps': return toolQueryPlanningGaps(api, args as Parameters<typeof toolQueryPlanningGaps>[1])
     case 'list_modules': return toolListModules(api, args.projectId as string)
     case 'get_current_sprint': return toolGetCurrentSprint(api, args.projectId as string)
     case 'list_columns': return toolListColumns(api, args.projectId as string)

@@ -3,7 +3,7 @@
 
 import type { AssistantScreen, AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 import { MCP_TOOL_POLICIES, type McpPolicy } from './policies.js'
-import { TOOL_TEXT_LIMITS } from './limits.js'
+import { PLANNING_GAP_LIMITS, TOOL_TEXT_LIMITS } from './limits.js'
 import { toolFields, requiredFieldsFor, nestedRequiredFieldsFor, isRegisteredTool, OPERATION_ARGS_REQUIRED, SHARED_TOOL_NAMES } from './fields.js'
 
 export type ToolSource = 'mcp' | 'azy-agent'
@@ -60,7 +60,7 @@ export type ItemMutationResponse = {
 
 export { toolFields, requiredFieldsFor, nestedRequiredFieldsFor, isRegisteredTool, OPERATION_ARGS_REQUIRED, SHARED_TOOL_NAMES }
 
-const discovery = new Set(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_screen_overview', 'get_dashboard_metrics', 'get_shadow_markdown', 'list_tasks', 'list_modules', 'get_current_sprint', 'list_columns', 'list_sprints', 'list_tags', 'list_versions', 'list_members', 'list_squads', 'list_item_logs', 'list_cost_centers', 'list_attachments', 'read_attachment', 'list_item_links', 'list_checklists'])
+const discovery = new Set(['list_projects', 'get_project', 'get_board', 'get_tree', 'get_screen_overview', 'get_dashboard_metrics', 'query_planning_gaps', 'get_shadow_markdown', 'list_tasks', 'list_modules', 'get_current_sprint', 'list_columns', 'list_sprints', 'list_tags', 'list_versions', 'list_members', 'list_squads', 'list_item_logs', 'list_cost_centers', 'list_attachments', 'read_attachment', 'list_item_links', 'list_checklists'])
 const planning = new Set(['claim_task', 'list_tasks', 'list_checklists', 'create_checklist', 'add_checklist_item', 'add_checklist_item_to_task', 'check_item', 'get_shadow_markdown'])
 
 type ToolClassification = {
@@ -85,6 +85,7 @@ const classifications: Record<string, ToolClassification> = {
   get_screen_overview: { domain: 'board', scope: 'project', operation: 'read' },
   // Card T20 — métricas oficiais do Dashboard (paridade com as rotas /dashboard/*).
   get_dashboard_metrics: { domain: 'board', scope: 'project', operation: 'read' },
+  query_planning_gaps: { domain: 'planning', scope: 'project', operation: 'read' },
   get_shadow_markdown: { domain: 'board', scope: 'project', operation: 'read' },
   list_columns: { domain: 'board', scope: 'project', operation: 'read' },
   create_column: { domain: 'board', scope: 'project', operation: 'create' },
@@ -234,6 +235,49 @@ const versionChangeSchema = {
   },
 }
 
+function planningGapNodeSchema(depth: number): SchemaNode {
+  const conditions = depth > 1
+    ? { type: ['array', 'null'], minItems: 1, maxItems: PLANNING_GAP_LIMITS.maxConditions, items: planningGapNodeSchema(depth - 1) }
+    : { type: ['array', 'null'], minItems: 1, maxItems: PLANNING_GAP_LIMITS.maxConditions, items: { type: 'object', additionalProperties: false, required: ['field', 'operator', 'value', 'conditions'], properties: { field: { type: ['string', 'null'], enum: ['dueDate', 'points', 'sprint', 'version', 'assignee', null] }, operator: { type: 'string', enum: ['ALL', 'ANY', 'IS_EMPTY', 'IS_NOT_EMPTY', 'EQ', 'LT', 'LTE', 'GT', 'GTE'] }, value: { type: ['string', 'number', 'null'] }, conditions: { type: 'null' } } } }
+  return {
+  type: 'object', additionalProperties: false,
+  required: ['field', 'operator', 'value', 'conditions'],
+  properties: {
+    field: { type: ['string', 'null'], enum: ['dueDate', 'points', 'sprint', 'version', 'assignee', null] },
+    operator: { type: 'string', enum: ['ALL', 'ANY', 'IS_EMPTY', 'IS_NOT_EMPTY', 'EQ', 'LT', 'LTE', 'GT', 'GTE'] },
+    value: { type: ['string', 'number', 'null'], description: 'Valor tipado; null no envelope não significa IS_EMPTY. IS_EMPTY/IS_NOT_EMPTY não usam valor.' },
+    conditions,
+  },
+  }
+}
+
+const planningGapWhereSchema = planningGapNodeSchema(PLANNING_GAP_LIMITS.maxDepth)
+
+const planningGapScopeSchema = {
+  type: ['object', 'null'], additionalProperties: false,
+  required: ['types', 'statuses', 'moduleId', 'assignee', 'includeArchived'],
+  properties: {
+    types: { type: ['array', 'null'], items: { type: 'string', enum: ['TASK', 'BUG'] }, description: 'Escopo padrão: TASK/BUG folhas.' },
+    statuses: { type: ['array', 'null'], items: { type: 'string', enum: ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'] }, description: 'Escopo padrão: NOT_STARTED/IN_PROGRESS/BLOCKED.' },
+    moduleId: { type: ['string', 'null'] },
+    assignee: { type: ['string', 'null'], description: 'ID, e-mail, nome exato ou me para o ator autenticado.' },
+    includeArchived: { type: ['boolean', 'null'], description: 'Por padrão false.' },
+  },
+}
+
+const planningGapQueryResponseSchema: SchemaNode = {
+  type: 'object', additionalProperties: false,
+  required: ['resultId', 'capturedAt', 'expiresAt', 'totalDistinct', 'groups', 'exclusiveCombinations', 'items', 'nextCursor', 'scope', 'expression', 'referenceDate', 'timeZone'],
+  properties: {
+    resultId: { type: 'string' }, capturedAt: { type: 'string' }, expiresAt: { type: 'string' }, totalDistinct: { type: 'number' },
+    groups: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['field', 'count', 'overlapping'], properties: { field: { type: 'string', enum: ['dueDate', 'points', 'sprint', 'version', 'assignee'] }, count: { type: 'number' }, overlapping: { type: 'boolean' } } } },
+    exclusiveCombinations: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['fields', 'count'], properties: { fields: { type: 'array', items: { type: 'string', enum: ['dueDate', 'points', 'sprint', 'version', 'assignee'] } }, count: { type: 'number' } } } },
+    items: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    nextCursor: { type: ['string', 'null'] }, scope: { type: 'object', additionalProperties: true }, expression: { type: 'object', additionalProperties: true },
+    referenceDate: { type: ['string', 'null'] }, timeZone: { type: ['string', 'null'] },
+  },
+}
+
 const itemFiltersSchema = {
   type: 'object', additionalProperties: false,
   required: ['itemIds', 'types', 'statuses', 'sprint', 'version', 'module', 'assignee', 'parent', 'column', 'tag', 'titleContains', 'onlyLeaves', 'matchAll'],
@@ -254,7 +298,7 @@ const itemFiltersSchema = {
   },
 }
 
-function schemaFor(field: string, isRequired: boolean): Record<string, unknown> {
+function schemaFor(field: string, isRequired: boolean, toolName?: string): Record<string, unknown> {
   const nullable = (schema: Record<string, unknown>) => isRequired ? schema : { ...schema, type: [schema.type, 'null'] }
   if (field === 'operations') return {
     type: 'array', maxItems: 50,
@@ -304,6 +348,8 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
   if (field === 'metric') return { type: 'string', enum: ['snapshot', 'burnup', 'aging', 'hours', 'sprint'], description: 'Métrica oficial do Dashboard: snapshot (Progresso/WIP/Bloqueados/Atrasados/Carga), burnup, aging, hours ou sprint.' }
   if (field === 'includeItems') return { ...nullable({ type: 'boolean' }), description: 'Inclui uma amostra limitada dos itens que compõem o indicador (padrão true).' }
   if (field === 'from' || field === 'to') return { ...nullable({ type: 'string' }), description: 'Data UTC no formato AAAA-MM-DD (período do burnup/horas).' }
+  if (toolName === 'query_planning_gaps' && field === 'referenceDate') return { ...nullable({ type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }), description: 'Data de referência YYYY-MM-DD obrigatória ao usar hoje/amanhã.' }
+  if (toolName === 'query_planning_gaps' && field === 'timeZone') return { ...nullable({ type: 'string' }), description: 'Fuso IANA obrigatório ao usar hoje/amanhã (ex.: America/Sao_Paulo).' }
   if (field === 'onlyLeaves' || field === 'atomic' || field === 'confirm' || field === 'dryRun' || field === 'checked') return nullable({ type: 'boolean' })
   if (field === 'advancedChecklists') return { ...nullable({ type: 'boolean' }), description: 'Habilita data, responsável e descrição nos itens de checklist do projeto (padrão false).' }
   if (field === 'plannedPoints') return { ...nullable({ type: 'number' }), description: 'Estimated total story points for the project.' }
@@ -319,9 +365,12 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
   if (field === 'squadId') return { type: ['string', 'null'], description: 'Squad ID to associate (SET) or null to clear the member squad (CLEAR). Requires an existing project membership.' }
   if (field === 'color') return { ...nullable({ type: 'string' }), description: 'Cor hex no formato #RRGGBB.' }
   if (field === 'code') return { ...nullable({ type: 'string' }), description: 'Código do centro de custo (único por projeto).' }
+  if (field === 'limit' && toolName === 'query_planning_gaps') return { ...nullable({ type: 'integer', minimum: 1, maximum: PLANNING_GAP_LIMITS.maxPageSize }), description: `Tamanho da página (padrão ${PLANNING_GAP_LIMITS.defaultPageSize}, máximo ${PLANNING_GAP_LIMITS.maxPageSize}).` }
   if (field === 'limit' || field === 'points' || field === 'offset') return nullable({ type: 'number' })
   if (field === 'durationMin') return { ...nullable({ type: 'number' }), description: 'Duração em minutos (inteiro não negativo); alternativa a duration.' }
   if (field === 'filters') return itemFiltersSchema
+  if (toolName === 'query_planning_gaps' && field === 'scope') return planningGapScopeSchema
+  if (toolName === 'query_planning_gaps' && field === 'where') return planningGapWhereSchema
   if (field === 'changes') return itemChangeSchema
   if (field === 'itemId') return nullable({ type: 'string', description: 'Board item/card ID. For checklist tools, this is the parent card that owns the checklist; never use checklistId or checklistItemId.' })
   if (field === 'linkId') return nullable({ type: 'string', description: 'ID do link externo pertencente ao item identificado por itemId.' })
@@ -429,7 +478,7 @@ export function applyOptionalFields(inputSchema: ToolDefinition['inputSchema'], 
 const friendlyNames: Record<string, string> = {
   update_items: 'Atualizar itens', update_item: 'Atualizar item', batch: 'Cadastrar estrutura', batch_move: 'Mover itens em lote',
   list_projects: 'Listar projetos', get_project: 'Consultar projeto', get_board: 'Consultar board', get_tree: 'Consultar hierarquia', list_tasks: 'Listar itens',
-  get_screen_overview: 'Resumo do board', get_dashboard_metrics: 'Métricas do Dashboard',
+  get_screen_overview: 'Resumo do board', get_dashboard_metrics: 'Métricas do Dashboard', query_planning_gaps: 'Consultar lacunas de planejamento',
   create_project: 'Criar projeto', create_project_structure: 'Criar projeto e estrutura', update_project: 'Atualizar projeto', delete_project: 'Excluir projeto', create_task: 'Criar item', delete_item: 'Excluir item',
   move_task: 'Mover item', complete_task: 'Concluir item', claim_task: 'Assumir item', release_task: 'Liberar item', archive_item: 'Arquivar item', unarchive_item: 'Desarquivar item',
   list_sprints: 'Listar sprints', create_sprint: 'Criar sprint', update_sprint: 'Editar sprint', activate_sprint: 'Ativar sprint', close_sprint: 'Fechar sprint', list_members: 'Listar membros',
@@ -467,6 +516,7 @@ const toolDescriptions: Record<string, string> = {
   get_tree: 'Retorna a hierarquia de itens (EPIC > STORY > TASK/BUG), filtrável por moduleId, assigneeId e sprintId. Descrições resumidas por padrão; includeDetails=true devolve os campos pesados e includeDescriptions=true o texto completo.',
   get_screen_overview: 'Digest do board em um único passo: contagens por coluna (total, TASK, BUG), sprint/filtro ativo e amostra de referências. Prefira sobre get_board para perguntas de contagem/recorte; scope=SCREEN reflete o recorte capturado na tela do usuário, scope=PROJECT o estado atual do banco.',
   get_dashboard_metrics: 'Métricas oficiais do Dashboard com os mesmos números e regras da tela: metric=snapshot (Progresso/Escopo, WIP, Bloqueados, Atrasados, Carga), burnup, aging, hours ou sprint. Aceita filtros e período; limit (padrão 50, máximo 100), cursor opaco e detail para continuar páginas de detalhe. Preserva totais completos, avisos de truncamento/cobertura parcial e populações sobrepostas. Quando os filtros não são informados e a tela ativa é o Dashboard, usa os filtros da fotografia.',
+  query_planning_gaps: 'Consulta itens por lacunas de planejamento com condições tipadas ALL/ANY. Retorna total distinto, grupos sobrepostos identificados e resultado paginado fixado ao ator/projeto.',
   get_shadow_markdown: 'Retorna o board do projeto em Markdown (board.md) para leitura rápida.',
   list_tasks: 'Lista itens do projeto; onlyLeaves é true, includeDescriptions é false e limit é 50 por padrão. Filtros opcionais: type, status, assigneeId, sprintId, tagIds, parentId, columnId, moduleId, com projeção fields e paginação por limit/cursor. Omitir um filtro equivale a não filtrar.',
   list_modules: 'Lista os módulos do projeto.',
@@ -540,12 +590,12 @@ export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinit
               : name === 'update_sprint' && field === 'changes' ? sprintChangeSchema
                 : name === 'update_version' && field === 'changes' ? versionChangeSchema
                   : name === 'create_version' && field === 'status' ? { type: ['string', 'null'], enum: ['PLANNED', 'IN_DEV', 'RELEASED', 'CANCELLED', null], description: 'Situação da versão (padrão PLANNED).' }
-                    : schemaFor(field, mandatory.has(field))])), required: fields, additionalProperties: false }
+                    : schemaFor(field, mandatory.has(field), name)])), required: fields, additionalProperties: false }
     })(),
     policy: MCP_TOOL_POLICIES[name]!,
     namespace: discovery.has(name) ? 'discovery' : planning.has(name) ? 'planning' : 'mutation',
     routing: routingFor(name),
-    ...(['update_item', 'update_items'].includes(name) ? { responseSchema: itemMutationResponseSchema } : name === 'check_items' ? { responseSchema: checkItemsResponseSchema } : name === 'read_attachment' ? { responseSchema: attachmentReadResponseSchema } : {}),
+     ...(['update_item', 'update_items'].includes(name) ? { responseSchema: itemMutationResponseSchema } : name === 'check_items' ? { responseSchema: checkItemsResponseSchema } : name === 'read_attachment' ? { responseSchema: attachmentReadResponseSchema } : name === 'query_planning_gaps' ? { responseSchema: planningGapQueryResponseSchema } : {}),
   }))
 }
 

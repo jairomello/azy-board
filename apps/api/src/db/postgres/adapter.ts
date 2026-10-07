@@ -8,6 +8,8 @@ import type {
   ItemLinkRecord,
   ItemRecord,
   MembershipRecord,
+  PlanningGapQueryRequest,
+  PlanningGapSnapshotRecord,
   ModuleRecord,
   MutationContext,
   PersistenceContext,
@@ -109,6 +111,7 @@ import { IdempotencyConflictError, IdempotentReplaySignal } from '../../persiste
 import { buildBatchUpdateResponse } from '../../persistence/commandResponses'
 import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
 import { applyDimensionProjectionBackfill, applyDimensionProjectionBaselineBackfill, readItemSnapshot, readItemSnapshots, recordDeletedItemEventsBatch, recordItemEvent, type PgItemSnapshot } from './itemAnalytics'
+import { buildPlanningGapSnapshot, planningGapPage, type PlanningGapCandidate } from '../../services/planningGaps'
 
 // ---------------------------------------------------------------------------
 // Mapeamento de linhas SQL para records de domínio
@@ -2418,6 +2421,52 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             if (complete) break
           }
         }
+      },
+    },
+
+    planningGapSnapshots: {
+      async capture(context, request: PlanningGapQueryRequest): Promise<PlanningGapSnapshotRecord> {
+        if (!context.actorUserId) throw new Error('PLANNING_GAP_ACTOR_REQUIRED')
+        const capturedAt = new Date().toISOString()
+        const resultId = generateId()
+        return tx(async client => {
+          // [TENANT] Uma única leitura MVCC reúne itens, folhas e todos os vínculos históricos.
+          const result = await client.query(`SELECT i.id, i.updated_at AS revision, i.type, i.status,
+            NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id) AS is_leaf,
+            i.title, i.column_id, i.parent_id, i.module_id, i.sequence_code, i.position, i.due_date, i.points,
+            COALESCE((SELECT string_agg(s.sprint_id, ',' ORDER BY s.sprint_id) FROM item_sprints s WHERE s.tenant_id = i.tenant_id AND s.item_id = i.id), '') AS sprint_ids,
+            i.version_id, i.assignee_id, i.assignee_api_key_id
+            FROM items i WHERE i.tenant_id = $1 AND i.project_id = $2`, [context.tenantId, request.projectId])
+          const candidates = result.rows.map((raw: PgRow) => ({
+            id: raw.id as string, revision: raw.revision as string, type: raw.type as PlanningGapCandidate['type'],
+            status: raw.status as PlanningGapCandidate['status'], isLeaf: raw.is_leaf as boolean,
+            title: raw.title as string, columnId: raw.column_id as string | null, parentId: raw.parent_id as string | null,
+            moduleId: raw.module_id as string | null, sequenceCode: raw.sequence_code as string | null, position: Number(raw.position),
+            dueDate: raw.due_date as string | null, points: raw.points as number | null,
+            sprintIds: raw.sprint_ids ? String(raw.sprint_ids).split(',').sort() : [], versionId: raw.version_id as string | null,
+            assigneeId: raw.assignee_id as string | null, assigneeApiKeyId: raw.assignee_api_key_id as string | null,
+          }))
+          const snapshot = buildPlanningGapSnapshot({ context, request, resultId, capturedAt, candidates })
+          await client.query(`INSERT INTO planning_gap_snapshots (result_id, tenant_id, project_id, actor_user_id, captured_at, expires_at, snapshot_json)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)`, [resultId, context.tenantId, request.projectId, context.actorUserId, capturedAt, snapshot.expiresAt, JSON.stringify(snapshot)])
+          return snapshot
+        })
+      },
+      async get(context, projectId, resultId): Promise<PlanningGapSnapshotRecord | null> {
+        if (!context.actorUserId) return null
+        const row = await q1(`SELECT snapshot_json, expires_at FROM planning_gap_snapshots
+          WHERE tenant_id = $1 AND project_id = $2 AND actor_user_id = $3 AND result_id = $4`, [context.tenantId, projectId, context.actorUserId, resultId])
+        if (!row) return null
+        if (Date.parse(row.expires_at as string) <= Date.now()) throw new Error('PLANNING_GAP_RESULT_EXPIRED')
+        return JSON.parse(row.snapshot_json as string) as PlanningGapSnapshotRecord
+      },
+      async page(context, projectId, resultId, cursor, limit) {
+        const snapshot = await this.get(context, projectId, resultId)
+        return snapshot ? planningGapPage(snapshot, cursor, limit) : null
+      },
+      async pruneExpired(nowIso) {
+        const result = await pool.query('DELETE FROM planning_gap_snapshots WHERE expires_at <= $1', [nowIso])
+        return result.rowCount ?? 0
       },
     },
 

@@ -24,6 +24,8 @@ import type {
   DashboardPopulationFilter,
   DashboardSnapshotAggregateRow,
   DashboardTransitionRecord,
+  PlanningGapQueryRequest,
+  PlanningGapSnapshotRecord,
   ItemEventRecord,
   AssistantApprovalDetailRecord,
   AssistantConversationRecord,
@@ -56,7 +58,7 @@ import type { AssistantModelConfigPatch, ChecklistItemPatch, ColumnPatch, CostCe
 import type { DrizzleDb } from '../index'
 import {
   apiKeys, assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantModelConfigs, assistantRuns, assistantSettings, assistantToolCalls,
-  attachments, checklistItems, checklists, columns, idempotencyRecords, itemEvents, itemLinks, itemLogs, itemSprints, itemTags,
+   attachments, checklistItems, checklists, columns, idempotencyRecords, itemEvents, itemLinks, itemLogs, itemSprints, itemTags, planningGapSnapshots,
   items, loginAttempts, memberships, modules, projectAnalyticsCoverage, projectCostCenters, projectMetricsDaily, projectVersions, projects, squads, sprintCycleItems, sprintCycles, sprints,
   storageCleanupJobs, tags, tenantAttachmentSettings, tenants, userAvatars, users,
 } from '../schema'
@@ -68,6 +70,7 @@ import { createSqliteProjectUnitOfWork } from './projectUnitOfWork'
 import { createSqliteDomainEventPort, appendDomainEventSync } from './domainEventOutbox'
 import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
 import { applyDimensionProjectionBackfill, applyDimensionProjectionBaselineBackfill, type SqliteItemSnapshot } from './itemAnalytics'
+import { buildPlanningGapSnapshot, planningGapPage, type PlanningGapCandidate } from '../../services/planningGaps'
 
 function asMutation(context: PersistenceContext): MutationContext {
   return {
@@ -1847,6 +1850,55 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
             if (complete) break
           }
         }
+      },
+    },
+    planningGapSnapshots: {
+      async capture(context, request: PlanningGapQueryRequest) {
+        if (!context.actorUserId) throw new Error('PLANNING_GAP_ACTOR_REQUIRED')
+        const capturedAt = new Date().toISOString()
+        const resultId = generateId()
+        return runSqliteAtomic(sqlite, () => {
+          // [TENANT] Todas as relações são lidas na mesma transação e no mesmo tenant/projeto.
+          const rows = sqlite.query<{
+            id: string; revision: string; type: PlanningGapCandidate['type']; status: PlanningGapCandidate['status']; is_leaf: number;
+            title: string; column_id: string | null; parent_id: string | null; module_id: string | null; sequence_code: string | null; position: number;
+            due_date: string | null; points: number | null; sprint_ids: string | null; version_id: string | null; assignee_id: string | null; assignee_api_key_id: string | null;
+          }, [string, string]>(`SELECT i.id, i.updated_at AS revision, i.type, i.status,
+            CASE WHEN EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id) THEN 0 ELSE 1 END AS is_leaf,
+            i.title, i.column_id, i.parent_id, i.module_id, i.sequence_code, i.position, i.due_date, i.points,
+            (SELECT group_concat(s.sprint_id, ',') FROM item_sprints s WHERE s.tenant_id = i.tenant_id AND s.item_id = i.id) AS sprint_ids,
+            i.version_id, i.assignee_id, i.assignee_api_key_id
+            FROM items i WHERE i.tenant_id = ? AND i.project_id = ?`).all(context.tenantId, request.projectId)
+          const snapshot = buildPlanningGapSnapshot({
+            context, request, resultId, capturedAt,
+            candidates: rows.map(row => ({
+              id: row.id, revision: row.revision, type: row.type, status: row.status, isLeaf: row.is_leaf === 1,
+              title: row.title, columnId: row.column_id, parentId: row.parent_id, moduleId: row.module_id,
+              sequenceCode: row.sequence_code, position: row.position, dueDate: row.due_date, points: row.points,
+              sprintIds: row.sprint_ids ? row.sprint_ids.split(',').sort() : [], versionId: row.version_id,
+              assigneeId: row.assignee_id, assigneeApiKeyId: row.assignee_api_key_id,
+            })),
+          })
+          sqlite.query(`INSERT INTO planning_gap_snapshots (result_id, tenant_id, project_id, actor_user_id, captured_at, expires_at, snapshot_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?)`).run(resultId, context.tenantId, request.projectId, context.actorUserId, capturedAt, snapshot.expiresAt, JSON.stringify(snapshot))
+          return snapshot
+        })
+      },
+      async get(context, projectId, resultId) {
+        if (!context.actorUserId) return null
+        const row = sqlite.query<{ snapshot_json: string; expires_at: string }, [string, string, string, string]>(`SELECT snapshot_json, expires_at
+          FROM planning_gap_snapshots WHERE tenant_id = ? AND project_id = ? AND actor_user_id = ? AND result_id = ?`)
+          .get(context.tenantId, projectId, context.actorUserId, resultId)
+        if (!row) return null
+        if (Date.parse(row.expires_at) <= Date.now()) throw new Error('PLANNING_GAP_RESULT_EXPIRED')
+        return JSON.parse(row.snapshot_json) as PlanningGapSnapshotRecord
+      },
+      async page(context, projectId, resultId, cursor, limit) {
+        const snapshot = await this.get(context, projectId, resultId)
+        return snapshot ? planningGapPage(snapshot, cursor, limit) : null
+      },
+      async pruneExpired(nowIso) {
+        return sqlite.query('DELETE FROM planning_gap_snapshots WHERE expires_at <= ?').run(nowIso).changes
       },
     },
     dashboard: {

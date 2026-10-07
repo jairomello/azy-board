@@ -56,6 +56,8 @@ import { useBoardFilterValidation } from './hooks/useBoardFilterValidation'
 import { resolveBoardModalTarget } from './model/interaction'
 import { buildEpicGroups, groupEpicsByModule, selectBoardCards, selectOrphanCards, selectStoryVirtualCards } from './model/boardView'
 import type { ItemData } from './model/types'
+import { applyViewCommand, readPinnedResult, subscribeViewSession } from '../../lib/assistantViewStore'
+import { VIEW_COMMAND_SCHEMA_VERSION, type AssistantPlanningResult } from '@azy-board/assistant-contracts'
 
 export default function BoardPage() {
   const { projectId } = useParams<{ projectId: string }>()
@@ -103,6 +105,9 @@ export default function BoardPage() {
   } = useBoardPreferences(projectId)
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
   const [view, setView] = useState<'kanban' | 'tree'>('kanban')
+  // Card T26 — recorte fixado de um resultado de lacunas; escopa a exibição ao
+  // conjunto exato sem reconverter a expressão em filtros do toolbar.
+  const [pinnedResult, setPinnedResult] = useState<AssistantPlanningResult | null>(() => projectId ? readPinnedResult(projectId) : null)
   const [itemModalId, setItemModalId] = useState<string | null>(null)
   const [storyModalData, setStoryModalData] = useState<{ story?: StoryData } | null>(null)
   const [epicModalData, setEpicModalData] = useState<{ epic?: EpicData } | null>(null)
@@ -119,6 +124,29 @@ export default function BoardPage() {
     const itemId = searchParams.get('itemId')
     if (itemId && allItems.some(item => item.id === itemId)) setItemModalId(itemId)
   }, [allItems, searchParams])
+
+  // Card T26 — assina o recorte fixado por aba e projeto.
+  useEffect(() => {
+    if (!projectId) { setPinnedResult(null); return }
+    setPinnedResult(readPinnedResult(projectId))
+    return subscribeViewSession((session, pid) => { if (pid === projectId) setPinnedResult(session.pinnedResult ?? null) })
+  }, [projectId])
+
+  // População apresentável: folhas do resultado + ancestrais apenas para navegação.
+  const scopedAllItems = useMemo(() => {
+    if (!pinnedResult) return allItems
+    const allowed = new Set([...pinnedResult.itemIds, ...pinnedResult.ancestorIds])
+    return allItems.filter(item => allowed.has(item.id))
+  }, [allItems, pinnedResult])
+
+  const restorePinnedView = useCallback(() => {
+    if (!projectId) return
+    applyViewCommand(projectId, {
+      schemaVersion: VIEW_COMMAND_SCHEMA_VERSION,
+      commandId: crypto.randomUUID(),
+      type: 'restore_previous_view',
+    })
+  }, [projectId])
 
 
 
@@ -162,9 +190,9 @@ export default function BoardPage() {
     return map
   }, [members])
 
-  // Items derivados por tipo
-  const epics = useMemo(() => allItems.filter(i => i.type === 'EPIC'), [allItems])
-  const stories = useMemo(() => allItems.filter(i => i.type === 'STORY'), [allItems])
+  // Items derivados por tipo (escopados pelo recorte fixado, quando houver)
+  const epics = useMemo(() => scopedAllItems.filter(i => i.type === 'EPIC'), [scopedAllItems])
+  const stories = useMemo(() => scopedAllItems.filter(i => i.type === 'STORY'), [scopedAllItems])
   const simpleStory = useMemo(() => (
     stories.find(story => story.id === simpleStoryId) ?? stories.find(story => !story.parentId)
   ), [simpleStoryId, stories])
@@ -179,8 +207,8 @@ export default function BoardPage() {
   const storyIdSet = useMemo(() => new Set(stories.map(s => s.id)), [stories])
 
   const boardCards = useMemo(() => selectBoardCards({
-    allItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard,
-  }), [allItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard])
+    allItems: scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard,
+  }), [scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard])
 
   // Cards virtuais de histórias NÃO-folha quando toggle "Mostrar histórias" ativo
   // Histórias folha aparecem como cards reais em boardCards (arrastáveis)
@@ -419,6 +447,17 @@ export default function BoardPage() {
       contentClassName="overflow-hidden"
     >
       <div className={`h-full min-h-0 flex flex-col ${density === 'compact' ? 'gap-2' : 'gap-3'}`}>
+        {pinnedResult && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/40 bg-primary/5 px-3 py-2 text-xs">
+            <span className="font-semibold text-foreground">{tBoard(`planningGapLabel.${pinnedResult.labelKey}`)}</span>
+            <span className="text-muted-foreground">{tBoard('planningGapTotal', { count: pinnedResult.totalDistinct, capturedAt: pinnedResult.capturedAt })}</span>
+            {pinnedResult.hiddenCount > 0 && <span className="text-muted-foreground">{tBoard('planningGapHidden', { count: pinnedResult.hiddenCount })}</span>}
+            <span className="ml-auto flex items-center gap-2">
+              <button type="button" className="rounded-lg border border-border px-2 py-1 font-medium hover:bg-muted" onClick={() => setView('tree')}>{tBoard('planningGapViewTree')}</button>
+              <button type="button" className="rounded-lg border border-border px-2 py-1 font-medium hover:bg-muted" onClick={restorePinnedView}>{tBoard('planningGapRestore')}</button>
+            </span>
+          </div>
+        )}
         {density !== 'compact' && (
           <ActiveFilterChips
             filters={filters}
@@ -440,6 +479,7 @@ export default function BoardPage() {
            <TreeViewPage
            projectId={projectId!}
              filters={filters}
+             pinnedItemIds={pinnedResult ? pinnedResult.itemIds : null}
              canCreate={members.find(member => member.userId === user?.id)?.role !== 'VIEWER'}
              canEdit={members.find(member => member.userId === user?.id)?.role !== 'VIEWER'}
               onCreate={openCreation}

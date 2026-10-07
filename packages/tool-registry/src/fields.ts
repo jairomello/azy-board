@@ -20,6 +20,8 @@ export const toolFields: Record<string, ToolFields> = {
   get_screen_overview: { fields: ['projectId', 'scope'], required: ['scope'] },
   // Card T20 — métricas oficiais do Dashboard; projectId injetado do contexto no chat.
   get_dashboard_metrics: { fields: ['projectId', 'metric', 'from', 'to', 'moduleId', 'sprintId', 'versionId', 'squadId', 'assigneeId', 'type', 'cycleId', 'includeItems', 'limit', 'cursor', 'detail'], required: ['metric'] },
+  // Card T26 — consulta tipada de lacunas sem alterar o contrato de list_tasks.
+  query_planning_gaps: { fields: ['projectId', 'scope', 'where', 'limit', 'cursor', 'resultId', 'referenceDate', 'timeZone'], required: ['projectId', 'where'], nested: { scope: [], where: ['operator', 'conditions'], 'where.conditions[]': ['field', 'operator', 'value', 'conditions'], 'where.conditions[].conditions[]': ['field', 'operator', 'value', 'conditions'], 'where.conditions[].conditions[].conditions[]': ['field', 'operator', 'value', 'conditions'] } },
   get_shadow_markdown: { fields: ['projectId'], required: ['projectId'] },
   get_current_sprint: { fields: ['projectId'], required: ['projectId'] },
   list_tasks: { fields: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'onlyLeaves', 'includeDescriptions', 'fields', 'limit', 'cursor'], required: ['projectId'] },

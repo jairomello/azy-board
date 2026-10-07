@@ -228,7 +228,7 @@ export interface ScreenOverview {
 // iniciou o pedido. Filtros e IDs são referências a validar; nunca permissões.
 export const VIEW_COMMAND_SCHEMA_VERSION = 1
 
-export type AssistantViewCommandType = 'set_filters' | 'clear_filters' | 'set_view' | 'open_item' | 'reveal_item' | 'restore_previous_view'
+export type AssistantViewCommandType = 'set_filters' | 'clear_filters' | 'set_view' | 'open_item' | 'reveal_item' | 'open_planning_result' | 'restore_previous_view'
 
 export interface AssistantViewCommand {
   schemaVersion: typeof VIEW_COMMAND_SCHEMA_VERSION
@@ -243,6 +243,27 @@ export interface AssistantViewCommand {
   itemId?: string
   // Presente em reveal_item: plano de neutralização dos motivos de visibilidade.
   reveal?: AssistantViewRevealPlan
+  // Presente em open_planning_result: população exata do resultado capturado.
+  planningResult?: AssistantPlanningResult
+}
+
+// Card T26 — recorte fixado aberto no board. A população vem do snapshot do
+// servidor e não é reconvertida para os filtros do toolbar (OR continua OR).
+export interface AssistantPlanningResult {
+  resultId: string
+  // IDs exibíveis no Kanban (folhas visíveis no board).
+  itemIds: string[]
+  // Ancestrais mantidos apenas para navegação na árvore, fora da população.
+  ancestorIds: string[]
+  // Itens do resultado não apresentáveis no Kanban (ex.: tipos não suportados).
+  hiddenCount: number
+  totalDistinct: number
+  capturedAt: string
+  // Chave estável de rótulo (ex.: planning-gap-query, planning-gap:dueDate);
+  // o cliente traduz para PT-BR/EN/ES.
+  labelKey: string
+  // Grupo por lacuna (opcional) quando a abertura é de um grupo específico.
+  group?: 'dueDate' | 'points' | 'sprint' | 'version' | 'assignee' | null
 }
 
 // Card T18 — plano de revelação de um item escondido. O cliente aplica sobre o

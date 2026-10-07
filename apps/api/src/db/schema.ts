@@ -317,6 +317,20 @@ export const idempotencyRecords = sqliteTable('idempotency_records', {
   expiresAt: text('expires_at').notNull(),
 })
 
+// [T26] Captura de leitura paginada; não participa do journal/outbox de mutações.
+export const planningGapSnapshots = sqliteTable('planning_gap_snapshots', {
+  resultId: text('result_id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id),
+  projectId: text('project_id').notNull(),
+  actorUserId: text('actor_user_id').notNull().references(() => users.id),
+  capturedAt: text('captured_at').notNull(),
+  expiresAt: text('expires_at').notNull(),
+  snapshotJson: text('snapshot_json').notNull(),
+}, (table) => ({
+  ownerLookup: index('planning_gap_snapshots_owner_idx').on(table.tenantId, table.projectId, table.actorUserId, table.resultId),
+  expiry: index('planning_gap_snapshots_expiry_idx').on(table.expiresAt),
+}))
+
 // ---------------------------------------------------------------------------
 // [T38] Outbox de eventos de domínio durável
 // Sequência monotônica por tenant/projeto alocada no commit da mutação.
