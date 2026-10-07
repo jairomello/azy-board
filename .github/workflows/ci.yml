@@ -74,15 +74,24 @@ jobs:
   smoke:
     name: smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       DATABASE_URL: /tmp/azy-ci-smoke.db
       AZYBOARD_INSTALL_PROFILE: SIMPLE
       AZYBOARD_INSTANCE_DIR: /tmp/azy-ci-smoke-state
       JWT_SECRET: ci-smoke-secret-not-for-production
+      ASSISTANT_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      AZY_AGENT_PROVIDER: stub
       NODE_ENV: test
       PORT: "3001"
       FRONTEND_URL: http://localhost:5173
       AZYBOARD_API_TARGET: http://localhost:3001
+      SMOKE_URL: http://localhost:5173
+      SMOKE_API_URL: http://localhost:3001
+      SMOKE_ADMIN_EMAIL: smoke-admin@simple.test
+      SMOKE_ADMIN_PASSWORD: CiSmokePass123!
+      SMOKE_SECONDARY_ADMIN_EMAIL: secondary-admin@simple.test
+      SMOKE_SECONDARY_ADMIN_PASSWORD: CiOtherPass123!
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -98,12 +107,19 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Aplicar migrations
         run: bun run db:migrate
+      - name: Setup dos tenants efêmeros
+        run: |
+          bun run --cwd apps/api src/scripts/setup.ts "CI Smoke" "ci-smoke" "$SMOKE_ADMIN_EMAIL" "$SMOKE_ADMIN_PASSWORD" "Smoke Admin" > /dev/null
+          bun run --cwd apps/api src/scripts/setup.ts "CI Smoke Secondary" "ci-smoke-secondary" "$SMOKE_SECONDARY_ADMIN_EMAIL" "$SMOKE_SECONDARY_ADMIN_PASSWORD" "Smoke Secondary" > /dev/null
+      - name: Configurar provider determinístico do agente
+        run: bun run --cwd apps/api src/scripts/seed-smoke.ts
       - name: Subir API
         run: |
           mkdir -p tmp/ci
-          bun run --cwd apps/api src/index.ts > tmp/ci/azy-api.log 2>&1 &
+          setsid bun run --cwd apps/api src/index.ts > tmp/ci/azy-api.log 2>&1 &
+          echo $! > tmp/ci/azy-api.pid
           for i in $(seq 1 60); do
-            if curl -s -o /dev/null http://localhost:3001/api/auth/me; then
+            if curl -s -o /dev/null http://localhost:3001/health/ready; then
               echo "API respondeu na tentativa $i"
               exit 0
             fi
@@ -114,7 +130,8 @@ jobs:
           exit 1
       - name: Subir Web
         run: |
-          bun run dev:web > tmp/ci/azy-web.log 2>&1 &
+          setsid bun run dev:web > tmp/ci/azy-web.log 2>&1 &
+          echo $! > tmp/ci/azy-web.pid
           for i in $(seq 1 60); do
             if curl -s -o /dev/null http://localhost:5173; then
               echo "Web respondeu na tentativa $i"
@@ -143,6 +160,11 @@ jobs:
           path: |
             tmp/ci/azy-api.log
             tmp/ci/azy-web.log
+      - name: Teardown smoke
+        if: always()
+        run: |
+          if [ -s tmp/ci/azy-api.pid ]; then kill -TERM -- "-$(cat tmp/ci/azy-api.pid)" 2>/dev/null || true; fi
+          if [ -s tmp/ci/azy-web.pid ]; then kill -TERM -- "-$(cat tmp/ci/azy-web.pid)" 2>/dev/null || true; fi
 
   e2e:
     name: e2e
@@ -186,6 +208,7 @@ jobs:
   advanced:
     name: advanced (PostgreSQL + Valkey)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16
@@ -215,6 +238,8 @@ jobs:
       REDIS_URL: redis://localhost:6379
       AZYBOARD_INSTANCE_DIR: /tmp/azy-ci-advanced-state
       JWT_SECRET: ci-advanced-secret-not-for-production
+      ASSISTANT_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      AZY_AGENT_PROVIDER: stub
       NODE_ENV: test
       TEST_PG_URL: postgresql://azyboard:ci-password@localhost:5432/azyboard_test
       PORT: "3002"
@@ -222,6 +247,11 @@ jobs:
       FRONTEND_URL: http://localhost:5173
       AZYBOARD_API_TARGET: http://localhost:3002
       SMOKE_URL: http://localhost:5173
+      SMOKE_API_URL: http://localhost:3002
+      SMOKE_ADMIN_EMAIL: admin@ci-advanced.test
+      SMOKE_ADMIN_PASSWORD: SenhaForte123!
+      SMOKE_SECONDARY_ADMIN_EMAIL: secondary-admin@ci-advanced.test
+      SMOKE_SECONDARY_ADMIN_PASSWORD: CiOtherPass123!
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -253,6 +283,11 @@ jobs:
         run: bun test apps/api/src/advanced-worker-fence.test.ts
       - name: Rollout/rollback ADVANCED (redeploy e marcador)
         run: bun test apps/api/src/advanced-rollout.test.ts
+      - name: Realtime ADVANCED duas instâncias (PostgreSQL + Valkey, clientes em réplicas)
+        run: bun test apps/api/src/advanced-realtime.test.ts
+        env:
+          TEST_PG_URL: postgresql://azyboard:ci-password@localhost:5432/azyboard_test
+          TEST_REDIS_URL: redis://localhost:6379
       - name: Testes de coordenação (local)
         run: bun test apps/api/src/coordination/local.test.ts
       - name: Migrations PostgreSQL da instalação (runner do perfil)
@@ -262,11 +297,33 @@ jobs:
       - name: Setup CLI ADVANCED (tenant/admin)
         run: |
           bun run --cwd apps/api src/scripts/setup.ts \
-            "CI Advanced" "ci-advanced" "admin@ci-advanced.test" "SenhaForte123!" "CI Admin"
+            "CI Advanced" "ci-advanced" "$SMOKE_ADMIN_EMAIL" "$SMOKE_ADMIN_PASSWORD" "CI Admin" > /dev/null
+      - name: Setup tenant secundário ADVANCED
+        run: |
+          bun run --cwd apps/api src/scripts/setup.ts \
+            "CI Advanced Secondary" "ci-advanced-secondary" "$SMOKE_SECONDARY_ADMIN_EMAIL" "$SMOKE_SECONDARY_ADMIN_PASSWORD" "CI Secondary" > /dev/null
+      - name: Configurar provider determinístico do agente
+        run: bun run --cwd apps/api src/scripts/seed-smoke.ts
+      - name: Subir worker ADVANCED real
+        run: |
+          mkdir -p tmp/ci
+          setsid bun run --cwd apps/api src/worker.ts > tmp/ci/advanced-worker.log 2>&1 &
+          echo $! > tmp/ci/advanced-worker.pid
+          for i in $(seq 1 60); do
+            if grep -q 'agent-worker-process: iniciado' tmp/ci/advanced-worker.log; then
+              echo "Worker ADVANCED respondeu na tentativa $i"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Worker ADVANCED não iniciou em 60s"
+          cat tmp/ci/advanced-worker.log
+          exit 1
       - name: Subir API ADVANCED real
         run: |
           mkdir -p tmp/ci "$UPLOADS_DIR"
-          bun run --cwd apps/api src/index.ts > tmp/ci/advanced-api.log 2>&1 &
+          setsid bun run --cwd apps/api src/index.ts > tmp/ci/advanced-api.log 2>&1 &
+          echo $! > tmp/ci/advanced-api.pid
           for i in $(seq 1 60); do
             if curl -s -o /dev/null http://localhost:3002/health/ready; then
               echo "API ADVANCED respondeu na tentativa $i"
@@ -279,7 +336,8 @@ jobs:
           exit 1
       - name: Subir Web real
         run: |
-          bun run dev:web > tmp/ci/advanced-web.log 2>&1 &
+          setsid bun run dev:web > tmp/ci/advanced-web.log 2>&1 &
+          echo $! > tmp/ci/advanced-web.pid
           for i in $(seq 1 60); do
             if curl -s -o /dev/null http://localhost:5173; then
               echo "Web respondeu na tentativa $i"
@@ -299,6 +357,8 @@ jobs:
           cat tmp/ci/advanced-api.log || true
           echo "=== WEB ==="
           cat tmp/ci/advanced-web.log || true
+          echo "=== WORKER ADVANCED ==="
+          cat tmp/ci/advanced-worker.log || true
       - name: Publicar artefatos de diagnóstico
         if: failure()
         uses: actions/upload-artifact@v4
@@ -308,10 +368,18 @@ jobs:
           path: |
             tmp/ci/advanced-api.log
             tmp/ci/advanced-web.log
+            tmp/ci/advanced-worker.log
+      - name: Teardown ADVANCED
+        if: always()
+        run: |
+          if [ -s tmp/ci/advanced-api.pid ]; then kill -TERM -- "-$(cat tmp/ci/advanced-api.pid)" 2>/dev/null || true; fi
+          if [ -s tmp/ci/advanced-web.pid ]; then kill -TERM -- "-$(cat tmp/ci/advanced-web.pid)" 2>/dev/null || true; fi
+          if [ -s tmp/ci/advanced-worker.pid ]; then kill -TERM -- "-$(cat tmp/ci/advanced-worker.pid)" 2>/dev/null || true; fi
 
   image:
     name: image (deploy reproduzível)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -343,7 +411,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Teste automatizado de restore (SIMPLE)
-        run: bun run test:restore
+        run: bun run scripts/deploy-test-restore.ts --perfil SIMPLE
+      - name: Teste automatizado de restore (ADVANCED)
+        run: bun run scripts/deploy-test-restore.ts --perfil ADVANCED
+      - name: Publicar evidência de restore vinculada ao SHA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: restore-evidence-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 90
+          path: |
+            tmp/test-restore-*/manifest.json
+            tmp/test-restore-*/restore-evidence.json
       - name: Diagnóstico
         if: failure()
         run: docker ps -a

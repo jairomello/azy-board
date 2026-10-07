@@ -256,5 +256,18 @@
   "planning": "Planificación",
   "information": "Información",
   "saveChanges": "Guardar cambios",
-  "filtersSummary": "Filtros ({{count}})"
+  "filtersSummary": "Filtros ({{count}})",
+  "addCard": "Añadir tarjeta",
+  "noArchivedItems": "No hay elementos archivados en este proyecto.",
+  "itemArchived": "Elemento archivado",
+  "archiveItemError": "Error al archivar el elemento",
+  "itemRestored": "Elemento restaurado",
+  "unarchiveItemError": "Error al restaurar el elemento",
+  "cardCreateError": "Error al crear la tarjeta",
+  "subtaskCreated": "Subtarea creada",
+  "subtaskCreateError": "Error al crear la subtarea",
+  "itemDeleted": "Elemento eliminado",
+  "itemDeleteError": "Error al eliminar el elemento",
+  "moduleCreated": "Módulo creado",
+  "moduleCreateError": "Error al crear el módulo"
 }

@@ -28,7 +28,7 @@ Adicione ao seu `.claude/settings.json`:
 <!-- BEGIN GENERATED: mcp-catalog -->
 <!-- GERADO AUTOMATICAMENTE por scripts/generate-docs.ts — não editar; rode `bun run generate:docs`. -->
 
-Catálogo com 69 ferramentas, derivado de `apps/mcp/src/registry.ts`.
+Catálogo com 74 ferramentas, derivado de `packages/tool-registry/src/registry.ts`.
 
 | Ferramenta | Descrição |
 |---|---|
@@ -64,7 +64,7 @@ Catálogo com 69 ferramentas, derivado de `apps/mcp/src/registry.ts`.
 | `delete_project` | Exclui um projeto e os registros dependentes. Ação destrutiva; suporta dryRun. |
 | `get_board` | Retorna colunas, módulos e itens do board do projeto. As descrições longas vêm resumidas por padrão; includeDetails=true devolve os campos pesados e includeDescriptions=true o texto completo. Em projetos grandes, prefira list_tasks com filtros. |
 | `get_current_sprint` | Retorna a sprint ativa (CURRENT) do projeto, se houver. |
-| `get_dashboard_metrics` | Métricas oficiais do Dashboard com os mesmos números e regras da tela: metric=snapshot (Progresso/Escopo, WIP, Bloqueados, Atrasados, Carga), burnup, aging, hours ou sprint. Aceita filtros (módulo, sprint, versão, squad, responsável, tipo) e período (from/to, AAAA-MM-DD); cycleId para sprint. Preserva avisos de cobertura parcial e rotula populações sobrepostas (WIP inclui Bloqueados; não somar). Quando não informados e a tela ativa é o Dashboard, usa os filtros da fotografia. |
+| `get_dashboard_metrics` | Métricas oficiais do Dashboard com os mesmos números e regras da tela: metric=snapshot (Progresso/Escopo, WIP, Bloqueados, Atrasados, Carga), burnup, aging, hours ou sprint. Aceita filtros e período; limit (padrão 50, máximo 100), cursor opaco e detail para continuar páginas de detalhe. Preserva totais completos, avisos de truncamento/cobertura parcial e populações sobrepostas. Quando os filtros não são informados e a tela ativa é o Dashboard, usa os filtros da fotografia. |
 | `get_project` | Consulta os dados de um projeto por projectId (ID ou nome exato). |
 | `get_screen_overview` | Digest do board em um único passo: contagens por coluna (total, TASK, BUG), sprint/filtro ativo e amostra de referências. Prefira sobre get_board para perguntas de contagem/recorte; scope=SCREEN reflete o recorte capturado na tela do usuário, scope=PROJECT o estado atual do banco. |
 | `get_shadow_markdown` | Retorna o board do projeto em Markdown (board.md) para leitura rápida. |
@@ -90,16 +90,21 @@ Catálogo com 69 ferramentas, derivado de `apps/mcp/src/registry.ts`.
 | `reorder_columns` | Reordena as colunas do board conforme a lista order. |
 | `reorder_items` | Reordena os itens de uma coluna conforme a lista order de IDs. |
 | `set_item_tags` | Substitui as tags do item pela lista tagIds informada. |
+| `set_member_squad` | Define, troca ou limpa o squad de um membro existente do projeto sem alterar o papel. squadId é o ID do squad (SET) ou null para limpar (CLEAR). Exige ADMIN e não adiciona a pessoa ao projeto. |
 | `unarchive_item` | Desarquiva um item. |
 | `update_checklist` | Atualiza nome/posição de uma checklist do item. |
 | `update_checklist_item` | Atualiza o texto/estado de um passo da checklist. changes aceita text, checked, dueDate, assigneeId e description (os três últimos exigem checklists detalhados no projeto). |
+| `update_cost_center` | Edita o código e/ou a descrição de um centro de custo do projeto. O código é único por projeto. Exige ADMIN. |
 | `update_item` | Atualiza um item específico. changes aceita a lista {field, operation, value}; as operações CLEAR, TODAY, OFFSET_DAYS e COPY_CREATED_DATE dependem do campo. |
 | `update_item_link` | Atualiza nome, URL ou descrição de um link do item. Requer linkId e ao menos um de name/url/description. |
 | `update_item_log` | Atualiza o texto e/ou a duração de um log de trabalho. |
 | `update_items` | Atomically update one or many active items selected by filters. For bulk moves, set filters.column to the source column, preserve every other requested criterion, and add a column SET change with the destination. Generic tasks or cards in a bulk move covers leaf TASK and BUG items unless the user explicitly restricts the type. Also supports fixed values, clearing fields, relative dates, today, and copying each item creation date. Use itemIds for one item and matchAll only for every item without narrower filters. |
-| `update_member` | Atualiza o papel (e o squad opcional) de um membro do projeto. |
+| `update_member` | Atualiza o papel de um membro do projeto. Para trocar ou limpar o squad sem alterar o papel, use set_member_squad. |
+| `update_module` | Renomeia um módulo do projeto. Exige ADMIN. |
 | `update_project` | Atualiza campos do projeto (nome, descrição, boardMode, planejamento). Omita os campos que não devem mudar. |
 | `update_sprint` | Edita o nome e/ou as datas de uma sprint existente. Use changes com { field, operation: "SET", value }; fields aceitos: name, startDate e endDate (YYYY-MM-DD). A edição preserva o status e os ciclos da sprint; abrir/encerrar continuam em activate_sprint/close_sprint. |
+| `update_squad` | Renomeia um squad do projeto. Exige ADMIN. |
+| `update_tag` | Edita o nome e/ou a cor de uma tag do projeto. Exige MEMBER ou superior. |
 | `update_version` | Edita uma versão existente. Use changes com { field, operation, value }; fields aceitos: name, releaseDate, description e status. operation SET define o valor; CLEAR limpa releaseDate ou description. Não altera o vínculo de itens. |
 
 <!-- END GENERATED: mcp-catalog -->

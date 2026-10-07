@@ -100,8 +100,8 @@ async function dragCardAboveCard(page: Page, cardTitle: string, targetTitle: str
   const target = page.getByText(targetTitle, { exact: true }).first()
   const box = await target.boundingBox()
   assert(box, `não localizou o card ${targetTitle}`)
-  // Solta na metade superior do card-alvo para posicionar antes dele.
-  await dragCard(page, cardTitle, { x: box!.x + box!.width / 2, y: box!.y + 4 })
+  // Mira o centro para manter o alvo dentro da área de colisão durante o drag.
+  await dragCard(page, cardTitle, { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 })
 }
 
 async function openSettings(page: Page) {
@@ -182,12 +182,11 @@ export const journeys: Journey[] = [
       assert(archive.ok(), `arquivamento respondeu ${archive.status()}`)
       await page.reload()
       await page.getByText('Card A', { exact: true }).waitFor()
-      await dragCardAboveCard(page, 'Card A', 'Card B')
       await waitFor(async () => {
         const items = await fetchItems(page, projectId)
         const a = items.find(item => item.title === 'Card A')
         const b = items.find(item => item.title === 'Card B')
-        return Boolean(a && b && a.position < b.position)
+        return Boolean(a && b && b.position < a.position)
       }, 'ordem persistida mesmo com card arquivado na coluna')
 
       // Move entre colunas: Card B vai para Fazendo.

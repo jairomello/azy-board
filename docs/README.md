@@ -16,6 +16,7 @@ os documentos referenciam o artefato gerado em vez de repeti-lo.
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Padrões de engenharia | Convenções, fluxo de PR e definição de pronto. |
 | [`TESTING.md`](../TESTING.md) | Estratégia de testes | Níveis, comandos e política de testes. |
 | [`DEPLOY.md`](../DEPLOY.md) | Deploy | Procedimentos de publicação e operação. |
+| [`release-evidence.md`](release-evidence.md) e [`release-evidence.json`](release-evidence.json) | Evidência de release | Matriz por perfil/check, estado verificado/limitado/pendente, comando, SHA, data e limitações observadas. |
 
 ## Artefatos gerados (não editar)
 
@@ -26,7 +27,7 @@ Não edite os arquivos manualmente nem replique seus valores em outros documento
 |---|---|
 | [`generated/assistant-limits.md`](generated/assistant-limits.md) | `packages/types/src/assistantLimits.ts` |
 | [`generated/openapi.json`](generated/openapi.json) | `apps/api/src/validation.ts` |
-| `apps/mcp/README.md` (bloco do catálogo) | `apps/mcp/src/registry.ts` |
+| `apps/mcp/README.md` (bloco do catálogo) | `packages/tool-registry/src/registry.ts` |
 
 ## Verificação
 
@@ -39,5 +40,7 @@ sabiamente incorreta. Rode `bun run generate:docs` para atualizar os artefatos.
 - [`docs/AI_AGENT_DATA_POLICY.md`](AI_AGENT_DATA_POLICY.md) — dados e privacidade do Azy Agent.
 - [`docs/error-contract.md`](error-contract.md) — envelope de erro da API.
 - [`docs/db-integrity.md`](db-integrity.md) — integridade e cascatas do banco.
+- [`docs/dashboard-performance.md`](dashboard-performance.md) — benchmark, metas e operação das projeções do Dashboard.
 - [`docs/ci.md`](ci.md) — integração contínua.
+- [`docs/release-evidence.md`](release-evidence.md) — garantias, evidências e limites por perfil e release.
 - [`docs/ANALISE-SISTEMA.md`](ANALISE-SISTEMA.md) — auditoria técnica (documento de análise, cita divergências de propósito).

@@ -9,12 +9,15 @@
  * API, com os volumes de dados e uploads montados), portanto funcionam com a
  * API parada ou em execução.
  */
-import { closeSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { createReadStream } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
 
 export type Perfil = 'SIMPLE' | 'ADVANCED'
 
 export interface ManifestBackup {
+  formatVersion?: 2
   perfil: Perfil
   criadoEm: string
   composeFile: string
@@ -25,6 +28,32 @@ export interface ManifestBackup {
     uploads: string
     marcador?: string
   }
+  integridade?: Partial<Record<'banco' | 'uploads' | 'marcador', ArtifactDigest>>
+  imagem?: { referencia: string | null; imageId: string | null; revision: string | null }
+  migrations?: { perfil: Perfil; arquivos: Array<{ nome: string; sha256: string }> }
+}
+
+export interface ArtifactDigest {
+  sha256: string
+  bytes: number
+}
+
+function hashFile(path: string): Promise<ArtifactDigest> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256')
+    let bytes = 0
+    const input = createReadStream(path)
+    input.on('data', chunk => {
+      bytes += chunk.length
+      hash.update(chunk)
+    })
+    input.on('error', reject)
+    input.on('end', () => resolve({ sha256: hash.digest('hex'), bytes }))
+  })
+}
+
+function arquivoExisteComDados(path: string): boolean {
+  return existsSync(path) && statSync(path).isFile() && statSync(path).size > 0
 }
 
 export interface RunOpts {
@@ -96,12 +125,17 @@ export function execNoServico(
   return compose(composeFile, ['exec', '-T', service, ...args], opts)
 }
 
-/** Detecta o perfil: env DEPLOY_PROFILE > conteúdo do compose file > SIMPLE. */
+/** Detecta o perfil efetivo declarado no compose, sem override do ambiente. */
+export function detectarPerfilDoCompose(composeFile: string): Perfil {
+  const content = readFileSync(composeFile, 'utf8')
+  return /AZYBOARD_INSTALL_PROFILE=ADVANCED/.test(content) ? 'ADVANCED' : 'SIMPLE'
+}
+
+/** Detecta o perfil operacional: env DEPLOY_PROFILE > conteúdo do compose > SIMPLE. */
 export function detectarPerfil(composeFile: string): Perfil {
   const env = process.env.DEPLOY_PROFILE?.trim().toUpperCase()
   if (env === 'SIMPLE' || env === 'ADVANCED') return env
-  const content = readFileSync(composeFile, 'utf8')
-  return /AZYBOARD_INSTALL_PROFILE=ADVANCED/.test(content) ? 'ADVANCED' : 'SIMPLE'
+  return detectarPerfilDoCompose(composeFile)
 }
 
 /** Formato YYYYMMDD-HHMMSS para nomes de diretório de backup. */
@@ -120,7 +154,30 @@ export function bancoDoPerfil(perfil: Perfil): string {
  * - ADVANCED: pg_dump do PostgreSQL;
  * - ambos: volume de uploads (tar.gz).
  */
-export function fazerBackup(opts: { composeFile: string; perfil: Perfil; out: string }): ManifestBackup {
+function migrationDirectory(perfil: Perfil): string {
+  return join(import.meta.dir, '..', 'apps', 'api', 'src', 'db', perfil === 'ADVANCED' ? 'postgres/migrations' : 'migrations')
+}
+
+async function migrationDigests(perfil: Perfil) {
+  const directory = migrationDirectory(perfil)
+  const names = readdirSync(directory).filter(name => name.endsWith('.sql')).sort()
+  return Promise.all(names.map(async nome => ({ nome, sha256: (await hashFile(join(directory, nome))).sha256 })))
+}
+
+function imagemDaInstalacao(composeFile: string) {
+  let referencia: string | null = null
+  try {
+    const configured = compose(composeFile, ['config', '--format', 'json'], { capture: true, allowFailure: true })
+    referencia = (JSON.parse(configured) as { services?: { migrate?: { image?: string } } }).services?.migrate?.image ?? null
+  } catch { /* Compose config unavailable; preserve an explicit unknown. */ }
+  const imageId = compose(composeFile, ['images', '-q', 'migrate'], { capture: true, allowFailure: true }).split(/\s+/).find(Boolean) ?? null
+  const revisionResult = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: join(import.meta.dir, '..') })
+  const revision = revisionResult.success ? revisionResult.stdout.toString().trim() : null
+  return { referencia, imageId, revision }
+}
+
+/** Cria um backup consistente e registra hashes, imagem e migrations presentes no checkout. */
+export async function fazerBackup(opts: { composeFile: string; perfil: Perfil; out: string }): Promise<ManifestBackup> {
   const { composeFile, perfil, out } = opts
   mkdirSync(out, { recursive: true })
   const arquivoBanco = bancoDoPerfil(perfil)
@@ -175,7 +232,14 @@ export function fazerBackup(opts: { composeFile: string; perfil: Perfil; out: st
     allowFailure: true,
   })
 
+  const integrity: NonNullable<ManifestBackup['integridade']> = {
+    banco: await hashFile(join(out, arquivoBanco)),
+    uploads: await hashFile(join(out, 'uploads.tar.gz')),
+  }
+  if (arquivoMarcador) integrity.marcador = await hashFile(join(out, arquivoMarcador))
+
   const manifest: ManifestBackup = {
+    formatVersion: 2,
     perfil,
     criadoEm: new Date().toISOString(),
     composeFile,
@@ -185,6 +249,9 @@ export function fazerBackup(opts: { composeFile: string; perfil: Perfil; out: st
       uploads: 'uploads.tar.gz',
       marcador: arquivoMarcador,
     },
+    integridade: integrity,
+    imagem: imagemDaInstalacao(composeFile),
+    migrations: { perfil, arquivos: await migrationDigests(perfil) },
   }
   writeFileSync(join(out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
   console.log(`Backup concluído: ${out}`)
@@ -196,13 +263,60 @@ export function fazerBackup(opts: { composeFile: string; perfil: Perfil; out: st
  * nova": o schema/dados atuais do alvo são substituídos). A API e o web são
  * parados durante a restauração e religados ao final.
  */
-export function restaurarBackup(opts: { composeFile: string; dir: string }): void {
+function nomeSeguroDeArtefato(name: unknown, field: string): string {
+  if (typeof name !== 'string' || name.length === 0 || basename(name) !== name) {
+    throw new Error(`BACKUP_ARTIFACT_INVALID: nome inválido para ${field}.`)
+  }
+  return name
+}
+
+/** Valida presença, hashes disponíveis e compatibilidade de perfil antes de alterar volumes. */
+export async function validarBackupDirectory(opts: { dir: string; expectedProfile?: Perfil }): Promise<{ manifest: ManifestBackup; warnings: string[] }> {
+  const manifest = JSON.parse(readFileSync(join(opts.dir, 'manifest.json'), 'utf8')) as ManifestBackup
+  if (manifest.perfil !== 'SIMPLE' && manifest.perfil !== 'ADVANCED') throw new Error('BACKUP_PROFILE_INVALID: perfil não reconhecido.')
+  if (opts.expectedProfile && manifest.perfil !== opts.expectedProfile) {
+    throw new Error(`BACKUP_PROFILE_MISMATCH: backup ${manifest.perfil} não é compatível com alvo ${opts.expectedProfile}.`)
+  }
+  if (!manifest.arquivos || typeof manifest.arquivos !== 'object') throw new Error('BACKUP_MANIFEST_INVALID: inventário de arquivos ausente.')
+
+  const artifactNames: Partial<Record<'banco' | 'uploads' | 'marcador', string>> = {
+    banco: nomeSeguroDeArtefato(manifest.arquivos.banco, 'banco'),
+    uploads: nomeSeguroDeArtefato(manifest.arquivos.uploads, 'uploads'),
+    ...(manifest.arquivos.marcador ? { marcador: nomeSeguroDeArtefato(manifest.arquivos.marcador, 'marcador') } : {}),
+  }
+  for (const [key, filename] of Object.entries(artifactNames)) {
+    if (!filename || !arquivoExisteComDados(join(opts.dir, filename))) throw new Error(`BACKUP_ARTIFACT_MISSING: arquivo ${key} ausente ou vazio.`)
+  }
+
+  const warnings: string[] = []
+  if (!manifest.integridade) {
+    if (manifest.formatVersion === 2) throw new Error('BACKUP_INTEGRITY_MISSING: manifesto v2 sem hashes.')
+    warnings.push('Backup legado sem hashes; integridade criptográfica não verificada.')
+  } else {
+    for (const [key, filename] of Object.entries(artifactNames)) {
+      const expected = manifest.integridade[key as keyof typeof manifest.integridade]
+      if (!expected || !/^[a-f0-9]{64}$/i.test(expected.sha256) || !Number.isSafeInteger(expected.bytes) || expected.bytes < 1) {
+        throw new Error(`BACKUP_HASH_MISSING: hash/tamanho ausente ou inválido para ${key}.`)
+      }
+      const actual = await hashFile(join(opts.dir, filename!))
+      if (actual.sha256 !== expected.sha256 || actual.bytes !== expected.bytes) {
+        throw new Error(`BACKUP_HASH_MISMATCH: integridade inválida para ${key}.`)
+      }
+    }
+  }
+  return { manifest, warnings }
+}
+
+export async function restaurarBackup(opts: { composeFile: string; dir: string }): Promise<void> {
   const { composeFile, dir } = opts
-  const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')) as ManifestBackup
+  const destinationProfile = detectarPerfilDoCompose(composeFile)
+  const { manifest, warnings } = await validarBackupDirectory({ dir, expectedProfile: destinationProfile })
   const perfil = manifest.perfil
+  for (const warning of warnings) console.warn(`AVISO RESTORE: ${warning}`)
   console.log(`Restaurando backup (${perfil}) de ${dir}...`)
 
-  compose(composeFile, ['stop', 'web', 'azyboard'], { allowFailure: true })
+  const servicesToStop = perfil === 'ADVANCED' ? ['web', 'azyboard', 'agent-worker'] : ['web', 'azyboard']
+  compose(composeFile, ['stop', ...servicesToStop], { allowFailure: true })
 
   if (perfil === 'SIMPLE') {
     const alvo = manifest.dbPath || '/data/dev.db'

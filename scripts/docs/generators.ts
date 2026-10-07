@@ -25,7 +25,7 @@ export function buildMcpCatalogBlock(): string {
     MCP_CATALOG_BEGIN,
     generatedHeader('generate-docs.ts'),
     '',
-    `Catálogo com ${tools.length} ferramentas, derivado de \`apps/mcp/src/registry.ts\`.`,
+    `Catálogo com ${tools.length} ferramentas, derivado de \`packages/tool-registry/src/registry.ts\`.`,
     '',
     '| Ferramenta | Descrição |',
     '|---|---|',

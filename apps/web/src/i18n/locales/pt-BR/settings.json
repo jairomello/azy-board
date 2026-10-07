@@ -221,5 +221,10 @@
   "photoEditorHint": "Arraste para reposicionar e use o controle para dar zoom.",
   "photoEditorZoom": "Zoom",
   "photoEditorApply": "Salvar foto",
-  "photoEditorCancel": "Cancelar"
+  "photoEditorCancel": "Cancelar",
+  "squadMemberCount": "{{count}} membro(s)",
+  "roleAdmin": "Admin",
+  "dateRange": "{{start}} a {{end}}",
+  "versionNamePlaceholder": "Ex: v1.0.0",
+  "memberEmailPlaceholder": "usuario@empresa.com"
 }

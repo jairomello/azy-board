@@ -5,7 +5,7 @@ description: Operar o Azy Board com segurança por meio das ferramentas MCP e do
 
 # Azy Board
 
-Use o Azy Board como fonte compartilhada de planejamento e execução para pessoas e agentes. O catálogo oficial compartilhado está em `apps/mcp/src/registry.ts`; comandos internos e MCP devem usar essas mesmas definições, políticas e executores. Antes de alterar dados, descubra o projeto e leia seu contexto pelo MCP. Nunca invente IDs, relações ou permissões.
+Use o Azy Board como fonte compartilhada de planejamento e execução para pessoas e agentes. Definições, schemas e políticas do catálogo vivem em `packages/tool-registry/`; execução compartilhada e adaptadores HTTP vivem em `packages/tool-execution/`. O transporte MCP apenas usa esses pacotes. Antes de alterar dados, descubra o projeto e leia seu contexto pelo MCP. Nunca invente IDs, relações ou permissões.
 
 ## Fluxo obrigatório
 

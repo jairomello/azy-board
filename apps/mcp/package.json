@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@azy-board/assistant-contracts": "workspace:*",
+    "@azy-board/tool-execution": "workspace:*",
     "@azy-board/tool-registry": "workspace:*",
     "@azy-board/types": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.0",

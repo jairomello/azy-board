@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
-import { toolCreateTask, toolListTasks, toolMoveTask } from '../../mcp/src/tools'
+import { toolCreateTask, toolListTasks, toolMoveTask } from '@azy-board/tool-execution'
 
 process.env.DATABASE_URL = ':memory:'
 process.env.TRUST_PROXY = 'true'

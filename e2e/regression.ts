@@ -12,23 +12,28 @@
  *   E2E_WEB_PORT        porta do web (padrão 5173)
  *   PLAYWRIGHT_CHROMIUM_EXECUTABLE  binário do Chromium (padrão /usr/bin/chromium)
  */
+import type { Browser } from 'playwright'
 import { bootStack, cleanup, E2E_CONTEXT_OPTIONS, launchBrowser, runJourneys } from './harness'
 import { journeys } from './journeys'
 
 async function main() {
   let browser: Awaited<ReturnType<typeof launchBrowser>> | undefined
+  let context: Awaited<ReturnType<Browser['newContext']>> | undefined
   let results: Awaited<ReturnType<typeof runJourneys>> = []
   try {
     console.log('▶ Preparando stack descartável de regressão...')
     await bootStack()
     browser = await launchBrowser()
-    const context = await browser.newContext(E2E_CONTEXT_OPTIONS)
+    context = await browser.newContext(E2E_CONTEXT_OPTIONS)
+    // Tracing habilitado para que `runJourneys` grave um .zip por jornada falha.
+    await context.tracing.start({ screenshots: true, snapshots: true })
     const page = await context.newPage()
     results = await runJourneys(page, journeys)
   } catch (error) {
     results = [{ name: 'bootstrap do stack', ok: false, error: error instanceof Error ? error.message : String(error) }]
     console.error(`✗ Falha no bootstrap: ${error instanceof Error ? error.message : error}`)
   } finally {
+    await context?.tracing.stop().catch(() => {})
     await browser?.close().catch(() => {})
     await cleanup()
   }

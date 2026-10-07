@@ -219,10 +219,10 @@ export function TagSelector({ allTags, selected, onSelect, onCreate, onEdit }: P
           </div>
           <div className="flex gap-2">
             <button onClick={saveEdit} className="flex-1 py-1 text-xs bg-primary text-primary-foreground rounded hover:bg-primary/90 transition">
-              Salvar
+              {t('save')}
             </button>
             <button onClick={() => setEditingTag(null)} className="flex-1 py-1 text-xs border border-border rounded hover:bg-muted text-muted-foreground transition">
-              Cancelar
+              {t('cancel')}
             </button>
           </div>
         </div>

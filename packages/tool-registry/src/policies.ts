@@ -24,7 +24,9 @@ export const MCP_TOOL_POLICIES: Readonly<Record<string, McpPolicy>> = {
   create_column: admin, reorder_columns: admin, create_sprint: admin,
   activate_sprint: admin, close_sprint: admin, create_tag: admin, create_version: admin,
   update_sprint: admin, update_version: admin,
-  add_member: admin, update_member: admin, remove_member: admin, create_squad: admin, create_cost_center: admin,
+  update_module: admin, update_cost_center: admin, create_cost_center: admin,
+  add_member: admin, update_member: admin, set_member_squad: admin, remove_member: admin, create_squad: admin, update_squad: admin,
+  update_tag: write,
 }
 
 export function hasMcpPolicy(name: string): boolean {

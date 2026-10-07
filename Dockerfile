@@ -5,8 +5,9 @@
 # entre `.bun-version`, este ARG e o workflow do CI é verificada por
 # `bun run check:deploy-versions`.
 #
-# Subcomandos do entrypoint: `api` (padrão, sem auto-migração) e `migrate`
-# (job separado de rollout). Ver docker/entrypoint-api.sh e DEPLOY.md.
+# Subcomandos do entrypoint: `api` (padrão, sem auto-migração), `migrate`
+# (job de rollout) e `setup` (provisionamento inicial de tenant/admin).
+# Ver docker/entrypoint-api.sh e DEPLOY.md.
 
 ARG BUN_VERSION=1.3.14
 
@@ -22,6 +23,7 @@ COPY packages/assistant-contracts/package.json packages/assistant-contracts/
 COPY packages/domain/package.json packages/domain/
 COPY packages/realtime-contracts/package.json packages/realtime-contracts/
 COPY packages/tool-registry/package.json packages/tool-registry/
+COPY packages/tool-execution/package.json packages/tool-execution/
 COPY packages/types/package.json packages/types/
 COPY packages/ui-contracts/package.json packages/ui-contracts/
 RUN bun install --frozen-lockfile
@@ -37,6 +39,7 @@ WORKDIR /app/apps/api
 RUN bun run build \
   && bun build src/db/migrate.ts --outfile dist/migrate.js --target bun \
   && bun build src/db/postgres/migrate.ts --outfile dist/migrate-pg.js --target bun \
+  && bun build src/scripts/setup.ts --outfile dist/setup.js --target bun \
   && bun build src/worker.ts --outfile dist/worker.js --target bun
 
 # --- Apenas dependências de produção (sharp e demais externas do bundle) ---

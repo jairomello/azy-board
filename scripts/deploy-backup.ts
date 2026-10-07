@@ -26,4 +26,4 @@ if (perfilArg && perfilArg !== 'SIMPLE' && perfilArg !== 'ADVANCED') {
 const perfil: Perfil = (perfilArg as Perfil) || detectarPerfil(composeFile)
 const out = argValue('--out') || `backups/backup-${carimboDeData()}`
 
-fazerBackup({ composeFile, perfil, out })
+await fazerBackup({ composeFile, perfil, out })

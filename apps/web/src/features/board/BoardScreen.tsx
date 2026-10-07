@@ -1,3 +1,18 @@
+// Composition root do Board (kanban/tree).
+//
+// Fronteiras: esta tela apenas compõe dados, controllers e componentes. HTTP,
+// regras de filtro/população, DnD, edição/arquivamento, carregamento de modal e
+// sessão/fotografia do agente vivem em módulos próprios:
+//   - model/boardView.ts                     → filtros/população/agrupamento
+//   - model/{interaction,mutation}.ts        → helpers puros e política otimista
+//   - hooks/useBoardData                     → cache remoto + reducer de eventos
+//   - hooks/useBoardPreferences              → preferências por projeto
+//   - hooks/useBoardInteraction              → DnD/mutações
+//   - hooks/useBoardItemEditing              → edição/criação (itens, tags, épico, história, módulo)
+//   - hooks/useBoardItemModal                → detalhe do item com cancelamento de resposta antiga
+//   - hooks/useBoardArchiving                → arquivamento/restauração
+//   - hooks/useBoardFilterValidation         → coerência dos filtros vs catálogos
+//   - hooks/useBoardAgentSession             → comandos de visão, foco e snapshot (T16–T19)
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useSearchParams, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -14,16 +29,9 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
-import {
-  arrayMove,
-} from '@dnd-kit/sortable'
-import { ApiError, api } from '../../lib/api'
 import { useQueryClient } from '@tanstack/react-query'
 import { invalidateTree } from '../../lib/queryKeys'
-import { buildScreenSnapshot } from '../../lib/assistantSnapshot'
-import type { AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 import { KanbanCard } from '../../components/KanbanCard'
-import type { FullItemData } from '../../components/ItemModal'
 import type { EpicData } from '../../components/EpicModal'
 import type { StoryData } from '../../components/StoryModal'
 import { ActiveFilterChips, removeActiveBoardFilter, type ActiveFilterKey } from '../../components/ActiveFilterChips'
@@ -35,32 +43,19 @@ import { AppShell } from '../../components/AppShell'
 import { BoardCommandBar } from '../../components/BoardCommandBar'
 import { BoardContextHeader, BoardStatusRail } from '../../components/BoardContext'
 import type { ItemType } from '@azy-board/domain'
-import type { AncestorNode } from '@azy-board/ui-contracts'
-import { populationFilterReasons, type ItemVisibilityInput, type VisibilityFilterState } from '@azy-board/ui-contracts'
-import type { Tag } from '../../components/TagSelector'
 import { useBoardPreferences } from './hooks/useBoardPreferences'
 import { useBoardData } from './hooks/useBoardData'
-import { subscribeViewSession, syncCurrentViewSession } from '../../lib/assistantViewStore'
-import { emptyFocusState, getFocusState, subscribeFocus, type AssistantFocusState } from '../../lib/assistantFocusStore'
 import { BoardLanes } from './components/BoardLanes'
 import { BoardModals } from './components/BoardModals'
 import { useBoardInteraction } from './hooks/useBoardInteraction'
-import { buildBoardItemCreatePayload, resolveBoardModalTarget } from './model/interaction'
-import { runOptimisticMutation } from './model/mutation'
-import {
-  computeIsLeaf,
-  getEpicIdFromPath,
-  getStoryIdFromPath,
-  isEmptyFilterValue,
-  matchesMemberFilter,
-  matchesScalarFilter,
-  matchesSprintFilter,
-  upsertItem,
-  type ArchivedItem,
-  type ItemData,
-  type Module,
-  type StoryLaneGroup,
-} from './model/types'
+import { useBoardArchiving } from './hooks/useBoardArchiving'
+import { useBoardItemEditing } from './hooks/useBoardItemEditing'
+import { useBoardItemModal } from './hooks/useBoardItemModal'
+import { useBoardAgentSession } from './hooks/useBoardAgentSession'
+import { useBoardFilterValidation } from './hooks/useBoardFilterValidation'
+import { resolveBoardModalTarget } from './model/interaction'
+import { buildEpicGroups, groupEpicsByModule, selectBoardCards, selectOrphanCards, selectStoryVirtualCards } from './model/boardView'
+import type { ItemData } from './model/types'
 
 export default function BoardPage() {
   const { projectId } = useParams<{ projectId: string }>()
@@ -109,7 +104,6 @@ export default function BoardPage() {
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
   const [view, setView] = useState<'kanban' | 'tree'>('kanban')
   const [itemModalId, setItemModalId] = useState<string | null>(null)
-  const [itemModalData, setItemModalData] = useState<FullItemData | null>(null)
   const [storyModalData, setStoryModalData] = useState<{ story?: StoryData } | null>(null)
   const [epicModalData, setEpicModalData] = useState<{ epic?: EpicData } | null>(null)
   const [columnAddForms, setColumnAddForms] = useState<Record<string, boolean>>({})
@@ -120,84 +114,18 @@ export default function BoardPage() {
   const [newModuleName, setNewModuleName] = useState('')
   const [newModuleDescription, setNewModuleDescription] = useState('')
   // Tarefa 10 — arquivamento
-  const [archiveConfirm, setArchiveConfirm] = useState<{ itemId: string; childrenCount: number } | null>(null)
-  const [archivedModal, setArchivedModal] = useState(false)
-  const [archivedItems, setArchivedItems] = useState<ArchivedItem[]>([])
-  const [archivedLoading, setArchivedLoading] = useState(false)
 
   useEffect(() => {
     const itemId = searchParams.get('itemId')
     if (itemId && allItems.some(item => item.id === itemId)) setItemModalId(itemId)
   }, [allItems, searchParams])
 
-  useEffect(() => {
-    if (!itemModalId) {
-      setItemModalData(null)
-      return
-    }
-    let cancelled = false
-    setItemModalData(null)
-    api.get<FullItemData>(`/projects/${projectId}/items/${itemModalId}`)
-      .then(item => { if (!cancelled) setItemModalData(item) })
-      .catch(() => { if (!cancelled) setItemModalData(null) })
-    return () => { cancelled = true }
-  }, [itemModalId, projectId])
 
-  // Card T17 — aplica comandos de interface emitidos pela conversa nesta aba.
-  // Card T18 — reveal_item expande os grupos responsáveis por esconder o item.
-  useEffect(() => {
-    if (!projectId) return
-    return subscribeViewSession((session, pid) => {
-      if (pid !== projectId) return
-      setFilters(session.filters)
-      setView(session.mode)
-      setActiveModuleId(session.activeModuleId)
-      setItemModalId(session.openItemId)
-      if (session.expandGroupIds?.length) {
-        const expand = new Set(session.expandGroupIds)
-        setCollapsedEpics(previous => new Set([...previous].filter(id => !expand.has(id))))
-        setCollapsedModules(previous => new Set([...previous].filter(id => !expand.has(id))))
-        setCollapsedStories(previous => new Set([...previous].filter(id => !expand.has(id))))
-      }
-    })
-  }, [projectId, setFilters, setCollapsedEpics, setCollapsedModules, setCollapsedStories])
-
-  // Card T17 — publica o estado corrente como baseline do histórico da visão.
-  useEffect(() => {
-    if (!projectId) return
-    syncCurrentViewSession(projectId, { filters, mode: view, activeModuleId, openItemId: itemModalId })
-  }, [projectId, filters, view, activeModuleId, itemModalId])
-
-  // Card T19 — foco da interface (pilha de modais, item em primeiro plano, aba
-  // ativa e objeto interno) publicado pelas modais de item.
-  const [focusState, setFocusState] = useState<AssistantFocusState>(() => projectId ? getFocusState(projectId) : emptyFocusState())
-  useEffect(() => {
-    if (!projectId) return
-    setFocusState(getFocusState(projectId))
-    return subscribeFocus((state, pid) => { if (pid === projectId) setFocusState(state) })
-  }, [projectId])
 
   // Ref para preservar o over ID mais recente durante o drag (evita perder o alvo no momento do drop)
   const lastOverRef = useRef<string | null>(null)
 
 
-  useEffect(() => {
-    if (versionsLoaded && filters.versionId && !isEmptyFilterValue(filters.versionId) && !projectVersions.some(version => version.id === filters.versionId)) {
-      setFilters(previous => ({ ...previous, versionId: '' }))
-    }
-  }, [filters.versionId, projectVersions, versionsLoaded])
-
-  useEffect(() => {
-    if (filters.sprintId && !isEmptyFilterValue(filters.sprintId) && sprints.length > 0 && !sprints.some(sprint => sprint.id === filters.sprintId)) {
-      setFilters(previous => ({ ...previous, sprintId: '' }))
-    }
-  }, [filters.sprintId, sprints])
-
-  useEffect(() => {
-    if (costCentersLoaded && filters.costCenterId && !isEmptyFilterValue(filters.costCenterId) && !projectCostCenters.some(center => center.id === filters.costCenterId)) {
-      setFilters(previous => ({ ...previous, costCenterId: '' }))
-    }
-  }, [filters.costCenterId, projectCostCenters, costCentersLoaded])
 
   useEffect(() => {
     document.title = projectName ? `${projectName} · Board` : 'Board'
@@ -209,7 +137,9 @@ export default function BoardPage() {
 
   // Prioriza elementos menores (cards) sobre elementos maiores (colunas) na detecção de colisão
   const collisionDetection: CollisionDetection = useCallback((args) => {
-    const hits = pointerWithin(args)
+    // O ponteiro permanece capturado pelo grip do card arrastado; ignorar o
+    // próprio item evita que ele seja escolhido como destino do reorder.
+    const hits = pointerWithin(args).filter(hit => hit.id !== args.active.id)
     if (hits.length > 0) {
       const itemIds = new Set(allItems.map(item => item.id))
       return [...hits].sort((left, right) => {
@@ -217,7 +147,7 @@ export default function BoardPage() {
         return score(left.id.toString()) - score(right.id.toString())
       })
     }
-    return rectIntersection(args)
+    return rectIntersection(args).filter(hit => hit.id !== args.active.id)
   }, [allItems])
 
   // Mapa squadId → Set<userId> para filtro de squad O(1)
@@ -239,112 +169,25 @@ export default function BoardPage() {
     stories.find(story => story.id === simpleStoryId) ?? stories.find(story => !story.parentId)
   ), [simpleStoryId, stories])
   const isSimpleBoard = boardMode === 'SIMPLE'
+  useBoardFilterValidation({
+    filters, setFilters, isSimpleBoard, versionsLoaded, projectVersions,
+    sprints, costCentersLoaded, projectCostCenters,
+  })
 
-  useEffect(() => {
-    if (isSimpleBoard && filters.moduleId) {
-      setFilters(prev => ({ ...prev, moduleId: '' }))
-    }
-  }, [isSimpleBoard, filters.moduleId])
 
   // IDs das STORYs — usados para identificar TASK/BUG de primeiro nível
   const storyIdSet = useMemo(() => new Set(stories.map(s => s.id)), [stories])
 
-  // Cards para o board
-  //   showSubtasks = false ("Mostrar subtasks"): mostra TASK/BUG de primeiro nível
-  //     = cujo parentId aponta para uma STORY, ou sem parentId (órfãos)
-  //   showSubtasks = true  ("Ocultar subtasks"): Leaf Rule
-  //     = só TASK/BUG sem filhos (subtasks ficam visíveis, pais somem)
-  const boardCards = useMemo(() => {
-    let result: ItemData[]
-    if (filters.showSubtasks) {
-      // Leaf Rule: itens TASK/BUG que não são pai de nenhum outro item
-      const parentIdSet = new Set(allItems.map(i => i.parentId).filter(Boolean) as string[])
-      result = allItems.filter(i => ['TASK', 'BUG'].includes(i.type) && !parentIdSet.has(i.id))
-    } else {
-      // Primeiro nível: TASK/BUG cujo pai imediato é uma STORY (ou sem pai = órfão)
-      result = allItems.filter(i =>
-        ['TASK', 'BUG'].includes(i.type) &&
-        (!i.parentId || storyIdSet.has(i.parentId))
-      )
-    }
-
-    // Card T18 — filtros de população compartilhados com o avaliador de visibilidade
-    // (fonte única): os motivos de exclusão usam a mesma lógica do board.
-    const epicModuleById = new Map(epics.map(e => [e.id, e.moduleId ?? null]))
-    const visibilityFilters: VisibilityFilterState = {
-      moduleId: filters.moduleId, sprintId: filters.sprintId, assigneeId: filters.assigneeId,
-      squadId: filters.squadId, versionId: filters.versionId, priority: filters.priority,
-      status: filters.status, authorId: filters.authorId, costCenterId: filters.costCenterId,
-      types: filters.types, tagIds: filters.tagIds,
-    }
-    const toVisibilityInput = (item: ItemData): ItemVisibilityInput => ({
-      type: item.type, status: item.status, parentId: item.parentId ?? null,
-      moduleId: item.moduleId ?? null, versionId: item.versionId ?? null,
-      assigneeId: item.assigneeId ?? null, assigneeUserId: item.assignee?.id ?? null,
-      authorId: item.authorId ?? null, authorUserId: item.author?.id ?? null,
-      costCenterId: item.costCenterId ?? null, priority: item.priority,
-      itemSprints: item.itemSprints, tagIds: (item.itemTags ?? item.taskTags ?? []).map(it => it.tag.id),
-      epicModuleId: epicModuleById.get(getEpicIdFromPath(item.ancestryPath) ?? '') ?? null,
-      squadMemberIds: filters.squadId ? [...(squadMembersMap.get(filters.squadId) ?? [])] : undefined,
-    })
-    result = result.filter(i => populationFilterReasons(toVisibilityInput(i), visibilityFilters).length === 0)
-
-    // Histórias folha (sem filhos) — aparecem como cards arrastáveis quando "Histórias no board" ativo
-    if (!isSimpleBoard && filters.storyDisplay === 'cards' && columns.length > 0) {
-      const firstColId = columns[0]!.id
-      let leafStories = stories
-        .filter(s => s.isLeaf)
-        .map(s => ({ ...s, columnId: s.columnId ?? firstColId }))
-      if (filters.moduleId) {
-        const epicIds = new Set(epics.filter(e => e.moduleId === filters.moduleId).map(e => e.id))
-        leafStories = leafStories.filter(i => {
-          const epicId = getEpicIdFromPath(i.ancestryPath)
-          return epicId ? epicIds.has(epicId) : false
-        })
-      }
-      if (filters.assigneeId) {
-        leafStories = leafStories.filter(i => matchesMemberFilter(i.assigneeId, i.assignee?.id, filters.assigneeId))
-      }
-      if (filters.squadId) {
-        const squadUsers = squadMembersMap.get(filters.squadId)
-        leafStories = leafStories.filter(i => {
-          const uid = i.assigneeId ?? i.assignee?.id
-          return uid != null && squadUsers?.has(uid)
-        })
-      }
-      if (filters.tagIds.length > 0) {
-        leafStories = leafStories.filter(i =>
-          (i.itemTags ?? i.taskTags ?? []).some((it: { tag: Tag }) => filters.tagIds.includes(it.tag.id))
-        )
-      }
-      if (filters.sprintId) {
-        leafStories = leafStories.filter(i => matchesSprintFilter(i.itemSprints, filters.sprintId))
-      }
-      if (filters.versionId) leafStories = leafStories.filter(i => matchesScalarFilter(i.versionId, filters.versionId))
-      if (filters.priority) leafStories = leafStories.filter(i => i.priority === filters.priority)
-      if (filters.status) leafStories = leafStories.filter(i => i.status === filters.status)
-      if (filters.authorId) leafStories = leafStories.filter(i => matchesMemberFilter(i.authorId, i.author?.id, filters.authorId))
-      if (filters.costCenterId) leafStories = leafStories.filter(i => matchesScalarFilter(i.costCenterId, filters.costCenterId))
-      result = [...result, ...leafStories]
-    }
-
-    return result
-  }, [allItems, filters, storyIdSet, epics, squadMembersMap, columns, stories, isSimpleBoard])
+  const boardCards = useMemo(() => selectBoardCards({
+    allItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard,
+  }), [allItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard])
 
   // Cards virtuais de histórias NÃO-folha quando toggle "Mostrar histórias" ativo
   // Histórias folha aparecem como cards reais em boardCards (arrastáveis)
-  const storyVirtualCards: ItemData[] = useMemo(() => {
-    if (filters.storyDisplay !== 'cards' || columns.length === 0) return []
-    const firstColId = columns[0]!.id
-    return stories
-      .filter(s => !s.isLeaf)
-      .map(s => ({
-        ...s,
-        id: `story-virtual-${s.id}`,
-        columnId: firstColId,
-        isLeaf: false,
-      }))
-  }, [filters.storyDisplay, stories, columns])
+  const storyVirtualCards: ItemData[] = useMemo(
+    () => selectStoryVirtualCards(stories, filters, columns),
+    [stories, filters, columns],
+  )
 
   const allDisplayed = useMemo(() => [...boardCards, ...storyVirtualCards], [boardCards, storyVirtualCards])
   const handleDragEnd = useBoardInteraction({
@@ -357,69 +200,19 @@ export default function BoardPage() {
     onError: toast,
   })
 
+  const archiving = useBoardArchiving({ projectId, allItems, setAllItems, invalidateBoard, toast, tBoard })
+
   // Agrupar por EPIC. No modo de lanes, cada grupo contém também as histórias
   // do épico e seus cards visíveis, formando EPIC → STORY → CARD.
-  const epicGroups = useMemo(() => {
-    const hideEmpty = filters.hideEmptyEpics || !!filters.squadId
-    return epics
-      .map(epic => {
-        const epicCards = allDisplayed.filter(i =>
-          getEpicIdFromPath(i.ancestryPath) === epic.id
-        )
-        const storyGroups: StoryLaneGroup[] = filters.storyDisplay === 'lanes'
-          ? stories
-              .filter(story => story.parentId === epic.id || getEpicIdFromPath(story.ancestryPath) === epic.id)
-              .map(story => ({
-                id: story.id,
-                title: story.title,
-                story,
-                tasks: epicCards.filter(card => getStoryIdFromPath(card.ancestryPath) === story.id),
-              }))
-              .filter(group => !filters.hideEmptyStories || group.tasks.length > 0)
-          : []
+  const epicGroups = useMemo(() => buildEpicGroups({
+    epics, stories, allDisplayed, filters, noStoryLabel: tBoard('noStory'),
+  }), [epics, stories, allDisplayed, filters, tBoard])
 
-        if (filters.storyDisplay === 'lanes') {
-          const cardsWithoutStory = epicCards.filter(card => !getStoryIdFromPath(card.ancestryPath))
-          if (cardsWithoutStory.length > 0) {
-            storyGroups.push({
-              id: `no-story-${epic.id}`,
-              title: 'Sem história',
-              story: undefined,
-              tasks: cardsWithoutStory,
-            })
-          }
-        }
+  const orphanCards = useMemo(() => selectOrphanCards(allDisplayed), [allDisplayed])
 
-        return { epic, tasks: epicCards, storyGroups }
-      })
-      .filter(group => !hideEmpty || group.tasks.length > 0)
-  }, [
-    epics,
-    stories,
-    allDisplayed,
-    filters.hideEmptyEpics,
-    filters.hideEmptyStories,
-    filters.squadId,
-    filters.storyDisplay,
-  ])
-
-  const orphanCards = useMemo(() =>
-    allDisplayed.filter(i => ['TASK', 'BUG'].includes(i.type) && !getEpicIdFromPath(i.ancestryPath) && !i.id.startsWith('story-virtual-')),
-    [allDisplayed]
-  )
-
-  const moduleGroups = useMemo(() => {
-    if (isSimpleBoard) return []
-    const groups = new Map<string, { module: Module; epics: typeof epicGroups }>()
-    for (const group of epicGroups) {
-      const moduleId = group.epic.moduleId ?? '__no-module__'
-      const module = modules.find(item => item.id === moduleId) ?? { id: moduleId, name: tBoard('noModule'), position: Number.MAX_SAFE_INTEGER }
-      const existing = groups.get(moduleId)
-      if (existing) existing.epics.push(group)
-      else groups.set(moduleId, { module, epics: [group] })
-    }
-    return [...groups.values()].sort((a, b) => (a.module.position ?? Number.MAX_SAFE_INTEGER) - (b.module.position ?? Number.MAX_SAFE_INTEGER))
-  }, [epicGroups, modules, tBoard, isSimpleBoard])
+  const moduleGroups = useMemo(() => groupEpicsByModule({
+    epicGroups, modules, isSimpleBoard, noModuleLabel: tBoard('noModule'),
+  }), [epicGroups, modules, isSimpleBoard, tBoard])
 
   useEffect(() => {
     if (moduleGroups.length === 0) {
@@ -429,465 +222,40 @@ export default function BoardPage() {
     setActiveModuleId(current => moduleGroups.some(group => group.module.id === current) ? current : moduleGroups[0]!.module.id)
   }, [moduleGroups])
 
-  async function handleLegacyDragEnd(event: DragEndEvent, effectiveOverStr?: string) {
-    const { active, over } = event
-    setActiveId(null)
-    const overStr = effectiveOverStr ?? over?.id?.toString()
-    if (!overStr || !projectId) return
-
-    const activeStr = active.id.toString()
-
-    // Drag de coluna
-    if (activeStr.includes(':col:')) {
-      const activeColId = activeStr.split(':col:')[1]!
-      const overColId = overStr.includes(':col:')
-        ? overStr.split(':col:')[1]!
-        : overStr.includes(':drop:')
-          ? overStr.split(':drop:')[1]!
-          : null
-      if (!overColId || activeColId === overColId) return
-
-      const oldIndex = columns.findIndex(c => c.id === activeColId)
-      const newIndex = columns.findIndex(c => c.id === overColId)
-      if (oldIndex === -1 || newIndex === -1) return
-
-      const newCols = arrayMove(columns, oldIndex, newIndex)
-      setColumns(newCols)
-      try {
-        await api.patch(`/projects/${projectId}/columns/reorder`, { order: newCols.map(c => c.id) })
-      } catch {
-        setColumns(columns)
-        toast('Erro ao reordenar colunas', 'error')
-      }
-      return
-    }
-
-    const itemId = activeStr
-    const item = allItems.find(i => i.id === itemId)
-    // EPIC nunca é movível; STORY folha (sem filhos) pode ser movida como uma task
-    if (!item || !item.isLeaf || item.type === 'EPIC') return
-
-    const colIds = new Set(columns.map(c => c.id))
-    let targetColId: string | undefined
-
-    if (colIds.has(overStr)) {
-      targetColId = overStr
-    } else if (overStr.includes(':drop:')) {
-      const extracted = overStr.split(':drop:').pop()
-      if (extracted && colIds.has(extracted)) targetColId = extracted
-    } else if (overStr.includes(':col:')) {
-      const extracted = overStr.split(':col:').pop()
-      if (extracted && colIds.has(extracted)) targetColId = extracted
-    } else {
-      targetColId = allItems.find(i => i.id === overStr)?.columnId ?? undefined
-    }
-
-    if (!targetColId) return
-
-    // Reordenação vertical (mesma coluna)
-    // overStr deve ser um card ID — se for coluna, ignora (drop em espaço vazio).
-    // Exclui story-virtual cards pois não existem no banco e contaminariam os positions.
-    if (item.columnId === targetColId) {
-      const colItems = allDisplayed
-        .filter(i => i.columnId === targetColId && !i.id.startsWith('story-virtual-'))
-        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-      const oldIdx = colItems.findIndex(i => i.id === itemId)
-      const newIdx = colItems.findIndex(i => i.id === overStr)
-      if (oldIdx === -1 || newIdx === -1 || oldIdx === newIdx) return
-
-      const reordered = arrayMove(colItems, oldIdx, newIdx)
-      const positionMap = Object.fromEntries(reordered.map((i, pos) => [i.id, pos]))
-      const snapshot = allItems.map(i => ({ ...i }))
-      setAllItems(prev => prev.map(i => positionMap[i.id] !== undefined ? { ...i, position: positionMap[i.id] } : i))
-      try {
-        await api.patch(`/projects/${projectId}/items/reorder`, {
-          columnId: targetColId,
-          order: reordered.map(i => i.id),
-        })
-      } catch {
-        setAllItems(snapshot)
-        toast('Erro ao reordenar', 'error')
-      }
-      return
-    }
-
-    // Mudança de coluna
-    const prevItem = { ...item }
-    const targetCol = columns.find(c => c.id === targetColId)
-    if (targetCol) {
-      setAllItems(prev => prev.map(i => i.id === itemId
-        ? { ...i, columnId: targetColId!, status: targetCol.baseStatus as ItemData['status'] }
-        : i
-      ))
-    }
-    try {
-      await api.patch(`/projects/${projectId}/items/${itemId}/move`, { columnId: targetColId })
-    } catch {
-      setAllItems(prev => prev.map(i => i.id === itemId ? prevItem : i))
-      toast('Erro ao mover card', 'error')
-    }
-  }
 
   // Cria novo item TASK/BUG via modal (botões da toolbar)
-  const handleModalCreate = useCallback(async (_itemId: string, changes: Partial<FullItemData>, tagIds: string[]) => {
-    if (!projectId || !newItemCreation) return
-    try {
-      // Campos e tags vão numa única requisição (transação no servidor).
-      const created = await api.post<ItemData>(`/projects/${projectId}/items`, {
-        ...changes,
-        type: newItemCreation.type,
-        columnId: newItemCreation.columnId ?? columns[0]?.id,
-        tagIds,
-      })
-      setAllItems(prev => upsertItem(prev, created))
-      void invalidateTree(queryClient, user?.id, projectId)
-    } catch (error) {
-      toast(tBoard('errorSave'), 'error')
-      throw error instanceof Error ? error : new Error('failed')
-    }
-  }, [projectId, newItemCreation, columns, toast, tBoard])
+  const invalidateTreeForProject = useCallback(() => {
+    void invalidateTree(queryClient, user?.id, projectId)
+  }, [queryClient, user?.id, projectId])
 
-  const handleCardCreate = useCallback(async (
-    columnId: string,
-    title: string,
-    type: ItemType,
-    parentId?: string,
-    formKey?: string,
-    versionId?: string,
-    sprintId?: string,
-  ) => {
-    if (!projectId) return
-    try {
-      await api.post(`/projects/${projectId}/items`, buildBoardItemCreatePayload(title, columnId, type, parentId, versionId, sprintId))
-      void invalidateTree(queryClient, user?.id, projectId)
-      setColumnAddForms(prev => ({ ...prev, [formKey ?? columnId]: false }))
-    } catch {
-      toast('Erro ao criar card', 'error')
-      throw new Error('failed')
-    }
-  }, [projectId, toast])
+  const {
+    handleModalCreate, handleCardCreate, handleTitleSave, handleModalSave, handleAddSubtask,
+    handleDeleteItem, handleCreateTag, handleEditTag, handleStorySave, handleCreateStory,
+    handleEpicSave, handleModuleCreate,
+  } = useBoardItemEditing({
+    projectId, allItems, setAllItems, columns, newItemCreation, setColumnAddForms,
+    modules, setModules, newModuleName, newModuleDescription, setNewModuleName,
+    setNewModuleDescription, setModuleModalOpen, setProjectTags, invalidateBoard,
+    invalidateTreeForProject, toast, tBoard,
+  })
 
-  const handleTitleSave = useCallback(async (itemId: string, title: string) => {
-    if (!projectId) return
-    await runOptimisticMutation({
-      capture: () => allItems.find(i => i.id === itemId)?.title ?? null,
-      apply: () => setAllItems(prev => prev.map(i => i.id === itemId ? { ...i, title } : i)),
-      restore: previousTitle => {
-        if (previousTitle === null) return
-        setAllItems(prev => prev.map(i => i.id === itemId ? { ...i, title: previousTitle } : i))
-      },
-      request: () => api.patch(`/projects/${projectId}/items/${itemId}`, { title }),
-      onError: () => toast(tBoard('errorSaveTitle'), 'error'),
-    })
-  }, [projectId, toast, allItems, tBoard])
-
-  const handleModalSave = useCallback(async (itemId: string, changes: Partial<FullItemData>, tagIds: string[]) => {
-    if (!projectId) return
-    const current = allItems.find(i => i.id === itemId)
-    try {
-      // Uma única requisição salva campos e tags; a resposta reconcilia o cache.
-      const result = await api.patch<{ item: ItemData }>(`/projects/${projectId}/items/${itemId}`, {
-        ...changes,
-        tagIds,
-        ...(current?.updatedAt ? { expectedUpdatedAt: current.updatedAt } : {}),
-      })
-      if (result?.item) setAllItems(prev => upsertItem(prev, result.item))
-      // Invalidação cobre mudanças em cascata de ancestryPath no servidor.
-      invalidateBoard()
-      void invalidateTree(queryClient, user?.id, projectId)
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 409) {
-        // Conflito de edição: reconcilia com o servidor em vez de sobrescrever.
-        invalidateBoard()
-        toast(tBoard('saveConflict'), 'error')
-      } else {
-        toast(tBoard('errorSave'), 'error')
-      }
-      throw error instanceof Error ? error : new Error('failed')
-    }
-  }, [projectId, allItems, toast, invalidateBoard, tBoard])
-
-  const handleAddSubtask = useCallback(async (parentId: string, title: string, type: ItemType) => {
-    if (!projectId) return
-    try {
-      await api.post(`/projects/${projectId}/items`, { title, parentId, type })
-      void invalidateTree(queryClient, user?.id, projectId)
-      toast('Subtask criada', 'success')
-    } catch {
-      toast('Erro ao criar subtask', 'error')
-      throw new Error('failed')
-    }
-  }, [projectId, toast])
-
-  const handleDeleteItem = useCallback(async (itemId: string) => {
-    if (!projectId) return
-    try {
-      await api.delete(`/projects/${projectId}/items/${itemId}`)
-      setAllItems(prev => computeIsLeaf(prev.filter(i => i.id !== itemId && i.parentId !== itemId)))
-      // Invalidação garante consistência após cascata profunda.
-      invalidateBoard()
-      toast('Item excluído', 'success')
-    } catch {
-      toast('Erro ao excluir item', 'error')
-    }
-  }, [projectId, toast, invalidateBoard])
-
-  // Tarefa 10.1 — arquivamento de cards
-  const handleArchiveRequest = useCallback((itemId: string) => {
-    // Conta descendentes não-arquivados para mostrar confirmação quando há filhos
-    const item = allItems.find(i => i.id === itemId)
-    if (!item) return
-    const childrenCount = allItems.filter(i => {
-      try {
-        const path: AncestorNode[] = JSON.parse(i.ancestryPath || '[]')
-        return path.some(a => a.id === itemId)
-      } catch { return false }
-    }).length
-    if (childrenCount > 0) {
-      setArchiveConfirm({ itemId, childrenCount })
-    } else {
-      executeArchive(itemId)
-    }
-  }, [allItems]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function executeArchive(itemId: string) {
-    if (!projectId) return
-    try {
-      await api.post(`/projects/${projectId}/items/${itemId}/archive`, {})
-      // Tarefa 10.3 — remover item e descendentes da UI imediatamente
-      setAllItems(prev => computeIsLeaf(prev.filter(i => {
-        if (i.id === itemId) return false
-        try {
-          const path: AncestorNode[] = JSON.parse(i.ancestryPath || '[]')
-          return !path.some(a => a.id === itemId)
-        } catch { return true }
-      })))
-      setArchiveConfirm(null)
-      toast('Item arquivado', 'success')
-    } catch {
-      toast('Erro ao arquivar item', 'error')
-    }
-  }
-
-  // Tarefa 10.4/10.5 — carregar e exibir itens arquivados
-  async function openArchivedModal() {
-    if (!projectId) return
-    setArchivedModal(true)
-    setArchivedLoading(true)
-    try {
-      const items = await api.get<ArchivedItem[]>(`/projects/${projectId}/items/archived`)
-      setArchivedItems(items)
-    } catch {
-      setArchivedItems([])
-    } finally {
-      setArchivedLoading(false)
-    }
-  }
-
-  // Tarefa 10.6 — restaurar item arquivado
-  async function handleUnarchive(itemId: string) {
-    if (!projectId) return
-    try {
-      await api.post(`/projects/${projectId}/items/${itemId}/unarchive`, {})
-      setArchivedItems(prev => prev.filter(i => i.id !== itemId))
-      // Invalidação garante que o restaurado apareça no board.
-      invalidateBoard()
-      toast('Item restaurado', 'success')
-    } catch {
-      toast('Erro ao restaurar item', 'error')
-    }
-  }
-
-  const handleCreateTag = useCallback(async (name: string, color: string): Promise<Tag> => {
-    if (!projectId) throw new Error('no project')
-    try {
-      const tag = await api.post<Tag>(`/projects/${projectId}/tags`, { name, color })
-      setProjectTags(prev => [...prev, tag])
-      return tag
-    } catch (error) {
-      toast(tBoard('errorSave'), 'error')
-      throw error instanceof Error ? error : new Error('failed')
-    }
-  }, [projectId, toast, tBoard])
-
-  const handleEditTag = useCallback(async (tagId: string, name: string, color: string) => {
-    if (!projectId) return
-    try {
-      await api.patch(`/projects/${projectId}/tags/${tagId}`, { name, color })
-      setProjectTags(prev => prev.map(t => t.id === tagId ? { ...t, name, color } : t))
-    } catch (error) {
-      toast(tBoard('errorSave'), 'error')
-      throw error instanceof Error ? error : new Error('failed')
-    }
-  }, [projectId, toast, tBoard])
-
-  // Salvar história via /items
-  const handleStorySave = useCallback(async (data: StoryData) => {
-    if (!projectId) return
-    try {
-      if (data.id) {
-        await api.patch(`/projects/${projectId}/items/${data.id}`, {
-          title: data.title,
-          parentId: data.epicId,
-          persona: data.persona,
-          goal: data.goal,
-          benefit: data.benefit,
-          acceptanceCriteria: data.acceptanceCriteria,
-          notes: data.notes,
-          description: data.description,
-          versionId: data.versionId,
-          sequenceCode: data.sequenceCode,
-        })
-        setAllItems(prev => prev.map(i => i.id === data.id ? { ...i, title: data.title } : i))
-        void invalidateTree(queryClient, user?.id, projectId)
-      } else {
-        const item = await api.post<ItemData>(`/projects/${projectId}/items`, {
-          type: 'STORY',
-          parentId: data.epicId,
-          title: data.title,
-          persona: data.persona,
-          goal: data.goal,
-          benefit: data.benefit,
-          acceptanceCriteria: data.acceptanceCriteria,
-          notes: data.notes,
-          description: data.description,
-          versionId: data.versionId,
-          sequenceCode: data.sequenceCode,
-        })
-        setAllItems(prev => upsertItem(prev, item))
-        void invalidateTree(queryClient, user?.id, projectId)
-      }
-    } catch (error) {
-      toast(tBoard('errorSaveStory'), 'error')
-      throw error instanceof Error ? error : new Error('failed')
-    }
-  }, [projectId, toast, tBoard])
-
-  // Criar história inline (para StorySelector no ItemModal)
-  const handleCreateStory = useCallback(async (title: string, epicId: string) => {
-    if (!projectId) throw new Error('no project')
-    try {
-      const item = await api.post<ItemData>(`/projects/${projectId}/items`, {
-        type: 'STORY',
-        parentId: epicId,
-        title,
-      })
-      setAllItems(prev => upsertItem(prev, item))
-      return { id: item.id, title: item.title, epicId }
-    } catch (error) {
-      toast(tBoard('errorSaveStory'), 'error')
-      throw error instanceof Error ? error : new Error('failed')
-    }
-  }, [projectId, toast, tBoard])
-
-  // Salvar épico via /items
-  const handleEpicSave = useCallback(async (data: EpicData) => {
-    if (!projectId) return
-    try {
-      if (data.id) {
-        await api.patch(`/projects/${projectId}/items/${data.id}`, {
-          title: data.title,
-          moduleId: data.moduleId,
-          description: data.description,
-          versionId: data.versionId,
-          sequenceCode: data.sequenceCode,
-        })
-        setAllItems(prev => prev.map(i => i.id === data.id ? { ...i, ...data } : i))
-      } else {
-        const item = await api.post<ItemData>(`/projects/${projectId}/items`, {
-          type: 'EPIC',
-          moduleId: data.moduleId,
-          title: data.title,
-          description: data.description,
-          versionId: data.versionId,
-          sequenceCode: data.sequenceCode,
-        })
-        setAllItems(prev => upsertItem(prev, item))
-      }
-    } catch (error) {
-      toast(tBoard('errorSave'), 'error')
-      throw error instanceof Error ? error : new Error('failed')
-    }
-  }, [projectId, toast, tBoard])
-
-  async function handleModuleCreate() {
-    if (!projectId || !newModuleName.trim()) return
-    try {
-      const created = await api.post<Module>(`/projects/${projectId}/modules`, {
-        name: newModuleName.trim(),
-        description: newModuleDescription.trim() || undefined,
-      })
-      const refreshed = await api.get<Module[]>(`/projects/${projectId}/modules`)
-       setModules(refreshed.length > 0 ? refreshed : [...modules, created])
-       void invalidateTree(queryClient, user?.id, projectId)
-      setNewModuleName('')
-      setNewModuleDescription('')
-      setModuleModalOpen(false)
-      toast('Módulo criado', 'success')
-    } catch {
-      toast('Erro ao criar módulo', 'error')
-    }
-  }
+  const itemModalData = useBoardItemModal(projectId, itemModalId)
 
   const isColumnDrag = activeId?.includes(':col:') ?? false
   const activeCard = !isColumnDrag ? allItems.find(i => i.id === activeId) : null
-  const assistantSelectedItem = useMemo(() => {
-    // Card T19 — o item em primeiro plano (topo da pilha de modais) tem precedência.
-    const selectedId = focusState.activeItemId ?? itemModalId ?? storyModalData?.story?.id ?? epicModalData?.epic?.id
-    const selected = selectedId ? allItems.find(item => item.id === selectedId) : undefined
-    if (!selected) return null
-    let ancestry: AncestorNode[] = []
-    try {
-      const parsed = JSON.parse(selected.ancestryPath || '[]')
-      if (Array.isArray(parsed)) ancestry = parsed.filter(node => node && typeof node.id === 'string' && typeof node.title === 'string' && typeof node.type === 'string')
-    } catch {
-      ancestry = []
-    }
-    return { id: selected.id, title: selected.title, type: selected.type, ancestry }
-  }, [allItems, epicModalData?.epic?.id, itemModalId, storyModalData?.story?.id, focusState.activeItemId])
 
-  // Fotografia do contexto da tela (Card T16): mesma população determinada por
-  // filtros/visualização. Sem filtro nenhum, escopo ALL — sem lista de IDs.
-  const [treeSnapshot, setTreeSnapshot] = useState<AssistantScreenSnapshot | null>(null)
-  const handleTreeSnapshot = useCallback((snapshot: AssistantScreenSnapshot | null) => setTreeSnapshot(snapshot), [])
-  const kanbanSnapshot = useMemo(() => {
-    if (!projectId) return null
-    const actionCards = allDisplayed.filter(item => (item.type === 'TASK' || item.type === 'BUG') && !item.id.startsWith('story-virtual-'))
-    const revisions: Record<string, string> = {}
-    for (const item of actionCards) if (item.updatedAt) revisions[item.id] = item.updatedAt
-    return buildScreenSnapshot({
-      screen: view === 'tree' ? 'project-board-tree' : 'project-board-kanban',
-      route: location.pathname,
-      projectId,
-      projectName,
-      viewMode: view === 'tree' ? 'tree' : 'kanban',
-      activeModuleId: filters.moduleId || null,
-      collapsedGroupIds: [...new Set([...collapsedEpics, ...collapsedModules, ...collapsedStories])],
-      filters: {
-        sprintId: filters.sprintId,
-        versionId: filters.versionId,
-        assigneeId: filters.assigneeId,
-        authorId: filters.authorId,
-        squadId: filters.squadId,
-        costCenterId: filters.costCenterId,
-        status: filters.status,
-        priority: filters.priority,
-        tagIds: filters.tagIds.length ? filters.tagIds : null,
-        types: filters.types.length ? filters.types : null,
-      },
-      presentation: {
-        showSubtasks: filters.showSubtasks,
-        storyDisplay: filters.storyDisplay,
-        moduleViewMode: filters.moduleViewMode,
-        hideEmptyEpics: filters.hideEmptyEpics,
-        hideEmptyStories: filters.hideEmptyStories,
-      },
-      focus: focusState,
-      actionCardIds: actionCards.map(item => item.id),
-      revisions,
-    })
-  }, [allDisplayed, projectId, projectName, view, filters, collapsedEpics, collapsedModules, collapsedStories, focusState])
-  const assistantScreenSnapshot = view === 'tree' ? treeSnapshot : kanbanSnapshot
+  const { assistantSelectedItem, handleTreeSnapshot, assistantScreenSnapshot } = useBoardAgentSession({
+    projectId, projectName, route: location.pathname,
+    filters, setFilters, view, setView, activeModuleId, setActiveModuleId,
+    itemModalId, setItemModalId,
+    storyModalId: storyModalData?.story?.id, epicModalId: epicModalData?.epic?.id,
+    collapsedEpics, collapsedModules, collapsedStories,
+    setCollapsedEpics, setCollapsedModules, setCollapsedStories,
+    allItems, allDisplayed,
+  })
+
+
+
 
   if (loading) return (
     <div className="flex items-center justify-center h-screen bg-background">
@@ -1033,7 +401,7 @@ export default function BoardPage() {
               epicGroups.flatMap(group => group.storyGroups.map(storyGroup => storyGroup.id))
             ))
           }}
-          onOpenArchived={openArchivedModal}
+          onOpenArchived={archiving.openArchivedModal}
           onCreate={openCreation}
           progress={{ completed: sprintCompleted, total: sprintItems.length }}
           compactFilters={density === 'compact' ? (
@@ -1078,13 +446,7 @@ export default function BoardPage() {
               onEdit={handleOpenDetail}
               onSnapshotChange={handleTreeSnapshot}
             // Tarefa 10.2 — passa o handler de arquivamento para a tree view
-            onArchive={(itemId, childrenCount) => {
-              if (childrenCount > 0) {
-                setArchiveConfirm({ itemId, childrenCount })
-              } else {
-                executeArchive(itemId)
-              }
-            }}
+            onArchive={archiving.openArchiveConfirm}
           />
         )}
 
@@ -1144,7 +506,7 @@ export default function BoardPage() {
                   onOpenDetail={handleOpenDetail}
                   onTitleSave={handleTitleSave}
                   onDelete={handleDeleteItem}
-                  onArchive={handleArchiveRequest}
+                  onArchive={archiving.requestArchive}
                   onEditStory={openStoryModal}
                   onEditEpic={epic => setEpicModalData({ epic: { id: epic.id, title: epic.title, moduleId: epic.moduleId ?? '', description: epic.description } })}
                   noModuleLabel={tBoard('noModule')}
@@ -1180,10 +542,10 @@ export default function BoardPage() {
         moduleOpen={moduleModalOpen}
         moduleName={newModuleName}
         moduleDescription={newModuleDescription}
-        archiveConfirm={archiveConfirm}
-        archivedOpen={archivedModal}
-        archivedItems={archivedItems}
-        archivedLoading={archivedLoading}
+        archiveConfirm={archiving.archiveConfirm}
+        archivedOpen={archiving.archivedModal}
+        archivedItems={archiving.archivedItems}
+        archivedLoading={archiving.archivedLoading}
         epics={epicsForModal}
         stories={storiesForSelector}
         modules={modules}
@@ -1193,12 +555,12 @@ export default function BoardPage() {
         sprints={sprints}
         costCenters={projectCostCenters}
         advancedChecklists={advancedChecklists}
-        onCloseItem={() => { setItemModalId(null); setItemModalData(null); setNewItemCreation(null) }}
+        onCloseItem={() => { setItemModalId(null); setNewItemCreation(null) }}
         onCloseStory={() => setStoryModalData(null)}
         onCloseEpic={() => setEpicModalData(null)}
         onCloseModule={() => setModuleModalOpen(false)}
-        onCloseArchive={() => setArchiveConfirm(null)}
-        onCloseArchived={() => setArchivedModal(false)}
+        onCloseArchive={archiving.cancelArchive}
+        onCloseArchived={archiving.closeArchivedModal}
         onCreate={handleModalCreate}
         onSaveItem={handleModalSave}
         onSaveStory={handleStorySave}
@@ -1208,8 +570,8 @@ export default function BoardPage() {
         onCreateTag={handleCreateTag}
         onEditTag={handleEditTag}
         onCreateStory={handleCreateStory}
-        onArchive={() => archiveConfirm && executeArchive(archiveConfirm.itemId)}
-        onUnarchive={handleUnarchive}
+        onArchive={archiving.confirmArchive}
+        onUnarchive={archiving.unarchive}
         onModuleCreate={handleModuleCreate}
         onModuleNameChange={setNewModuleName}
         onModuleDescriptionChange={setNewModuleDescription}

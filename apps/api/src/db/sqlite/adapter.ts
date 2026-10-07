@@ -14,8 +14,15 @@ import type {
   ItemWithRelationsRecord,
   MembershipRecord,
   DashboardHoursFilter,
+  DashboardHoursAuthorRow,
   DashboardHoursRow,
+  DashboardAgingDetailItem,
+  DashboardLeafItemPageOptions,
+  DashboardDimensionProjectionMeta,
+  DashboardDimensionSnapshotRecord,
   DashboardMemberRow,
+  DashboardPopulationFilter,
+  DashboardSnapshotAggregateRow,
   DashboardTransitionRecord,
   ItemEventRecord,
   AssistantApprovalDetailRecord,
@@ -60,6 +67,7 @@ import { createSqliteItemUnitOfWork } from './itemUnitOfWork'
 import { createSqliteProjectUnitOfWork } from './projectUnitOfWork'
 import { createSqliteDomainEventPort, appendDomainEventSync } from './domainEventOutbox'
 import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
+import { applyDimensionProjectionBackfill, applyDimensionProjectionBaselineBackfill, type SqliteItemSnapshot } from './itemAnalytics'
 
 function asMutation(context: PersistenceContext): MutationContext {
   return {
@@ -368,6 +376,32 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
     unarchiveItemSubtree: async (...args) => itemCommands.unarchiveItemSubtree(...args),
     applyItemBatch: async (...args) => itemCommands.applyItemBatch(...args),
     createItemsBatch: async (...args) => itemCommands.createItemsBatch(...args),
+  }
+
+  const dashboardLeafConditions = (context: PersistenceContext, projectId: string, filter?: DashboardPopulationFilter) => {
+    const conditions = [
+      eq(items.tenantId, context.tenantId), eq(items.projectId, projectId),
+      inArray(items.type, ['TASK', 'BUG']), sql`${items.status} <> 'ARCHIVED'`,
+      sql`NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = ${context.tenantId} AND child.project_id = ${projectId} AND child.parent_id = ${items.id})`,
+    ]
+    if (!filter) return conditions
+    if (filter.moduleIds.length) conditions.push(inArray(items.moduleId, filter.moduleIds))
+    if (filter.versionIds.length) conditions.push(inArray(items.versionId, filter.versionIds))
+    if (filter.assigneeIds.length) conditions.push(inArray(items.assigneeId, filter.assigneeIds))
+    if (filter.types.length) conditions.push(inArray(items.type, filter.types as ItemRecord['type'][]))
+    if (filter.sprintIds.length) {
+      const sprintItems = database.select({ itemId: itemSprints.itemId }).from(itemSprints)
+        .innerJoin(sprints, and(eq(sprints.id, itemSprints.sprintId), eq(sprints.tenantId, itemSprints.tenantId)))
+        .where(and(eq(itemSprints.tenantId, context.tenantId), eq(sprints.projectId, projectId), inArray(itemSprints.sprintId, filter.sprintIds)))
+      conditions.push(inArray(items.id, sprintItems))
+    }
+    if (filter.squadIds.length) {
+      const squadUsers = database.select({ userId: memberships.userId }).from(memberships)
+        .innerJoin(squads, and(eq(squads.id, memberships.squadId), eq(squads.tenantId, memberships.tenantId), eq(squads.projectId, memberships.projectId)))
+        .where(and(eq(memberships.tenantId, context.tenantId), eq(memberships.projectId, projectId), inArray(memberships.squadId, filter.squadIds)))
+      conditions.push(inArray(items.assigneeId, squadUsers))
+    }
+    return conditions
   }
 
   return {
@@ -728,10 +762,12 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
       },
       async updateModule(context, projectId, moduleId, patch: ModulePatch) {
         return runSqliteAtomic(sqlite, () => {
-          const existing = sqlite.query<{ id: string }, [string, string, string]>(
-            'SELECT id FROM modules WHERE tenant_id = ? AND project_id = ? AND id = ?',
+          const existing = sqlite.query<{ id: string; name: string }, [string, string, string]>(
+            'SELECT id, name FROM modules WHERE tenant_id = ? AND project_id = ? AND id = ?',
           ).get(context.tenantId, projectId, moduleId)
           if (!existing) return false
+          // Card T25 — pré-condição de concorrência: o nome aprovado precisa bater.
+          if (patch.expectedName !== undefined && existing.name !== patch.expectedName) throw new Error('PRECONDITION_FAILED')
           const sets: string[] = []
           const params: Array<string | number | null> = []
           const map: Array<[keyof ModulePatch, string]> = [['name', 'name'], ['description', 'description'], ['position', 'position']]
@@ -739,7 +775,8 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
             const value = patch[field]
             if (value !== undefined) { sets.push(`${column} = ?`); params.push(value as string | number | null) }
           }
-          if (sets.length) sqlite.query(`UPDATE modules SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND id = ?`)
+          if (!sets.length) return true
+          sqlite.query(`UPDATE modules SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND id = ?`)
             .run(...params, context.tenantId, projectId, moduleId)
           emitMetadataEvent(sqlite, context.tenantId, projectId, 'modules')
           return true
@@ -770,8 +807,16 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         ) })
         return row ? mapSquad(row) : null
       },
-      async updateSquad(context, projectId, squadId, name) {
+      async updateSquad(context, projectId, squadId, name, expectedName?: string | null) {
         return runSqliteAtomic(sqlite, () => {
+          // Card T25 — pré-condição de concorrência: nome aprovado precisa bater.
+          if (expectedName !== undefined) {
+            const current = sqlite.query<{ name: string }, [string, string, string]>(
+              'SELECT name FROM squads WHERE tenant_id = ? AND project_id = ? AND id = ?',
+            ).get(context.tenantId, projectId, squadId)
+            if (!current) return false
+            if (current.name !== expectedName) throw new Error('PRECONDITION_FAILED')
+          }
           const result = sqlite.query('UPDATE squads SET name = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
             .run(name, context.tenantId, projectId, squadId)
           if (result.changes === 0) return false
@@ -824,11 +869,20 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
             ).get(context.tenantId, projectId, patch.squadId)
             if (!squad) throw new Error('SQUAD_NOT_IN_PROJECT')
           }
+          // Card T25 — pré-condições transacionais: comparar os valores aprovados
+          // com o estado atual no commit. Mudança independente de papel convive
+          // com a troca de squad (só o campo tocado é comparado).
+          const current = sqlite.query<{ role: string; squadId: string | null }, [string, string, string]>(
+            'SELECT role, squad_id AS squadId FROM memberships WHERE tenant_id = ? AND project_id = ? AND user_id = ?',
+          ).get(context.tenantId, projectId, userId)
+          if (!current) return false
+          if (patch.expectedSquadId !== undefined && current.squadId !== patch.expectedSquadId) throw new Error('PRECONDITION_FAILED')
+          if (patch.expectedRole !== undefined && current.role !== patch.expectedRole) throw new Error('PRECONDITION_FAILED')
           const columnsToUpdate: string[] = []
           const values: Array<string | null> = []
           if (patch.role !== undefined) { columnsToUpdate.push('role = ?'); values.push(patch.role) }
           if (patch.squadId !== undefined) { columnsToUpdate.push('squad_id = ?'); values.push(patch.squadId || null) }
-          if (!columnsToUpdate.length) return false
+          if (!columnsToUpdate.length) return true
           const result = sqlite.query(`UPDATE memberships SET ${columnsToUpdate.join(', ')} WHERE tenant_id = ? AND project_id = ? AND user_id = ?`)
             .run(...values, context.tenantId, projectId, userId)
           if (result.changes > 0) {
@@ -1094,10 +1148,14 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
       },
       async updateTag(context, projectId, tagId, patch) {
         return runSqliteAtomic(sqlite, () => {
-          const existing = sqlite.query<{ id: string }, [string, string, string]>(
-            'SELECT id FROM tags WHERE tenant_id = ? AND project_id = ? AND id = ?',
+          const existing = sqlite.query<{ id: string; name: string; color: string }, [string, string, string]>(
+            'SELECT id, name, color FROM tags WHERE tenant_id = ? AND project_id = ? AND id = ?',
           ).get(context.tenantId, projectId, tagId)
           if (!existing) return null
+          // Card T25 — pré-condições de concorrência para os campos aprovados.
+          if (patch.expectedName !== undefined && existing.name !== patch.expectedName) throw new Error('PRECONDITION_FAILED')
+          if (patch.expectedColor !== undefined && existing.color !== patch.expectedColor) throw new Error('PRECONDITION_FAILED')
+          if (patch.name === undefined && patch.color === undefined) return mapTagRow(sqlite.query<Record<string, unknown>, [string]>('SELECT * FROM tags WHERE id = ?').get(tagId)!)
           if (patch.name !== undefined) sqlite.query('UPDATE tags SET name = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
             .run(patch.name, context.tenantId, projectId, tagId)
           if (patch.color !== undefined) sqlite.query('UPDATE tags SET color = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
@@ -1272,10 +1330,12 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
       },
       async updateCostCenter(context, projectId, costCenterId, patch: CostCenterPatch) {
         return runSqliteAtomic(sqlite, () => {
-          const existing = sqlite.query<{ id: string }, [string, string, string]>(
-            'SELECT id FROM project_cost_centers WHERE tenant_id = ? AND project_id = ? AND id = ?',
+          const existing = sqlite.query<{ id: string; code: string }, [string, string, string]>(
+            'SELECT id, code FROM project_cost_centers WHERE tenant_id = ? AND project_id = ? AND id = ?',
           ).get(context.tenantId, projectId, costCenterId)
           if (!existing) return null
+          // Card T25 — pré-condição de concorrência: código aprovado precisa bater.
+          if (patch.expectedCode !== undefined && existing.code !== patch.expectedCode) throw new Error('PRECONDITION_FAILED')
           const sets: string[] = []
           const params: Array<string | number | null> = []
           const map: Array<[keyof CostCenterPatch, string]> = [['code', 'code'], ['description', 'description'], ['sortOrder', 'sort_order']]
@@ -1283,7 +1343,8 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
             const value = patch[field]
             if (value !== undefined) { sets.push(`${column} = ?`); params.push(value as string | number | null) }
           }
-          if (sets.length) sqlite.query(`UPDATE project_cost_centers SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND id = ?`)
+          if (!sets.length) return mapCostCenter(sqlite.query<never, [string]>(`SELECT id, tenant_id AS tenantId, project_id AS projectId, code, description, sort_order AS sortOrder, created_at AS createdAt FROM project_cost_centers WHERE id = ?`).get(costCenterId)!)
+          sqlite.query(`UPDATE project_cost_centers SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND id = ?`)
             .run(...params, context.tenantId, projectId, costCenterId)
           emitMetadataEvent(sqlite, context.tenantId, projectId, 'costCenters')
           return mapCostCenter(sqlite.query<never, [string]>(`SELECT id, tenant_id AS tenantId, project_id AS projectId, code, description, sort_order AS sortOrder, created_at AS createdAt FROM project_cost_centers WHERE id = ?`).get(costCenterId)!)
@@ -1708,20 +1769,196 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           await replaysProjectRollup(database, sqlite, project.tenantId, project.projectId)
         }
       },
+      async backfillDimensionProjections(projectId?: string) {
+        const covered = projectId
+          ? sqlite.query<{ tenant_id: string; project_id: string }, [string]>(
+            'SELECT tenant_id, project_id FROM project_analytics_coverage WHERE project_id = ? ORDER BY tenant_id, project_id',
+          ).all(projectId)
+          : sqlite.query<{ tenant_id: string; project_id: string }, []>(
+            'SELECT tenant_id, project_id FROM project_analytics_coverage ORDER BY tenant_id, project_id',
+          ).all()
+        if (projectId && covered.length === 0) throw new Error('DASHBOARD_DIMENSION_BACKFILL_PROJECT_NOT_COVERED')
+        for (const project of covered) {
+          let meta = sqlite.query<{ projection_version: number; status: string; last_sequence: number }, [string, string]>(
+            'SELECT projection_version, status, last_sequence FROM project_analytics_dimension_meta WHERE tenant_id = ? AND project_id = ?',
+          ).get(project.tenant_id, project.project_id)
+          if (meta?.projection_version === 1 && meta.status === 'READY') continue
+          if (!meta) {
+            const now = new Date().toISOString()
+            sqlite.query(`INSERT INTO project_analytics_dimension_meta
+              (project_id, tenant_id, projection_version, status, last_sequence, target_sequence, updated_at)
+              VALUES (?, ?, 1, 'BUILDING', -1, NULL, ?)`).run(project.project_id, project.tenant_id, now)
+            meta = { projection_version: 1, status: 'BUILDING', last_sequence: -1 }
+          } else if (meta.projection_version !== 1) {
+            runSqliteAtomic(sqlite, () => {
+              for (const table of ['project_analytics_dimension_state', 'project_analytics_dimension_snapshots', 'project_analytics_dimension_items']) {
+                sqlite.query(`DELETE FROM ${table} WHERE tenant_id = ? AND project_id = ?`).run(project.tenant_id, project.project_id)
+              }
+              sqlite.query(`UPDATE project_analytics_dimension_meta SET projection_version = 1, status = 'BUILDING', last_sequence = -1,
+                target_sequence = NULL, updated_at = ? WHERE tenant_id = ? AND project_id = ?`).run(new Date().toISOString(), project.tenant_id, project.project_id)
+            })
+            meta = { projection_version: 1, status: 'BUILDING', last_sequence: -1 }
+          } else {
+            sqlite.query("UPDATE project_analytics_dimension_meta SET status = 'BUILDING', updated_at = ? WHERE tenant_id = ? AND project_id = ?")
+              .run(new Date().toISOString(), project.tenant_id, project.project_id)
+          }
+
+          let lastSequence = meta.last_sequence
+          while (true) {
+            const batch = sqlite.query<{
+              sequence: number; item_id: string | null; event_type: string; occurred_at: string
+              before_snapshot: string | null; after_snapshot: string | null
+            }, [string, string, number]>(
+              `SELECT sequence, item_id, event_type, occurred_at, before_snapshot, after_snapshot
+               FROM item_events WHERE tenant_id = ? AND project_id = ? AND sequence > ?
+               ORDER BY sequence LIMIT 250`,
+            ).all(project.tenant_id, project.project_id, lastSequence)
+            if (batch.length > 0) {
+              runSqliteAtomic(sqlite, () => {
+                for (const event of batch) {
+                  if (event.event_type === 'ANALYTICS_BASELINE' && event.after_snapshot) {
+                    const baseline = JSON.parse(event.after_snapshot) as Array<{ itemId: string } & SqliteItemSnapshot>
+                    applyDimensionProjectionBaselineBackfill(sqlite, project.tenant_id, project.project_id, event.occurred_at, event.sequence, baseline)
+                  } else if (event.item_id) {
+                    const before = event.before_snapshot ? JSON.parse(event.before_snapshot) as SqliteItemSnapshot : null
+                    const after = event.after_snapshot ? JSON.parse(event.after_snapshot) as SqliteItemSnapshot : null
+                    applyDimensionProjectionBackfill(sqlite, project.tenant_id, project.project_id, event.item_id, event.occurred_at, event.sequence, before, after)
+                  }
+                }
+                lastSequence = batch.at(-1)!.sequence
+                const maxSequence = sqlite.query<{ value: number | null }, [string, string]>(
+                  'SELECT MAX(sequence) AS value FROM item_events WHERE tenant_id = ? AND project_id = ?',
+                ).get(project.tenant_id, project.project_id)?.value ?? -1
+                sqlite.query(`UPDATE project_analytics_dimension_meta SET last_sequence = ?, target_sequence = ?, updated_at = ?
+                  WHERE tenant_id = ? AND project_id = ?`).run(lastSequence, maxSequence, new Date().toISOString(), project.tenant_id, project.project_id)
+              })
+              continue
+            }
+
+            const complete = runSqliteAtomic(sqlite, () => {
+              const maxSequence = sqlite.query<{ value: number | null }, [string, string]>(
+                'SELECT MAX(sequence) AS value FROM item_events WHERE tenant_id = ? AND project_id = ?',
+              ).get(project.tenant_id, project.project_id)?.value ?? -1
+              if (maxSequence > lastSequence) return false
+              sqlite.query(`UPDATE project_analytics_dimension_meta SET status = 'READY', last_sequence = ?, target_sequence = NULL, updated_at = ?
+                WHERE tenant_id = ? AND project_id = ?`).run(lastSequence, new Date().toISOString(), project.tenant_id, project.project_id)
+              return true
+            })
+            if (complete) break
+          }
+        }
+      },
     },
     dashboard: {
       async projectExists(context, projectId) {
         const row = await database.query.projects.findFirst({ where: and(eq(projects.tenantId, context.tenantId), eq(projects.id, projectId)), columns: { id: true } })
         return Boolean(row)
       },
-      async listLeafItems(context, projectId) {
-        const rows = await database.select().from(items).where(and(
-          eq(items.tenantId, context.tenantId), eq(items.projectId, projectId),
-          inArray(items.type, ['TASK', 'BUG']),
-          sql`${items.status} <> 'ARCHIVED'`,
-          sql`NOT EXISTS (SELECT 1 FROM items child WHERE child.parent_id = ${items.id})`,
-        ))
+      // [TENANT] A população e todos os filtros são restritos a tenant/projeto dentro do adapter.
+      async listLeafItems(context, projectId, filter, page?: DashboardLeafItemPageOptions) {
+        const conditions = dashboardLeafConditions(context, projectId, filter)
+        if (page?.statuses?.length) conditions.push(inArray(items.status, page.statuses as ItemRecord['status'][]))
+        if (page?.overdue) {
+          conditions.push(page.overdue.match
+            ? and(lt(items.dueDate, page.overdue.asOf), sql`${items.status} NOT IN ('DONE', 'CANCELLED')`)!
+            : or(isNull(items.dueDate), gte(items.dueDate, page.overdue.asOf), inArray(items.status, ['DONE', 'CANCELLED']))!)
+        }
+        if (page?.afterId) conditions.push(gt(items.id, page.afterId))
+        let query = database.select().from(items).where(and(...conditions))
+        const rows = page
+          ? await query.orderBy(asc(items.id)).limit(page.limit)
+          : await query.orderBy(asc(items.position), asc(items.id))
         return rows.map(mapItem)
+      },
+      async listAgingDetailPage(context, projectId, filter, target, limit, after): Promise<DashboardAgingDetailItem[]> {
+        const conditions = dashboardLeafConditions(context, projectId, filter)
+        conditions.push(target === 'BLOCKED' ? eq(items.status, 'BLOCKED') : inArray(items.status, ['IN_PROGRESS', 'BLOCKED']))
+        const beforeStatus = sql`CASE WHEN json_valid(e.before_snapshot) THEN json_extract(e.before_snapshot, '$.status') ELSE NULL END`
+        const entersTarget = target === 'BLOCKED'
+          ? sql`json_extract(e.after_snapshot, '$.status') = 'BLOCKED' AND COALESCE(${beforeStatus}, '') <> 'BLOCKED'`
+          : sql`json_extract(e.after_snapshot, '$.status') IN ('IN_PROGRESS', 'BLOCKED') AND COALESCE(${beforeStatus}, '') NOT IN ('IN_PROGRESS', 'BLOCKED')`
+        const transitionAt = sql<string | null>`(
+          SELECT e.occurred_at FROM item_events e
+          WHERE e.tenant_id = ${context.tenantId} AND e.project_id = ${projectId}
+            AND e.item_id = ${items.id} AND e.event_type = 'STATUS_CHANGED'
+            AND json_valid(e.after_snapshot) AND ${entersTarget}
+          ORDER BY e.occurred_at DESC, e.sequence DESC, e.id DESC LIMIT 1
+        )`
+        const startedAt = sql<string>`COALESCE(${transitionAt}, (
+          SELECT coverage_started_at FROM project_analytics_coverage
+          WHERE tenant_id = ${context.tenantId} AND project_id = ${projectId}
+        ), ${items.createdAt})`
+        if (after) conditions.push(or(
+          gt(startedAt, after.startedAt),
+          and(eq(startedAt, after.startedAt), gt(items.id, after.id)),
+        )!)
+        const rows = await database.select({ item: items, transitionAt, startedAt }).from(items)
+          .where(and(...conditions)).orderBy(asc(startedAt), asc(items.id)).limit(limit)
+        return rows.map(row => ({ ...mapItem(row.item), startedAt: row.startedAt, minimumKnown: row.transitionAt === null } satisfies DashboardAgingDetailItem))
+      },
+      async getDimensionProjectionMeta(context, projectId) {
+        const row = sqlite.query<{ projection_version: number; status: 'BUILDING' | 'READY' | 'FAILED'; last_sequence: number; target_sequence: number | null }, [string, string]>(
+          'SELECT projection_version, status, last_sequence, target_sequence FROM project_analytics_dimension_meta WHERE tenant_id = ? AND project_id = ?',
+        ).get(context.tenantId, projectId)
+        return row ? { projectionVersion: row.projection_version, status: row.status, lastSequence: row.last_sequence, targetSequence: row.target_sequence } : null
+      },
+      async listDimensionSnapshots(context, projectId, filter, from, to) {
+        const conditions = ['d.tenant_id = ?', 'd.project_id = ?', 'd.metric_date <= ?']
+        const params: string[] = [context.tenantId, projectId, to]
+        const addIn = (column: string, values: string[]) => {
+          if (!values.length) return
+          conditions.push(`${column} IN (${values.map(() => '?').join(', ')})`)
+          params.push(...values)
+        }
+        addIn('d.module_key', filter.moduleIds)
+        addIn('d.version_key', filter.versionIds)
+        addIn('d.type', filter.types)
+        if (filter.sprintIds.length) {
+          conditions.push(`EXISTS (SELECT 1 FROM json_each(d.sprint_ids_json) AS sprint_dim WHERE sprint_dim.value IN (${filter.sprintIds.map(() => '?').join(', ')}))`)
+          params.push(...filter.sprintIds)
+        }
+        const where = conditions.join(' AND ')
+        const rows = sqlite.query(
+          `WITH filtered AS (
+             SELECT d.* FROM project_analytics_dimension_snapshots d WHERE ${where}
+           ), ranked AS (
+             SELECT filtered.*, ROW_NUMBER() OVER (
+               PARTITION BY module_key, version_key, sprint_set_hash, sprint_ids_json, type
+               ORDER BY metric_date DESC
+             ) AS row_num
+             FROM filtered WHERE metric_date < ?
+           )
+           SELECT metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points
+           FROM ranked WHERE row_num = 1
+           UNION ALL
+           SELECT metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points
+           FROM filtered WHERE metric_date >= ? AND metric_date <= ?
+           ORDER BY metric_date, module_key, version_key, sprint_set_hash, type`,
+        ).all(...params, from, from, to) as Array<Record<string, unknown>>
+        return rows.map(row => ({
+          metricDate: String(row.metric_date), moduleKey: String(row.module_key), versionKey: String(row.version_key),
+          sprintSetHash: String(row.sprint_set_hash), sprintIdsJson: String(row.sprint_ids_json), type: String(row.type),
+          total: Number(row.total), done: Number(row.done), points: Number(row.points), donePoints: Number(row.done_points),
+        } satisfies DashboardDimensionSnapshotRecord))
+      },
+      // [DB-SWAP] Contagens/status/points/team são agregados SQL, equivalentes ao port PostgreSQL.
+      async aggregateLeafItems(context, projectId, filter, today): Promise<DashboardSnapshotAggregateRow[]> {
+        const rows = await database.select({
+          status: items.status,
+          assigneeId: items.assigneeId,
+          count: sql<number>`COUNT(*)`,
+          estimatedCount: sql<number>`COUNT(${items.points})`,
+          points: sql<number>`COALESCE(SUM(${items.points}), 0)`,
+          donePoints: sql<number>`COALESCE(SUM(CASE WHEN ${items.status} = 'DONE' THEN ${items.points} ELSE 0 END), 0)`,
+          overdueCount: sql<number>`COALESCE(SUM(CASE WHEN ${items.dueDate} IS NOT NULL AND ${items.dueDate} < ${today} AND ${items.status} NOT IN ('DONE', 'CANCELLED') THEN 1 ELSE 0 END), 0)`,
+          overduePoints: sql<number>`COALESCE(SUM(CASE WHEN ${items.dueDate} IS NOT NULL AND ${items.dueDate} < ${today} AND ${items.status} NOT IN ('DONE', 'CANCELLED') THEN ${items.points} ELSE 0 END), 0)`,
+        }).from(items).where(and(...dashboardLeafConditions(context, projectId, filter)))
+          .groupBy(items.status, items.assigneeId)
+        return rows.map(row => ({
+          status: row.status, assigneeId: row.assigneeId,
+          count: Number(row.count), estimatedCount: Number(row.estimatedCount),
+          points: Number(row.points), donePoints: Number(row.donePoints), overdueCount: Number(row.overdueCount), overduePoints: Number(row.overduePoints),
+        }))
       },
       async listSprintItemIds(context, projectId, sprintIds) {
         if (sprintIds.length === 0) return []
@@ -1751,15 +1988,27 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         ) })
         return row ? { coverageStartedAt: row.coverageStartedAt } : null
       },
-      async listTransitions(context, projectId, itemIds) {
+      async listTransitionStarts(context, projectId, itemIds, target) {
         if (itemIds.length === 0) return []
-        return database.select({
-          id: itemEvents.id, itemId: itemEvents.itemId, occurredAt: itemEvents.occurredAt,
-          afterSnapshot: itemEvents.afterSnapshot, beforeSnapshot: itemEvents.beforeSnapshot,
-        }).from(itemEvents).where(and(
-          eq(itemEvents.tenantId, context.tenantId), eq(itemEvents.projectId, projectId), inArray(itemEvents.itemId, itemIds),
-        )).orderBy(asc(itemEvents.occurredAt), asc(itemEvents.sequence), asc(itemEvents.id))
-          .then(rows => rows satisfies DashboardTransitionRecord[])
+        const placeholders = itemIds.map(() => '?').join(', ')
+        const beforeStatus = "CASE WHEN json_valid(before_snapshot) THEN json_extract(before_snapshot, '$.status') ELSE NULL END"
+        const enterTarget = target === 'BLOCKED'
+          ? `json_extract(after_snapshot, '$.status') = 'BLOCKED' AND COALESCE(${beforeStatus}, '') <> 'BLOCKED'`
+          : `json_extract(after_snapshot, '$.status') IN ('IN_PROGRESS', 'BLOCKED') AND COALESCE(${beforeStatus}, '') NOT IN ('IN_PROGRESS', 'BLOCKED')`
+        const rows = sqlite.query(
+          `WITH ranked AS (
+             SELECT id, item_id, occurred_at, after_snapshot, before_snapshot,
+                    ROW_NUMBER() OVER (PARTITION BY item_id ORDER BY occurred_at DESC, sequence DESC, id DESC) AS row_num
+             FROM item_events
+             WHERE tenant_id = ? AND project_id = ? AND event_type = 'STATUS_CHANGED'
+               AND item_id IN (${placeholders}) AND json_valid(after_snapshot) AND ${enterTarget}
+           )
+           SELECT id, item_id, occurred_at, after_snapshot, before_snapshot FROM ranked WHERE row_num = 1 ORDER BY occurred_at, id`,
+        ).all(context.tenantId, projectId, ...itemIds) as Array<{ id: string; item_id: string | null; occurred_at: string; after_snapshot: string | null; before_snapshot: string | null }>
+        return rows.map(row => ({
+          id: row.id, itemId: row.item_id, occurredAt: row.occurred_at,
+          afterSnapshot: row.after_snapshot, beforeSnapshot: row.before_snapshot,
+        } satisfies DashboardTransitionRecord))
       },
       async listEvents(context, projectId, from, to) {
         const rows = await database.select().from(itemEvents).where(and(
@@ -1792,6 +2041,21 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
             startedAt: row.startedAt, endedAt: row.endedAt, endReason: row.endReason, source: row.source,
           } satisfies SprintCycleRecord)))
       },
+      async listSprintCyclesPage(context, projectId, limit, after) {
+        const conditions = [eq(sprintCycles.tenantId, context.tenantId), eq(sprintCycles.projectId, projectId)]
+        if (after) conditions.push(or(
+          gt(sprintCycles.startedAt, after.startedAt),
+          and(eq(sprintCycles.startedAt, after.startedAt), gt(sprintCycles.id, after.id)),
+        )!)
+        const [count, rows] = await Promise.all([
+          database.select({ total: sql<number>`COUNT(*)` }).from(sprintCycles).where(and(eq(sprintCycles.tenantId, context.tenantId), eq(sprintCycles.projectId, projectId))),
+          database.select().from(sprintCycles).where(and(...conditions)).orderBy(asc(sprintCycles.startedAt), asc(sprintCycles.id)).limit(limit),
+        ])
+        return { total: Number(count[0]?.total ?? 0), rows: rows.map(row => ({
+          id: row.id, tenantId: row.tenantId, projectId: row.projectId, sprintId: row.sprintId,
+          startedAt: row.startedAt, endedAt: row.endedAt, endReason: row.endReason, source: row.source,
+        } satisfies SprintCycleRecord)) }
+      },
       async getSprintCycle(context, projectId, cycleId) {
         const row = await database.query.sprintCycles.findFirst({ where: and(
           eq(sprintCycles.id, cycleId), eq(sprintCycles.tenantId, context.tenantId), eq(sprintCycles.projectId, projectId),
@@ -1800,6 +2064,20 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           id: row.id, tenantId: row.tenantId, projectId: row.projectId, sprintId: row.sprintId,
           startedAt: row.startedAt, endedAt: row.endedAt, endReason: row.endReason, source: row.source,
         } satisfies SprintCycleRecord : null
+      },
+      async getSprintCycleCommitmentCounts(context, projectId, cycleId) {
+        const row = await database.select({
+          commitment: sql<number>`COUNT(*)`,
+          committedDone: sql<number>`COALESCE(SUM(CASE WHEN ${sprintCycleItems.status} = 'DONE' THEN 1 ELSE 0 END), 0)`,
+          uncompletedCommitment: sql<number>`COALESCE(SUM(CASE WHEN ${sprintCycleItems.status} NOT IN ('DONE', 'CANCELLED') THEN 1 ELSE 0 END), 0)`,
+        }).from(sprintCycleItems).where(and(
+          eq(sprintCycleItems.cycleId, cycleId), eq(sprintCycleItems.tenantId, context.tenantId), eq(sprintCycleItems.projectId, projectId),
+        ))
+        return {
+          commitment: Number(row[0]?.commitment ?? 0),
+          committedDone: Number(row[0]?.committedDone ?? 0),
+          uncompletedCommitment: Number(row[0]?.uncompletedCommitment ?? 0),
+        }
       },
       async listSprintCycleItems(context, projectId, cycleId) {
         return database.select().from(sprintCycleItems).where(and(
@@ -1811,7 +2089,21 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           moduleId: row.moduleId, versionId: row.versionId,
         } satisfies SprintCycleItemRecord)))
       },
-      async listHoursLogs(context, projectId, filter: DashboardHoursFilter, limit) {
+      async getCurrentSprintCycleCounts(context, projectId, sprintId) {
+        const result = sqlite.query<{ current_scope: number; current_done: number }, [string, string, string]>(
+          `SELECT COUNT(*) AS current_scope,
+                  COALESCE(SUM(CASE WHEN i.status = 'DONE' THEN 1 ELSE 0 END), 0) AS current_done
+           FROM items i
+           INNER JOIN item_sprints s ON s.tenant_id = i.tenant_id AND s.item_id = i.id
+           WHERE i.tenant_id = ? AND i.project_id = ? AND s.sprint_id = ? AND i.status <> 'ARCHIVED'
+             AND NOT EXISTS (
+               SELECT 1 FROM items child
+               WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id
+             )`,
+        ).get(context.tenantId, projectId, sprintId)
+        return { currentScope: result?.current_scope ?? 0, currentDone: result?.current_done ?? 0 }
+      },
+      async listHoursLogs(context, projectId, filter: DashboardHoursFilter, limit, after) {
         const conditions = [
           eq(itemLogs.tenantId, context.tenantId),
           eq(itemLogs.type, 'manual'),
@@ -1825,25 +2117,48 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         if (filter.moduleIds.length) conditions.push(inArray(items.moduleId, filter.moduleIds))
         if (filter.versionIds.length) conditions.push(inArray(items.versionId, filter.versionIds))
         if (filter.types.length) conditions.push(inArray(items.type, filter.types as Array<ItemRecord['type']>))
-        const totalRow = await database.select({ totalMinutes: sql<number>`COALESCE(SUM(${itemLogs.durationMin}), 0)` })
+        const totalRow = await database.select({
+          totalMinutes: sql<number>`COALESCE(SUM(${itemLogs.durationMin}), 0)`,
+          totalRows: sql<number>`COUNT(*)`,
+        })
           .from(itemLogs)
           .innerJoin(items, and(eq(items.id, itemLogs.itemId), eq(items.tenantId, context.tenantId), eq(items.projectId, projectId)))
           .leftJoin(users, and(eq(users.id, itemLogs.authorId), eq(users.tenantId, context.tenantId)))
           .leftJoin(memberships, and(eq(memberships.userId, itemLogs.authorId), eq(memberships.tenantId, context.tenantId), eq(memberships.projectId, projectId)))
           .leftJoin(squads, and(eq(squads.id, memberships.squadId), eq(squads.tenantId, context.tenantId), eq(squads.projectId, projectId)))
           .where(and(...conditions))
-        const rows = await database.select({ log: itemLogs, item: items, squadName: squads.name, authorName: users.name })
+        const rowConditions = [...conditions]
+        if (after) rowConditions.push(or(
+          gt(itemLogs.createdAt, after.createdAt),
+          and(eq(itemLogs.createdAt, after.createdAt), gt(itemLogs.id, after.id)),
+        )!)
+        const [rows, byAuthor] = await Promise.all([
+          database.select({ log: itemLogs, item: items, squadName: squads.name, authorName: users.name })
           .from(itemLogs)
           .innerJoin(items, and(eq(items.id, itemLogs.itemId), eq(items.tenantId, context.tenantId), eq(items.projectId, projectId)))
           .leftJoin(users, and(eq(users.id, itemLogs.authorId), eq(users.tenantId, context.tenantId)))
           .leftJoin(memberships, and(eq(memberships.userId, itemLogs.authorId), eq(memberships.tenantId, context.tenantId), eq(memberships.projectId, projectId)))
           .leftJoin(squads, and(eq(squads.id, memberships.squadId), eq(squads.tenantId, context.tenantId), eq(squads.projectId, projectId)))
-          .where(and(...conditions))
+          .where(and(...rowConditions))
           .orderBy(asc(itemLogs.createdAt), asc(itemLogs.id))
-          .limit(limit)
+          .limit(limit),
+          database.select({
+            authorId: itemLogs.authorId, authorName: users.name, squadName: squads.name,
+            totalMinutes: sql<number>`COALESCE(SUM(${itemLogs.durationMin}), 0)`,
+          }).from(itemLogs)
+            .innerJoin(items, and(eq(items.id, itemLogs.itemId), eq(items.tenantId, context.tenantId), eq(items.projectId, projectId)))
+            .leftJoin(users, and(eq(users.id, itemLogs.authorId), eq(users.tenantId, context.tenantId)))
+            .leftJoin(memberships, and(eq(memberships.userId, itemLogs.authorId), eq(memberships.tenantId, context.tenantId), eq(memberships.projectId, projectId)))
+            .leftJoin(squads, and(eq(squads.id, memberships.squadId), eq(squads.tenantId, context.tenantId), eq(squads.projectId, projectId)))
+            .where(and(...conditions))
+            .groupBy(itemLogs.authorId, users.name, squads.name),
+        ])
         return {
           totalMinutes: Number(totalRow[0]?.totalMinutes ?? 0),
+          totalRows: Number(totalRow[0]?.totalRows ?? 0),
+          byAuthor: byAuthor.map(row => ({ ...row, totalMinutes: Number(row.totalMinutes) } satisfies DashboardHoursAuthorRow)),
           rows: rows.map(row => ({
+            id: row.log.id,
             authorId: row.log.authorId, authorName: row.authorName, squadName: row.squadName,
             itemId: row.item.id, versionId: row.item.versionId, moduleId: row.item.moduleId,
             durationMin: row.log.durationMin, createdAt: row.log.createdAt,

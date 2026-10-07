@@ -23,7 +23,12 @@ import {
   toolUpdateItemLink,
   toolUpdateSprint,
   toolUpdateVersion,
-} from './tools'
+  toolSetMemberSquad,
+  toolUpdateSquad,
+  toolUpdateModule,
+  toolUpdateTag,
+  toolUpdateCostCenter,
+} from '@azy-board/tool-execution'
 
 interface Column {
   id: string
@@ -660,5 +665,32 @@ describe('edição de sprint e versão (T24)', () => {
       { field: 'releaseDate', operation: 'CLEAR' },
     ])
     expect(calls[1]).toEqual({ path: '/projects/p1/versions/v1', method: 'PATCH', body: { status: 'RELEASED', releaseDate: null } })
+  })
+})
+
+describe('composição de squad e edições de cadastros (T25)', () => {
+  test('set_member_squad usa PATCH de membro e envia squadId (null = CLEAR)', async () => {
+    const calls: Array<{ path: string; method: string; body?: unknown }> = []
+    const api: ApiCall = async (path, method = 'GET', body) => { calls.push({ path, method, body }); return { ok: true } }
+
+    await toolSetMemberSquad(api, 'p1', 'u1', 's2')
+    expect(calls[0]).toEqual({ path: '/projects/p1/members/u1', method: 'PATCH', body: { squadId: 's2' } })
+    await toolSetMemberSquad(api, 'p1', 'u1', null)
+    expect(calls[1]).toEqual({ path: '/projects/p1/members/u1', method: 'PATCH', body: { squadId: null } })
+    await expect(toolSetMemberSquad(api, 'p1', '', 's2')).rejects.toThrow('userId é obrigatório')
+  })
+
+  test('edições de squad/módulo/tag/centro chamam as rotas PATCH corretas', async () => {
+    const calls: Array<{ path: string; method: string; body?: unknown }> = []
+    const api: ApiCall = async (path, method = 'GET', body) => { calls.push({ path, method, body }); return { ok: true } }
+
+    await toolUpdateSquad(api, 'p1', 's1', 'Novo squad', 'Antigo')
+    expect(calls[0]).toEqual({ path: '/projects/p1/squads/s1', method: 'PATCH', body: { name: 'Novo squad', expectedName: 'Antigo' } })
+    await toolUpdateModule(api, 'p1', 'm1', 'Novo módulo')
+    expect(calls[1]).toEqual({ path: '/projects/p1/modules/m1', method: 'PATCH', body: { name: 'Novo módulo' } })
+    await toolUpdateTag(api, 'p1', 't1', { color: '#ff0000' })
+    expect(calls[2]).toEqual({ path: '/projects/p1/tags/t1', method: 'PATCH', body: { color: '#ff0000' } })
+    await toolUpdateCostCenter(api, 'p1', 'c1', { code: 'CC-2', description: 'Novo' })
+    expect(calls[3]).toEqual({ path: '/projects/p1/cost-centers/c1', method: 'PATCH', body: { code: 'CC-2', description: 'Novo' } })
   })
 })

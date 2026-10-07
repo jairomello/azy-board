@@ -38,6 +38,7 @@ export const APP_TABLES = [
   'project_cost_centers', 'memberships', 'modules', 'columns', 'sprints', 'items', 'project_versions', 'item_logs',
   'tags', 'item_tags', 'item_sprints', 'project_analytics_coverage', 'item_events', 'sprint_cycles',
   'sprint_cycle_items', 'attachments', 'item_links', 'checklists', 'checklist_items', 'storage_cleanup_jobs', 'project_metrics_daily',
+  'project_analytics_dimension_state', 'project_analytics_dimension_snapshots', 'project_analytics_dimension_items', 'project_analytics_dimension_meta',
 ] as const
 
 /** Fingerprint irreversível; não inclui credenciais nem parâmetros de conexão. */

@@ -61,6 +61,15 @@ function friendlyRunError(error: string | null | undefined, t: (key: string) => 
     TOOL_NOT_REGISTERED: t("toolUnavailable"),
     PROJECT_CONTEXT_MISMATCH: t("contextMismatch"),
     CAPABILITY_NOT_IMPLEMENTED: t("capabilityUnavailable"),
+    PROVIDER_FALLBACK_EXHAUSTED: t("providerUnavailable"),
+    PROVIDER_UNAVAILABLE: t("providerUnavailable"),
+    PROVIDER_TIMEOUT: t("providerUnavailable"),
+    PROVIDER_FAILED: t("providerUnavailable"),
+    PROVIDER_RATE_LIMITED: t("providerRateLimited"),
+    PROVIDER_UNAUTHORIZED: t("providerUnauthorized"),
+    PROVIDER_FORBIDDEN: t("providerUnauthorized"),
+    MODEL_UNAVAILABLE: t("modelUnavailable"),
+    MODEL_CREDENTIAL_UNAVAILABLE: t("assistantUnavailable"),
   };
   return messages[error] ?? error;
 }

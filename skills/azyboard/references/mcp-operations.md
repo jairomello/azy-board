@@ -100,6 +100,25 @@ create_version(projectId, name, releaseDate?, description?, status?)  # status: 
 - A prévia mostra o alvo e o efeito de cada alteração antes da aprovação; a execução usa exatamente o que foi aprovado.
 - `create_version` agora aceita, além de `name`, `releaseDate`, `description` e `status`; informar apenas o nome continua válido.
 
+### Membros, squads e cadastros
+
+A composição de squads e a edição de cadastros acontecem sem sair da conversa, com paridade às rotas de configurações. Resolva alvos por ID, e-mail ou nome/código exato **dentro do projeto atual** antes de propor a mutação; homônimos exigem que o usuário escolha o ID.
+
+```text
+set_member_squad(projectId, userId, squadId)         # troca o squad do membro (SET)
+set_member_squad(projectId, userId, squadId: null)   # limpa o squad (CLEAR), sem remover o membro
+update_squad(projectId, squadId, name)
+update_module(projectId, moduleId, name)
+update_tag(projectId, tagId, name?, color?)          # color: #RRGGBB
+update_cost_center(projectId, costCenterId, code?, description?)
+```
+
+- `set_member_squad` exige `ADMIN`, preserva o papel e o membership e **não** adiciona pessoas ao projeto. Trocar de squad é sempre associação singular (o squad anterior é substituído); remover apenas limpa o squad.
+- `update_squad`, `update_module` e `update_cost_center` exigem `ADMIN`; `update_tag` exige `MEMBER` ou superior. Nenhuma edição exclui o cadastro.
+- `update_tag` e `update_cost_center` exigem ao menos um campo de alteração. O código do centro de custo é único por projeto: um código duplicado retorna conflito 409 sem alterar nada.
+- A resposta informa antes/depois e se houve mudança real (no-op quando os valores aprovados já eram os atuais). Um conflito de concorrência significa que os dados mudaram desde a prévia: refaça a prévia, não repita a mesma chamada.
+- Use `list_members`, `list_squads`, `list_modules`, `list_tags` e `list_cost_centers` para obter os IDs. Nunca invente IDs de outro projeto/tenant; IDs externos são recusados.
+
 ### Leitura de anexos
 
 `read_attachment` lê o conteúdo textual de um anexo do card, com referência ao arquivo e limites explícitos:
@@ -122,7 +141,7 @@ Respostas de erro têm `code`, `message`, `retryable` e, para validação MCP, `
 
 ## Encerrar processos de teste sem derrubar o MCP
 
-O servidor MCP roda como processo local do harness, com o comando apontando para `apps/mcp/src/index.ts`. Matar processos por padrão amplo (por exemplo, `pkill -f "src/index.ts"` ou `pkill -f node_modules/.bin/vite`) pode casar com o processo do MCP e encerrar a conexão da sessão; o harness não reconecta no meio da sessão e as ferramentas deixam de existir até reiniciar.
+O servidor MCP roda como processo local do harness, com o comando apontando para o entrypoint dedicado `apps/mcp/mcp-server.ts` (nome distinto de `apps/mcp/src/index.ts` justamente para não ser atingido por limpezas amplas). Matar processos por padrão amplo (por exemplo, `pkill -f "src/index.ts"` ou `pkill -f node_modules/.bin/vite`) pode casar com o processo do MCP e encerrar a conexão da sessão; o harness não reconecta no meio da sessão e as ferramentas deixam de existir até reiniciar.
 
 Ao encerrar servidores de desenvolvimento/teste:
 

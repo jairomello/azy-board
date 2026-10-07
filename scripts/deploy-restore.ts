@@ -35,4 +35,4 @@ if (!dir || !manifestPath || !existsSync(manifestPath)) {
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as ManifestBackup
 const composeFile = composeFileArg || process.env.COMPOSE_FILE || manifest.composeFile
 
-restaurarBackup({ composeFile, dir })
+await restaurarBackup({ composeFile, dir })

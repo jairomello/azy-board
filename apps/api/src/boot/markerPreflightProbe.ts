@@ -8,5 +8,3 @@ import { closeRuntime, createMarkerStore, installProfile } from '../persistence/
 await ensureInstallationMarkers(installProfile, createMarkerStore())
 process.stdout.write('MARKER_PREFLIGHT_OK\n')
 await closeRuntime()
-
-export {}

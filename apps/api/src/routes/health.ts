@@ -10,6 +10,8 @@ export interface ReadinessProbes {
   database(): Promise<void>
   storage(): Promise<void>
   coordination(): Promise<void>
+  /** [T39] Saúde do subscriber do barramento (ADVANCED). Opcional em testes. */
+  realtime?(): Promise<void>
 }
 
 let injectedProbes: ReadinessProbes | null = null
@@ -58,6 +60,12 @@ export async function runtimeReadinessProbes(): Promise<ReadinessProbes> {
       const ready = await getCoordination().isReady()
       if (!ready) throw new Error('coordination unavailable')
     },
+    // [T39] Falha de assinatura do barramento degrada readiness sem descartar a
+    // outbox confirmada (SQL é a verdade).
+    realtime: async () => {
+      const { isRealtimeSubscriberHealthy } = await import('../services/websocket')
+      if (!isRealtimeSubscriberHealthy()) throw new Error('realtime subscriber unavailable')
+    },
   }
 }
 
@@ -91,6 +99,10 @@ healthRouter.get('/ready', async (c) => {
   // opcional; SIMPLE não depende de coordenação externa.
   if (profile.profile === 'ADVANCED' && !(await runProbe(probes?.coordination))) {
     failures.push('coordination')
+  }
+  // [T39] Em ADVANCED, subscriber do barramento indisponível também reprova.
+  if (profile.profile === 'ADVANCED' && probes?.realtime && !(await runProbe(probes.realtime))) {
+    failures.push('realtime')
   }
 
   if (failures.length > 0) {

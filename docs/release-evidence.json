@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-07",
+  "sourceSha": "6f311de528b643760ac38aaac3efa671957a498e",
+  "branch": "main",
+  "workingTree": "DIRTY",
+  "runId": null,
+  "gates": [
+    {
+      "id": "check",
+      "name": "check",
+      "status": "LIMITADO",
+      "command": "bun run check",
+      "evidence": "Execução local concluída: typecheck, lint, boundaries, 1.251 testes aprovados/23 ignorados e build.",
+      "sha": "6f311de528b643760ac38aaac3efa671957a498e",
+      "date": "2026-10-07",
+      "note": "O SHA é o HEAD-base; a working tree está alterada e não representa esse commit."
+    },
+    {
+      "id": "contracts",
+      "name": "contracts",
+      "status": "LIMITADO",
+      "command": "bun run check:i18n && bun run test:mcp-catalog && bun run test:agent-skill && bun run test:migrations && bun run check:docs && bun run build:web && bun run check:bundle",
+      "evidence": "Todos os comandos passaram localmente em 2026-10-07; check:frontend-tests e check:deploy-versions também passaram.",
+      "sha": "6f311de528b643760ac38aaac3efa671957a498e",
+      "date": "2026-10-07",
+      "note": "Execução local em working tree alterada; a proteção de merge externa permanece fora de escopo e não foi comprovada."
+    },
+    {
+      "id": "smoke-simple",
+      "name": "Smoke autenticado SIMPLE",
+      "status": "LIMITADO",
+      "command": "bun run test:smoke",
+      "evidence": "Smoke local em SQLite temporário: login, RBAC, isolamento tenant, CRUD/readback e agente determinístico passaram.",
+      "sha": "6f311de528b643760ac38aaac3efa671957a498e",
+      "date": "2026-10-07",
+      "note": "Execução local em working tree alterada; não equivale a artefato de CI vinculado a release."
+    },
+    {
+      "id": "smoke-advanced",
+      "name": "Smoke autenticado ADVANCED",
+      "status": "LIMITADO",
+      "command": "bun run test:smoke (PostgreSQL 16 + Valkey 8 efêmeros)",
+      "evidence": "Smoke local em PostgreSQL/Valkey descartáveis: readiness, login, RBAC, isolamento tenant, CRUD/readback e worker/agente passaram.",
+      "sha": "6f311de528b643760ac38aaac3efa671957a498e",
+      "date": "2026-10-07",
+      "note": "Execução local em working tree alterada; não equivale a artefato de CI vinculado a release."
+    },
+    {
+      "id": "e2e",
+      "name": "E2E de navegador SIMPLE",
+      "status": "LIMITADO",
+      "command": "bun run test:e2e",
+      "evidence": "bun run test:e2e: 8/8 jornadas passaram; a jornada corrigida verifica reordenação, persistência após arquivamento e movimento entre colunas.",
+      "sha": "6f311de528b643760ac38aaac3efa671957a498e",
+      "date": "2026-10-07",
+      "note": "A jornada de drag foi corrigida e passou isoladamente; falta validar o job completo na working tree final."
+    },
+    {
+      "id": "advanced",
+      "name": "Matriz ADVANCED PostgreSQL + Valkey",
+      "status": "LIMITADO",
+      "command": "bun test apps/api/src/advanced-http.test.ts apps/api/src/advanced-agent.test.ts apps/api/src/advanced-worker-fence.test.ts apps/api/src/advanced-realtime.test.ts",
+      "evidence": "10 suítes do job advanced passaram localmente contra PostgreSQL e Valkey descartáveis em projeto isolado.",
+      "sha": "6f311de528b643760ac38aaac3efa671957a498e",
+      "date": "2026-10-07",
+      "note": "Execução local em working tree alterada; não há runId/artefato do GitHub Actions nesta sessão."
+    },
+    {
+      "id": "restore-simple",
+      "name": "Backup/restore SIMPLE",
+      "status": "LIMITADO",
+      "command": "bun run scripts/deploy-test-restore.ts --perfil SIMPLE",
+      "evidence": "tmp/test-restore-azyboard-test-restore-20261007-174435/restore-evidence.json",
+      "sha": "6f311de528b643760ac38aaac3efa671957a498e",
+      "date": "2026-10-07",
+      "note": "Fixture autenticada restaurada; manifesto é de execução local em working tree alterada."
+    },
+    {
+      "id": "restore-advanced",
+      "name": "Backup/restore ADVANCED",
+      "status": "LIMITADO",
+      "command": "bun run scripts/deploy-test-restore.ts --perfil ADVANCED",
+      "evidence": "tmp/test-restore-azyboard-test-restore-20261007-174500/restore-evidence.json",
+      "sha": "6f311de528b643760ac38aaac3efa671957a498e",
+      "date": "2026-10-07",
+      "note": "Fixture autenticada restaurada; manifesto é de execução local em working tree alterada."
+    },
+    {
+      "id": "visual-regression",
+      "name": "Regressão visual",
+      "status": "LIMITADO",
+      "command": "bun run test:visual",
+      "evidence": "Job e2e executa em continue-on-error; diferenças locais ficam em tmp/visual-diffs/.",
+      "sha": "6f311de528b643760ac38aaac3efa671957a498e",
+      "date": "2026-10-07",
+      "note": "Observacional; não é required check bloqueante até baselines e política serem promovidos com evidência."
+    },
+    {
+      "id": "external-branch-protection",
+      "name": "Proteção externa de branch/rulesets e bypass",
+      "status": "NAO_COMPROVADO",
+      "command": "Consulta somente-leitura à API GitHub; bun run audit:release-policy",
+      "evidence": "docs/release-policy.json; branch protection respondeu HTTP 401 sem autenticação.",
+      "sha": "6f311de528b643760ac38aaac3efa671957a498e",
+      "date": "2026-10-07",
+      "note": "Configuração externa e prova de bloqueio de merge fora do escopo de T43 por decisão do usuário; não comprovado."
+    }
+  ]
+}

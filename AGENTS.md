@@ -26,6 +26,21 @@ Código, comentários, commits, mensagens e documentação em **português do Br
 - Se ocorrer `JSON parsing failed` / `Unexpected EOF`, repita a mesma intenção
   uma única vez, isoladamente, sem paralelismo.
 
+## Nunca matar o processo do MCP ao encerrar servidores de teste
+
+- O servidor MCP roda como processo local do harness. **Nunca** use padrões
+  amplos como `pkill -f "src/index.ts"`, `pkill -f "vite"` ou `killall node`:
+  eles casam com o processo do MCP (e com outros) e encerram a conexão da
+  sessão. O harness **não reconecta** no meio da sessão — as ferramentas
+  `azy-board_*` somem até reiniciar.
+- Encerre por **PID específico** (guarde o PID do processo que você subiu) ou
+  restrinja o padrão ao seu processo (ex.: `pkill -f "vite --port 5173"`).
+- O entrypoint oficial do MCP é `apps/mcp/mcp-server.ts` (nome distinto de
+  `src/index.ts` justamente para não ser atingido por limpezas amplas). Não
+  altere `opencode.json` para apontar de volta a `src/index.ts`.
+- Se a conexão do MCP cair no meio da sessão, avise o usuário que é preciso
+  reiniciar a sessão do harness; não presuma que as ferramentas voltaram.
+
 ## Encerramento de trabalho ligado a um card (obrigatório)
 
 - Todo trabalho que tenha um card no Azy Board termina com o card em uma coluna

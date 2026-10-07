@@ -94,8 +94,8 @@ describe('cobertura de eventos por mutação', () => {
     for (const { file, text } of routeSources()) {
       for (const block of mutationBlocks(text)) {
         if (EXEMPT.some(prefix => block.header.startsWith(prefix))) continue
-        // [T38] Emissão via outbox de domínio (emitDomainEvent) ou broadcast legado.
-        const emits = block.body.includes('emitDomainEvent(') || block.body.includes('broadcast(') || block.body.includes('emitProjectMetadata(')
+        // [T38]/[T39] Emissão via outbox de domínio (emitDomainEvent).
+        const emits = block.body.includes('emitDomainEvent(')
         if (!emits) missing.push(`${file}: ${block.header}`)
       }
     }
@@ -106,7 +106,7 @@ describe('cobertura de eventos por mutação', () => {
     const contract = readFileSync(join(import.meta.dir, '../../../../packages/realtime-contracts/src/index.ts'), 'utf8')
     const domainTypes = [...contract.matchAll(/'([A-Z_]+)'/g)]
       .map(match => match[1]!)
-      .filter(name => !['REPLAY_COMPLETE', 'RESYNC_REQUIRED', 'HEARTBEAT'].includes(name))
+      .filter(name => !['REPLAY_COMPLETE', 'RESYNC_REQUIRED', 'HEARTBEAT', 'REFETCH_COMPLETE'].includes(name))
     // Fontes emissoras: rotas + mapper de eventos de domínio (T38), que produz
     // os tipos de invalidação (ITEM_CREATED/SUBTASK_CREATED/ITEM_UPDATED/...).
     const apiSources = [
@@ -127,10 +127,13 @@ describe('cobertura de eventos por mutação', () => {
     }
   })
 
-  test('helpers de controle e metadados existem no serviço', () => {
+  test('helpers duráveis de replay e heartbeat existem no serviço', () => {
     const service = readFileSync(join(import.meta.dir, 'websocket.ts'), 'utf8')
-    expect(service.includes('export function emitProjectMetadata(')).toBe(true)
-    expect(service.includes('export function planReplay(')).toBe(true)
+    expect(service.includes('durableReplayPlan(')).toBe(true)
+    expect(service.includes('export function publishDurableEvent<')).toBe(true)
     expect(service.includes('export function heartbeatTick(')).toBe(true)
+    // [T39] A alocação local de sequence foi removida do serviço.
+    expect(service.includes('export function broadcast(')).toBe(false)
+    expect(service.includes('export function emitProjectMetadata(')).toBe(false)
   })
 })

@@ -62,11 +62,21 @@ describe('migration de rollup diário do dashboard (Item 13)', () => {
     migrate(database, { migrationsFolder })
     const tables = sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
     expect(tables.map(table => table.name)).toContain('project_metrics_daily')
+    expect(tables.map(table => table.name)).toContain('project_analytics_dimension_state')
+    expect(tables.map(table => table.name)).toContain('project_analytics_dimension_snapshots')
+    expect(tables.map(table => table.name)).toContain('project_analytics_dimension_meta')
     expect((sqlite.query('SELECT COUNT(*) AS count FROM project_metrics_daily').get() as { count: number }).count).toBe(0)
     const indexes = sqlite.query("SELECT name FROM sqlite_master WHERE type = 'index'").all() as Array<{ name: string }>
     expect(indexes.map(index => index.name)).toContain('item_events_item_occurrence_idx')
+    expect(indexes.map(index => index.name)).toContain('item_events_transition_lookup_idx')
     expect(indexes.map(index => index.name)).toContain('item_logs_tenant_created_idx')
     expect(indexes.map(index => index.name)).toContain('items_tenant_project_parent_idx')
+    const eventIndex = sqlite.query("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'item_events_tenant_project_date_idx'").get() as { sql: string }
+    const hoursIndex = sqlite.query("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'item_logs_tenant_created_idx'").get() as { sql: string }
+    expect(eventIndex.sql).toContain('(tenant_id, project_id, occurred_at, sequence, id)')
+    expect(hoursIndex.sql).toContain('(tenant_id, type, created_at, id)')
+    const transitionIndex = sqlite.query("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'item_events_transition_lookup_idx'").get() as { sql: string }
+    expect(transitionIndex.sql).toContain('(tenant_id, project_id, item_id, event_type, occurred_at DESC, sequence DESC, id DESC)')
     expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
     sqlite.close()
   })

@@ -52,7 +52,7 @@ export class FallbackModelProvider implements ModelProvider {
         if (!secret) throw new Error('MODEL_CREDENTIAL_UNAVAILABLE')
       } catch (error) {
         if (request.signal?.aborted || (error instanceof Error && localFailure.test(error.message))) throw error
-        const attempt: ModelProviderAttempt = { configId: candidate.configId, provider: candidate.provider, model: candidate.model, errorCode: safeProviderErrorCode(error), durationMs: Date.now() - startedAt }
+        const attempt: ModelProviderAttempt = { configId: candidate.configId, provider: candidate.provider, model: candidate.model, errorCode: safeProviderErrorCode(error), durationMs: Date.now() - startedAt, reason: safeProviderReason(error) }
         attempts.push(attempt)
         this.reportAttempt?.(attempt)
         continue
@@ -79,7 +79,12 @@ export class FallbackModelProvider implements ModelProvider {
           const message = error instanceof Error ? error.message : 'PROVIDER_FAILED'
           if (request.signal?.aborted || localFailure.test(message)) throw error
           if (retry < 2 && transientProviderFailure.test(message) && Date.now() < deadline) {
-            await new Promise(resolve => setTimeout(resolve, 400 * 2 ** retry))
+            // Honra o Retry-After do provider quando informado; se a espera não cabe
+            // no orçamento, não insiste no mesmo candidato (evita martelar overload).
+            const hinted = providerRetryAfterMs(error)
+            const delay = hinted ?? 400 * 2 ** retry
+            if (hinted !== null && Date.now() + delay >= deadline) break
+            await new Promise(resolve => setTimeout(resolve, delay))
             continue
           }
 
@@ -89,6 +94,7 @@ export class FallbackModelProvider implements ModelProvider {
             model: candidate.model,
             errorCode: safeProviderErrorCode(error),
             durationMs: Date.now() - startedAt,
+            reason: safeProviderReason(error),
           }
           attempts.push(attempt)
           this.reportAttempt?.(attempt)
@@ -129,4 +135,26 @@ function safeProviderErrorCode(error: unknown): string {
   if (/timeout|timed out|ETIMEDOUT/i.test(message)) return 'PROVIDER_TIMEOUT'
   if (/5\d\d|overloaded|bad gateway|service unavailable/i.test(message)) return 'PROVIDER_UNAVAILABLE'
   return 'PROVIDER_FAILED'
+}
+
+/** Mensagem curta e sanitizada da falha bruta do provider, para diagnóstico operacional. */
+function safeProviderReason(error: unknown): string {
+  if (!(error instanceof Error)) return 'PROVIDER_FAILED'
+  const body = (error as { error?: { message?: unknown; metadata?: { provider_name?: unknown } } }).error
+  const status = (error as { status?: unknown }).status
+  const parts: string[] = []
+  if (typeof status === 'number') parts.push(`HTTP ${status}`)
+  const message = typeof body?.message === 'string' ? body.message : error.message
+  parts.push(message)
+  if (typeof body?.metadata?.provider_name === 'string') parts.push(`provider=${body.metadata.provider_name}`)
+  return parts.join(' ').replace(/secret|token|api.?key|ciphertext|bearer\s+\S+/gi, '[REDACTED]').slice(0, 300)
+}
+
+/** Lê o Retry-After/retry_after_seconds informado pelo provider, quando presente. */
+function providerRetryAfterMs(error: unknown): number | null {
+  if (!(error instanceof Error)) return null
+  const metadata = (error as { error?: { metadata?: { retry_after_seconds?: unknown } } }).error?.metadata
+  const seconds = Number(metadata?.retry_after_seconds)
+  if (!Number.isFinite(seconds) || seconds <= 0) return null
+  return Math.min(seconds, 300) * 1000
 }

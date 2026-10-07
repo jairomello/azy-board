@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 process.env.DATABASE_URL = ':memory:'
 const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
 const { db } = await import('../db/index')
-const { tenants, users, assistantConversations, assistantRuns } = await import('../db/schema')
+const { tenants, users, projects, memberships, assistantConversations, assistantRuns } = await import('../db/schema')
 const { claimNextRun, heartbeatRun, releaseRun, isCancelRequested, requestCancel } = await import('./agentJobQueue')
 const { AgentWorker } = await import('./agentWorker')
 const { persistence } = await import('../persistence/runtime')
@@ -385,5 +385,39 @@ describe('tool API do worker autentica com sessão sintética', () => {
     const api = await createWorkerToolApi(tenantId, userId)
     const result = await api('/projects') as Array<Record<string, unknown>>
     expect(Array.isArray(result)).toBe(true)
+  })
+
+  test('a rota local revalida membership revogada após a autorização da tool', async () => {
+    const { authorizeAssistantTool } = await import('../routes/assistant')
+    const { createWorkerToolApi } = await import('./workerContext')
+    const managerId = id()
+    const now = new Date().toISOString()
+    await db.insert(users).values({ id: managerId, tenantId, email: `manager-${managerId}@test.local`, passwordHash: 'x', name: 'Project Manager', createdAt: now })
+    const context = { tenantId, actorUserId: userId, actorKind: 'USER' as const, globalGroup: 'TEAM_MEMBER' as const }
+    const project = await persistence.unitOfWork.createProjectAggregate({
+      ...context,
+      mutation: { origin: 'REST', actorType: 'HUMAN', actorSource: 'REST', actorLabel: null },
+    }, {
+      project: { name: `Revoked ${id()}`, boardMode: 'SIMPLE', managerUserId: managerId },
+      defaultColumns: [
+        { name: 'Backlog', baseStatus: 'NOT_STARTED' },
+        { name: 'A Fazer', baseStatus: 'NOT_STARTED' },
+        { name: 'Fazendo', baseStatus: 'IN_PROGRESS' },
+        { name: 'Concluídas', baseStatus: 'DONE' },
+      ],
+      defaultModuleName: 'Geral',
+      simpleStoryTitle: 'Fluxo contínuo',
+    })
+    // A criação do agregado concede membership inicial ao ator, como a rota real.
+    const agentContext = {
+      source: 'azy-agent' as const, userId, tenantId, globalGroup: 'TEAM_MEMBER' as const,
+      projectId: project.id,
+    }
+    await authorizeAssistantTool(agentContext, 'create_task', { projectId: project.id, title: 'Após revogação' })
+
+    await db.delete(memberships).where(eq(memberships.tenantId, tenantId))
+    await db.update(projects).set({ managerUserId: managerId }).where(eq(projects.id, project.id))
+    const api = await createWorkerToolApi(tenantId, userId)
+    await expect(api(`/projects/${project.id}/items`, 'POST', { title: 'Após revogação', type: 'TASK' })).rejects.toThrow('HTTP 404')
   })
 })

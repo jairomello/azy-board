@@ -27,9 +27,16 @@ import type {
   ChecklistItemRecord,
   ChecklistProgressRecord,
   ChecklistRecord,
+  DashboardHoursAuthorRow,
   DashboardHoursFilter,
   DashboardHoursRow,
+  DashboardAgingDetailItem,
+  DashboardLeafItemPageOptions,
+  DashboardDimensionProjectionMeta,
+  DashboardDimensionSnapshotRecord,
   DashboardMemberRow,
+  DashboardPopulationFilter,
+  DashboardSnapshotAggregateRow,
   DashboardTransitionRecord,
   ItemEventRecord,
   ItemWithRelationsRecord,
@@ -77,6 +84,7 @@ import type {
   ProjectMembershipPatch,
   ProjectPatch,
   ProjectTeamPort,
+  TagPatch,
   ApiKeyPort,
   TenantPort,
   UserPreferencesPatch,
@@ -100,7 +108,7 @@ import { nextSequenceCode as computeNextSequenceCode, sequencePrefix } from '../
 import { IdempotencyConflictError, IdempotentReplaySignal } from '../../persistence/idempotency'
 import { buildBatchUpdateResponse } from '../../persistence/commandResponses'
 import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
-import { readItemSnapshot, readItemSnapshots, recordDeletedItemEventsBatch, recordItemEvent } from './itemAnalytics'
+import { applyDimensionProjectionBackfill, applyDimensionProjectionBaselineBackfill, readItemSnapshot, readItemSnapshots, recordDeletedItemEventsBatch, recordItemEvent, type PgItemSnapshot } from './itemAnalytics'
 
 // ---------------------------------------------------------------------------
 // Mapeamento de linhas SQL para records de domínio
@@ -540,6 +548,44 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
   async function q1(sql: string, params: unknown[] = []): Promise<PgRow | null> {
     const rows = await q(sql, params)
     return rows[0] ?? null
+  }
+
+  function dashboardLeafWhere(context: PersistenceContext, projectId: string, filter?: DashboardPopulationFilter) {
+    const params: unknown[] = [context.tenantId, projectId]
+    const conditions = [
+      'i.tenant_id = $1', 'i.project_id = $2', "i.type IN ('TASK', 'BUG')", "i.status <> 'ARCHIVED'",
+      'NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id)',
+    ]
+    const addArray = (column: string, values: string[]) => {
+      if (!values.length) return
+      params.push(values)
+      conditions.push(`${column} = ANY($${params.length}::text[])`)
+    }
+    if (filter) {
+      addArray('i.module_id', filter.moduleIds)
+      addArray('i.version_id', filter.versionIds)
+      addArray('i.assignee_id', filter.assigneeIds)
+      addArray('i.type', filter.types)
+      if (filter.sprintIds.length) {
+        params.push(filter.sprintIds)
+        conditions.push(`EXISTS (
+          SELECT 1 FROM item_sprints s
+          INNER JOIN sprints sp ON sp.tenant_id = s.tenant_id AND sp.id = s.sprint_id
+          WHERE s.tenant_id = i.tenant_id AND s.item_id = i.id AND sp.project_id = i.project_id
+            AND s.sprint_id = ANY($${params.length}::text[])
+        )`)
+      }
+      if (filter.squadIds.length) {
+        params.push(filter.squadIds)
+        conditions.push(`EXISTS (
+          SELECT 1 FROM memberships m
+          INNER JOIN squads sq ON sq.tenant_id = m.tenant_id AND sq.project_id = m.project_id AND sq.id = m.squad_id
+          WHERE m.tenant_id = i.tenant_id AND m.project_id = i.project_id AND m.user_id = i.assignee_id
+            AND m.squad_id = ANY($${params.length}::text[])
+        )`)
+      }
+    }
+    return { where: conditions.join(' AND '), params }
   }
 
   // Helper: executa dentro de transação
@@ -1350,8 +1396,15 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         if (patch.name !== undefined) { sets.push(`name = $${idx++}`); params.push(patch.name) }
         if (patch.description !== undefined) { sets.push(`description = $${idx++}`); params.push(patch.description) }
         if (patch.position !== undefined) { sets.push(`position = $${idx++}`); params.push(patch.position) }
-        if (!sets.length) return false
         return tx(async (client) => {
+          // Card T25 — pré-condição de concorrência e no-op explícito.
+          if (patch.expectedName !== undefined) {
+            const current = await client.query('SELECT name FROM modules WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+              [context.tenantId, projectId, moduleId])
+            if (!current.rows[0]) return false
+            if (current.rows[0].name !== patch.expectedName) throw new Error('PRECONDITION_FAILED')
+          }
+          if (!sets.length) return true
           const result = await client.query(`UPDATE modules SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING id`, params)
           if ((result.rowCount ?? 0) === 0) return false
           await emitMetadataEventPg(client, context.tenantId, projectId, 'modules')
@@ -1386,8 +1439,15 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           [context.tenantId, projectId, squadId])
         return row ? mapSquad(row) : null
       },
-      async updateSquad(context: PersistenceContext, projectId: string, squadId: string, name: string): Promise<boolean> {
+      async updateSquad(context: PersistenceContext, projectId: string, squadId: string, name: string, expectedName?: string | null): Promise<boolean> {
         return tx(async (client) => {
+          // Card T25 — pré-condição de concorrência: nome aprovado precisa bater.
+          if (expectedName !== undefined) {
+            const current = await client.query('SELECT name FROM squads WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+              [context.tenantId, projectId, squadId])
+            if (!current.rows[0]) return false
+            if (current.rows[0].name !== expectedName) throw new Error('PRECONDITION_FAILED')
+          }
           const result = await client.query('UPDATE squads SET name = $1 WHERE tenant_id = $2 AND project_id = $3 AND id = $4 RETURNING id',
             [name, context.tenantId, projectId, squadId])
           if ((result.rowCount ?? 0) === 0) return false
@@ -1438,12 +1498,18 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
               [context.tenantId, projectId, patch.squadId])
             if (!squad.rows[0]) throw new Error('SQUAD_NOT_IN_PROJECT')
           }
+          // Card T25 — pré-condições transacionais no commit.
+          const current = await client.query('SELECT role, squad_id FROM memberships WHERE tenant_id = $1 AND project_id = $2 AND user_id = $3',
+            [context.tenantId, projectId, userId])
+          if (!current.rows[0]) return false
+          if (patch.expectedSquadId !== undefined && current.rows[0].squad_id !== patch.expectedSquadId) throw new Error('PRECONDITION_FAILED')
+          if (patch.expectedRole !== undefined && current.rows[0].role !== patch.expectedRole) throw new Error('PRECONDITION_FAILED')
           const sets: string[] = []
           const params: unknown[] = [context.tenantId, projectId, userId]
           let idx = 4
           if (patch.role !== undefined) { sets.push(`role = $${idx++}`); params.push(patch.role) }
           if (patch.squadId !== undefined) { sets.push(`squad_id = $${idx++}`); params.push(patch.squadId || null) }
-          if (!sets.length) return false
+          if (!sets.length) return true
           const result = await client.query(`UPDATE memberships SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND user_id = $3`, params)
           if ((result.rowCount ?? 0) === 0) return false
           await emitMetadataEventPg(client, context.tenantId, projectId, 'members')
@@ -1691,14 +1757,25 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           return mapTag(result.rows[0] as PgRow)
         })
       },
-      async updateTag(context: PersistenceContext, projectId: string, tagId: string, patch: { name?: string; color?: string }): Promise<TagRecord | null> {
+      async updateTag(context: PersistenceContext, projectId: string, tagId: string, patch: TagPatch): Promise<TagRecord | null> {
         const sets: string[] = []
         const params: unknown[] = [context.tenantId, projectId, tagId]
         let idx = 4
         if (patch.name !== undefined) { sets.push(`name = $${idx++}`); params.push(patch.name) }
         if (patch.color !== undefined) { sets.push(`color = $${idx++}`); params.push(patch.color) }
-        if (!sets.length) return null
         return tx(async (client) => {
+          // Card T25 — pré-condições de concorrência e no-op explícito.
+          if (patch.expectedName !== undefined || patch.expectedColor !== undefined) {
+            const current = await client.query('SELECT name, color FROM tags WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+              [context.tenantId, projectId, tagId])
+            if (!current.rows[0]) return null
+            if (patch.expectedName !== undefined && current.rows[0].name !== patch.expectedName) throw new Error('PRECONDITION_FAILED')
+            if (patch.expectedColor !== undefined && current.rows[0].color !== patch.expectedColor) throw new Error('PRECONDITION_FAILED')
+          }
+          if (!sets.length) {
+            const current = await q1('SELECT * FROM tags WHERE tenant_id = $1 AND project_id = $2 AND id = $3', [context.tenantId, projectId, tagId])
+            return current ? mapTag(current) : null
+          }
           const result = await client.query(`UPDATE tags SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING *`, params)
           if (!result.rows[0]) return null
           await emitMetadataEventPg(client, context.tenantId, projectId, 'tags')
@@ -1817,7 +1894,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           return mapCostCenter(result.rows[0] as PgRow)
         })
       },
-      async updateCostCenter(context: PersistenceContext, projectId: string, costCenterId: string, patch: Record<string, unknown>): Promise<CostCenterRecord | null> {
+      async updateCostCenter(context: PersistenceContext, projectId: string, costCenterId: string, patch: CostCenterPatch): Promise<CostCenterRecord | null> {
         const sets: string[] = []
         const params: unknown[] = [context.tenantId, projectId, costCenterId]
         let idx = 4
@@ -1825,8 +1902,18 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         for (const [key, col] of Object.entries(fields)) {
           if (key in patch) { sets.push(`${col} = $${idx++}`); params.push((patch as Record<string, unknown>)[key]) }
         }
-        if (!sets.length) return null
         return tx(async (client) => {
+          // Card T25 — pré-condição de concorrência e no-op explícito.
+          if (patch.expectedCode !== undefined) {
+            const current = await client.query('SELECT code FROM project_cost_centers WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+              [context.tenantId, projectId, costCenterId])
+            if (!current.rows[0]) return null
+            if (current.rows[0].code !== patch.expectedCode) throw new Error('PRECONDITION_FAILED')
+          }
+          if (!sets.length) {
+            const current = await q1('SELECT * FROM project_cost_centers WHERE tenant_id = $1 AND project_id = $2 AND id = $3', [context.tenantId, projectId, costCenterId])
+            return current ? mapCostCenter(current) : null
+          }
           const result = await client.query(`UPDATE project_cost_centers SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING *`, params)
           if (!result.rows[0]) return null
           await emitMetadataEventPg(client, context.tenantId, projectId, 'costCenters')
@@ -2254,6 +2341,84 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       async backfillRollups(): Promise<void> {
         // Backfill simplificado: marcar para implementação completa em 4.7
       },
+      async backfillDimensionProjections(projectId?: string): Promise<void> {
+        const covered = await q(
+          `SELECT tenant_id, project_id FROM project_analytics_coverage ${projectId ? 'WHERE project_id = $1' : ''} ORDER BY tenant_id, project_id`,
+          projectId ? [projectId] : [],
+        )
+        if (projectId && covered.length === 0) throw new Error('DASHBOARD_DIMENSION_BACKFILL_PROJECT_NOT_COVERED')
+        for (const project of covered) {
+          const tenantId = project.tenant_id as string
+          const projectId = project.project_id as string
+          let meta = await q1('SELECT projection_version, status, last_sequence FROM project_analytics_dimension_meta WHERE tenant_id = $1 AND project_id = $2', [tenantId, projectId])
+          if (meta?.status === 'READY' && Number(meta.projection_version) === 1) continue
+          if (!meta) {
+            await tx(async client => {
+              await client.query(`INSERT INTO project_analytics_dimension_meta
+                (project_id, tenant_id, projection_version, status, last_sequence, target_sequence, updated_at)
+                VALUES ($1, $2, 1, 'BUILDING', -1, NULL, $3) ON CONFLICT (project_id) DO NOTHING`,
+              [projectId, tenantId, new Date().toISOString()])
+            })
+            meta = await q1('SELECT projection_version, status, last_sequence FROM project_analytics_dimension_meta WHERE tenant_id = $1 AND project_id = $2', [tenantId, projectId])
+          }
+          if (!meta) continue
+          if (Number(meta.projection_version) !== 1) {
+            await tx(async client => {
+              await client.query('DELETE FROM project_analytics_dimension_state WHERE tenant_id = $1 AND project_id = $2', [tenantId, projectId])
+              await client.query('DELETE FROM project_analytics_dimension_snapshots WHERE tenant_id = $1 AND project_id = $2', [tenantId, projectId])
+              await client.query('DELETE FROM project_analytics_dimension_items WHERE tenant_id = $1 AND project_id = $2', [tenantId, projectId])
+              await client.query(`UPDATE project_analytics_dimension_meta SET projection_version = 1, status = 'BUILDING', last_sequence = -1,
+                target_sequence = NULL, updated_at = $1 WHERE tenant_id = $2 AND project_id = $3`, [new Date().toISOString(), tenantId, projectId])
+            })
+            meta = { ...meta, projection_version: 1, status: 'BUILDING', last_sequence: -1 }
+          } else {
+            await q(`UPDATE project_analytics_dimension_meta SET status = 'BUILDING', updated_at = $1 WHERE tenant_id = $2 AND project_id = $3`, [new Date().toISOString(), tenantId, projectId])
+          }
+
+          let lastSequence = Number(meta.last_sequence ?? -1)
+          while (true) {
+            const batch = await q(
+              `SELECT sequence, item_id, event_type, occurred_at, before_snapshot, after_snapshot
+               FROM item_events WHERE tenant_id = $1 AND project_id = $2 AND sequence > $3
+               ORDER BY sequence LIMIT 250`,
+              [tenantId, projectId, lastSequence],
+            )
+            if (batch.length) {
+              await tx(async client => {
+                await client.query('SELECT status FROM project_analytics_dimension_meta WHERE tenant_id = $1 AND project_id = $2 FOR UPDATE', [tenantId, projectId])
+                for (const event of batch) {
+                  const sequence = Number(event.sequence)
+                  const occurredAt = event.occurred_at as string
+                  if (event.event_type === 'ANALYTICS_BASELINE' && event.after_snapshot) {
+                    const baseline = JSON.parse(String(event.after_snapshot)) as Array<{ itemId: string } & PgItemSnapshot>
+                    await applyDimensionProjectionBaselineBackfill(client, tenantId, projectId, occurredAt, sequence, baseline)
+                  } else if (event.item_id) {
+                    const before = event.before_snapshot ? JSON.parse(String(event.before_snapshot)) as PgItemSnapshot : null
+                    const after = event.after_snapshot ? JSON.parse(String(event.after_snapshot)) as PgItemSnapshot : null
+                    await applyDimensionProjectionBackfill(client, tenantId, projectId, String(event.item_id), occurredAt, sequence, before, after)
+                  }
+                  lastSequence = sequence
+                }
+                const max = await client.query('SELECT COALESCE(MAX(sequence), -1)::int AS value FROM item_events WHERE tenant_id = $1 AND project_id = $2', [tenantId, projectId])
+                const targetSequence = Number((max.rows[0] as { value: number }).value)
+                await client.query(`UPDATE project_analytics_dimension_meta SET last_sequence = $1, target_sequence = $2, updated_at = $3
+                  WHERE tenant_id = $4 AND project_id = $5`, [lastSequence, targetSequence, new Date().toISOString(), tenantId, projectId])
+              })
+              continue
+            }
+
+            const complete = await tx(async client => {
+              await client.query('SELECT status FROM project_analytics_dimension_meta WHERE tenant_id = $1 AND project_id = $2 FOR UPDATE', [tenantId, projectId])
+              const max = await client.query('SELECT COALESCE(MAX(sequence), -1)::int AS value FROM item_events WHERE tenant_id = $1 AND project_id = $2', [tenantId, projectId])
+              if (Number((max.rows[0] as { value: number }).value) > lastSequence) return false
+              await client.query(`UPDATE project_analytics_dimension_meta SET status = 'READY', last_sequence = $1, target_sequence = NULL, updated_at = $2
+                WHERE tenant_id = $3 AND project_id = $4`, [lastSequence, new Date().toISOString(), tenantId, projectId])
+              return true
+            })
+            if (complete) break
+          }
+        }
+      },
     },
 
     // -----------------------------------------------------------------------
@@ -2264,25 +2429,150 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         const row = await q1('SELECT 1 FROM projects WHERE tenant_id = $1 AND id = $2', [context.tenantId, projectId])
         return !!row
       },
-      async listLeafItems(context: PersistenceContext, projectId: string): Promise<ItemRecord[]> {
-        const rows = await q(
-          `SELECT * FROM items WHERE tenant_id = $1 AND project_id = $2 AND type IN ('TASK', 'BUG') AND status != 'ARCHIVED' AND NOT EXISTS (SELECT 1 FROM items c WHERE c.parent_id = items.id) ORDER BY position`,
-          [context.tenantId, projectId],
-        )
+      // [TENANT] Query builder fixa tenant/projeto antes de aplicar filtros do usuário.
+      async listLeafItems(context: PersistenceContext, projectId: string, filter?: DashboardPopulationFilter, page?: DashboardLeafItemPageOptions): Promise<ItemRecord[]> {
+        const query = dashboardLeafWhere(context, projectId, filter)
+        const conditions = [query.where]
+        const params = [...query.params]
+        if (page?.statuses?.length) {
+          params.push(page.statuses)
+          conditions.push(`i.status = ANY($${params.length}::text[])`)
+        }
+        if (page?.overdue) {
+          params.push(page.overdue.asOf)
+          const dateParam = `$${params.length}`
+          conditions.push(page.overdue.match
+            ? `i.due_date IS NOT NULL AND i.due_date < ${dateParam} AND i.status NOT IN ('DONE','CANCELLED')`
+            : `(i.due_date IS NULL OR i.due_date >= ${dateParam} OR i.status IN ('DONE','CANCELLED'))`)
+        }
+        if (page?.afterId) {
+          params.push(page.afterId)
+          conditions.push(`i.id > $${params.length}`)
+        }
+        const limit = page ? ` LIMIT $${params.push(page.limit)}` : ''
+        const rows = await q(`SELECT i.* FROM items i WHERE ${conditions.join(' AND ')} ORDER BY ${page ? 'i.id' : 'i.position, i.id'}${limit}`, params)
         return rows.map(mapItem)
+      },
+      async listAgingDetailPage(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, target: 'WIP' | 'BLOCKED', limit: number, after?: { startedAt: string; id: string }): Promise<DashboardAgingDetailItem[]> {
+        const query = dashboardLeafWhere(context, projectId, filter)
+        const conditions = [query.where, target === 'BLOCKED' ? "i.status = 'BLOCKED'" : "i.status IN ('IN_PROGRESS','BLOCKED')"]
+        const params = [...query.params]
+        const entryPredicate = target === 'BLOCKED'
+          ? `(after_snapshot::jsonb ->> 'status') = 'BLOCKED' AND COALESCE(before_snapshot::jsonb ->> 'status', '') <> 'BLOCKED'`
+          : `(after_snapshot::jsonb ->> 'status') IN ('IN_PROGRESS','BLOCKED') AND COALESCE(before_snapshot::jsonb ->> 'status', '') NOT IN ('IN_PROGRESS','BLOCKED')`
+        const transitionAt = `(SELECT e.occurred_at FROM item_events e
+          WHERE e.tenant_id = $1 AND e.project_id = $2 AND e.item_id = i.id
+            AND e.event_type = 'STATUS_CHANGED' AND ${entryPredicate}
+          ORDER BY e.occurred_at DESC, e.sequence DESC, e.id DESC LIMIT 1)`
+        const startedAt = `COALESCE(${transitionAt},
+          (SELECT coverage_started_at FROM project_analytics_coverage WHERE tenant_id = $1 AND project_id = $2),
+          i.created_at)`
+        if (after) {
+          params.push(after.startedAt, after.id)
+          const startedParam = `$${params.length - 1}`
+          const idParam = `$${params.length}`
+          conditions.push(`(${startedAt}) > ${startedParam} OR ((${startedAt}) = ${startedParam} AND i.id > ${idParam})`)
+        }
+        params.push(limit)
+        const rows = await q(
+          `SELECT i.*, ${transitionAt} AS transition_at, ${startedAt} AS started_at
+           FROM items i WHERE ${conditions.map(condition => `(${condition})`).join(' AND ')}
+           ORDER BY started_at ASC, i.id ASC LIMIT $${params.length}`,
+          params,
+        )
+        return rows.map(row => ({
+          ...mapItem(row), startedAt: row.started_at as string,
+          minimumKnown: row.transition_at == null,
+        } satisfies DashboardAgingDetailItem))
+      },
+      async getDimensionProjectionMeta(context: PersistenceContext, projectId: string): Promise<DashboardDimensionProjectionMeta | null> {
+        const row = await q1('SELECT projection_version, status, last_sequence, target_sequence FROM project_analytics_dimension_meta WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
+        return row ? {
+          projectionVersion: row.projection_version as number,
+          status: row.status as DashboardDimensionProjectionMeta['status'],
+          lastSequence: row.last_sequence as number,
+          targetSequence: row.target_sequence as number | null,
+        } : null
+      },
+      async listDimensionSnapshots(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, from: string, to: string): Promise<DashboardDimensionSnapshotRecord[]> {
+        const params: unknown[] = [context.tenantId, projectId, to]
+        const conditions = ['d.tenant_id = $1', 'd.project_id = $2', 'd.metric_date <= $3']
+        const addArray = (column: string, values: string[]) => {
+          if (!values.length) return
+          params.push(values)
+          conditions.push(`${column} = ANY($${params.length}::text[])`)
+        }
+        addArray('d.module_key', filter.moduleIds)
+        addArray('d.version_key', filter.versionIds)
+        addArray('d.type', filter.types)
+        if (filter.sprintIds.length) {
+          params.push(filter.sprintIds)
+          conditions.push(`EXISTS (SELECT 1 FROM jsonb_array_elements_text(d.sprint_ids_json::jsonb) AS sprint_dim(value) WHERE sprint_dim.value = ANY($${params.length}::text[]))`)
+        }
+        const where = conditions.join(' AND ')
+        params.push(from, from, to)
+        const rows = await q(
+          `WITH filtered AS (
+             SELECT d.* FROM project_analytics_dimension_snapshots d WHERE ${where}
+           ), ranked AS (
+             SELECT filtered.*, ROW_NUMBER() OVER (
+               PARTITION BY module_key, version_key, sprint_set_hash, sprint_ids_json, type
+               ORDER BY metric_date DESC
+             ) AS row_num
+             FROM filtered WHERE metric_date < $${params.length - 2}
+           )
+           SELECT metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points
+           FROM ranked WHERE row_num = 1
+           UNION ALL
+           SELECT metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points
+           FROM filtered WHERE metric_date >= $${params.length - 1} AND metric_date <= $${params.length}
+           ORDER BY metric_date, module_key, version_key, sprint_set_hash, type`,
+          params,
+        )
+        return rows.map(row => ({
+          metricDate: row.metric_date as string, moduleKey: row.module_key as string, versionKey: row.version_key as string,
+          sprintSetHash: row.sprint_set_hash as string, sprintIdsJson: row.sprint_ids_json as string, type: row.type as string,
+          total: row.total as number, done: row.done as number, points: row.points as number, donePoints: row.done_points as number,
+        } satisfies DashboardDimensionSnapshotRecord))
+      },
+      // [DB-SWAP] Usa os mesmos agregados sem hidratar população completa na aplicação.
+      async aggregateLeafItems(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, today: string): Promise<DashboardSnapshotAggregateRow[]> {
+        const query = dashboardLeafWhere(context, projectId, filter)
+        const params = [...query.params, today]
+        const rows = await q(
+          `SELECT i.status, i.assignee_id,
+                  COUNT(*)::int AS count,
+                  COUNT(i.points)::int AS estimated_count,
+                  COALESCE(SUM(i.points), 0)::int AS points,
+                   COALESCE(SUM(CASE WHEN i.status = 'DONE' THEN i.points ELSE 0 END), 0)::int AS done_points,
+                  COUNT(*) FILTER (WHERE i.due_date IS NOT NULL AND i.due_date < $${params.length} AND i.status NOT IN ('DONE', 'CANCELLED'))::int AS overdue_count,
+                  COALESCE(SUM(i.points) FILTER (WHERE i.due_date IS NOT NULL AND i.due_date < $${params.length} AND i.status NOT IN ('DONE', 'CANCELLED')), 0)::int AS overdue_points
+           FROM items i WHERE ${query.where}
+           GROUP BY i.status, i.assignee_id`,
+          params,
+        )
+        return rows.map(row => ({
+          status: row.status as string, assigneeId: row.assignee_id as string | null,
+          count: row.count as number, estimatedCount: row.estimated_count as number,
+          points: row.points as number, donePoints: row.done_points as number, overdueCount: row.overdue_count as number, overduePoints: row.overdue_points as number,
+        }))
       },
       async listSprintItemIds(context: PersistenceContext, projectId: string, sprintIds: string[]): Promise<string[]> {
         if (!sprintIds.length) return []
         const ph = sprintIds.map((_, i) => `$${i + 3}`).join(', ')
-        const rows = await q(`SELECT item_id FROM item_sprints WHERE tenant_id = $1 AND sprint_id IN (${ph})`,
-          [context.tenantId, ...sprintIds])
+        const rows = await q(
+          `SELECT s.item_id FROM item_sprints s
+           INNER JOIN items i ON i.tenant_id = s.tenant_id AND i.id = s.item_id AND i.project_id = $2
+           WHERE s.tenant_id = $1 AND s.sprint_id IN (${ph})`,
+          [context.tenantId, projectId, ...sprintIds],
+        )
         return rows.map(r => r.item_id as string)
       },
       async listSquadUserIds(context: PersistenceContext, projectId: string, squadIds: string[]): Promise<string[]> {
         if (!squadIds.length) return []
         const ph = squadIds.map((_, i) => `$${i + 3}`).join(', ')
-        const rows = await q(`SELECT user_id FROM memberships WHERE tenant_id = $1 AND squad_id IN (${ph})`,
-          [context.tenantId, ...squadIds])
+        const rows = await q(`SELECT user_id FROM memberships WHERE tenant_id = $1 AND project_id = $2 AND squad_id IN (${ph})`,
+          [context.tenantId, projectId, ...squadIds])
         return rows.map(r => r.user_id as string)
       },
       async listMembersWithSquads(context: PersistenceContext, projectId: string): Promise<DashboardMemberRow[]> {
@@ -2304,14 +2594,22 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           [projectId, context.tenantId])
         return row ? { coverageStartedAt: row.coverage_started_at as string } : null
       },
-      async listTransitions(context: PersistenceContext, projectId: string, itemIds: string[]): Promise<DashboardTransitionRecord[]> {
+      async listTransitionStarts(context: PersistenceContext, projectId: string, itemIds: string[], target: 'BLOCKED' | 'WIP'): Promise<DashboardTransitionRecord[]> {
         if (!itemIds.length) return []
-        const ph = itemIds.map((_, i) => `$${i + 3}`).join(', ')
+        const enters = target === 'BLOCKED'
+          ? `(after_snapshot::jsonb ->> 'status') = 'BLOCKED' AND COALESCE(before_snapshot::jsonb ->> 'status', '') <> 'BLOCKED'`
+          : `(after_snapshot::jsonb ->> 'status') IN ('IN_PROGRESS', 'BLOCKED') AND COALESCE(before_snapshot::jsonb ->> 'status', '') NOT IN ('IN_PROGRESS', 'BLOCKED')`
         const rows = await q(
-          `SELECT item_id, before_snapshot, after_snapshot, occurred_at FROM item_events
-           WHERE tenant_id = $1 AND project_id = $2 AND event_type = 'STATUS_CHANGED' AND item_id IN (${ph})
-           ORDER BY occurred_at`,
-          [context.tenantId, projectId, ...itemIds],
+          `WITH ranked AS (
+             SELECT id, item_id, before_snapshot, after_snapshot, occurred_at,
+                    ROW_NUMBER() OVER (PARTITION BY item_id ORDER BY occurred_at DESC, sequence DESC, id DESC) AS row_num
+             FROM item_events
+             WHERE tenant_id = $1 AND project_id = $2 AND event_type = 'STATUS_CHANGED'
+               AND item_id = ANY($3::text[]) AND ${enters}
+           )
+           SELECT id, item_id, before_snapshot, after_snapshot, occurred_at FROM ranked
+           WHERE row_num = 1 ORDER BY occurred_at, id`,
+          [context.tenantId, projectId, itemIds],
         )
         return rows.map(r => ({
           id: r.id as string, itemId: r.item_id as string,
@@ -2362,6 +2660,27 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           source: r.source as SprintCycleRecord['source'],
         }))
       },
+      async listSprintCyclesPage(context: PersistenceContext, projectId: string, limit: number, after?: { startedAt: string; id: string }) {
+        const params: unknown[] = [context.tenantId, projectId]
+        let afterClause = ''
+        if (after) {
+          params.push(after.startedAt, after.id)
+          afterClause = `AND (started_at, id) > ($3, $4)`
+        }
+        const [count, rows] = await Promise.all([
+          q1('SELECT count(*)::int AS total FROM sprint_cycles WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId]),
+          q(`SELECT * FROM sprint_cycles WHERE tenant_id = $1 AND project_id = $2 ${afterClause} ORDER BY started_at, id LIMIT $${params.push(limit)}`, params),
+        ])
+        return {
+          total: (count?.total as number) ?? 0,
+          rows: rows.map(row => ({
+            id: row.id as string, tenantId: row.tenant_id as string, projectId: row.project_id as string,
+            sprintId: row.sprint_id as string, startedAt: row.started_at as string,
+            endedAt: row.ended_at as string | null, endReason: row.end_reason as SprintCycleRecord['endReason'],
+            source: row.source as SprintCycleRecord['source'],
+          })),
+        }
+      },
       async getSprintCycle(context: PersistenceContext, projectId: string, cycleId: string): Promise<SprintCycleRecord | null> {
         const row = await q1('SELECT * FROM sprint_cycles WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
           [context.tenantId, projectId, cycleId])
@@ -2372,6 +2691,20 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           endedAt: row.ended_at as string | null,
           endReason: row.end_reason as SprintCycleRecord['endReason'],
           source: row.source as SprintCycleRecord['source'],
+        }
+      },
+      async getSprintCycleCommitmentCounts(context: PersistenceContext, projectId: string, cycleId: string) {
+        const row = await q1(
+          `SELECT COUNT(*)::int AS commitment,
+                  COUNT(*) FILTER (WHERE status = 'DONE')::int AS committed_done,
+                  COUNT(*) FILTER (WHERE status NOT IN ('DONE', 'CANCELLED'))::int AS uncompleted_commitment
+           FROM sprint_cycle_items WHERE tenant_id = $1 AND project_id = $2 AND cycle_id = $3`,
+          [context.tenantId, projectId, cycleId],
+        )
+        return {
+          commitment: (row?.commitment as number) ?? 0,
+          committedDone: (row?.committed_done as number) ?? 0,
+          uncompletedCommitment: (row?.uncompleted_commitment as number) ?? 0,
         }
       },
       async listSprintCycleItems(context: PersistenceContext, projectId: string, cycleId: string): Promise<SprintCycleItemRecord[]> {
@@ -2385,28 +2718,78 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           versionId: r.version_id as string | null,
         }))
       },
-      async listHoursLogs(context: PersistenceContext, projectId: string, filter: DashboardHoursFilter, limit: number) {
-        const conditions = ['l.tenant_id = $1', 'i.project_id = $2', 'l.duration_min IS NOT NULL']
+      async getCurrentSprintCycleCounts(context: PersistenceContext, projectId: string, sprintId: string) {
+        const row = await q1(
+          `SELECT COUNT(*)::int AS current_scope,
+                  COUNT(*) FILTER (WHERE i.status = 'DONE')::int AS current_done
+           FROM items i
+           INNER JOIN item_sprints s ON s.tenant_id = i.tenant_id AND s.item_id = i.id
+           WHERE i.tenant_id = $1 AND i.project_id = $2 AND s.sprint_id = $3 AND i.status <> 'ARCHIVED'
+             AND NOT EXISTS (
+               SELECT 1 FROM items child
+               WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id
+             )`,
+          [context.tenantId, projectId, sprintId],
+        )
+        return { currentScope: (row?.current_scope as number) ?? 0, currentDone: (row?.current_done as number) ?? 0 }
+      },
+      async listHoursLogs(context: PersistenceContext, projectId: string, filter: DashboardHoursFilter, limit: number, after?: { createdAt: string; id: string }) {
+        const conditions = ["l.tenant_id = $1", "l.type = 'manual'", 'l.duration_min IS NOT NULL', 'l.duration_min > 0', 'i.tenant_id = $1', 'i.project_id = $2']
         const params: unknown[] = [context.tenantId, projectId]
         let idx = 3
         if (filter.from) { conditions.push(`l.created_at >= $${idx++}`); params.push(filter.from) }
-        if (filter.to) { conditions.push(`l.created_at <= $${idx++}`); params.push(filter.to) }
-        const [totalRow, rows] = await Promise.all([
+        if (filter.to) { conditions.push(`l.created_at <= $${idx++}`); params.push(`${filter.to}T23:59:59.999Z`) }
+        if (filter.sprintId) {
+          conditions.push(`EXISTS (SELECT 1 FROM item_sprints s WHERE s.tenant_id = $1 AND s.item_id = i.id AND s.sprint_id = $${idx++})`)
+          params.push(filter.sprintId)
+        }
+        if (filter.authorId) { conditions.push(`l.author_id = $${idx++}`); params.push(filter.authorId) }
+        if (filter.squadId) {
+          conditions.push(`EXISTS (SELECT 1 FROM memberships m WHERE m.tenant_id = $1 AND m.project_id = $2 AND m.user_id = l.author_id AND m.squad_id = $${idx++})`)
+          params.push(filter.squadId)
+        }
+        if (filter.moduleIds.length) { conditions.push(`i.module_id = ANY($${idx++}::text[])`); params.push(filter.moduleIds) }
+        if (filter.versionIds.length) { conditions.push(`i.version_id = ANY($${idx++}::text[])`); params.push(filter.versionIds) }
+        if (filter.types.length) { conditions.push(`i.type = ANY($${idx++}::text[])`); params.push(filter.types) }
+        const rowConditions = [...conditions]
+        const rowParams = [...params]
+        if (after) {
+          rowConditions.push(`(l.created_at, l.id) > ($${idx}, $${idx + 1})`)
+          rowParams.push(after.createdAt, after.id)
+          idx += 2
+        }
+        const limitParam = `$${idx}`
+        const [totalRow, countRow, rows, byAuthor] = await Promise.all([
           q1(`SELECT COALESCE(sum(l.duration_min), 0)::int AS total FROM item_logs l JOIN items i ON i.id = l.item_id WHERE ${conditions.join(' AND ')}`, params),
-          q(`SELECT l.*, u.name AS author_name, i.module_id, i.version_id
-             FROM item_logs l JOIN items i ON i.id = l.item_id
+          q1(`SELECT count(*)::int AS total FROM item_logs l JOIN items i ON i.id = l.item_id WHERE ${conditions.join(' AND ')}`, params),
+          q(`SELECT l.*, u.name AS author_name, sq.name AS squad_name, i.module_id, i.version_id
+             FROM item_logs l JOIN items i ON i.tenant_id = l.tenant_id AND i.id = l.item_id
              LEFT JOIN users u ON u.tenant_id = l.tenant_id AND u.id = l.author_id
-             WHERE ${conditions.join(' AND ')} ORDER BY l.created_at DESC LIMIT $${idx++}`,
-            [...params, limit]),
+             LEFT JOIN memberships m ON m.tenant_id = l.tenant_id AND m.project_id = i.project_id AND m.user_id = l.author_id
+             LEFT JOIN squads sq ON sq.tenant_id = m.tenant_id AND sq.project_id = m.project_id AND sq.id = m.squad_id
+             WHERE ${rowConditions.join(' AND ')} ORDER BY l.created_at ASC, l.id ASC LIMIT ${limitParam}`,
+             [...rowParams, limit]),
+          q(`SELECT l.author_id, u.name AS author_name, sq.name AS squad_name, COALESCE(sum(l.duration_min), 0)::int AS total_minutes
+             FROM item_logs l JOIN items i ON i.tenant_id = l.tenant_id AND i.id = l.item_id
+             LEFT JOIN users u ON u.tenant_id = l.tenant_id AND u.id = l.author_id
+             LEFT JOIN memberships m ON m.tenant_id = l.tenant_id AND m.project_id = i.project_id AND m.user_id = l.author_id
+             LEFT JOIN squads sq ON sq.tenant_id = m.tenant_id AND sq.project_id = m.project_id AND sq.id = m.squad_id
+             WHERE ${conditions.join(' AND ')} GROUP BY l.author_id, u.name, sq.name ORDER BY l.author_id, sq.name`, params),
         ])
         return {
           totalMinutes: (totalRow?.total as number) ?? 0,
+          totalRows: (countRow?.total as number) ?? 0,
+          byAuthor: byAuthor.map(row => ({
+            authorId: row.author_id as string | null, authorName: row.author_name as string | null,
+            squadName: row.squad_name as string | null, totalMinutes: row.total_minutes as number,
+          } satisfies DashboardHoursAuthorRow)),
           rows: rows.map(r => ({
+            id: r.id as string,
             itemId: r.item_id as string, activity: r.activity as string,
             durationMin: r.duration_min as number, createdAt: r.created_at as string,
             authorId: r.author_id as string | null,
             authorName: r.author_name as string | null,
-            squadName: null,
+            squadName: r.squad_name as string | null,
             versionId: r.version_id as string | null,
             moduleId: r.module_id as string | null,
           })),
@@ -3070,6 +3453,10 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             'INSERT INTO project_analytics_coverage (project_id, tenant_id, coverage_started_at, baseline_event_id, created_at) VALUES ($1, $2, $3, NULL, $4)',
             [projectId, context.tenantId, now, now],
           )
+          await client.query(
+            "INSERT INTO project_analytics_dimension_meta (project_id, tenant_id, projection_version, status, last_sequence, target_sequence, updated_at) VALUES ($1, $2, 1, 'READY', -1, NULL, $3)",
+            [projectId, context.tenantId, now],
+          )
           const row = await client.query('SELECT * FROM projects WHERE tenant_id = $1 AND id = $2', [context.tenantId, projectId])
           return mapProject(row.rows[0] as PgRow)
         })
@@ -3368,8 +3755,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           // [T38] Reserva/replay idempotente na MESMA transação do movimento.
           await assertJournalAvailablePg(client, context)
           const before = await readItemSnapshot(client, context.tenantId, projectId, itemId)
-          await client.query('UPDATE items SET column_id = $1, updated_at = now() WHERE tenant_id = $2 AND project_id = $3 AND id = $4',
-            [column.id, context.tenantId, projectId, itemId])
+          await client.query('UPDATE items SET column_id = $1, status = $2, updated_at = now() WHERE tenant_id = $3 AND project_id = $4 AND id = $5',
+            [column.id, column.baseStatus, context.tenantId, projectId, itemId])
           const now = new Date().toISOString()
           await client.query(
             `INSERT INTO item_logs (id, tenant_id, item_id, author_id, type, actor_type, actor_label, source, activity, duration_min, created_at, updated_at)

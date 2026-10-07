@@ -20,10 +20,10 @@
         "@azy-board/assistant-contracts": "workspace:*",
         "@azy-board/domain": "workspace:*",
         "@azy-board/realtime-contracts": "workspace:*",
+        "@azy-board/tool-execution": "workspace:*",
         "@azy-board/tool-registry": "workspace:*",
         "@azy-board/types": "workspace:*",
         "@azy-board/ui-contracts": "workspace:*",
-        "@modelcontextprotocol/sdk": "^1.0.0",
         "@opentelemetry/api": "^1.9.0",
         "@opentelemetry/exporter-metrics-otlp-proto": "^0.57.0",
         "@opentelemetry/exporter-trace-otlp-proto": "^0.57.0",
@@ -53,6 +53,7 @@
       "name": "@azy-board/mcp",
       "dependencies": {
         "@azy-board/assistant-contracts": "workspace:*",
+        "@azy-board/tool-execution": "workspace:*",
         "@azy-board/tool-registry": "workspace:*",
         "@azy-board/types": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.0.0",
@@ -155,6 +156,17 @@
         "typescript": "^5.6.0",
       },
     },
+    "packages/tool-execution": {
+      "name": "@azy-board/tool-execution",
+      "version": "0.0.1",
+      "dependencies": {
+        "@azy-board/tool-registry": "workspace:*",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+        "typescript": "^5.6.0",
+      },
+    },
     "packages/tool-registry": {
       "name": "@azy-board/tool-registry",
       "version": "0.0.1",
@@ -245,6 +257,8 @@
     "@azy-board/mcp": ["@azy-board/mcp@workspace:apps/mcp"],
 
     "@azy-board/realtime-contracts": ["@azy-board/realtime-contracts@workspace:packages/realtime-contracts"],
+
+    "@azy-board/tool-execution": ["@azy-board/tool-execution@workspace:packages/tool-execution"],
 
     "@azy-board/tool-registry": ["@azy-board/tool-registry@workspace:packages/tool-registry"],
 

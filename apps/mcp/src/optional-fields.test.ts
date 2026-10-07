@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createMcpServer } from './index.js'
-import { executeSharedTool, OPERATION_ARGS_REQUIRED, requiredFieldsFor, SHARED_TOOL_NAMES } from './registry.js'
+import { executeSharedTool, OPERATION_ARGS_REQUIRED, requiredFieldsFor, SHARED_TOOL_NAMES } from '@azy-board/tool-execution'
 import { validateToolArguments } from '@azy-board/tool-registry'
-import { toolGetBoard, type ApiCall } from './tools.js'
+import { toolGetBoard, type ApiCall } from '@azy-board/tool-execution'
 
 const UUID = '11111111-1111-1111-1111-111111111111'
 

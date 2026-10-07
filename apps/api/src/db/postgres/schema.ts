@@ -343,7 +343,7 @@ export const itemLogs = pgTable('item_logs', {
   updatedAt: text('updated_at').notNull(),
 }, (table) => ({
   itemTypeDateIdx: index('item_logs_tenant_item_type_date_idx').on(table.tenantId, table.itemId, table.type, table.createdAt),
-  tenantCreatedIdx: index('item_logs_tenant_created_idx').on(table.tenantId, table.createdAt),
+  tenantCreatedIdx: index('item_logs_tenant_created_idx').on(table.tenantId, table.type, table.createdAt, table.id),
   durationCheck: check('item_logs_duration_check', sql`${table.durationMin} IS NULL OR ${table.durationMin} >= 0`),
   typeCheck: check('item_logs_type_check', sql`${table.type} IN ('auto','manual')`),
   actorTypeCheck: check('item_logs_actor_type_check', sql`${table.actorType} IN ('HUMAN','AGENT','SYSTEM','UNKNOWN')`),
@@ -398,6 +398,63 @@ export const projectAnalyticsCoverage = pgTable('project_analytics_coverage', {
   tenantProject: index('coverage_tenant_project_idx').on(table.tenantId, table.projectId),
 }))
 
+export const projectAnalyticsDimensionState = pgTable('project_analytics_dimension_state', {
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  moduleKey: text('module_key').notNull(),
+  versionKey: text('version_key').notNull(),
+  sprintSetHash: text('sprint_set_hash').notNull(),
+  sprintIdsJson: text('sprint_ids_json').notNull(),
+  type: text('type').notNull(),
+  total: integer('total').notNull().default(0),
+  done: integer('done').notNull().default(0),
+  points: integer('points').notNull().default(0),
+  donePoints: integer('done_points').notNull().default(0),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.tenantId, table.projectId, table.moduleKey, table.versionKey, table.sprintSetHash, table.sprintIdsJson, table.type] }),
+  tenantProject: index('dimension_state_tenant_project_idx').on(table.tenantId, table.projectId),
+}))
+
+export const projectAnalyticsDimensionSnapshots = pgTable('project_analytics_dimension_snapshots', {
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  metricDate: text('metric_date').notNull(),
+  moduleKey: text('module_key').notNull(),
+  versionKey: text('version_key').notNull(),
+  sprintSetHash: text('sprint_set_hash').notNull(),
+  sprintIdsJson: text('sprint_ids_json').notNull(),
+  type: text('type').notNull(),
+  total: integer('total').notNull().default(0),
+  done: integer('done').notNull().default(0),
+  points: integer('points').notNull().default(0),
+  donePoints: integer('done_points').notNull().default(0),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.tenantId, table.projectId, table.metricDate, table.moduleKey, table.versionKey, table.sprintSetHash, table.sprintIdsJson, table.type] }),
+  tenantProjectDate: index('dimension_snapshots_tenant_project_date_idx').on(table.tenantId, table.projectId, table.metricDate),
+}))
+
+export const projectAnalyticsDimensionItems = pgTable('project_analytics_dimension_items', {
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  itemId: text('item_id').notNull(),
+  snapshotJson: text('snapshot_json').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.tenantId, table.projectId, table.itemId] }),
+}))
+
+export const projectAnalyticsDimensionMeta = pgTable('project_analytics_dimension_meta', {
+  projectId: text('project_id').primaryKey().references(() => projects.id, { onDelete: 'cascade' }),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectionVersion: integer('projection_version').notNull(),
+  status: text('status').notNull(),
+  lastSequence: integer('last_sequence').notNull().default(-1),
+  targetSequence: integer('target_sequence'),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  tenantProject: index('dimension_meta_tenant_project_idx').on(table.tenantId, table.projectId),
+  statusCheck: check('project_analytics_dimension_meta_status_check', sql`${table.status} IN ('BUILDING','READY','FAILED')`),
+}))
+
 export const itemEvents = pgTable('item_events', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
@@ -412,8 +469,9 @@ export const itemEvents = pgTable('item_events', {
   beforeSnapshot: text('before_snapshot'),
   afterSnapshot: text('after_snapshot'),
 }, (table) => ({
-  tenantProjectDate: index('item_events_tenant_project_date_idx').on(table.tenantId, table.projectId, table.occurredAt),
+  tenantProjectDate: index('item_events_tenant_project_date_idx').on(table.tenantId, table.projectId, table.occurredAt, table.sequence, table.id),
   itemDate: index('item_events_item_date_idx').on(table.tenantId, table.projectId, table.itemId, table.occurredAt),
+  transitionLookup: index('item_events_transition_lookup_idx').on(table.tenantId, table.projectId, table.itemId, table.eventType, table.occurredAt, table.sequence, table.id),
   itemOccurrence: index('item_events_item_occurrence_idx').on(table.tenantId, table.projectId, table.itemId),
   typeDate: index('item_events_type_date_idx').on(table.tenantId, table.projectId, table.eventType, table.occurredAt),
   correlationUnique: uniqueIndex('item_events_correlation_unique').on(table.tenantId, table.projectId, table.correlationId, table.eventType, table.itemId),

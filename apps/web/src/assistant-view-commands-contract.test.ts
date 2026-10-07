@@ -16,7 +16,7 @@ describe('contrato dos comandos de interface (card T17)', () => {
   })
 
   test('o BoardScreen assina as mudanças e publica o baseline da visão', async () => {
-    const board = await source('./features/board/BoardScreen.tsx')
+    const board = await source('./features/board/hooks/useBoardAgentSession.ts')
     expect(board.includes('subscribeViewSession')).toBe(true)
     expect(board.includes('syncCurrentViewSession')).toBe(true)
     expect(board.includes('setFilters(session.filters)')).toBe(true)

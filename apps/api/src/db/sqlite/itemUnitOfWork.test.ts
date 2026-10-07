@@ -16,6 +16,8 @@ function setup() {
   const now = new Date().toISOString()
   sqlite.query('INSERT INTO tenants (id, name, slug, created_at) VALUES (?, ?, ?, ?)').run('tenant-a', 'Tenant A', 'tenant-a', now)
   sqlite.query('INSERT INTO projects (id, tenant_id, name, board_mode, created_at) VALUES (?, ?, ?, ?, ?)').run('project-a', 'tenant-a', 'Projeto A', 'HIERARCHICAL', now)
+  sqlite.query('INSERT INTO project_analytics_coverage (project_id, tenant_id, coverage_started_at, baseline_event_id, created_at) VALUES (?, ?, ?, NULL, ?)').run('project-a', 'tenant-a', now, now)
+  sqlite.query("INSERT INTO project_analytics_dimension_meta (project_id, tenant_id, projection_version, status, last_sequence, target_sequence, updated_at) VALUES (?, ?, 1, 'READY', -1, NULL, ?)").run('project-a', 'tenant-a', now)
   const context: MutationContext = {
     tenantId: 'tenant-a', actorUserId: null, actorKind: 'SYSTEM',
     mutation: { origin: 'TEST', actorType: 'SYSTEM', actorSource: 'SYSTEM', actorLabel: null },
@@ -36,6 +38,11 @@ describe('comandos atômicos SQLite para itens', () => {
     expect(item.title).toBe('Item atômico')
     expect(sqlite.query('SELECT tag_id FROM item_tags WHERE tenant_id = ? AND item_id = ?').all('tenant-a', item.id)).toEqual([{ tag_id: 'tag-a' }])
     expect(sqlite.query('SELECT sprint_id FROM item_sprints WHERE tenant_id = ? AND item_id = ?').all('tenant-a', item.id)).toEqual([{ sprint_id: 'sprint-a' }])
+    expect(sqlite.query('SELECT total, done, points, done_points FROM project_analytics_dimension_state WHERE tenant_id = ? AND project_id = ? AND type = ? AND sprint_ids_json = ?').get('tenant-a', 'project-a', 'TASK', '["sprint-a"]')).toEqual({ total: 1, done: 0, points: 0, done_points: 0 })
+    const historySnapshot = sqlite.query<{ snapshot_json: string }, [string, string, string]>(
+      'SELECT snapshot_json FROM project_analytics_dimension_items WHERE tenant_id = ? AND project_id = ? AND item_id = ?',
+    ).get('tenant-a', 'project-a', item.id)
+    expect(JSON.parse(historySnapshot!.snapshot_json).sprintIds).toEqual(['sprint-a'])
     sqlite.close()
   })
 
@@ -59,10 +66,17 @@ describe('comandos atômicos SQLite para itens', () => {
       'SELECT event_type FROM item_events WHERE tenant_id = ? AND project_id = ? ORDER BY sequence',
     ).all('tenant-a', 'project-a').map(row => row.event_type)
     expect(eventTypes).toEqual(['ITEM_CREATED', 'STATUS_CHANGED', 'POINTS_CHANGED'])
+    const fieldEvents = sqlite.query<{ event_type: string; before_snapshot: string; after_snapshot: string }, [string, string, string]>(
+      "SELECT event_type, before_snapshot, after_snapshot FROM item_events WHERE tenant_id = ? AND project_id = ? AND item_id = ? AND event_type IN ('STATUS_CHANGED','POINTS_CHANGED') ORDER BY sequence",
+    ).all('tenant-a', 'project-a', item.id)
+    expect(JSON.parse(fieldEvents[0]!.after_snapshot)).toMatchObject({ status: 'DONE', points: null })
+    expect(JSON.parse(fieldEvents[1]!.before_snapshot)).toMatchObject({ status: 'DONE', points: null })
+    expect(JSON.parse(fieldEvents[1]!.after_snapshot)).toMatchObject({ status: 'DONE', points: 5 })
     const rollup = sqlite.query<{ total: number; done: number; points: number; done_points: number }, [string, string]>(
       'SELECT total, done, points, done_points FROM project_metrics_daily WHERE tenant_id = ? AND project_id = ?',
     ).get('tenant-a', 'project-a')
-    expect(rollup).toEqual({ total: 1, done: 2, points: 10, done_points: 10 })
+    expect(rollup).toEqual({ total: 1, done: 1, points: 5, done_points: 5 })
+    expect(sqlite.query('SELECT total, done, points, done_points FROM project_analytics_dimension_state WHERE tenant_id = ? AND project_id = ? AND type = ? AND sprint_ids_json = ?').get('tenant-a', 'project-a', 'TASK', '[]')).toEqual({ total: 1, done: 1, points: 5, done_points: 5 })
     expect(sqlite.query<{ activity: string }, [string, string]>(
       'SELECT activity FROM item_logs WHERE tenant_id = ? AND item_id = ? ORDER BY created_at',
     ).all('tenant-a', item.id).map(row => row.activity)).toEqual(['Card criado: Item atualizado', 'Campos atualizados'])

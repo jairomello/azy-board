@@ -17,7 +17,7 @@ describe('dispatcher de eventos de domínio (T38)', () => {
     const projectId = crypto.randomUUID()
     await persistence.domainEvents.append({ tenantId: TENANT, projectId, type: 'item.created', payload: { itemIds: ['i1'] } })
     const seen: Array<{ projectId: string; sequence: number; type: string }> = []
-    const summary = await dispatchDueEvents({ transport: event => seen.push({ projectId: event.projectId, sequence: event.sequence, type: event.type }), workerId: 'w1' })
+    const summary = await dispatchDueEvents({ transport: event => { seen.push({ projectId: event.projectId, sequence: event.sequence, type: event.type }) }, workerId: 'w1' })
     expect(summary.published).toBe(1)
     expect(seen).toEqual([{ projectId, sequence: 1, type: 'ITEM_CREATED' }])
     const rows = await persistence.domainEvents.listAfter({ tenantId: TENANT, projectId, cursor: 0, limit: 10 })
@@ -57,7 +57,7 @@ describe('dispatcher de eventos de domínio (T38)', () => {
       expect(JSON.parse(plan.messages[0]!) as { sequence: number }).toMatchObject({ sequence: 1 })
     }
     const ahead = await durableReplayPlan(TENANT, projectId, 99)
-    expect(ahead).toEqual({ kind: 'resync', reason: 'cursor-ahead' })
+    expect(ahead).toEqual({ kind: 'resync', reason: 'cursor-ahead', watermark: 2 })
     const fresh = await durableReplayPlan(TENANT, projectId, null)
     if (fresh.kind === 'replay') expect(fresh.messages).toHaveLength(0)
   })

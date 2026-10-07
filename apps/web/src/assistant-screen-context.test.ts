@@ -26,7 +26,8 @@ describe('contexto de tela do Azy Agent', () => {
     expect(contracts.includes("operator: 'IS_EMPTY'")).toBe(true)
 
     const board = await source('./features/board/BoardScreen.tsx')
-    expect(board.includes('buildScreenSnapshot')).toBe(true)
+    const agent = await source('./features/board/hooks/useBoardAgentSession.ts')
+    expect(agent.includes('buildScreenSnapshot')).toBe(true)
     expect(board.includes('assistantScreenSnapshot={assistantScreenSnapshot}')).toBe(true)
 
     const tree = await source('./pages/TreeViewPage.tsx')
@@ -54,10 +55,11 @@ describe('contexto de tela do Azy Agent', () => {
     const snapshot = await source('./lib/assistantSnapshot.ts')
     expect(snapshot.includes('presentation')).toBe(true)
 
-    const board = await source('./features/board/BoardScreen.tsx')
-    expect(board.includes('populationFilterReasons')).toBe(true)
-    expect(board.includes('presentation: {')).toBe(true)
-    expect(board.includes('expandGroupIds')).toBe(true)
+    const agent = await source('./features/board/hooks/useBoardAgentSession.ts')
+    const boardView = await source('./features/board/model/boardView.ts')
+    expect(boardView.includes('populationFilterReasons')).toBe(true)
+    expect(agent.includes('presentation: {')).toBe(true)
+    expect(agent.includes('expandGroupIds')).toBe(true)
 
     const store = await source('./lib/assistantViewStore.ts')
     expect(store.includes('reveal_item')).toBe(true)
@@ -81,8 +83,8 @@ describe('contexto de tela do Azy Agent', () => {
     const snapshot = await source('./lib/assistantSnapshot.ts')
     expect(snapshot.includes('focus: input.focus')).toBe(true)
 
-    const board = await source('./features/board/BoardScreen.tsx')
-    expect(board.includes('focusState.activeItemId')).toBe(true)
+    const agent = await source('./features/board/hooks/useBoardAgentSession.ts')
+    expect(agent.includes('focusState.activeItemId')).toBe(true)
 
     const harness = await source('../../../apps/api/src/services/assistantHarness.ts')
     expect(harness.includes('Focus resolution (Card T19)')).toBe(true)

@@ -89,27 +89,23 @@ O workflow SHALL executar gates que detectam divergencia de contratos antes do m
 
 ### Requirement: Smoke test do fluxo web e API
 
-O workflow SHALL subir a API e o frontend e executar `bun run test:smoke`, verificando que a pagina inicial responde 200 e que a rota autenticada responde 401 sem sessao. A falha do smoke test SHALL reprovar o job.
+O workflow SHALL subir API e frontend em instalações descartáveis SIMPLE e ADVANCED e executar smoke essencial autenticado reutilizável por comando. SHALL verificar raiz 200, live/readiness, auth/me 401 sem sessão, login/cookie, criação/edição/movimento/leitura de item e persistência após nova leitura, negativa de mutação VIEWER e isolamento de outro tenant. A jornada básica do agente SHALL usar provider determinístico somente de teste e worker conforme o perfil. A falha de qualquer etapa SHALL reprovar o job, com teardown garantido e diagnóstico sem segredos.
 
 #### Scenario: Servicos respondem
-- **WHEN** a API e o frontend estao no ar
-- **THEN** o smoke test valida `200` na raiz e `401` na rota de sessao e conclui com sucesso
+- **WHEN** API e frontend de cada perfil estão no ar com setup descartável
+- **THEN** smoke valida raiz/live/readiness, 401 sem sessão e fluxo autenticado completo, incluindo negativa de permissões
 
 #### Scenario: Servico indisponivel
-- **WHEN** a API ou o frontend nao sobem ou respondem de forma inesperada
-- **THEN** o smoke test falha e o pull request fica bloqueado
+- **WHEN** API, frontend ou worker necessário não sobem ou respondem inesperadamente
+- **THEN** smoke falha, publica diagnóstico e não substitui boot real por teste de adapter
 
-### Requirement: Bloqueio de merge por required checks
+#### Scenario: Item não persiste
+- **WHEN** criação, edição ou movimentação aparenta sucesso mas nova leitura não confirma estado persistido
+- **THEN** smoke reprova o perfil mesmo que os três endpoints de disponibilidade respondam corretamente
 
-O repositorio SHALL documentar e configurar os jobs de CI como verificacoes obrigatorias da branch principal, de modo que pull requests com gate reprovado nao possam ser mesclados. A configuracao externa de protecao de branch SHALL ser registrada na documentacao do projeto.
-
-#### Scenario: Gate reprovado impede merge
-- **WHEN** um pull request tem qualquer gate de CI reprovado
-- **THEN** a mesclagem permanece bloqueada ate a correcao
-
-#### Scenario: Todos os gates aprovados liberam merge
-- **WHEN** todos os gates de CI passam
-- **THEN** o pull request fica apto a ser mesclado segundo as regras da branch
+#### Scenario: Isolamento negado
+- **WHEN** usuário VIEWER tenta mutação ou usuário de outro tenant tenta ler o projeto criado
+- **THEN** operação é negada e nenhum estado proibido é persistido ou revelado
 
 ### Requirement: Reprodutibilidade e diagnostico do CI
 
@@ -175,4 +171,16 @@ O workflow de CI SHALL buildar as imagens Docker de API e Web a partir dos arqui
 
 - **WHEN** o job de imagens conclui o build das imagens
 - **THEN** o teste automatizado de backup e restore é executado e sua falha reprova o job
+
+### Requirement: Inventário de checks sem promessa de bloqueio externo
+
+O repositório SHALL manter manifesto dos jobs/contextos de CI e validar localmente sua correspondência com `.github/workflows/ci.yml`. Esta change SHALL NOT configurar branch protection/rulesets, exigir confirmação externa de required checks nem afirmar que o merge está bloqueado. Estado externo desconhecido SHALL ser rotulado `NOT_PROVEN`; alteração de nomes dos jobs SHALL atualizar o manifesto.
+
+#### Scenario: Workflow diverge do manifesto
+- **WHEN** job essencial é removido ou seu contexto muda sem atualização do manifesto
+- **THEN** a auditoria local detecta a divergência e informa o contexto esperado/observado
+
+#### Scenario: Proteção externa não comprovada
+- **WHEN** a API de proteção GitHub não pode ser consultada com credencial apropriada
+- **THEN** o manifesto registra `NOT_PROVEN` e a documentação não promete bloqueio de merge
 

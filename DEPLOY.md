@@ -208,12 +208,19 @@ dentro do perfil escolhido continuam existindo normalmente.
 
 Todo push de branch e pull request passa pelo CI
 ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) com os jobs `check`,
-`contracts`, `smoke` e `advanced`. O job **`advanced`** sobe PostgreSQL 16 e
-Valkey 8 reais, aplica as migrations pelo runner do perfil, executa o setup CLI,
-inicia API e web de verdade e roda o smoke autenticado — nenhuma prova de
-multi-instância é inferida desse boot. Não publique uma versão com gate
-reprovado. Para reproduzir localmente e para configurar os required checks, veja
-[`docs/ci.md`](docs/ci.md).
+`contracts`, `smoke`, `e2e`, `advanced (PostgreSQL + Valkey)` e
+`image (deploy reproduzível)`. O job `smoke` verifica o fluxo autenticado SIMPLE;
+`advanced` sobe PostgreSQL 16 e Valkey 8, aplica migrations pelo runner do perfil,
+executa setup CLI, sobe API/Web e roda o mesmo contrato de smoke nesse perfil.
+`image` constrói as imagens e ensaia restore integral em SIMPLE e ADVANCED. O
+workflow [`weekly-restore.yml`](.github/workflows/weekly-restore.yml) repete o
+ensaio semanalmente e publica manifestos/evidências vinculados ao SHA.
+
+Não publique uma versão com gate reprovado. A lista é política local de checks;
+branch protection/rulesets e bloqueio efetivo de merge são configuração externa
+e permanecem `NAO_COMPROVADO`. Para reproduzir os jobs e consultar estados,
+consulte [`docs/ci.md`](docs/ci.md) e
+[`docs/release-evidence.md`](docs/release-evidence.md).
 
 ## Rollout, rollback e backup
 
@@ -266,7 +273,11 @@ fence) e uma nova ao mesmo tempo.
 - `bun run deploy:restore <dir-do-backup>` — restaura em **instância limpa**
   (banco, marcador e uploads são substituídos; não é merge de dados).
 - `bun run test:restore` — teste automatizado de backup/restore em instância
-  efêmera (executado no CI, job `image`).
+  efêmera nos dois perfis (executado no CI, job `image`, e semanalmente).
+- Os manifestos registram perfil, image ID/revision, hashes de migrations,
+  fixture verificada, perda observada e tempos de backup/recuperação. O restore
+  integral substitui banco/marcador/uploads em volume novo e requer downtime;
+  tempos medidos não são compromisso de RTO/RPO.
 
 ### Compatibilidade entre versão da aplicação e schema
 
@@ -286,6 +297,13 @@ fence) e uma nova ao mesmo tempo.
    (`bun run deploy:restore <dir>`) e então suba a imagem anterior.
 3. Sem backup válido, não há rollback de dados — por isso o backup é etapa
    obrigatória do rollout.
+
+### Definição curta de pronto para deploy
+
+Deploy está pronto quando os gates aplicáveis passaram no SHA candidato, smoke e
+restore cobrem o perfil escolhido, e os manifestos/logs permitem reproduzir a
+conclusão sem alegar limites que não foram medidos. Evidência local sobre working
+tree alterada não substitui artefato do workflow vinculado ao SHA.
 
 ## Idempotência e operações (T38)
 
@@ -325,6 +343,56 @@ As migrations T38 (`0039/0040` no SQLite; `0010/0011` no PostgreSQL) são
    contador de sequência e as pendências **nunca** são apagados. Ao reverter a
    imagem, mantenha as tabelas de journal/outbox para preservar pendências e
    evitar republicação cega.
+
+## Sincronização em tempo real entre instâncias (T39)
+
+- **Pub/Sub é aceleração, não durabilidade.** Eventos **já confirmados** na outbox
+  T38 são publicados pelo `CoordinationPort` (Valkey) em canais versionados
+  `azyboard:v2:evt:<tenant>:<projeto>`; cada API assina as salas ativas e entrega
+  localmente. O Pub/Sub **não** é fila nem replay: a verdade durável continua no
+  SQL/outbox. Não há promessa de HA geral só por usar Pub/Sub.
+- **SIMPLE sem serviço externo.** Sem `REDIS_URL`, a entrega é local/in-process
+  pelo mesmo fluxo pós-commit; nenhum Valkey é exigido.
+- **Retenção e limites de replay.** Replay pelo cursor usa a outbox com retenção
+  de **≥ 24 h** e no máximo **1.000 eventos** por reconciliação. Cursor inválido,
+  à frente, legado sem continuidade, fora da retenção ou acima do limite gera
+  `RESYNC_REQUIRED` (motivo tipado) e o cliente refaz as consultas ativas.
+- **Última mensagem perdida.** Cada API compara o watermark durável das salas
+  ativas a cada heartbeat e ao reconectar o subscriber; diferença aciona
+  replay/refetch mesmo **sem novo evento**. Se a assinatura do barramento falha,
+  a readiness degrada (probe `realtime`) e a sala é recomposta no ciclo seguinte,
+  sem descartar a outbox.
+- **Cliente honesto.** `connecting → syncing → synced | offline`; `synced` só
+  após replay contíguo até o watermark ou refetch/barreira concluído. Falha de
+  refetch mantém `syncing` e retenta; duplicatas são ignoradas; lacunas voltam a
+  `syncing`. A barreira de refetch compara a revisão antes/depois das consultas.
+- **Métricas de lag.** `realtime.lag_seconds` (idade do confirmado mais antigo não
+  entregue), `realtime.gap.detected`, `realtime.delivery.dedup`,
+  `realtime.resync{reason}` e `realtime.refetch.confirmed` — **sem** tenant como
+  label. Alerte sobre `lag_seconds` crescente e `resync` por `retention`/`overflow`.
+- **Protocolo e cursor legado.** O handshake negocia `protocol` (versão atual 2).
+  Cliente sem `protocol` que ainda envia cursor é tratado como **legado** e recebe
+  `RESYNC_REQUIRED` (refetch), nunca conversão do cursor local em sequência global.
+- **Recuperação/refetch (runbook).** 1) Confirme `GET /health/ready` (inclui
+  `coordination` e `realtime` em ADVANCED). 2) Verifique a outbox pendente e o
+  dispatcher nos logs. 3) Se o lag persistir, force refetch do cliente recarregando
+  a página (cursor legado) — o SQL/outbox permanece a fonte. 4) Não recrie outbox
+  nem reinicie contadores manualmente.
+
+### Cutover de protocolo e rollback (T39)
+
+Aditivo; **não** migra perfis nem apaga contador/outbox:
+
+1. **Ordem de rollout**: publique contratos/web e servidor de forma coordenada.
+   O web novo envia `protocol` e reconcilia por replay/barreira; clientes antigos
+   com cursor recebem `RESYNC` e refazem as consultas (cutover de cursor legado).
+2. **Subir o subscriber/dispatcher** em uma API primeiro, validar `ready` e
+   lag antes de escalar para duas instâncias. Libere a topologia multi-API com
+   agente apenas com T36/T37/T38/T39 verificados.
+3. **Rollback para uma API**: pare as réplicas extras e mantenha uma. O
+   dispatcher drena a outbox por versão compatível, o watermark/contador
+   **não reinicia** e as pendências são preservadas. Force refetch dos clientes
+   (recarregar) em vez de converter cursores.
 
 ## Health endpoints
 

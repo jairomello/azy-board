@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { makeApiCall } from './index.js'
-import { toolBatch, toolListTasks } from './tools.js'
+import { toolBatch, toolListTasks } from '@azy-board/tool-execution'
 import { validateToolArguments } from '@azy-board/tool-registry'
 
 describe('MCP reliability contracts', () => {

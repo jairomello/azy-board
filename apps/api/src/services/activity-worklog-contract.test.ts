@@ -21,7 +21,8 @@ describe('contrato de auditoria e diário', () => {
 
   test('auditoria normaliza texto e diário valida duração', async () => {
     const items = await source('../routes/items.ts')
-    expect(items.includes('function normalizeAuditText')).toBe(true)
+    const rules = await source('../application/itemRules.ts')
+    expect(rules.includes('function normalizeAuditText')).toBe(true)
     expect(items.includes('parseWorkDuration(body.duration)')).toBe(true)
     expect(items.includes('totalDurationMin')).toBe(true)
   })

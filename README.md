@@ -338,16 +338,24 @@ bun run test:migrations   # migration, integrity and timestamp tests
 bun run test:mcp          # MCP tools without external services or credentials
 bun run test:mcp-catalog  # MCP catalog and authorization policies
 bun run test:agent-skill   # skill, commands and references
-bun run test:smoke        # HTTP smoke test; use SMOKE_URL for a published app
+bun run test:smoke        # authenticated smoke; setup/variables: docs/ci.md
 bun run check:i18n        # translation key parity and hardcoded-text inventory
 bun run check             # typecheck + lint + tests + build (the CI gate)
 ```
 
-**Continuous integration:** every branch push and pull request runs three
-required jobs — `check`, `contracts` and `smoke` — defined in
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml). See
-[`docs/ci.md`](docs/ci.md) for how to reproduce each gate locally, the pinned
-Bun version and the lint debt tracked in `biome.json`.
+**Gates de integração contínua:** push de branch e pull request executam os jobs
+`check`, `contracts`, `smoke`, `e2e`, `advanced (PostgreSQL + Valkey)` e
+`image (deploy reproduzível)` em [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+O workflow semanal exercita restore SIMPLE e ADVANCED. São os checks esperados
+pela política local; a exigência efetiva para merge não é comprovada pelo
+repositório. Consulte [`docs/ci.md`](docs/ci.md) para reprodução e
+[`docs/release-evidence.md`](docs/release-evidence.md) para estado por perfil,
+evidências e limites.
+
+**Definição curta de pronto:** gates aplicáveis passam, SIMPLE/ADVANCED têm
+smoke e restore exercitados, e a documentação liga cada afirmação a comando,
+SHA, data e ressalvas. Uma execução sobre working tree alterada é evidência
+limitada, não prova vinculada a release.
 
 ### Evals (AI quality tests)
 

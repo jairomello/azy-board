@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "types": ["bun-types"],
+    "paths": {
+      "@azy-board/tool-registry": ["../tool-registry/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

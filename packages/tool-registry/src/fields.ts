@@ -19,7 +19,7 @@ export const toolFields: Record<string, ToolFields> = {
   // Card B7 — projectId pode ser injetado do contexto da conversa (obrigatório apenas para MCP fora do chat); scope é obrigatório.
   get_screen_overview: { fields: ['projectId', 'scope'], required: ['scope'] },
   // Card T20 — métricas oficiais do Dashboard; projectId injetado do contexto no chat.
-  get_dashboard_metrics: { fields: ['projectId', 'metric', 'from', 'to', 'moduleId', 'sprintId', 'versionId', 'squadId', 'assigneeId', 'type', 'cycleId', 'includeItems'], required: ['metric'] },
+  get_dashboard_metrics: { fields: ['projectId', 'metric', 'from', 'to', 'moduleId', 'sprintId', 'versionId', 'squadId', 'assigneeId', 'type', 'cycleId', 'includeItems', 'limit', 'cursor', 'detail'], required: ['metric'] },
   get_shadow_markdown: { fields: ['projectId'], required: ['projectId'] },
   get_current_sprint: { fields: ['projectId'], required: ['projectId'] },
   list_tasks: { fields: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'onlyLeaves', 'includeDescriptions', 'fields', 'limit', 'cursor'], required: ['projectId'] },
@@ -79,11 +79,19 @@ export const toolFields: Record<string, ToolFields> = {
   create_tag: { fields: ['projectId', 'name', 'color'], required: ['projectId', 'name'] },
   create_version: { fields: ['projectId', 'name', 'releaseDate', 'description', 'status'], required: ['projectId', 'name'] },
   update_version: { fields: ['projectId', 'versionId', 'changes'], required: ['projectId', 'versionId', 'changes'], nested: { 'changes[]': ['field', 'operation'] } },
-  add_member: { fields: ['projectId', 'email', 'role'], required: ['projectId', 'email', 'role'] },
+  add_member: { fields: ['projectId', 'email', 'role', 'squadId'], required: ['projectId', 'email', 'role'] },
   update_member: { fields: ['projectId', 'userId', 'role'], required: ['projectId', 'userId', 'role'] },
+  // Card T25 — composição de squad sem regravar o papel: SET por ID ou CLEAR
+  // explícito (squadId: null). O papel do membro permanece intacto.
+  set_member_squad: { fields: ['projectId', 'userId', 'squadId'], required: ['projectId', 'userId', 'squadId'] },
   remove_member: { fields: ['projectId', 'userId'], required: ['projectId', 'userId'] },
   create_squad: { fields: ['projectId', 'name'], required: ['projectId', 'name'] },
-  create_cost_center: { fields: ['projectId', 'code'], required: ['projectId', 'code'] },
+  // Card T25 — edição de cadastros; ao menos um campo deve mudar (validado no catálogo).
+  update_squad: { fields: ['projectId', 'squadId', 'name'], required: ['projectId', 'squadId', 'name'] },
+  update_module: { fields: ['projectId', 'moduleId', 'name'], required: ['projectId', 'moduleId', 'name'] },
+  update_tag: { fields: ['projectId', 'tagId', 'name', 'color'], required: ['projectId', 'tagId'] },
+  update_cost_center: { fields: ['projectId', 'costCenterId', 'code', 'description'], required: ['projectId', 'costCenterId'] },
+  create_cost_center: { fields: ['projectId', 'code', 'description'], required: ['projectId', 'code'] },
 }
 
 // Campos aceitos na projeção `fields` de list_tasks. Fonte única entre o

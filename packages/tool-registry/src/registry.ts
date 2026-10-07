@@ -99,21 +99,26 @@ const classifications: Record<string, ToolClassification> = {
   get_current_sprint: { domain: 'planning', scope: 'project', operation: 'read' },
   list_modules: { domain: 'planning', scope: 'project', operation: 'read' },
   create_module: { domain: 'planning', scope: 'project', operation: 'create' },
+  update_module: { domain: 'planning', scope: 'project', operation: 'update', dependencyTools: ['list_modules'] },
   list_tags: { domain: 'planning', scope: 'project', operation: 'read' },
   create_tag: { domain: 'planning', scope: 'project', operation: 'create' },
+  update_tag: { domain: 'planning', scope: 'project', operation: 'update', dependencyTools: ['list_tags'] },
   set_item_tags: { domain: 'planning', scope: 'item', operation: 'update' },
   list_versions: { domain: 'planning', scope: 'project', operation: 'read' },
   create_version: { domain: 'planning', scope: 'project', operation: 'create' },
   update_version: { domain: 'planning', scope: 'project', operation: 'update' },
   list_cost_centers: { domain: 'planning', scope: 'project', operation: 'read' },
   create_cost_center: { domain: 'planning', scope: 'project', operation: 'create' },
+  update_cost_center: { domain: 'planning', scope: 'project', operation: 'update', dependencyTools: ['list_cost_centers'] },
 
   list_members: { domain: 'collaboration', scope: 'project', operation: 'read' },
   add_member: { domain: 'collaboration', scope: 'project', operation: 'create' },
   update_member: { domain: 'collaboration', scope: 'project', operation: 'update' },
+  set_member_squad: { domain: 'collaboration', scope: 'project', operation: 'update', dependencyTools: ['list_members', 'list_squads'] },
   remove_member: { domain: 'collaboration', scope: 'project', operation: 'delete' },
   list_squads: { domain: 'collaboration', scope: 'project', operation: 'read' },
   create_squad: { domain: 'collaboration', scope: 'project', operation: 'create' },
+  update_squad: { domain: 'collaboration', scope: 'project', operation: 'update', dependencyTools: ['list_squads'] },
 
   list_item_logs: { domain: 'evidence', scope: 'item', operation: 'read' },
   create_item_log: { domain: 'evidence', scope: 'item', operation: 'create' },
@@ -310,6 +315,10 @@ function schemaFor(field: string, isRequired: boolean): Record<string, unknown> 
   if (field === 'assigneeId') return { ...nullable({ type: 'string' }), description: 'ID de um membro do projeto (requer checklists detalhados no projeto).' }
   if (field === 'scope') return { ...nullable({ type: 'string' }), description: 'Project scope as Markdown rich text.' }
   if (field === 'projectId') return { ...nullable({ type: 'string' }), description: 'Project ID (UUID) or the exact project name; names are resolved against the projects accessible to the API key.' }
+  // Card T25 — squadId aceita ID (SET) ou null (CLEAR); nunca cria membership.
+  if (field === 'squadId') return { type: ['string', 'null'], description: 'Squad ID to associate (SET) or null to clear the member squad (CLEAR). Requires an existing project membership.' }
+  if (field === 'color') return { ...nullable({ type: 'string' }), description: 'Cor hex no formato #RRGGBB.' }
+  if (field === 'code') return { ...nullable({ type: 'string' }), description: 'Código do centro de custo (único por projeto).' }
   if (field === 'limit' || field === 'points' || field === 'offset') return nullable({ type: 'number' })
   if (field === 'durationMin') return { ...nullable({ type: 'number' }), description: 'Duração em minutos (inteiro não negativo); alternativa a duration.' }
   if (field === 'filters') return itemFiltersSchema
@@ -426,6 +435,8 @@ const friendlyNames: Record<string, string> = {
   list_sprints: 'Listar sprints', create_sprint: 'Criar sprint', update_sprint: 'Editar sprint', activate_sprint: 'Ativar sprint', close_sprint: 'Fechar sprint', list_members: 'Listar membros',
   list_modules: 'Listar módulos', create_module: 'Criar módulo', list_versions: 'Listar versões', create_version: 'Criar versão', update_version: 'Editar versão', list_columns: 'Listar colunas', create_column: 'Criar coluna',
   create_item_log: 'Registrar trabalho', update_item_log: 'Atualizar apontamento',
+  set_member_squad: 'Definir squad do membro', update_squad: 'Editar squad', update_module: 'Editar módulo',
+  update_tag: 'Editar tag', update_cost_center: 'Editar centro de custo',
   list_item_links: 'Listar links', create_item_link: 'Adicionar link', update_item_link: 'Atualizar link', delete_item_link: 'Remover link',
 }
 
@@ -455,7 +466,7 @@ const toolDescriptions: Record<string, string> = {
   get_board: 'Retorna colunas, módulos e itens do board do projeto. As descrições longas vêm resumidas por padrão; includeDetails=true devolve os campos pesados e includeDescriptions=true o texto completo. Em projetos grandes, prefira list_tasks com filtros.',
   get_tree: 'Retorna a hierarquia de itens (EPIC > STORY > TASK/BUG), filtrável por moduleId, assigneeId e sprintId. Descrições resumidas por padrão; includeDetails=true devolve os campos pesados e includeDescriptions=true o texto completo.',
   get_screen_overview: 'Digest do board em um único passo: contagens por coluna (total, TASK, BUG), sprint/filtro ativo e amostra de referências. Prefira sobre get_board para perguntas de contagem/recorte; scope=SCREEN reflete o recorte capturado na tela do usuário, scope=PROJECT o estado atual do banco.',
-  get_dashboard_metrics: 'Métricas oficiais do Dashboard com os mesmos números e regras da tela: metric=snapshot (Progresso/Escopo, WIP, Bloqueados, Atrasados, Carga), burnup, aging, hours ou sprint. Aceita filtros (módulo, sprint, versão, squad, responsável, tipo) e período (from/to, AAAA-MM-DD); cycleId para sprint. Preserva avisos de cobertura parcial e rotula populações sobrepostas (WIP inclui Bloqueados; não somar). Quando não informados e a tela ativa é o Dashboard, usa os filtros da fotografia.',
+  get_dashboard_metrics: 'Métricas oficiais do Dashboard com os mesmos números e regras da tela: metric=snapshot (Progresso/Escopo, WIP, Bloqueados, Atrasados, Carga), burnup, aging, hours ou sprint. Aceita filtros e período; limit (padrão 50, máximo 100), cursor opaco e detail para continuar páginas de detalhe. Preserva totais completos, avisos de truncamento/cobertura parcial e populações sobrepostas. Quando os filtros não são informados e a tela ativa é o Dashboard, usa os filtros da fotografia.',
   get_shadow_markdown: 'Retorna o board do projeto em Markdown (board.md) para leitura rápida.',
   list_tasks: 'Lista itens do projeto; onlyLeaves é true, includeDescriptions é false e limit é 50 por padrão. Filtros opcionais: type, status, assigneeId, sprintId, tagIds, parentId, columnId, moduleId, com projeção fields e paginação por limit/cursor. Omitir um filtro equivale a não filtrar.',
   list_modules: 'Lista os módulos do projeto.',
@@ -503,9 +514,14 @@ const toolDescriptions: Record<string, string> = {
   create_version: 'Cria uma versão do projeto com name obrigatório e releaseDate, description e status opcionais.',
   update_version: 'Edita uma versão existente. Use changes com { field, operation, value }; fields aceitos: name, releaseDate, description e status. operation SET define o valor; CLEAR limpa releaseDate ou description. Não altera o vínculo de itens.',
   add_member: 'Adiciona um membro ao projeto por e-mail com role ADMIN, MEMBER ou VIEWER.',
-  update_member: 'Atualiza o papel (e o squad opcional) de um membro do projeto.',
+  update_member: 'Atualiza o papel de um membro do projeto. Para trocar ou limpar o squad sem alterar o papel, use set_member_squad.',
+  set_member_squad: 'Define, troca ou limpa o squad de um membro existente do projeto sem alterar o papel. squadId é o ID do squad (SET) ou null para limpar (CLEAR). Exige ADMIN e não adiciona a pessoa ao projeto.',
   remove_member: 'Remove um membro do projeto.',
   create_squad: 'Cria um squad no projeto.',
+  update_squad: 'Renomeia um squad do projeto. Exige ADMIN.',
+  update_module: 'Renomeia um módulo do projeto. Exige ADMIN.',
+  update_tag: 'Edita o nome e/ou a cor de uma tag do projeto. Exige MEMBER ou superior.',
+  update_cost_center: 'Edita o código e/ou a descrição de um centro de custo do projeto. O código é único por projeto. Exige ADMIN.',
   create_cost_center: 'Cria um centro de custo no projeto com code e description opcional.',
 }
 

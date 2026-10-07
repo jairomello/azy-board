@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 
 export type ModelTool = { type: 'function'; name: string; description: string; parameters: Record<string, unknown>; strict: true }
 export type ModelInput = string | Array<Record<string, unknown>>
-export type ModelProviderAttempt = { configId: string; provider: string; model: string; errorCode: string; durationMs: number }
+export type ModelProviderAttempt = { configId: string; provider: string; model: string; errorCode: string; durationMs: number; reason?: string }
 export type ModelResponse = { id: string; output: Array<{ type: string; name?: string; callId?: string; arguments?: string; text?: string }>; usage?: { inputTokens?: number; outputTokens?: number; costMicros?: number }; history?: Array<Record<string, unknown>>; providerName?: string; modelName?: string; fallbackAttempts?: ModelProviderAttempt[] }
 export type ModelStreamEvent = { type: 'text_delta' | 'response'; text?: string; response?: ModelResponse }
 export interface ModelProvider {

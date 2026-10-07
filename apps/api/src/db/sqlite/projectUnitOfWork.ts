@@ -138,6 +138,10 @@ export function createSqliteProjectUnitOfWork(database: Database) {
         database.query(`INSERT INTO project_analytics_coverage
           (project_id, tenant_id, coverage_started_at, baseline_event_id, created_at) VALUES (?, ?, ?, NULL, ?)`)
           .run(projectId, context.tenantId, now, now)
+        database.query(`INSERT INTO project_analytics_dimension_meta
+          (project_id, tenant_id, projection_version, status, last_sequence, target_sequence, updated_at)
+          VALUES (?, ?, 1, 'READY', -1, NULL, ?)`)
+          .run(projectId, context.tenantId, now)
 
         return project
       })

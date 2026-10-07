@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-10-07",
+  "sourceSha": "6f311de528b643760ac38aaac3efa671957a498e",
+  "workingTree": "CLEAN",
+  "gates": [
+    {
+      "id": "e2e",
+      "name": "Jornada de navegador",
+      "status": "VERIFICADO",
+      "command": "bun run test:e2e",
+      "evidence": "",
+      "sha": "6f311de528b643760ac38aaac3efa671957a498e",
+      "date": "2026-10-07",
+      "note": "Fixture inválida: prova vazia"
+    }
+  ]
+}

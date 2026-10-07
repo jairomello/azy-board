@@ -5,7 +5,7 @@
  * o Azy Agent determinístico, executa jornadas e derruba tudo ao final. Não
  * depende do banco de dev.
  */
-import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { chromium, type Browser, type Page } from 'playwright'
 
@@ -210,6 +210,16 @@ export async function cleanup() {
 export async function runJourneys(page: Page, journeys: Journey[], retries = 1): Promise<JourneyResult[]> {
   const results: JourneyResult[] = []
   for (const journey of journeys) {
+    // Trace por jornada: só é persistido quando a jornada falha após as tentativas.
+    const tracing = page.context().tracing
+    let tracingChunk = false
+    try {
+      await tracing.startChunk({ title: journey.name })
+      tracingChunk = true
+    } catch {
+      // Sem tracing habilitado no contexto; diagnóstico segue por screenshot/HTML.
+    }
+
     let lastError: unknown
     let ok = false
     for (let attempt = 0; attempt <= retries && !ok; attempt++) {
@@ -221,7 +231,12 @@ export async function runJourneys(page: Page, journeys: Journey[], retries = 1):
         if (attempt < retries) console.error(`    ↻ tentativa ${attempt + 1} de "${journey.name}" falhou: ${error instanceof Error ? error.message : error}`)
       }
     }
-    if (!ok) await captureFailure(page, journey.name)
+    if (!ok) {
+      await captureFailure(page, journey.name)
+      if (tracingChunk) await tracing.stopChunk({ path: tracePath(journey.name) }).catch(() => {})
+    } else if (tracingChunk) {
+      await tracing.stopChunk().catch(() => {})
+    }
     results.push({ name: journey.name, ok, ...(ok ? {} : { error: lastError instanceof Error ? lastError.message : String(lastError) }) })
     if (ok) console.log(`  ✓ ${journey.name}`)
     else console.error(`  ✗ ${journey.name}: ${lastError instanceof Error ? lastError.message : lastError}`)
@@ -229,12 +244,26 @@ export async function runJourneys(page: Page, journeys: Journey[], retries = 1):
   return results
 }
 
+function failureDir() {
+  return join(root, 'tmp', 'e2e-failures')
+}
+
+function failureSlug(journeyName: string) {
+  return journeyName.replace(/[^a-z0-9]+/gi, '-').slice(0, 60)
+}
+
+function tracePath(journeyName: string) {
+  return join(failureDir(), `${failureSlug(journeyName)}.zip`)
+}
+
 async function captureFailure(page: Page, journeyName: string) {
   try {
-    const dir = join(root, 'tmp', 'e2e-failures')
+    const dir = failureDir()
     mkdirSync(dir, { recursive: true })
-    const slug = journeyName.replace(/[^a-z0-9]+/gi, '-').slice(0, 60)
+    const slug = failureSlug(journeyName)
     await page.screenshot({ path: join(dir, `${slug}.png`), fullPage: true })
+    // Dump do DOM final ajuda a reproduzir seletores sem depender do trace.
+    writeFileSync(join(dir, `${slug}.html`), await page.content())
   } catch {
     // Diagnóstico é melhor-esforço; nunca deve mascarar a falha original.
   }

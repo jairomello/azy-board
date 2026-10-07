@@ -222,6 +222,9 @@ describe('contrato de fonte única do catálogo MCP', () => {
     expect(definition.inputSchema.properties.metric).toMatchObject({ type: 'string', enum: ['snapshot', 'burnup', 'aging', 'hours', 'sprint'] })
     expect(new Set(requiredFieldsFor('get_dashboard_metrics'))).toEqual(new Set(['metric']))
     expect(() => validateToolArguments('get_dashboard_metrics', { metric: 'snapshot' })).not.toThrow()
+    expect(() => validateToolArguments('get_dashboard_metrics', { metric: 'hours', limit: 100, cursor: 'opaque' })).not.toThrow()
+    expect(() => validateToolArguments('get_dashboard_metrics', { metric: 'snapshot', limit: 101 })).toThrow()
+    expect(() => validateToolArguments('get_dashboard_metrics', { metric: 'snapshot', detail: 'other' })).toThrow()
     expect(() => validateToolArguments('get_dashboard_metrics', { metric: 'inválida' })).toThrow()
   })
 
@@ -292,5 +295,51 @@ describe('rejeição de campos desconhecidos', () => {
   test('campo desconhecido em ferramenta de escrita é rejeitado antes de qualquer efeito', () => {
     expect(() => validateToolArguments('create_task', { projectId: 'p', title: 'T', type: 'TASK', prioridade: 'HIGH' }))
       .toThrow('Campo desconhecido: prioridade')
+  })
+})
+
+describe('catálogo de composição de squads e cadastros (T25)', () => {
+  test('set_member_squad expõe SET/CLEAR, policy admin e routing de colaboração', () => {
+    expect(new Set(requiredFieldsFor('set_member_squad'))).toEqual(new Set(['projectId', 'userId', 'squadId']))
+    expect(byName.get('set_member_squad')!.policy).toEqual({ globalGroup: 'MANAGER', localRole: 'ADMIN' })
+    expect(byName.get('set_member_squad')!.routing).toMatchObject({ domain: 'collaboration', scope: 'project', operation: 'update' })
+    expect((byName.get('set_member_squad')!.inputSchema.properties.squadId as { type: string[] }).type).toEqual(['string', 'null'])
+  })
+
+  test('set_member_squad aceita SET por ID e CLEAR por null, mas rejeita vazio', () => {
+    expect(() => validateToolArguments('set_member_squad', { projectId: 'p', userId: 'u', squadId: 's' })).not.toThrow()
+    expect(() => validateToolArguments('set_member_squad', { projectId: 'p', userId: 'u', squadId: null })).not.toThrow()
+    expect(() => validateToolArguments('set_member_squad', { projectId: 'p', userId: 'u' })).toThrow('Campo obrigatório ausente: squadId')
+    expect(() => validateToolArguments('set_member_squad', { projectId: 'p', userId: 'u', squadId: '   ' })).toThrow()
+  })
+
+  test('edições de squad/módulo/centro exigem ADMIN e tag exige MEMBER', () => {
+    expect(byName.get('update_squad')!.policy).toEqual({ globalGroup: 'MANAGER', localRole: 'ADMIN' })
+    expect(byName.get('update_module')!.policy).toEqual({ globalGroup: 'MANAGER', localRole: 'ADMIN' })
+    expect(byName.get('update_cost_center')!.policy).toEqual({ globalGroup: 'MANAGER', localRole: 'ADMIN' })
+    expect(byName.get('update_tag')!.policy).toEqual({ globalGroup: 'TEAM_MEMBER', localRole: 'MEMBER' })
+    expect(byName.get('update_module')!.routing).toMatchObject({ domain: 'planning', scope: 'project', operation: 'update' })
+    expect(byName.get('update_tag')!.routing).toMatchObject({ domain: 'planning', scope: 'project', operation: 'update' })
+    expect(byName.get('update_cost_center')!.routing).toMatchObject({ domain: 'planning', scope: 'project', operation: 'update' })
+  })
+
+  test('update_tag exige ao menos um campo e valida cor hex', () => {
+    expect(() => validateToolArguments('update_tag', { projectId: 'p', tagId: 't', color: '#ff0000' })).not.toThrow()
+    expect(() => validateToolArguments('update_tag', { projectId: 'p', tagId: 't', name: 'Nova' })).not.toThrow()
+    expect(() => validateToolArguments('update_tag', { projectId: 'p', tagId: 't' })).toThrow('ao menos um de name ou color')
+    expect(() => validateToolArguments('update_tag', { projectId: 'p', tagId: 't', color: 'vermelho' })).toThrow('#RRGGBB')
+  })
+
+  test('update_cost_center exige ao menos um campo', () => {
+    expect(() => validateToolArguments('update_cost_center', { projectId: 'p', costCenterId: 'c', code: 'CC-2' })).not.toThrow()
+    expect(() => validateToolArguments('update_cost_center', { projectId: 'p', costCenterId: 'c', description: 'x' })).not.toThrow()
+    expect(() => validateToolArguments('update_cost_center', { projectId: 'p', costCenterId: 'c' })).toThrow('ao menos um de code ou description')
+  })
+
+  test('update_member continua compatível e update_squad/update_module exigem nome', () => {
+    expect(new Set(requiredFieldsFor('update_member'))).toEqual(new Set(['projectId', 'userId', 'role']))
+    expect(() => validateToolArguments('update_member', { projectId: 'p', userId: 'u', role: 'MEMBER' })).not.toThrow()
+    expect(new Set(requiredFieldsFor('update_squad'))).toEqual(new Set(['projectId', 'squadId', 'name']))
+    expect(new Set(requiredFieldsFor('update_module'))).toEqual(new Set(['projectId', 'moduleId', 'name']))
   })
 })

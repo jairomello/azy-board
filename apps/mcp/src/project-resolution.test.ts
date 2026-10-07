@@ -2,9 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createMcpServer } from './index.js'
-import { executeSharedTool, resolveProjectId } from './registry.js'
+import { executeSharedTool, resolveProjectId } from '@azy-board/tool-execution'
 import { validateToolArguments } from '@azy-board/tool-registry'
-import type { ApiCall } from './tools.js'
+import type { ApiCall } from '@azy-board/tool-execution'
 
 const PROJECT_UUID = '0f6d7c1e-2a3b-4c5d-8e9f-0a1b2c3d4e5f'
 const mcpContext = { source: 'mcp' as const, userId: 'api-key-owner', tenantId: 'api-key-tenant', globalGroup: 'TEAM_MEMBER' as const }

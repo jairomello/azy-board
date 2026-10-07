@@ -1,24 +1,22 @@
 import { Hono, type Context } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
-import { generateId } from '../utils/id'
 import { addTreeProgress, type TreeProgressNode } from '../services/treeProgress'
 import type { RequestContext } from '@azy-board/api-contracts'
 import type { ActivityActorType, ActivitySource, ItemType } from '@azy-board/domain'
-import { DEFAULT_ITEM_ICON, parseWorkDuration } from '@azy-board/ui-contracts'
-import { isWorkCard, resolveActiveSprint, resolveActiveVersion } from '../services/creationDefaults'
+import { parseWorkDuration } from '@azy-board/ui-contracts'
 import { PROJECTION_FIELDS } from '@azy-board/tool-registry'
-import { nextSequenceCode as computeNextSequenceCode } from '../utils/sequenceCode'
 import { IDEMPOTENCY_RETENTION_MS, payloadHash } from '../services/idempotency'
 import { COMMAND_NAMESPACES, isIdempotencyConflict, isIdempotentReplay, isPendingBody, parseEnvelope } from '../persistence/idempotency'
-import { claimItem, moveItem, releaseItem } from '../services/itemMutations'
+import { claimItem, releaseItem } from '../services/itemMutations'
 import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
 import { confirmationSchema, createItemSchema, itemLogSchema, itemSprintSchema, itemTagsSchema, moveItemSchema, parseJson, parseOptionalJson, reorderItemsSchema, updateItemLogSchema, updateItemSchema, updateWorkLogSchema, workLogSchema } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
-import type { ItemPatch } from '../persistence/ports'
 import type { ItemLogRecord, ItemRecord } from '../persistence/models'
 import { emitDomainEvent, findOperationId } from '../services/domainEventOutbox'
+import { createItemApplication, moveItemApplication, updateItemApplication } from '../application/items'
+import { loadItemWithRelations } from '../application/itemRules'
 
 export const itemsRouter = new Hono<HonoEnv>()
 itemsRouter.use('*', authMiddleware)
@@ -30,109 +28,6 @@ function auditContext(c: Context<HonoEnv>): { actorType: ActivityActorType; sour
     source: apiKeyId ? 'MCP' : 'REST',
     actorLabel: apiKeyId ? c.get('apiKeyName') : null,
   }
-}
-
-function normalizeAuditText(value: unknown): string {
-  return String(value ?? '')
-    .replace(/<br\s*\/?\s*>/gi, '\n')
-    .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
-
-const MAX_ANCESTRY_DEPTH = 50
-
-function systemContext(tenantId: string) {
-  return { tenantId, actorUserId: null, actorKind: 'SYSTEM' as const }
-}
-
-// Constrói o ancestry_path de um item a partir do pai imediato usando o caminho
-// desnormalizado já existente no pai.
-async function buildAncestryPath(tenantId: string, projectId: string, parentId: string) {
-  const parent = await persistence.items.getItem(systemContext(tenantId), projectId, parentId)
-  if (!parent) return []
-  let parentPath: Array<{ id: string; title: string; type: string }> = []
-  try { parentPath = JSON.parse(parent.ancestryPath || '[]') } catch { parentPath = [] }
-  return [...parentPath, { id: parent.id, title: parent.title, type: parent.type }]
-}
-
-// Detecta ciclo em uma leitura: ancestryPath do novo pai já contém a cadeia
-// completa de ancestrais, portanto não é necessário consultar cada nível.
-async function detectReparentCycle(tenantId: string, projectId: string, itemId: string, newParentId: string): Promise<boolean> {
-  const newParent = await persistence.items.getItem(systemContext(tenantId), projectId, newParentId)
-  if (!newParent) return false // validação de pai inexistente ocorre no fluxo de hierarquia
-  let ancestry: Array<{ id: string }> = []
-  try { ancestry = JSON.parse(newParent.ancestryPath || '[]') } catch { return true }
-  return ancestry.length >= MAX_ANCESTRY_DEPTH || ancestry.some(node => node.id === itemId)
-}
-
-// Gera o próximo sequenceCode disponível para o tipo no projeto
-// [TENANT] filtrado por tenantId + projectId
-async function nextSequenceCode(tenantId: string, projectId: string, type: string): Promise<string> {
-  const rows = await persistence.items.listItems({ tenantId, actorUserId: null, actorKind: 'SYSTEM' }, projectId)
-  return computeNextSequenceCode(rows.map(row => row.sequenceCode), type)
-}
-
-// Verifica se item é folha (sem filhos) via consulta indexada — Leaf Rule.
-async function isLeaf(tenantId: string, projectId: string, itemId: string): Promise<boolean> {
-  return !(await persistence.items.hasChildren(systemContext(tenantId), projectId, itemId))
-}
-
-// [TENANT] Valida que todas as tags pertencem ao projeto do tenant. Retorna os
-// ids únicos ou null quando alguma tag é inválida (rollback total no chamador).
-async function resolveProjectTagIds(tenantId: string, projectId: string, tagIds: string[] | undefined): Promise<string[] | null> {
-  const unique = [...new Set(tagIds ?? [])]
-  if (unique.length === 0) return []
-  const valid = await persistence.planning.listTags({ tenantId, actorUserId: null, actorKind: 'SYSTEM' }, projectId)
-  const validIds = new Set(valid.map(tag => tag.id))
-  return unique.every(id => validIds.has(id)) ? unique : null
-}
-
-// Carrega o item com as relações que o board consome (tags, sprint, responsável),
-// garantindo que a resposta e o broadcast reconciliem o cache sem refetch.
-async function loadItemWithRelations(tenantId: string, projectId: string, itemId: string) {
-  const rows = await persistence.items.listItemsWithRelations({ tenantId, actorUserId: null, actorKind: 'SYSTEM' }, projectId)
-  return rows.find(item => item.id === itemId) ?? null
-}
-
-// Valida que a hierarquia de tipos é coerente
-// EPIC → parentId null; STORY → pai é EPIC; TASK/BUG → pai é STORY, TASK ou BUG
-async function validateHierarchy(
-  tenantId: string,
-  projectId: string,
-  type: ItemType,
-  parentId: string | null | undefined,
-  moduleId: string | null | undefined
-): Promise<string | null> {
-  if (type === 'EPIC') {
-    if (parentId) return 'EPIC não pode ter parentId — EPICs são raiz da hierarquia'
-    if (!moduleId) return 'EPIC requer moduleId — use GET /projects/:id/modules para listar os módulos disponíveis'
-    return null
-  }
-  // STORY exige pai EPIC. TASK/BUG sem pai são rejeitadas nas rotas de projeto hierárquico
-  // (POST/PATCH têm guards HIERARCHY_REQUIRED próprios); aqui só validamos pais informados.
-  if (type === 'STORY' && !parentId) return 'STORY requer parentId apontando para um EPIC — use GET /projects/:id/items?type=EPIC para listar os EPICs'
-  if (!parentId) return null
-
-  const parent = await persistence.items.getItem({ tenantId, actorUserId: null, actorKind: 'SYSTEM' }, projectId, parentId)
-  if (!parent) return `parentId "${parentId}" não encontrado neste projeto`
-
-  if (type === 'STORY' && parent.type !== 'EPIC') {
-    return `STORY deve ser filha de EPIC, mas "${parent.title}" (${parentId}) é ${parent.type}`
-  }
-  if ((type === 'TASK' || type === 'BUG') && !['STORY', 'TASK', 'BUG'].includes(parent.type)) {
-    return (
-      `${type} não pode ser filho direto de ${parent.type} ("${parent.title}"). ` +
-      `Hierarquia: EPIC → STORY → TASK/BUG. ` +
-      `Crie uma STORY filha do EPIC e use o ID da STORY como parentId.`
-    )
-  }
-  return null
 }
 
 // PATCH /projects/:projectId/items/reorder — antes de /:itemId para não colidir
@@ -487,96 +382,7 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   // dentro do commit da mutação (UnitOfWork), não mais em find/save separados.
   const commandHash = idempotencyKey ? await payloadHash(idempotencyPayload) : null
 
-  const type: ItemType = body.type ?? 'TASK'
-  const projectContext = userPersistenceContext(ctx)
-  // [TENANT] O projeto e a STORY fixa são buscados no tenant autenticado; o cliente não escolhe outro projeto.
-  const project = await persistence.projects.getProject(projectContext, projectId)
-  if (!project) return c.json({ error: 'Projeto não encontrado' }, 404)
-
-  const effectiveParentId = project.boardMode === 'SIMPLE' && ['TASK', 'BUG'].includes(type)
-    ? project.simpleStoryId
-    : (body.parentId ?? null)
-  if (project.boardMode === 'SIMPLE' && ['TASK', 'BUG'].includes(type) && !effectiveParentId) {
-    return c.json({ error: 'Projeto simples não possui história fixa configurada' }, 409)
-  }
-  // [HIERARQUIA] Em projetos hierárquicos TASK/BUG sem pai ficam invisíveis no board — proibido.
-  if (project.boardMode !== 'SIMPLE' && ['TASK', 'BUG'].includes(type) && !effectiveParentId) {
-    return c.json({ error: 'TASK/BUG requerem parentId apontando para uma STORY, TASK ou BUG neste projeto. Use GET /projects/:id/items?type=STORY para listar as histórias disponíveis.', code: 'HIERARCHY_REQUIRED', retryable: false }, 400)
-  }
-
-  const validationError = await validateHierarchy(ctx.tenantId, projectId, type, effectiveParentId, project.boardMode === 'SIMPLE' ? null : body.moduleId)
-  if (validationError) return c.json({ error: validationError }, 400)
-
-  // [TENANT] Tags precisam pertencer ao projeto; inválidas abortam a criação inteira.
-  const tagIds = await resolveProjectTagIds(ctx.tenantId, projectId, body.tagIds)
-  if (tagIds === null) return c.json({ error: 'Uma ou mais tags não existem neste projeto' }, 400)
-
-  const [module, column, version, costCenter, assignee] = await Promise.all([
-    body.moduleId ? persistence.projects.getModule(projectContext, projectId, body.moduleId) : null,
-    body.columnId ? persistence.projects.getColumn(projectContext, projectId, body.columnId) : null,
-    body.versionId ? persistence.planning.getVersion(projectContext, projectId, body.versionId) : null,
-    body.costCenterId ? persistence.planning.getCostCenter(projectContext, projectId, body.costCenterId) : null,
-    body.assigneeId ? persistence.projects.getMembership(projectContext, projectId, body.assigneeId) : null,
-  ])
-  if (body.moduleId && !module) return c.json({ error: 'Módulo não encontrado neste projeto' }, 400)
-  if (body.columnId && !column) return c.json({ error: 'Coluna não encontrada neste projeto' }, 400)
-  if (body.versionId && !version) return c.json({ error: 'Versão não encontrada neste projeto' }, 400)
-  if (body.costCenterId && !costCenter) return c.json({ error: 'Centro de custo não encontrado neste projeto' }, 400)
-  if (body.assigneeId && !assignee) return c.json({ error: 'Responsável não é membro deste projeto' }, 400)
-
-  // Card T35 — defaults determinísticos na criação (apenas cards TASK/BUG):
-  // sprint vigente e versão vigente quando o campo é omitido; ícone default.
-  const workCard = isWorkCard(type)
-  let effectiveSprintId: string | null = body.sprintId ?? null
-  if (body.sprintId === undefined && workCard) {
-    // [TENANT] sprint vigente resolvida no projeto do tenant autenticado.
-    effectiveSprintId = (await resolveActiveSprint(projectContext, projectId))?.id ?? null
-  }
-  if (effectiveSprintId) {
-    const sprint = await persistence.planning.getSprint(projectContext, projectId, effectiveSprintId)
-    if (!sprint) return c.json({ error: 'Sprint não encontrada neste projeto' }, 400)
-    if (sprint.status === 'CLOSED') return c.json({ error: 'Não é possível associar itens a uma sprint fechada' }, 409)
-  }
-
-  let effectiveVersionId: string | null = body.versionId ?? null
-  if (body.versionId === undefined && workCard) {
-    // [TENANT] versão vigente (próximo lançamento) resolvida no projeto do tenant.
-    effectiveVersionId = (await resolveActiveVersion(projectContext, projectId))?.id ?? null
-  }
-
-  const effectiveIcon = body.icon === undefined ? (workCard ? DEFAULT_ITEM_ICON : null) : body.icon
-
-  // Para TASK/BUG sem coluna: buscar primeira coluna do projeto
-  let columnId = body.columnId ?? null
-  if (!columnId && ['TASK', 'BUG'].includes(type)) {
-    const projectColumns = await persistence.projects.listColumns(projectContext, projectId)
-    columnId = projectColumns[0]?.id ?? null
-  }
-
   const audit = auditContext(c)
-
-  const ancestryPath = effectiveParentId
-    ? await buildAncestryPath(ctx.tenantId, projectId, effectiveParentId)
-    : []
-
-  // Auto-preenchimento do centro de custo: se o body não informou, buscar o primeiro do projeto
-  // [TENANT] filtra cost centers pelo tenantId + projectId para isolamento cross-tenant
-  let costCenterId = body.costCenterId ?? null
-  if (costCenterId === null) {
-    const projectCostCenters = await persistence.planning.listCostCenters(projectContext, projectId)
-    costCenterId = projectCostCenters[0]?.id ?? null
-  }
-
-  // Gerar sequenceCode automaticamente se não informado
-  // [TENANT] nextSequenceCode já filtra por tenantId + projectId
-  let sequenceCode = body.sequenceCode ?? null
-  if (sequenceCode === null) {
-    sequenceCode = await nextSequenceCode(ctx.tenantId, projectId, type)
-  } else {
-    // Validar unicidade se informado explicitamente
-    const projectItems = await persistence.items.listItems(projectContext, projectId)
-    if (projectItems.some(candidate => candidate.sequenceCode === sequenceCode)) return c.json({ error: `Código "${sequenceCode}" já existe neste projeto` }, 409)
-  }
 
   // [TENANT] tenantId vem do contexto autenticado; relações, log e analytics
   // entram no mesmo comando síncrono/atômico do adapter SQLite.
@@ -595,39 +401,16 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
         expiresAt: new Date(Date.now() + IDEMPOTENCY_RETENTION_MS).toISOString(),
       }
     }
-    const createdRecord = await persistence.unitOfWork.createItemWithRelations(mutationContext, {
+    const createResult = await createItemApplication({
+      context: ctx,
+      permissionScope: c.get('apiKeyPermissionScope'),
       projectId,
-      type,
-      sequenceCode,
-      parentId: effectiveParentId,
-      moduleId: project.boardMode === 'SIMPLE' ? null : (body.moduleId ?? null),
-      columnId,
-      title: body.title,
-      description: body.description ?? null,
-      persona: body.persona ?? null,
-      goal: body.goal ?? null,
-      benefit: body.benefit ?? null,
-      acceptanceCriteria: body.acceptanceCriteria ?? null,
-      notes: body.notes ?? null,
-      ancestryPath: JSON.stringify(ancestryPath),
-      status: 'NOT_STARTED',
-      priority: body.priority ?? 'MEDIUM',
-      points: body.points ?? null,
-      assigneeId: body.assigneeId ?? null,
-      authorId: ctx.userId,
-      versionId: effectiveVersionId,
-      costCenterId,
-      startDate: body.startDate ?? null,
-      dueDate: body.dueDate ?? null,
-      icon: effectiveIcon,
-      color: body.color ?? null,
-      position: 0,
-    }, {
-      tagIds,
-      ...(effectiveSprintId ? { sprintIds: [effectiveSprintId] } : {}),
-      activity: `Card criado: ${normalizeAuditText(body.title)}`,
+      minimumRole: 'MEMBER',
+      mutationContext,
+      body,
     })
-    id = createdRecord.id
+    if (!createResult.ok) return c.json(createResult.body, createResult.status)
+    id = createResult.record.id
   } catch (error) {
     if (isIdempotencyConflict(error)) return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
     if (isIdempotentReplay(error)) {
@@ -686,45 +469,37 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
   const body = parsed.data
 
   const projectContext = userPersistenceContext(ctx)
-  const item = await persistence.items.getItem(projectContext, projectId, itemId)
-  if (!item) return c.json({ error: 'Item não encontrado' }, 404)
-
-  // Item arquivado não pode ser movido de coluna
-  if (item.status === 'ARCHIVED') {
-    return c.json({ error: 'Item arquivado não pode ser movido' }, 422)
-  }
-
-  // Leaf Rule: TASK, BUG e STORY sem filhos são movíveis — EPIC nunca é movível
-  if (!['TASK', 'BUG', 'STORY'].includes(item.type)) {
-    return c.json({ error: `Items do tipo ${item.type} não são movíveis no Kanban` }, 422)
-  }
-
-  if (!(await isLeaf(ctx.tenantId, projectId, itemId))) {
-    return c.json({ error: 'Este item possui tarefas filhas — mova as tarefas individualmente' }, 422)
-  }
-
-  const col = await persistence.projects.getColumn(projectContext, projectId, body.columnId)
-  if (!col) return c.json({ error: 'Coluna não encontrada' }, 404)
-
-  // Buscar nome da coluna de origem para log — [TENANT] filtro por tenantId
-  let fromColName = 'desconhecida'
-  if (item.columnId) {
-    const fromCol = await persistence.projects.getColumn(projectContext, projectId, item.columnId)
-    fromColName = fromCol?.name ?? fromColName
-  }
 
   // [T38] Chave idempotente opcional (agente envia Idempotency-Key estável).
   const idempotencyKey = c.req.header('Idempotency-Key')
   const commandHash = idempotencyKey ? await payloadHash({ projectId, itemId, columnId: body.columnId }) : null
   const audit = auditContext(c)
+  let moveStatus: string | null = null
   try {
-    await moveItem({
-      tenantId: ctx.tenantId, projectId, itemId, userId: ctx.userId, apiKeyId: c.get('apiKeyId') as string | undefined,
-      actor: audit, columnId: body.columnId, columnName: col.name, baseStatus: col.baseStatus, fromColumnName: fromColName,
-      ...(idempotencyKey && commandHash
-        ? { idempotency: { key: idempotencyKey, payloadHash: commandHash, expiresAt: new Date(Date.now() + IDEMPOTENCY_RETENTION_MS).toISOString() } }
-        : {}),
+    const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST', idempotencyKey)
+    mutationContext.mutation.actorType = audit.actorType
+    mutationContext.mutation.actorSource = audit.source
+    mutationContext.mutation.actorLabel = audit.actorLabel
+    if (idempotencyKey && commandHash) {
+      mutationContext.idempotency = {
+        namespace: COMMAND_NAMESPACES.moveItem,
+        projectScope: projectId,
+        key: idempotencyKey,
+        payloadHash: commandHash,
+        expiresAt: new Date(Date.now() + IDEMPOTENCY_RETENTION_MS).toISOString(),
+      }
+    }
+    const moveResult = await moveItemApplication({
+      context: ctx,
+      permissionScope: c.get('apiKeyPermissionScope'),
+      projectId,
+      minimumRole: 'MEMBER',
+      mutationContext,
+      itemId,
+      columnId: body.columnId,
     })
+    if (!moveResult.ok) return c.json(moveResult.body, moveResult.status)
+    moveStatus = moveResult.column.baseStatus
   } catch (error) {
     if (isIdempotencyConflict(error)) return c.json({ code: 'IDEMPOTENCY_CONFLICT', error: 'A chave já foi usada com outro payload' }, 409)
     if (isIdempotentReplay(error)) {
@@ -739,14 +514,15 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
     throw error
   }
 
-  void emitDomainEvent({ tenantId: ctx.tenantId, projectId, type: 'CARD_MOVED', payload: { itemId, columnId: body.columnId, status: col.baseStatus } })
+  if (moveStatus === null) return c.json({ error: 'Movimentação sem resultado' }, 500)
+  void emitDomainEvent({ tenantId: ctx.tenantId, projectId, type: 'CARD_MOVED', payload: { itemId, columnId: body.columnId, status: moveStatus } })
 
   if (idempotencyKey) {
     const operationId = await findOperationId(ctx.tenantId, ctx.userId, COMMAND_NAMESPACES.moveItem, idempotencyKey, projectId)
     if (operationId) c.header('X-Operation-Id', operationId)
   }
   const updated = await persistence.items.getItem(projectContext, projectId, itemId)
-  return c.json({ item: updated, status: col.baseStatus })
+  return c.json({ item: updated, status: moveStatus })
 })
 
 // PATCH /projects/:projectId/items/:itemId/claim
@@ -796,136 +572,26 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
   if (!parsed.ok) return parsed.response
   const body = parsed.data
 
-  // Concorrência otimista: a versão lida pelo cliente é comparada no update.
-  const expectedUpdatedAt = body.expectedUpdatedAt
-  // [TENANT] Tags precisam pertencer ao projeto; inválidas abortam a edição inteira.
-  const tagIds = await resolveProjectTagIds(ctx.tenantId, projectId, body.tagIds)
-  if (tagIds === null) return c.json({ error: 'Uma ou mais tags não existem neste projeto' }, 400)
-
-  // Identidade, tenant e relações de autorização são sempre derivados do
-  // contexto/rota; nunca aceitamos esses campos do agente.
-  const writableFields = new Set([
-    'title', 'description', 'priority', 'type', 'status', 'points', 'assigneeId',
-    'columnId', 'parentId', 'moduleId', 'startDate', 'dueDate', 'blockedReason',
-    'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'versionId', 'costCenterId', 'sprintId', 'sequenceCode',
-    'icon', 'color',
-  ])
-  const safeBody = Object.fromEntries(Object.entries(body).filter(([field]) => writableFields.has(field))) as Omit<typeof body, 'authorId'>
-  const updates: Record<string, unknown> = { ...safeBody, updatedAt: new Date().toISOString() }
-
-  const projectContext = userPersistenceContext(ctx)
-  // [TENANT] O modo do projeto e a STORY fixa são resolvidos no mesmo tenant do item.
-  const project = await persistence.projects.getProject(projectContext, projectId)
-  if (!project) return c.json({ error: 'Projeto não encontrado' }, 404)
-
-  // Tarefa 5.1 — buscar estado anterior para gerar log automático
-  const LOGGABLE_FIELDS = ['title', 'description', 'priority', 'assigneeId', 'points', 'startDate', 'dueDate', 'status'] as const
-  type LoggableField = typeof LOGGABLE_FIELDS[number]
-  const prevItem = await persistence.items.getItem(projectContext, projectId, itemId)
-  if (!prevItem) return c.json({ error: 'Item não encontrado' }, 404)
-
-  // Validar unicidade do sequenceCode se mudou
-  // [TENANT] filtrado por tenantId + projectId
-  if (updates.sequenceCode !== undefined && updates.sequenceCode !== null && updates.sequenceCode !== prevItem.sequenceCode) {
-    const projectItems = await persistence.items.listItems(projectContext, projectId)
-    if (projectItems.some(candidate => candidate.id !== itemId && candidate.sequenceCode === updates.sequenceCode)) return c.json({ error: `Código "${updates.sequenceCode}" já existe neste projeto` }, 409)
-  }
-
-  if (project.boardMode === 'SIMPLE' && prevItem && ['TASK', 'BUG'].includes(prevItem.type)) {
-    if (!project.simpleStoryId) return c.json({ error: 'Projeto simples não possui história fixa configurada' }, 409)
-    updates.parentId = project.simpleStoryId
-    updates.moduleId = null
-  }
-
-  if (safeBody.parentId !== undefined || safeBody.moduleId !== undefined || safeBody.columnId !== undefined || safeBody.versionId !== undefined || safeBody.costCenterId !== undefined || safeBody.assigneeId !== undefined || safeBody.type !== undefined) {
-    const nextType = (safeBody.type as ItemType | undefined) ?? prevItem?.type
-    if (nextType && (safeBody.parentId !== undefined || safeBody.type !== undefined)) {
-      const effectiveParentId = updates.parentId !== undefined ? updates.parentId as string | null : prevItem?.parentId ?? null
-      const effectiveModuleId = updates.moduleId !== undefined ? updates.moduleId as string | null : prevItem?.moduleId ?? null
-      const hierarchyError = await validateHierarchy(ctx.tenantId, projectId, nextType, effectiveParentId, project.boardMode === 'SIMPLE' ? null : effectiveModuleId)
-      if (hierarchyError) return c.json({ error: hierarchyError }, 400)
-    }
-    const [parent, module, column, version, costCenter, assignee] = await Promise.all([
-      updates.parentId ? persistence.items.getItem(projectContext, projectId, updates.parentId as string) : null,
-      updates.moduleId ? persistence.projects.getModule(projectContext, projectId, updates.moduleId as string) : null,
-      safeBody.columnId ? persistence.projects.getColumn(projectContext, projectId, safeBody.columnId as string) : null,
-      safeBody.versionId ? persistence.planning.getVersion(projectContext, projectId, safeBody.versionId as string) : null,
-      safeBody.costCenterId ? persistence.planning.getCostCenter(projectContext, projectId, safeBody.costCenterId as string) : null,
-      safeBody.assigneeId ? persistence.projects.getMembership(projectContext, projectId, safeBody.assigneeId as string) : null,
-    ])
-    if (updates.parentId && !parent) return c.json({ error: 'Item pai não encontrado neste projeto' }, 400)
-    if (updates.moduleId && !module) return c.json({ error: 'Módulo não encontrado neste projeto' }, 400)
-    if (safeBody.columnId && !column) return c.json({ error: 'Coluna não encontrada neste projeto' }, 400)
-    if (safeBody.versionId && !version) return c.json({ error: 'Versão não encontrada neste projeto' }, 400)
-    if (safeBody.costCenterId && !costCenter) return c.json({ error: 'Centro de custo não encontrado neste projeto' }, 400)
-    if (safeBody.assigneeId && !assignee) return c.json({ error: 'Responsável não é membro deste projeto' }, 400)
-  }
-
-  // [HIERARQUIA] Bloqueia requisições que deixariam TASK/BUG órfã em projeto hierárquico
-  // (desvincular pai ou mudar tipo para TASK/BUG sem pai). Edições em itens legacy já órfãos continuam permitidas.
-  {
-    const finalType = (safeBody.type as ItemType | undefined) ?? prevItem.type
-    const finalParentId = safeBody.parentId !== undefined ? (updates.parentId as string | null | undefined) : prevItem.parentId
-    const introducesOrphan = ['TASK', 'BUG'].includes(finalType) && !finalParentId &&
-      (safeBody.parentId !== undefined || (safeBody.type !== undefined && safeBody.type !== prevItem.type))
-    if (project.boardMode !== 'SIMPLE' && introducesOrphan) {
-      return c.json({ error: 'TASK/BUG não podem ficar sem pai em projeto hierárquico — vincule a uma STORY, TASK ou BUG.', code: 'HIERARCHY_REQUIRED', retryable: false }, 400)
-    }
-  }
-
-  if (safeBody.sprintId !== undefined) {
-    const sprint = safeBody.sprintId
-      ? await persistence.planning.getSprint(projectContext, projectId, safeBody.sprintId as string)
-      : null
-    if (safeBody.sprintId && !sprint) return c.json({ error: 'Sprint não encontrada neste projeto' }, 400)
-    if (sprint?.status === 'CLOSED') return c.json({ error: 'Não é possível associar itens a uma sprint fechada' }, 409)
-  }
-
-  // [HIERARQUIA] Reparenting: valida ciclo/profundidade ANTES de qualquer escrita
-  // e recalcula ancestryPath do item e dos descendentes DENTRO da transação.
-  const reparenting = safeBody.parentId !== undefined || (project.boardMode === 'SIMPLE' && prevItem && ['TASK', 'BUG'].includes(prevItem.type))
-  const requestedParent = updates.parentId as string | null | undefined
-  if (reparenting) {
-    const newParentId = requestedParent ?? safeBody.parentId
-    if (newParentId && newParentId !== prevItem.parentId) {
-      if (newParentId === itemId) {
-        return c.json({ error: 'Item não pode ser pai de si mesmo', code: 'HIERARCHY_CYCLE', retryable: false }, 400)
-      }
-      if (await detectReparentCycle(ctx.tenantId, projectId, itemId, newParentId)) {
-        return c.json({ error: 'Reparenting recusado: o novo pai é descendente deste item, o que criaria um ciclo na hierarquia.', code: 'HIERARCHY_CYCLE', retryable: false }, 400)
-      }
-    }
-  }
-  const fieldLabels: Record<LoggableField, string> = {
-    title: 'Título', description: 'Descrição', priority: 'Prioridade',
-    assigneeId: 'Responsável', points: 'Pontos', startDate: 'Início', dueDate: 'Fim', status: 'Status',
-  }
-  const changes: string[] = []
-  for (const field of LOGGABLE_FIELDS) {
-    if (field in safeBody && String(safeBody[field]) !== String(prevItem[field])) {
-      changes.push(`${fieldLabels[field]}: "${prevItem[field] ?? ''}" → "${safeBody[field] ?? ''}"`)
-    }
-  }
-  const activity = changes.length > 0
-    ? `Campos alterados: ${changes.map(change => normalizeAuditText(change)).join('; ')}`
-    : undefined
-  const itemPatch = { ...updates } as ItemPatch & { sprintId?: string | null; updatedAt?: string }
-  delete itemPatch.sprintId
-  delete itemPatch.updatedAt
   const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
   const audit = auditContext(c)
-  mutationContext.mutation.actorType = audit.actorType
-  mutationContext.mutation.actorSource = audit.source
-  mutationContext.mutation.actorLabel = audit.actorLabel
-
   let updatedRecord: ItemRecord | null = null
+  let safeBody: Record<string, unknown> = {}
+  let tagIds: string[] | null = null
   try {
-    updatedRecord = await persistence.unitOfWork.updateItemWithRelations(mutationContext, projectId, itemId, itemPatch, {
-      ...(body.tagIds !== undefined ? { tagIds } : {}),
-      ...(safeBody.sprintId !== undefined ? { sprintIds: safeBody.sprintId ? [safeBody.sprintId as string] : [] } : {}),
-      ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
-      ...(activity ? { activity } : {}),
+    const updateResult = await updateItemApplication({
+      context: ctx,
+      permissionScope: c.get('apiKeyPermissionScope'),
+      projectId,
+      minimumRole: 'MEMBER',
+      mutationContext,
+      itemId,
+      body,
+      actor: { actorType: audit.actorType, source: audit.source, actorLabel: audit.actorLabel },
     })
+    if (!updateResult.ok) return c.json(updateResult.body, updateResult.status)
+    updatedRecord = updateResult.record
+    safeBody = updateResult.safeBody
+    tagIds = updateResult.tagIds
   } catch (error) {
     if (error instanceof Error && error.message.includes('PERSISTENCE_CONFLICT')) {
       return c.json({ error: 'O item foi alterado por outra pessoa desde que você o abriu. Recarregue e tente novamente.', code: 'CONFLICT', retryable: false }, 409)

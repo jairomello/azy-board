@@ -165,8 +165,126 @@ describe.skipIf(!runPostgres)('ADVANCED HTTP ponta a ponta (PostgreSQL real)', (
     })
     expect(doubleClaim.status).toBe(409)
 
+    const columns = await (await app.request(`/api/projects/${projectId}/columns`, { headers: { Cookie: a.cookie } })).json() as Array<{ id: string; baseStatus: string }>
+    const doing = columns.find(column => column.baseStatus === 'IN_PROGRESS')!
+    const moved = await app.request(`/api/projects/${projectId}/items/${task.id}/move`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: a.cookie },
+      body: JSON.stringify({ columnId: doing.id }),
+    })
+    expect(moved.status).toBe(200)
+
     const dashboard = await app.request(`/api/projects/${projectId}/dashboard/snapshot`, { headers: { Cookie: a.cookie } })
     expect(dashboard.status).toBe(200)
+    const dashboardBody = await dashboard.json() as {
+      boxes: { progressScope: { total: number; done: number }; wip: { total: number; byStatus: Record<string, number> } }
+    }
+    expect(dashboardBody.boxes.progressScope).toMatchObject({ total: 1, done: 0 })
+    expect(dashboardBody.boxes.wip).toMatchObject({ total: 1, byStatus: { IN_PROGRESS: 1 } })
+
+    const projectedTask = await createItem(a.cookie, projectId, {
+      title: 'Tarefa projeção dimensional', type: 'TASK', parentId: story.id, moduleId: modules[0]!.id, points: 3,
+    })
+    const from = new Date().toISOString().slice(0, 10)
+    const to = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+    const projectedBurnup = await app.request(`/api/projects/${projectId}/dashboard/burnup?moduleId=${modules[0]!.id}&from=${from}&to=${to}`, { headers: { Cookie: a.cookie } })
+    expect(projectedBurnup.status).toBe(200)
+    const projectedBody = await projectedBurnup.json() as { projection?: { status: string; version: number }; warnings?: string[]; series: Array<{ total: number; points: number }> }
+    expect(projectedBody.projection).toEqual({ status: 'READY', version: 1 })
+    expect(projectedBody.warnings).toEqual([])
+    expect(projectedBody.series[0]).toMatchObject({ total: 1, points: 3 })
+    expect(projectedTask.id).toBeTruthy()
+  })
+
+  test('filtro de squad no Dashboard não usa associação de outro projeto (PostgreSQL)', async () => {
+    const a = await session(fixtures[0]!)
+    const projectA = await createProject(a.cookie, 'Projeto filtro local')
+    const projectB = await createProject(a.cookie, 'Projeto filtro externo')
+    const modules = await (await app.request(`/api/projects/${projectA}/modules`, { headers: { Cookie: a.cookie } })).json() as Array<{ id: string }>
+    const epic = await createItem(a.cookie, projectA, { title: 'Épico local', type: 'EPIC', moduleId: modules[0]!.id })
+    const story = await createItem(a.cookie, projectA, { title: 'História local', type: 'STORY', parentId: epic.id })
+    const localTask = await createItem(a.cookie, projectA, {
+      title: 'Tarefa atribuída', type: 'TASK', parentId: story.id, assigneeId: a.tenant.adminUserId,
+    })
+    const squadResponse = await app.request(`/api/projects/${projectB}/squads`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: a.cookie },
+      body: JSON.stringify({ name: 'Squad externa' }),
+    })
+    expect(squadResponse.status).toBe(201)
+    const squad = await squadResponse.json() as { id: string }
+    const assigned = await app.request(`/api/projects/${projectB}/members/${a.tenant.adminUserId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: a.cookie },
+      body: JSON.stringify({ squadId: squad.id }),
+    })
+    expect(assigned.status).toBe(200)
+
+    const localSquadResponse = await app.request(`/api/projects/${projectA}/squads`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: a.cookie },
+      body: JSON.stringify({ name: 'Squad local' }),
+    })
+    expect(localSquadResponse.status).toBe(201)
+    const localSquad = await localSquadResponse.json() as { id: string }
+    const localAssignment = await app.request(`/api/projects/${projectA}/members/${a.tenant.adminUserId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: a.cookie },
+      body: JSON.stringify({ squadId: localSquad.id }),
+    })
+    expect(localAssignment.status).toBe(200)
+    const workLog = await app.request(`/api/projects/${projectA}/items/${localTask.id}/work-log`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: a.cookie },
+      body: JSON.stringify({ activity: 'Medição dashboard', duration: '1:30' }),
+    })
+    expect(workLog.status).toBe(201)
+
+    const dashboard = await app.request(`/api/projects/${projectA}/dashboard/snapshot?squadId=${squad.id}`, { headers: { Cookie: a.cookie } })
+    expect(dashboard.status).toBe(200)
+    const body = await dashboard.json() as { boxes: { progressScope: { total: number } } }
+    expect(body.boxes.progressScope.total).toBe(0)
+
+    const localHoursResponse = await app.request(`/api/projects/${projectA}/dashboard/hours?squadId=${localSquad.id}`, { headers: { Cookie: a.cookie } })
+    expect(localHoursResponse.status).toBe(200)
+    const localHours = await localHoursResponse.json() as { totalMinutes: number; rows: Array<{ squadName: string | null }> }
+    expect(localHours).toMatchObject({ totalMinutes: 90, rows: [{ squadName: 'Squad local' }] })
+    const externalHoursResponse = await app.request(`/api/projects/${projectA}/dashboard/hours?squadId=${squad.id}`, { headers: { Cookie: a.cookie } })
+    const externalHours = await externalHoursResponse.json() as { totalMinutes: number; rows: unknown[] }
+    expect(externalHours.totalMinutes).toBe(0)
+    expect(externalHours.rows).toHaveLength(0)
+    expect(localTask.id).toBeTruthy()
+  })
+
+  test('ciclo ativo agrega escopo atual por SQL sem alterar fotografia de compromisso', async () => {
+    const a = await session(fixtures[0]!)
+    const projectId = await createProject(a.cookie, 'Projeto ciclo dashboard')
+    const modules = await (await app.request(`/api/projects/${projectId}/modules`, { headers: { Cookie: a.cookie } })).json() as Array<{ id: string }>
+    const epic = await createItem(a.cookie, projectId, { title: 'Épico ciclo', type: 'EPIC', moduleId: modules[0]!.id })
+    const story = await createItem(a.cookie, projectId, { title: 'História ciclo', type: 'STORY', parentId: epic.id })
+    const sprintResponse = await app.request(`/api/projects/${projectId}/sprints`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: a.cookie },
+      body: JSON.stringify({ name: 'Ciclo atual', startDate: '2026-10-07', endDate: '2026-10-14' }),
+    })
+    expect(sprintResponse.status).toBe(201)
+    const sprint = await sprintResponse.json() as { id: string }
+    const task = await createItem(a.cookie, projectId, { title: 'Tarefa comprometida', type: 'TASK', parentId: story.id, sprintId: sprint.id })
+    const opened = await app.request(`/api/projects/${projectId}/sprints/${sprint.id}/open`, {
+      method: 'PATCH', headers: { Cookie: a.cookie },
+    })
+    expect(opened.status).toBe(200)
+    const cyclesResponse = await app.request(`/api/projects/${projectId}/dashboard/sprints`, { headers: { Cookie: a.cookie } })
+    const cycles = (await cyclesResponse.json() as { cycles: Array<{ id: string; sprintId: string }> }).cycles
+    const cycle = cycles.find(row => row.sprintId === sprint.id)!
+
+    const edited = await app.request(`/api/projects/${projectId}/items/${task.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: a.cookie },
+      body: JSON.stringify({ status: 'DONE' }),
+    })
+    expect(edited.status).toBe(200)
+    const active = await app.request(`/api/projects/${projectId}/dashboard/sprints/${cycle.id}`, { headers: { Cookie: a.cookie } })
+    expect(await active.json()).toMatchObject({ commitment: 1, committedDone: 0, currentScope: 1, currentDone: 1 })
+
+    const closed = await app.request(`/api/projects/${projectId}/sprints/${sprint.id}/close`, {
+      method: 'PATCH', headers: { Cookie: a.cookie },
+    })
+    expect(closed.status).toBe(200)
+    const historical = await app.request(`/api/projects/${projectId}/dashboard/sprints/${cycle.id}`, { headers: { Cookie: a.cookie } })
+    expect(await historical.json()).toMatchObject({ commitment: 1, committedDone: 0, currentScope: 1, currentDone: 1 })
   })
 
   test('create_item idempotente por chave: replay, 409 e retomada PENDING no PostgreSQL', async () => {

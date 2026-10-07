@@ -471,6 +471,58 @@ export interface DashboardMemberRow {
   squadName: string | null
 }
 
+export interface DashboardPopulationFilter {
+  moduleIds: string[]
+  versionIds: string[]
+  assigneeIds: string[]
+  types: string[]
+  sprintIds: string[]
+  squadIds: string[]
+}
+
+export interface DashboardSnapshotAggregateRow {
+  status: string
+  assigneeId: string | null
+  count: number
+  estimatedCount: number
+  points: number
+  donePoints: number
+  overdueCount: number
+  overduePoints: number
+}
+
+export interface DashboardLeafItemPageOptions {
+  limit: number
+  afterId?: string
+  statuses?: string[]
+  overdue?: { asOf: string; match: boolean }
+}
+
+export interface DashboardAgingDetailItem extends ItemRecord {
+  startedAt: string
+  minimumKnown: boolean
+}
+
+export interface DashboardDimensionSnapshotRecord {
+  metricDate: string
+  moduleKey: string
+  versionKey: string
+  sprintSetHash: string
+  sprintIdsJson: string
+  type: string
+  total: number
+  done: number
+  points: number
+  donePoints: number
+}
+
+export interface DashboardDimensionProjectionMeta {
+  projectionVersion: number
+  status: 'BUILDING' | 'READY' | 'FAILED'
+  lastSequence: number
+  targetSequence: number | null
+}
+
 export interface DashboardHoursFilter {
   from?: string
   to?: string
@@ -483,6 +535,7 @@ export interface DashboardHoursFilter {
 }
 
 export interface DashboardHoursRow {
+  id: string
   authorId: string | null
   authorName: string | null
   squadName: string | null
@@ -491,6 +544,13 @@ export interface DashboardHoursRow {
   moduleId: string | null
   durationMin: number | null
   createdAt: string
+}
+
+export interface DashboardHoursAuthorRow {
+  authorId: string | null
+  authorName: string | null
+  squadName: string | null
+  totalMinutes: number
 }
 
 export interface StorageCleanupJobRecord {

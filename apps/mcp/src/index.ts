@@ -20,9 +20,9 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
-import type { ApiCall } from './tools.js'
+import type { ApiCall } from '@azy-board/tool-execution'
 import { applyOptionalFields, hasMcpPolicy } from '@azy-board/tool-registry'
-import { executeSharedTool, getSharedToolDefinitions, sanitizeToolOutput, type ToolDefinition } from './registry.js'
+import { executeSharedTool, getSharedToolDefinitions, sanitizeToolOutput, type ToolDefinition } from '@azy-board/tool-execution'
 
 // [TENANT] API Key autentica o agente como o Owner humano vinculado — resolvido pelo middleware da API
 export async function makeApiCall(apiUrl: string, apiKey: string, options: { timeoutMs?: number } = {}) {
@@ -172,7 +172,10 @@ export function createMcpServer(apiCall: ApiCall, options: McpServerOptions = {}
   return server
 }
 
-if (import.meta.main) {
+// Bootstrap do transporte stdio. Extraído para permitir um entrypoint dedicado
+// (`apps/mcp/mcp-server.ts`) com nome de processo distinto de `src/index.ts`,
+// evitando que limpezas amplas como `pkill -f "src/index.ts"` derrubem o MCP.
+export async function startStdioServer(): Promise<void> {
   const apiKey = process.env.EASYBOARD_API_KEY
   if (!apiKey) {
     console.error('EASYBOARD_API_KEY não configurada')
@@ -184,4 +187,8 @@ if (import.meta.main) {
   const server = createMcpServer(apiCall, { defaultProjectId })
   const transport = new StdioServerTransport()
   await server.connect(transport)
+}
+
+if (import.meta.main) {
+  await startStdioServer()
 }

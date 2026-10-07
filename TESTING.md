@@ -84,6 +84,51 @@ fonte sem o marcador:
 bun run check:frontend-tests
 ```
 
+### Modularização do Board, i18n e interação (T42)
+
+Fronteiras extraídas do `BoardScreen` (que passou a ser composition root, sem HTTP
+nem regras inline): `model/boardView.ts` (filtros/população), `model/{interaction,
+mutation}.ts`, `hooks/useBoardData`, `hooks/useBoardPreferences`,
+`hooks/useBoardInteraction`, `hooks/useBoardItemEditing`, `hooks/useBoardItemModal`,
+`hooks/useBoardArchiving`, `hooks/useBoardFilterValidation` e
+`hooks/useBoardAgentSession`. A cobertura comportamental correspondente vive em
+`model/boardView.test.ts`, `board-interaction.test.ts` e nos testes DOM de
+componente (`board-filters`, `add-card-form`, `board-modals`, `inline-edit`).
+
+- **Contratos estruturais mantidos**: layout/CSS que o `happy-dom` não calcula,
+  fronteira de módulos e uso obrigatório de `resolveAppUrl`. **Substituídos**: os
+  que liam o `BoardScreen` para alegar comportamento (filtros/população,
+  snapshot/foco, mutação otimista) agora apontam ao módulo onde o comportamento
+  passou a residir ou foram cobertos por testes observáveis.
+- **i18n**: `scripts/check-i18n.ts` usa a AST do TypeScript (Apache-2.0, sem nova
+  dependência) para paridade dos locales e para detectar texto fixo sem acento em
+  JSXText, atributos acessíveis/visíveis, `toast` e chaves inválidas. Chaves
+  dinâmicas opacas precisam estar em `apps/web/src/i18n/dynamic-keys.json`;
+  templates/ternários com conjunto finito são aceitos. Exceções estreitas:
+  marcas/provedores, unidades (`bytes`, `pt`), símbolos e identificadores
+  técnicos (`EXEMPT_LITERALS`), além de `// i18n-exempt: <motivo>` por linha.
+  Conteúdo do usuário, URLs e identificadores não são tratados como texto.
+- **Acessibilidade**: o diálogo de `BoardModals` expõe `role="dialog"`,
+  `aria-modal` e nome acessível, com foco inicial e Escape; controles com nome
+  acessível verificados; feedback/rótulos presentes em PT-BR/EN/ES. A alternativa
+  de teclado ao drag é o select de status da modal de item.
+- **Rollback do frontend**: reverter o bundle para a imagem anterior; não apagar
+  preferências (`localStorage`/`sessionStorage`) nem alterar a versão do snapshot
+  do agente. Não há migration de banco nesta mudança.
+
+Comandos para o gate de release (T43):
+
+```bash
+bun run check              # typecheck + lint + persistência + testes + build
+bun run check:i18n         # paridade + texto/chaves via AST
+bun run check:frontend-tests
+bun run test:web
+bun run check:docs
+bun run test:e2e
+bun run scripts/deploy-test-restore.ts --perfil SIMPLE
+bun run scripts/deploy-test-restore.ts --perfil ADVANCED
+```
+
 ### E2E de navegador (Playwright)
 
 A suíte sobe um stack descartável (SQLite temporário + API + web), semeia um
@@ -117,7 +162,8 @@ E2E_UPDATE_SNAPSHOTS=1 bun run test:visual
 ```
 
 Diferenças são gravadas em `tmp/visual-diffs/`. A regressão visual roda em modo
-de observação no CI até as baselines estabilizarem em todos os ambientes.
+de observação no CI (`continue-on-error: true`) até as baselines estabilizarem em
+todos os ambientes; ela não é required check bloqueante.
 
 ### Bateria completa
 
@@ -131,15 +177,30 @@ Para a validação completa do monorepo:
 bun run check
 ```
 
-Com os servidores locais ativos, valide a publicação web e o endpoint de
-autenticação:
+O comando de smoke exercita o fluxo autenticado do perfil apontado pelas
+variáveis de ambiente: readiness, sessão/cookie, criação/edição/movimento e nova
+leitura de item, VIEWER, isolamento entre dois tenants e jornada do agente
+determinístico. Rode-o uma vez em cada perfil usando serviços descartáveis; no
+ADVANCED configure PostgreSQL e Valkey, aplique migrations e inicie o worker
+separado antes do smoke. A CI automatiza os dois cenários nos jobs `smoke` e
+`advanced`.
+
+Para validar uma publicação fora da CI, inicie API e Web no perfil já instalado e
+execute:
 
 ```bash
 bun run test:smoke
 ```
 
-O smoke test verifica HTTP `200` na raiz e HTTP `401` em `/api/auth/me` sem
-sessão. Para usá-lo contra outra instalação, defina `SMOKE_URL`.
+Para smoke autenticado contra uma instalação já configurada, forneça credenciais
+de teste descartáveis por `SMOKE_ADMIN_EMAIL`, `SMOKE_ADMIN_PASSWORD` e
+`SMOKE_SECONDARY_ADMIN_EMAIL`/`SMOKE_SECONDARY_ADMIN_PASSWORD`; use `SMOKE_URL` e
+`SMOKE_API_URL` para informar os endpoints. Não use contas de produção: o smoke
+cria e altera itens de teste.
+
+O estado por perfil, comandos, SHA, data e limites das evidências está em
+[`docs/release-evidence.md`](docs/release-evidence.md). Uma saída local na
+working tree alterada é limitada e não deve ser descrita como artefato de release.
 
 ## Evals do Azy Agent
 

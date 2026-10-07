@@ -105,6 +105,48 @@ describe('fallback ordenado de modelos do Azy Agent', () => {
     expect(called).toEqual(['gpt-primary'])
   })
 
+  test('registra o motivo sanitizado da falha sem vazar segredo', async () => {
+    const attempts: Array<{ errorCode?: string; reason?: string }> = []
+    const provider = new FallbackModelProvider([candidate('primary', 'gpt-primary')], {}, attempt => attempts.push(attempt), () => ({
+      name: 'fake', capabilities: { tools: true, streaming: false, cancellation: true },
+      async createRun() {
+        const error = new Error('HTTP 404 model not found secret-primary') as Error & { status: number; error: { message: string; metadata: { provider_name: string } } }
+        error.status = 404
+        error.error = { message: 'model not found', metadata: { provider_name: 'Meta' } }
+        throw error
+      },
+      async *streamRun() {},
+    }))
+    await expect(provider.createRun({ model: 'gpt-primary', input: 'pedido', tools: [], userId: 'user-1' })).rejects.toThrow('PROVIDER_FALLBACK_EXHAUSTED')
+    expect(attempts).toHaveLength(1)
+    expect(attempts[0]?.errorCode).toBe('MODEL_UNAVAILABLE')
+    expect(attempts[0]?.reason).toContain('HTTP 404')
+    expect(attempts[0]?.reason).toContain('provider=Meta')
+    expect(attempts[0]?.reason).not.toContain('secret-')
+  })
+
+  test('não repete o candidato quando o Retry-After do provider excede o orçamento', async () => {
+    const calls: string[] = []
+    const provider = new FallbackModelProvider(
+      [candidate('primary', 'gpt-primary'), candidate('fallback', 'gpt-fallback')],
+      { timeoutMs: 5_000 },
+      undefined,
+      (config): ModelProvider => ({
+        name: config.model, capabilities: { tools: true, streaming: false, cancellation: true },
+        async createRun() {
+          calls.push(config.model)
+          const error = new Error('503 Provider returned error') as Error & { status: number; error: { message: string; metadata: { retry_after_seconds: number } } }
+          error.status = 503
+          error.error = { message: 'Provider returned error', metadata: { retry_after_seconds: 60 } }
+          throw error
+        },
+        async *streamRun() {},
+      }),
+    )
+    await expect(provider.createRun({ model: 'gpt-primary', input: 'pedido', tools: [], userId: 'user-1' })).rejects.toThrow('PROVIDER_FALLBACK_EXHAUSTED')
+    expect(calls).toEqual(['gpt-primary', 'gpt-fallback'])
+  })
+
   test('ao esgotar candidatos retorna erro agregado sem expor segredo', async () => {
     const attempts: Array<{ configId: string; errorCode?: string }> = []
     const provider = new FallbackModelProvider([candidate('primary', 'gpt-primary'), candidate('fallback', 'gpt-fallback')], {}, attempt => attempts.push(attempt), config => ({

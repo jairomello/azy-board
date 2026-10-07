@@ -4,7 +4,8 @@ import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
-import type { DashboardHoursFilter, ItemRecord } from '../persistence/models'
+import type { DashboardHoursFilter, DashboardPopulationFilter, ItemRecord } from '../persistence/models'
+import { createDashboardCursor, parseDashboardPageSize, readDashboardCursor } from '../services/dashboardCursor'
 
 export const dashboardRouter = new Hono<HonoEnv>()
 dashboardRouter.use('*', authMiddleware)
@@ -32,8 +33,6 @@ export function fillDailySeries<T extends object>(values: Map<string, T>, start:
 }
 function csv(value?: string) { return value?.split(',').filter(Boolean) ?? [] }
 const MAX_PERIOD_DAYS = 366
-const HOURS_ROW_LIMIT_DEFAULT = 500
-const HOURS_ROW_LIMIT_MAX = 2000
 export function period(from?: string, to?: string) {
   if (!from && !to) return null
   if (!from || !to || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return 'from e to devem ser datas UTC no formato AAAA-MM-DD'
@@ -43,62 +42,98 @@ export function period(from?: string, to?: string) {
   return null
 }
 
-// Filtros de população aplicados sobre as folhas já resolvidas pelo port.
-// [TENANT] sprint/squad resolvidos no adapter com escopo de tenant + projeto.
-async function filterPopulation(ctx: RequestContext, projectId: string, rows: ItemRecord[], query: (name: string) => string | undefined) {
-  const projectContext = userPersistenceContext(ctx)
-  const modules = csv(query('moduleId')); const versions = csv(query('versionId')); const assignees = csv(query('assigneeId')); const types = csv(query('type'))
-  const sprintIds = csv(query('sprintId')); const squadIds = csv(query('squadId'))
-  const sprintItems = new Set(sprintIds.length ? await persistence.dashboard.listSprintItemIds(projectContext, projectId, sprintIds) : [])
-  const squadUsers = new Set(squadIds.length ? await persistence.dashboard.listSquadUserIds(projectContext, projectId, squadIds) : [])
-  return rows.filter(row => (!modules.length || modules.includes(row.moduleId ?? '')) && (!versions.length || versions.includes(row.versionId ?? '')) && (!assignees.length || assignees.includes(row.assigneeId ?? '')) && (!types.length || types.includes(row.type)) && (!sprintIds.length || sprintItems.has(row.id)) && (!squadIds.length || squadUsers.has(row.assigneeId ?? '')))
-}
-
-function snapshotStatus(raw: string | null): string | null {
-  if (!raw) return null
-  try {
-    const parsed = JSON.parse(raw) as { status?: string } | null
-    return typeof parsed?.status === 'string' ? parsed.status : null
-  } catch { return null }
+function populationFilter(query: (name: string) => string | undefined): DashboardPopulationFilter {
+  return {
+    moduleIds: csv(query('moduleId')),
+    versionIds: csv(query('versionId')),
+    assigneeIds: csv(query('assigneeId')),
+    types: csv(query('type')),
+    sprintIds: csv(query('sprintId')),
+    squadIds: csv(query('squadId')),
+  }
 }
 
 dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext; const projectId = c.req.param('projectId')!
   const projectContext = userPersistenceContext(ctx)
-  const all = await persistence.dashboard.listLeafItems(projectContext, projectId)
-  const rows = await filterPopulation(ctx, projectId, all, name => c.req.query(name))
-  const totalPoints = rows.reduce((sum, row) => sum + (row.points ?? 0), 0); const estimated = rows.filter(row => row.points !== null)
-  const done = rows.filter(row => row.status === 'DONE'); const wip = rows.filter(row => activeStatuses.has(row.status)); const blocked = rows.filter(row => row.status === 'BLOCKED')
-  const distribution = distributionByStatus(rows)
-  const byStatus = Object.fromEntries(Object.entries(distribution).map(([status, value]) => [status, value.count]))
-  const byStatusPoints = Object.fromEntries(Object.entries(distribution).map(([status, value]) => [status, value.points]))
+  const filter = populationFilter(name => c.req.query(name))
+  const limit = parseDashboardPageSize(c.req.query('limit'))
+  if (limit === null) return c.json({ error: 'limit deve ser um inteiro entre 1 e 100' }, 422)
+  const scope = (collection: string, order: string) => ({ tenantId: ctx.tenantId, projectId, collection, filters: filter, order })
+  const readPosition = (name: string, collection: string, order: string, kind: 'id' | 'age') => {
+    const token = c.req.query(name)
+    if (token === undefined) return { position: null as { id: string; startedAt?: string } | null, invalid: false }
+    const value = readDashboardCursor(scope(collection, order), token)
+    if (!value || typeof value !== 'object' || Array.isArray(value) || typeof (value as Record<string, unknown>).id !== 'string'
+      || (kind === 'age' && typeof (value as Record<string, unknown>).startedAt !== 'string')) return { position: null, invalid: true }
+    return { position: value as { id: string; startedAt?: string }, invalid: false }
+  }
+  const wipCursor = readPosition('wipCursor', 'snapshot-wip', 'startedAt,id:asc', 'age')
+  const blockedCursor = readPosition('blockedCursor', 'snapshot-blocked', 'startedAt,id:asc', 'age')
+  const overdueCursor = readPosition('overdueCursor', 'snapshot-overdue', 'id:asc', 'id')
+  const remainingCursor = readPosition('remainingCursor', 'snapshot-remaining', 'id:asc', 'id')
+  if (wipCursor.invalid || blockedCursor.invalid || overdueCursor.invalid || remainingCursor.invalid) {
+    return c.json({ error: 'Cursor inválido ou pertencente a outro escopo/filtro' }, 422)
+  }
   const today = new Date().toISOString().slice(0, 10)
-  const { overdue, remaining } = overdueGroups(rows, today)
-  const detail = (row: typeof rows[number]) => ({ id: row.id, title: row.title, type: row.type, status: row.status, points: row.points, assigneeId: row.assigneeId, dueDate: row.dueDate })
+  const [aggregates, wipRowsExtra, blockedRowsExtra, overdueRowsExtra, remainingRowsExtra] = await Promise.all([
+    persistence.dashboard.aggregateLeafItems(projectContext, projectId, filter, today),
+    persistence.dashboard.listAgingDetailPage(projectContext, projectId, filter, 'WIP', limit + 1, wipCursor.position?.startedAt ? { startedAt: wipCursor.position.startedAt, id: wipCursor.position.id } : undefined),
+    persistence.dashboard.listAgingDetailPage(projectContext, projectId, filter, 'BLOCKED', limit + 1, blockedCursor.position?.startedAt ? { startedAt: blockedCursor.position.startedAt, id: blockedCursor.position.id } : undefined),
+    persistence.dashboard.listLeafItems(projectContext, projectId, filter, { limit: limit + 1, overdue: { asOf: today, match: true }, ...(overdueCursor.position ? { afterId: overdueCursor.position.id } : {}) }),
+    persistence.dashboard.listLeafItems(projectContext, projectId, filter, { limit: limit + 1, overdue: { asOf: today, match: false }, ...(remainingCursor.position ? { afterId: remainingCursor.position.id } : {}) }),
+  ])
+  const sum = (groups: typeof aggregates, select: 'count' | 'estimatedCount' | 'points' | 'donePoints' | 'overdueCount' | 'overduePoints') => groups.reduce((total, group) => total + group[select], 0)
+  const byStatus = Object.fromEntries(['DONE', 'IN_PROGRESS', 'BLOCKED', 'NOT_STARTED'].map(status => [status, sum(aggregates.filter(row => row.status === status), 'count')]))
+  const byStatusPoints = Object.fromEntries(['DONE', 'IN_PROGRESS', 'BLOCKED', 'NOT_STARTED'].map(status => [status, sum(aggregates.filter(row => row.status === status), 'points')]))
+  const total = sum(aggregates, 'count'); const done = sum(aggregates.filter(row => row.status === 'DONE'), 'count')
+  const totalPoints = sum(aggregates, 'points'); const donePoints = sum(aggregates, 'donePoints'); const estimatedCount = sum(aggregates, 'estimatedCount')
+  const activeAggregates = aggregates.filter(row => activeStatuses.has(row.status))
+  const blockedTotal = sum(aggregates.filter(row => row.status === 'BLOCKED'), 'count')
+  const wipTotal = sum(activeAggregates, 'count')
+  const overdueTotal = sum(aggregates, 'overdueCount')
+  const overduePoints = sum(aggregates, 'overduePoints')
+  const wipHasMore = wipRowsExtra.length > limit; const wipRows = wipHasMore ? wipRowsExtra.slice(0, limit) : wipRowsExtra
+  const blockedHasMore = blockedRowsExtra.length > limit; const blockedRows = blockedHasMore ? blockedRowsExtra.slice(0, limit) : blockedRowsExtra
+  const overdueHasMore = overdueRowsExtra.length > limit; const overdueRows = overdueHasMore ? overdueRowsExtra.slice(0, limit) : overdueRowsExtra
+  const remainingHasMore = remainingRowsExtra.length > limit; const remainingRows = remainingHasMore ? remainingRowsExtra.slice(0, limit) : remainingRowsExtra
+  const wipLast = wipRows.at(-1); const blockedLast = blockedRows.at(-1); const overdueLast = overdueRows.at(-1); const remainingLast = remainingRows.at(-1)
+  const detailsPagination = {
+    wip: { limit, total: wipTotal, hasMore: wipHasMore, truncated: wipHasMore, nextCursor: wipHasMore && wipLast ? createDashboardCursor(scope('snapshot-wip', 'startedAt,id:asc'), { startedAt: wipLast.startedAt, id: wipLast.id }) : null },
+    blocked: { limit, total: blockedTotal, hasMore: blockedHasMore, truncated: blockedHasMore, nextCursor: blockedHasMore && blockedLast ? createDashboardCursor(scope('snapshot-blocked', 'startedAt,id:asc'), { startedAt: blockedLast.startedAt, id: blockedLast.id }) : null },
+    overdue: { limit, total: overdueTotal, hasMore: overdueHasMore, truncated: overdueHasMore, nextCursor: overdueHasMore && overdueLast ? createDashboardCursor(scope('snapshot-overdue', 'id:asc'), { id: overdueLast.id }) : null },
+    remaining: { limit, total: total - overdueTotal, hasMore: remainingHasMore, truncated: remainingHasMore, nextCursor: remainingHasMore && remainingLast ? createDashboardCursor(scope('snapshot-remaining', 'id:asc'), { id: remainingLast.id }) : null },
+  }
+  const detail = (row: typeof overdueRows[number]) => ({ id: row.id, title: row.title, type: row.type, status: row.status, points: row.points, assigneeId: row.assigneeId, dueDate: row.dueDate })
   const memberRows = await persistence.dashboard.listMembersWithSquads(projectContext, projectId)
   // WIP inclui bloqueados; blockedSubset é informativo e não aditivo.
-  const teamRows = wip
-  const team = memberRows.map(member => { const mine = teamRows.filter(row => row.assigneeId === member.userId); const blockedMine = mine.filter(row => row.status === 'BLOCKED'); const estimatedMine = mine.filter(row => row.points !== null); const blockedEstimated = blockedMine.filter(row => row.points !== null); return { userId: member.userId, userName: member.userName, squadId: member.squadId, squadName: member.squadName, wipTotal: mine.length, blockedSubset: blockedMine.length, wipPoints: estimatedMine.length ? estimatedMine.reduce((sum, row) => sum + (row.points ?? 0), 0) : null, blockedPoints: blockedEstimated.length ? blockedEstimated.reduce((sum, row) => sum + (row.points ?? 0), 0) : null, pointsCoverage: completionPercent(estimatedMine.length, mine.length) } })
-  const unassignedRows = teamRows.filter(row => !row.assigneeId); const unassignedBlocked = unassignedRows.filter(row => row.status === 'BLOCKED'); const unassignedEstimated = unassignedRows.filter(row => row.points !== null); const unassignedBlockedEstimated = unassignedBlocked.filter(row => row.points !== null)
-  const unassigned = unassignedRows.length; const teamTotal = teamRows.length; const teamEstimated = teamRows.filter(row => row.points !== null)
+  const forAssignee = (assigneeId: string | null) => activeAggregates.filter(row => row.assigneeId === assigneeId)
+  const team = memberRows.map(member => {
+    const mine = forAssignee(member.userId); const blockedMine = mine.filter(row => row.status === 'BLOCKED')
+    const mineCount = sum(mine, 'count'); const mineEstimated = sum(mine, 'estimatedCount'); const blockedEstimated = sum(blockedMine, 'estimatedCount')
+    return { userId: member.userId, userName: member.userName, squadId: member.squadId, squadName: member.squadName, wipTotal: mineCount, blockedSubset: sum(blockedMine, 'count'), wipPoints: mineEstimated ? sum(mine, 'points') : null, blockedPoints: blockedEstimated ? sum(blockedMine, 'points') : null, pointsCoverage: completionPercent(mineEstimated, mineCount) }
+  })
+  const unassignedRows = forAssignee(null); const unassignedBlocked = unassignedRows.filter(row => row.status === 'BLOCKED')
+  const unassignedEstimated = sum(unassignedRows, 'estimatedCount'); const unassignedBlockedEstimated = sum(unassignedBlocked, 'estimatedCount')
+  const unassigned = sum(unassignedRows, 'count'); const teamTotal = wipTotal; const teamEstimated = sum(activeAggregates, 'estimatedCount')
   const coverage = await persistence.dashboard.getCoverage(projectContext, projectId)
-  const transitionByItem = new Map<string, string>()
-  for (const event of await persistence.dashboard.listTransitions(projectContext, projectId, blocked.map(row => row.id))) {
-    if (!event.itemId) continue
-    if (snapshotStatus(event.afterSnapshot) === 'BLOCKED' && snapshotStatus(event.beforeSnapshot) !== 'BLOCKED') transitionByItem.set(event.itemId, event.occurredAt)
-  }
   const now = Date.now()
-  const blockedDetails = blocked.map(row => {
-    const observedAt = transitionByItem.get(row.id) ?? coverage?.coverageStartedAt ?? null
-    const minimumKnown = !transitionByItem.has(row.id)
-    return { id: row.id, title: row.title, type: row.type, status: row.status, blockedReason: row.blockedReason, assigneeId: row.assigneeId, dueDate: row.dueDate, blockedAgeDays: observedAt ? Math.max(0, (now - Date.parse(observedAt)) / 86400000) : null, minimumKnown }
-  }).sort((a, b) => (b.blockedAgeDays ?? 0) - (a.blockedAgeDays ?? 0))
+  const wip = wipRows.map(row => ({
+    id: row.id, title: row.title, type: row.type, status: row.status, points: row.points,
+    assigneeId: row.assigneeId, dueDate: row.dueDate, startedAt: row.startedAt,
+    ageHours: Math.max(0, (now - Date.parse(row.startedAt)) / 3600000), minimumKnown: row.minimumKnown,
+  }))
+  const blockedDetails = blockedRows.map(row => ({
+    id: row.id, title: row.title, type: row.type, status: row.status, blockedReason: row.blockedReason,
+    assigneeId: row.assigneeId, dueDate: row.dueDate,
+    blockedAgeDays: Math.max(0, (now - Date.parse(row.startedAt)) / 86400000), minimumKnown: row.minimumKnown,
+  }))
   return c.json({ coverage: coverage ? { startedAt: coverage.coverageStartedAt, partial: true } : { startedAt: null, partial: true }, filters: { applied: ['moduleId', 'sprintId', 'versionId', 'squadId', 'assigneeId', 'type'], inapplicable: ['from', 'to'] }, boxes: {
-    progressScope: { total: rows.length, done: done.length, completionPercent: completionPercent(done.length, rows.length), points: totalPoints, donePoints: done.reduce((sum, row) => sum + (row.points ?? 0), 0), estimationCoverage: completionPercent(estimated.length, rows.length) },
-    wip: { total: wip.length, byStatus, byStatusPoints, pointsCoverage: completionPercent(estimated.length, rows.length), items: wip },
-    blocked: { total: blocked.length, items: blockedDetails.slice(0, 10) },
-    overdue: { total: overdue.length, items: overdue.map(detail), remainingItems: remaining.map(detail) },
-    teamLoad: { members: team, unassignedWip: unassigned, blockedUnassignedSubset: unassignedBlocked.length, unassignedWipPoints: unassignedEstimated.length ? unassignedEstimated.reduce((sum, row) => sum + (row.points ?? 0), 0) : null, unassignedBlockedPoints: unassignedBlockedEstimated.length ? unassignedBlockedEstimated.reduce((sum, row) => sum + (row.points ?? 0), 0) : null, pointsCoverage: completionPercent(teamEstimated.length, teamTotal) },
+      progressScope: { total, done, completionPercent: completionPercent(done, total), points: totalPoints, donePoints, estimationCoverage: completionPercent(estimatedCount, total) },
+      wip: { total: wipTotal, byStatus, byStatusPoints, pointsCoverage: completionPercent(estimatedCount, total), items: wip, pagination: detailsPagination.wip },
+      blocked: { total: blockedTotal, items: blockedDetails, pagination: detailsPagination.blocked },
+      overdue: { total: overdueTotal, points: overduePoints, items: overdueRows.map(detail), remainingItems: remainingRows.map(detail), pagination: detailsPagination.overdue, remainingPagination: detailsPagination.remaining },
+     teamLoad: { members: team, unassignedWip: unassigned, blockedUnassignedSubset: sum(unassignedBlocked, 'count'), unassignedWipPoints: unassignedEstimated ? sum(unassignedRows, 'points') : null, blockedUnassignedPoints: unassignedBlockedEstimated ? sum(unassignedBlocked, 'points') : null, pointsCoverage: completionPercent(teamEstimated, teamTotal) },
   } })
 })
 
@@ -114,16 +149,29 @@ dashboardRouter.get('/hours', requireRole('VIEWER'), async (c) => {
     ...(c.req.query('squadId') ? { squadId: c.req.query('squadId') } : {}),
     moduleIds: csv(c.req.query('moduleId')), versionIds: csv(c.req.query('versionId')), types: csv(c.req.query('type')),
   }
-  const limitRaw = Number.parseInt(c.req.query('limit') ?? String(HOURS_ROW_LIMIT_DEFAULT), 10)
-  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), HOURS_ROW_LIMIT_MAX) : HOURS_ROW_LIMIT_DEFAULT
-  const result = await persistence.dashboard.listHoursLogs(projectContext, projectId, filter, limit)
-  return c.json({ semantics: 'manual durationMin, grouped by log author and current author squad; createdAt is the registration date', totalMinutes: result.totalMinutes, limit, rows: result.rows })
+   const limit = parseDashboardPageSize(c.req.query('limit'))
+   if (limit === null) return c.json({ error: 'limit deve ser um inteiro entre 1 e 100' }, 422)
+   const cursorToken = c.req.query('cursor')
+   const cursorScope = { tenantId: ctx.tenantId, projectId, collection: 'hours', filters: filter, order: 'createdAt,id:asc' }
+   const position = cursorToken === undefined ? null : readDashboardCursor(cursorScope, cursorToken)
+   if (cursorToken !== undefined && (!position || typeof position !== 'object' || Array.isArray(position)
+     || typeof (position as Record<string, unknown>).createdAt !== 'string' || typeof (position as Record<string, unknown>).id !== 'string')) {
+     return c.json({ error: 'Cursor inválido ou pertencente a outro escopo/filtro' }, 422)
+   }
+   const after = position as { createdAt: string; id: string } | null
+   const result = await persistence.dashboard.listHoursLogs(projectContext, projectId, filter, limit + 1, after ?? undefined)
+   const hasMore = result.rows.length > limit
+   const rows = hasMore ? result.rows.slice(0, limit) : result.rows
+   const last = rows.at(-1)
+   const nextCursor = hasMore && last ? createDashboardCursor(cursorScope, { createdAt: last.createdAt, id: last.id }) : null
+   const pagination = { limit, total: result.totalRows, hasMore, truncated: hasMore, nextCursor }
+   return c.json({ semantics: 'manual durationMin, grouped by log author and current author squad; createdAt is the registration date', totalMinutes: result.totalMinutes, totalRows: result.totalRows, limit, pagination, byAuthor: result.byAuthor, rows })
 })
 
 dashboardRouter.get('/burnup', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext; const projectId = c.req.param('projectId')!; const from = c.req.query('from'); const to = c.req.query('to'); const periodError = period(from, to); if (periodError) return c.json({ error: periodError }, 422)
   const projectContext = userPersistenceContext(ctx)
-  const coverage = await persistence.dashboard.getCoverage(projectContext, projectId); if (!coverage) return c.json({ partial: true, series: [] })
+  const coverage = await persistence.dashboard.getCoverage(projectContext, projectId); if (!coverage) return c.json({ partial: true, warnings: ['ANALYTICS_COVERAGE_MISSING'], series: [] })
   const requestedStart = from && from > coverage.coverageStartedAt.slice(0, 10) ? from : coverage.coverageStartedAt.slice(0, 10); const requestedEnd = to ?? new Date().toISOString().slice(0, 10)
   const modules = csv(c.req.query('moduleId')); const versions = csv(c.req.query('versionId')); const types = csv(c.req.query('type')); const sprintIds = csv(c.req.query('sprintId'))
   if (!modules.length && !versions.length && !types.length && !sprintIds.length) {
@@ -131,7 +179,27 @@ dashboardRouter.get('/burnup', requireRole('VIEWER'), async (c) => {
     const rollupRows = await persistence.analytics.readProjectRollup(projectContext, projectId, coverage.coverageStartedAt.slice(0, 10), requestedEnd)
     const rollup = new Map(rollupRows.map(row => [row.date, { total: row.total, done: row.done, points: row.points, donePoints: row.donePoints }]))
     const series = fillDailySeries(rollup, requestedStart, requestedEnd, { total: 0, done: 0, points: 0, donePoints: 0 })
-    return c.json({ partial: true, coverageStartedAt: coverage.coverageStartedAt, filters: { applied: ['from', 'to', 'moduleId', 'sprintId', 'versionId', 'type'], inapplicable: ['squadId', 'assigneeId'] }, series })
+     return c.json({ partial: true, coverageStartedAt: coverage.coverageStartedAt, projection: { status: 'ROLLUP' }, warnings: [], filters: { applied: ['from', 'to', 'moduleId', 'sprintId', 'versionId', 'type'], inapplicable: ['squadId', 'assigneeId'] }, series })
+  }
+  const projection = await persistence.dashboard.getDimensionProjectionMeta(projectContext, projectId)
+  if (projection?.status === 'READY' && projection.projectionVersion === 1) {
+    const projectedRows = await persistence.dashboard.listDimensionSnapshots(projectContext, projectId, { moduleIds: modules, versionIds: versions, assigneeIds: [], types, sprintIds, squadIds: [] }, requestedStart, requestedEnd)
+    const state = new Map<string, { total: number; done: number; points: number; donePoints: number }>()
+    const current = { total: 0, done: 0, points: 0, donePoints: 0 }
+    const byDay = new Map<string, { total: number; done: number; points: number; donePoints: number }>()
+    for (const row of projectedRows) {
+      const key = JSON.stringify([row.moduleKey, row.versionKey, row.sprintSetHash, row.sprintIdsJson, row.type])
+      const before = state.get(key) ?? { total: 0, done: 0, points: 0, donePoints: 0 }
+      const after = { total: row.total, done: row.done, points: row.points, donePoints: row.donePoints }
+      current.total += after.total - before.total
+      current.done += after.done - before.done
+      current.points += after.points - before.points
+      current.donePoints += after.donePoints - before.donePoints
+      state.set(key, after)
+      if (row.metricDate >= requestedStart) byDay.set(row.metricDate, { ...current })
+    }
+    const series = fillDailySeries(byDay, requestedStart, requestedEnd, { total: 0, done: 0, points: 0, donePoints: 0 })
+    return c.json({ partial: true, coverageStartedAt: coverage.coverageStartedAt, projection: { status: 'READY', version: projection.projectionVersion }, warnings: [], filters: { applied: ['from', 'to', 'moduleId', 'sprintId', 'versionId', 'type'], inapplicable: ['squadId', 'assigneeId'] }, series })
   }
   const events = await persistence.dashboard.listEvents(projectContext, projectId, coverage.coverageStartedAt, `${requestedEnd}T23:59:59.999Z`)
   // Item 13: replay com estado persistente e acumuladores incrementais.
@@ -173,45 +241,92 @@ dashboardRouter.get('/burnup', requireRole('VIEWER'), async (c) => {
     byDay.set(key, { ...cur })
   }
   const series = fillDailySeries(byDay, requestedStart, requestedEnd, { total: 0, done: 0, points: 0, donePoints: 0 })
-  return c.json({ partial: true, coverageStartedAt: coverage.coverageStartedAt, filters: { applied: ['from', 'to', 'moduleId', 'sprintId', 'versionId', 'type'], inapplicable: ['squadId', 'assigneeId'] }, series })
+  return c.json({ partial: true, coverageStartedAt: coverage.coverageStartedAt, projection: { status: 'FALLBACK', version: projection?.projectionVersion ?? null, sourceStatus: projection?.status ?? 'MISSING' }, warnings: ['DASHBOARD_DIMENSION_PROJECTION_FALLBACK'], filters: { applied: ['from', 'to', 'moduleId', 'sprintId', 'versionId', 'type'], inapplicable: ['squadId', 'assigneeId'] }, series })
 })
 
 dashboardRouter.get('/aging', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext; const projectId = c.req.param('projectId')!
   const projectContext = userPersistenceContext(ctx)
-  const rows = await filterPopulation(ctx, projectId, await persistence.dashboard.listLeafItems(projectContext, projectId), name => c.req.query(name))
-  const coverage = await persistence.dashboard.getCoverage(projectContext, projectId)
-  const wipRows = rows.filter(row => activeStatuses.has(row.status))
-  const startedAtByItem = new Map<string, string>()
-  for (const event of await persistence.dashboard.listTransitions(projectContext, projectId, wipRows.map(row => row.id))) {
-    if (!event.itemId) continue
-    const nextActive = activeStatuses.has(snapshotStatus(event.afterSnapshot) ?? '')
-    const beforeActive = activeStatuses.has(snapshotStatus(event.beforeSnapshot) ?? '')
-    if (nextActive && !beforeActive) startedAtByItem.set(event.itemId, event.occurredAt)
+  const filter = populationFilter(name => c.req.query(name))
+  const limit = parseDashboardPageSize(c.req.query('limit'))
+  if (limit === null) return c.json({ error: 'limit deve ser um inteiro entre 1 e 100' }, 422)
+  const cursorScope = { tenantId: ctx.tenantId, projectId, collection: 'aging', filters: filter, order: 'startedAt,id:asc' }
+  const cursorToken = c.req.query('cursor')
+  const position = cursorToken === undefined ? null : readDashboardCursor(cursorScope, cursorToken)
+  if (cursorToken !== undefined && (!position || typeof position !== 'object' || Array.isArray(position)
+    || typeof (position as Record<string, unknown>).startedAt !== 'string' || typeof (position as Record<string, unknown>).id !== 'string')) {
+    return c.json({ error: 'Cursor inválido ou pertencente a outro escopo/filtro' }, 422)
   }
-  const now = Date.now(); const result = wipRows.map(row => { const startedAt = startedAtByItem.get(row.id) ?? coverage?.coverageStartedAt ?? row.createdAt; return { id: row.id, title: row.title, type: row.type, status: row.status, blockedReason: row.blockedReason, assigneeId: row.assigneeId, startedAt, ageHours: Math.max(0, (now - Date.parse(startedAt)) / 3600000), minimumKnown: !startedAtByItem.has(row.id) } })
-  return c.json({ coverageStartedAt: coverage?.coverageStartedAt ?? null, items: result })
+  const after = position as { startedAt: string; id: string } | null
+  const today = new Date().toISOString().slice(0, 10)
+  const [aggregates, rowsExtra, coverage] = await Promise.all([
+    persistence.dashboard.aggregateLeafItems(projectContext, projectId, filter, today),
+    persistence.dashboard.listAgingDetailPage(projectContext, projectId, filter, 'WIP', limit + 1, after ?? undefined),
+    persistence.dashboard.getCoverage(projectContext, projectId),
+  ])
+  const total = aggregates.filter(row => activeStatuses.has(row.status)).reduce((sum, row) => sum + row.count, 0)
+  const hasMore = rowsExtra.length > limit
+  const rows = hasMore ? rowsExtra.slice(0, limit) : rowsExtra
+  const now = Date.now()
+  const items = rows.map(row => ({
+    id: row.id, title: row.title, type: row.type, status: row.status, blockedReason: row.blockedReason,
+    assigneeId: row.assigneeId, startedAt: row.startedAt,
+    ageHours: Math.max(0, (now - Date.parse(row.startedAt)) / 3600000), minimumKnown: row.minimumKnown,
+  }))
+  const last = rows.at(-1)
+  const pagination = {
+    limit, total, hasMore, truncated: hasMore,
+    nextCursor: hasMore && last ? createDashboardCursor(cursorScope, { startedAt: last.startedAt, id: last.id }) : null,
+  }
+  return c.json({ coverageStartedAt: coverage?.coverageStartedAt ?? null, total, pagination, items })
 })
 
 dashboardRouter.get('/sprints/:cycleId', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext; const projectId = c.req.param('projectId')!; const cycleId = c.req.param('cycleId')!
   const projectContext = userPersistenceContext(ctx)
   const cycle = await persistence.dashboard.getSprintCycle(projectContext, projectId, cycleId); if (!cycle) return c.json({ error: 'Ciclo não encontrado' }, 404)
-  const committed = await persistence.dashboard.listSprintCycleItems(projectContext, projectId, cycleId)
+  const commitment = await persistence.dashboard.getSprintCycleCommitmentCounts(projectContext, projectId, cycleId)
   const cutoff = cycle.endedAt && Date.parse(cycle.endedAt) < Date.now() ? cycle.endedAt : new Date().toISOString()
-  // Item 13: baseline isolada (1 consulta) + replay somente dos eventos do ciclo
-  const baseline = await persistence.dashboard.getBaselineEvent(projectContext, projectId)
-  const events = await persistence.dashboard.listEvents(projectContext, projectId, cycle.startedAt, cutoff)
-  const state = new Map<string, { status: string; isLeaf: boolean; sprintIds: string[] }>()
-  if (baseline?.afterSnapshot) for (const row of JSON.parse(baseline.afterSnapshot) as Array<{ itemId: string; status: string; isLeaf: boolean; sprintIds?: string[] }>) state.set(row.itemId, { status: row.status, isLeaf: row.isLeaf, sprintIds: row.sprintIds ?? [] })
-  for (const row of committed) state.set(row.itemId, { status: row.status, isLeaf: row.isLeaf, sprintIds: [cycle.sprintId] })
-  for (const event of events) if (event.itemId && event.eventType === 'ITEM_DELETED') state.delete(event.itemId); else if (event.itemId && event.afterSnapshot) { const next = JSON.parse(event.afterSnapshot) as { status: string; isLeaf: boolean; sprintIds?: string[] }; state.set(event.itemId, { status: next.status, isLeaf: next.isLeaf, sprintIds: next.sprintIds ?? [] }) }
-  const current = [...state.values()].filter(row => row.isLeaf && row.sprintIds.includes(cycle.sprintId) && row.status !== 'ARCHIVED')
-  return c.json({ cycle, commitment: committed.length, committedDone: committed.filter(row => row.status === 'DONE').length, currentScope: current.length, currentDone: current.filter(row => row.status === 'DONE').length, uncompletedCommitment: committed.filter(row => !['DONE', 'CANCELLED'].includes(row.status)).length })
+  let currentScope: number
+  let currentDone: number
+  if (!cycle.endedAt) {
+    // Ciclo ativo: estado vigente por join/Leaf Rule set-based, sem replay de eventos.
+    ({ currentScope, currentDone } = await persistence.dashboard.getCurrentSprintCycleCounts(projectContext, projectId, cycle.sprintId))
+  } else {
+    // Ciclo encerrado: replay até o instante de fechamento preserva sua fotografia histórica.
+    const committed = await persistence.dashboard.listSprintCycleItems(projectContext, projectId, cycleId)
+    const baseline = await persistence.dashboard.getBaselineEvent(projectContext, projectId)
+    const events = await persistence.dashboard.listEvents(projectContext, projectId, cycle.startedAt, cutoff)
+    const state = new Map<string, { status: string; isLeaf: boolean; sprintIds: string[] }>()
+    if (baseline?.afterSnapshot) for (const row of JSON.parse(baseline.afterSnapshot) as Array<{ itemId: string; status: string; isLeaf: boolean; sprintIds?: string[] }>) state.set(row.itemId, { status: row.status, isLeaf: row.isLeaf, sprintIds: row.sprintIds ?? [] })
+    for (const row of committed) state.set(row.itemId, { status: row.status, isLeaf: row.isLeaf, sprintIds: [cycle.sprintId] })
+    for (const event of events) if (event.itemId && event.eventType === 'ITEM_DELETED') state.delete(event.itemId); else if (event.itemId && event.afterSnapshot) { const next = JSON.parse(event.afterSnapshot) as { status: string; isLeaf: boolean; sprintIds?: string[] }; state.set(event.itemId, { status: next.status, isLeaf: next.isLeaf, sprintIds: next.sprintIds ?? [] }) }
+    const current = [...state.values()].filter(row => row.isLeaf && row.sprintIds.includes(cycle.sprintId) && row.status !== 'ARCHIVED')
+    currentScope = current.length
+    currentDone = current.filter(row => row.status === 'DONE').length
+  }
+  return c.json({ cycle, ...commitment, currentScope, currentDone })
 })
 
 dashboardRouter.get('/sprints', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext; const projectId = c.req.param('projectId')!
-  const cycles = await persistence.dashboard.listSprintCycles(userPersistenceContext(ctx), projectId)
-  return c.json({ cycles })
+  const limit = parseDashboardPageSize(c.req.query('limit'))
+  if (limit === null) return c.json({ error: 'limit deve ser um inteiro entre 1 e 100' }, 422)
+  const projectContext = userPersistenceContext(ctx)
+  const scope = { tenantId: ctx.tenantId, projectId, collection: 'sprint-cycles', filters: {}, order: 'startedAt,id:asc' }
+  const token = c.req.query('cursor')
+  const position = token === undefined ? null : readDashboardCursor(scope, token)
+  if (token !== undefined && (!position || typeof position !== 'object' || Array.isArray(position)
+    || typeof (position as Record<string, unknown>).startedAt !== 'string' || typeof (position as Record<string, unknown>).id !== 'string')) {
+    return c.json({ error: 'Cursor inválido ou pertencente a outro escopo/filtro' }, 422)
+  }
+  const result = await persistence.dashboard.listSprintCyclesPage(projectContext, projectId, limit + 1, position as { startedAt: string; id: string } | null ?? undefined)
+  const hasMore = result.rows.length > limit
+  const cycles = hasMore ? result.rows.slice(0, limit) : result.rows
+  const last = cycles.at(-1)
+  const pagination = {
+    limit, total: result.total, hasMore, truncated: hasMore,
+    nextCursor: hasMore && last ? createDashboardCursor(scope, { startedAt: last.startedAt, id: last.id }) : null,
+  }
+  return c.json({ cycles, pagination })
 })

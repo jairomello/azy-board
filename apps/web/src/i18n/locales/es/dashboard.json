@@ -10,7 +10,7 @@
   "refresh": "Actualizar",
   "connecting": "Conectando",
   "syncing": "Sincronizando",
-  "offline": "Sin conexi\u00f3n",
+  "offline": "Sin conexión",
   "synced": "Actualizado ahora",
   "partial": "Cobertura parcial",
   "empty": "No hay elementos elegibles en este proyecto.",
@@ -37,6 +37,7 @@
   "clear": "Limpiar filtros",
   "coverage": "Cobertura desde {{date}}",
   "coverageNote": "Serie y tooltip limitados a la cobertura observada.",
+  "projectionFallback": "El historial filtrado usa la ruta de compatibilidad mientras se prepara su proyección.",
   "unknownCoverage": "Cobertura histórica no disponible",
   "inapplicablePeriod": "El período no aplica al estado actual",
   "inapplicablePeople": "La persona no aplica al histórico",
@@ -76,5 +77,9 @@
   "hoursUnit": "h",
   "status": "Estado",
   "filtersMenu": "Filtros",
-  "remaining": "Restantes"
+  "remaining": "Restantes",
+  "loadingChart": "Cargando gráfico",
+  "partialCoverage": "Cobertura parcial",
+  "filterNotApplicable": "Este filtro no se aplica a esta vista.",
+  "loadViewError": "No se pudo cargar esta vista."
 }

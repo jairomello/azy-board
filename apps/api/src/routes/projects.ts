@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import { generateId } from '../utils/id'
@@ -7,11 +8,22 @@ import { hasGlobalGroup } from '../services/auth'
 import { hasKeyPermission } from '../services/authorization'
 import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
 import { confirmationSchema, createProjectSchema, parseJson, parseOptionalJson, updateProjectSchema } from '../validation'
-import { addProjectMemberSchema, costCenterSchema, deleteModuleSchema, moduleSchema, projectMemberSchema, squadMemberSchema, squadSchema, updateCostCenterSchema, updateModuleSchema } from '../validation'
+import { addProjectMemberSchema, costCenterSchema, deleteModuleSchema, moduleSchema, projectMemberSchema, squadMemberSchema, squadSchema, updateCostCenterSchema, updateModuleSchema, updateSquadSchema } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
 import type { ProjectPatch } from '../persistence/ports'
+import { COMMAND_NAMESPACES } from '../persistence/idempotency'
+import { runMetadataMutation } from '../services/metadataIdempotency'
 import { logger } from '../services/logger'
+
+// Card T25 — erros de pré-condição/conflito das mutações de cadastros.
+function metadataMutationError(c: { json: (body: unknown, status: ContentfulStatusCode) => Response }, error: unknown): Response | null {
+  const message = error instanceof Error ? error.message : ''
+  if (message === 'PRECONDITION_FAILED') return c.json({ error: 'Os dados mudaram desde a aprovação; refaça a prévia.', code: 'CONFLICT', retryable: false }, 409)
+  if (message === 'SQUAD_NOT_IN_PROJECT') return c.json({ error: 'Squad não encontrado neste projeto' }, 400)
+  if (message === 'COST_CENTER_CODE_DUPLICATE') return c.json({ error: 'Código de centro de custo já existe neste projeto' }, 409)
+  return null
+}
 
 export const projectsRouter = new Hono<HonoEnv>()
 projectsRouter.use('*', authMiddleware)
@@ -342,17 +354,36 @@ projectsRouter.patch('/:id/modules/:moduleId', requireRole('ADMIN'), async (c) =
   const parsed = await parseJson(c, updateModuleSchema)
   if (!parsed.ok) return parsed.response
   const body = parsed.data
+  const projectContext = userPersistenceContext(ctx)
 
-  const existing = await persistence.projects.getModule(userPersistenceContext(ctx), projectId, moduleId)
+  const existing = await persistence.projects.getModule(projectContext, projectId, moduleId)
   if (!existing) return c.json({ error: 'Módulo não encontrado' }, 404)
+  const changed = body.name !== undefined && body.name !== existing.name
 
-  const updated = await persistence.projects.updateModule(userPersistenceContext(ctx), projectId, moduleId, {
-    ...(body.name !== undefined ? { name: body.name } : {}),
-    ...(body.position !== undefined ? { position: body.position } : {}),
-  })
-
-  if (!updated) return c.json({ error: 'Módulo não encontrado' }, 404)
-  return c.json({ ok: true })
+  try {
+    const outcome = await runMetadataMutation({
+      ctx, projectId, namespace: COMMAND_NAMESPACES.updateModule,
+      idempotencyKey: c.req.header('Idempotency-Key'),
+      payload: { moduleId, name: body.name ?? null, position: body.position ?? null, expectedName: body.expectedName ?? null },
+      execute: async () => {
+        const updated = await persistence.projects.updateModule(projectContext, projectId, moduleId, {
+          ...(body.name !== undefined ? { name: body.name } : {}),
+          ...(body.position !== undefined ? { position: body.position } : {}),
+          ...(body.expectedName !== undefined ? { expectedName: body.expectedName } : {}),
+        })
+        if (!updated) throw new Error('PRECONDITION_FAILED')
+        return { status: 200 as const, body: { ok: true, changed, module: { id: moduleId, name: body.name ?? existing.name }, previous: { name: existing.name } } }
+      },
+    })
+    if (outcome.kind === 'conflict') {
+      return c.json({ error: outcome.reason === 'payload' ? 'A chave já foi usada com outro payload' : 'Operação em andamento; tente novamente.', code: 'IDEMPOTENCY_CONFLICT', retryable: outcome.reason === 'in-flight' }, 409)
+    }
+    return c.json(outcome.body, outcome.status)
+  } catch (error) {
+    const response = metadataMutationError(c, error)
+    if (response) return response
+    throw error
+  }
 })
 
 // DELETE /projects/:id/modules/:moduleId — Tarefas 2.1-2.4
@@ -428,19 +459,50 @@ projectsRouter.patch('/:id/members/:userId', requireRole('ADMIN'), async (c) => 
   const parsed = await parseJson(c, projectMemberSchema)
   if (!parsed.ok) return parsed.response
   const body = parsed.data
+  const projectContext = userPersistenceContext(ctx)
 
-  const existing = await persistence.projects.getMembership(userPersistenceContext(ctx), projectId, userId)
+  const existing = await persistence.projects.getMembership(projectContext, projectId, userId)
   if (!existing) return c.json({ error: 'Membro não encontrado' }, 404)
   if (body.squadId) {
-    const squad = await persistence.projects.getSquad(userPersistenceContext(ctx), projectId, body.squadId)
+    const squad = await persistence.projects.getSquad(projectContext, projectId, body.squadId)
     if (!squad) return c.json({ error: 'Squad não encontrado neste projeto' }, 400)
   }
-  await persistence.projects.updateProjectMember(userPersistenceContext(ctx), projectId, userId, {
-    role: body.role,
-    ...(body.squadId !== undefined ? { squadId: body.squadId || null } : {}),
-  })
 
-  return c.json({ ok: true })
+  const nextSquadId = body.squadId !== undefined ? (body.squadId || null) : undefined
+  const changed = (body.role !== undefined && body.role !== existing.role) || (nextSquadId !== undefined && nextSquadId !== existing.squadId)
+
+  try {
+    const outcome = await runMetadataMutation({
+      ctx, projectId, namespace: COMMAND_NAMESPACES.setMemberSquad,
+      idempotencyKey: c.req.header('Idempotency-Key'),
+      payload: { userId, role: body.role ?? null, squadId: nextSquadId ?? null, expectedSquadId: body.expectedSquadId ?? null, expectedRole: body.expectedRole ?? null },
+      execute: async () => {
+        await persistence.projects.updateProjectMember(projectContext, projectId, userId, {
+          ...(body.role !== undefined ? { role: body.role } : {}),
+          ...(nextSquadId !== undefined ? { squadId: nextSquadId } : {}),
+          ...(body.expectedSquadId !== undefined ? { expectedSquadId: body.expectedSquadId } : {}),
+          ...(body.expectedRole !== undefined ? { expectedRole: body.expectedRole } : {}),
+        })
+        const updated = await persistence.projects.getMembership(projectContext, projectId, userId)
+        return {
+          status: 200,
+          body: {
+            ok: true, changed,
+            member: { userId, role: updated?.role, squadId: updated?.squadId },
+            previous: { role: existing.role, squadId: existing.squadId },
+          },
+        }
+      },
+    })
+    if (outcome.kind === 'conflict') {
+      return c.json({ error: outcome.reason === 'payload' ? 'A chave já foi usada com outro payload' : 'Operação em andamento; tente novamente.', code: 'IDEMPOTENCY_CONFLICT', retryable: outcome.reason === 'in-flight' }, 409)
+    }
+    return c.json(outcome.body, outcome.status)
+  } catch (error) {
+    const response = metadataMutationError(c, error)
+    if (response) return response
+    throw error
+  }
 })
 
 // GET /projects/:id/members — listar membros com role, squad_id e squad_name
@@ -475,16 +537,35 @@ projectsRouter.delete('/:id/squads/:squadId/members/:userId', requireRole('ADMIN
 projectsRouter.patch('/:id/squads/:squadId', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { id: projectId, squadId } = c.req.param()
-  const parsed = await parseJson(c, squadSchema)
+  const parsed = await parseJson(c, updateSquadSchema)
   if (!parsed.ok) return parsed.response
   const body = parsed.data
+  const projectContext = userPersistenceContext(ctx)
 
-  const squad = await persistence.projects.getSquad(userPersistenceContext(ctx), projectId, squadId)
+  const squad = await persistence.projects.getSquad(projectContext, projectId, squadId)
   if (!squad) return c.json({ error: 'Squad não encontrado' }, 404)
+  const changed = body.name !== squad.name
 
-  await persistence.projects.updateSquad(userPersistenceContext(ctx), projectId, squadId, body.name)
-
-  return c.json({ ok: true })
+  try {
+    const outcome = await runMetadataMutation({
+      ctx, projectId, namespace: COMMAND_NAMESPACES.updateSquad,
+      idempotencyKey: c.req.header('Idempotency-Key'),
+      payload: { squadId, name: body.name, expectedName: body.expectedName ?? null },
+      execute: async () => {
+        const updated = await persistence.projects.updateSquad(projectContext, projectId, squadId, body.name, body.expectedName)
+        if (!updated) throw new Error('PRECONDITION_FAILED')
+        return { status: 200 as const, body: { ok: true, changed, squad: { id: squadId, name: body.name }, previous: { name: squad.name } } }
+      },
+    })
+    if (outcome.kind === 'conflict') {
+      return c.json({ error: outcome.reason === 'payload' ? 'A chave já foi usada com outro payload' : 'Operação em andamento; tente novamente.', code: 'IDEMPOTENCY_CONFLICT', retryable: outcome.reason === 'in-flight' }, 409)
+    }
+    return c.json(outcome.body, outcome.status)
+  } catch (error) {
+    const response = metadataMutationError(c, error)
+    if (response) return response
+    throw error
+  }
 })
 
 // DELETE /projects/:id/squads/:squadId — excluir squad (desassocia membros)
@@ -597,18 +678,43 @@ projectsRouter.patch('/:id/cost-centers/:ccId', requireRole('ADMIN'), async (c) 
   const cc = await persistence.planning.getCostCenter(projectContext, projectId, ccId)
   if (!cc) return c.json({ error: 'Centro de custo não encontrado' }, 404)
 
-  if (body.code && body.code.trim() !== cc.code) {
-    const duplicate = (await persistence.planning.listCostCenters(projectContext, projectId))
-      .some(costCenter => costCenter.code === body.code!.trim())
-    if (duplicate) return c.json({ error: 'Código de centro de custo já existe neste projeto' }, 409)
+  const nextCode = body.code !== undefined ? body.code.trim() : undefined
+  const changed = (nextCode !== undefined && nextCode !== cc.code) || (body.description !== undefined && (body.description?.trim() ?? null) !== cc.description)
+
+  try {
+    const outcome = await runMetadataMutation({
+      ctx, projectId, namespace: COMMAND_NAMESPACES.updateCostCenter,
+      idempotencyKey: c.req.header('Idempotency-Key'),
+      payload: { costCenterId: ccId, code: nextCode ?? null, description: body.description?.trim() ?? null, expectedCode: body.expectedCode ?? null },
+      execute: async () => {
+        if (nextCode !== undefined && nextCode !== cc.code) {
+          const duplicate = (await persistence.planning.listCostCenters(projectContext, projectId)).some(costCenter => costCenter.code === nextCode)
+          if (duplicate) throw new Error('COST_CENTER_CODE_DUPLICATE')
+        }
+        const updated = await persistence.planning.updateCostCenter(projectContext, projectId, ccId, {
+          ...(nextCode !== undefined ? { code: nextCode } : {}),
+          ...(body.description !== undefined ? { description: body.description?.trim() ?? null } : {}),
+          ...(body.expectedCode !== undefined ? { expectedCode: body.expectedCode } : {}),
+        })
+        return {
+          status: 200,
+          body: {
+            ok: true, changed,
+            costCenter: { id: ccId, code: updated?.code ?? cc.code, description: updated?.description ?? cc.description },
+            previous: { code: cc.code, description: cc.description },
+          },
+        }
+      },
+    })
+    if (outcome.kind === 'conflict') {
+      return c.json({ error: outcome.reason === 'payload' ? 'A chave já foi usada com outro payload' : 'Operação em andamento; tente novamente.', code: 'IDEMPOTENCY_CONFLICT', retryable: outcome.reason === 'in-flight' }, 409)
+    }
+    return c.json(outcome.body, outcome.status)
+  } catch (error) {
+    const response = metadataMutationError(c, error)
+    if (response) return response
+    throw error
   }
-
-  await persistence.planning.updateCostCenter(projectContext, projectId, ccId, {
-    ...(body.code !== undefined ? { code: body.code.trim() } : {}),
-    ...(body.description !== undefined ? { description: body.description?.trim() ?? null } : {}),
-  })
-
-  return c.json({ ok: true })
 })
 
 // DELETE /projects/:id/cost-centers/:ccId — excluir centro de custo

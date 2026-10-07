@@ -139,6 +139,7 @@ export async function executeAssistantRun(
   }, attempt => logger.warn('assistant-run: model fallback candidate failed', {
     runId, tenantId, modelConfigId: attempt.configId, provider: attempt.provider,
     model: attempt.model, errorCode: attempt.errorCode, durationMs: attempt.durationMs,
+    reason: attempt.reason,
   }))
   const workerApi = await createWorkerToolApi(tenantId, loaded.userId)
   const harness = new AssistantHarness({

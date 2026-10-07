@@ -724,6 +724,15 @@ export function approvalPreview(name: string, args: Record<string, unknown>, con
     const targetLabel = isSprint ? 'Sprint' : 'Versão'
     return { summary, markdown: `### ${summary}\n\n- **${targetLabel}:** ${targetId}\n${lines.join('\n')}`, targetId, changes }
   }
+  // Card T25 — composição de squad e edições de cadastros.
+  if (name === 'set_member_squad' || name === 'update_squad' || name === 'update_module' || name === 'update_tag' || name === 'update_cost_center') {
+    const labels: Record<string, string> = { userId: 'Membro', squadId: 'Squad', name: 'Nome', color: 'Cor', moduleId: 'Módulo', tagId: 'Tag', costCenterId: 'Centro de custo', code: 'Código', description: 'Descrição' }
+    const lines = Object.entries(args)
+      .filter(([field]) => field !== 'projectId' && !field.startsWith('expected'))
+      .map(([field, value]) => `- **${labels[field] ?? field}:** ${value === null ? 'limpar' : String(value)}`)
+    const summary = friendlyToolName(name)
+    return { summary, markdown: `### ${summary}\n\n${lines.join('\n')}`, ...args }
+  }
   const fields = Object.entries(args).map(([field, value]) => [field, Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? JSON.stringify(value) : value])
   const displayName = friendlyToolName(name)
   return { summary: displayName, markdown: `### ${displayName}\n\n${fields.map(([field, value]) => `- **${field}:** ${String(value)}`).join('\n')}`, fields }

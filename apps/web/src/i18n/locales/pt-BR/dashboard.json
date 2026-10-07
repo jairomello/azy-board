@@ -37,6 +37,7 @@
   "clear": "Limpar filtros",
   "coverage": "Cobertura desde {{date}}",
   "coverageNote": "Série e tooltip limitados à cobertura observada.",
+  "projectionFallback": "Histórico filtrado em modo de compatibilidade enquanto a projeção é preparada.",
   "unknownCoverage": "Cobertura histórica indisponível",
   "inapplicablePeriod": "Período não se aplica ao estado atual",
   "inapplicablePeople": "Pessoa não se aplica ao histórico",
@@ -76,5 +77,9 @@
   "hoursUnit": "h",
   "status": "Status",
   "filtersMenu": "Filtros",
-  "remaining": "Restantes"
+  "remaining": "Restantes",
+  "loadingChart": "Carregando gráfico",
+  "partialCoverage": "Cobertura parcial",
+  "filterNotApplicable": "Este filtro não se aplica a esta visão.",
+  "loadViewError": "Não foi possível carregar esta visão."
 }

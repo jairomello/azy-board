@@ -25,6 +25,10 @@
   "empty": "Em branco",
   "retry": "Dispensar erro e tentar novamente",
   "runFailed": "A execução falhou. Você pode tentar novamente.",
+  "providerUnavailable": "Os provedores de IA configurados estão indisponíveis no momento. Tente novamente em instantes ou configure outro modelo de fallback nas configurações do agente.",
+  "providerRateLimited": "O provedor de IA limitou as requisições. Aguarde alguns segundos e tente novamente.",
+  "providerUnauthorized": "O provedor de IA recusou a credencial ou o modelo. Revise a configuração do agente.",
+  "modelUnavailable": "O modelo configurado não está mais disponível. Escolha outro modelo nas configurações do agente.",
   "rateLimit": "Muitas mensagens em sequência. Aguarde alguns segundos e tente novamente.",
   "concurrencyLimit": "Já existe uma execução do agente em andamento. Aguarde a conclusão antes de enviar outra.",
   "quotaExceeded": "Orçamento diário do agente atingido. Tente novamente amanhã.",
@@ -129,5 +133,6 @@
   },
   "revealOffer": "Quer que eu mostre este card? A visão anterior pode ser restaurada.",
   "focusAmbiguity": "Há mais de um item possível (checklist, link ou apontamento). Qual deles devo usar?",
-  "focusFrontItem": "Usando o item em primeiro plano: {{title}}"
+  "focusFrontItem": "Usando o item em primeiro plano: {{title}}",
+  "saveModel": "Salvar"
 }

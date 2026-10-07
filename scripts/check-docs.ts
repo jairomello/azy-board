@@ -18,6 +18,7 @@ import {
   MCP_CATALOG_BEGIN,
   MCP_CATALOG_END,
 } from './docs/generators'
+import { validateReleaseEvidenceManifest } from './docs/releaseEvidence'
 
 const root = join(import.meta.dir, '..')
 const problems: string[] = []
@@ -61,6 +62,27 @@ async function checkGenerated() {
     const actual = normalize(await readFile(limitsPath, 'utf8'))
     const expected = normalize(buildAssistantLimitsMarkdown())
     if (actual !== expected) fail('docs/generated/assistant-limits.md desatualizado. Rode `bun run generate:docs`.')
+  }
+}
+
+async function checkReleaseEvidence() {
+  const manifestPath = join(root, 'docs', 'release-evidence.json')
+  if (!existsSync(manifestPath)) {
+    fail('docs/release-evidence.json ausente; a matriz de evidências é obrigatória.')
+    return
+  }
+
+  try {
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as unknown
+    for (const problem of validateReleaseEvidenceManifest(manifest)) {
+      fail(`docs/release-evidence.json: ${problem}`)
+    }
+  } catch (error) {
+    fail(`docs/release-evidence.json inválido: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  if (!existsSync(join(root, 'docs', 'release-evidence.md'))) {
+    fail('docs/release-evidence.md ausente; publique a matriz legível junto do manifesto.')
   }
 }
 
@@ -136,6 +158,7 @@ async function checkForbidden(files: string[]) {
 }
 
 await checkGenerated()
+await checkReleaseEvidence()
 const markdownFiles = await collectMarkdown()
 await checkLinks(markdownFiles)
 await checkForbidden(markdownFiles)

@@ -27,8 +27,15 @@ import type {
   ColumnRecord,
   CostCenterRecord,
   DashboardHoursFilter,
+  DashboardHoursAuthorRow,
   DashboardHoursRow,
+  DashboardAgingDetailItem,
+  DashboardDimensionProjectionMeta,
+  DashboardDimensionSnapshotRecord,
+  DashboardLeafItemPageOptions,
   DashboardMemberRow,
+  DashboardPopulationFilter,
+  DashboardSnapshotAggregateRow,
   DashboardTransitionRecord,
   ItemEventRecord,
   ItemLogRecord,
@@ -67,10 +74,18 @@ export type NewTenantRecord = Pick<TenantRecord, 'name' | 'slug'>
 export type NewColumnRecord = Pick<ColumnRecord, 'name' | 'baseStatus'>
 export type ColumnPatch = Partial<NewColumnRecord>
 export type NewModuleRecord = Pick<ModuleRecord, 'name'> & Partial<Pick<ModuleRecord, 'description' | 'position'>>
-export type ModulePatch = Partial<Pick<ModuleRecord, 'name' | 'description' | 'position'>>
+export type ModulePatch = Partial<Pick<ModuleRecord, 'name' | 'description' | 'position'>> & {
+  // Card T25 — pré-condição de concorrência: nome anterior aprovado.
+  expectedName?: string | null
+}
 export type NewSquadRecord = Pick<SquadRecord, 'name'>
 export type NewProjectMembership = Pick<MembershipRecord, 'userId' | 'role'> & Partial<Pick<MembershipRecord, 'squadId'>>
-export type ProjectMembershipPatch = Partial<Pick<MembershipRecord, 'role' | 'squadId'>>
+export type ProjectMembershipPatch = Partial<Pick<MembershipRecord, 'role' | 'squadId'>> & {
+  // Card T25 — pré-condições transacionais: squad anterior aprovado e papel
+  // esperado. `expectedSquadId: null` exige que o squad esteja nulo.
+  expectedSquadId?: string | null
+  expectedRole?: MembershipRecord['role']
+}
 export type UserPreferencesPatch = Partial<Pick<UserCredentialRecord, 'theme' | 'lightShellTheme' | 'language' | 'autoThemeByTime'>>
 export type NewApiKeyRecord = Pick<ApiKeyRecord, 'ownerId' | 'name' | 'keyHash'> & Partial<Pick<ApiKeyRecord, 'aiModelName' | 'projectScope' | 'permissionScope' | 'expiresAt'>>
 export type NewProjectRecord = Pick<ProjectRecord, 'name' | 'boardMode'> & Partial<Omit<ProjectRecord, 'id' | 'tenantId' | 'name' | 'boardMode' | 'createdAt'>>
@@ -87,7 +102,13 @@ export type NewSprintRecord = Omit<SprintRecord, 'id' | 'tenantId' | 'projectId'
 export type NewVersionRecord = Pick<ProjectVersionRecord, 'name'> & Partial<Pick<ProjectVersionRecord, 'releaseDate' | 'description' | 'status' | 'position'>>
 export type VersionPatch = Partial<Pick<ProjectVersionRecord, 'name' | 'releaseDate' | 'description' | 'status' | 'position'>>
 export type NewCostCenterRecord = Pick<CostCenterRecord, 'code'> & Partial<Pick<CostCenterRecord, 'description' | 'sortOrder'>>
-export type CostCenterPatch = Partial<Pick<CostCenterRecord, 'code' | 'description' | 'sortOrder'>>
+export type CostCenterPatch = Partial<Pick<CostCenterRecord, 'code' | 'description' | 'sortOrder'>> & {
+  // Card T25 — pré-condição de concorrência: código anterior aprovado.
+  expectedCode?: string | null
+}
+
+// Card T25 — edição de tag com pré-condição opcional de nome/cor anteriores.
+export type TagPatch = { name?: string; color?: string; expectedName?: string | null; expectedColor?: string | null }
 export type NewChecklistItemRecord = Pick<ChecklistItemRecord, 'text'> & Partial<Pick<ChecklistItemRecord, 'checked' | 'dueDate' | 'assigneeId' | 'description'>>
 export type ChecklistItemPatch = Partial<Pick<ChecklistItemRecord, 'text' | 'checked' | 'position' | 'dueDate' | 'assigneeId' | 'description'>>
 export type NewItemLogRecord = Pick<ItemLogRecord, 'type' | 'activity'> & Partial<Pick<ItemLogRecord, 'durationMin'>>
@@ -166,7 +187,7 @@ export interface ProjectTeamPort {
   listSquads(context: PersistenceContext, projectId: string): Promise<SquadSummaryRecord[]>
   createSquad(context: PersistenceContext, projectId: string, input: NewSquadRecord): Promise<SquadRecord>
   getSquad(context: PersistenceContext, projectId: string, squadId: string): Promise<SquadRecord | null>
-  updateSquad(context: PersistenceContext, projectId: string, squadId: string, name: string): Promise<boolean>
+  updateSquad(context: PersistenceContext, projectId: string, squadId: string, name: string, expectedName?: string | null): Promise<boolean>
   deleteSquad(context: PersistenceContext, projectId: string, squadId: string): Promise<boolean>
   addProjectMember(context: PersistenceContext, projectId: string, input: NewProjectMembership): Promise<MembershipRecord>
   updateProjectMember(context: PersistenceContext, projectId: string, userId: string, patch: ProjectMembershipPatch): Promise<boolean>
@@ -198,7 +219,7 @@ export interface PlanningPort {
   transitionSprint(context: PersistenceContext, projectId: string, sprintId: string, targetStatus: SprintRecord['status']): Promise<SprintRecord | null>
   listTags(context: PersistenceContext, projectId: string): Promise<TagRecord[]>
   createTag(context: PersistenceContext, projectId: string, input: { name: string; color?: string | null }): Promise<TagRecord>
-  updateTag(context: PersistenceContext, projectId: string, tagId: string, patch: { name?: string; color?: string }): Promise<TagRecord | null>
+  updateTag(context: PersistenceContext, projectId: string, tagId: string, patch: TagPatch): Promise<TagRecord | null>
   deleteTag(context: PersistenceContext, projectId: string, tagId: string): Promise<boolean>
   setItemTags(context: PersistenceContext, projectId: string, itemId: string, tagIds: string[]): Promise<void>
   addItemSprint(context: PersistenceContext, projectId: string, itemId: string, sprintId: string): Promise<void>
@@ -281,22 +302,34 @@ export interface AnalyticsPort {
   assertCutoverReady(): Promise<void>
   /** Backfill idempotente do rollup diário para projetos com cobertura e sem linhas. */
   backfillRollups(): Promise<void>
+  /** Backfill de snapshots filtráveis, retomável por sequência e projeto. */
+  backfillDimensionProjections(projectId?: string): Promise<void>
 }
 
 export interface DashboardReadPort {
   projectExists(context: PersistenceContext, projectId: string): Promise<boolean>
-  listLeafItems(context: PersistenceContext, projectId: string): Promise<ItemRecord[]>
+  listLeafItems(context: PersistenceContext, projectId: string, filter?: DashboardPopulationFilter, page?: DashboardLeafItemPageOptions): Promise<ItemRecord[]>
+  /** WIP/BLOCKED detalhe limitado e ordenado pela idade real do episódio, desempate por ID. */
+  listAgingDetailPage(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, target: 'WIP' | 'BLOCKED', limit: number, after?: { startedAt: string; id: string }): Promise<DashboardAgingDetailItem[]>
+  getDimensionProjectionMeta(context: PersistenceContext, projectId: string): Promise<DashboardDimensionProjectionMeta | null>
+  listDimensionSnapshots(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, from: string, to: string): Promise<DashboardDimensionSnapshotRecord[]>
+  /** Agregados de status/points/atrasos e carga por responsável sem hidratar itens. */
+  aggregateLeafItems(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, today: string): Promise<DashboardSnapshotAggregateRow[]>
   listSprintItemIds(context: PersistenceContext, projectId: string, sprintIds: string[]): Promise<string[]>
   listSquadUserIds(context: PersistenceContext, projectId: string, squadIds: string[]): Promise<string[]>
   listMembersWithSquads(context: PersistenceContext, projectId: string): Promise<DashboardMemberRow[]>
   getCoverage(context: PersistenceContext, projectId: string): Promise<{ coverageStartedAt: string } | null>
-  listTransitions(context: PersistenceContext, projectId: string, itemIds: string[]): Promise<DashboardTransitionRecord[]>
+  /** Última transição de entrada em BLOCKED ou WIP por item, sem carregar histórico completo. */
+  listTransitionStarts(context: PersistenceContext, projectId: string, itemIds: string[], target: 'BLOCKED' | 'WIP'): Promise<DashboardTransitionRecord[]>
   listEvents(context: PersistenceContext, projectId: string, from: string, to: string): Promise<ItemEventRecord[]>
   getBaselineEvent(context: PersistenceContext, projectId: string): Promise<ItemEventRecord | null>
   listSprintCycles(context: PersistenceContext, projectId: string): Promise<SprintCycleRecord[]>
+  listSprintCyclesPage(context: PersistenceContext, projectId: string, limit: number, after?: { startedAt: string; id: string }): Promise<{ total: number; rows: SprintCycleRecord[] }>
   getSprintCycle(context: PersistenceContext, projectId: string, cycleId: string): Promise<SprintCycleRecord | null>
+  getSprintCycleCommitmentCounts(context: PersistenceContext, projectId: string, cycleId: string): Promise<{ commitment: number; committedDone: number; uncompletedCommitment: number }>
   listSprintCycleItems(context: PersistenceContext, projectId: string, cycleId: string): Promise<SprintCycleItemRecord[]>
-  listHoursLogs(context: PersistenceContext, projectId: string, filter: DashboardHoursFilter, limit: number): Promise<{ totalMinutes: number; rows: DashboardHoursRow[] }>
+  getCurrentSprintCycleCounts(context: PersistenceContext, projectId: string, sprintId: string): Promise<{ currentScope: number; currentDone: number }>
+  listHoursLogs(context: PersistenceContext, projectId: string, filter: DashboardHoursFilter, limit: number, after?: { createdAt: string; id: string }): Promise<{ totalMinutes: number; totalRows: number; byAuthor: DashboardHoursAuthorRow[]; rows: DashboardHoursRow[] }>
 }
 
 

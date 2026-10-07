@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { WsEvent, WsEventType } from '@azy-board/realtime-contracts'
-import { WS_ZOMBIE_TIMEOUT_MS, isControlMessage, type WsServerMessage } from '@azy-board/realtime-contracts'
+import type { WsEventType } from '@azy-board/realtime-contracts'
+import { WS_PROTOCOL_VERSION, WS_ZOMBIE_TIMEOUT_MS, parseServerMessage } from '@azy-board/realtime-contracts'
+import { RealtimeSession, type SyncStatus } from '../lib/realtimeSession'
 
-export type SyncStatus = 'connecting' | 'syncing' | 'synced' | 'offline'
+export type { SyncStatus } from '../lib/realtimeSession'
 
-type Handler = (event: WsEvent) => void
+type Handler = (event: import('@azy-board/realtime-contracts').WsEvent) => void
 
 const RETRY_BASE_MS = 1000
 const RETRY_MAX_MS = 30_000
@@ -21,23 +22,23 @@ export function isZombieConnection(lastMessageAt: number, now: number, timeoutMs
   return now - lastMessageAt > timeoutMs
 }
 
-// Canal WebSocket por projeto com replay por cursor, heartbeat e estados de
-// sincronização honestos:
-//   connecting → syncing → synced | offline
-// `synced` só aparece após a reconciliação (replay aplicado ou onResync concluído).
+// Canal WebSocket por projeto. A máquina de estados (cursor, buffer de lacunas,
+// geração de conexão e barreira de refetch) vive em `RealtimeSession`, testável
+// sem DOM; aqui só há IO: abrir/reconectar socket, timers e heartbeat zumbi.
 export function useWebSocket(
   projectId: string | null,
   handlers: Partial<Record<WsEventType, Handler>>,
   onResync?: () => Promise<void> | void,
 ) {
   const wsRef = useRef<WebSocket | null>(null)
+  const sessionRef = useRef<RealtimeSession | null>(null)
   const retryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const refetchRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const zombieRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const mountedRef = useRef(true)
   const handlersRef = useRef(handlers)
   const onResyncRef = useRef(onResync)
   const retryDelayRef = useRef(RETRY_BASE_MS)
-  const cursorRef = useRef<number | null>(null)
   const lastMessageAtRef = useRef(Date.now())
   const [status, setStatus] = useState<SyncStatus>('connecting')
   handlersRef.current = handlers
@@ -45,14 +46,37 @@ export function useWebSocket(
 
   const reconnect = useCallback(() => {
     if (!projectId || !mountedRef.current) return
+
+    let session = sessionRef.current
+    if (!session || session.projectId !== projectId) {
+      session = new RealtimeSession({
+        projectId,
+        sendControl: (type, token) => {
+          try {
+            wsRef.current?.send(JSON.stringify({ kind: 'control', type, projectId, sequence: 0, token }))
+          } catch { /* socket fechado */ }
+        },
+        applyEvent: event => handlersRef.current[event.type]?.(event),
+        hasRefetch: () => Boolean(onResyncRef.current),
+        refetch: () => onResyncRef.current?.(),
+        setStatus: next => { if (mountedRef.current) setStatus(next) },
+        scheduleRetry: fn => {
+          const delay = retryDelayRef.current
+          retryDelayRef.current = nextRetryDelay(retryDelayRef.current)
+          refetchRetryRef.current = setTimeout(fn, delay)
+        },
+      })
+      sessionRef.current = session
+    }
+    session.newGeneration()
     setStatus('connecting')
 
     const basePath = (window as Window & { __BASE_PATH__?: string }).__BASE_PATH__ ?? ''
     const wsPath = `${basePath}/ws`.replace(/\/{2,}/g, '/')
-    const since = cursorRef.current
+    const since = session.appliedCursor
     const cursorQuery = since === null ? '' : `&since=${since}`
     const ws = new WebSocket(
-      `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}${wsPath}?projectId=${projectId}${cursorQuery}`
+      `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}${wsPath}?projectId=${projectId}&protocol=${WS_PROTOCOL_VERSION}${cursorQuery}`
     )
 
     ws.onopen = () => {
@@ -63,40 +87,9 @@ export function useWebSocket(
 
     ws.onmessage = (e) => {
       lastMessageAtRef.current = Date.now()
-      let message: WsServerMessage
-      try {
-        message = JSON.parse(e.data) as WsServerMessage
-      } catch {
-        return // Mensagem inválida — ignorar
-      }
-
-      if (isControlMessage(message)) {
-        switch (message.type) {
-          case 'HEARTBEAT':
-            return // só mantém o controle de conexão vivo
-          case 'REPLAY_COMPLETE':
-            if (message.sequence > 0) cursorRef.current = message.sequence
-            retryDelayRef.current = RETRY_BASE_MS // conexão estável
-            setStatus('synced')
-            return
-          case 'RESYNC_REQUIRED':
-            // Replay impossível: o consumidor refaz as consultas ativas.
-            cursorRef.current = null
-            void Promise.resolve(onResyncRef.current?.())
-              .catch(() => {})
-              .then(() => {
-                if (mountedRef.current) {
-                  retryDelayRef.current = RETRY_BASE_MS
-                  setStatus('synced')
-                }
-              })
-            return
-        }
-      }
-
-      // Evento de domínio: em ordem (TCP), o cursor acompanha a sequence.
-      cursorRef.current = message.sequence
-      handlersRef.current[message.type]?.(message)
+      const message = parseServerMessage(e.data)
+      if (!message) return
+      session!.onMessage(message)
     }
 
     ws.onclose = () => {
@@ -114,7 +107,7 @@ export function useWebSocket(
 
   useEffect(() => {
     mountedRef.current = true
-    cursorRef.current = null
+    sessionRef.current = null // troca de projeto: não herda cursor/geração
     retryDelayRef.current = RETRY_BASE_MS
     lastMessageAtRef.current = Date.now()
     reconnect()
@@ -130,7 +123,9 @@ export function useWebSocket(
     return () => {
       mountedRef.current = false
       if (retryRef.current) clearTimeout(retryRef.current)
+      if (refetchRetryRef.current) clearTimeout(refetchRetryRef.current)
       if (zombieRef.current) clearInterval(zombieRef.current)
+      sessionRef.current = null
       wsRef.current?.close()
     }
   }, [reconnect])

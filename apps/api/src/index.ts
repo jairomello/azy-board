@@ -14,7 +14,7 @@ import { apiKeysRouter, userApiKeysRouter } from './routes/apiKeys'
 import { versionsRouter } from './routes/versions'
 import { usersRouter } from './routes/users'
 import { batchRouter } from './routes/batch'
-import { startHeartbeat, stopHeartbeat, wsHandler } from './services/websocket'
+import { configureRealtimeAuthorizer, configureRealtimeBus, startHeartbeat, stopHeartbeat, wsHandler } from './services/websocket'
 import type { WsClientData } from './services/websocket'
 import { verifyJwt } from './services/auth'
 import { authorizeProjectSubscription } from './services/wsAuthorization'
@@ -35,6 +35,8 @@ import { startStorageCleanupWorker } from './services/storageCleanup'
 import { startAgentWorker } from './services/agentWorker'
 import { executeAssistantRun } from './services/assistantRunExecutor'
 import { startDomainEventDispatcher, websocketDomainEventTransport } from './services/domainEventDispatcher'
+import { createCoordinationEventTransport } from './services/realtimeBus'
+import { WS_REPLAY_RETENTION_MS } from '@azy-board/realtime-contracts'
 import { bootstrapRuntime } from './persistence/runtime'
 import { resolveAgentWorkerMode } from './config/workerMode'
 import { resolveObservabilityConfig } from './config/observability'
@@ -140,8 +142,9 @@ export async function startServer() {
   // [T38] Poda somente resultados idempotentes expirados (nunca PENDING).
   await runtime.persistence.idempotency.pruneExpired(new Date().toISOString())
   // [T38] Retenção de replay da outbox: remove apenas eventos confirmados com
-  // mais de 24 h; contador durável e pendências são preservados.
-  await runtime.persistence.domainEvents.prunePublishedBefore(new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+  // mais de 24 h (WS_REPLAY_RETENTION_MS, alinhado ao contrato T39); contador
+  // durável e pendências são preservados.
+  await runtime.persistence.domainEvents.prunePublishedBefore(new Date(Date.now() - WS_REPLAY_RETENTION_MS).toISOString())
   await runtime.persistence.analytics.assertCutoverReady()
   // [TENANT] Backfill determinístico do rollup por projeto (idempotente: só
   // preenche projetos com cobertura e sem linhas). [DB-SWAP] PostgreSQL:
@@ -151,9 +154,25 @@ export async function startServer() {
   // Probes reais: banco limitado + storage + coordenação (obrigatória em ADVANCED).
   configureReadinessProbes(await runtimeReadinessProbes())
 
-  // [T38] Dispatcher da outbox de domínio: publica eventos confirmados com a
-  // sequência durável (transporte local WebSocket; T39 troca o barramento).
-  stopDomainEventDispatcher = startDomainEventDispatcher({ transport: websocketDomainEventTransport, workerId: `api-${process.pid}` })
+  // [T38]/[T39] Dispatcher da outbox de domínio: publica eventos confirmados com
+  // a sequência durável. ADVANCED publica no barramento (CoordinationPort) e cada
+  // instância assina as salas ativas; SIMPLE entrega local sem serviço externo.
+  if (runtime.config.profile === 'ADVANCED') {
+    configureRealtimeBus(runtime.coordination)
+    stopDomainEventDispatcher = startDomainEventDispatcher({ transport: createCoordinationEventTransport(runtime.coordination), workerId: `api-${process.pid}` })
+  } else {
+    stopDomainEventDispatcher = startDomainEventDispatcher({ transport: websocketDomainEventTransport, workerId: `api-${process.pid}` })
+  }
+
+  // [T39] Revalidação de autorização das salas: o canal interno não substitui a
+  // autorização REST; heartbeat e mudanças de membership reconferem o acesso.
+  configureRealtimeAuthorizer(async data => {
+    const decision = await authorizeProjectSubscription(
+      { tenantId: data.tenantId, userId: data.userId, globalGroup: data.globalGroup ?? null },
+      data.projectId,
+    )
+    return decision.ok
+  })
 
   // Item 12: drena a fila de limpeza de storage no startup e em ciclo periódico
   // (backoff e FAILED são persistidos; index de intervalo é com unref, não
@@ -183,6 +202,13 @@ export async function startServer() {
         // Cursor de replay: último sequence aplicado pelo cliente (ausente em cliente novo).
         const sinceParam = url.searchParams.get('since')
         const sinceCursor = sinceParam === null ? null : Number(sinceParam)
+        // [T39] Negociação de protocolo: cliente declara a versão para o servidor
+        // decidir replay versus refetch obrigatório de cursor legado. Cliente SEM
+        // `protocol` que ainda envia cursor é tratado como legado (força refetch,
+        // sem converter o cursor local em sequência global).
+        const protocolParam = url.searchParams.get('protocol')
+        const declaredProtocol = protocolParam === null ? null : Number(protocolParam)
+        const protocolVersion = declaredProtocol === null && sinceCursor !== null ? 0 : declaredProtocol
 
         // Autenticar antes de aceitar conexão WebSocket
         const cookieHeader = req.headers.get('cookie') ?? ''
@@ -199,7 +225,7 @@ export async function startServer() {
           if (!decision.ok) return new Response(decision.message, { status: decision.status })
           // [TENANT] tenantId armazenado na conexão WebSocket para isolamento de broadcast
           server.upgrade(req, {
-            data: { projectId, tenantId: payload.tenantId, userId: payload.sub, sinceCursor } satisfies WsClientData,
+            data: { projectId, tenantId: payload.tenantId, userId: payload.sub, globalGroup: payload.globalGroup ?? null, sinceCursor, protocolVersion } satisfies WsClientData,
           })
           return undefined as unknown as Response
         } catch {

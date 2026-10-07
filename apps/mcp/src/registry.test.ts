@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createMcpServer } from './index.js'
-import { dependencyToolsFor, executeSharedTool, getSharedToolDefinitions, sanitizeToolOutput, searchSharedTools, selectSharedTools, SHARED_TOOL_NAMES, SKILL_COMMAND_INTENTS } from './registry.js'
+import { dependencyToolsFor, executeSharedTool, getSharedToolDefinitions, sanitizeToolOutput, searchSharedTools, selectSharedTools, SHARED_TOOL_NAMES, SKILL_COMMAND_INTENTS } from '@azy-board/tool-execution'
 import { validateToolArguments } from '@azy-board/tool-registry'
 
 describe('shared MCP/Azy Agent registry', () => {
@@ -121,5 +121,160 @@ describe('shared MCP/Azy Agent registry', () => {
         expect(selected.every(tool => tool.policy.globalGroup)).toBe(true)
       }
     }
+  })
+})
+
+// Baseline de paridade capturado antes de mover o dispatcher para o pacote
+// compartilhado. Estes fixtures preservam resolução/coerção, autorização,
+// snapshot e forma do resultado; sanitização, null/CLEAR e approval têm também
+// casos dedicados neste arquivo e em assistant.test.ts.
+const executionContractFixture = {
+  project: { id: '11111111-1111-1111-1111-111111111111', name: 'Projeto Contrato', boardMode: 'SIMPLE' },
+  logResult: { id: 'log-contract', activity: 'Revisão', durationMin: 90 },
+  revisions: { 'card-contract': '2026-10-07T01:02:03.000Z' },
+}
+
+describe('baseline de contrato da execução compartilhada (pré-extração T40)', () => {
+  test('coage duração, resolve projeto por nome e preserva o formato do resultado', async () => {
+    const calls: Array<{ path: string; method: string; body?: unknown }> = []
+    const api = async (path: string, method = 'GET', body?: unknown) => {
+      calls.push({ path, method, body })
+      if (path === '/projects') return [executionContractFixture.project]
+      if (path.endsWith('/items/card-contract/logs')) return executionContractFixture.logResult
+      return []
+    }
+
+    const result = await executeSharedTool('create_item_log', {
+      projectId: executionContractFixture.project.name,
+      itemId: 'card-contract',
+      activity: ' Revisão ',
+      duration: '1h30',
+    }, { api, context: { source: 'mcp', userId: 'user-contract', tenantId: 'tenant-contract', globalGroup: 'TEAM_MEMBER' } })
+
+    expect(calls).toEqual([
+      { path: '/projects', method: 'GET', body: undefined },
+      {
+        path: `/projects/${executionContractFixture.project.id}/items/card-contract/logs`,
+        method: 'POST',
+        body: { activity: 'Revisão', durationMin: 90 },
+      },
+    ])
+    expect(result).toEqual(executionContractFixture.logResult)
+  })
+
+  test('revalida autorização antes do dispatch e injeta revisões da fotografia', async () => {
+    const events: string[] = []
+    let requestBody: Record<string, unknown> | undefined
+    const context = {
+      source: 'azy-agent' as const,
+      userId: 'user-contract',
+      tenantId: 'tenant-contract',
+      globalGroup: 'TEAM_MEMBER' as const,
+      projectId: executionContractFixture.project.id,
+      runId: 'run-contract',
+      screenSnapshot: {
+        schemaVersion: 1 as const,
+        contextId: 'snapshot-contract',
+        capturedAt: '2026-10-07T01:02:03.000Z',
+        route: '/projects/11111111-1111-1111-1111-111111111111/board',
+        screen: 'project-board-kanban' as const,
+        projectId: executionContractFixture.project.id,
+        projectName: executionContractFixture.project.name,
+        view: { mode: 'kanban' as const, activeModuleId: null, collapsedGroupIds: [] },
+        filters: {},
+        scope: { mode: 'FILTERED' as const },
+        results: {
+          displayedItemIds: ['card-contract'],
+          displayedCount: 1,
+          totalMatchingCount: 1,
+          isComplete: true,
+          revisions: executionContractFixture.revisions,
+        },
+        focus: { modalStack: 0, activeItemId: null, activeTab: null, hasUnsavedChanges: false },
+      },
+    }
+
+    const result = await executeSharedTool('update_items', {
+      projectId: executionContractFixture.project.id,
+      filters: { itemIds: ['card-contract'] },
+      changes: [{ field: 'title', operation: 'SET', value: 'Título atualizado' }],
+    }, {
+      api: async (_path, method, body) => {
+        events.push('dispatch')
+        expect(method).toBe('POST')
+        requestBody = body as Record<string, unknown>
+        return { updatedCount: 1 }
+      },
+      context,
+      operationId: 'op-contract',
+      authorize: async (_context, name) => {
+        expect(name).toBe('update_items')
+        events.push('authorized')
+      },
+    })
+
+    expect(events).toEqual(['authorized', 'dispatch'])
+    expect(requestBody).toMatchObject({
+      agentRunId: 'op-contract',
+      filters: { itemIds: ['card-contract'], expectedRevisions: executionContractFixture.revisions },
+    })
+    expect(result).toEqual({ updatedCount: 1 })
+  })
+})
+
+describe('composição de squad e cadastros pelo catálogo (T25)', () => {
+  const projectId = '11111111-1111-1111-1111-111111111111'
+  const members = [
+    { userId: 'u-ana', name: 'Ana', email: 'ana@test.local' },
+    { userId: 'u-bruno', name: 'Bruno', email: 'bruno@test.local' },
+  ]
+  const squads = [{ id: 'sq-a', name: 'Squad A' }, { id: 'sq-b', name: 'Squad B' }]
+
+  function mockApi(calls: Array<{ path: string; method: string; body?: unknown }>) {
+    return async (path: string, method = 'GET', body?: unknown) => {
+      calls.push({ path, method, body })
+      if (method === 'GET' && path.endsWith('/members')) return members
+      if (method === 'GET' && path.endsWith('/squads')) return squads
+      return { ok: true }
+    }
+  }
+
+  test('resolve membro por e-mail e squad por nome antes de executar', async () => {
+    const calls: Array<{ path: string; method: string; body?: unknown }> = []
+    await executeSharedTool('set_member_squad', { projectId, userId: 'ana@test.local', squadId: 'Squad B' }, {
+      api: mockApi(calls), context: { source: 'mcp', userId: 'u', tenantId: 't', globalGroup: 'TEAM_MEMBER' },
+    })
+    const patch = calls.find(call => call.method === 'PATCH')!
+    expect(patch).toEqual({ path: `/projects/${projectId}/members/u-ana`, method: 'PATCH', body: { squadId: 'sq-b' } })
+  })
+
+  test('CLEAR envia squadId null sem resolver', async () => {
+    const calls: Array<{ path: string; method: string; body?: unknown }> = []
+    await executeSharedTool('set_member_squad', { projectId, userId: 'u-bruno', squadId: null }, {
+      api: mockApi(calls), context: { source: 'mcp', userId: 'u', tenantId: 't', globalGroup: 'TEAM_MEMBER' },
+    })
+    expect(calls.find(call => call.method === 'PATCH')).toEqual({ path: `/projects/${projectId}/members/u-bruno`, method: 'PATCH', body: { squadId: null } })
+  })
+
+  test('homônimos exigem identificador e squad externo é recusado', async () => {
+    const homonymApi = async (path: string) => {
+      if (path.endsWith('/members')) return [...members, { userId: 'u-ana-2', name: 'Ana', email: 'ana2@test.local' }]
+      return []
+    }
+    await expect(executeSharedTool('set_member_squad', { projectId, userId: 'Ana', squadId: 'sq-a' }, {
+      api: homonymApi, context: { source: 'mcp', userId: 'u', tenantId: 't', globalGroup: 'TEAM_MEMBER' },
+    })).rejects.toThrow('AMBIGUOUS_MEMBER')
+    const memberOnlyApi = async (path: string) => (path.endsWith('/members') ? members : [])
+    await expect(executeSharedTool('set_member_squad', { projectId, userId: 'u-ana', squadId: 'Squad Externo' }, {
+      api: memberOnlyApi, context: { source: 'mcp', userId: 'u', tenantId: 't', globalGroup: 'TEAM_MEMBER' },
+    })).rejects.toThrow('SQUAD_NOT_FOUND')
+  })
+
+  test('update_tag valida cor e despacha PATCH', async () => {
+    const calls: Array<{ path: string; method: string; body?: unknown }> = []
+    await executeSharedTool('update_tag', { projectId, tagId: '22222222-2222-2222-2222-222222222222', color: '#00ff00' }, {
+      api: mockApi(calls), context: { source: 'mcp', userId: 'u', tenantId: 't', globalGroup: 'TEAM_MEMBER' },
+    })
+    expect(calls.find(call => call.method === 'PATCH')).toMatchObject({ method: 'PATCH', body: { color: '#00ff00' } })
   })
 })

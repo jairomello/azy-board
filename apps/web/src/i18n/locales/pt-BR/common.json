@@ -221,5 +221,6 @@
       "task": "Task",
       "bug": "Bug"
     }
-  }
+  },
+  "loadMore": "Carregar mais"
 }

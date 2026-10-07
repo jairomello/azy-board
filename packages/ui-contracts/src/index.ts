@@ -331,17 +331,25 @@ export interface DashboardSnapshot {
   filters: DashboardFilterInfo
   boxes: {
     progressScope: { total: number; done: number; completionPercent: number | null; points: number; donePoints: number; estimationCoverage: number | null }
-    wip: { total: number; byStatus: Record<string, number>; byStatusPoints: Record<string, number>; pointsCoverage: number | null; items: DashboardItemDetail[] }
-    blocked: { total: number; items: DashboardItemDetail[] }
-    overdue: { total: number; items: DashboardItemDetail[]; remainingItems: DashboardItemDetail[] }
+    wip: { total: number; byStatus: Record<string, number>; byStatusPoints: Record<string, number>; pointsCoverage: number | null; items: DashboardItemDetail[]; pagination?: DashboardPagination }
+    blocked: { total: number; items: DashboardItemDetail[]; pagination?: DashboardPagination }
+    overdue: { total: number; points?: number; items: DashboardItemDetail[]; remainingItems: DashboardItemDetail[]; pagination?: DashboardPagination; remainingPagination?: DashboardPagination }
     teamLoad: { members: Array<{ userId: string; userName: string; squadId: string | null; squadName: string | null; wipTotal: number; blockedSubset?: number; wipPoints: number | null; blockedPoints?: number | null; pointsCoverage: number | null }>; unassignedWip: number; blockedUnassignedSubset?: number; unassignedWipPoints: number | null; unassignedBlockedPoints?: number | null; pointsCoverage: number | null }
   }
 }
 
 export interface DashboardBurnupPoint { date: string; total: number; done: number; points: number; donePoints: number }
-export interface DashboardBurnup { partial: boolean; coverageStartedAt?: string | null; series: DashboardBurnupPoint[] }
-export interface DashboardAging { coverageStartedAt: string | null; items: DashboardItemDetail[] }
-export interface DashboardHours { semantics: string; totalMinutes: number; rows: Array<{ authorId: string; authorName: string | null; squadName: string | null; itemId: string; versionId: string | null; moduleId: string | null; durationMin: number | null; createdAt?: string }> }
+export interface DashboardBurnup { partial: boolean; coverageStartedAt?: string | null; projection?: { status: 'ROLLUP' | 'READY' | 'FALLBACK'; version?: number | null; sourceStatus?: string }; warnings?: string[]; series: DashboardBurnupPoint[] }
+export interface DashboardAging { coverageStartedAt: string | null; total?: number; pagination?: DashboardPagination; items: DashboardItemDetail[] }
+export interface DashboardPagination { limit: number; total: number; hasMore: boolean; truncated: boolean; nextCursor: string | null }
+export interface DashboardHours {
+  semantics: string
+  totalMinutes: number
+  totalRows?: number
+  byAuthor?: Array<{ authorId: string | null; authorName: string | null; squadName: string | null; totalMinutes: number }>
+  pagination?: DashboardPagination
+  rows: Array<{ id?: string; authorId: string | null; authorName: string | null; squadName: string | null; itemId: string; versionId: string | null; moduleId: string | null; durationMin: number | null; createdAt?: string }>
+}
 
 // Card T18 — avaliador compartilhado de visibilidade (interface + agente).
 export * from './visibility'

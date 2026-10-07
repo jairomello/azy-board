@@ -19,7 +19,7 @@ async function resetDatabase(client: Client) {
 
 async function runMigrations(client: Client) {
   const migrationsDir = join(import.meta.dir, 'migrations')
-  const files = ['0000_pale_warlock.sql', '0001_composite_fks.sql', '0003_items_tenant_project_parent_index.sql', '0004_assistant_model_configs.sql', '0005_assistant_run_context.sql', '0009_project_and_item_icons.sql']
+  const files = ['0000_pale_warlock.sql', '0001_composite_fks.sql', '0003_items_tenant_project_parent_index.sql', '0004_assistant_model_configs.sql', '0005_assistant_run_context.sql', '0009_project_and_item_icons.sql', '0014_dashboard_ordered_history_indexes.sql', '0015_dashboard_dimension_projections.sql', '0016_dashboard_transition_lookup_index.sql']
   for (const file of files) {
     const sql = readFileSync(join(migrationsDir, file), 'utf8')
     await client.query(sql)
@@ -42,6 +42,12 @@ describe.skipIf(!runPostgres)('Migrations PostgreSQL', () => {
       expect(names).toContain('assistant_model_configs')
       const index = await client.query("SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'items_tenant_project_parent_idx'")
       expect(index.rows[0]?.indexdef).toContain('(tenant_id, project_id, parent_id)')
+      const eventIndex = await client.query("SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'item_events_tenant_project_date_idx'")
+      const hoursIndex = await client.query("SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'item_logs_tenant_created_idx'")
+      const transitionIndex = await client.query("SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'item_events_transition_lookup_idx'")
+      expect(eventIndex.rows[0]?.indexdef).toContain('(tenant_id, project_id, occurred_at, sequence, id)')
+      expect(hoursIndex.rows[0]?.indexdef).toContain('(tenant_id, type, created_at, id)')
+      expect(transitionIndex.rows[0]?.indexdef).toContain('(tenant_id, project_id, item_id, event_type, occurred_at DESC, sequence DESC, id DESC)')
     } finally {
       await client.end()
     }

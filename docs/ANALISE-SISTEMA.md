@@ -2,6 +2,14 @@
 
 **Data:** 2026-09-11
 
+> **Documento histórico.** Este diagnóstico registra o estado observado em
+> 2026-09-11 e preserva os problemas/recomendações originais. Para a revisão
+> posterior, consulte [`ANALISE-SISTEMA-ATUALIZADA-2026-10-05.md`](ANALISE-SISTEMA-ATUALIZADA-2026-10-05.md).
+> Para o estado atual dos gates, provas e limitações por perfil, consulte
+> [`release-evidence.md`](release-evidence.md). Os cards T36–T43 vinculados à
+> evolução estão listados na revisão posterior; este diagnóstico não é uma
+> declaração de estado atual.
+
 ## Diagnóstico Geral
 
 O sistema tem uma base funcional boa para um produto em evolução: TypeScript estrito, isolamento por tenant aplicado em muitas consultas, transações em operações importantes, testes de integração razoáveis, migrations versionadas, API Keys com escopos e uma preocupação real com auditoria.

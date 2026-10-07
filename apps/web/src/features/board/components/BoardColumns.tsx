@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Plus } from 'lucide-react'
 import {
   SortableContext,
@@ -49,6 +50,8 @@ export function BoardColumns({
   onDelete,
   onArchive,
 }: BoardColumnsProps) {
+  const { t } = useTranslation('board')
+
   const columnSortableIds = columns.map(column => `${laneId}:col:${column.id}`)
 
   return (
@@ -79,7 +82,7 @@ export function BoardColumns({
                   ) : (
                     <button onClick={() => onShowAddForm(formKey)} className="w-full flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition">
                       <Plus className="w-3.5 h-3.5" />
-                      Adicionar card
+                      {t('addCard')}
                     </button>
                   ))}
                 </div>

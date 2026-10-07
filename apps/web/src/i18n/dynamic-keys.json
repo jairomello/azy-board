@@ -1,0 +1,10 @@
+{
+  "entries": [
+    { "file": "apps/web/src/features/board/BoardScreen.tsx", "expression": "key", "reason": "helper de tradução genérico que repassa chave já validada pelo chamador" },
+    { "file": "apps/web/src/pages/ProjectDashboardPage.tsx", "expression": "label", "reason": "rótulo vindo da configuração de métrica do dashboard" },
+    { "file": "apps/web/src/components/ShowHiddenProjectsSwitch.tsx", "expression": "labelKey", "reason": "chave calculada por props do switch" },
+    { "file": "apps/web/src/components/CardChildrenSection.tsx", "expression": "itemTypeMeta(child.type).labelKey", "reason": "chave derivada do catálogo de tipos de item" },
+    { "file": "apps/web/src/components/ItemModal.tsx", "expression": "typeMeta.labelKey", "reason": "chave derivada do catálogo de tipos de item" },
+    { "file": "apps/web/src/components/ItemDetailHeader.tsx", "expression": "typeMeta.labelKey", "reason": "chave derivada do catálogo de tipos de item" }
+  ]
+}

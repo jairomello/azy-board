@@ -173,7 +173,7 @@ export const reorderSchema = z.object({ order: z.array(z.string().min(1)).max(50
 export const deleteColumnSchema = z.object({ moveToColumnId: z.string().min(1).nullable() }).strict()
 export const sprintSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), startDate: z.string().min(1).optional(), endDate: z.string().min(1).optional() }).strict()
 export const tagSchema = z.object({ name: z.string().trim().min(1).max(100), color: z.string().trim().max(30).optional() }).strict()
-export const updateTagSchema = z.object({ name: z.string().trim().min(1).max(100).optional(), color: z.string().trim().max(30).optional() }).strict()
+export const updateTagSchema = z.object({ name: z.string().trim().min(1).max(100).optional(), color: z.string().trim().max(30).optional(), expectedName: z.string().trim().min(1).max(100).optional(), expectedColor: z.string().trim().max(30).optional() }).strict()
 export const versionSchema = z.object({ name: z.string().trim().min(1).max(200), releaseDate: z.string().nullable().optional(), description: optionalText().nullable().optional(), status: z.enum(['PLANNED', 'IN_DEV', 'RELEASED', 'CANCELLED']).optional() }).strict()
 export const updateVersionSchema = versionSchema.partial().extend({ position: z.number().int().min(0).optional() }).strict()
 export const createUserSchema = z.object({ email: z.string().trim().email().max(320).optional(), name: z.string().trim().min(1).max(200).optional(), password: z.string().max(200).optional(), globalGroup: z.enum(['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT']).optional() }).strict().superRefine((value, ctx) => {
@@ -318,14 +318,22 @@ export const updateItemLinkSchema = z.object({
   description: optionalText(20_000).nullable().optional(),
 }).strict().refine(value => Object.keys(value).length > 0, 'Informe ao menos um campo para atualizar.')
 export const moduleSchema = z.object({ name: z.string().trim().min(1).max(200), description: optionalText().nullable().optional() }).strict()
-export const updateModuleSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), position: z.number().int().min(0).optional() }).strict()
+export const updateModuleSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), position: z.number().int().min(0).optional(), expectedName: z.string().trim().min(1).max(200).optional() }).strict()
 export const deleteModuleSchema = z.object({ targetModuleId: z.string().min(1).optional(), cascade: z.boolean().optional() }).strict()
 export const squadSchema = z.object({ name: z.string().trim().min(1).max(200) }).strict()
+export const updateSquadSchema = z.object({ name: z.string().trim().min(1).max(200), expectedName: z.string().trim().min(1).max(200).optional() }).strict()
 export const squadMemberSchema = z.object({ userId: z.string().min(1), role: z.enum(['ADMIN', 'MEMBER', 'VIEWER']) }).strict()
-export const projectMemberSchema = z.object({ role: z.enum(['ADMIN', 'MEMBER', 'VIEWER']).optional(), squadId: z.string().min(1).nullable().optional() }).strict()
+// Card T25 — PATCH de membro aceita troca só de squad (role opcional) e
+// pré-condições de concorrência aprovadas (squad/papel anteriores).
+export const projectMemberSchema = z.object({
+  role: z.enum(['ADMIN', 'MEMBER', 'VIEWER']).optional(),
+  squadId: z.string().min(1).nullable().optional(),
+  expectedSquadId: z.string().min(1).nullable().optional(),
+  expectedRole: z.enum(['ADMIN', 'MEMBER', 'VIEWER']).optional(),
+}).strict()
 export const addProjectMemberSchema = z.object({ email: z.string().trim().email().max(320), role: z.enum(['ADMIN', 'MEMBER', 'VIEWER']), squadId: z.string().min(1).nullable().optional() }).strict()
 export const costCenterSchema = z.object({ code: z.string().trim().min(1).max(100), description: optionalText(2_000).nullable().optional() }).strict()
-export const updateCostCenterSchema = costCenterSchema.partial().strict()
+export const updateCostCenterSchema = costCenterSchema.partial().extend({ expectedCode: z.string().trim().min(1).max(100).optional() }).strict()
 
 const openApiSchemaMap = {
   LoginRequest: loginSchema,

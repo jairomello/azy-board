@@ -8,7 +8,7 @@ import { assertJournalAvailable, reserveJournal } from './idempotencyJournal'
 import { appendDomainEventSync } from './domainEventOutbox'
 import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
 import { buildBatchUpdateResponse } from '../../persistence/commandResponses'
-import { readItemSnapshot, readItemSnapshots, recordDeletedItemEventsBatch, recordItemEvent } from './itemAnalytics'
+import { readItemSnapshot, readItemSnapshots, recordDeletedItemEventsBatch, recordItemEvent, type SqliteItemSnapshot } from './itemAnalytics'
 
 interface ItemRow {
   id: string
@@ -510,23 +510,32 @@ export function createSqliteItemUnitOfWork(database: Database) {
         if (relations.tagIds !== undefined) replaceRelations(database, 'item_tags', 'tag_id', context.tenantId, projectId, itemId, relations.tagIds)
         if (relations.sprintIds !== undefined) replaceRelations(database, 'item_sprints', 'sprint_id', context.tenantId, projectId, itemId, relations.sprintIds)
         const updated = itemById(database, context.tenantId, projectId, itemId)
-        if (updated) {
-          if (parentChanged || patch.title !== undefined) refreshDescendantAncestry(database, context.tenantId, projectId, itemId)
-          const after = readItemSnapshot(database, context.tenantId, projectId, itemId)
-          if (relations.activity ?? context.mutation.activity) insertActivity(database, context, itemId, relations.activity ?? context.mutation.activity!)
-          if (before && after) {
-            const eventByField: Array<[keyof ItemPatch, string]> = [
-              ['status', 'STATUS_CHANGED'], ['points', 'POINTS_CHANGED'], ['type', 'TYPE_CHANGED'],
-              ['versionId', 'VERSION_CHANGED'], ['moduleId', 'MODULE_CHANGED'], ['parentId', 'ITEM_REPARENTED'],
-            ]
-            for (const [field, eventType] of eventByField) {
-              if (patch[field] !== undefined && patch[field] !== current[itemColumns[field as keyof typeof itemColumns] as keyof ItemRow]) {
-                recordItemEvent(database, context, { projectId, itemId, eventType, before, after })
+          if (updated) {
+            if (parentChanged || patch.title !== undefined) refreshDescendantAncestry(database, context.tenantId, projectId, itemId)
+            const after = readItemSnapshot(database, context.tenantId, projectId, itemId)
+            if (relations.activity ?? context.mutation.activity) insertActivity(database, context, itemId, relations.activity ?? context.mutation.activity!)
+            if (before && after) {
+              let eventState = before
+              const eventByField: Array<[keyof ItemPatch, string]> = [
+                ['status', 'STATUS_CHANGED'], ['points', 'POINTS_CHANGED'], ['type', 'TYPE_CHANGED'],
+                ['versionId', 'VERSION_CHANGED'], ['moduleId', 'MODULE_CHANGED'], ['parentId', 'ITEM_REPARENTED'],
+              ]
+              const snapshotField: Partial<Record<keyof ItemPatch, keyof SqliteItemSnapshot>> = {
+                status: 'status', points: 'points', type: 'type', versionId: 'versionId', moduleId: 'moduleId', parentId: 'parentId',
               }
-            }
-            if (relations.sprintIds !== undefined && JSON.stringify(before.sprintIds) !== JSON.stringify(after.sprintIds)) {
-              recordItemEvent(database, context, { projectId, itemId, eventType: 'SPRINT_CHANGED', before, after })
-            }
+              for (const [field, eventType] of eventByField) {
+                if (patch[field] !== undefined && patch[field] !== current[itemColumns[field as keyof typeof itemColumns] as keyof ItemRow]) {
+                  const key = snapshotField[field]!
+                  const eventAfter = { ...eventState, [key]: after[key] } as SqliteItemSnapshot
+                  recordItemEvent(database, context, { projectId, itemId, eventType, before: eventState, after: eventAfter })
+                  eventState = eventAfter
+                }
+              }
+              if (relations.sprintIds !== undefined && JSON.stringify(eventState.sprintIds) !== JSON.stringify(after.sprintIds)) {
+                const eventAfter = { ...eventState, sprintIds: after.sprintIds }
+                recordItemEvent(database, context, { projectId, itemId, eventType: 'SPRINT_CHANGED', before: eventState, after: eventAfter })
+                eventState = eventAfter
+              }
           }
           if (oldParentBefore && oldParentId) {
             recordItemEvent(database, context, {

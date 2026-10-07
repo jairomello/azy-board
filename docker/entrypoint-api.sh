@@ -5,6 +5,7 @@
 #   api      (padrão) sobe o servidor HTTP sem aplicar migrations.
 #   migrate  aplica as migrations do perfil (SIMPLE: SQLite; ADVANCED:
 #            PostgreSQL) e encerra — job separado executado antes do rollout.
+#   setup    provisiona tenant/admin inicial pelo CLI oficial.
 #   worker   sobe o consumidor dedicado de runs do agente (T37; ADVANCED/
 #            SEPARATE), sem listener HTTP.
 #   outro    qualquer outro valor é executado como comando livre (debug).
@@ -25,6 +26,9 @@ case "$cmd" in
       exec bun /app/apps/api/dist/migrate-pg.js "$@"
     fi
     exec bun /app/apps/api/dist/migrate.js "$@"
+    ;;
+  setup)
+    exec bun /app/apps/api/dist/setup.js "$@"
     ;;
   worker)
     exec bun /app/apps/api/dist/worker.js "$@"

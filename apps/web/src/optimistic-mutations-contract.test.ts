@@ -8,13 +8,13 @@ async function read(relativePath: string) {
 
 describe('mutações otimistas consistentes (contrato)', () => {
   test('o título usa rollback otimista e comunica erro', async () => {
-    const source = await read('./features/board/BoardScreen.tsx')
+    const source = await read('./features/board/hooks/useBoardItemEditing.ts')
     expect(source.includes('runOptimisticMutation')).toBe(true)
     expect(source.includes('errorSaveTitle')).toBe(true)
   })
 
   test('salvar item envia campos e tags em uma única chamada', async () => {
-    const source = await read('./features/board/BoardScreen.tsx')
+    const source = await read('./features/board/hooks/useBoardItemEditing.ts')
     const handler = source.slice(source.indexOf('handleModalSave'), source.indexOf('handleAddSubtask'))
     expect(handler.includes('tagIds')).toBe(true)
     expect(handler.includes('expectedUpdatedAt')).toBe(true)
@@ -22,7 +22,7 @@ describe('mutações otimistas consistentes (contrato)', () => {
   })
 
   test('conflito 409 é reconciliado e avisado', async () => {
-    const source = await read('./features/board/BoardScreen.tsx')
+    const source = await read('./features/board/hooks/useBoardItemEditing.ts')
     const marker = source.indexOf('status === 409')
     expect(marker >= 0).toBe(true)
     const block = source.slice(marker, marker + 400)

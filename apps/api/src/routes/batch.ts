@@ -12,6 +12,7 @@ import type { BatchItemCreateOperation, BatchItemUpdate, ItemPatch } from '../pe
 import { DEFAULT_ITEM_ICON } from '@azy-board/ui-contracts'
 import { isWorkCard, resolveActiveSprint, resolveActiveVersion } from '../services/creationDefaults'
 import { emitDomainEvent, findOperationId } from '../services/domainEventOutbox'
+import { applyItemBatchApplication, createItemsBatchApplication } from '../application/batch'
 
 export const batchRouter = new Hono<HonoEnv>()
 batchRouter.use('*', authMiddleware)
@@ -304,8 +305,15 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
         expiresAt: new Date(Date.now() + IDEMPOTENCY_RETENTION_MS).toISOString(),
       }
     }
-    const resultItems = await persistence.unitOfWork.applyItemBatch(mutationContext, projectId, batchUpdates)
-    const result = buildBatchUpdateResponse(resultItems)
+    const batchResult = await applyItemBatchApplication({
+      context: ctx,
+      permissionScope: c.get('apiKeyPermissionScope'),
+      projectId,
+      mutationContext,
+      updates: batchUpdates,
+    })
+    if (!batchResult.ok) return c.json(batchResult.body, batchResult.status)
+    const result = buildBatchUpdateResponse(batchResult.results)
     // [T38] O evento item.updated é gravado pelo adapter no mesmo commit.
     if (agentRunId) {
       const operationId = await findOperationId(ctx.tenantId, ctx.userId, COMMAND_NAMESPACES.updateItems, agentRunId, projectId)
@@ -402,9 +410,17 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
         expiresAt: new Date(Date.now() + IDEMPOTENCY_RETENTION_MS).toISOString(),
       }
     }
-    const result = await persistence.unitOfWork.createItemsBatch(mutationContext, projectId, operations, {
-      atomic, agentRunId: input.agentRunId ?? null,
+    const batchResult = await createItemsBatchApplication({
+      context: ctx,
+      permissionScope: c.get('apiKeyPermissionScope'),
+      projectId,
+      mutationContext,
+      operations,
+      atomic,
+      agentRunId: input.agentRunId ?? null,
     })
+    if (!batchResult.ok) return c.json(batchResult.body, batchResult.status)
+    const result = batchResult.result
     const response = { atomic: result.atomic, agentRunId: result.agentRunId, results: result.results }
     // Módulos criados no lote não têm evento próprio no adapter; itens criados
     // já são cobertos por `item.created` gravado no mesmo commit.

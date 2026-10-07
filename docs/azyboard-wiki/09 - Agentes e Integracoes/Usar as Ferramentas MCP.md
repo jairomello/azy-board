@@ -203,7 +203,8 @@ grupo, tenant, estado da chave e autorização do recurso em cada chamada. O
 servidor resolve nomes de coluna, pré-valida relações de pai, encontra o módulo
 padrão e escolhe a estratégia de conclusão antes de chamar a API.
 
-O catálogo compartilhado vive em `apps/mcp/src/registry.ts` e é a mesma fonte
+O catálogo compartilhado vive em `packages/tool-registry/`; a execução e os
+adaptadores HTTP vivem em `packages/tool-execution/`. São as mesmas fontes
 usada pelo Azy Agent interno. O contrato MCP declara schemas JSON para cada
 entrada. A suíte `bun run test:mcp` exercita o fluxo completo contra uma API em
 memória, incluindo hierarquia, claim, movimentação, conclusão e checklists.

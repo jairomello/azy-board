@@ -4,6 +4,12 @@
 
 Esta revisão atualiza a [análise de 2026-09-11](ANALISE-SISTEMA.md) após a implementação dos cards derivados dela. A pergunta é se as melhorias estão presentes, se as garantias anunciadas funcionam no produto e o que ainda falta para considerar o trabalho concluído. Os cards do Backlog citam este arquivo como especificação de referência.
 
+> **Atualização de rastreamento em 2026-10-07:** o board registra T36, T37, T38,
+> T39, T40, T41 e T42 em `Concluídas`; T43 está em `Fazendo` e T44 em
+> `Backlog`. Esse estado do board não substitui os gates nem prova uma release.
+> Use [`release-evidence.md`](release-evidence.md) para a fotografia de comandos,
+> evidências e limitações; esta revisão continua sendo um snapshot técnico datado.
+
 Foi feita inspeção do código, dos testes, das configurações de CI e deploy e do board real. `bun run check` passou com 1.010 testes aprovados, 12 ignorados e nenhum erro; `check:i18n`, `check:docs`, `check:bundle` e `check:frontend-tests` passaram. O smoke do perfil SIMPLE passou para `/`, `/health/live` e `/api/auth/me` (401 esperado). Não foi executada uma jornada E2E completa nem um teste com serviços PostgreSQL/Valkey nesta revisão. O teste de importação da API configurada como ADVANCED falhou antes de qualquer conexão com PostgreSQL, com `ADVANCED_DATABASE_ADAPTER_NOT_READY`.
 
 ## Avaliação geral
@@ -52,6 +58,8 @@ Ainda não é correto declarar o roteiro inteiro encerrado. O perfil ADVANCED n�
 
 **Critérios de pronto.** Build e execução da API não exigem fontes de `apps/mcp`; handlers encaminham para casos de uso testáveis; não há regra de negócio duplicada entre REST, MCP e agente; testes exercitam resultados e efeitos transacionais em SIMPLE e ADVANCED.
 
+**Estado após T40 (2026-10-07).** Execução compartilhada e adaptadores HTTP foram movidos para `packages/tool-execution`; o catálogo segue em `packages/tool-registry`. A API não importa fontes MCP, criação/edição/movimento e batch passam por `apps/api/src/application`, e `check:api-boundary` compila e inicializa a API em staging sem `apps/mcp`. A cobertura SQLite/SIMPLE passou; a matriz ADVANCED/PostgreSQL continua condicionada a `TEST_POSTGRES_URL`.
+
 ## P1 — Escala e semântica das métricas do Dashboard
 
 **Problema.** Há rollup diário no caminho padrão de burnup e consultas otimizadas. Algumas rotas ainda carregam todas as folhas do projeto e fazem agregações em memória; o burnup filtrado ainda percorre histórico de eventos. A análise original de desempenho está parcialmente atendida, mas não há evidência nesta revisão de metas de latência com projetos e históricos grandes.
@@ -83,7 +91,9 @@ Ainda não é correto declarar o roteiro inteiro encerrado. O perfil ADVANCED n�
 3. Completar publicação/sincronização distribuída e separar execução compartilhada API/MCP.
 4. Medir Dashboard; depois tratar manutenção de UI, cobertura de testes, i18n e gates de release.
 
-Os cards de continuidade ficam no **Backlog** porque esta revisão planeja o trabalho, mas não autoriza começar a implementação. Os IDs são registrados abaixo após a criação no board.
+No snapshot de 2026-10-05, os cards de continuidade abaixo foram colocados no
+**Backlog** para planejar o trabalho, sem autorizar seu início. A tabela preserva
+os IDs criados; o estado atual é consultado no board e resumido no aviso acima.
 
 | Prioridade | Card no Azy Board | ID | Tema |
 |---|---|---|---|

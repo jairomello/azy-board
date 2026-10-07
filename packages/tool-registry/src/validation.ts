@@ -3,8 +3,9 @@ import { normalizeDurationArguments } from './duration.js'
 import { TOOL_TEXT_LIMITS } from './limits.js'
 
 // Campos internos injetados por harness/executores que não fazem parte do schema
-// exposto (ex.: assistantHarness adiciona atomic: true em batch).
-export const INTERNAL_ARG_ALLOWLIST: ReadonlySet<string> = new Set(['atomic', 'idempotencyKey', 'agentRunId'])
+// exposto (ex.: assistantHarness adiciona atomic: true em batch; T25 injeta as
+// pré-condições aprovadas expected* na execução).
+export const INTERNAL_ARG_ALLOWLIST: ReadonlySet<string> = new Set(['atomic', 'idempotencyKey', 'agentRunId', 'expectedSquadId', 'expectedRole', 'expectedName', 'expectedColor', 'expectedCode'])
 
 export function assertNonEmptyString(value: unknown, field: string, maxLength = 200): asserts value is string {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -68,6 +69,11 @@ function assertIsoDay(value: unknown, field: string): void {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error(`${field} deve ser uma data no formato AAAA-MM-DD`)
 }
 
+// Card T25 — cor de tag no mesmo formato aceito pela UI/rotas (#RRGGBB).
+function assertHexColor(value: unknown, field: string): void {
+  if (typeof value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(value)) throw new Error(`${field} deve ser um hex no formato #RRGGBB`)
+}
+
 function validatePlanningChanges(changes: unknown, allowedFields: readonly string[], clearableFields: readonly string[]): void {
   if (!Array.isArray(changes) || changes.length < 1 || changes.length > 20) throw new Error('changes deve conter entre 1 e 20 alterações')
   const seen = new Set<string>()
@@ -94,9 +100,12 @@ export function validateToolArguments(name: string, args: Record<string, unknown
   // schema exposto), eliminando a tabela paralela que já divergiu no passado.
   if (!isRegisteredTool(name)) throw new Error(`Ferramenta desconhecida: ${name}`)
   const required = requiredFieldsFor(name)
+  // Card T25 — set_member_squad.squadId é obrigatório mas aceita null (CLEAR).
+  const nullableRequired = new Set(['set_member_squad.squadId'])
   for (const field of required) {
     const value = args?.[field]
-    if (value === undefined || value === null || (typeof value === 'string' && !value.trim())) throw new Error(`Campo obrigatório ausente: ${field}`)
+    const nullable = nullableRequired.has(`${name}.${field}`)
+    if (value === undefined || (value === null && !nullable) || (typeof value === 'string' && !value.trim())) throw new Error(`Campo obrigatório ausente: ${field}`)
   }
   const input = args ?? {}
   // O schema declara additionalProperties: false — aceitar campo desconhecido
@@ -211,6 +220,19 @@ export function validateToolArguments(name: string, args: Record<string, unknown
   } else if (name === 'update_version') {
     validatePlanningChanges(input.changes, VERSION_EDIT_FIELDS, VERSION_CLEARABLE_FIELDS)
   } else if ('changes' in input && (typeof input.changes !== 'object' || input.changes === null || Array.isArray(input.changes))) throw new Error('changes deve ser um objeto')
+  // Card T25 — composição de squad e edições de cadastros.
+  if (name === 'set_member_squad') {
+    if (input.squadId !== null && input.squadId !== undefined) assertNonEmptyString(input.squadId, 'squadId', 128)
+  }
+  if (name === 'update_tag') {
+    const hasChange = ['name', 'color'].some(field => input[field] !== undefined && input[field] !== null)
+    if (!hasChange) throw new Error('update_tag exige ao menos um de name ou color')
+    if (input.color != null) assertHexColor(input.color, 'color')
+  }
+  if (name === 'update_cost_center') {
+    const hasChange = ['code', 'description'].some(field => input[field] !== undefined && input[field] !== null)
+    if (!hasChange) throw new Error('update_cost_center exige ao menos um de code ou description')
+  }
   if (name === 'update_items') {
     const filters = input.filters
     if (!filters || typeof filters !== 'object' || Array.isArray(filters)) throw new Error('filters deve ser um objeto')
@@ -241,6 +263,9 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     if (input.from != null) assertIsoDate(input.from, 'from')
     if (input.to != null) assertIsoDate(input.to, 'to')
     if (input.includeItems != null && typeof input.includeItems !== 'boolean') throw new Error('includeItems deve ser booleano')
+    if (input.limit != null && (!Number.isInteger(input.limit) || (input.limit as number) < 1 || (input.limit as number) > 100)) throw new Error('limit deve ser inteiro entre 1 e 100')
+    if (input.cursor != null) assertNonEmptyString(input.cursor, 'cursor', 4096)
+    if (input.detail != null) assertEnum(input.detail, 'detail', ['wip', 'blocked', 'overdue', 'remaining'])
   }
   if (name === 'batch_move') {
     assertStringArray(input.itemIds, 'itemIds', 500)

@@ -108,4 +108,57 @@ describe('comportamentos observáveis da interação do Board', () => {
     expect(updates[1]?.columnId).toBe('todo')
     expect(JSON.stringify(errors)).toBe(JSON.stringify(['Erro ao mover card']))
   })
+
+  test('409 no movimento faz rollback e comunica sem retry automático', async () => {
+    const errors: string[] = []
+    const updates: ItemData[] = []
+    let calls = 0
+    const handler = createBoardInteractionHandler({
+      projectId: 'project-1', columns, items: [item], displayedItems: [item],
+      setColumns: () => undefined,
+      setItems: update => updates.push(typeof update === 'function' ? update([{ ...item, columnId: 'doing' }])[0]! : update[0]!),
+      onError: message => errors.push(message),
+    }, async () => { calls += 1; throw new Error('conflito 409') })
+
+    await handler({ active: { id: item.id }, over: { id: 'doing' } } as never)
+    expect(updates[1]?.columnId).toBe('todo')
+    expect(JSON.stringify(errors)).toBe(JSON.stringify(['Erro ao mover card']))
+    expect(calls).toBe(1)
+  })
+
+  test('403 no movimento faz rollback, comunica e não repete a requisição', async () => {
+    const errors: string[] = []
+    const updates: ItemData[] = []
+    let calls = 0
+    const handler = createBoardInteractionHandler({
+      projectId: 'project-1', columns, items: [item], displayedItems: [item],
+      setColumns: () => undefined,
+      setItems: update => updates.push(typeof update === 'function' ? update([{ ...item, columnId: 'doing' }])[0]! : update[0]!),
+      onError: message => errors.push(message),
+    }, async () => { calls += 1; throw new Error('negado 403') })
+
+    await handler({ active: { id: item.id }, over: { id: 'doing' } } as never)
+    expect(updates[1]?.columnId).toBe('todo')
+    expect(JSON.stringify(errors)).toBe(JSON.stringify(['Erro ao mover card']))
+    expect(calls).toBe(1)
+  })
+
+  test('rollback preserva atualização mais recente de outro item', async () => {
+    const items = [item, { ...item, id: 'task-2', title: 'Tarefa 2', columnId: 'todo', position: 1 } as ItemData]
+    // Estado do servidor avança em task-2 enquanto a movimentação de task-1 está em voo.
+    let state: ItemData[] = items.map(candidate => ({ ...candidate }))
+    const handler = createBoardInteractionHandler({
+      projectId: 'project-1', columns, items, displayedItems: items,
+      setColumns: () => undefined,
+      setItems: update => { state = typeof update === 'function' ? update(state) : update },
+      onError: () => undefined,
+    }, async () => {
+      state = state.map(candidate => candidate.id === 'task-2' ? { ...candidate, title: 'Tarefa 2 (nova)' } : candidate)
+      throw new Error('falha')
+    })
+
+    await handler({ active: { id: 'task-1' }, over: { id: 'doing' } } as never)
+    expect(state.find(candidate => candidate.id === 'task-1')?.columnId).toBe('todo')
+    expect(state.find(candidate => candidate.id === 'task-2')?.title).toBe('Tarefa 2 (nova)')
+  })
 })

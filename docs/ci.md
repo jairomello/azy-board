@@ -1,9 +1,13 @@
 # Integração contínua (CI)
 
 O workflow [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) roda em todo
-push de branch e em todo pull request. Os gates obrigatórios da branch principal
-são nomeados exatamente como aparecem nos required checks: `check`, `contracts`,
-`smoke`, `e2e`, `advanced` e `image`.
+push de branch e em todo pull request. Os jobs/contextos inventariados no
+manifesto são `check`, `contracts`, `smoke`, `e2e`,
+`advanced (PostgreSQL + Valkey)` e `image (deploy reproduzível)`. Eles são os
+checks esperados pela política local; branch protection/rulesets são configuração
+externa, não comprovada por este repositório, e não se afirma que esses jobs
+bloqueiam merge. A fotografia por SHA, incluindo limites e estados pendentes,
+está em [`release-evidence.md`](release-evidence.md).
 
 ## Jobs
 
@@ -15,6 +19,7 @@ Validação principal, executada por `bun run check`:
 - `bun run lint` — lint real via Biome (ver abaixo).
 - `bun test` — suíte de testes do Bun.
 - `bun run build` — build de API, Web e MCP.
+- `bun run check:api-boundary` — ciclo de dependências, imports e build/boot isolado da API sem `apps/mcp`.
 
 ### `contracts`
 
@@ -31,9 +36,22 @@ Gates que detectam divergência de contratos antes do merge:
 
 ### `smoke`
 
-Sobe a API na porta `3001` e o Web na `5173` e roda `bun run test:smoke`
-(`200` na raiz e `401` em `/api/auth/me`). Usa `DATABASE_URL` temporário
-(`/tmp/azy-ci-smoke.db`), então não depende de estado externo.
+Sobe a API na porta `3001` e o Web na `5173`, usa banco temporário
+(`/tmp/azy-ci-smoke.db`) e roda `bun run test:smoke` com tenants efêmeros e
+provider determinístico. Além de readiness, login/cookie e `/api/auth/me`, o
+smoke exercita criação/edição/movimento/readback de itens, sessão VIEWER,
+isolamento entre tenants, recusas de autorização e uma jornada básica do agente.
+Logs de API/Web e diagnóstico são publicados em falha; teardown roda sempre.
+
+### `e2e`
+
+Executa `bun run check:frontend-tests` e `bun run test:e2e` em Chromium real com
+stack descartável SIMPLE. A suíte cobre login, criação de projeto, CRUD/movimento/
+reordenação de cards, Settings, permissões e agente determinístico. Uma falha
+Playwright reprova o job e publica trace, screenshot, HTML e logs em
+`e2e-diagnostics`. O passo `test:visual` é deliberadamente observacional e tem
+`continue-on-error: true`; até a promoção por evidência, não o conte como check
+bloqueante.
 
 ### `advanced` (PostgreSQL + Valkey)
 
@@ -55,11 +73,18 @@ Gate do perfil ADVANCED com serviços efêmeros:
   com `bun test apps/api/src/advanced-agent.test.ts`.
 - Ensaio de rollout/rollback (`advanced-rollout.test.ts`): redeploy do mesmo
   schema mantém marcador/volume/dados e estado incompatível é recusado.
+- Ensaio de realtime com **duas instâncias** (`advanced-realtime.test.ts`): dois
+  processos da API em portas distintas, clientes WebSocket em réplicas diferentes,
+  entrega cross-instância com identidade/sequence, ordem/dedup, replay de eventos
+  perdidos, restart com contador preservado, isolamento cross-tenant, cutover de
+  cursor legado e rollback para uma API. Evidência do gate multi-instância (T39).
 - API e Web reais sobem contra os serviços e o smoke autenticado
   (`bun run test:smoke`) é executado; logs são publicados sanitizados em falha.
 
-O gate avançado é obrigatório para considerar o perfil ADVANCED pronto e prova
-apenas boot/smoke de instância única — não habilita réplicas.
+O gate avançado é obrigatório para considerar o perfil ADVANCED pronto. Com T39,
+o ensaio `advanced-realtime` prova a topologia de **duas instâncias** (entrega,
+recuperação e isolamento), mas não promete HA geral — Pub/Sub continua sendo
+aceleração transitória com o SQL/outbox como verdade.
 O `bun run check` local continua sem serviços externos.
 
 ### `image` (deploy reproduzível)
@@ -73,11 +98,21 @@ Prova que o deploy constrói a partir de um clone limpo do repositório:
 - Build das imagens `Dockerfile` (API) e `Dockerfile.web` (nginx) com cache do
   GitHub Actions.
 - `bun run test:restore` — teste automatizado de backup e restore em instância
-  efêmera do perfil SIMPLE (sondas no banco e em uploads, `down -v`, restore e
-  verificação de integridade + `/health/ready`).
+  efêmera nos perfis SIMPLE e ADVANCED: dados de negócio, relações, anexos/hash,
+  autenticação/leitura após restore, integridade e `/health/ready`.
+- Evidência JSON de cada perfil publicada como artefato com SHA e retenção de 90
+  dias, inclusive quando algum gate falha.
 
 Qualquer falha reprova o job; o deploy considerado reproduzível é somente o que
 este job constrói.
+
+### `weekly-restore`
+
+`.github/workflows/weekly-restore.yml` executa restore integral SIMPLE e ADVANCED
+toda segunda-feira e também permite `workflow_dispatch`. Cada perfil é um job
+independente; manifesto/evidência são publicados com o SHA mesmo em caso de
+falha. Isso comprova execução periódica quando o workflow é executado, não prova
+disponibilidade de branch protection externa.
 
 ## Reprodução local
 
@@ -91,14 +126,37 @@ bun run check:i18n
 bun run test:mcp-catalog
 bun run test:agent-skill
 bun run test:migrations
+bun run check:docs
 bun run build:web
 bun run check:bundle
 
-# smoke: API em 3001 e Web em 5173
-DATABASE_URL=/tmp/azy-smoke.db bun run db:migrate
-DATABASE_URL=/tmp/azy-smoke.db JWT_SECRET=local-smoke PORT=3001 \
-  bun run --cwd apps/api src/index.ts &
-AZYBOARD_API_TARGET=http://localhost:3001 bun run dev:web &
+# smoke SIMPLE: use diretório/banco descartáveis e credenciais fictícias
+set -e
+export DATABASE_URL=/tmp/azy-smoke.db
+export AZYBOARD_INSTALL_PROFILE=SIMPLE
+export AZYBOARD_INSTANCE_DIR=/tmp/azy-smoke-state
+export JWT_SECRET=local-smoke-secret-not-production
+export ASSISTANT_ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+export AZY_AGENT_PROVIDER=stub
+export NODE_ENV=test
+export FRONTEND_URL=http://localhost:5173
+export SMOKE_URL=http://localhost:5173
+export SMOKE_API_URL=http://localhost:3001
+export SMOKE_ADMIN_EMAIL=smoke-admin@simple.test
+export SMOKE_ADMIN_PASSWORD=SmokePass123!
+export SMOKE_SECONDARY_ADMIN_EMAIL=smoke-secondary@simple.test
+export SMOKE_SECONDARY_ADMIN_PASSWORD=SmokeOther123!
+
+bun run db:migrate
+bun run --cwd apps/api src/scripts/setup.ts "Smoke" "smoke" "$SMOKE_ADMIN_EMAIL" "$SMOKE_ADMIN_PASSWORD" "Smoke Admin"
+bun run --cwd apps/api src/scripts/setup.ts "Smoke Secondary" "smoke-secondary" "$SMOKE_SECONDARY_ADMIN_EMAIL" "$SMOKE_SECONDARY_ADMIN_PASSWORD" "Smoke Secondary"
+bun run --cwd apps/api src/scripts/seed-smoke.ts
+
+setsid env PORT=3001 bun run --cwd apps/api src/index.ts >/tmp/azy-smoke-api.log 2>&1 & API_PID=$!
+setsid env AZYBOARD_API_TARGET=http://localhost:3001 bun run dev:web >/tmp/azy-smoke-web.log 2>&1 & WEB_PID=$!
+trap 'kill -TERM -- "-$API_PID" "-$WEB_PID" 2>/dev/null || true' EXIT
+
+# Aguarde /health/ready e http://localhost:5173 antes do smoke.
 bun run test:smoke
 
 # image: deploy reproduzível (exige Docker + Docker Compose v2)
@@ -107,8 +165,20 @@ docker compose -f docker-compose.simple.yml config -q
 docker compose -f docker-compose.advanced.yml config -q
 docker build -f Dockerfile -t azyboard-api:local .
 docker build -f Dockerfile.web -t azyboard-web:local .
-bun run test:restore
+bun run scripts/deploy-test-restore.ts --perfil SIMPLE
+bun run scripts/deploy-test-restore.ts --perfil ADVANCED
+
+# jornada de navegador
+bun run check:frontend-tests
+bun run test:e2e
 ```
+
+Para o smoke ADVANCED, repita o setup com `AZYBOARD_INSTALL_PROFILE=ADVANCED`,
+PostgreSQL e Valkey descartáveis, aplique `bun run db:migrate:pg`, rode o setup
+para os dois tenants e `seed-smoke.ts`, e suba `src/worker.ts` junto da API. Use
+portas livres para API/Web e defina `SMOKE_URL`/`SMOKE_API_URL` de acordo com os
+targets do proxy. A receita exata executada no runner é a sequência dos jobs
+`smoke` e `advanced` em `.github/workflows/ci.yml`.
 
 ## Orçamento de bundle do Web
 
@@ -175,30 +245,23 @@ habilitar `--error-on-warnings` no `scripts/lint.ts` para tornar o gate estrito.
 - regenera em memória o catálogo MCP, o OpenAPI e a tabela de limites e compara
   com os artefatos versionados em `docs/generated/` e em `apps/mcp/README.md`;
 - valida links internos relativos de Markdown;
+- valida o manifesto `docs/release-evidence.json`: estados, comando, evidência,
+  SHA completo e data; recusa status verificado sobre working tree alterada e
+  usa fixture para provar que evidência ausente é detectada;
 - rejeita afirmações proibidas (mantidas em um ponto único no script).
 
 Para atualizar os artefatos depois de mudar um contrato volátil, rode
 `bun run generate:docs`. Os papéis de cada fonte estão em `docs/README.md`.
 
-## Required checks
+## Proteção externa
 
-A proteção de branch é configuração externa ao repositório. No GitHub, em
-**Settings → Branches → Branch protection rules** (ou Rulesets) da branch
-principal, marque como obrigatórios os jobs:
+O manifesto [`release-policy.json`](release-policy.json) inventaria os jobs e
+contextos esperados. A proteção efetiva de branches e rulesets permanece
+`NOT_PROVEN`; YAML, workflow verde ou manifesto não comprovam bloqueio de merge.
+Configuração externa de required checks não faz parte desta demanda.
 
-- `check`
-- `contracts`
-- `smoke`
-- `e2e`
-- `advanced`
-- `image`
-
-### Trabalho solo
-
-Quando uma única pessoa mantém o repositório, a recomendação é **não** exigir
-required checks nem PR obrigatório: o CI roda a cada push e serve de sinal,
-sem adicionar fricção. Nesse caso, rode `bun run check` localmente antes de
-subir e acompanhe o resultado no GitHub Actions.
-
-Ao passar a trabalhar com mais pessoas, ative os required checks acima para
-bloquear merge com gate reprovado.
+Os estados observados, comandos, ressalvas por perfil e metadados de execução
+ficam em [`release-evidence.md`](release-evidence.md) e
+[`release-evidence.json`](release-evidence.json). Uma execução local sobre
+working tree alterada é marcada `LIMITADO`; somente artefato vinculado ao SHA
+limpo da execução pode ser `VERIFICADO`.

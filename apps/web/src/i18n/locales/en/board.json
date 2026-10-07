@@ -256,5 +256,18 @@
   "planning": "Planning",
   "information": "Information",
   "saveChanges": "Save changes",
-  "filtersSummary": "Filters ({{count}})"
+  "filtersSummary": "Filters ({{count}})",
+  "addCard": "Add card",
+  "noArchivedItems": "No archived items in this project.",
+  "itemArchived": "Item archived",
+  "archiveItemError": "Error archiving item",
+  "itemRestored": "Item restored",
+  "unarchiveItemError": "Error restoring item",
+  "cardCreateError": "Error creating card",
+  "subtaskCreated": "Subtask created",
+  "subtaskCreateError": "Error creating subtask",
+  "itemDeleted": "Item deleted",
+  "itemDeleteError": "Error deleting item",
+  "moduleCreated": "Module created",
+  "moduleCreateError": "Error creating module"
 }

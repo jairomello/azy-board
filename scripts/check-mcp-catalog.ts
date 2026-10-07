@@ -1,5 +1,5 @@
 const documentation = await Bun.file(new URL('../apps/mcp/README.md', import.meta.url)).text()
-const registrySource = await Bun.file(new URL('../apps/mcp/src/registry.ts', import.meta.url)).text()
+const registrySource = await Bun.file(new URL('../packages/tool-execution/src/registry.ts', import.meta.url)).text()
 const validationSource = await Bun.file(new URL('../packages/tool-registry/src/validation.ts', import.meta.url)).text()
 const { getSharedToolDefinitions, SHARED_TOOL_NAMES, requiredFieldsFor, isRegisteredTool } = await import('../packages/tool-registry/src/index.ts')
 const { validateToolArguments } = await import('../packages/tool-registry/src/validation.ts')
@@ -46,15 +46,19 @@ const executorMismatches = Object.entries(executorRequiredFields).filter(([name,
 // A tabela paralela de obrigatórios não pode voltar a validation.ts.
 const validationKeepsRequiredTable = /const\s+requiredByTool\s*:/.test(validationSource)
 // Código morto não pode ser reintroduzido nos fontes do MCP e do tool-registry.
-const mcpSources = ['registry.ts', 'index.ts', 'tools.ts']
+const mcpSources = ['index.ts', '../mcp-server.ts']
+const executionSources = ['registry.ts', 'http-adapter.ts']
 const registrySources = ['fields.ts', 'registry.ts', 'policies.ts', 'validation.ts', 'limits.ts']
 const deadCodeFindings: string[] = []
 for (const file of mcpSources) {
   const source = await Bun.file(new URL(`../apps/mcp/src/${file}`, import.meta.url)).text()
   const lines = source.split('\n')
-  lines.forEach((line, index) => {
-    if (/\bfalse\s*\?/.test(line) || /\bif\s*\(\s*false\s*\)/.test(line)) deadCodeFindings.push(`mcp/${file}:${index + 1}`)
-  })
+  lines.forEach((line, index) => { if (/\bfalse\s*\?/.test(line) || /\bif\s*\(\s*false\s*\)/.test(line)) deadCodeFindings.push(`mcp/${file}:${index + 1}`) })
+}
+for (const file of executionSources) {
+  const source = await Bun.file(new URL(`../packages/tool-execution/src/${file}`, import.meta.url)).text()
+  const lines = source.split('\n')
+  lines.forEach((line, index) => { if (/\bfalse\s*\?/.test(line) || /\bif\s*\(\s*false\s*\)/.test(line)) deadCodeFindings.push(`tool-execution/${file}:${index + 1}`) })
 }
 for (const file of registrySources) {
   const source = await Bun.file(new URL(`../packages/tool-registry/src/${file}`, import.meta.url)).text()

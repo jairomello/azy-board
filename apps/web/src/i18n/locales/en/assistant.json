@@ -25,6 +25,10 @@
   "empty": "Blank",
   "retry": "Dismiss error and try again",
   "runFailed": "The run failed. You can try again.",
+  "providerUnavailable": "The configured AI providers are unavailable right now. Try again in a moment or add another fallback model in the agent settings.",
+  "providerRateLimited": "The AI provider rate-limited the requests. Wait a few seconds and try again.",
+  "providerUnauthorized": "The AI provider rejected the credential or model. Review the agent configuration.",
+  "modelUnavailable": "The configured model is no longer available. Choose another model in the agent settings.",
   "rateLimit": "Too many messages in a row. Wait a few seconds and try again.",
   "concurrencyLimit": "An agent run is already in progress. Wait for it to finish before sending another.",
   "quotaExceeded": "Daily agent budget reached. Try again tomorrow.",
@@ -129,5 +133,6 @@
   },
   "revealOffer": "Want me to show this card? The previous view can be restored.",
   "focusAmbiguity": "There is more than one possible item (checklist, link or work log). Which one should I use?",
-  "focusFrontItem": "Using the front item: {{title}}"
+  "focusFrontItem": "Using the front item: {{title}}",
+  "saveModel": "Save"
 }

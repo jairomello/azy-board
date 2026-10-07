@@ -42,19 +42,21 @@ describe('detecção de conexão zumbi', () => {
 })
 
 describe('estados de sincronização do hook', () => {
-  test('backoff, cursor e estados estão no fonte do hook', async () => {
-    const source = await fetch(new URL('./useWebSocket.ts', import.meta.url)).then(r => r.text())
-    // Cursor enviado como since no handshake
-    expect(source.includes('cursorRef.current')).toBe(true)
-    expect(source.includes('&since=${since}')).toBe(true)
-    // Máquina de estados honesta
-    expect(source.includes("'connecting' | 'syncing' | 'synced' | 'offline'")).toBe(true)
-    expect(source.includes("case 'REPLAY_COMPLETE':")).toBe(true)
-    expect(source.includes("case 'RESYNC_REQUIRED':")).toBe(true)
-    // synced só após reconciliação (REPLAY_COMPLETE ou onResync concluído)
-    expect(source.includes("setStatus('synced')")).toBe(true)
-    expect(source.includes('onResyncRef.current?.()')).toBe(true)
-    // Heartbeat não toca estado de dados
-    expect(source.includes("case 'HEARTBEAT':")).toBe(true)
+  test('IO do hook (cursor/protocolo) e máquina de estados da sessão estão presentes', async () => {
+    const hook = await fetch(new URL('./useWebSocket.ts', import.meta.url)).then(r => r.text())
+    const session = await fetch(new URL('../lib/realtimeSession.ts', import.meta.url)).then(r => r.text())
+    // Cursor enviado como since no handshake e protocolo negociado.
+    expect(hook.includes('session.appliedCursor')).toBe(true)
+    expect(hook.includes('&since=${since}')).toBe(true)
+    expect(hook.includes('&protocol=${WS_PROTOCOL_VERSION}')).toBe(true)
+    expect(hook.includes('onResyncRef.current?.()')).toBe(true)
+    // Máquina de estados honesta na sessão.
+    expect(session.includes("'connecting' | 'syncing' | 'synced' | 'offline'")).toBe(true)
+    expect(session.includes("case 'REPLAY_COMPLETE':")).toBe(true)
+    expect(session.includes("case 'RESYNC_REQUIRED':")).toBe(true)
+    expect(session.includes("case 'HEARTBEAT':")).toBe(true)
+    // synced só após reconciliação (replay/barreira), nunca após catch.
+    expect(session.includes("setStatus('synced')")).toBe(true)
+    expect(session.includes("setStatus('syncing')")).toBe(true)
   })
 })

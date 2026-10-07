@@ -7,11 +7,16 @@ process.env.DATABASE_URL = ':memory:'
 const { db } = await import('../db/index')
 const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
 const { persistence } = await import('../persistence/runtime')
+const { createLocalCoordination } = await import('../coordination/local')
 const {
-  broadcast,
+  configureRealtimeAuthorizer,
+  configureRealtimeBus,
   controlMessage,
   durableReplayPlan,
   heartbeatTick,
+  isRealtimeSubscriberHealthy,
+  publishDurableEvent,
+  reconcileActiveRooms,
   resetRealtimeState,
   wsHandler,
 } = await import('./websocket')
@@ -40,7 +45,7 @@ function fakeSocket(projectId: string, sinceCursor: number | null = null): FakeS
     sent: [],
     closed: false,
     failSend: false,
-    data: { projectId, tenantId: TENANT, userId: 'u', sinceCursor },
+    data: { projectId, tenantId: TENANT, userId: 'u', sinceCursor, protocolVersion: null },
     send(message: string) {
       if (socket.failSend) throw new Error('dead peer')
       socket.sent.push(message)
@@ -68,20 +73,63 @@ function eventSequences(socket: FakeSocket): number[] {
     .map(message => message.sequence as number)
 }
 
-afterEach(() => resetRealtimeState())
+afterEach(() => {
+  configureRealtimeAuthorizer(null)
+  configureRealtimeBus(null)
+  resetRealtimeState()
+})
 
-describe('sequência por projeto', () => {
-  test('broadcast aloca sequence monotônica por projeto', async () => {
+describe('[T39] consumo dedup e contíguo por sequence durável', () => {
+  test('entrega eventos confirmados em ordem contígua', async () => {
     const socket = fakeSocket('seq-p1')
     await wsHandler().open(asServer(socket))
     socket.sent.length = 0
 
-    broadcast('seq-p1', { type: 'CARD_MOVED', projectId: 'seq-p1', payload: { itemId: 'a' } })
-    broadcast('seq-p1', { type: 'CARD_MOVED', projectId: 'seq-p1', payload: { itemId: 'b' } })
-    broadcast('seq-p2', { type: 'CARD_MOVED', projectId: 'seq-p2', payload: { itemId: 'c' } })
+    publishDurableEvent(TENANT, 'seq-p1', 1, { type: 'CARD_MOVED', projectId: 'seq-p1', payload: { itemId: 'a' } }, { eventId: 'e1' })
+    publishDurableEvent(TENANT, 'seq-p1', 2, { type: 'CARD_MOVED', projectId: 'seq-p1', payload: { itemId: 'b' } }, { eventId: 'e2' })
 
-    const sequences = socket.sent.map(raw => (JSON.parse(raw) as { sequence: number }).sequence)
-    expect(sequences).toEqual([1, 2])
+    expect(eventSequences(socket)).toEqual([1, 2])
+  })
+
+  test('deduplica por eventId sem reaplicar efeito', async () => {
+    const socket = fakeSocket('dedup-p1')
+    await wsHandler().open(asServer(socket))
+    socket.sent.length = 0
+
+    const event = { type: 'ITEM_CREATED' as const, projectId: 'dedup-p1', payload: { itemIds: ['x'] } }
+    publishDurableEvent(TENANT, 'dedup-p1', 1, event, { eventId: 'dup-1' })
+    publishDurableEvent(TENANT, 'dedup-p1', 1, event, { eventId: 'dup-1' })
+    publishDurableEvent(TENANT, 'dedup-p1', 1, event, { eventId: 'dup-2' }) // sequence não avança
+
+    expect(eventSequences(socket)).toEqual([1])
+  })
+
+  test('retém out-of-order em buffer e drena quando a lacuna fecha', async () => {
+    const socket = fakeSocket('gap-p1')
+    await wsHandler().open(asServer(socket))
+    socket.sent.length = 0
+
+    publishDurableEvent(TENANT, 'gap-p1', 1, { type: 'ITEM_CREATED', projectId: 'gap-p1', payload: {} }, { eventId: 'g1' })
+    publishDurableEvent(TENANT, 'gap-p1', 3, { type: 'ITEM_CREATED', projectId: 'gap-p1', payload: {} }, { eventId: 'g3' })
+    expect(eventSequences(socket)).toEqual([1])
+
+    publishDurableEvent(TENANT, 'gap-p1', 2, { type: 'ITEM_CREATED', projectId: 'gap-p1', payload: {} }, { eventId: 'g2' })
+    expect(eventSequences(socket)).toEqual([1, 2, 3])
+  })
+
+  test('preenche a lacuna pelo SQL durável quando a mensagem se perde', async () => {
+    await seed('sqlfill-p1', 1)
+    const socket = fakeSocket('sqlfill-p1')
+    await wsHandler().open(asServer(socket))
+    socket.sent.length = 0
+
+    // Novos eventos confirmados na outbox, mas o do meio não chegou ao canal.
+    await seed('sqlfill-p1', 1) // sequence 2
+    await seed('sqlfill-p1', 1) // sequence 3
+    publishDurableEvent(TENANT, 'sqlfill-p1', 3, { type: 'ITEM_CREATED', projectId: 'sqlfill-p1', payload: {} }, { eventId: 's3' })
+
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(eventSequences(socket)).toEqual([2, 3])
   })
 })
 
@@ -165,5 +213,100 @@ describe('heartbeat e descarte de peers', () => {
 
     handler.message(asServer(socket), JSON.stringify(controlMessage('hb-2', 'HEARTBEAT')))
     expect(socket.sent).toEqual([])
+  })
+})
+
+describe('[T39] revalidação de autorização de salas', () => {
+  const flush = () => new Promise(resolve => setTimeout(resolve, 20))
+
+  test('heartbeat corta conexão revogada', async () => {
+    configureRealtimeAuthorizer(async () => false)
+    const socket = fakeSocket('revoke-hb')
+    await wsHandler().open(asServer(socket))
+    socket.sent.length = 0
+
+    heartbeatTick()
+    await flush()
+
+    expect(socket.closed).toBe(true)
+  })
+
+  test('mudança de membership revalida imediatamente', async () => {
+    configureRealtimeAuthorizer(async () => false)
+    const socket = fakeSocket('revoke-members')
+    await wsHandler().open(asServer(socket))
+    socket.sent.length = 0
+
+    publishDurableEvent(TENANT, 'revoke-members', 1, { type: 'PROJECT_METADATA_CHANGED', projectId: 'revoke-members', payload: { section: 'members' } }, { eventId: 'm1' })
+    await flush()
+
+    expect(socket.closed).toBe(true)
+  })
+
+  test('conexão autorizada permanece aberta', async () => {
+    configureRealtimeAuthorizer(async () => true)
+    const socket = fakeSocket('keep-hb')
+    await wsHandler().open(asServer(socket))
+    socket.sent.length = 0
+
+    heartbeatTick()
+    await flush()
+
+    expect(socket.closed).toBe(false)
+    expect(controls(socket)).toEqual(['HEARTBEAT'])
+  })
+})
+
+describe('[T39] recuperação por watermark e barreira de refetch', () => {
+  const flush = () => new Promise(resolve => setTimeout(resolve, 30))
+
+  test('reconcile recupera a última mensagem perdida sem novo publish', async () => {
+    await seed('wm-lost', 1)
+    const socket = fakeSocket('wm-lost')
+    await wsHandler().open(asServer(socket))
+    socket.sent.length = 0
+
+    // Evento confirmado na outbox cuja mensagem do canal se perdeu.
+    await seed('wm-lost', 1)
+    await reconcileActiveRooms()
+    await flush()
+
+    expect(eventSequences(socket)).toEqual([2])
+  })
+
+  test('REFETCH_COMPLETE só confirma o token pendente da conexão', async () => {
+    const socket = fakeSocket('barrier-1', 99) // cursor à frente → RESYNC
+    const handler = wsHandler()
+    await handler.open(asServer(socket))
+    const resync = socket.sent
+      .map(raw => JSON.parse(raw) as { kind?: string; type?: string; token?: string })
+      .find(message => message.kind === 'control' && message.type === 'RESYNC_REQUIRED')
+    expect(resync?.token).toBeTruthy()
+    expect(socket.data.refetchToken).toBe(resync!.token)
+
+    handler.message(asServer(socket), JSON.stringify({ kind: 'control', type: 'REFETCH_COMPLETE', projectId: 'barrier-1', sequence: 0, token: 'geração-antiga' }))
+    expect(socket.data.refetchToken).toBe(resync!.token)
+
+    handler.message(asServer(socket), JSON.stringify({ kind: 'control', type: 'REFETCH_COMPLETE', projectId: 'barrier-1', sequence: 0, token: resync!.token }))
+    expect(socket.data.refetchToken).toBeNull()
+  })
+})
+
+describe('[T39] saúde do subscriber do barramento', () => {
+  test('falha de assinatura degrada readiness do realtime', async () => {
+    const broken = {
+      ...createLocalCoordination(),
+      subscribe: async () => { throw new Error('barramento fora') },
+    }
+    configureRealtimeBus(broken)
+    const socket = fakeSocket('health-1')
+    await wsHandler().open(asServer(socket))
+
+    expect(isRealtimeSubscriberHealthy()).toBe(false)
+  })
+
+  test('SIMPLE (sem barramento) permanece saudável', () => {
+    configureRealtimeBus(null)
+    expect(isRealtimeSubscriberHealthy()).toBe(true)
   })
 })

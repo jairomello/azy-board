@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "policyVersion": "1.0.0",
+  "repository": {
+    "slug": "jairomello/azy-board",
+    "visibility": "public",
+    "defaultBranch": "main",
+    "protectedBranchTargets": ["main"],
+    "releaseBranchesObserved": [],
+    "remoteHeadsObserved": [
+      "main",
+      "ci/add-ci-pipeline",
+      "feat/t15-card-description-autosave",
+      "fix/azy-agent-chat-contrast",
+      "fix/profile-menu-stacking"
+    ],
+    "observedAt": "2026-10-07",
+    "observedAtCommit": "6f311de528b643760ac38aaac3efa671957a498e"
+  },
+  "protectionAudit": {
+    "status": "NOT_PROVEN",
+    "externalConfigurationScope": "OUT_OF_SCOPE_FOR_T43_BY_USER_DECISION",
+    "requiredChecksByPolicy": true,
+    "strictUpToDateByPolicy": true,
+    "allowedBypassActors": "UNKNOWN",
+    "branchProtectionEndpointHttpStatus": 401,
+    "rulesetsEndpointHttpStatus": 200,
+    "rulesetsVisibleWithoutAuthentication": [],
+    "reason": "gh CLI ausente e a API de branch protection exige autenticação. Uma lista pública de rulesets vazia não comprova ausência de branch protection nem bypass."
+  },
+  "requiredChecks": [
+    {
+      "jobId": "check",
+      "context": "check",
+      "appSlugExpected": "github-actions",
+      "profile": "GENERAL",
+      "requiredByPolicy": true,
+      "actualRequired": "NOT_PROVEN"
+    },
+    {
+      "jobId": "contracts",
+      "context": "contracts",
+      "appSlugExpected": "github-actions",
+      "profile": "GENERAL",
+      "requiredByPolicy": true,
+      "actualRequired": "NOT_PROVEN"
+    },
+    {
+      "jobId": "smoke",
+      "context": "smoke",
+      "appSlugExpected": "github-actions",
+      "profile": "SIMPLE",
+      "requiredByPolicy": true,
+      "actualRequired": "NOT_PROVEN"
+    },
+    {
+      "jobId": "e2e",
+      "context": "e2e",
+      "appSlugExpected": "github-actions",
+      "profile": "SIMPLE",
+      "requiredByPolicy": true,
+      "actualRequired": "NOT_PROVEN"
+    },
+    {
+      "jobId": "advanced",
+      "context": "advanced (PostgreSQL + Valkey)",
+      "appSlugExpected": "github-actions",
+      "profile": "ADVANCED",
+      "requiredByPolicy": true,
+      "actualRequired": "NOT_PROVEN"
+    },
+    {
+      "jobId": "image",
+      "context": "image (deploy reproduzível)",
+      "appSlugExpected": "github-actions",
+      "profile": "SIMPLE",
+      "requiredByPolicy": true,
+      "actualRequired": "NOT_PROVEN",
+      "coverage": "Build API/Web; restore autenticado SIMPLE+ADVANCED no CI e no workflow semanal."
+    }
+  ],
+  "evidencePolicy": {
+    "requiredFields": [
+      "repository",
+      "branch",
+      "commitSha",
+      "observedAt",
+      "workflow",
+      "runId",
+      "checkContext",
+      "appSlug",
+      "conclusion",
+      "artifactUrl"
+    ],
+    "neverRecord": [
+      "GITHUB_TOKEN",
+      "GH_TOKEN",
+      "JWT_SECRET",
+      "DATABASE_URL credentials",
+      "REDIS_URL credentials",
+      "admin credentials"
+    ],
+    "unavailableEvidenceStatus": "NOT_PROVEN",
+    "visualRegressionIsRequired": false
+  }
+}

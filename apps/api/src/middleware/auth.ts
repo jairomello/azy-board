@@ -2,9 +2,9 @@ import type { Context, Next } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { isGlobalGroup, verifyJwt, signJwt, SESSION_COOKIE, sessionCookieOptions, resolveSessionState } from '../services/auth'
-import { hasGlobalGroup, hasMemberRole, hasKeyPermission, isValidApiKeyPermissionScope, parseApiKeyScope } from '../services/authorization'
+import { hasGlobalGroup, isValidApiKeyPermissionScope, parseApiKeyScope } from '../services/authorization'
 import { persistence } from '../persistence/runtime'
-import { userPersistenceContext } from '../persistence/context'
+import { authorizeProjectRole } from '../services/projectAuthorization'
 import type { RequestContext } from '@azy-board/api-contracts'
 import type { GlobalGroup, MemberRole } from '@azy-board/domain'
 
@@ -99,47 +99,10 @@ export function requireRole(minRole: MemberRole) {
 
     if (!projectId) return c.json({ error: 'Projeto não especificado', code: 'INVALID_REQUEST', retryable: false }, 400)
 
-    // [TENANT] Resolve a visibilidade do projeto no tenant atual antes do bypass global.
-    // Projeto restrito sem membership ou gerência não pode ser acessado por nenhuma rota.
-    const persistenceContext = userPersistenceContext(ctx)
-    const project = await persistence.projects.getProject(persistenceContext, projectId)
-    if (!project) return c.json({ error: 'Projeto não encontrado', code: 'RESOURCE_NOT_FOUND', retryable: false }, 404)
-
-    const membership = await persistence.projects.getMembership(persistenceContext, projectId, ctx.userId)
-
-    const globalAdmin = hasGlobalGroup(ctx.globalGroup, 'ADMIN')
-    const isProjectManager = project.managerUserId === ctx.userId
-    if (project.isRestricted && !membership && !isProjectManager) {
-      // Não revelar projeto restrito nem mesmo para ADMIN/ROOT, por URL ou API Key.
-      return c.json({ error: 'Projeto não encontrado', code: 'RESOURCE_NOT_FOUND', retryable: false }, 404)
-    }
-    const isAssociated = Boolean(membership || isProjectManager)
-    if (minRole === 'ADMIN' && !hasGlobalGroup(ctx.globalGroup, 'MANAGER')) {
-      return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
-    }
-    if (!isAssociated && !globalAdmin) {
-      // Retorna 404 para não revelar se o projeto existe para outro tenant
-      return c.json({ error: 'Projeto não encontrado', code: 'RESOURCE_NOT_FOUND', retryable: false }, 404)
-    }
-
-    if (!globalAdmin && !hasGlobalGroup(ctx.globalGroup, 'MANAGER') && !hasMemberRole(membership?.role, minRole) && !(isProjectManager && minRole === 'VIEWER')) {
-      return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
-    }
-    if (!globalAdmin && hasGlobalGroup(ctx.globalGroup, 'MANAGER') && minRole === 'ADMIN' && !membership && !isProjectManager) {
-      return c.json({ error: 'Projeto não encontrado', code: 'RESOURCE_NOT_FOUND', retryable: false }, 404)
-    }
-    if (!globalAdmin && membership && !hasMemberRole(membership.role, minRole) && !(hasGlobalGroup(ctx.globalGroup, 'MANAGER') && minRole === 'ADMIN')) {
-      return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
-    }
     const permissionScope = c.get('apiKeyPermissionScope')
-    if (permissionScope) {
-      const requiredPermission = minRole === 'VIEWER' ? 'read' : minRole === 'MEMBER' ? 'write' : 'admin'
-      if (!hasKeyPermission(permissionScope, minRole)) {
-        return c.json({ error: 'Permissão insuficiente', code: 'FORBIDDEN', retryable: false }, 403)
-      }
-    }
-
-    c.set('memberRole', globalAdmin ? 'ADMIN' : membership?.role ?? 'MEMBER')
+    const authorization = await authorizeProjectRole(ctx, projectId, minRole, permissionScope)
+    if (!authorization.ok) return c.json(authorization.body, authorization.status)
+    c.set('memberRole', authorization.memberRole)
     await next()
   }
 }

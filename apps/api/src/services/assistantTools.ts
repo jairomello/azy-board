@@ -13,5 +13,5 @@ export {
   assertHumanContext,
   executeSharedTool,
   sanitizeToolOutput,
-} from '../../../mcp/src/registry.js'
-export type { ToolExecution } from '../../../mcp/src/registry.js'
+} from '@azy-board/tool-execution'
+export type { ToolExecution } from '@azy-board/tool-execution'

@@ -14,6 +14,7 @@ describe('formulários de épico e história no padrão da modal de task', () =>
   test('épico usa casca, áreas, painel e persistência de versão/código', async () => {
     const epic = await source('./components/EpicModal.tsx')
     const board = await source('./features/board/BoardScreen.tsx')
+    const editing = await source('./features/board/hooks/useBoardItemEditing.ts')
     contains(epic, '<ItemDetailModalShell')
     contains(epic, '<ItemDetailHeader')
     contains(epic, '<ItemAreaTabs')
@@ -33,8 +34,8 @@ describe('formulários de épico e história no padrão da modal de task', () =>
     expect(epic.includes('ChecklistSection')).toBe(false)
     expect(epic.includes('WorkLogPanel')).toBe(false)
     contains(board, 'handleOpenChildFromHierarchy')
-    contains(board, 'versionId: data.versionId')
-    contains(board, 'sequenceCode: data.sequenceCode')
+    contains(editing, 'versionId: data.versionId')
+    contains(editing, 'sequenceCode: data.sequenceCode')
   })
 
   test('história mantém narrativa, critérios e notas em Detalhes', async () => {

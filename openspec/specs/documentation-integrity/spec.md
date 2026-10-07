@@ -3,9 +3,7 @@
 ## Purpose
 
 Definir os papéis de cada fonte de documentação, a geração de referências voláteis a partir do runtime (catálogo MCP, OpenAPI e limites), a fonte única das constantes de limites, a verificação de integridade (artefatos em dia, links internos e afirmações proibidas) e a revisão de documentação na definição de pronto.
-
 ## Requirements
-
 ### Requirement: Papéis definidos por fonte de documentação
 O projeto SHALL definir, em um único índice de documentação, o papel de cada fonte e o que pertence a cada uma: código/schema/runtime como fonte dos contratos, OpenSpec para decisão e comportamento, wiki para uso do produto, README para arquitetura e início rápido, e CHANGELOG para histórico. Nenhum documento SHALL ser usado para replicar fatos que tenham fonte derivável no runtime.
 
@@ -76,3 +74,19 @@ O projeto SHALL incluir a revisão de documentação na definição de pronto, e
 #### Scenario: Contrato volátil alterado sem regeneração é bloqueado
 - **WHEN** uma mudança altera um contrato volátil sem regenerar os artefatos
 - **THEN** a verificação de integridade falha e o pull request não é considerado pronto
+
+### Requirement: Garantias operacionais vinculadas à versão e evidência
+Documentação de release SHALL identificar garantias e limites por perfil como verificados, limitados ou pendentes, vinculando cada garantia verificada a teste/comando, evidência de execução, SHA e data. README/DEPLOY/TESTING SHALL referenciar fontes geradas para limites voláteis e descrever rollback/restore compatível com schema. Diagnósticos históricos SHALL estar sinalizados e ligados à revisão atual e cards de continuidade. Checker SHALL validar links/metadados da matriz e rejeitar status verificado sem prova, além dos contratos existentes de integridade.
+
+#### Scenario: Promessa sem prova
+- **WHEN** documentação marca suporte/garantia como verificado sem teste ou evidência aplicável à versão/perfil
+- **THEN** gate documental falha ou exige reclassificação explícita para limitado/pendente, sem inventar execução
+
+#### Scenario: Análise histórica consultada
+- **WHEN** leitor abre análise original de setembro
+- **THEN** encontra sinalização de diagnóstico histórico, ligação para revisão de 2026-10-05 e continuidade T36–T43
+
+#### Scenario: Release com evidência e recuperação
+- **WHEN** release candidata é preparada
+- **THEN** definição de pronto exige gates essenciais, prova da proteção efetiva, smoke/restore por perfil e documentação de limites/rollback vinculada ao SHA antes de declará-la verificada
+

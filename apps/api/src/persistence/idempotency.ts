@@ -12,6 +12,12 @@ export const COMMAND_NAMESPACES = {
   createItemLink: 'create_item_link.v1',
   createChecklist: 'create_checklist.v1',
   createChecklistItem: 'create_checklist_item.v1',
+  // Card T25 — mutações de cadastros/composição de squad pela conversa.
+  setMemberSquad: 'set_member_squad.v1',
+  updateSquad: 'update_squad.v1',
+  updateModule: 'update_module.v1',
+  updateTag: 'update_tag.v1',
+  updateCostCenter: 'update_cost_center.v1',
 } as const
 
 /** Sentinela para operações sem projeto (ex.: criação de projeto/tenant). */

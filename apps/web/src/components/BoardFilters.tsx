@@ -256,16 +256,16 @@ export function BoardFilters({
          {versions.length === 0 && <option disabled>{t('noVersions')}</option>}
         {versions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
       </select>
-      <select aria-label="Prioridade" value={filters.priority} onChange={e => update({ priority: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
+      <select aria-label={t('filterPriority')} value={filters.priority} onChange={e => update({ priority: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
          <option value="">{t('filterPriority')}</option><option value="LOW">{t('priorityLow')}</option><option value="MEDIUM">{t('priorityMedium')}</option><option value="HIGH">{t('priorityHigh')}</option><option value="CRITICAL">{t('priorityCritical')}</option>
       </select>
-      <select aria-label="Status" value={filters.status} onChange={e => update({ status: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
+      <select aria-label={t('filterStatus')} value={filters.status} onChange={e => update({ status: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
          <option value="">{t('filterStatus')}</option><option value="NOT_STARTED">{t('statusNotStarted')}</option><option value="IN_PROGRESS">{t('statusInProgress')}</option><option value="BLOCKED">{t('statusBlocked')}</option><option value="DONE">{t('statusDone')}</option><option value="CANCELLED">{t('statusCancelled')}</option>
       </select>
-      {members.length > 0 && <select aria-label="Autor" value={filters.authorId} onChange={e => update({ authorId: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
+      {members.length > 0 && <select aria-label={t('filterAuthor')} value={filters.authorId} onChange={e => update({ authorId: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
          <option value="">{t('filterAuthor')}</option><option value={EMPTY_FILTER_VALUE}>{t('noAuthor')}</option>{members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
       </select>}
-      <select aria-label="Centro de Custo" value={filters.costCenterId} onChange={e => update({ costCenterId: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
+      <select aria-label={t('filterCostCenter')} value={filters.costCenterId} onChange={e => update({ costCenterId: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
          <option value="">{t('filterCostCenter')}</option>
          <option value={EMPTY_FILTER_VALUE}>{t('noCostCenter')}</option>
          {costCenters.length === 0 && <option disabled>{t('filterCostCenter')}</option>}

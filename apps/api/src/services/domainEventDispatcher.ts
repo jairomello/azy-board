@@ -47,9 +47,10 @@ export interface TransportedDomainEvent {
   sequence: number
   type: string
   payload: unknown
+  schemaVersion: number
 }
 
-export type DomainEventTransport = (event: TransportedDomainEvent) => void
+export type DomainEventTransport = (event: TransportedDomainEvent) => void | Promise<void>
 
 export interface DomainEventDispatcherOptions {
   transport: DomainEventTransport
@@ -71,7 +72,13 @@ export interface DispatchSummary {
 
 /** Transporte local (SIMPLE): publica no canal WebSocket com a sequência durável. */
 export function websocketDomainEventTransport(event: TransportedDomainEvent): void {
-  publishDurableEvent(event.projectId, event.sequence, { projectId: event.projectId, type: event.type as WsEventType, payload: event.payload })
+  publishDurableEvent(
+    event.tenantId,
+    event.projectId,
+    event.sequence,
+    { projectId: event.projectId, type: event.type as WsEventType, payload: event.payload },
+    { eventId: event.id, schemaVersion: event.schemaVersion },
+  )
 }
 
 function backoffMs(attempts: number, base: number, max: number): number {
@@ -104,7 +111,7 @@ export async function dispatchDueEvents(options: DomainEventDispatcherOptions): 
       continue
     }
     try {
-      options.transport({ id: event.id, tenantId: event.tenantId, projectId: event.projectId, sequence: event.sequence, type: mapped.type, payload: mapped.payload })
+      await options.transport({ id: event.id, tenantId: event.tenantId, projectId: event.projectId, sequence: event.sequence, type: mapped.type, payload: mapped.payload, schemaVersion: event.schemaVersion })
       await persistence.domainEvents.markPublished(event.id, event.tenantId, clock().toISOString())
       published += 1
     } catch (error) {

@@ -34,10 +34,12 @@
     "test:agent-skill": "bun run scripts/check-agent-skill.ts",
     "generate:docs": "bun run scripts/generate-docs.ts",
     "check:docs": "bun run scripts/check-docs.ts",
+    "audit:release-policy": "bun run scripts/audit-release-policy.ts",
     "check:i18n": "bun run scripts/check-i18n.ts",
     "check:frontend-tests": "bun run scripts/check-frontend-tests.ts",
     "check:bundle": "bun run scripts/check-bundle.ts",
     "check:persistence": "bun run scripts/check-persistence-boundaries.ts",
+    "check:api-boundary": "bun run scripts/check-api-boundary.ts",
     "test:migrations": "bun test apps/api/src/db/migration.test.ts apps/api/src/db/integrity.test.ts apps/api/src/db/timestamp.test.ts",
     "test:mcp": "bun run --cwd apps/mcp test",
     "evals": "bun run scripts/evals.ts",
@@ -45,7 +47,7 @@
     "evals:env": "bun run scripts/buildEvalEnv.ts",
     "lint": "bun run scripts/lint.ts",
     "typecheck": "bun run --cwd packages/types typecheck && bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck && bun run --cwd apps/mcp typecheck",
-    "check": "bun run typecheck && bun run lint && bun run check:persistence && bun test --isolate && bun run build"
+    "check": "bun run typecheck && bun run lint && bun run check:persistence && bun run check:api-boundary && bun test --isolate && bun run build"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",

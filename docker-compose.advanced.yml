@@ -20,6 +20,9 @@ services:
   postgres:
     image: postgres:16
     restart: unless-stopped
+    # PostgreSQL usa /dev/shm para workers paralelos. O padrão do Docker
+    # (64 MiB) pode causar HTTP 500 sob a concorrência esperada pelo Dashboard.
+    shm_size: 1gb
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-azyboard}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}

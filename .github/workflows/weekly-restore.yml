@@ -1,0 +1,44 @@
+name: weekly-restore
+
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  restore:
+    name: restore (${{ matrix.profile }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: SIMPLE
+            compose-file: docker-compose.simple.yml
+          - profile: ADVANCED
+            compose-file: docker-compose.advanced.yml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Instalar dependências
+        run: bun install --frozen-lockfile
+      - name: Construir imagens do perfil
+        run: docker compose -f "${{ matrix.compose-file }}" build
+      - name: Executar restore integral
+        run: bun run scripts/deploy-test-restore.ts --perfil "${{ matrix.profile }}" --compose-file "${{ matrix.compose-file }}"
+      - name: Publicar evidência vinculada ao SHA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-restore-${{ matrix.profile }}-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 90
+          path: |
+            tmp/test-restore-*/manifest.json
+            tmp/test-restore-*/restore-evidence.json

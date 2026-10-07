@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { and, eq } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
-import { toolCreateTask, toolListTasks } from '../../mcp/src/tools'
+import { toolCreateTask, toolListTasks } from '@azy-board/tool-execution'
 import { ATTACHMENT_READ_MAX_BYTES, ATTACHMENT_READ_MAX_CHARS } from '@azy-board/assistant-contracts'
 
 process.env.DATABASE_URL = ':memory:'
@@ -2736,5 +2736,164 @@ describe('aparência de projeto e item (Card T14)', () => {
       body: JSON.stringify({ icon: 'invalid-icon' }),
     })
     expect(invalid.status).toBe(400)
+  })
+})
+
+describe('gestão de squads e cadastros pelo catálogo (T25)', () => {
+  let tenantId: string
+  let admin: { id: string; email: string }
+  let member: { id: string; email: string }
+  let outsider: { id: string; email: string }
+  let adminToken: string
+  let memberToken: string
+  let projectId: string
+  let squadA: string
+  let squadB: string
+
+  async function patchMember(body: Record<string, unknown>, headers: Record<string, string> = {}) {
+    return request(`/projects/${projectId}/members/${member.id}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body),
+    })
+  }
+  async function listMembers() {
+    const response = await request(`/projects/${projectId}/members`, adminToken)
+    return response.json() as Promise<Array<{ userId: string; role: string; squadId: string | null }>>
+  }
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'T25', slug: `t25-${tenantId}`, createdAt: new Date().toISOString() })
+    admin = await createUser(tenantId, 't25-admin@test.local', 'Admin T25', 'ADMIN')
+    member = await createUser(tenantId, 't25-member@test.local', 'Membro T25', 'TEAM_MEMBER')
+    outsider = await createUser(tenantId, 't25-out@test.local', 'Fora T25', 'TEAM_MEMBER')
+    adminToken = await token(admin.id, tenantId, admin.email)
+    memberToken = await token(member.id, tenantId, member.email)
+
+    const created = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Projeto T25', boardMode: 'HIERARCHICAL' }),
+    })
+    projectId = (await created.json() as { id: string }).id
+    await request(`/projects/${projectId}/members`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: member.email, role: 'MEMBER' }),
+    })
+    const a = await request(`/projects/${projectId}/squads`, adminToken, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Squad A' }) })
+    squadA = (await a.json() as { id: string }).id
+    const b = await request(`/projects/${projectId}/squads`, adminToken, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Squad B' }) })
+    squadB = (await b.json() as { id: string }).id
+  })
+
+  test('troca e remoção de squad preservam papel e membership', async () => {
+    const set = await patchMember({ squadId: squadA })
+    expect(set.status).toBe(200)
+    expect((await set.json() as { changed: boolean }).changed).toBe(true)
+    expect((await listMembers()).find(item => item.userId === member.id)).toMatchObject({ role: 'MEMBER', squadId: squadA })
+
+    const swap = await patchMember({ squadId: squadB })
+    expect((await swap.json() as { changed: boolean }).changed).toBe(true)
+    expect((await listMembers()).find(item => item.userId === member.id)).toMatchObject({ role: 'MEMBER', squadId: squadB })
+
+    const clear = await patchMember({ squadId: null })
+    expect((await clear.json() as { member: { squadId: string | null } }).member.squadId).toBeNull()
+    expect((await listMembers()).find(item => item.userId === member.id)).toMatchObject({ role: 'MEMBER', squadId: null })
+  })
+
+  test('no-op explícito quando o valor aprovado já é o atual', async () => {
+    await patchMember({ squadId: squadA })
+    const again = await patchMember({ squadId: squadA })
+    expect((await again.json() as { changed: boolean }).changed).toBe(false)
+  })
+
+  test('pessoa fora do projeto é rejeitada sem criar membership', async () => {
+    const response = await request(`/projects/${projectId}/members/${outsider.id}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ squadId: squadA }),
+    })
+    expect(response.status).toBe(404)
+    expect((await listMembers()).some(item => item.userId === outsider.id)).toBe(false)
+  })
+
+  test('squad de outro projeto é recusado sem tocar a membership', async () => {
+    const other = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Outro T25', boardMode: 'HIERARCHICAL' }),
+    })
+    const otherId = (await other.json() as { id: string }).id
+    const external = await request(`/projects/${otherId}/squads`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Squad Externo' }),
+    })
+    const externalSquad = (await external.json() as { id: string }).id
+    const before = (await listMembers()).find(item => item.userId === member.id)?.squadId
+    const response = await patchMember({ squadId: externalSquad })
+    expect(response.status).toBe(400)
+    expect((await listMembers()).find(item => item.userId === member.id)?.squadId).toBe(before)
+  })
+
+  test('concorrência de squad retorna conflito e preserva mudança independente de papel', async () => {
+    // Estado atual: squad A. Aprovação antiga acreditava que o squad era B.
+    const conflict = await patchMember({ squadId: squadB, expectedSquadId: squadB })
+    // expectedSquadId = squadB diverge do atual squadA → conflito
+    expect(conflict.status).toBe(409)
+    expect(await conflict.json()).toMatchObject({ error: { code: 'CONFLICT' } })
+
+    // Outro admin muda o papel; a troca de squad aprovada continua válida e preserva o papel novo.
+    await patchMember({ role: 'ADMIN' })
+    await patchMember({ squadId: squadB, expectedSquadId: squadA })
+    expect((await listMembers()).find(item => item.userId === member.id)).toMatchObject({ role: 'ADMIN', squadId: squadB })
+  })
+
+  test('código de centro de custo duplicado retorna 409 sem alterar', async () => {
+    const first = await request(`/projects/${projectId}/cost-centers`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: 'CC-1' }),
+    })
+    const ccId = (await first.json() as { id: string }).id
+    const second = await request(`/projects/${projectId}/cost-centers`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: 'CC-2' }),
+    })
+    const secondId = (await second.json() as { id: string }).id
+    const dup = await request(`/projects/${projectId}/cost-centers/${secondId}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: 'CC-1' }),
+    })
+    expect(dup.status).toBe(409)
+    const updated = await request(`/projects/${projectId}/cost-centers/${ccId}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ description: 'Atualizado' }),
+    })
+    expect(updated.status).toBe(200)
+    expect((await updated.json() as { previous: { code: string } }).previous.code).toBe('CC-1')
+  })
+
+  test('MEMBER edita tag mas não módulo', async () => {
+    const tag = await request(`/projects/${projectId}/tags`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Tag T25' }),
+    })
+    const tagId = (await tag.json() as { id: string }).id
+    const editTag = await request(`/projects/${projectId}/tags/${tagId}`, memberToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ color: '#00ff00' }),
+    })
+    expect(editTag.status).toBe(200)
+
+    const mod = await request(`/projects/${projectId}/modules`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Módulo T25' }),
+    })
+    const moduleId = (await mod.json() as { id: string }).id
+    const editModule = await request(`/projects/${projectId}/modules/${moduleId}`, memberToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Renomeado' }),
+    })
+    expect(editModule.status).toBe(403)
+  })
+
+  test('retry idempotente devolve o mesmo resultado sem duplicar efeitos', async () => {
+    await patchMember({ squadId: squadA })
+    const key = `t25-key-${generateId()}`
+    const headers = { 'Content-Type': 'application/json', 'Idempotency-Key': key }
+    const first = await request(`/projects/${projectId}/members/${member.id}`, adminToken, { method: 'PATCH', headers, body: JSON.stringify({ squadId: squadB }) })
+    const firstBody = await first.json()
+    expect((firstBody as { changed: boolean }).changed).toBe(true)
+    const second = await request(`/projects/${projectId}/members/${member.id}`, adminToken, { method: 'PATCH', headers, body: JSON.stringify({ squadId: squadB }) })
+    expect(second.status).toBe(200)
+    expect(await second.json()).toEqual(firstBody)
+
+    const conflict = await request(`/projects/${projectId}/members/${member.id}`, adminToken, {
+      method: 'PATCH', headers, body: JSON.stringify({ squadId: squadA }),
+    })
+    expect(conflict.status).toBe(409)
+    expect(await conflict.json()).toMatchObject({ error: { code: 'IDEMPOTENCY_CONFLICT' } })
   })
 })
