@@ -270,7 +270,7 @@ export function AppShell({
             link
           )
           return (
-            <div key={item.href} className="max-[1279px]:flex max-[1279px]:justify-center">
+            <div key={item.href ?? item.label} className="max-[1279px]:flex max-[1279px]:justify-center">
               <div className="min-[1280px]:hidden">
                 <Tooltip label={item.label}>
                   <>{itemContent}{children}</>

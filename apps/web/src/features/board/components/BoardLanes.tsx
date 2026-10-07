@@ -56,6 +56,7 @@ export function BoardLanes({
         <ModuleSwimlane key={module.id} title={module.name} epicCount={epics.length} progress={moduleProgress(epics)} points={modulePoints(epics)} collapsed={collapsedModules.has(module.id)} onToggle={() => onToggleModule(module.id)}>
           {epics.map(group => (
             <Swimlane key={group.epic.id} {...laneProps(group.epic.id, group.epic.title, columns, versions, sprints, group.tasks, collapsedEpics.has(group.epic.id), columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, () => onEditEpic(group.epic))}
+              onToggle={() => onToggleEpic(group.epic.id)}
               storyGroups={showStoryLanes ? group.storyGroups : undefined}
               collapsedStories={collapsedStories}
               onToggleStory={onToggleStory}
