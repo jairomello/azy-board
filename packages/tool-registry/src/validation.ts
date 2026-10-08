@@ -83,6 +83,11 @@ function addCalendarDays(day: string, count: number): string {
 
 /** Normaliza somente a ferramenta nova; list_tasks mantém seu contrato intacto. */
 export function normalizePlanningGapArguments(args: Record<string, unknown>, actorUserId?: string): Record<string, unknown> {
+  // O modelo às vezes envia `scope` como texto livre; scope é opcional e um
+  // texto nunca é um escopo válido — coage para null para não falhar a consulta.
+  if (args.scope != null && (typeof args.scope !== 'object' || Array.isArray(args.scope))) {
+    args = { ...args, scope: null }
+  }
   const referenceDate = args.referenceDate
   const timeZone = args.timeZone
   const hasReference = referenceDate !== undefined && referenceDate !== null
@@ -135,7 +140,11 @@ function validatePlanningGapWhere(where: unknown): void {
       return
     }
     if (typeof node.field !== 'string' || !fields.includes(node.field as typeof fields[number])) throw new Error(`field inválido; valores aceitos: ${fields.join(', ')}`)
-    if (node.conditions != null) throw new Error('Condições folha não aceitam conditions aninhadas')
+    // Folha pode trazer conditions vazio/null (clientes strict enviam o campo);
+    // apenas conditions com itens é inválido.
+    if (node.conditions != null && !(Array.isArray(node.conditions) && node.conditions.length === 0)) {
+      throw new Error('Condição folha não aceita conditions com itens; use conditions vazio ou null')
+    }
     if (node.operator === 'IS_EMPTY' || node.operator === 'IS_NOT_EMPTY') {
       if (node.value != null) throw new Error(`${node.operator} não recebe value; use null, e não um valor inferido`)
       return
@@ -224,7 +233,12 @@ export function validateToolArguments(name: string, args: Record<string, unknown
   if (input.limit != null && (typeof input.limit !== 'number' || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)) {
     throw new Error('limit, quando informado, deve ser um inteiro entre 1 e 100 (omita ou envie null para o padrão)')
   }
-  if (name === 'query_planning_gaps') validatePlanningGapWhere(input.where)
+  if (name === 'query_planning_gaps') {
+    if (input.scope != null && (typeof input.scope !== 'object' || Array.isArray(input.scope))) {
+      throw new Error('scope deve ser um objeto { types, statuses, moduleId, assignee, includeArchived } ou null; use where para as lacunas')
+    }
+    validatePlanningGapWhere(input.where)
+  }
   if (input.offset != null && (typeof input.offset !== 'number' || !Number.isInteger(input.offset) || input.offset < 0)) {
     throw new Error('offset, quando informado, deve ser um inteiro não negativo')
   }

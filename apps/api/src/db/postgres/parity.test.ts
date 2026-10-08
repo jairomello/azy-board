@@ -104,10 +104,15 @@ async function seedDuplication(ports: PersistencePorts, mode: 'HIERARCHICAL' | '
   return {
     mode, project, sourceRootId, destinationParentId, ids, result, replay, scope, mut,
     copiedSprintCount: result.createdItemIds.reduce((count, id) => count + (relationsAfter.get(id)?.itemSprints.length ?? 0), 0),
-    // Sem IDs físicos: a comparação entre adapters usa forma, não identidade.
-    copies: copies.map(item => item && ({ type: item.type, status: item.status, points: item.points, versionId: item.versionId, assigneeId: item.assigneeId, hasColumn: item.columnId !== null, hasParent: item.parentId !== null })),
-    copiedChecklists: copiedChecklists.map(list => ({ name: list.name, steps: list.items.map(step => ({ text: step.text, checked: step.checked, dueDate: step.dueDate, description: step.description })) })),
-    copiedLinks: copiedLinks.map(link => ({ name: link.name, url: link.url })),
+    // Sem IDs físicos e ordenado de forma estável: a ordem de irmãos criados
+    // depende de UUIDs aleatórios, então a paridade compara forma, não ordem.
+    copies: copies
+      .map(item => item && ({ type: item.type, status: item.status, points: item.points, versionId: item.versionId, assigneeId: item.assigneeId, hasColumn: item.columnId !== null, hasParent: item.parentId !== null }))
+      .sort((a, b) => `${a?.type}|${a?.points}|${a?.hasParent}`.localeCompare(`${b?.type}|${b?.points}|${b?.hasParent}`)),
+    copiedChecklists: copiedChecklists
+      .map(list => ({ name: list.name, steps: list.items.map(step => ({ text: step.text, checked: step.checked, dueDate: step.dueDate, description: step.description })) }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    copiedLinks: copiedLinks.map(link => ({ name: link.name, url: link.url })).sort((a, b) => a.url.localeCompare(b.url)),
     copiedTaskLogCount: copiedTaskLogs.total,
     copyIds: result.createdItemIds,
   }

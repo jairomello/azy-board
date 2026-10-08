@@ -305,6 +305,11 @@ História: Projetos`
     expect(toolsForMessage('Registre horas nas tasks e bugs do sprint atual')).not.toEqual(['batch', 'list_modules'])
   })
 
+  test('oferece ferramentas de apontamento de trabalho e links em pedidos de mutação', () => {
+    expect(toolsForMessage('Registre 30 minutos de trabalho no card T1 com a atividade "revisão"')).toContain('create_item_log')
+    expect(toolsForMessage('Adicione um link https://example.com no card T1')).toContain('create_item_link')
+  })
+
   test('prioriza movimentação atual sobre criação mencionada no histórico', () => {
     const tools = toolsForMessage("mova a tarefa 'Criar formulário' para 'Fazendo'", 'Cadastre a estrutura abaixo com EPIC, STORY e TASK em lote')
     expect(tools).toEqual(['list_tasks', 'list_columns', 'move_task'])

@@ -386,6 +386,10 @@ export function toolsForMessage(content: string, recentContext = ''): string[] {
   add(/coluna/, ['create_column', 'reorder_columns'])
   add(/tag/, ['create_tag', 'set_item_tags'])
   add(/checklist/, ['create_checklist', 'add_checklist_item', 'check_item', 'update_checklist', 'delete_checklist'])
+  // Card T21/T22 — apontamentos de trabalho e links do card não entravam no
+  // roteamento adaptativo de mutação; o agente dizia que a ferramenta não existia.
+  add(/registr|apontament|\blog\b|horas|minutos?|dura[çc]|trabalho/, ['create_item_log', 'update_item_log', 'list_item_logs'])
+  add(/links?|url|endere[çc]o/, ['create_item_link', 'update_item_link', 'delete_item_link', 'list_item_links'])
   if (names.size === discovery.length) getSharedToolDefinitions(['list_projects']).forEach(tool => names.add(tool.name))
   return withDependencies([...names])
 }
