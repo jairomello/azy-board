@@ -99,6 +99,10 @@ export function AzyAgentDrawer() {
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const reconcilingRunsRef = useRef(new Set<string>());
+  // Cursor do stream SSE mantido em ref para não recriar o EventSource a cada
+  // evento (o cursor mudava a dependência do efeito e provocava storm de reconexão).
+  const streamCursorRef = useRef(0);
+  const streamRunIdRef = useRef<string | null>(null);
   const available = Boolean(availability?.enabled && availability.configured);
   const reconcileTerminalRun = useCallback(async (conversationId: string, runId: string) => {
     if (reconcilingRunsRef.current.has(runId)) return;
@@ -150,8 +154,13 @@ export function AzyAgentDrawer() {
     const base = (
       (window as unknown as { __BASE_PATH__?: string }).__BASE_PATH__ ?? ""
     ).replace(/\/+$/, "");
+    // Reinicia o cursor só ao trocar de run; reconexões usam o último recebido.
+    if (streamRunIdRef.current !== runId) {
+      streamRunIdRef.current = runId;
+      streamCursorRef.current = run.cursor ?? 0;
+    }
     const source = new EventSource(
-      `${base}/api/assistant/runs/${runId}/events?cursor=${run.cursor ?? 0}`,
+      `${base}/api/assistant/runs/${runId}/events?cursor=${streamCursorRef.current}`,
     );
     const handler = (event: MessageEvent) => {
       let data: {
@@ -181,6 +190,7 @@ export function AzyAgentDrawer() {
                 : event.type === "QUESTION"
                   ? "WAITING_USER"
                   : undefined;
+      if (data.cursor !== undefined) streamCursorRef.current = data.cursor;
       setRun((current) =>
         current
           ? {
@@ -190,6 +200,14 @@ export function AzyAgentDrawer() {
             }
           : current,
       );
+      // Run terminal: encerra o SSE para o navegador não reconectar em loop.
+      if (
+        event.type === "RUN_COMPLETED" ||
+        event.type === "RUN_FAILED" ||
+        event.type === "RUN_CANCELLED" ||
+        event.type === "RUN_EXPIRED"
+      )
+        source.close();
       if (event.type === "TEXT_DELTA" && data.text)
         setMessages((current) => [
           ...current.filter((item) => item.id !== `stream-${runId}`),
@@ -260,7 +278,7 @@ export function AzyAgentDrawer() {
         .catch(() => setError(t("runFailed")));
     };
     return () => source.close();
-  }, [conversation, reconcileTerminalRun, run?.id, run?.status, run?.cursor, t, projectId]);
+  }, [conversation, reconcileTerminalRun, run?.id, run?.status, t, projectId]);
   useEffect(() => {
     const element = messagesRef.current;
     if (element) element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
