@@ -15,7 +15,7 @@ const instanceDir = mkdtempSync(join(tmpdir(), 'azyboard-advanced-worker-'))
 
 describe.skipIf(!runPostgres)('ADVANCED worker — fencing entre dois workers (PostgreSQL real)', () => {
   let ports: PersistencePorts
-  let pool: Pool
+  let _pool: Pool
   let closeRuntime: () => Promise<void>
   let queue: typeof import('./services/agentJobQueue')
   let tenantId: string

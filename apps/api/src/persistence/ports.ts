@@ -48,6 +48,10 @@ import type {
   ItemLinkRecord,
   ItemLinkPatch,
   NewItemLinkRecord,
+  ItemDependencyRecord,
+  ItemDependencyWithTarget,
+  ItemDependencyPatch,
+  NewItemDependencyRecord,
   ItemRecord,
   ItemWithRelationsRecord,
   MembershipRecord,
@@ -292,6 +296,18 @@ export interface ItemLinkPort {
   create(context: MutationContext, projectId: string, itemId: string, input: NewItemLinkRecord): Promise<ItemLinkRecord>
   update(context: PersistenceContext, projectId: string, itemId: string, linkId: string, patch: ItemLinkPatch): Promise<ItemLinkRecord | null>
   delete(context: PersistenceContext, projectId: string, itemId: string, linkId: string): Promise<boolean>
+}
+
+export interface ItemDependencyPort {
+  /** Dependências em que o item é origem, com resumo do item dependido. */
+  list(context: PersistenceContext, projectId: string, itemId: string): Promise<ItemDependencyWithTarget[]>
+  /** Arestas do projeto, para detecção de ciclo e contagens agregadas. */
+  listByProject(context: PersistenceContext, projectId: string): Promise<ItemDependencyRecord[]>
+  get(context: PersistenceContext, projectId: string, itemId: string, dependencyId: string): Promise<ItemDependencyRecord | null>
+  // [T38] create recebe MutationContext para reserva/replay idempotente no commit.
+  create(context: MutationContext, projectId: string, itemId: string, input: NewItemDependencyRecord): Promise<ItemDependencyWithTarget>
+  update(context: PersistenceContext, projectId: string, itemId: string, dependencyId: string, patch: ItemDependencyPatch): Promise<ItemDependencyWithTarget | null>
+  delete(context: PersistenceContext, projectId: string, itemId: string, dependencyId: string): Promise<boolean>
 }
 
 export interface TenantAttachmentSettingsPort {
@@ -580,6 +596,7 @@ export interface PersistenceTransaction {
   workLogs: WorkLogPort
   files: FilePort
   itemLinks: ItemLinkPort
+  itemDependencies: ItemDependencyPort
   avatars: AvatarPort
   storageCleanup: StorageCleanupPort
   analytics: AnalyticsPort

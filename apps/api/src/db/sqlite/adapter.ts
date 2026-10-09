@@ -1,5 +1,6 @@
 import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts'
+import type { ItemDependencyType, ItemType } from '@azy-board/domain'
 import type { Database } from 'bun:sqlite'
 import type {
   AttachmentRecord,
@@ -10,6 +11,10 @@ import type {
   CostCenterRecord,
   ItemLogRecord,
   ItemLinkRecord,
+  ItemDependencyRecord,
+  ItemDependencyWithTarget,
+  ItemDependencyPatch,
+  NewItemDependencyRecord,
   ItemRecord,
   ItemWithRelationsRecord,
   MembershipRecord,
@@ -18,7 +23,6 @@ import type {
   DashboardHoursRow,
   DashboardAgingDetailItem,
   DashboardLeafItemPageOptions,
-  DashboardDimensionProjectionMeta,
   DashboardDimensionSnapshotRecord,
   DashboardMemberRow,
   DashboardPopulationFilter,
@@ -57,11 +61,11 @@ import type {
   TenantAttachmentSettingsRecord,
   UserCredentialRecord,
 } from '../../persistence/models'
-import type { AssistantModelConfigPatch, ChecklistItemPatch, ColumnPatch, CostCenterPatch, ItemLinkPatch, ItemLogPatch, ModulePatch, NewApiKeyRecord, NewAssistantModelConfig, NewChecklistItemRecord, NewColumnRecord, NewCostCenterRecord, NewItemLinkRecord, NewItemLogRecord, NewModuleRecord, NewProjectMembership, NewSquadRecord, NewTenantRecord, NewVersionRecord, PersistencePorts, ProjectMembershipPatch, ProjectPatch, UserPreferencesPatch, VersionPatch } from '../../persistence/ports'
+import type { ChecklistItemPatch, ColumnPatch, CostCenterPatch, ItemLinkPatch, ItemLogPatch, ModulePatch, NewApiKeyRecord, NewChecklistItemRecord, NewColumnRecord, NewCostCenterRecord, NewItemLinkRecord, NewItemLogRecord, NewModuleRecord, NewProjectMembership, NewSquadRecord, NewTenantRecord, NewVersionRecord, PersistencePorts, ProjectMembershipPatch, ProjectPatch, UserPreferencesPatch, VersionPatch } from '../../persistence/ports'
 import type { DrizzleDb } from '../index'
 import {
-  apiKeys, assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantModelConfigs, assistantRuns, assistantSettings, assistantToolCalls,
-   attachments, checklistItems, checklists, columns, idempotencyRecords, itemEvents, itemLinks, itemLogs, itemSprints, itemTags, planningGapSnapshots,
+  apiKeys, assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantRuns, assistantSettings, assistantToolCalls,
+   attachments, checklistItems, checklists, columns, idempotencyRecords, itemDependencies, itemEvents, itemLinks, itemLogs, itemSprints, itemTags, 
   items, loginAttempts, memberships, modules, projectAnalyticsCoverage, projectCostCenters, projectMetricsDaily, projectVersions, projects, squads, sprintCycleItems, sprintCycles, sprints,
   storageCleanupJobs, tags, tenantAttachmentSettings, tenants, userAvatars, users,
 } from '../schema'
@@ -85,6 +89,28 @@ function asMutation(context: PersistenceContext): MutationContext {
       actorSource: 'SYSTEM',
       actorLabel: null,
     },
+  }
+}
+
+function readDependencyWithTargetSqlite(sqlite: Database, tenantId: string, itemId: string, dependencyId: string): ItemDependencyWithTarget | null {
+  const row = sqlite.query<{
+    id: string; tenantId: string; projectId: string; itemId: string; dependsOnItemId: string
+    dependencyType: string; lagDays: number; createdAt: string; updatedAt: string
+    targetTitle: string; targetType: string; targetSequenceCode: string | null
+  }, [string, string, string]>(`SELECT d.id, d.tenant_id AS tenantId, d.project_id AS projectId, d.item_id AS itemId,
+      d.depends_on_item_id AS dependsOnItemId, d.dependency_type AS dependencyType, d.lag_days AS lagDays,
+      d.created_at AS createdAt, d.updated_at AS updatedAt,
+      i.title AS targetTitle, i.type AS targetType, i.sequence_code AS targetSequenceCode
+    FROM item_dependencies d
+    JOIN items i ON i.id = d.depends_on_item_id AND i.tenant_id = d.tenant_id
+    WHERE d.tenant_id = ? AND d.item_id = ? AND d.id = ?`).get(tenantId, itemId, dependencyId)
+  if (!row) return null
+  return {
+    id: row.id, tenantId: row.tenantId, projectId: row.projectId, itemId: row.itemId,
+    dependsOnItemId: row.dependsOnItemId,
+    dependencyType: row.dependencyType as ItemDependencyType,
+    lagDays: row.lagDays, createdAt: row.createdAt, updatedAt: row.updatedAt,
+    dependsOn: { id: row.dependsOnItemId, title: row.targetTitle, type: row.targetType as ItemType, sequenceCode: row.targetSequenceCode },
   }
 }
 
@@ -1760,6 +1786,79 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         })
       },
     },
+    itemDependencies: {
+      async list(context, projectId, itemId): Promise<ItemDependencyWithTarget[]> {
+        const rows = await database.select({
+          dependency: itemDependencies,
+          targetTitle: items.title,
+          targetType: items.type,
+          targetSequenceCode: items.sequenceCode,
+        }).from(itemDependencies)
+          .innerJoin(items, and(eq(items.id, itemDependencies.dependsOnItemId), eq(items.tenantId, context.tenantId)))
+          .where(and(
+            eq(itemDependencies.tenantId, context.tenantId),
+            eq(itemDependencies.projectId, projectId),
+            eq(itemDependencies.itemId, itemId),
+          ))
+          .orderBy(asc(itemDependencies.createdAt), asc(itemDependencies.id))
+        return rows.map(({ dependency, targetTitle, targetType, targetSequenceCode }) => ({
+          ...dependency,
+          dependsOn: { id: dependency.dependsOnItemId, title: targetTitle, type: targetType as ItemType, sequenceCode: targetSequenceCode },
+        }))
+      },
+      async listByProject(context, projectId): Promise<ItemDependencyRecord[]> {
+        const rows = await database.select().from(itemDependencies)
+          .where(and(eq(itemDependencies.tenantId, context.tenantId), eq(itemDependencies.projectId, projectId)))
+        return rows.map(row => ({ ...row }))
+      },
+      async get(context, projectId, itemId, dependencyId): Promise<ItemDependencyRecord | null> {
+        const [row] = await database.select().from(itemDependencies)
+          .where(and(
+            eq(itemDependencies.tenantId, context.tenantId),
+            eq(itemDependencies.projectId, projectId),
+            eq(itemDependencies.itemId, itemId),
+            eq(itemDependencies.id, dependencyId),
+          ))
+          .limit(1)
+        return row ? { ...row } : null
+      },
+      async create(context, projectId, itemId, input: NewItemDependencyRecord): Promise<ItemDependencyWithTarget> {
+        return runSqliteAtomic(sqlite, () => {
+          // [T38] Reserva/replay idempotente na MESMA transação da dependência.
+          assertJournalAvailable(sqlite, context)
+          const now = new Date().toISOString()
+          const id = generateId()
+          sqlite.query('INSERT INTO item_dependencies (id, tenant_id, project_id, item_id, depends_on_item_id, dependency_type, lag_days, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(id, context.tenantId, projectId, itemId, input.dependsOnItemId, input.dependencyType ?? 'FS', input.lagDays ?? 0, now, now)
+          const withTarget = readDependencyWithTargetSqlite(sqlite, context.tenantId, itemId, id)!
+          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          reserveJournal(sqlite, context, JSON.stringify({ status: 201, body: withTarget }))
+          return withTarget
+        })
+      },
+      async update(context, projectId, itemId, dependencyId, patch: ItemDependencyPatch): Promise<ItemDependencyWithTarget | null> {
+        return runSqliteAtomic(sqlite, () => {
+          const sets: string[] = ['updated_at = ?']
+          const params: Array<string | number> = [new Date().toISOString()]
+          if (patch.dependencyType !== undefined) { sets.push('dependency_type = ?'); params.push(patch.dependencyType) }
+          if (patch.lagDays !== undefined) { sets.push('lag_days = ?'); params.push(patch.lagDays) }
+          const updated = sqlite.query<{ id: string }, Array<string | number>>(`UPDATE item_dependencies SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND item_id = ? AND id = ? RETURNING id`)
+            .get(...params, context.tenantId, projectId, itemId, dependencyId)
+          if (!updated) return null
+          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          return readDependencyWithTargetSqlite(sqlite, context.tenantId, itemId, dependencyId)
+        })
+      },
+      async delete(context, projectId, itemId, dependencyId): Promise<boolean> {
+        return runSqliteAtomic(sqlite, () => {
+          const result = sqlite.query('DELETE FROM item_dependencies WHERE tenant_id = ? AND project_id = ? AND item_id = ? AND id = ?')
+            .run(context.tenantId, projectId, itemId, dependencyId)
+          if (result.changes === 0) return false
+          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          return true
+        })
+      },
+    },
     avatars: {
       async save(input: SaveAvatarRecord) {
         const updatedAt = new Date().toISOString()
@@ -2573,7 +2672,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         )).returning({ id: assistantRuns.id })
         return result.length > 0
       },
-      async expireStaleRuns(tenantId, cutoff, now) {
+      async expireStaleRuns(tenantId, _cutoff, now) {
         // Expire QUEUED runs without active claim (queued too long or never claimed)
         // and RUNNING runs with expired lease (worker died).
         await database.update(assistantRuns).set({ status: 'EXPIRED', errorCode: 'TIMEOUT', finishedAt: now }).where(and(

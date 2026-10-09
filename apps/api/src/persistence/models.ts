@@ -1,6 +1,6 @@
 /** Modelos internos de persistência; não expõem tabelas nem tipos Drizzle. */
 import type { AssistantApprovalStatus, AssistantEventType, AssistantRunStatus } from '@azy-board/assistant-contracts'
-import type { ActivityActorType, ActivitySource, BoardMode, ColumnBaseStatus, GlobalGroup, ItemType, MemberRole, Priority, SprintStatus, TaskStatus } from '@azy-board/domain'
+import type { ActivityActorType, ActivitySource, BoardMode, ColumnBaseStatus, GlobalGroup, ItemDependencyType, ItemType, MemberRole, Priority, SprintStatus, TaskStatus } from '@azy-board/domain'
 import type { Language, LightShellTheme, Theme } from '@azy-board/ui-contracts'
 
 export interface PersistenceContext {
@@ -498,6 +498,36 @@ export interface ItemLinkRecord {
 
 export type NewItemLinkRecord = Pick<ItemLinkRecord, 'name' | 'url'> & Partial<Pick<ItemLinkRecord, 'description'>>
 export type ItemLinkPatch = Partial<Pick<ItemLinkRecord, 'name' | 'url' | 'description'>>
+
+export interface ItemDependencyRecord {
+  id: string
+  tenantId: string
+  projectId: string
+  /** Item de origem (quem depende). */
+  itemId: string
+  /** Item do qual o item de origem depende. */
+  dependsOnItemId: string
+  dependencyType: ItemDependencyType
+  /** Retardo em dias; positivo = folga, negativo = antecipação. */
+  lagDays: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** Resumo do item dependido, embutido nas leituras para exibição. */
+export interface ItemDependencyTargetSummary {
+  id: string
+  title: string
+  type: ItemType
+  sequenceCode: string | null
+}
+
+export interface ItemDependencyWithTarget extends ItemDependencyRecord {
+  dependsOn: ItemDependencyTargetSummary
+}
+
+export type NewItemDependencyRecord = Pick<ItemDependencyRecord, 'dependsOnItemId'> & Partial<Pick<ItemDependencyRecord, 'dependencyType' | 'lagDays'>>
+export type ItemDependencyPatch = Partial<Pick<ItemDependencyRecord, 'dependencyType' | 'lagDays'>>
 
 export interface TenantAttachmentSettingsRecord {
   tenantId: string

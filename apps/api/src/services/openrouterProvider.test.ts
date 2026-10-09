@@ -5,7 +5,7 @@ describe('OpenRouterProvider', () => {
   test('normaliza tool calls Chat Completions para o contrato do harness', async () => {
     let requestBody: Record<string, unknown> | undefined
     const provider = new OpenRouterProvider('or-key', {
-      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
         requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>
         return new Response(JSON.stringify({
           id: 'chatcmpl-1',

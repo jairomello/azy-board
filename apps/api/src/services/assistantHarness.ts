@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { persistence } from '../persistence/runtime'
 import type { AgentPort } from '../persistence/ports'
 import type { AssistantEventTypeName, PersistenceContext } from '../persistence/models'
-import { executeSharedTool, friendlyToolName, getSharedToolDefinitions, sanitizeToolOutput, type HumanToolContext } from './assistantTools'
+import { friendlyToolName, getSharedToolDefinitions, sanitizeToolOutput, type HumanToolContext } from './assistantTools'
 import type { ModelInput, ModelProvider, ModelResponse, ModelTool } from './openaiProvider'
 import { coerceArgumentsBySchema, formatDurationMinutes, normalizeDurationArguments, validateToolArguments } from '@azy-board/tool-registry'
 import { HARNESS_LIMITS } from '@azy-board/assistant-contracts'
@@ -17,7 +17,7 @@ let runStepsHistogram: import('@opentelemetry/api').Histogram | null = null
 let runInputTokensHistogram: import('@opentelemetry/api').Histogram | null = null
 let runOutputTokensHistogram: import('@opentelemetry/api').Histogram | null = null
 let runCostHistogram: import('@opentelemetry/api').Histogram | null = null
-let quotaRejectionCounter: import('@opentelemetry/api').Counter | null = null
+let _quotaRejectionCounter: import('@opentelemetry/api').Counter | null = null
 
 async function initAgentMetrics() {
   if (runStepsHistogram || !isOtelInitialized()) return
@@ -36,7 +36,7 @@ async function initAgentMetrics() {
   runCostHistogram = meter.createHistogram('agent.run.cost_micros', {
     description: 'Custo acumulado por run em micros',
   })
-  quotaRejectionCounter = meter.createCounter('agent.quota.rejections', {
+  _quotaRejectionCounter = meter.createCounter('agent.quota.rejections', {
     description: 'Rejeições por quota/orçamento',
   })
 }

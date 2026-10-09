@@ -1,4 +1,4 @@
-import type { Pool, PoolClient } from 'pg'
+import type { PoolClient } from 'pg'
 import type { MutationContext } from '../../persistence/models'
 import { dashboardDimensionDeltas, dashboardDimensionMetrics, dashboardDimensionTuple, type DashboardDimensionDelta, type DashboardDimensionSnapshot, type DashboardDimensionTuple } from '../../services/dashboardDimensionProjection'
 import { generateId } from '../../utils/id'
@@ -126,7 +126,6 @@ async function applyDailyDeltaValue(client: PoolClient, tenantId: string, projec
     value = add(c ? { total: c.total as number, done: c.done as number, points: c.points as number, done_points: c.done_points as number } : { total: 0, done: 0, points: 0, done_points: 0 }, delta)
   }
 
-  const op = exists.rows.length > 0 ? 'project_metrics_daily.total + $4' : '$4'
   await client.query(
     `INSERT INTO project_metrics_daily (tenant_id, project_id, metric_date, total, done, points, done_points)
      VALUES ($1, $2, $3, $4, $5, $6, $7)

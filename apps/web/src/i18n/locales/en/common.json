@@ -210,6 +210,7 @@
     "assignee": "Assignee",
     "start": "Start",
     "endActions": "End / Actions",
+    "dependencies": "Dependencies",
     "empty": "No items in the project",
     "archiveTitle": "Archive item",
     "archiveDescription": "This item has {{count}} direct child item(s) that will also be archived recursively. Do you want to continue?",

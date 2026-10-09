@@ -114,7 +114,7 @@ async function executeRequest<T>(path: string, options: ApiRequestOptions): Prom
     // Em deploy path-based (ex.: /azyboard/), o href usa window.__BASE_PATH__
     // (injetado pelo proxy) e o pathname e normalizado para ser relativo ao
     // base, para que o navigate(redirect) do React Router resolva correto.
-    const BASE_PATH = ((window as any).__BASE_PATH__ || '').replace(/\/+$/, '')
+    const BASE_PATH = ((window as { __BASE_PATH__?: string }).__BASE_PATH__ || '').replace(/\/+$/, '')
     let currentPath = window.location.pathname
     if (BASE_PATH && currentPath.startsWith(BASE_PATH)) {
       currentPath = currentPath.slice(BASE_PATH.length) || '/'

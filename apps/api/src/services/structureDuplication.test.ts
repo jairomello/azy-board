@@ -5,7 +5,6 @@ import {
   DEFAULT_DUPLICATION_POLICY,
   fingerprintSource,
   normalizeDuplicationPolicy,
-  StructureDuplicationError,
   validateDuplicationDestination,
   type SourceFacts,
 } from './structureDuplication'

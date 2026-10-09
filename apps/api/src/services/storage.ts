@@ -1,6 +1,6 @@
-import { chmod, mkdir } from 'fs/promises'
-import { join, resolve } from 'path'
-import { randomUUID } from 'crypto'
+import { chmod, mkdir } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 
 export interface StorageConfiguration {
@@ -52,7 +52,7 @@ export class LocalStorageAdapter implements StorageAdapter {
 
   async delete(storagePath: string) {
     try {
-      const { unlinkSync } = await import('fs')
+      const { unlinkSync } = await import('node:fs')
       unlinkSync(storagePath)
     } catch {
       // Arquivo já removido — não é erro crítico

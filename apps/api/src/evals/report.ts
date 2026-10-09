@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { EVAL_CONFIG } from './config'
-import { computeDatasetHash, scoreDimensionAverage } from './aggregate'
+import { scoreDimensionAverage } from './aggregate'
 import type { EvalCaseResult, EvalDimension, EvalReport } from './types'
 
 export type GateComputation = { pass: boolean; violations: string[]; regressions: string[]; dimensionScores: Partial<Record<EvalDimension, number | null>> }
@@ -37,7 +37,6 @@ export async function writeReport(report: EvalReport): Promise<{ jsonPath: strin
 
 export async function latestBaseline(datasetHash: string): Promise<EvalReport | null> {
   try {
-    const files = (await import('node:fs/promises')).readdir
     const { readdir } = await import('node:fs/promises')
     const names = (await readdir(EVAL_CONFIG.reportsDir)).filter(name => name.endsWith('.json')).sort()
     for (const name of names.reverse()) {

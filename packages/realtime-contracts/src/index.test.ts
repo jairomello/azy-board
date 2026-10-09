@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
   RESYNC_REASONS,
-  WS_CONTROL_TYPES,
   WS_EVENT_TYPES,
   WS_HEARTBEAT_INTERVAL_MS,
   WS_LIVE_BUFFER_MAX,

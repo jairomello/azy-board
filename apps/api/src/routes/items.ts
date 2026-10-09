@@ -13,13 +13,33 @@ import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
 import { confirmationSchema, createItemSchema, itemLogSchema, itemSprintSchema, itemTagsSchema, moveItemSchema, parseJson, parseOptionalJson, reorderItemsSchema, updateItemLogSchema, updateItemSchema, updateWorkLogSchema, workLogSchema } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
-import type { ItemLogRecord, ItemRecord } from '../persistence/models'
+import type { ItemLogRecord, ItemRecord, ItemDependencyRecord, ItemDependencyWithTarget } from '../persistence/models'
 import { emitDomainEvent, findOperationId } from '../services/domainEventOutbox'
 import { createItemApplication, moveItemApplication, updateItemApplication } from '../application/items'
 import { loadItemWithRelations } from '../application/itemRules'
 
 export const itemsRouter = new Hono<HonoEnv>()
 itemsRouter.use('*', authMiddleware)
+
+/** Resumo de dependências por item, agregado sem N+1 (uma leitura de arestas do projeto). */
+function dependencyIndexByItem(
+  items: Array<{ id: string; title: string; type: ItemType; sequenceCode: string | null }>,
+  edges: ItemDependencyRecord[],
+): Map<string, { dependencies: Array<Pick<ItemDependencyWithTarget, 'dependsOnItemId' | 'dependencyType' | 'lagDays' | 'dependsOn'>>; dependencyCount: number }> {
+  const summaryByItem = new Map(items.map(item => [item.id, item]))
+  const byOrigin = new Map<string, Array<Pick<ItemDependencyWithTarget, 'dependsOnItemId' | 'dependencyType' | 'lagDays' | 'dependsOn'>>>()
+  for (const edge of edges) {
+    const list = byOrigin.get(edge.itemId) ?? []
+    list.push({
+      dependsOnItemId: edge.dependsOnItemId,
+      dependencyType: edge.dependencyType,
+      lagDays: edge.lagDays,
+      dependsOn: summaryByItem.get(edge.dependsOnItemId) ?? { id: edge.dependsOnItemId, title: '', type: 'TASK' as ItemType, sequenceCode: null },
+    })
+    byOrigin.set(edge.itemId, list)
+  }
+  return new Map([...byOrigin].map(([itemId, dependencies]) => [itemId, { dependencies, dependencyCount: dependencies.length }]))
+}
 
 function auditContext(c: Context<HonoEnv>): { actorType: ActivityActorType; source: ActivitySource; actorLabel: string | null } {
   const apiKeyId = c.get('apiKeyId')
@@ -76,10 +96,18 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
   const usersInTenant = assigneeIds.length > 0 ? await persistence.identity.listUsers(projectContext) : []
   const assignees = usersInTenant.filter(user => assigneeIds.includes(user.id)).map(user => ({ id: user.id, name: user.name, avatarUrl: user.avatarUrl }))
   const assigneeMap = new Map(assignees.map(assignee => [assignee.id, assignee]))
-  const treeItems = activeItems.map(item => ({
-    ...item,
-    assignee: item.assigneeId ? assigneeMap.get(item.assigneeId) ?? null : null,
-  }))
+  // [TENANT] Arestas de dependência do projeto, agregadas em um único mapa (sem N+1).
+  const dependencyEdges = await persistence.itemDependencies.listByProject(projectContext, projectId)
+  const dependencyIndex = dependencyIndexByItem(activeItems, dependencyEdges)
+  const treeItems = activeItems.map(item => {
+    const dependency = dependencyIndex.get(item.id)
+    return {
+      ...item,
+      assignee: item.assigneeId ? assigneeMap.get(item.assigneeId) ?? null : null,
+      dependencies: dependency?.dependencies ?? [],
+      dependencyCount: dependency?.dependencyCount ?? 0,
+    }
+  })
 
   // [TENANT] O modo e a STORY fixa são resolvidos dentro do projeto do tenant atual.
   const project = await persistence.projects.getProject(projectContext, projectId)
@@ -247,13 +275,20 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
       : null,
   }))
 
+  // [TENANT] Arestas de dependência do projeto, agregadas em um único mapa (sem N+1).
+  const dependencyEdges = await persistence.itemDependencies.listByProject(userPersistenceContext(ctx), projectId)
+  const dependencyIndex = dependencyIndexByItem(allItems, dependencyEdges)
+
   const projected = withProgress.map(item => {
+    const dependency = dependencyIndex.get(item.id)
     const flat = {
       ...item,
       sprintId: item.itemSprints[0]?.sprintId ?? null,
       sprintName: null,
       tagIds: item.itemTags.map(link => link.tag.id),
       tagNames: item.itemTags.map(link => link.tag.name),
+      dependencies: dependency?.dependencies ?? [],
+      dependencyCount: dependency?.dependencyCount ?? 0,
     } as Record<string, unknown>
     // itemSprints é preservado na resposta: o Board filtra cards por sprint client-side
     // via i.itemSprints?.some(...) (BoardScreen.tsx). Remover este campo esvaziava o board.

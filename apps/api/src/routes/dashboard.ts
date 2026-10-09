@@ -4,7 +4,7 @@ import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
-import type { DashboardHoursFilter, DashboardPopulationFilter, ItemRecord } from '../persistence/models'
+import type { DashboardHoursFilter, DashboardPopulationFilter, } from '../persistence/models'
 import { createDashboardCursor, parseDashboardPageSize, readDashboardCursor } from '../services/dashboardCursor'
 
 export const dashboardRouter = new Hono<HonoEnv>()

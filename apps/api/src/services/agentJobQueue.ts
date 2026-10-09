@@ -2,7 +2,6 @@
 // Uses the assistant_runs table with lease/claim columns for atomic claiming.
 // Pattern follows storageCleanup: enqueue → claim → execute → release/retry.
 
-import { randomUUID } from 'node:crypto'
 import { persistence } from '../persistence/runtime'
 import { logger } from './logger'
 import { isOtelInitialized, getOtelMeter } from './telemetry'
@@ -13,7 +12,7 @@ let queueAgeGauge: import('@opentelemetry/api').Gauge | null = null
 let claimLatencyHistogram: import('@opentelemetry/api').Histogram | null = null
 let claimCounter: import('@opentelemetry/api').Counter | null = null
 let claimAttemptsHistogram: import('@opentelemetry/api').Histogram | null = null
-let leaseExpirationCounter: import('@opentelemetry/api').Counter | null = null
+let _leaseExpirationCounter: import('@opentelemetry/api').Counter | null = null
 let uncertainResultCounter: import('@opentelemetry/api').Counter | null = null
 
 async function initQueueMetrics() {
@@ -38,7 +37,7 @@ async function initQueueMetrics() {
   claimAttemptsHistogram = meter.createHistogram('agent.queue.claim_attempts', {
     description: 'Historical attempts count at the moment of claim',
   })
-  leaseExpirationCounter = meter.createCounter('agent.worker.lease_expirations', {
+  _leaseExpirationCounter = meter.createCounter('agent.worker.lease_expirations', {
     description: 'Number of lease expirations (worker died or stalled)',
   })
   // [T37] Efeitos externos potencialmente incertos (tool em RUNNING ao perder posse).

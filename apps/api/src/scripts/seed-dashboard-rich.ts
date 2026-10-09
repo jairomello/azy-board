@@ -1,6 +1,6 @@
 import { and, asc, eq, max } from 'drizzle-orm'
 import { db } from '../db/index'
-import { columns, itemEvents, itemLogs, itemSprints, items, memberships, modules, projectVersions, projects, squads, sprints, users } from '../db/schema'
+import { columns, itemEvents, itemLogs, itemSprints, items, memberships, modules, projectVersions, squads, sprints, users } from '../db/schema'
 import { hashPassword } from '../services/auth'
 import { generateId } from '../utils/id'
 

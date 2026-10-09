@@ -273,7 +273,7 @@ export function AppShell({
             <div key={item.href ?? item.label} className="max-[1279px]:flex max-[1279px]:justify-center">
               <div className="min-[1280px]:hidden">
                 <Tooltip label={item.label}>
-                  <>{itemContent}{children}</>
+                  {itemContent}{children}
                 </Tooltip>
               </div>
               <div className="hidden min-[1280px]:block">

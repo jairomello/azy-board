@@ -27,7 +27,7 @@ export async function openPlanningResult(context: HarnessContext, args: { result
   if (!projectId || !args.resultId) return { ok: false, code: 'RESULT_NOT_FOUND' }
   if (!await hasProjectAccess(context, projectId)) return { ok: false, code: 'ITEM_NOT_ACCESSIBLE' }
   const scope = { tenantId: context.tenantId, actorUserId: context.userId, actorKind: 'USER' as const }
-  let snapshot
+  let snapshot: Awaited<ReturnType<typeof persistence.planningGapSnapshots.get>>
   try {
     snapshot = await persistence.planningGapSnapshots.get(scope, projectId, args.resultId)
   } catch (error) {

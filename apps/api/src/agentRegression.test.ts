@@ -6,7 +6,7 @@ process.env.DATABASE_URL = ':memory:'
 
 const { app } = await import('./index')
 const { db } = await import('./db/index')
-const { tenants, users, projects, memberships, items, modules, columns } = await import('./db/schema')
+const { tenants, users, projects, items, modules, columns } = await import('./db/schema')
 const { signJwt } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 

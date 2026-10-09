@@ -131,4 +131,21 @@ describe('duplicação de estrutura (SQLite)', () => {
       cleanup()
     }
   })
+
+  test('dependências não são copiadas na duplicação (origem preservada)', async () => {
+    const { ports, cleanup } = setup()
+    try {
+      const { scope, mut, project, ids } = await seed(ports)
+      // task depende de sub; ambos dentro da subárvore duplicada.
+      await ports.itemDependencies.create(mut, project.id, ids.task, { dependsOnItemId: ids.sub, dependencyType: 'FS', lagDays: 1 })
+      const plan = await planFor(ports, scope, project, ids.story, ids.epic)
+      const result = await ports.unitOfWork.duplicateStructure(mut, plan)
+      const copiedTaskId = result.itemMap.find(entry => entry.sourceId === ids.task)!.copyId
+      // A cópia nasce sem vínculos de dependência; a origem mantém os seus.
+      expect(await ports.itemDependencies.list(scope, project.id, copiedTaskId)).toHaveLength(0)
+      expect(await ports.itemDependencies.list(scope, project.id, ids.task)).toHaveLength(1)
+    } finally {
+      cleanup()
+    }
+  })
 })

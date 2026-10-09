@@ -73,7 +73,7 @@ export async function snapshotItem(tx: AnalyticsDb, tenantId: string, projectId:
   return { ...item, isLeaf: children.length === 0, sprintIds: links.map(link => link.sprintId) }
 }
 
-export async function ensureCoverage(tx: AnalyticsDb, tenantId: string, projectId: string, actorId = 'SYSTEM', origin = 'SYSTEM') {
+export async function ensureCoverage(tx: AnalyticsDb, tenantId: string, projectId: string, _actorId = 'SYSTEM', _origin = 'SYSTEM') {
   const now = new Date().toISOString()
   await tx.insert(projectAnalyticsCoverage).values({ projectId, tenantId, coverageStartedAt: now, createdAt: now }).onConflictDoNothing()
   return tx.query.projectAnalyticsCoverage.findFirst({ where: (c) => and(eq(c.projectId, projectId), eq(c.tenantId, tenantId)) })

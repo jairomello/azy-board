@@ -9,7 +9,7 @@ const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
 await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
 
 const {
-  tenants, users, projects, projectAnalyticsCoverage, items, tags, itemTags, sprints, itemSprints, modules,
+  tenants, users, projects, projectAnalyticsCoverage, items, tags, itemTags, sprints, itemSprints,
 } = await import('./db/schema')
 const { signJwt } = await import('./services/auth')
 const { generateId } = await import('./utils/id')

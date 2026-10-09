@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray, max } from 'drizzle-orm'
+import { and, asc, eq, max } from 'drizzle-orm'
 import { db } from '../db/index'
-import { columns, itemEvents, itemLogs, itemSprints, items, memberships, modules, projectAnalyticsCoverage, projectVersions, projects, squads, sprintCycleItems, sprintCycles, sprints, users } from '../db/schema'
+import { columns, itemEvents, itemLogs, itemSprints, items, memberships, modules, projectAnalyticsCoverage, projectVersions, squads, sprintCycleItems, sprintCycles, sprints, } from '../db/schema'
 import { generateId } from '../utils/id'
 
 const project = await db.query.projects.findFirst({ where: (row) => eq(row.name, 'Azy Board') })

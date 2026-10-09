@@ -13,7 +13,9 @@ const { generateId } = await import('./utils/id')
 
 await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
 
-type JsonRecord = Record<string, any>
+// Resposta JSON arbitrária: corpos com `id` + campos extras (index signature)
+// preservam `.data.id` como string e mantêm os casts de `.data` dos testes.
+type JsonRecord = { id: string } & Record<string, unknown>
 
 async function call(session: string, method: string, path: string, body?: unknown) {
   const response = await app.fetch(new Request(`http://test.local/api${path}`, {
@@ -43,7 +45,7 @@ type ListedItem = {
 async function listItems(session: string, projectId: string): Promise<ListedItem[]> {
   const listed = await call(session, 'GET', `/projects/${projectId}/items`)
   expect(listed.status).toBe(200)
-  return (listed.data as { data: ListedItem[] }).data
+  return (listed.data as unknown as { data: ListedItem[] }).data
 }
 
 async function findItem(session: string, projectId: string, id: string): Promise<ListedItem> {

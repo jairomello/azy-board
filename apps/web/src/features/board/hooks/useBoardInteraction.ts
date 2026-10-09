@@ -16,7 +16,7 @@ export interface BoardInteractionOptions {
   onError: (message: string) => void
 }
 
-export function createBoardInteractionHandler({ projectId, columns, items, displayedItems, setColumns, setItems, onError }: BoardInteractionOptions, patch = api.patch) {
+export function createBoardInteractionHandler({ projectId, columns, items, setColumns, setItems, onError }: BoardInteractionOptions, patch = api.patch) {
   return async (event: DragEndEvent, effectiveOver?: string) => {
     const activeId = event.active.id.toString()
     const over = effectiveOver ?? event.over?.id?.toString()

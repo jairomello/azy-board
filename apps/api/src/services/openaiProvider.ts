@@ -37,14 +37,12 @@ export function validateModelId(model: string): boolean {
 
 export class OpenAIProvider implements ModelProvider {
   private readonly client: OpenAI
-  private readonly apiKey: string
   private readonly timeoutMs: number
   private readonly maxOutputTokens: number
   readonly name = 'OPENAI'
   readonly capabilities = { tools: true, streaming: true, cancellation: true } as const
 
   constructor(apiKey: string, options: OpenAIProviderOptions = {}) {
-    this.apiKey = apiKey
     this.timeoutMs = options.timeoutMs ?? 10_000
     this.maxOutputTokens = options.maxOutputTokens ?? 2_048
     this.client = new OpenAI({ apiKey, timeout: this.timeoutMs, maxRetries: options.maxRetries ?? 2, fetch: options.fetch })

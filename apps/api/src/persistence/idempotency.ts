@@ -10,6 +10,7 @@ export const COMMAND_NAMESPACES = {
   moveItem: 'move_item.v1',
   createItemLog: 'create_item_log.v1',
   createItemLink: 'create_item_link.v1',
+  createItemDependency: 'create_item_dependency.v1',
   createChecklist: 'create_checklist.v1',
   createChecklistItem: 'create_checklist_item.v1',
   // Card T25 — mutações de cadastros/composição de squad pela conversa.

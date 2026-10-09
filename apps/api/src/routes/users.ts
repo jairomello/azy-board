@@ -1,7 +1,6 @@
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
-import type { GlobalGroup } from '@azy-board/domain'
 import { isLightShellTheme, type Language, type LightShellTheme, type Theme } from '@azy-board/ui-contracts'
 import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
 import { hasGlobalGroup, hashPassword, isGlobalGroup } from '../services/auth'

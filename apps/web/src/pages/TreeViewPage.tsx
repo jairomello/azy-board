@@ -26,6 +26,9 @@ export interface TreeNode {
   moduleId?: string | null
   parentId?: string | null
   isLeaf?: boolean
+  // Card T46 — itens dos quais a linha depende, com código/título para exibição.
+  dependencies?: Array<{ id?: string; dependsOn?: { id?: string; title?: string; sequenceCode?: string | null } }>
+  dependencyCount?: number
   children: TreeNode[]
 }
 
@@ -94,6 +97,7 @@ interface RowProps {
   startDate?: string | null
   dueDate?: string | null
   assigneeName?: string | null
+  dependencies?: Array<{ id?: string; dependsOn?: { id?: string; title?: string; sequenceCode?: string | null } }>
   expanded: boolean
   hasChildren: boolean
   onToggle: () => void
@@ -110,7 +114,7 @@ export interface TreeActionContext {
   moduleId?: string
 }
 
-function Row({ depth, label, type, status, points, progress, startDate, dueDate, assigneeName, expanded, hasChildren, onToggle, onArchive, onEdit, onCreate }: RowProps) {
+function Row({ depth, label, type, status, points, progress, startDate, dueDate, assigneeName, dependencies, expanded, hasChildren, onToggle, onArchive, onEdit, onCreate }: RowProps) {
   const { t } = useTranslation()
   const indentPx = depth * 20
   const typeInfo = TYPE_ICON[type.toUpperCase()]
@@ -176,6 +180,13 @@ function Row({ depth, label, type, status, points, progress, startDate, dueDate,
               />
             </div>
             <span className="text-xs text-muted-foreground flex-shrink-0">{clampProgress(progress)}%</span>
+          </div>
+        ) : '—'}
+      </td>
+      <td className="py-2 px-2 text-xs text-muted-foreground">
+        {dependencies && dependencies.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {dependencies.map((dep, index) => <span key={dep.id ?? dep.dependsOn?.id ?? index} className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">{dep.dependsOn?.sequenceCode ?? dep.dependsOn?.title ?? '—'}</span>)}
           </div>
         ) : '—'}
       </td>
@@ -260,6 +271,7 @@ function NodeRows({ nodes, depth, expanded, onToggle, onArchive, onEdit, onCreat
             startDate={node.startDate}
             dueDate={node.dueDate}
             assigneeName={node.assignee?.name}
+            dependencies={node.dependencies}
             expanded={expanded.has(node.id)}
             hasChildren={(node.children ?? []).length > 0}
             onToggle={() => onToggle(node.id)}
@@ -472,6 +484,7 @@ export function TreeViewPage({ projectId, filters, onArchive, canCreate = true, 
                <th className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('tree.assignee')}</th>
                <th className="text-right py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('points')}</th>
                <th className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide w-24">{t('progress')}</th>
+               <th className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('tree.dependencies')}</th>
                <th className="text-left py-2.5 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('tree.start')}</th>
                <th className="text-left py-2.5 px-2 pr-4 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('tree.endActions')}</th>
             </tr>

@@ -58,7 +58,7 @@ async function main(): Promise<number> {
   }
 
   const report = await buildReport(config, results)
-  const { jsonPath, markdownPath } = await writeReport(report)
+  const { jsonPath } = await writeReport(report)
   console.log(`[evals] relatório: ${jsonPath}`)
   console.log('[evals] scores:', JSON.stringify(report.dimensionScores))
   if (report.gate.regressions.length) console.warn('[evals] regressão de qualidade:', report.gate.regressions.join('; '))

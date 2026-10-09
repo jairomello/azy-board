@@ -1,6 +1,5 @@
 import type { ObservabilityConfig } from '../config/observability'
 import { anonymizeTenantId } from './tenantHash'
-import { redactSensitive } from './logger'
 
 export interface ErrorTracker {
   init(): Promise<void>

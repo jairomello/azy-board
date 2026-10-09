@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
+import { describe, expect, test, beforeEach, } from 'bun:test'
 import { redactSensitive, configureLogger, logger } from './logger'
 import { anonymizeTenantId } from './tenantHash'
 

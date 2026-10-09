@@ -7,6 +7,9 @@ export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 // Mantido para retrocompatibilidade em código legado — usar ItemType nos novos usos
 export type TaskType = 'TASK' | 'BUG' | 'STORY'
 export type ItemType = 'EPIC' | 'STORY' | 'TASK' | 'BUG'
+// Tipo de dependência de cronograma (padrão MS Project): Término-Início,
+// Início-Início, Início-Término e Término-Término. FS é o default.
+export type ItemDependencyType = 'FS' | 'SS' | 'SF' | 'FF'
 export type MemberRole = 'ADMIN' | 'MEMBER' | 'VIEWER'
 export type GlobalGroup = 'TEAM_MEMBER' | 'MANAGER' | 'ADMIN' | 'ROOT'
 export type BoardMode = 'HIERARCHICAL' | 'SIMPLE'

@@ -210,6 +210,7 @@
     "assignee": "Responsável",
     "start": "Início",
     "endActions": "Fim / Ações",
+    "dependencies": "Dependências",
     "empty": "Nenhum item no projeto",
     "archiveTitle": "Arquivar item",
     "archiveDescription": "Este item possui {{count}} filho(s) direto(s) que também serão arquivados em cascata. Deseja continuar?",

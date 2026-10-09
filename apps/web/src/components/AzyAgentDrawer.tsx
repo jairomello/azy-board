@@ -3,7 +3,6 @@ import {
   Bot,
   Check,
   Loader2,
-  MessageSquare,
   Pencil,
   Send,
   X,

@@ -1,6 +1,6 @@
 // Contratos de UI: preferências, board adapter, checklists e helpers de apresentação
 
-import type { ItemType, Priority, TaskStatus } from '@azy-board/domain'
+import type { ItemDependencyType, ItemType, Priority, TaskStatus } from '@azy-board/domain'
 
 // Catálogo de ícones do produto — fonte única dos nomes válidos (kebab-case),
 // servido por lucide-react (ISC). Compartilhado por web, API e MCP; o mapa de
@@ -263,6 +263,26 @@ export interface ItemLink {
   description: string | null
   createdAt: string
   updatedAt: string
+}
+
+/** Resumo do item dependido para exibição em card e árvore. */
+export interface ItemDependencyTarget {
+  id: string
+  title: string
+  type: ItemType
+  sequenceCode: string | null
+}
+
+export interface ItemDependency {
+  id: string
+  itemId: string
+  dependsOnItemId: string
+  dependencyType: ItemDependencyType
+  lagDays: number
+  createdAt: string
+  updatedAt: string
+  /** Resumo do item dependido; preenchido nas leituras da API. */
+  dependsOn: ItemDependencyTarget
 }
 
 export type AttachmentProvider = 'local' | 's3'

@@ -94,7 +94,7 @@ export function syncCurrentViewSession(projectId: string, session: AssistantView
   if (existing) writeRaw(projectId, session, existing.history)
 }
 
-function filterValueToBoardField(key: string, value: AssistantScreenFilterValue): unknown {
+function filterValueToBoardField(_key: string, value: AssistantScreenFilterValue): unknown {
   if (Array.isArray(value)) return value
   if (typeof value === 'boolean') return value
   if (value && typeof value === 'object' && 'operator' in value && value.operator === 'IS_EMPTY') return EMPTY_FILTER_VALUE

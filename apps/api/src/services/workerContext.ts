@@ -3,7 +3,7 @@
 
 import { persistence } from '../persistence/runtime'
 import { logger } from './logger'
-import type { AssistantRunDetailRecord, AssistantSettingsRecord, UserCredentialRecord } from '../persistence/models'
+import type { UserCredentialRecord } from '../persistence/models'
 import type { AssistantScreenSnapshot, Governance } from '@azy-board/assistant-contracts'
 import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts'
 import { formatAssistantPromptContext } from '../routes/assistant'

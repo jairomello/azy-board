@@ -18,7 +18,7 @@ const { signJwt } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 const { appendAnalyticsEvent } = await import('./services/analytics')
 const {
-  applyEventToDailyRollup, recomputeProjectRollup, ensureDashboardRollupsBackfill, readDailyRollupSeries, rollupMatchesReplay,
+  recomputeProjectRollup, readDailyRollupSeries, rollupMatchesReplay,
 } = await import('./services/dashboardMetrics')
 
 async function token(userId: string, tenantId: string, email: string) {

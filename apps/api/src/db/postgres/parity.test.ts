@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { Client, type Pool } from 'pg'
+import type { Pool } from 'pg'
 import { Database } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
 import * as schema from '../schema'
@@ -14,7 +14,7 @@ import { shouldRunPostgresTests } from './pgTestSupport'
 import { buildDuplicationPlan, buildPlanItem, DEFAULT_DUPLICATION_POLICY, itemFacts } from '../../services/structureDuplication'
 import { COMMAND_NAMESPACES, isIdempotentReplay, parseEnvelope } from '../../persistence/idempotency'
 import { buildSprintTransitionPlan, candidateFromItem, isEligibleCandidate } from '../../services/sprintTransition'
-import type { ItemRecord, ProjectRecord, StructureDuplicationPolicy } from '../../persistence/models'
+import type { ProjectRecord, StructureDuplicationPolicy } from '../../persistence/models'
 
 const PG_URL = process.env.TEST_PG_URL ?? 'postgresql://postgres:postgres@localhost:5432/azyboard_parity'
 const runPostgres = await shouldRunPostgresTests(PG_URL)

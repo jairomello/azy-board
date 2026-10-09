@@ -881,6 +881,40 @@ export const itemLinks = sqliteTable('item_links', {
   descriptionCheck: check('item_links_description_check', sql`${table.description} IS NULL OR length(${table.description}) <= 20000`),
 }))
 
+// ---------------------------------------------------------------------------
+// ITEM_DEPENDENCIES — dependências de cronograma entre itens do mesmo projeto
+//
+// Cada linha expressa que `item_id` depende de `depends_on_item_id`, com um
+// tipo de dependência (FS/SS/SF/FF) e um retardo em dias (positivo = folga,
+// negativo = antecipação). Alvo pode ser qualquer item do mesmo projeto.
+// [TENANT] Todo lookup filtra tenant_id e projeto antes da leitura
+// [DB-SWAP] dependency_type como TEXT CHECK; em PostgreSQL pode usar ENUM nativo
+// ---------------------------------------------------------------------------
+export const itemDependencies = sqliteTable('item_dependencies', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  // [TENANT] Origem e alvo pertencem ao mesmo tenant/projeto
+  itemId: text('item_id').notNull(),
+  dependsOnItemId: text('depends_on_item_id').notNull(),
+  // Término-Início (FS) é o default, como no MS Project
+  dependencyType: text('dependency_type', { enum: ['FS', 'SS', 'SF', 'FF'] }).notNull().default('FS'),
+  // Retardo em dias; positivo = folga, negativo = antecipação
+  lagDays: integer('lag_days').notNull().default(0),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+  updatedAt: text('updated_at').notNull().default(defaultNowIso()),
+}, (table) => ({
+  itemFk: foreignKey(() => ({ columns: [table.tenantId, table.itemId], foreignColumns: [items.tenantId, items.id] })).onDelete('cascade'),
+  dependsOnFk: foreignKey(() => ({ columns: [table.tenantId, table.dependsOnItemId], foreignColumns: [items.tenantId, items.id] })).onDelete('cascade'),
+  // Um único vínculo por par (origem, alvo) dentro do tenant
+  pairUnique: uniqueIndex('item_dependencies_pair_unique').on(table.tenantId, table.itemId, table.dependsOnItemId),
+  itemList: index('item_dependencies_tenant_project_item_idx').on(table.tenantId, table.projectId, table.itemId, table.createdAt),
+  // Suporta varredura de ciclo e cascata reversa (item excluído como alvo)
+  dependsOnList: index('item_dependencies_depends_on_idx').on(table.tenantId, table.dependsOnItemId),
+  selfCheck: check('item_dependencies_self_check', sql`${table.itemId} <> ${table.dependsOnItemId}`),
+  typeCheck: check('item_dependencies_type_check', sql`${table.dependencyType} IN ('FS','SS','SF','FF')`),
+}))
+
 export const tenantAttachmentSettings = sqliteTable('tenant_attachment_settings', {
   tenantId: text('tenant_id').primaryKey().references(() => tenants.id, { onDelete: 'cascade' }),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(false),
@@ -1045,6 +1079,9 @@ export const itemsRelations = relations(items, ({ one, many }) => ({
   links: many(itemLinks),
   checklists: many(checklists),
   logs: many(itemLogs),
+  // Dependências de cronograma: itens dos quais este item depende e itens que dependem dele
+  dependencies: many(itemDependencies, { relationName: 'dependencies' }),
+  dependents: many(itemDependencies, { relationName: 'dependents' }),
 }))
 
 export const projectVersionsRelations = relations(projectVersions, ({ one, many }) => ({
@@ -1084,6 +1121,11 @@ export const itemSprintsRelations = relations(itemSprints, ({ one }) => ({
 
 export const attachmentsRelations = relations(attachments, ({ one }) => ({
   item: one(items, { fields: [attachments.itemId], references: [items.id] }),
+}))
+
+export const itemDependenciesRelations = relations(itemDependencies, ({ one }) => ({
+  item: one(items, { fields: [itemDependencies.itemId], references: [items.id], relationName: 'dependencies' }),
+  dependsOn: one(items, { fields: [itemDependencies.dependsOnItemId], references: [items.id], relationName: 'dependents' }),
 }))
 
 export const storageCleanupJobsRelations = relations(storageCleanupJobs, ({ one }) => ({

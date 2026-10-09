@@ -592,6 +592,27 @@ export const checklistItems = pgTable('checklist_items', {
 }))
 
 // ---------------------------------------------------------------------------
+// ITEM DEPENDENCIES
+// ---------------------------------------------------------------------------
+export const itemDependencies = pgTable('item_dependencies', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  itemId: text('item_id').notNull(),
+  dependsOnItemId: text('depends_on_item_id').notNull(),
+  dependencyType: text('dependency_type').notNull().default('FS'),
+  lagDays: integer('lag_days').notNull().default(0),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+  updatedAt: text('updated_at').notNull().default(defaultNowIso()),
+}, (table) => ({
+  pairUnique: uniqueIndex('item_dependencies_pair_unique').on(table.tenantId, table.itemId, table.dependsOnItemId),
+  itemList: index('item_dependencies_tenant_project_item_idx').on(table.tenantId, table.projectId, table.itemId, table.createdAt),
+  dependsOnList: index('item_dependencies_depends_on_idx').on(table.tenantId, table.dependsOnItemId),
+  selfCheck: check('item_dependencies_self_check', sql`${table.itemId} <> ${table.dependsOnItemId}`),
+  typeCheck: check('item_dependencies_type_check', sql`${table.dependencyType} IN ('FS','SS','SF','FF')`),
+}))
+
+// ---------------------------------------------------------------------------
 // STORAGE CLEANUP JOBS
 // ---------------------------------------------------------------------------
 export const storageCleanupJobs = pgTable('storage_cleanup_jobs', {

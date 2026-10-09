@@ -407,3 +407,51 @@ describe('migration de aparência de projeto e item (Card T14)', () => {
     sqlite.close()
   })
 })
+
+describe('migration de dependências entre itens (Card T46)', () => {
+  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+
+  test('cria item_dependencies com FKs compostas, unicidade por par e checks', () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    migrate(database, { migrationsFolder })
+    migrate(database, { migrationsFolder })
+
+    const tables = sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
+    expect(tables.map(table => table.name)).toContain('item_dependencies')
+
+    const fks = sqlite.query("PRAGMA foreign_key_list('item_dependencies')").all() as Array<{ table: string; from: string }>
+    expect(fks.some(fk => fk.table === 'items' && fk.from === 'item_id')).toBe(true)
+    expect(fks.some(fk => fk.table === 'items' && fk.from === 'depends_on_item_id')).toBe(true)
+
+    const indexes = sqlite.query("PRAGMA index_list('item_dependencies')").all() as Array<{ name: string; unique: number }>
+    expect(indexes.some(index => index.name === 'item_dependencies_pair_unique' && index.unique === 1)).toBe(true)
+    expect(indexes.map(index => index.name)).toContain('item_dependencies_tenant_project_item_idx')
+    expect(indexes.map(index => index.name)).toContain('item_dependencies_depends_on_idx')
+
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+
+  test('aplica o self-check e o check de tipo de dependência', async () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    await migrate(database, { migrationsFolder })
+    const now = new Date().toISOString()
+    await database.insert(schema.tenants).values({ id: 'dep-tenant', name: 'Dep', slug: 'dep', createdAt: now })
+    await database.insert(schema.projects).values({ id: 'dep-project', tenantId: 'dep-tenant', name: 'Dep', createdAt: now })
+    await database.insert(schema.items).values([
+      { id: 'dep-a', tenantId: 'dep-tenant', projectId: 'dep-project', type: 'TASK', title: 'A', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now },
+      { id: 'dep-b', tenantId: 'dep-tenant', projectId: 'dep-project', type: 'TASK', title: 'B', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, createdAt: now, updatedAt: now },
+    ])
+    const insert = sqlite.query('INSERT INTO item_dependencies (id, tenant_id, project_id, item_id, depends_on_item_id, dependency_type, lag_days) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    // Um item não depende de si mesmo
+    expect(() => insert.run('dep-self', 'dep-tenant', 'dep-project', 'dep-a', 'dep-a', 'FS', 0)).toThrow()
+    // Tipo de dependência fora do vocabulário é rejeitado
+    expect(() => insert.run('dep-bad-type', 'dep-tenant', 'dep-project', 'dep-a', 'dep-b', 'XX', 0)).toThrow()
+    insert.run('dep-ok', 'dep-tenant', 'dep-project', 'dep-a', 'dep-b', 'FS', 0)
+    expect((await database.select().from(schema.itemDependencies)).map(row => row.id)).toContain('dep-ok')
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+})

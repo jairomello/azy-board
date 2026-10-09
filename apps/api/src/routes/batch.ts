@@ -10,7 +10,7 @@ import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
 import type { BatchItemCreateOperation, BatchItemUpdate, ItemPatch } from '../persistence/ports'
 import { DEFAULT_ITEM_ICON } from '@azy-board/ui-contracts'
-import { isWorkCard, resolveActiveSprint, resolveActiveVersion } from '../services/creationDefaults'
+import { resolveActiveSprint, resolveActiveVersion } from '../services/creationDefaults'
 import { emitDomainEvent, findOperationId } from '../services/domainEventOutbox'
 import { applyItemBatchApplication, createItemsBatchApplication } from '../application/batch'
 

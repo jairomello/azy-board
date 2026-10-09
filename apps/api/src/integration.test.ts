@@ -12,7 +12,7 @@ process.env.LOGIN_PROGRESSIVE_DELAY_MS = '0'
 
 const { app } = await import('./index')
 const { db } = await import('./db/index')
-const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, itemLinks, tenantAttachmentSettings, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys, assistantConversations, assistantMessages, assistantRuns, assistantEvents, loginAttempts, idempotencyRecords, domainEventOutbox, domainEventCounters } = await import('./db/schema')
+const { tenants, users, projects, memberships, modules, columns, items, tags, sprints, itemTags, itemSprints, attachments, itemLinks, itemDependencies, tenantAttachmentSettings, checklists, checklistItems, itemLogs, projectAnalyticsCoverage, itemEvents, sprintCycles, sprintCycleItems, apiKeys, assistantConversations, assistantMessages, assistantRuns, assistantEvents, loginAttempts, idempotencyRecords, domainEventOutbox, domainEventCounters } = await import('./db/schema')
 const { signJwt, generateApiKey, hashPassword } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 const { appendAnalyticsEvent, assertAnalyticsCutoverReady, createSprintCycle, ensureCoverage } = await import('./services/analytics')
@@ -1411,14 +1411,14 @@ describe('visibilidade de projetos', () => {
 
 describe('campos de planejamento do projeto', () => {
   let tenantId: string
-  let adminId: string
+  let _adminId: string
   let adminToken: string
 
   beforeAll(async () => {
     tenantId = generateId()
     await db.insert(tenants).values({ id: tenantId, name: 'Tenant Planejamento', slug: `t-${tenantId}`, createdAt: new Date().toISOString() })
     const admin = await createUser(tenantId, 'admin-planning@test.com', 'Admin Planning')
-    adminId = admin.id
+    _adminId = admin.id
     adminToken = await token(admin.id, tenantId, admin.email)
   })
 
@@ -2163,6 +2163,212 @@ describe('links externos de itens', () => {
   })
 })
 
+describe('dependências entre itens (Card T46)', () => {
+  let tenantId: string
+  let member: { id: string; email: string }
+  let viewer: { id: string; email: string }
+  let outsider: { id: string; email: string }
+  let projectId: string
+  let itemA: string
+  let itemB: string
+  let itemC: string
+  let itemD: string
+  let memberToken: string
+  let viewerToken: string
+  let outsiderToken: string
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Dependências', slug: `dep-${tenantId}`, createdAt: new Date().toISOString() })
+    member = await createUser(tenantId, 'dep-member@test.local', 'Membro Dep', 'TEAM_MEMBER')
+    viewer = await createUser(tenantId, 'dep-viewer@test.local', 'Leitor Dep', 'TEAM_MEMBER')
+    outsider = await createUser(tenantId, 'dep-outsider@test.local', 'Visitante Dep', 'ADMIN')
+    memberToken = await token(member.id, tenantId, member.email)
+    viewerToken = await token(viewer.id, tenantId, viewer.email)
+    outsiderToken = await token(outsider.id, tenantId, outsider.email)
+    projectId = generateId()
+    await db.insert(projects).values({
+      id: projectId, tenantId, name: 'Projeto de dependências', description: null,
+      boardMode: 'HIERARCHICAL', simpleStoryId: null, managerUserId: null,
+      isRestricted: true, isHidden: false, createdAt: new Date().toISOString(),
+    })
+    await db.insert(memberships).values([
+      { id: generateId(), tenantId, userId: member.id, projectId, role: 'MEMBER', createdAt: new Date().toISOString() },
+      { id: generateId(), tenantId, userId: viewer.id, projectId, role: 'VIEWER', createdAt: new Date().toISOString() },
+    ])
+    const now = new Date().toISOString()
+    const base = { tenantId, projectId, type: 'TASK' as const, parentId: null, moduleId: null, columnId: null, ancestryPath: '[]', status: 'NOT_STARTED' as const, priority: 'MEDIUM' as const, position: 0, authorId: member.id, createdAt: now, updatedAt: now }
+    itemA = generateId(); itemB = generateId(); itemC = generateId(); itemD = generateId()
+    await db.insert(items).values([
+      { ...base, id: itemA, title: 'A' },
+      { ...base, id: itemB, title: 'B' },
+      { ...base, id: itemC, title: 'C' },
+      { ...base, id: itemD, title: 'D' },
+    ])
+  })
+
+  test('faz CRUD com tipo default FS, retardo e lista isolada pelo item', async () => {
+    const create = await request(`/projects/${projectId}/items/${itemA}/dependencies`, memberToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dependsOnItemId: itemB }),
+    })
+    expect(create.status).toBe(201)
+    const first = await create.json() as { id: string; dependencyType: string; lagDays: number; dependsOn: { id: string; title: string; type: string } }
+    expect(first).toMatchObject({ dependencyType: 'FS', lagDays: 0, dependsOn: { id: itemB, type: 'TASK' } })
+
+    // Lista isolada por item de origem e com resumo do item dependido.
+    const listA = await request(`/projects/${projectId}/items/${itemA}/dependencies`, viewerToken)
+    expect(listA.status).toBe(200)
+    expect(await listA.json()).toEqual([first])
+    expect(await (await request(`/projects/${projectId}/items/${itemB}/dependencies`, viewerToken)).json()).toEqual([])
+
+    // Edição parcial de tipo/retardo.
+    const patch = await request(`/projects/${projectId}/items/${itemA}/dependencies/${first.id}`, memberToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lagDays: -2 }),
+    })
+    expect(patch.status).toBe(200)
+    expect(await patch.json()).toMatchObject({ dependencyType: 'FS', lagDays: -2 })
+
+    // Remoção.
+    const remove = await request(`/projects/${projectId}/items/${itemA}/dependencies/${first.id}`, memberToken, { method: 'DELETE' })
+    expect(remove.status).toBe(200)
+    expect(await (await request(`/projects/${projectId}/items/${itemA}/dependencies`, viewerToken)).json()).toEqual([])
+  })
+
+  test('valida tipo, retardo, auto-dependência, alvo ausente e permissões', async () => {
+    const invalids = [
+      { dependsOnItemId: itemB, dependencyType: 'XX' },
+      { dependsOnItemId: itemB, lagDays: 1.5 },
+      { dependsOnItemId: itemA },
+    ]
+    for (const body of invalids) {
+      const res = await request(`/projects/${projectId}/items/${itemA}/dependencies`, memberToken, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })
+      expect(res.status).toBe(400)
+    }
+    // Alvo fora do projeto não é aceito (anti-IDOR, sem revelar dados).
+    const absent = await request(`/projects/${projectId}/items/${itemA}/dependencies`, memberToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dependsOnItemId: generateId() }),
+    })
+    expect(absent.status).toBe(422)
+    // VIEWER não escreve; não membro não enxerga o recurso.
+    const readOnly = await request(`/projects/${projectId}/items/${itemA}/dependencies`, viewerToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dependsOnItemId: itemB }),
+    })
+    expect(readOnly.status).toBe(403)
+    const forbiddenList = await request(`/projects/${projectId}/items/${itemA}/dependencies`, outsiderToken)
+    expect(forbiddenList.status).toBe(404)
+  })
+
+  test('bloqueia ciclos diretos e indiretos', async () => {
+    const aToB = await request(`/projects/${projectId}/items/${itemA}/dependencies`, memberToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dependsOnItemId: itemB }),
+    })
+    expect(aToB.status).toBe(201)
+    // Ciclo direto: B dependeria de A, que já depende de B.
+    const bToA = await request(`/projects/${projectId}/items/${itemB}/dependencies`, memberToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dependsOnItemId: itemA }),
+    })
+    expect(bToA.status).toBe(409)
+    expect(((await bToA.json()) as { error: { code: string } }).error.code).toBe('DEPENDENCY_CYCLE')
+    // Grafo acíclico: B depende de C.
+    const bToC = await request(`/projects/${projectId}/items/${itemB}/dependencies`, memberToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dependsOnItemId: itemC }),
+    })
+    expect(bToC.status).toBe(201)
+    // Ciclo indireto: com A → B e B → C, fazer C depender de A fecha C → B → A → ... → C.
+    const cToA = await request(`/projects/${projectId}/items/${itemC}/dependencies`, memberToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dependsOnItemId: itemA }),
+    })
+    expect(cToA.status).toBe(409)
+    // Sem ciclo o vínculo é aceito: A depende de C.
+    const safe = await request(`/projects/${projectId}/items/${itemA}/dependencies`, memberToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dependsOnItemId: itemC }),
+    })
+    expect(safe.status).toBe(201)
+  })
+
+  test('com Idempotency-Key o replay não duplica a dependência', async () => {
+    const init = { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'dep-replay' }, body: JSON.stringify({ dependsOnItemId: itemD, dependencyType: 'SS', lagDays: 3 }) }
+    const first = await request(`/projects/${projectId}/items/${itemA}/dependencies`, memberToken, init)
+    expect(first.status).toBe(201)
+    const second = await request(`/projects/${projectId}/items/${itemA}/dependencies`, memberToken, init)
+    expect(second.status).toBe(201)
+    const rows = await db.select().from(itemDependencies).where(and(eq(itemDependencies.itemId, itemA), eq(itemDependencies.dependsOnItemId, itemD)))
+    expect(rows).toHaveLength(1)
+  })
+
+  test('excluir item remove dependências onde ele é origem ou alvo', async () => {
+    // Estado acumulado dos testes anteriores: A→B, B→C, A→C e A→D.
+    await db.delete(items).where(and(eq(items.tenantId, tenantId), eq(items.id, itemB)))
+    // B deletado como origem (B→C) e como alvo (A→B).
+    expect(await db.select().from(itemDependencies).where(eq(itemDependencies.itemId, itemB))).toHaveLength(0)
+    expect(await db.select().from(itemDependencies).where(eq(itemDependencies.dependsOnItemId, itemB))).toHaveLength(0)
+    // Vínculos não relacionados a B permanecem.
+    expect(await db.select().from(itemDependencies).where(and(eq(itemDependencies.itemId, itemA), eq(itemDependencies.dependsOnItemId, itemC)))).toHaveLength(1)
+    expect(await db.select().from(itemDependencies).where(and(eq(itemDependencies.itemId, itemA), eq(itemDependencies.dependsOnItemId, itemD)))).toHaveLength(1)
+  })
+
+  test('payload de list e da árvore expõe dependencies e dependencyCount', async () => {
+    const projectId2 = generateId()
+    const now = new Date().toISOString()
+    await db.insert(projects).values({
+      id: projectId2, tenantId, name: 'Projeto de árvore com dependências', description: null,
+      boardMode: 'HIERARCHICAL', simpleStoryId: null, managerUserId: null,
+      isRestricted: true, isHidden: false, createdAt: now,
+    })
+    await db.insert(memberships).values({ id: generateId(), tenantId, userId: member.id, projectId: projectId2, role: 'MEMBER', createdAt: now })
+    const moduleId = generateId()
+    await db.insert(modules).values({ id: moduleId, tenantId, projectId: projectId2, name: 'Modulo', description: null, position: 0 })
+
+    const createItem = async (title: string, type: string, parentId?: string) => {
+      const res = await request(`/projects/${projectId2}/items`, memberToken, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, type, moduleId: type === 'EPIC' ? moduleId : undefined, parentId }),
+      })
+      expect(res.status).toBe(201)
+      return ((await res.json()) as { id: string }).id
+    }
+    const epicId = await createItem('Epic', 'EPIC')
+    const storyId = await createItem('Story', 'STORY', epicId)
+    const leafId = await createItem('Leaf', 'TASK', storyId)
+    // leaf depende de epic — a árvore deve exibir a dependência.
+    const dep = await request(`/projects/${projectId2}/items/${leafId}/dependencies`, memberToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dependsOnItemId: epicId }),
+    })
+    expect(dep.status).toBe(201)
+
+    // GET /items (board).
+    const list = await request(`/projects/${projectId2}/items`, memberToken)
+    expect(list.status).toBe(200)
+    const leafInList = ((await list.json()) as { data: Array<Record<string, unknown>> }).data.find(item => item.id === leafId)
+    expect(leafInList).toMatchObject({ dependencyCount: 1 })
+    expect((leafInList!.dependencies as Array<{ dependsOnItemId: string }>)[0]!.dependsOnItemId).toBe(epicId)
+
+    // GET /items/tree.
+    const tree = await request(`/projects/${projectId2}/items/tree`, memberToken)
+    expect(tree.status).toBe(200)
+    const treeBody = (await tree.json()) as Array<Record<string, unknown>>
+    const findNode = (nodes: Array<Record<string, unknown>>, id: string): Record<string, unknown> | undefined => {
+      for (const node of nodes) {
+        if (node.id === id) return node
+        const found = findNode((node.children as Array<Record<string, unknown>>) ?? [], id)
+        if (found) return found
+      }
+      return undefined
+    }
+    const leafNode = findNode(treeBody, leafId)
+    expect(leafNode).toMatchObject({ dependencyCount: 1 })
+    const deps = leafNode!.dependencies as Array<{ dependsOn: { id: string } }>
+    expect(deps[0]!.dependsOn.id).toBe(epicId)
+    // Itens sem dependências carregam listas vazias/zero — checa um nó sem vínculos.
+    const storyNode = findNode(treeBody, storyId)
+    expect(storyNode?.dependencies).toEqual([])
+    expect(storyNode?.dependencyCount).toBe(0)
+  })
+})
+
 describe('reparenting transacional', () => {
   let tenantId: string
   let admin: { id: string; email: string }
@@ -2257,7 +2463,7 @@ describe('reparenting transacional', () => {
 
 describe('campos avançados de checklist (card T5)', () => {
   let tenantId: string
-  let adminId: string
+  let _adminId: string
   let adminToken: string
   let memberId: string
   let outsiderId: string
@@ -2266,7 +2472,7 @@ describe('campos avançados de checklist (card T5)', () => {
     tenantId = generateId()
     await db.insert(tenants).values({ id: tenantId, name: 'Tenant checklist T5', slug: `t5-${tenantId}`, createdAt: new Date().toISOString() })
     const admin = await createUser(tenantId, 'admin-t5@test.local', 'Admin T5')
-    adminId = admin.id
+    _adminId = admin.id
     adminToken = await token(admin.id, tenantId, admin.email)
     memberId = (await createUser(tenantId, 'member-t5@test.local', 'Membro T5', 'TEAM_MEMBER')).id
     outsiderId = (await createUser(tenantId, 'outsider-t5@test.local', 'Fora T5', 'TEAM_MEMBER')).id

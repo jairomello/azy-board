@@ -25,7 +25,7 @@ function readMarker(): InstallationMarker {
 describe.skipIf(!runPostgres)('ADVANCED rollout/rollback (PostgreSQL real)', () => {
   let closeRuntime: () => Promise<void>
   let tenantId: string
-  let projectId: string
+  let _projectId: string
   let markerBefore: InstallationMarker
 
   beforeAll(async () => {
@@ -64,7 +64,7 @@ describe.skipIf(!runPostgres)('ADVANCED rollout/rollback (PostgreSQL real)', () 
       { tenantId, actorUserId: user.id, actorKind: 'USER', mutation: { origin: 'REST', actorType: 'HUMAN', actorSource: 'REST', actorLabel: null } },
       { project: { name: 'Projeto Rollout', boardMode: 'SIMPLE' }, defaultColumns: [{ name: 'A Fazer', baseStatus: 'NOT_STARTED' }], defaultModuleName: 'Geral', simpleStoryTitle: 'Fluxo' },
     )
-    projectId = project.id
+    _projectId = project.id
 
     // Simula o encerramento da instância antiga antes do redeploy.
     await closeRuntime()

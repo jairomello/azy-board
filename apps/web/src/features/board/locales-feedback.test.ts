@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { expect, test } from 'bun:test'
 import ptBR from '../../i18n/locales/pt-BR/board.json'
 import en from '../../i18n/locales/en/board.json'
 import es from '../../i18n/locales/es/board.json'

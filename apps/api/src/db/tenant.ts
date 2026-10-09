@@ -1,5 +1,4 @@
-import { eq, and, type SQL } from 'drizzle-orm'
-import { db } from './index'
+import { eq, sql, and, type SQL } from 'drizzle-orm'
 
 // [TENANT] Este helper garante que TODA query inclua tenant_id como filtro obrigatório.
 // Nenhum handler de rota deve acessar o banco sem passar por withTenant().
@@ -14,7 +13,7 @@ export function tenantFilter<T extends { tenantId: SQL<unknown> | ReturnType<typ
   table: { tenantId: T['tenantId'] },
   extraCondition?: SQL<unknown>
 ): SQL<unknown> {
-  const tenantCondition = eq(table.tenantId as any, tenantId)
+  const tenantCondition = sql`${table.tenantId} = ${tenantId}`
   return extraCondition ? and(tenantCondition, extraCondition)! : tenantCondition
 }
 

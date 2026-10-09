@@ -1,14 +1,14 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { AssistantProvider, AssistantScreen, AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
-import { DEFAULT_GOVERNANCE, GOVERNANCE_BOUNDS, Governance, MAX_ASSISTANT_ACTIONS, MAX_MESSAGE_BYTES } from '@azy-board/assistant-contracts'
+import { DEFAULT_GOVERNANCE, GOVERNANCE_BOUNDS, type Governance, MAX_ASSISTANT_ACTIONS, MAX_MESSAGE_BYTES } from '@azy-board/assistant-contracts'
 import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
 import { AssistantEncryptionError, decryptAssistantSecret, encryptAssistantSecret } from '../services/assistantEncryption'
 import { probeOpenAICredential } from '../services/openaiProvider'
 import { probeOpenRouterCredential } from '../services/openrouterProvider'
-import { ASSIGNED_CARD_PRIORITY_INSTRUCTION, AZY_AGENT_SYSTEM_PROMPT, AssistantHarness, operationHash } from '../services/assistantHarness'
+import { ASSIGNED_CARD_PRIORITY_INSTRUCTION, AZY_AGENT_SYSTEM_PROMPT, AssistantHarness, } from '../services/assistantHarness'
 import type { ModelProvider } from '../services/openaiProvider'
-import { dependencyToolsFor, executeSharedTool, friendlyToolName, getSharedToolDefinitions, sanitizeToolOutput, selectSharedTools, type HumanToolContext } from '../services/assistantTools'
+import { dependencyToolsFor, friendlyToolName, getSharedToolDefinitions, sanitizeToolOutput, selectSharedTools, type HumanToolContext } from '../services/assistantTools'
 import { generateId } from '../utils/id'
 import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
@@ -16,7 +16,6 @@ import { hasGlobalGroup } from '../services/authorization'
 import { MCP_TOOL_POLICIES } from '@azy-board/tool-registry'
 import { assistantAdjustSchema, assistantAnswerSchema, assistantApprovalSchema, assistantAvailabilitySchema, assistantGovernanceSchema, assistantMessageSchema, assistantModelConfigSchema, assistantModelConfigTestSchema, assistantModelConfigUpdateSchema, assistantModelConfigsReorderSchema, assistantProviderSchema, conversationSchema, parseJson } from '../validation'
 import { getCoordination, persistence } from '../persistence/runtime'
-import { userPersistenceContext } from '../persistence/context'
 import type { AssistantSettingsRecord, ColumnRecord, ItemRecord, PersistenceContext } from '../persistence/models'
 import type { ScreenOverview } from '@azy-board/assistant-contracts'
 import { isOtelInitialized, getOtelMeter } from '../services/telemetry'
@@ -94,7 +93,7 @@ export function estimateRequestedActions(content: string): number {
   const headings = content.match(/^\s*(?:#{1,6}\s*)?(?:epic|épico|story|história|historia|task|tarefa|bug)(?:\s+\d[\d.]*)?\s*(?:—|-|:|$)/gim)?.length ?? 0
   return Math.max(explicitTypes, headings)
 }
-const exposeAssistantErrors = process.env.NODE_ENV !== 'production' && process.env.ASSISTANT_EXPOSE_ERRORS !== 'false'
+const _exposeAssistantErrors = process.env.NODE_ENV !== 'production' && process.env.ASSISTANT_EXPOSE_ERRORS !== 'false'
 const requestTimes = new Map<string, number[]>()
 
 function context(c: Context<HonoEnv>): RequestContext { return c.get('ctx') as RequestContext }
@@ -329,7 +328,7 @@ export function toolApi(c: Context<HonoEnv>) {
   }
 }
 
-function successMessage(tool: string, result: unknown): string {
+function _successMessage(tool: string, result: unknown): string {
   if (tool === 'create_project' && result && typeof result === 'object') {
     const project = result as Record<string, unknown>
     return `Projeto **${String(project.name ?? '')}** criado com sucesso.`
@@ -740,7 +739,7 @@ assistantRouter.delete('/conversations/:conversationId', async (c) => {
   return c.json({ ok: true })
 })
 
-const assistantScreens = new Set<AssistantScreen>(['projects-index', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'item-detail', 'account', 'admin-users', 'admin-assistant', 'global-other'])
+const _assistantScreens = new Set<AssistantScreen>(['projects-index', 'project-board-kanban', 'project-board-tree', 'project-dashboard', 'project-settings', 'item-detail', 'account', 'admin-users', 'admin-assistant', 'global-other'])
 
 async function runMessage(c: Context<HonoEnv>, conversationId: string, content: string, idempotencyKey: string, modelContext?: string, expectedProjectId?: string | null, expectedItemId?: string | null, screen: AssistantScreen = 'global-other', screenSnapshot?: AssistantScreenSnapshot | null) {
   const ctx = context(c), config = await available(ctx.tenantId)

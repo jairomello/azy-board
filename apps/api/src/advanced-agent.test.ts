@@ -34,7 +34,7 @@ class ScriptedProvider implements ModelProvider {
 
 describe.skipIf(!runPostgres)('ADVANCED agente — run/tool/aprovação/SSE (PostgreSQL real)', () => {
   let ports: PersistencePorts
-  let pool: Pool
+  let _pool: Pool
   let closeRuntime: () => Promise<void>
   let tenantId: string
   let userId: string

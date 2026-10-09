@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
-import { createErrorTracker, type ErrorTracker } from './errorTracker'
+import { createErrorTracker, } from './errorTracker'
 import type { ObservabilityConfig } from '../config/observability'
 
 describe('ErrorTracker', () => {

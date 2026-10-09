@@ -280,6 +280,30 @@ const CHECKS: CheckDefinition[] = [
     sql: `SELECT COUNT(*) AS count FROM attachments WHERE NOT EXISTS (SELECT 1 FROM items WHERE items.id = attachments.item_id AND items.tenant_id = attachments.tenant_id)`,
   },
   {
+    check: 'orphan_item_dependency_item',
+    table: 'item_dependencies',
+    sql: `SELECT COUNT(*) AS count FROM item_dependencies WHERE NOT EXISTS (SELECT 1 FROM items WHERE items.id = item_dependencies.item_id AND items.tenant_id = item_dependencies.tenant_id)`,
+  },
+  {
+    check: 'orphan_item_dependency_depends_on',
+    table: 'item_dependencies',
+    sql: `SELECT COUNT(*) AS count FROM item_dependencies WHERE NOT EXISTS (SELECT 1 FROM items WHERE items.id = item_dependencies.depends_on_item_id AND items.tenant_id = item_dependencies.tenant_id)`,
+  },
+  {
+    check: 'cross_tenant_item_dependency',
+    table: 'item_dependencies',
+    sql: `SELECT COUNT(*) AS count FROM item_dependencies
+          JOIN items ON items.id = item_dependencies.item_id
+          WHERE items.tenant_id <> item_dependencies.tenant_id`,
+  },
+  {
+    check: 'cross_tenant_item_dependency_target',
+    table: 'item_dependencies',
+    sql: `SELECT COUNT(*) AS count FROM item_dependencies
+          JOIN items ON items.id = item_dependencies.depends_on_item_id
+          WHERE items.tenant_id <> item_dependencies.tenant_id`,
+  },
+  {
     check: 'orphan_tag_project',
     table: 'tags',
     sql: `SELECT COUNT(*) AS count FROM tags WHERE NOT EXISTS (SELECT 1 FROM projects WHERE projects.id = tags.project_id AND projects.tenant_id = tags.tenant_id)`,

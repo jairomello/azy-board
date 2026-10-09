@@ -13,6 +13,7 @@ const { generateId } = await import('./utils/id')
 
 await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
 
+// biome-ignore lint/suspicious/noExplicitAny: JSON arbitrário deserializado nos testes (acessos dinâmicos).
 type JsonRecord = Record<string, any>
 
 async function request(path: string, session: string, init: RequestInit = {}) {

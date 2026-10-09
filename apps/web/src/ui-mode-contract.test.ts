@@ -33,7 +33,7 @@ describe('contratos de UI dos modos de board', () => {
   test('board simples usa uma lane única, mantém filtros úteis e remove controles hierárquicos', async () => {
     const board = await source('./features/board/BoardScreen.tsx')
     const lanes = await source('./features/board/components/BoardLanes.tsx')
-    const preferences = await source('./features/board/hooks/useBoardPreferences.ts')
+    const _preferences = await source('./features/board/hooks/useBoardPreferences.ts')
     const commandBar = await source('./components/BoardCommandBar.tsx')
     const filters = await source('./components/BoardFilters.tsx')
     const itemModal = await source('./components/ItemModal.tsx')
@@ -65,7 +65,7 @@ describe('contratos de UI dos modos de board', () => {
   })
 
   test('board oferece filtro de centro de custo e invalida seleções removidas', async () => {
-    const board = await source('./features/board/BoardScreen.tsx')
+    const _board = await source('./features/board/BoardScreen.tsx')
     const boardView = await source('./features/board/model/boardView.ts')
     const filterValidation = await source('./features/board/hooks/useBoardFilterValidation.ts')
     const preferences = await source('./features/board/hooks/useBoardPreferences.ts')
@@ -99,7 +99,7 @@ describe('contratos de UI dos modos de board', () => {
 
   test('board oferece filtro por valor vazio distinto do estado neutro', async () => {
     const filters = await source('./components/BoardFilters.tsx')
-    const board = await source('./features/board/BoardScreen.tsx')
+    const _board = await source('./features/board/BoardScreen.tsx')
     const boardView = await source('./features/board/model/boardView.ts')
     const filterValidation = await source('./features/board/hooks/useBoardFilterValidation.ts')
     const chips = await source('./components/ActiveFilterChips.tsx')

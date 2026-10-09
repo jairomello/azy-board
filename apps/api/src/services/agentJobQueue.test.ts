@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
+import { describe, expect, test, beforeEach, } from 'bun:test'
 import { eq } from 'drizzle-orm'
 
 process.env.DATABASE_URL = ':memory:'
@@ -71,7 +71,7 @@ describe('Agent job queue', () => {
   })
 
   test('claim atômico: dois workers concorrem, apenas um executa', async () => {
-    const runId = await createRun()
+    const _runId = await createRun()
     const worker1 = 'worker-1'
     const worker2 = 'worker-2'
 

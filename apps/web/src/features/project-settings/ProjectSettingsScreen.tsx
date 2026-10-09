@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ApiError, api } from '../../lib/api'
@@ -34,7 +34,7 @@ export default function ProjectSettingsScreen() {
 
   // Eventos do projeto invalidam a consulta da seção de Settings afetada.
   // Seções fora de Settings (ex.: tags) são ignoradas aqui — o board cuida delas.
-  const syncState = useWebSocket(projectId ?? null, buildSettingsHandlers(section => {
+  const _syncState = useWebSocket(projectId ?? null, buildSettingsHandlers(section => {
     if (isSettingsSection(section)) void data.invalidate(section)
   }), () => { void data.invalidateAll() })
 

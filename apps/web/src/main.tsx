@@ -14,13 +14,13 @@ import { DEFAULT_LIGHT_SHELL_THEME, isLightShellTheme, type Theme } from '@azy-b
 // no HTML, todas as chamadas a /api/ e a basename do React Router são
 // prefixadas com esse base path. Em dev local (sem __BASE_PATH__) o código
 // roda normalmente como se estivesse em "/".
-const BASE_PATH = ((window as any).__BASE_PATH__ || '').replace(/\/+$/, '')
+const BASE_PATH = ((window as { __BASE_PATH__?: string }).__BASE_PATH__ || '').replace(/\/+$/, '')
 if (BASE_PATH) {
   const originalFetch = window.fetch
   // Object.assign preserva as propriedades estáticas de `fetch`
   // (preconnect, priority, etc.) exigidas pelo typecheck do TS.
   window.fetch = Object.assign(
-    (input: any, init?: RequestInit) => {
+    (input: Parameters<typeof window.fetch>[0], init?: RequestInit) => {
       if (typeof input === 'string' && input.startsWith('/api/')) {
         input = BASE_PATH + input
       } else if (input instanceof Request) {
@@ -57,7 +57,7 @@ document.documentElement.dataset.lightShellTheme = savedShellTheme
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter basename={((window as any).__BASE_PATH__ || '')}>
+      <BrowserRouter basename={((window as { __BASE_PATH__?: string }).__BASE_PATH__ || '')}>
         <App />
       </BrowserRouter>
     </QueryClientProvider>

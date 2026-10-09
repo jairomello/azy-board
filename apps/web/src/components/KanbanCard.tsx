@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Trash2, GitBranch, Archive, Copy, Check } from 'lucide-react'
+import { Trash2, GitBranch, Archive, Copy, Check, Workflow } from 'lucide-react'
 import { UserAvatar } from './UserAvatar'
 import { InlineEdit } from './InlineEdit'
 import { useToast } from './Toast'
@@ -56,6 +56,8 @@ export interface CardData {
   itemTags?: Array<{ tag: { id: string; name: string; color: string } }>
   isLeaf: boolean
   childrenCount?: number
+  // Card T46 — quantidade de itens dos quais este card depende diretamente.
+  dependencyCount?: number
   checklistProgress?: ChecklistProgress | null
   icon?: string | null
   color?: string | null
@@ -188,6 +190,17 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
           {card.sequenceCode && (
             <span className="min-w-0 truncate font-mono text-[11px] font-semibold tracking-wide text-muted-foreground">
               {card.sequenceCode}
+            </span>
+          )}
+          {/* Indicador de dependências: somente leitura, omitido quando zero */}
+          {(card.dependencyCount ?? 0) > 0 && (
+            <span
+              className="dependencies-count flex items-center gap-0.5 text-muted-foreground"
+              aria-label={t('dependenciesCardLabel', { count: card.dependencyCount })}
+              title={t('dependenciesCardLabel', { count: card.dependencyCount })}
+            >
+              <Workflow className="h-3 w-3" />
+              <span className="text-[10px] font-semibold leading-none">{card.dependencyCount}</span>
             </span>
           )}
           {/* Ações: copiar, arquivar, excluir. Visíveis em hover e no foco por teclado. */}

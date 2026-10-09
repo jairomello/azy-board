@@ -317,6 +317,16 @@ export const updateItemLinkSchema = z.object({
   url: itemLinkUrlSchema.optional(),
   description: optionalText(20_000).nullable().optional(),
 }).strict().refine(value => Object.keys(value).length > 0, 'Informe ao menos um campo para atualizar.')
+export const itemDependencyTypeSchema = z.enum(['FS', 'SS', 'SF', 'FF'])
+export const createItemDependencySchema = z.object({
+  dependsOnItemId: z.string().trim().min(1),
+  dependencyType: itemDependencyTypeSchema.optional(),
+  lagDays: z.number().int().optional(),
+}).strict()
+export const updateItemDependencySchema = z.object({
+  dependencyType: itemDependencyTypeSchema.optional(),
+  lagDays: z.number().int().optional(),
+}).strict().refine(value => Object.keys(value).length > 0, 'Informe ao menos um campo para atualizar.')
 export const moduleSchema = z.object({ name: z.string().trim().min(1).max(200), description: optionalText().nullable().optional() }).strict()
 export const updateModuleSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), position: z.number().int().min(0).optional(), expectedName: z.string().trim().min(1).max(200).optional() }).strict()
 export const deleteModuleSchema = z.object({ targetModuleId: z.string().min(1).optional(), cascade: z.boolean().optional() }).strict()

@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { OpenAIProvider, type ModelProvider } from '../services/openaiProvider'
 import { OpenRouterProvider } from '../services/openrouterProvider'
 import { EVAL_CONFIG, EVAL_PROVIDER_ENV_KEYS, EVAL_PROVIDER_VARIABLES } from './config'

@@ -1,7 +1,7 @@
 import { defineConfig, loadEnv, type PluginOption } from 'vite'
 import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
-import path from 'path'
+import path from 'node:path'
 
 // `base: './'` gera paths relativos nos assets do build, o que permite
 // publicar o app em path-based (ex.: /azyboard/) sem mudar o codigo.

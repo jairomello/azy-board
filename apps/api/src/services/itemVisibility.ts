@@ -75,7 +75,7 @@ function toInput(item: ItemWithRelationsRecord, items: ItemWithRelationsRecord[]
   }
 }
 
-function buildRevealPlan(item: ItemVisibilityInput, reasons: ItemVisibilityReason[], snapshot: AssistantScreenSnapshot | undefined): AssistantViewRevealPlan | null {
+function buildRevealPlan(_item: ItemVisibilityInput, reasons: ItemVisibilityReason[], snapshot: AssistantScreenSnapshot | undefined): AssistantViewRevealPlan | null {
   if (reasons.some(reason => reason.code === 'ACCESS_DENIED' || reason.code === 'ARCHIVED')) return null
   const plan: AssistantViewRevealPlan = { itemId: '' }
   const clearFields = new Set<string>()

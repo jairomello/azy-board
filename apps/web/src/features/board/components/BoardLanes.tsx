@@ -43,7 +43,7 @@ interface BoardLanesProps {
 }
 
 export function BoardLanes({
-  simpleBoard, simpleStory, simpleCards, showStoryLanes, orphanCards, moduleGroups, visibleModuleGroups, columns, versions, sprints,
+  simpleBoard, simpleStory, simpleCards, showStoryLanes, orphanCards, visibleModuleGroups, columns, versions, sprints,
   collapsedEpics, collapsedModules, collapsedStories, columnAddForms, onToggleEpic, onToggleModule, onToggleStory,
   onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, onEditStory, onEditEpic,
   noModuleLabel,

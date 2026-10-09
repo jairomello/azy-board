@@ -5,7 +5,7 @@ export function resolveAppUrl(url: string | null | undefined): string | undefine
   if (!url) return undefined
   if (/^(https?:)?\/\//i.test(url) || url.startsWith('data:') || url.startsWith('blob:')) return url
 
-  const basePath = ((window as any).__BASE_PATH__ || '').replace(/\/+$/, '')
+  const basePath = ((window as { __BASE_PATH__?: string }).__BASE_PATH__ || '').replace(/\/+$/, '')
   if (basePath && url.startsWith('/api/')) return `${basePath}${url}`
   return url
 }
