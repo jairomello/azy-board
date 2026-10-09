@@ -64,27 +64,29 @@ export function BoardColumns({
           return (
             <SortableColumn key={column.id} id={sortableId} colName={column.name} colCount={columnTasks.length} baseStatus={column.baseStatus}>
               <DroppableColumn droppableId={`${laneId}:drop:${column.id}`}>
-              <div className="board-column-cards flex-1 px-3 pt-2.5 space-y-2">
+                {allowAdd && (
+                  <div className="board-column-add px-3 pt-2.5">
+                    {columnAddForms[formKey] ? (
+                      <AddCardForm
+                        versions={versions}
+                        sprints={sprints}
+                        onAdd={(title, type, versionId, sprintId) => onCardCreate(column.id, title, type, parentId, formKey, versionId, sprintId)}
+                        onCancel={() => onHideAddForm(formKey)}
+                      />
+                    ) : (
+                      <button onClick={() => onShowAddForm(formKey)} className="board-add-card w-full flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition">
+                        <Plus className="w-3.5 h-3.5" />
+                        {t('addCard')}
+                      </button>
+                    )}
+                  </div>
+                )}
+                <div className="board-column-cards flex-1 px-3 pt-2 space-y-2">
                   <SortableContext id={`${laneId}-cards-${column.id}`} items={columnTasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
                     {columnTasks.map(task => (
                       <KanbanCard key={task.id} card={task} onOpenDetail={onOpenDetail} onTitleSave={onTitleSave} onDelete={onDelete} onArchive={onArchive} />
                     ))}
                   </SortableContext>
-                </div>
-                <div className="board-column-add p-2 mt-1">
-                  {allowAdd && (columnAddForms[formKey] ? (
-                    <AddCardForm
-                      versions={versions}
-                      sprints={sprints}
-                      onAdd={(title, type, versionId, sprintId) => onCardCreate(column.id, title, type, parentId, formKey, versionId, sprintId)}
-                      onCancel={() => onHideAddForm(formKey)}
-                    />
-                  ) : (
-                      <button onClick={() => onShowAddForm(formKey)} className="board-add-card w-full flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition">
-                      <Plus className="w-3.5 h-3.5" />
-                      {t('addCard')}
-                    </button>
-                  ))}
                 </div>
               </DroppableColumn>
             </SortableColumn>

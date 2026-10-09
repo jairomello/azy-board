@@ -3,11 +3,15 @@
 Definir os requisitos da capacidade card creation ui.
 ## Requirements
 ### Requirement: Botão de criação de card por coluna envia para `/items`
-O sistema SHALL exibir um botão "+" no rodapé de cada coluna do board para adicionar novo card. O formulário rápido SHALL continuar compacto e inline na coluna, contendo título, tipo (`TASK`/`BUG`), sprint opcional e versão opcional, enviando os dados para `POST /projects/:id/items`. A criação de TASK/BUG pela toolbar SHALL abrir o mesmo formulário completo amplo usado pela edição, com painel de propriedades e áreas de conteúdo. Sprint SHALL listar somente `PROPOSED` ou `OPEN`.
+O sistema SHALL exibir um botão "+" no topo de cada coluna do board, imediatamente abaixo do cabeçalho e acima da lista de cards, para adicionar novo card. O formulário rápido SHALL continuar compacto e inline na coluna, contendo título, tipo (`TASK`/`BUG`), sprint opcional e versão opcional, enviando os dados para `POST /projects/:id/items`. A criação de TASK/BUG pela toolbar SHALL abrir o mesmo formulário completo amplo usado pela edição, com painel de propriedades e áreas de conteúdo. Sprint SHALL listar somente `PROPOSED` ou `OPEN`.
 
 #### Scenario: Abrir formulário rápido de criação
 - **WHEN** usuário clica no botão "+" de uma coluna
-- **THEN** formulário compacto é exibido inline na coluna com título, tipo, sprint opcional, versão opcional e ações Adicionar/Cancelar, sem abrir o modal amplo
+- **THEN** formulário compacto é exibido inline no topo da coluna (abaixo do cabeçalho e antes dos cards) com título, tipo, sprint opcional, versão opcional e ações Adicionar/Cancelar, sem abrir o modal amplo
+
+#### Scenario: Controle de criação visível em colunas longas
+- **WHEN** uma coluna contém muitos cards e o usuário deseja criar um novo card
+- **THEN** o controle de criação permanece visível no topo da coluna, sem exigir rolagem até o fim da lista
 
 #### Scenario: Abrir formulário completo pela toolbar
 - **WHEN** usuário seleciona `+ Task` ou `+ Bug` na toolbar

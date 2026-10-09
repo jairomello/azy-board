@@ -310,6 +310,16 @@
   min-height: 0;
 }
 
+/* Controle de criação de card no topo da coluna (abaixo do cabeçalho). No
+   compacto, reduz a separação vertical para acompanhar a densidade. */
+.density-compact .board-column-add {
+  padding-top: 0.375rem;
+}
+
+.density-compact .board-column-cards {
+  padding-top: 0.375rem;
+}
+
 /* Comandos e contexto do Board seguem a paleta própria do quadro, sem usar os
    presets de cor do shell global. */
 .board-command-bar {
