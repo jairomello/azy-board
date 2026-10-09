@@ -96,7 +96,7 @@ export function ActiveFilterChips({ filters, catalogs, labels, visualContext, on
   const activeFilters = normalizeActiveBoardFilters(filters, catalogs, labels, visualContext)
   if (activeFilters.length === 0) return null
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-xl border border-border/70 bg-surface/70 px-3 py-2" aria-label={labels.filterLabel} role="list">
+    <div className="board-filter-chips flex min-w-0 flex-wrap items-center gap-1.5 rounded-xl border border-border/70 bg-surface/70 px-3 py-2" aria-label={labels.filterLabel} role="list">
       {activeFilters.map(filter => {
         const accessibleLabel = `${labels.remove}: ${filter.filterLabel} ${filter.valueLabel}`
         return (

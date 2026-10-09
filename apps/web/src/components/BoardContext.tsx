@@ -14,7 +14,7 @@ export function BoardContextHeader({ sprintName, completed, total }: BoardContex
   const { t } = useTranslation('board')
   const percentage = total > 0 ? Math.round((completed / total) * 100) : 0
   return (
-    <section className="rounded-xl border border-border bg-surface px-4 py-3 flex items-center gap-4">
+    <section className="board-context-header rounded-xl border border-border bg-surface px-4 py-3 flex items-center gap-4">
       <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
         <Target className="w-[18px] h-[18px]" />
       </div>
@@ -45,7 +45,7 @@ export function BoardStatusRail({ syncState, visibleItems }: { syncState: SyncSt
   const Icon = config.icon
 
   return (
-    <div className="h-8 px-3 flex items-center gap-3 text-[11px] text-muted-foreground">
+    <div className="board-status-rail h-8 px-3 flex items-center gap-3 text-[11px] text-muted-foreground">
       <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
         <Icon className={`w-3.5 h-3.5 ${config.className}`} />
         {config.label}

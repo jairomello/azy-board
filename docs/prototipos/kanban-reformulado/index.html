@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Azy Board · Protótipo de cards</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <input class="theme-switch" type="checkbox" id="theme-switch" aria-label="Alternar tema claro e escuro">
+  <div class="app-shell" data-shell-layout>
+    <aside class="sidebar" data-shell-sidebar>
+      <a class="brand" href="#"><span class="brand-mark">a</span><span>Azy<span class="brand-light">board</span></span></a>
+      <p class="nav-caption">ESPAÇO DE TRABALHO</p>
+      <nav class="side-nav" aria-label="Navegação principal">
+        <a href="#"><span class="nav-icon">▦</span>Projetos</a>
+        <a class="active" href="#"><span class="nav-icon">▤</span>Quadro</a>
+        <a href="#"><span class="nav-icon">◷</span>Configurações</a>
+        <a href="#"><span class="nav-icon">▥</span>Dashboard</a>
+      </nav>
+      <div class="sidebar-project"><span class="project-mark">✦</span><div><strong>Plataforma Azy</strong><small>Projeto conectado</small></div><span class="dots">•••</span></div>
+      <div class="sidebar-bottom"><span class="avatar avatar-user">JC</span><span><strong>Jairo Costa</strong><small>Owner</small></span><span class="dots">⌄</span></div>
+    </aside>
+
+    <main class="workspace" data-shell-workspace>
+      <header class="topbar" data-shell-header>
+        <div class="breadcrumbs"><span>Plataforma Azy</span><b>·</b><span>Quadro</span></div>
+        <div class="topbar-right">
+          <span class="sync"><i></i>Sincronizado</span>
+          <label class="theme-control" for="theme-switch"><span class="sun">☼</span><span class="moon">☾</span><span class="theme-label">Tema</span></label>
+          <button class="header-avatar" aria-label="Perfil">JC</button>
+        </div>
+      </header>
+
+      <section class="board-page">
+        <div class="board-heading">
+          <div><div class="eyebrow">PROJETO <span>／</span> ENTREGA DO PRODUTO</div><h1>Plataforma Azy</h1><p>Organize o trabalho do time em um só lugar.</p></div>
+          <div class="heading-actions"><button class="button button-quiet">••• <span>Mais</span></button><button class="button button-primary"><span>＋</span> Novo card</button></div>
+        </div>
+        <div class="command-bar">
+          <div class="view-switch"><button class="selected">Quadro</button><button>Árvore</button></div>
+          <button class="button button-outline"><span>☷</span> Filtros <i class="count">2</i></button>
+          <button class="button button-outline"><span>☷</span> Opções</button>
+          <div class="command-spacer"></div>
+          <div class="search"><span>⌕</span><input aria-label="Buscar cards" placeholder="Buscar no quadro..."><kbd>⌘ K</kbd></div>
+          <button class="button button-outline icon-button" aria-label="Ordenar">↕</button>
+        </div>
+        <div class="filter-chips"><span class="filter-label">Filtros ativos</span><span class="filter-chip">Sprint atual <b>×</b></span><span class="filter-chip">Time Core <b>×</b></span><button>Limpar filtros</button></div>
+        <div class="board-context"><span class="context-dot"></span><strong>Sprint 24 · Refinamento e entrega</strong><span class="context-separator">/</span><span>12 cards</span><div class="sprint-progress"><span style="width:58%"></span></div><span class="context-stat"><b>7</b> concluídos</span></div>
+
+        <div class="board-canvas">
+          <div class="board-columns">
+            <section class="board-column" aria-label="A Fazer">
+              <header class="column-header"><div class="column-title"><span class="column-grip">⠿</span><i class="status-dot status-todo"></i><h2>A Fazer</h2><span class="column-count">3</span></div><button class="column-menu">•••</button></header>
+              <div class="column-cards">
+                <article class="kanban-card status-not-started" tabindex="0">
+                  <div class="kanban-card-grip" aria-label="Arrastar card"><span>⠿</span></div><div class="kanban-card-content">
+                    <div class="kanban-card-topo"><span class="item-icon icon-violet">✦</span><span class="sequence-code">AZY-284</span><div class="kanban-card__acoes"><button aria-label="Copiar referência">▢</button><button aria-label="Arquivar">▱</button><button aria-label="Excluir">⌫</button></div></div>
+                    <div class="kanban-card-breadcrumb">Experiência do produto <span>›</span> Quadro Kanban</div>
+                    <div class="kanban-card-title"><p>Revisar hierarquia visual dos cards no quadro</p></div>
+                    <div class="card-label-row"><div class="card-tags"><span class="tag tag-violet">design-system</span><span class="tag tag-blue">frontend</span></div><span class="type-pill type-task">Tarefa</span></div>
+                    <div class="checklist-progress"><div class="progress-copy"><span class="check-icon">✓</span><span>2/5</span><span class="progress-caption">itens concluídos</span></div><div class="progress-track"><i style="width:40%"></i></div></div>
+                    <footer class="kanban-card-footer"><span class="priority priority-high">ALTA</span><span class="points">5 pt</span><span class="children-count">⌘ <b>2</b></span><span class="avatar avatar-violet" title="Marina Lima">ML</span></footer>
+                  </div>
+                </article>
+                <article class="kanban-card status-not-started" tabindex="0">
+                  <div class="kanban-card-grip"><span>⠿</span></div><div class="kanban-card-content">
+                    <div class="kanban-card-topo"><span class="item-icon icon-cyan">◈</span><span class="sequence-code">AZY-291</span><div class="kanban-card__acoes"><button aria-label="Copiar referência">▢</button><button aria-label="Arquivar">▱</button><button aria-label="Excluir">⌫</button></div></div>
+                    <div class="kanban-card-breadcrumb">Plataforma <span>›</span> Acessibilidade</div><div class="kanban-card-title"><p>Adicionar navegação por teclado às ações rápidas</p></div>
+                    <div class="card-label-row"><div class="card-tags"><span class="tag tag-cyan">a11y</span></div><span class="type-pill type-bug">Bug</span></div>
+                    <footer class="kanban-card-footer"><span class="priority priority-medium">MÉDIA</span><span class="points">3 pt</span><span class="avatar avatar-blue" title="Rafael Alves">RA</span></footer>
+                  </div>
+                </article>
+                <article class="kanban-card status-not-started" tabindex="0">
+                  <div class="kanban-card-grip"><span>⠿</span></div><div class="kanban-card-content">
+                    <div class="kanban-card-topo"><span class="item-icon icon-amber">◎</span><span class="sequence-code">AZY-302</span><div class="kanban-card__acoes"><button aria-label="Copiar referência">▢</button><button aria-label="Arquivar">▱</button><button aria-label="Excluir">⌫</button></div></div>
+                    <div class="kanban-card-breadcrumb">Fundação <span>›</span> Observabilidade</div><div class="kanban-card-title"><p>Definir eventos de auditoria para alterações de cards</p></div>
+                    <div class="card-label-row"><div class="card-tags"><span class="tag tag-amber">telemetria</span><span class="tag tag-slate">backend</span></div><span class="type-pill type-story">História</span></div>
+                    <footer class="kanban-card-footer"><span class="priority priority-low">BAIXA</span><span class="points">8 pt</span><span class="children-count">⌘ <b>4</b></span><span class="avatar avatar-green" title="Ana Souza">AS</span></footer>
+                  </div>
+                </article>
+                <button class="add-card"><span>＋</span> Adicionar card</button>
+              </div>
+            </section>
+
+            <section class="board-column" aria-label="Fazendo">
+              <header class="column-header"><div class="column-title"><span class="column-grip">⠿</span><i class="status-dot status-progress"></i><h2>Fazendo</h2><span class="column-count">2</span></div><button class="column-menu">•••</button></header>
+              <div class="column-cards">
+                <article class="kanban-card status-in-progress is-highlighted" tabindex="0">
+                  <div class="kanban-card-grip"><span>⠿</span></div><div class="kanban-card-content">
+                    <div class="kanban-card-topo"><span class="item-icon icon-green">◉</span><span class="sequence-code">AZY-276</span><div class="kanban-card__acoes"><button aria-label="Copiar referência">▢</button><button aria-label="Arquivar">▱</button><button aria-label="Excluir">⌫</button></div></div>
+                    <div class="kanban-card-breadcrumb">Experiência do produto <span>›</span> Componentes</div><div class="kanban-card-title"><p>Implementar novo seletor de responsáveis com presença de agentes</p></div>
+                    <div class="card-label-row"><div class="card-tags"><span class="tag tag-green">agent-ready</span><span class="tag tag-blue">frontend</span></div><span class="type-pill type-task">Tarefa</span></div>
+                    <div class="checklist-progress"><div class="progress-copy"><span class="check-icon">✓</span><span>3/4</span><span class="progress-caption">itens concluídos</span></div><div class="progress-track"><i style="width:75%"></i></div></div>
+                    <footer class="kanban-card-footer"><span class="priority priority-critical">CRÍTICA</span><span class="points">8 pt</span><span class="children-count">⌘ <b>3</b></span><span class="avatar avatar-orange" title="Codex · GPT-6">CX<i class="ai-badge">✳</i></span></footer>
+                  </div>
+                </article>
+                <article class="kanban-card status-in-progress" tabindex="0">
+                  <div class="kanban-card-grip"><span>⠿</span></div><div class="kanban-card-content">
+                    <div class="kanban-card-topo"><span class="item-icon icon-pink">⌁</span><span class="sequence-code">AZY-268</span><div class="kanban-card__acoes"><button aria-label="Copiar referência">▢</button><button aria-label="Arquivar">▱</button><button aria-label="Excluir">⌫</button></div></div>
+                    <div class="kanban-card-breadcrumb">Plataforma <span>›</span> API pública</div><div class="kanban-card-title"><p>Documentar endpoints de consulta de tarefas</p></div>
+                    <div class="card-label-row"><div class="card-tags"><span class="tag tag-pink">documentação</span></div><span class="type-pill type-task">Tarefa</span></div>
+                    <footer class="kanban-card-footer"><span class="priority priority-medium">MÉDIA</span><span class="points">2 pt</span><span class="avatar avatar-violet" title="Bruno Rocha">BR</span></footer>
+                  </div>
+                </article>
+                <button class="add-card"><span>＋</span> Adicionar card</button>
+              </div>
+            </section>
+
+            <section class="board-column" aria-label="Em revisão">
+              <header class="column-header"><div class="column-title"><span class="column-grip">⠿</span><i class="status-dot status-review"></i><h2>Em revisão</h2><span class="column-count">2</span></div><button class="column-menu">•••</button></header>
+              <div class="column-cards">
+                <article class="kanban-card status-in-progress" tabindex="0">
+                  <div class="kanban-card-grip"><span>⠿</span></div><div class="kanban-card-content">
+                    <div class="kanban-card-topo"><span class="item-icon icon-blue">⌘</span><span class="sequence-code">AZY-251</span><div class="kanban-card__acoes"><button aria-label="Copiar referência">▢</button><button aria-label="Arquivar">▱</button><button aria-label="Excluir">⌫</button></div></div>
+                    <div class="kanban-card-breadcrumb">Fundação <span>›</span> Identidade e acesso</div><div class="kanban-card-title"><p>Unificar estados de carregamento na autenticação</p></div>
+                    <div class="card-label-row"><div class="card-tags"><span class="tag tag-blue">auth</span><span class="tag tag-violet">polimento</span></div><span class="type-pill type-bug">Bug</span></div>
+                    <div class="checklist-progress"><div class="progress-copy"><span class="check-icon">✓</span><span>4/4</span><span class="progress-caption">itens concluídos</span></div><div class="progress-track complete"><i style="width:100%"></i></div></div>
+                    <footer class="kanban-card-footer"><span class="priority priority-high">ALTA</span><span class="points">3 pt</span><span class="avatar avatar-blue" title="Rafael Alves">RA</span></footer>
+                </div></article>
+                <article class="kanban-card status-in-progress" tabindex="0">
+                  <div class="kanban-card-grip"><span>⠿</span></div><div class="kanban-card-content"><div class="kanban-card-topo"><span class="item-icon icon-violet">✦</span><span class="sequence-code">AZY-257</span><div class="kanban-card__acoes"><button aria-label="Copiar referência">▢</button><button aria-label="Arquivar">▱</button><button aria-label="Excluir">⌫</button></div></div>
+                    <div class="kanban-card-breadcrumb">Experiência do produto <span>›</span> Página inicial</div><div class="kanban-card-title"><p>Reorganizar resumo do projeto para leitura rápida</p></div><div class="card-label-row"><div class="card-tags"><span class="tag tag-amber">UX</span></div><span class="type-pill type-story">História</span></div>
+                    <footer class="kanban-card-footer"><span class="priority priority-low">BAIXA</span><span class="points">5 pt</span><span class="avatar avatar-green" title="Ana Souza">AS</span></footer>
+                  </div>
+                </article><button class="add-card"><span>＋</span> Adicionar card</button>
+              </div>
+            </section>
+
+            <section class="board-column" aria-label="Concluídas">
+              <header class="column-header"><div class="column-title"><span class="column-grip">⠿</span><i class="status-dot status-done"></i><h2>Concluídas</h2><span class="column-count">3</span></div><button class="column-menu">•••</button></header>
+              <div class="column-cards">
+                <article class="kanban-card status-done" tabindex="0"><div class="kanban-card-grip"><span>⠿</span></div><div class="kanban-card-content"><div class="kanban-card-topo"><span class="item-icon icon-green">✓</span><span class="sequence-code">AZY-243</span><div class="kanban-card__acoes"><button aria-label="Copiar referência">▢</button><button aria-label="Arquivar">▱</button><button aria-label="Excluir">⌫</button></div></div><div class="kanban-card-breadcrumb">Experiência do produto <span>›</span> Quadro Kanban</div><div class="kanban-card-title"><p>Salvar filtros recentes no projeto</p></div><div class="card-label-row"><div class="card-tags"><span class="tag tag-green">entregue</span></div><span class="type-pill type-task">Tarefa</span></div><footer class="kanban-card-footer"><span class="priority priority-medium">MÉDIA</span><span class="points">3 pt</span><span class="avatar avatar-orange">JC</span></footer></div></article>
+                <article class="kanban-card status-done" tabindex="0"><div class="kanban-card-grip"><span>⠿</span></div><div class="kanban-card-content"><div class="kanban-card-topo"><span class="item-icon icon-cyan">✓</span><span class="sequence-code">AZY-238</span><div class="kanban-card__acoes"><button aria-label="Copiar referência">▢</button><button aria-label="Arquivar">▱</button><button aria-label="Excluir">⌫</button></div></div><div class="kanban-card-breadcrumb">Fundação <span>›</span> Qualidade</div><div class="kanban-card-title"><p>Corrigir contraste das etiquetas no tema escuro</p></div><div class="card-label-row"><div class="card-tags"><span class="tag tag-cyan">acessibilidade</span></div><span class="type-pill type-bug">Bug</span></div><footer class="kanban-card-footer"><span class="priority priority-high">ALTA</span><span class="points">2 pt</span><span class="avatar avatar-violet">ML</span></footer></div></article>
+                <article class="kanban-card status-done" tabindex="0"><div class="kanban-card-grip"><span>⠿</span></div><div class="kanban-card-content"><div class="kanban-card-topo"><span class="item-icon icon-pink">✓</span><span class="sequence-code">AZY-231</span><div class="kanban-card__acoes"><button aria-label="Copiar referência">▢</button><button aria-label="Arquivar">▱</button><button aria-label="Excluir">⌫</button></div></div><div class="kanban-card-breadcrumb">Plataforma <span>›</span> Notificações</div><div class="kanban-card-title"><p>Reduzir ruído nas notificações de atividade</p></div><div class="card-label-row"><div class="card-tags"><span class="tag tag-pink">produto</span></div><span class="type-pill type-story">História</span></div><footer class="kanban-card-footer"><span class="priority priority-low">BAIXA</span><span class="points">5 pt</span><span class="avatar avatar-blue">RA</span></footer></div></article>
+                <button class="add-card"><span>＋</span> Adicionar card</button>
+              </div>
+            </section>
+          </div>
+        </div>
+        <footer class="board-footer"><span><i></i> 10 cards visíveis</span><span>Última atualização há pouco</span><span class="footer-spacer"></span><span>Protótipo estático · conteúdo ilustrativo</span></footer>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

@@ -1,7 +1,7 @@
-## Purpose
+# Spec Delta
 
-Definir a estrutura visual do card do Kanban (`KanbanCard`) conforme a proposta **01 — Essencial**, ordenando as regiões do card e as regras de exibição de cada uma.
-## Requirements
+## MODIFIED Requirements
+
 ### Requirement: Estrutura de regiões do card do Kanban
 O sistema SHALL renderizar o card na composição de `docs/prototipos/kanban-reformulado/`, dentro da coluna de 292 px, com raiz, topo, breadcrumb, título, tags/tipo, progresso opcional e rodapé nessa ordem. A raiz SHALL usar superfície temática, borda suave multicolorida, cantos de 13 px, elevação discreta e faixa lateral de 3 px representando o status. Realces e brilhos SHALL permanecer sutis em quadros densos.
 

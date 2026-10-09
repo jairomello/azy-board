@@ -109,10 +109,10 @@ export function BoardCommandBar({
     onFiltersChange({ ...filters, ...partial })
   }
 
-  const controlClass = 'h-9 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-foreground hover:bg-muted transition-colors'
+  const controlClass = 'board-control h-9 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-foreground hover:bg-muted transition-colors'
 
   return (
-    <div className={`${density === 'compact' ? 'min-h-10 py-1' : 'h-[54px]'} px-2.5 flex items-center gap-2 overflow-visible`}>
+    <div className={`board-command-bar ${density === 'compact' ? 'min-h-10 py-1' : 'h-[54px]'} px-2.5 flex items-center gap-2 overflow-visible`}>
         <div className="flex items-center rounded-lg bg-muted p-1 flex-shrink-0" aria-label={t('display')}>
         <button
           onClick={() => onViewChange('kanban')}
@@ -290,7 +290,7 @@ export function BoardCommandBar({
             <button
               onClick={() => setCreateOpen(open => !open)}
               aria-expanded={createOpen}
-              className="h-9 px-3.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-2 hover:bg-primary/90 shadow-sm transition"
+              className="board-create-control h-9 px-3.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold flex items-center gap-2 hover:bg-primary/90 shadow-sm transition"
             >
               <Plus className="w-4 h-4" />
                {t('create')}

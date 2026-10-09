@@ -1,8 +1,6 @@
-## Purpose
+# Spec Delta
 
-Definir uma preferência única de densidade do Board que, ao ser acionada, compacta o cabeçalho e os cards preservando informações, controles e acessibilidade.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Densidade do Board controla cabeçalho e cards
 O Board SHALL manter uma preferência única de densidade com os estados Confortável e Compacta. Confortável SHALL usar a composição visual alinhada ao protótipo; Compacta SHALL reduzir espaçamento e altura do cabeçalho e dos cards sem mudar a identidade visual, ocultar controles ou alterar filtros e visualização. O toggle SHALL ter `aria-pressed` e rótulo traduzido em PT-BR, EN e ES.

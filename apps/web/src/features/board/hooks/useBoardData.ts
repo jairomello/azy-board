@@ -19,6 +19,7 @@ import {
   type ProjectContext,
   type Sprint,
 } from '../model/types'
+import { hydrateItemTags } from '../model/boardTags'
 
 // Estado remoto do board mantido na camada de cache (TanStack Query).
 export interface BoardData {
@@ -183,7 +184,7 @@ export function useBoardData(projectId: string | undefined) {
       ])
       return {
         columns: cols,
-         allItems: computeIsLeaf(its),
+         allItems: computeIsLeaf(hydrateItemTags(its, tags)),
         modules: mods,
         sprints: sprs,
         members: mbrs,

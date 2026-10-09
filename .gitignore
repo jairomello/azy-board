@@ -67,7 +67,16 @@ uploads/
 .codex
 .codex/
 .codex*
+# As instruções OpenSpec do projeto devem acompanhar o repositório; outras skills locais ficam ignoradas.
 .agents/
+!.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/.openspec-target
+!.agents/skills/openspec-*/
+.agents/skills/openspec-*/*
+!.agents/skills/openspec-*/SKILL.md
 opencode.json
 
 # Homelab deployment notes (must stay local)

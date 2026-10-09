@@ -152,7 +152,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
         transition,
         opacity: isDragging ? 0.4 : 1,
       }}
-      className={`relative group flex bg-card text-card-foreground border border-border rounded-[10px] shadow-sm hover:-translate-y-px hover:shadow-md transition border-l-[3px] ${STATUS_INDICATOR[card.status]} ${!card.isLeaf ? 'opacity-70' : ''}`}
+      className={`kanban-card relative group flex border-l-[3px] ${STATUS_INDICATOR[card.status]} ${!card.isLeaf ? 'opacity-70' : ''}`}
     >
       {/* ── Grip: único lugar com listeners + setActivatorNodeRef ── */}
       <div
@@ -160,7 +160,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
         {...attributes}
         {...(card.isLeaf ? listeners : {})}
         className={[
-          'flex items-center px-1.5 flex-shrink-0 select-none transition-colors',
+          'kanban-card-grip flex items-center px-1.5 flex-shrink-0 select-none transition-colors',
           card.isLeaf
             ? 'cursor-grab active:cursor-grabbing text-muted-foreground/25 hover:text-muted-foreground/60'
             : 'cursor-not-allowed text-muted-foreground/20',
@@ -183,7 +183,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
         onClick={openDetail}
       >
         {/* Topo: ícone do item + código curto à esquerda, área reservada às ações à direita */}
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="kanban-card-topo flex items-center gap-2 min-w-0">
           {CardIcon ? <CardIcon className="h-[23px] w-[23px] flex-shrink-0" style={{ color: card.color ?? undefined }} /> : null}
           {card.sequenceCode && (
             <span className="min-w-0 truncate font-mono text-[11px] font-semibold tracking-wide text-muted-foreground">
@@ -287,8 +287,8 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
 
         {/* Etiquetas: tags à esquerda (podem quebrar linha), tipo textual único à direita */}
         {(tags.length > 0 || card.type) && (
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex flex-wrap gap-1 min-w-0">
+          <div className="card-label-row flex items-start justify-between gap-2">
+            <div className="card-tags flex flex-wrap gap-1 min-w-0">
               {tags.map(({ tag }) => (
                 <span
                   key={tag.id}
@@ -313,8 +313,8 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
           const pct = Math.round((checked / total) * 100)
           const done = checked === total
           return (
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-1.5">
+            <div className="checklist-progress space-y-0.5">
+              <div className="progress-copy flex items-center gap-1.5">
                 <svg className={`w-3 h-3 flex-shrink-0 ${done ? 'text-emerald-500' : 'text-muted-foreground'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                 </svg>
@@ -323,7 +323,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
                 </span>
               </div>
               {checked > 0 && (
-                <div className="h-0.5 w-full rounded-full overflow-hidden">
+                <div className="progress-track h-0.5 w-full rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${done ? 'bg-emerald-500' : 'bg-primary/60'}`}
                     style={{ width: `${pct}%` }}
@@ -335,17 +335,17 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
         })()}
 
         {/* Rodapé com divisor: prioridade, pontos, subtarefas e responsável (quando presentes) */}
-        <div className="flex items-center gap-1.5 border-t border-border pt-2">
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[card.priority]}`}>
+        <div className="kanban-card-footer flex items-center gap-1.5 border-t border-border pt-2">
+          <span className={`priority text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[card.priority]}`}>
             {card.priority}
           </span>
           {card.points != null && (
-            <span className="text-xs text-muted-foreground font-medium">{card.points}pt</span>
+            <span className="points text-xs text-muted-foreground font-medium">{card.points}pt</span>
           )}
           {/* Indicador de filhos diretos */}
           {(card.childrenCount ?? 0) > 0 && (
             <span
-              className="flex items-center gap-0.5 text-xs text-muted-foreground"
+              className="children-count flex items-center gap-0.5 text-xs text-muted-foreground"
               title={`${card.childrenCount} ${t('showSubtasks').toLowerCase()}`}
             >
               <GitBranch className="w-3 h-3" />

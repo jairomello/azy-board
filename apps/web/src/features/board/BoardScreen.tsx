@@ -446,7 +446,7 @@ export default function BoardPage() {
       statusRail={<BoardStatusRail syncState={syncState} visibleItems={allDisplayed.length} />}
       contentClassName="overflow-hidden"
     >
-      <div className={`h-full min-h-0 flex flex-col ${density === 'compact' ? 'gap-2' : 'gap-3'}`}>
+      <div className={`board-workspace h-full min-h-0 flex flex-col ${density === 'compact' ? 'gap-2' : 'gap-3'}`}>
         {pinnedResult && (
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/40 bg-primary/5 px-3 py-2 text-xs">
             <span className="font-semibold text-foreground">{tBoard(`planningGapLabel.${pinnedResult.labelKey}`)}</span>
@@ -474,7 +474,7 @@ export default function BoardPage() {
             total={sprintItems.length}
           />
         )}
-        <div className={`min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-border/80 bg-canvas ${density === 'compact' ? 'density-compact' : ''}`}>
+        <div className={`board-canvas min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-border/80 bg-canvas ${density === 'compact' ? 'density-compact' : ''}`}>
         {view === 'tree' && projectId && (
            <TreeViewPage
            projectId={projectId!}
