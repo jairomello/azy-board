@@ -55,7 +55,7 @@ export const users = pgTable('users', {
   emailUnique: uniqueIndex('users_email_unique').on(sql`lower(${table.email})`),
   groupCheck: check('users_global_group_check', sql`${table.globalGroup} IN ('TEAM_MEMBER','MANAGER','ADMIN','ROOT')`),
   themeCheck: check('users_theme_check', sql`${table.theme} IN ('light','dark')`),
-  shellThemeCheck: check('users_shell_theme_check', sql`${table.lightShellTheme} IN ('petroleum','ocean','emerald','graphite','classic')`),
+  shellThemeCheck: check('users_shell_theme_check', sql`${table.lightShellTheme} IN ('petroleum','ocean','emerald','graphite','classic','ruby','amber','amethyst','rose','silver')`),
   languageCheck: check('users_language_check', sql`${table.language} IN ('pt-BR','en','es')`),
 }))
 

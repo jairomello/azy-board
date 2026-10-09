@@ -7,7 +7,7 @@ import { gravarEmailLembrado, limparEmailLembrado } from '../lib/rememberedEmail
 import { clearAllItemDrafts } from '../lib/itemDraft'
 import { applyTheme, getEffectiveTheme, persistAutoThemeByTime, readAutoThemeByTime, readManualTheme } from '../lib/theme'
 import type { GlobalGroup } from '@azy-board/domain'
-import type { Language, LightShellTheme, Theme } from '@azy-board/ui-contracts'
+import { DEFAULT_LIGHT_SHELL_THEME, isLightShellTheme, type Language, type LightShellTheme, type Theme } from '@azy-board/ui-contracts'
 
 export interface User {
   id: string
@@ -22,12 +22,11 @@ export interface User {
 }
 
 type PreferenceUpdate = Partial<Pick<User, 'theme' | 'lightShellTheme' | 'language' | 'autoThemeByTime'>>
-const LIGHT_SHELL_THEMES = new Set<LightShellTheme>(['petroleum', 'ocean', 'emerald', 'graphite', 'classic'])
 
 function normalizeUser(user: User): User {
   return {
     ...user,
-    lightShellTheme: LIGHT_SHELL_THEMES.has(user.lightShellTheme) ? user.lightShellTheme : 'petroleum',
+    lightShellTheme: isLightShellTheme(user.lightShellTheme) ? user.lightShellTheme : DEFAULT_LIGHT_SHELL_THEME,
     autoThemeByTime: user.autoThemeByTime === true,
   }
 }

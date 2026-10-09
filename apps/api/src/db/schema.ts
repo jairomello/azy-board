@@ -52,7 +52,7 @@ export const users = sqliteTable('users', {
   avatarUrl: text('avatar_url'),
   theme: text('theme', { enum: ['light', 'dark'] }).notNull().default('light'),
   lightShellTheme: text('light_shell_theme', {
-    enum: ['petroleum', 'ocean', 'emerald', 'graphite', 'classic'],
+    enum: ['petroleum', 'ocean', 'emerald', 'graphite', 'classic', 'ruby', 'amber', 'amethyst', 'rose', 'silver'],
   }).notNull().default('petroleum'),
   language: text('language', { enum: ['pt-BR', 'en', 'es'] }).notNull().default('pt-BR'),
   // Card T4: quando verdadeiro, o tema claro/escuro segue o horário local do dispositivo.

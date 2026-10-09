@@ -62,7 +62,12 @@
     "ocean": "Ocean",
     "emerald": "Emerald",
     "graphite": "Graphite",
-    "classic": "Classic"
+    "classic": "Classic",
+    "ruby": "Red",
+    "amber": "Orange",
+    "amethyst": "Purple",
+    "rose": "Rose",
+    "silver": "Silver"
   },
   "projectVisibility": "Project visibility",
   "projectVisibilityDescription": "Define who can find this project when listing projects.",

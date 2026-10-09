@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
 import type { GlobalGroup } from '@azy-board/domain'
-import type { Language, LightShellTheme, Theme } from '@azy-board/ui-contracts'
+import { isLightShellTheme, type Language, type LightShellTheme, type Theme } from '@azy-board/ui-contracts'
 import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
 import { hasGlobalGroup, hashPassword, isGlobalGroup } from '../services/auth'
 import { normalizeEmail } from '../utils/email'
@@ -14,13 +14,6 @@ import { userPersistenceContext } from '../persistence/context'
 
 const THEMES = new Set<Theme>(['light', 'dark'])
 const LANGUAGES = new Set<Language>(['pt-BR', 'en', 'es'])
-const LIGHT_SHELL_THEMES = new Set<LightShellTheme>([
-  'petroleum',
-  'ocean',
-  'emerald',
-  'graphite',
-  'classic',
-])
 const ALLOWED_FIELDS = new Set(['theme', 'lightShellTheme', 'language', 'autoThemeByTime'])
 
 export const usersRouter = new Hono<HonoEnv>()
@@ -96,7 +89,7 @@ usersRouter.patch('/me', async (c) => {
   if (body.theme !== undefined && !THEMES.has(body.theme as Theme)) {
     return c.json({ error: 'Tema inválido' }, 400)
   }
-  if (body.lightShellTheme !== undefined && !LIGHT_SHELL_THEMES.has(body.lightShellTheme as LightShellTheme)) {
+  if (body.lightShellTheme !== undefined && !isLightShellTheme(body.lightShellTheme)) {
     return c.json({ error: 'Tema estrutural inválido' }, 400)
   }
   if (body.language !== undefined && !LANGUAGES.has(body.language as Language)) {

@@ -101,6 +101,57 @@
     --shell-accent-foreground: #ffffff;
   }
 
+  :root[data-light-shell-theme="ruby"] {
+    --shell-sidebar: #5b1620;
+    --shell-header: #6b1b27;
+    --shell-border: #8f2f3d;
+    --shell-active: #7a2230;
+    --shell-accent: #ff6b81;
+    --shell-accent-foreground: #3b0b13;
+    --shell-muted: #e8bcc4;
+  }
+
+  :root[data-light-shell-theme="amber"] {
+    --shell-sidebar: #5a3410;
+    --shell-header: #6b3e13;
+    --shell-border: #8f5a24;
+    --shell-active: #7a4a18;
+    --shell-accent: #ffb15c;
+    --shell-accent-foreground: #3a2109;
+    --shell-muted: #e7c9a3;
+  }
+
+  :root[data-light-shell-theme="amethyst"] {
+    --shell-sidebar: #3f2a63;
+    --shell-header: #4a3174;
+    --shell-border: #6b4d9e;
+    --shell-active: #553a86;
+    --shell-accent: #b592ff;
+    --shell-accent-foreground: #241442;
+    --shell-muted: #cec2e8;
+  }
+
+  :root[data-light-shell-theme="rose"] {
+    --shell-sidebar: #5c1f3b;
+    --shell-header: #6c2547;
+    --shell-border: #8f3a63;
+    --shell-active: #7c2c53;
+    --shell-accent: #ff8fc0;
+    --shell-accent-foreground: #3c0f24;
+    --shell-muted: #e8bfd3;
+  }
+
+  :root[data-light-shell-theme="silver"] {
+    --shell-sidebar: #cdd3dc;
+    --shell-header: #e2e6ec;
+    --shell-border: #aab2bd;
+    --shell-foreground: #29313c;
+    --shell-muted: #56606d;
+    --shell-active: #bcc3cd;
+    --shell-accent: #5b6675;
+    --shell-accent-foreground: #ffffff;
+  }
+
   :root.dark {
     --background: 220 15% 7%;
     --foreground: 210 20% 96%;

@@ -7,19 +7,7 @@ import { ProfilePhotoSection } from '../components/ProfilePhotoSection'
 import { ShowHiddenProjectsSwitch } from '../components/ShowHiddenProjectsSwitch'
 import { useToast } from '../components/Toast'
 import { AppShell } from '../components/AppShell'
-
-const SHELL_THEMES: Array<{
-  id: LightShellTheme
-  sidebar: string
-  header: string
-  accent: string
-}> = [
-  { id: 'petroleum', sidebar: '#0B4651', header: '#0E4B56', accent: '#50E3C2' },
-  { id: 'ocean', sidebar: '#123B67', header: '#164777', accent: '#67C7FF' },
-  { id: 'emerald', sidebar: '#125244', header: '#146052', accent: '#69E0B5' },
-  { id: 'graphite', sidebar: '#272B31', header: '#30353C', accent: '#A99FFF' },
-  { id: 'classic', sidebar: '#FFFFFF', header: '#FFFFFF', accent: '#635BFF' },
-]
+import { SHELL_THEMES } from '../lib/shellThemes'
 
 export default function AccountPage() {
   const { t } = useTranslation('settings')

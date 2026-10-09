@@ -100,7 +100,27 @@ export function isIconColor(value: unknown): value is IconColor {
 // Preferências de UI
 export type Theme = 'light' | 'dark'
 export type Language = 'pt-BR' | 'en' | 'es'
-export type LightShellTheme = 'petroleum' | 'ocean' | 'emerald' | 'graphite' | 'classic'
+
+// Fonte única dos presets de shell claro — consumida por web, API e validação.
+// A ordem define a ordem de exibição na grade de Aparência.
+export const LIGHT_SHELL_THEMES = [
+  'petroleum',
+  'ocean',
+  'emerald',
+  'graphite',
+  'classic',
+  'ruby',
+  'amber',
+  'amethyst',
+  'rose',
+  'silver',
+] as const
+export type LightShellTheme = (typeof LIGHT_SHELL_THEMES)[number]
+export const DEFAULT_LIGHT_SHELL_THEME: LightShellTheme = 'petroleum'
+
+export function isLightShellTheme(value: unknown): value is LightShellTheme {
+  return typeof value === 'string' && (LIGHT_SHELL_THEMES as readonly string[]).includes(value)
+}
 
 export interface UserPreferences {
   theme: Theme

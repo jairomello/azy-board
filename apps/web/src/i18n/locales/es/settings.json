@@ -62,7 +62,12 @@
     "ocean": "Océano",
     "emerald": "Esmeralda",
     "graphite": "Grafito",
-    "classic": "Clásico"
+    "classic": "Clásico",
+    "ruby": "Rojo",
+    "amber": "Naranja",
+    "amethyst": "Morado",
+    "rose": "Rosa",
+    "silver": "Plata"
   },
   "projectVisibility": "Visibilidad del proyecto",
   "projectVisibilityDescription": "Define quién encuentra este proyecto al listar los proyectos.",
