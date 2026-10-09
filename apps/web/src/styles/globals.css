@@ -38,6 +38,9 @@
     --board-glow-a: #2fc6d7;
     --board-glow-b: #7b7bff;
     --board-glow-c: #e785bb;
+    /* Acentos próprios do card, casados ao preset de shell claro ativo. */
+    --board-card-glow-a: #2fc6d7;
+    --board-card-glow-b: #4fd8c4;
     --board-shadow: 0 4px 14px #1d33471a;
     --board-shadow-hover: 0 12px 28px #23496921;
     --board-shadow-focus: 0 0 0 3px #635bff2e;
@@ -68,6 +71,8 @@
     --shell-accent: #67c7ff;
     --shell-accent-foreground: #102d42;
     --shell-muted: #c4d8ec;
+    --board-card-glow-a: #4aa3ff;
+    --board-card-glow-b: #67c7ff;
   }
 
   :root[data-light-shell-theme="emerald"] {
@@ -78,6 +83,8 @@
     --shell-accent: #69e0b5;
     --shell-accent-foreground: #10352d;
     --shell-muted: #c5e4da;
+    --board-card-glow-a: #35c99a;
+    --board-card-glow-b: #69e0b5;
   }
 
   :root[data-light-shell-theme="graphite"] {
@@ -88,6 +95,8 @@
     --shell-accent: #a99fff;
     --shell-accent-foreground: #171920;
     --shell-muted: #c9cdd3;
+    --board-card-glow-a: #8b7dff;
+    --board-card-glow-b: #a99fff;
   }
 
   :root[data-light-shell-theme="classic"] {
@@ -99,6 +108,8 @@
     --shell-active: #efeeff;
     --shell-accent: #635bff;
     --shell-accent-foreground: #ffffff;
+    --board-card-glow-a: #7c6dff;
+    --board-card-glow-b: #b0a4ff;
   }
 
   :root[data-light-shell-theme="ruby"] {
@@ -109,6 +120,8 @@
     --shell-accent: #ff6b81;
     --shell-accent-foreground: #3b0b13;
     --shell-muted: #e8bcc4;
+    --board-card-glow-a: #ff6b81;
+    --board-card-glow-b: #ff9e7a;
   }
 
   :root[data-light-shell-theme="amber"] {
@@ -119,6 +132,8 @@
     --shell-accent: #ffb15c;
     --shell-accent-foreground: #3a2109;
     --shell-muted: #e7c9a3;
+    --board-card-glow-a: #ffab44;
+    --board-card-glow-b: #ffcf6b;
   }
 
   :root[data-light-shell-theme="amethyst"] {
@@ -129,6 +144,8 @@
     --shell-accent: #b592ff;
     --shell-accent-foreground: #241442;
     --shell-muted: #cec2e8;
+    --board-card-glow-a: #a97bff;
+    --board-card-glow-b: #c9a6ff;
   }
 
   :root[data-light-shell-theme="rose"] {
@@ -139,6 +156,8 @@
     --shell-accent: #ff8fc0;
     --shell-accent-foreground: #3c0f24;
     --shell-muted: #e8bfd3;
+    --board-card-glow-a: #ff7fb4;
+    --board-card-glow-b: #ffa9cf;
   }
 
   :root[data-light-shell-theme="silver"] {
@@ -150,6 +169,8 @@
     --shell-active: #bcc3cd;
     --shell-accent: #5b6675;
     --shell-accent-foreground: #ffffff;
+    --board-card-glow-a: #8fa0b3;
+    --board-card-glow-b: #b9c4d1;
   }
 
   :root.dark {
@@ -409,11 +430,11 @@
     overflow: hidden;
     border-style: solid;
     border-width: 1px 1px 1px 3px;
-    border-color: color-mix(in srgb, var(--board-glow-a) 20%, var(--board-border));
+    border-color: color-mix(in srgb, var(--board-card-glow-a) 28%, var(--board-border));
     border-radius: 13px;
-    background: linear-gradient(148deg, color-mix(in srgb, var(--board-card) 94%, var(--board-glow-a) 6%), var(--board-card) 62%);
+    background: linear-gradient(148deg, color-mix(in srgb, var(--board-card) 88%, var(--board-card-glow-a) 12%), var(--board-card) 62%);
     color: hsl(var(--card-foreground));
-    box-shadow: var(--board-shadow), 0 0 0 1px color-mix(in srgb, var(--board-glow-b) 5%, transparent);
+    box-shadow: var(--board-shadow), 0 0 0 1px color-mix(in srgb, var(--board-card-glow-b) 5%, transparent);
     transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
   }
 
@@ -440,8 +461,8 @@
   .kanban-card:hover,
   .kanban-card:focus-within {
     transform: translateY(-2px);
-    border-color: color-mix(in srgb, var(--board-glow-a) 38%, var(--board-border));
-    box-shadow: var(--board-shadow-hover), 0 0 0 1px color-mix(in srgb, var(--board-glow-a) 18%, transparent);
+    border-color: color-mix(in srgb, var(--board-card-glow-a) 38%, var(--board-border));
+    box-shadow: var(--board-shadow-hover), 0 0 0 1px color-mix(in srgb, var(--board-card-glow-a) 18%, transparent);
   }
 
   .kanban-card-grip {
