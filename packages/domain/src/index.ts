@@ -6,7 +6,7 @@ export type ColumnBaseStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE
 export type Priority = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
 // Mantido para retrocompatibilidade em código legado — usar ItemType nos novos usos
 export type TaskType = 'TASK' | 'BUG' | 'STORY'
-export type ItemType = 'EPIC' | 'STORY' | 'TASK' | 'BUG'
+export type ItemType = 'EPIC' | 'STORY' | 'TASK' | 'BUG' | 'EXTERNAL'
 // Tipo de dependência de cronograma (padrão MS Project): Término-Início,
 // Início-Início, Início-Término e Término-Término. FS é o default.
 export type ItemDependencyType = 'FS' | 'SS' | 'SF' | 'FF'

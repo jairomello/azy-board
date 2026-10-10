@@ -4,11 +4,15 @@ import {
   Archive,
   BookOpen,
   Bug,
+  CalendarRange,
   CheckSquare,
   ChevronDown,
+  ExternalLink,
   Filter,
+  Flag,
   Gauge,
   Layers,
+  Loader2,
   Network,
   Package,
   SlidersHorizontal,
@@ -46,6 +50,12 @@ interface Props {
   // Card T33 — no modo compacto: resumo de filtros e indicador fino de progresso.
   compactFilters?: ReactNode
   progress?: { completed: number; total: number }
+  // Card T48/T49 — ações de cronograma no menu de opções.
+  onRecalculate?: () => void
+  recalculating?: boolean
+  onToggleCriticalPath?: () => void
+  criticalPathActive?: boolean
+  criticalPathAvailable?: boolean
 }
 
 export function BoardCommandBar({
@@ -69,6 +79,11 @@ export function BoardCommandBar({
   onCreate,
   compactFilters,
   progress,
+  onRecalculate,
+  recalculating = false,
+  onToggleCriticalPath,
+  criticalPathActive = false,
+  criticalPathAvailable = false,
 }: Props) {
   const { t } = useTranslation('board')
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -215,11 +230,46 @@ export function BoardCommandBar({
            </button>
            {optionsOpen && (
              <div className="absolute left-0 top-full mt-2 z-40 w-[min(720px,calc(100vw-2rem))] rounded-xl border border-border bg-popover shadow-2xl p-4">
-               <div className="mb-3">
-                 <p className="text-sm font-semibold text-foreground">{t('optionsMenu')}</p>
-                 <p className="text-xs text-muted-foreground">{t('optionsDescription')}</p>
-               </div>
-               <BoardFilters
+<div className="mb-3">
+                  <p className="text-sm font-semibold text-foreground">{t('optionsMenu')}</p>
+                  <p className="text-xs text-muted-foreground">{t('optionsDescription')}</p>
+                </div>
+                {(onRecalculate || onToggleCriticalPath) && (
+                  <div className="mb-4 rounded-lg border border-border/70 bg-surface p-3">
+                    <p className="mb-2 text-xs font-semibold text-muted-foreground">{t('scheduleGroup')}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {onRecalculate && (
+                        <button
+                          type="button"
+                          disabled={recalculating}
+                          onClick={onRecalculate}
+                          title={t('scheduleHint')}
+                          aria-label={t('scheduleRecalculate')}
+                          className="inline-flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:opacity-50"
+                        >
+                          {recalculating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarRange className="h-3.5 w-3.5" />}
+                          <span>{t('scheduleRecalculate')}</span>
+                        </button>
+                      )}
+                      {onToggleCriticalPath && (
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={criticalPathActive}
+                          disabled={!criticalPathAvailable && !criticalPathActive}
+                          onClick={onToggleCriticalPath}
+                          title={t('scheduleCriticalPathHint')}
+                          aria-label={t('scheduleCriticalPath')}
+                          className={`inline-flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium hover:bg-muted disabled:opacity-50 ${criticalPathActive ? 'border-amber-400/60 bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'border-border text-foreground'}`}
+                        >
+                          <Flag className="h-3.5 w-3.5" />
+                          <span>{t('scheduleCriticalPath')}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <BoardFilters
                  modules={modules}
                  sprints={sprints}
                  members={members}
@@ -304,7 +354,8 @@ export function BoardCommandBar({
                    ['STORY', t('typeStory'), BookOpen, 'text-violet-600 bg-violet-500/10'],
                    ['TASK', t('typeTask'), CheckSquare, 'text-blue-600 bg-blue-500/10'],
                    ['BUG', t('typeBug'), Bug, 'text-red-600 bg-red-500/10'],
-                ] as const).filter(([type]) => boardMode === 'HIERARCHICAL' || type === 'TASK' || type === 'BUG').map(([type, label, Icon, colors]) => (
+                   ['EXTERNAL', t('typeExternal'), ExternalLink, 'text-slate-600 bg-slate-500/10'],
+                ] as const).filter(([type]) => boardMode === 'HIERARCHICAL' || type === 'TASK' || type === 'BUG' || type === 'EXTERNAL').map(([type, label, Icon, colors]) => (
                   <button
                     key={type}
                     onClick={() => {

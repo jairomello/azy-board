@@ -19,7 +19,7 @@ interface BoardModalsProps {
   projectId: string
   userId?: string
   item?: ItemData | FullItemData | null
-  newItem?: { type: 'TASK' | 'BUG'; columnId?: string; costCenterId?: string | null; parentId?: string; title?: string } | null
+  newItem?: { type: 'TASK' | 'BUG' | 'EXTERNAL'; columnId?: string; costCenterId?: string | null; parentId?: string; title?: string } | null
   story?: StoryData
   epic?: EpicData
   moduleOpen: boolean

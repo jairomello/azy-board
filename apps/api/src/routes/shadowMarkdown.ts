@@ -23,7 +23,7 @@ shadowMarkdownRouter.get('/', requireRole('VIEWER'), async (c) => {
   const activeSprint = projectSprints.find(sprint => sprint.status === 'OPEN')
 
   // Apenas TASK e BUG com coluna aparecem no board markdown
-  const boardItems = allItems.filter(i => ['TASK', 'BUG'].includes(i.type) && i.columnId)
+  const boardItems = allItems.filter(i => ['TASK', 'BUG', 'EXTERNAL'].includes(i.type) && i.columnId)
 
   const sprintHeader = activeSprint
     ? `Sprint: ${activeSprint.name} (${activeSprint.startDate ?? '?'} → ${activeSprint.endDate ?? '?'})`

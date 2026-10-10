@@ -7,7 +7,7 @@ type Schema = z.ZodType
 
 export const prioritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'])
 export const boardModeSchema = z.enum(['HIERARCHICAL', 'SIMPLE'])
-export const itemTypeSchema = z.enum(['EPIC', 'STORY', 'TASK', 'BUG'])
+export const itemTypeSchema = z.enum(['EPIC', 'STORY', 'TASK', 'BUG', 'EXTERNAL'])
 
 const optionalText = (max = 20_000) => z.string().max(max)
 const optionalId = z.string().min(1).nullable().optional()
@@ -59,7 +59,7 @@ const itemTextFields = {
 export const createItemSchema = z.object({
   title: z.string().trim().min(1).max(500),
   type: itemTypeSchema.optional(),
-  sequenceCode: z.string().regex(/^[ESTB]\d+$/).max(20).nullable().optional(),
+  sequenceCode: z.string().regex(/^[ESTBX]\d+$/).max(20).nullable().optional(),
   parentId: optionalId,
   moduleId: optionalId,
   columnId: optionalId,
@@ -82,8 +82,8 @@ export const createItemSchema = z.object({
 export const updateItemSchema = z.object({
   title: z.string().trim().min(1).max(500).optional(),
   priority: prioritySchema.optional(),
-  type: z.enum(['TASK', 'BUG']).optional(),
-  sequenceCode: z.string().regex(/^[ESTB]\d+$/).max(20).nullable().optional(),
+  type: z.enum(['TASK', 'BUG', 'EXTERNAL']).optional(),
+  sequenceCode: z.string().regex(/^[ESTBX]\d+$/).max(20).nullable().optional(),
   status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED']).optional(),
   points: z.number().finite().min(0).nullable().optional(),
   assigneeId: optionalId,
@@ -320,11 +320,14 @@ export const updateItemLinkSchema = z.object({
 export const itemDependencyTypeSchema = z.enum(['FS', 'SS', 'SF', 'FF'])
 export const createItemDependencySchema = z.object({
   dependsOnItemId: z.string().trim().min(1),
+  // Dependência cross-project: projeto do item dependido. Omitido → mesmo projeto.
+  dependsOnProjectId: z.string().trim().min(1).nullable().optional(),
   dependencyType: itemDependencyTypeSchema.optional(),
   lagDays: z.number().int().optional(),
 }).strict()
 export const updateItemDependencySchema = z.object({
   dependsOnItemId: z.string().trim().min(1).optional(),
+  dependsOnProjectId: z.string().trim().min(1).nullable().optional(),
   dependencyType: itemDependencyTypeSchema.optional(),
   lagDays: z.number().int().optional(),
 }).strict().refine(value => Object.keys(value).length > 0, 'Informe ao menos um campo para atualizar.')

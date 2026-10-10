@@ -10,15 +10,15 @@ interface ApiCall { method: string; path: string; body?: Record<string, unknown>
 
 const calls: ApiCall[] = []
 let storedDependencies: ItemDependency[] = []
-let candidates: Array<{ id: string; title: string; type: 'EPIC' | 'STORY' | 'TASK' | 'BUG'; sequenceCode: string | null; parentId: string | null }> = []
+let candidates: Array<{ id: string; title: string; type: 'EPIC' | 'STORY' | 'TASK' | 'BUG' | 'EXTERNAL'; sequenceCode: string | null; parentId: string | null }> = []
 const fetchOriginal = globalThis.fetch
 
 function makeTarget(id: string, title: string, sequenceCode: string | null): ItemDependencyTarget {
-  return { id, title, type: 'TASK', sequenceCode }
+  return { id, title, type: 'TASK', sequenceCode, projectId: 'proj-1', projectName: null }
 }
 
 function makeDependency(id: string, target: ItemDependencyTarget, dependencyType = 'FS', lagDays = 0): ItemDependency {
-  return { id, itemId: 'item-1', dependsOnItemId: target.id, dependencyType: dependencyType as ItemDependency['dependencyType'], lagDays, createdAt: '2026-10-02T00:00:00.000Z', updatedAt: '2026-10-02T00:00:00.000Z', dependsOn: target }
+  return { id, itemId: 'item-1', dependsOnItemId: target.id, dependsOnProjectId: null, dependencyType: dependencyType as ItemDependency['dependencyType'], lagDays, createdAt: '2026-10-02T00:00:00.000Z', updatedAt: '2026-10-02T00:00:00.000Z', dependsOn: target }
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -39,7 +39,8 @@ function installFetchStub() {
       if (body?.dependsOnItemId === 'item-cycle') {
         return jsonResponse({ error: { code: 'DEPENDENCY_CYCLE', message: 'Essa dependência criaria um ciclo (direto ou indireto) e foi rejeitada.', details: null, retryable: false } }, 409)
       }
-      const target = candidates.find(candidate => candidate.id === body?.dependsOnItemId) ?? makeTarget(String(body?.dependsOnItemId), 'Candidato', null)
+      const foundCandidate = candidates.find(candidate => candidate.id === body?.dependsOnItemId)
+      const target = foundCandidate ? makeTarget(foundCandidate.id, foundCandidate.title, foundCandidate.sequenceCode) : makeTarget(String(body?.dependsOnItemId), 'Candidato', null)
       const created = makeDependency(`dep-${storedDependencies.length + 1}`, target, String(body?.dependencyType ?? 'FS'), Number(body?.lagDays ?? 0))
       storedDependencies = [...storedDependencies, created]
       return jsonResponse(created, 201)

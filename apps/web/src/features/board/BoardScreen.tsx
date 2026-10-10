@@ -37,6 +37,7 @@ import type { StoryData } from '../../components/StoryModal'
 import { ActiveFilterChips, removeActiveBoardFilter, type ActiveFilterKey } from '../../components/ActiveFilterChips'
 import { CompactFilterSummary } from '../../components/CompactFilterSummary'
 import { useToast } from '../../components/Toast'
+import { api } from '../../lib/api'
 import { TreeViewPage, type TreeActionContext } from '../../pages/TreeViewPage'
 import { useAuth } from '../../contexts/AuthContext'
 import { AppShell } from '../../components/AppShell'
@@ -112,7 +113,11 @@ export default function BoardPage() {
   const [storyModalData, setStoryModalData] = useState<{ story?: StoryData } | null>(null)
   const [epicModalData, setEpicModalData] = useState<{ epic?: EpicData } | null>(null)
   const [columnAddForms, setColumnAddForms] = useState<Record<string, boolean>>({})
-  const [newItemCreation, setNewItemCreation] = useState<{ type: 'TASK' | 'BUG'; columnId?: string; costCenterId?: string | null; title?: string; parentId?: string } | null>(null)
+  const [newItemCreation, setNewItemCreation] = useState<{ type: 'TASK' | 'BUG' | 'EXTERNAL'; columnId?: string; costCenterId?: string | null; title?: string; parentId?: string } | null>(null)
+  // Card T48/T49 — cronograma: recálculo explícito e destaque do caminho crítico.
+  const [showCriticalPath, setShowCriticalPath] = useState(false)
+  const [criticalIds, setCriticalIds] = useState<ReadonlySet<string>>(new Set())
+  const [recalculating, setRecalculating] = useState(false)
   const queryClient = useQueryClient()
   const [moduleModalOpen, setModuleModalOpen] = useState(false)
   const location = useLocation()
@@ -209,6 +214,42 @@ export default function BoardPage() {
   const boardCards = useMemo(() => selectBoardCards({
     allItems: scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard,
   }), [scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard])
+
+  // Card T49 — o toggle de caminho crítico só é oferecido com dependências no board.
+  const projectDepsAvailable = useMemo(
+    () => boardCards.some(card => ((card as { dependencyCount?: number }).dependencyCount ?? 0) > 0),
+    [boardCards],
+  )
+
+  async function toggleCriticalPath() {
+    if (showCriticalPath) {
+      setShowCriticalPath(false)
+      setCriticalIds(new Set())
+      return
+    }
+    try {
+      const result = await api.get<{ criticalPath: string[]; dependencyCount: number }>(`/projects/${projectId}/schedule/critical-path`)
+      if (result.dependencyCount === 0) {
+        toast(tBoard('scheduleNoDependencies', { defaultValue: 'Cadastre dependências para calcular o caminho crítico.' }), 'error')
+        return
+      }
+      setCriticalIds(new Set(result.criticalPath))
+      setShowCriticalPath(true)
+    } catch {
+      toast(tBoard('scheduleLoadError', { defaultValue: 'Falha ao calcular o caminho crítico.' }), 'error')
+    }
+  }
+
+  async function runRecalculate() {
+    setRecalculating(true)
+    try {
+      const result = await api.post<{ updatedCount: number }>(`/projects/${projectId}/schedule/recalculate`, {})
+      toast(tBoard('scheduleRecalculated', { count: result.updatedCount, defaultValue: `${result.updatedCount} item(ns) com datas ajustadas.` }))
+      invalidateBoard()
+    } catch {
+      toast(tBoard('scheduleRecalculateError', { defaultValue: 'Falha ao recalcular as datas.' }), 'error')
+    } finally { setRecalculating(false) }
+  }
 
   // Cards virtuais de histórias NÃO-folha quando toggle "Mostrar histórias" ativo
   // Histórias folha aparecem como cards reais em boardCards (arrastáveis)
@@ -361,7 +402,7 @@ export default function BoardPage() {
         columnId: columns[0]?.id,
         costCenterId: projectCostCenters[0]?.id ?? null,
         parentId: context.parentId,
-        title: type === 'TASK' ? 'Nova Task' : 'Novo Bug',
+        title: type === 'TASK' ? 'Nova Task' : type === 'EXTERNAL' ? 'Nova Dep. Externa' : 'Novo Bug',
       })
     }
   }
@@ -431,6 +472,11 @@ export default function BoardPage() {
           }}
           onOpenArchived={archiving.openArchivedModal}
           onCreate={openCreation}
+          onRecalculate={() => void runRecalculate()}
+          recalculating={recalculating}
+          onToggleCriticalPath={() => void toggleCriticalPath()}
+          criticalPathActive={showCriticalPath}
+          criticalPathAvailable={projectDepsAvailable}
           progress={{ completed: sprintCompleted, total: sprintItems.length }}
           compactFilters={density === 'compact' ? (
             <CompactFilterSummary
@@ -549,6 +595,7 @@ export default function BoardPage() {
                   onArchive={archiving.requestArchive}
                   onEditStory={openStoryModal}
                   onEditEpic={epic => setEpicModalData({ epic: { id: epic.id, title: epic.title, moduleId: epic.moduleId ?? '', description: epic.description } })}
+                  criticalIds={showCriticalPath ? criticalIds : null}
                   noModuleLabel={tBoard('noModule')}
                 />
 

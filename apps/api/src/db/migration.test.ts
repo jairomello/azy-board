@@ -114,10 +114,10 @@ describe('migração das configurações de modelo do Azy Agent', () => {
 
     const now = new Date().toISOString()
     await database.insert(schema.tenants).values({ id: 'model-tenant', name: 'Models', slug: 'models', createdAt: now })
-    await database.insert(schema.users).values({
-      id: 'model-root', tenantId: 'model-tenant', email: 'model-root@test.local', passwordHash: 'hash', name: 'Root',
-      globalGroup: 'ROOT', createdAt: now, theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR',
-    })
+    // Insere o usuário com as colunas disponíveis na base legada (nível 0032);
+    // o schema atual teria external_idp/external_subject, ausentes aqui.
+    sqlite.query('INSERT INTO users (id, tenant_id, email, password_hash, name, global_group, theme, light_shell_theme, language, auto_theme_by_time, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)')
+      .run('model-root', 'model-tenant', 'model-root@test.local', 'hash', 'Root', 'ROOT', 'light', 'petroleum', 'pt-BR', now)
     await database.insert(schema.assistantCredentials).values({
       id: 'model-credential', tenantId: 'model-tenant', provider: 'OPENROUTER', credentialMode: 'API_KEY',
       ciphertext: 'encrypted-value', ciphertextVersion: 1, keyPrefix: 'sk-model...', scopesJson: '[]', revokedAt: null,
@@ -303,11 +303,12 @@ describe('migration de identidade global de e-mail (Item 29)', () => {
       { id: 'gid-b', name: 'B', slug: 'gid-b', createdAt: now },
     ])
     // Base legada (antes da 0028): o mesmo e-mail em tenants diferentes era aceito.
-    const base = { passwordHash: 'h', name: 'U', theme: 'light' as const, lightShellTheme: 'petroleum' as const, language: 'pt-BR' as const, globalGroup: 'TEAM_MEMBER' as const, createdAt: now }
-    await database.insert(schema.users).values([
-      { id: 'gid-u1', tenantId: 'gid-a', email: 'Dup@Example.com', ...base },
-      { id: 'gid-u2', tenantId: 'gid-b', email: 'dup@example.com', ...base },
-    ])
+    // Insere via SQL cru com as colunas do nível 0027 — o schema atual também
+    // carrega external_idp/external_subject, ausentes nessa base legada.
+    sqlite.query('INSERT INTO users (id, tenant_id, email, password_hash, name, global_group, theme, light_shell_theme, language, auto_theme_by_time, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)')
+      .run('gid-u1', 'gid-a', 'Dup@Example.com', 'h', 'U', 'TEAM_MEMBER', 'light', 'petroleum', 'pt-BR', now)
+    sqlite.query('INSERT INTO users (id, tenant_id, email, password_hash, name, global_group, theme, light_shell_theme, language, auto_theme_by_time, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)')
+      .run('gid-u2', 'gid-b', 'dup@example.com', 'h', 'U', 'TEAM_MEMBER', 'light', 'petroleum', 'pt-BR', now)
 
     migrate(database, { migrationsFolder: source })
     const persisted = await database.select().from(schema.users)

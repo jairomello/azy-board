@@ -47,6 +47,11 @@ export const toolFields: Record<string, ToolFields> = {
   create_item_link: { fields: ['projectId', 'itemId', 'name', 'url', 'description'], required: ['projectId', 'itemId', 'name', 'url'] },
   update_item_link: { fields: ['projectId', 'itemId', 'linkId', 'name', 'url', 'description'], required: ['projectId', 'itemId', 'linkId'] },
   delete_item_link: { fields: ['projectId', 'itemId', 'linkId'], required: ['projectId', 'itemId', 'linkId'] },
+  // Card T52 — CRUD de dependências entre itens pelo agente (grafo FS/SS/SF/FF).
+  list_item_dependencies: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
+  create_item_dependency: { fields: ['projectId', 'itemId', 'dependsOnItemId', 'dependsOnProjectId', 'dependencyType', 'lagDays'], required: ['projectId', 'itemId', 'dependsOnItemId'] },
+  update_item_dependency: { fields: ['projectId', 'itemId', 'dependencyId', 'dependsOnItemId', 'dependsOnProjectId', 'dependencyType', 'lagDays'], required: ['projectId', 'itemId', 'dependencyId'] },
+  delete_item_dependency: { fields: ['projectId', 'itemId', 'dependencyId'], required: ['projectId', 'itemId', 'dependencyId'] },
   list_checklists: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
   claim_task: { fields: ['projectId', 'taskId'], required: ['projectId', 'taskId'] },
   move_task: { fields: ['projectId', 'taskId', 'columnName'], required: ['projectId', 'taskId', 'columnName'] },

@@ -212,7 +212,7 @@ export function createSqliteProjectUnitOfWork(database: Database) {
             .run(epic.id, storyPath, new Date().toISOString(), context.tenantId, projectId, story.id)
 
           const tasks = database.query<{ id: string }, [string, string]>(
-            "SELECT id FROM items WHERE tenant_id = ? AND project_id = ? AND type IN ('TASK', 'BUG')",
+            "SELECT id FROM items WHERE tenant_id = ? AND project_id = ? AND type IN ('TASK', 'BUG', 'EXTERNAL')",
           ).all(context.tenantId, projectId)
           for (const task of tasks) {
             const before = readItemSnapshot(database, context.tenantId, projectId, task.id)

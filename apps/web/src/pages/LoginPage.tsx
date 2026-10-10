@@ -1,9 +1,11 @@
-import { useState, type FormEvent } from 'react'
+import { useState, useEffect, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
+import { api } from '../lib/api'
+import type { AuthProvidersResponse } from '@azy-board/api-contracts'
 import { lerEmailLembrado } from '../lib/rememberedEmail'
-import { CheckCircle2, Sparkles } from 'lucide-react'
+import { CheckCircle2, LockKeyhole, Sparkles } from 'lucide-react'
 import { BrandLogo, BrandMark } from '../components/BrandLogo'
 
 const BASE_PATH = ((window as Window & { __BASE_PATH__?: string }).__BASE_PATH__ ?? '').replace(/\/+$/, '')
@@ -18,6 +20,19 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  // Card T45 — descoberta do provedor de autenticação da instalação.
+  const [providerInfo, setProviderInfo] = useState<AuthProvidersResponse | null>(null)
+
+  useEffect(() => {
+    let active = true
+    api.get<AuthProvidersResponse>('/auth/providers')
+      .then(data => { if (active) setProviderInfo(data) })
+      .catch(() => {})
+    return () => { active = false }
+  }, [])
+
+  const oauthUrl = providerInfo?.oauthStartUrl ? `${BASE_PATH}${providerInfo.oauthStartUrl}` : null
+  const localMode = !providerInfo || providerInfo.provider === 'LOCAL'
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -97,6 +112,21 @@ export default function LoginPage() {
             </div>
           )}
 
+          {!localMode && oauthUrl && (
+            <div className="space-y-5">
+              <p className="text-sm text-muted-foreground">{t('oauthProviderNote', { provider: providerInfo?.providerName ?? providerInfo?.provider ?? '' })}</p>
+              <button
+                type="button"
+                onClick={() => { window.location.assign(oauthUrl) }}
+                className="w-full h-11 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition shadow-sm inline-flex items-center justify-center gap-2"
+              >
+                <LockKeyhole className="w-4 h-4" />
+                {t('oauthProviderButton', { provider: providerInfo?.providerName ?? providerInfo?.provider ?? '' })}
+              </button>
+            </div>
+          )}
+
+          {localMode && (<>
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground" htmlFor="email">
               {t('email')}
@@ -146,6 +176,7 @@ export default function LoginPage() {
           >
              {loading ? t('loading') : t('loginButton')}
           </button>
+          </>)}
         </form>
           </div>
         </section>

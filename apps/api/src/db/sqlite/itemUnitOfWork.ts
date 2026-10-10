@@ -517,9 +517,9 @@ function createBatchItemInsideTransaction(database: Database, context: MutationC
   const parent = parentId ? itemById(database, context.tenantId, projectId, parentId) : null
   if (parentId && !parent) throw new Error('RELATION_OUT_OF_SCOPE')
   if (type === 'STORY' && parent?.type !== 'EPIC') throw new Error('VALIDATION_ERROR')
-  if ((type === 'TASK' || type === 'BUG') && parent && !['STORY', 'TASK', 'BUG'].includes(parent.type)) throw new Error('VALIDATION_ERROR')
+  if ((type === 'TASK' || type === 'BUG' || type === 'EXTERNAL') && parent && !['STORY', 'TASK', 'BUG', 'EXTERNAL'].includes(parent.type)) throw new Error('VALIDATION_ERROR')
 
-  const firstColumn = type === 'TASK' || type === 'BUG'
+  const firstColumn = type === 'TASK' || type === 'BUG' || type === 'EXTERNAL'
     ? database.query<{ id: string }, [string, string]>(
       'SELECT id FROM columns WHERE tenant_id = ? AND project_id = ? ORDER BY position LIMIT 1',
     ).get(context.tenantId, projectId)?.id ?? null

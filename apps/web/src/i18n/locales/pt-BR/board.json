@@ -41,6 +41,7 @@
   "moduleViewMode": "Módulos",
   "typeTask": "Tarefa",
   "typeBug": "Bug",
+  "typeExternal": "Dep. Externa",
   "priorityLow": "Baixa",
   "priorityMedium": "Média",
   "priorityHigh": "Alta",
@@ -303,5 +304,15 @@
     "planning-gap:sprint": "Sem sprint",
     "planning-gap:version": "Sem versão",
     "planning-gap:assignee": "Sem responsável"
-  }
+  },
+  "scheduleRecalculate": "Recalcular datas",
+  "scheduleCriticalPath": "Caminho crítico",
+  "scheduleHint": "Replanejamento explícito a partir das dependências.",
+  "scheduleNoDependencies": "Cadastre dependências para calcular o caminho crítico.",
+  "scheduleLoadError": "Falha ao calcular o caminho crítico.",
+  "scheduleRecalculated": "{{count}} item(ns) com datas ajustadas.",
+  "scheduleRecalculateError": "Falha ao recalcular as datas.",
+  "dependenciesProject": "Projeto do alvo",
+  "scheduleGroup": "Cronograma",
+  "scheduleCriticalPathHint": "Destaca no board os itens do caminho crítico (disponível com dependências cadastradas)."
 }

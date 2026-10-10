@@ -45,7 +45,7 @@ export type AssistantItemArea = 'details' | 'subtasks' | 'checklists' | 'links' 
 
 export interface AssistantFocusLevel {
   itemId: string
-  type: 'EPIC' | 'STORY' | 'TASK' | 'BUG'
+  type: 'EPIC' | 'STORY' | 'TASK' | 'BUG' | 'EXTERNAL'
 }
 
 export type AssistantFocusEntityKind = 'checklist' | 'checklist_item' | 'link' | 'work_log' | 'attachment'

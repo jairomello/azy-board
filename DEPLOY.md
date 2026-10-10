@@ -87,6 +87,27 @@ configurados somente na infraestrutura do ambiente, nunca neste repositório.
 O código da aplicação permanece portável entre raiz (`/`), subpaths e outros
 domínios.
 
+## Login integrado (opcional, card T45)
+
+O método de autenticação humana é decidido **na instalação** (permanente; sem
+migração em runtime). Variáveis:
+
+- `AZYBOARD_AUTH_PROVIDER`: `LOCAL` (padrão), `MICROSOFT` ou `GOOGLE`.
+- `AZYBOARD_AUTH_REDIRECT_URL`: URL pública do callback (ex.: mesma origem, sem
+  sessão) — obrigatória nos modos integrados.
+- `AZYBOARD_MICROSOFT_CLIENT_ID`, `AZYBOARD_MICROSOFT_CLIENT_SECRET`,
+  `AZYBOARD_MICROSOFT_TENANT_ID`: credenciais do EntraID (modo `MICROSOFT`).
+- `AZYBOARD_GOOGLE_CLIENT_ID`, `AZYBOARD_GOOGLE_CLIENT_SECRET`: credenciais do
+  Google (modo `GOOGLE`).
+
+Comportamento observável: no modo `LOCAL` a tela de login mostra e-mail e
+senha; nos modos integrados mostra apenas o botão do provedor ("Entrar com
+Microsoft"/"Entrar com Google"), o login por senha é recusado (403
+`PASSWORD_LOGIN_DISABLED`) e a identidade é vinculada por e-mail canônico a um
+usuário **já existente** — nunca há auto-provisionamento nem vínculo a outro
+tenant. A inicialização falha de forma explícita quando um provedor integrado
+não tem as credenciais exigidas.
+
 ## Perfis de instalação
 
 O Azy Board suporta dois perfis de instalação, escolhidos **uma única vez** no

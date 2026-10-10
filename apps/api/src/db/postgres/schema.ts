@@ -42,6 +42,10 @@ export const users = pgTable('users', {
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
   email: text('email').notNull(),
   passwordHash: text('password_hash').notNull(),
+  // [TENANT] Identidade externa vinculada (login integrado Microsoft/Google).
+  // Nullable: usuários locais não possuem vínculo. Par (idp, subject) é único.
+  externalIdp: text('external_idp'),
+  externalSubject: text('external_subject'),
   name: text('name').notNull(),
   globalGroup: text('global_group').notNull().default('TEAM_MEMBER'),
   avatarUrl: text('avatar_url'),
@@ -53,6 +57,7 @@ export const users = pgTable('users', {
 }, (table) => ({
   tenantIdUnique: uniqueIndex('users_tenant_id_id_unique').on(table.tenantId, table.id),
   emailUnique: uniqueIndex('users_email_unique').on(sql`lower(${table.email})`),
+  externalIdentityUnique: uniqueIndex('users_external_identity_unique').on(table.externalIdp, table.externalSubject),
   groupCheck: check('users_global_group_check', sql`${table.globalGroup} IN ('TEAM_MEMBER','MANAGER','ADMIN','ROOT')`),
   themeCheck: check('users_theme_check', sql`${table.theme} IN ('light','dark')`),
   shellThemeCheck: check('users_shell_theme_check', sql`${table.lightShellTheme} IN ('petroleum','ocean','emerald','graphite','classic','ruby','amber','amethyst','rose','silver')`),
@@ -333,7 +338,7 @@ export const items = pgTable('items', {
   pointsCheck: check('items_points_check', sql`${table.points} IS NULL OR ${table.points} >= 0`),
   positionCheck: check('items_position_check', sql`${table.position} >= 0`),
   datesCheck: check('items_dates_check', sql`${table.startDate} IS NULL OR ${table.dueDate} IS NULL OR ${table.dueDate} >= ${table.startDate}`),
-  typeCheck: check('items_type_check', sql`${table.type} IN ('EPIC','STORY','TASK','BUG')`),
+  typeCheck: check('items_type_check', sql`${table.type} IN ('EPIC','STORY','TASK','BUG','EXTERNAL')`),
   statusCheck: check('items_status_check', sql`${table.status} IN ('NOT_STARTED','IN_PROGRESS','BLOCKED','DONE','CANCELLED','ARCHIVED')`),
   statusBeforeArchiveCheck: check('items_status_before_archive_check', sql`${table.statusBeforeArchive} IS NULL OR ${table.statusBeforeArchive} IN ('NOT_STARTED','IN_PROGRESS','BLOCKED','DONE','CANCELLED')`),
   priorityCheck: check('items_priority_check', sql`${table.priority} IN ('LOW','MEDIUM','HIGH','CRITICAL')`),
@@ -600,6 +605,8 @@ export const itemDependencies = pgTable('item_dependencies', {
   projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
   itemId: text('item_id').notNull(),
   dependsOnItemId: text('depends_on_item_id').notNull(),
+  // [TENANT] Projeto do item alvo — permite dependência cross-project.
+  dependsOnProjectId: text('depends_on_project_id'),
   dependencyType: text('dependency_type').notNull().default('FS'),
   lagDays: integer('lag_days').notNull().default(0),
   createdAt: text('created_at').notNull().default(defaultNowIso()),

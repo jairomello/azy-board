@@ -43,14 +43,14 @@ export async function createItemApplication(input: ApplicationAuthorization & {
   if (!project) return { ok: false, status: 404, body: { error: 'Projeto não encontrado' } }
 
   const type: ItemType = body.type ?? 'TASK'
-  const effectiveParentId = project.boardMode === 'SIMPLE' && ['TASK', 'BUG'].includes(type)
+  const effectiveParentId = project.boardMode === 'SIMPLE' && isWorkCard(type)
     ? project.simpleStoryId
     : (body.parentId ?? null)
-  if (project.boardMode === 'SIMPLE' && ['TASK', 'BUG'].includes(type) && !effectiveParentId) {
+  if (project.boardMode === 'SIMPLE' && isWorkCard(type) && !effectiveParentId) {
     return { ok: false, status: 409, body: { error: 'Projeto simples não possui história fixa configurada' } }
   }
-  if (project.boardMode !== 'SIMPLE' && ['TASK', 'BUG'].includes(type) && !effectiveParentId) {
-    return { ok: false, status: 400, body: { error: 'TASK/BUG requerem parentId apontando para uma STORY, TASK ou BUG neste projeto. Use GET /projects/:id/items?type=STORY para listar as histórias disponíveis.', code: 'HIERARCHY_REQUIRED', retryable: false } }
+  if (project.boardMode !== 'SIMPLE' && isWorkCard(type) && !effectiveParentId) {
+    return { ok: false, status: 400, body: { error: 'TASK/BUG/EXTERNAL requerem parentId apontando para uma STORY, TASK ou BUG neste projeto. Use GET /projects/:id/items?type=STORY para listar as histórias disponíveis.', code: 'HIERARCHY_REQUIRED', retryable: false } }
   }
 
   const hierarchyError = await validateHierarchy(context.tenantId, projectId, type, effectiveParentId, project.boardMode === 'SIMPLE' ? null : body.moduleId)
@@ -85,7 +85,7 @@ export async function createItemApplication(input: ApplicationAuthorization & {
   const effectiveIcon = body.icon === undefined ? (workCard ? DEFAULT_ITEM_ICON : null) : body.icon
 
   let columnId = body.columnId ?? null
-  if (!columnId && ['TASK', 'BUG'].includes(type)) {
+  if (!columnId && isWorkCard(type)) {
     columnId = (await persistence.projects.listColumns(projectContext, projectId))[0]?.id ?? null
   }
   const ancestryPath = effectiveParentId ? await buildAncestryPath(context.tenantId, projectId, effectiveParentId) : []
@@ -176,7 +176,7 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
     }
   }
 
-  if (project.boardMode === 'SIMPLE' && ['TASK', 'BUG'].includes(prevItem.type)) {
+  if (project.boardMode === 'SIMPLE' && ['TASK', 'BUG', 'EXTERNAL'].includes(prevItem.type)) {
     if (!project.simpleStoryId) return { ok: false, status: 409, body: { error: 'Projeto simples não possui história fixa configurada' } }
     updates.parentId = project.simpleStoryId
     updates.moduleId = null
@@ -208,7 +208,7 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
 
   const finalType = (safeBody.type as ItemType | undefined) ?? prevItem.type
   const finalParentId = safeBody.parentId !== undefined ? (updates.parentId as string | null | undefined) : prevItem.parentId
-  const introducesOrphan = ['TASK', 'BUG'].includes(finalType) && !finalParentId &&
+  const introducesOrphan = ['TASK', 'BUG', 'EXTERNAL'].includes(finalType) && !finalParentId &&
     (safeBody.parentId !== undefined || (safeBody.type !== undefined && safeBody.type !== prevItem.type))
   if (project.boardMode !== 'SIMPLE' && introducesOrphan) {
     return { ok: false, status: 400, body: { error: 'TASK/BUG não podem ficar sem pai em projeto hierárquico — vincule a uma STORY, TASK ou BUG.', code: 'HIERARCHY_REQUIRED', retryable: false } }
@@ -220,7 +220,7 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
     if (sprint?.status === 'CLOSED') return { ok: false, status: 409, body: { error: 'Não é possível associar itens a uma sprint fechada' } }
   }
 
-  const reparenting = safeBody.parentId !== undefined || (project.boardMode === 'SIMPLE' && ['TASK', 'BUG'].includes(prevItem.type))
+  const reparenting = safeBody.parentId !== undefined || (project.boardMode === 'SIMPLE' && ['TASK', 'BUG', 'EXTERNAL'].includes(prevItem.type))
   const requestedParent = updates.parentId as string | null | undefined
   if (reparenting) {
     const newParentId = requestedParent ?? safeBody.parentId
@@ -268,7 +268,7 @@ export async function moveItemApplication(input: ApplicationAuthorization & {
   const item = await persistence.items.getItem(projectContext, input.projectId, input.itemId)
   if (!item) return { ok: false, status: 404, body: { error: 'Item não encontrado' } }
   if (item.status === 'ARCHIVED') return { ok: false, status: 422, body: { error: 'Item arquivado não pode ser movido' } }
-  if (!['TASK', 'BUG', 'STORY'].includes(item.type)) {
+  if (!['TASK', 'BUG', 'STORY', 'EXTERNAL'].includes(item.type)) {
     return { ok: false, status: 422, body: { error: `Items do tipo ${item.type} não são movíveis no Kanban` } }
   }
   if (!(await isLeaf(input.context.tenantId, input.projectId, input.itemId))) {

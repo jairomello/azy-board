@@ -316,6 +316,7 @@ function mapItemDependency(row: PgRow): ItemDependencyRecord {
   return {
     id: row.id as string, tenantId: row.tenant_id as string, projectId: row.project_id as string,
     itemId: row.item_id as string, dependsOnItemId: row.depends_on_item_id as string,
+    dependsOnProjectId: (row.depends_on_project_id ?? null) as string | null,
     dependencyType: row.dependency_type as ItemDependencyRecord['dependencyType'],
     lagDays: Number(row.lag_days), createdAt: row.created_at as string, updatedAt: row.updated_at as string,
   }
@@ -329,15 +330,19 @@ function mapItemDependencyWithTarget(row: PgRow): ItemDependencyWithTarget {
       title: (row.target_title ?? '') as string,
       type: row.target_type as ItemDependencyWithTarget['dependsOn']['type'],
       sequenceCode: (row.target_sequence_code ?? null) as string | null,
+      projectId: (row.target_project_id ?? row.project_id) as string,
+      projectName: (row.target_project_name ?? null) as string | null,
     },
   }
 }
 
 async function readItemDependencyWithTargetPg(client: PoolClient, tenantId: string, itemId: string, dependencyId: string): Promise<ItemDependencyWithTarget> {
   const result = await client.query(
-    `SELECT d.*, i.title AS target_title, i.type AS target_type, i.sequence_code AS target_sequence_code
+    `SELECT d.*, i.title AS target_title, i.type AS target_type, i.sequence_code AS target_sequence_code,
+            i.project_id AS target_project_id, p.name AS target_project_name
      FROM item_dependencies d
      JOIN items i ON i.id = d.depends_on_item_id AND i.tenant_id = d.tenant_id
+     LEFT JOIN projects p ON p.id = i.project_id AND p.tenant_id = d.tenant_id
      WHERE d.tenant_id = $1 AND d.item_id = $2 AND d.id = $3`,
     [tenantId, itemId, dependencyId],
   )
@@ -572,7 +577,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
   function dashboardLeafWhere(context: PersistenceContext, projectId: string, filter?: DashboardPopulationFilter) {
     const params: unknown[] = [context.tenantId, projectId]
     const conditions = [
-      'i.tenant_id = $1', 'i.project_id = $2', "i.type IN ('TASK', 'BUG')", "i.status <> 'ARCHIVED'",
+      'i.tenant_id = $1', 'i.project_id = $2', "i.type IN ('TASK', 'BUG', 'EXTERNAL')", "i.status <> 'ARCHIVED'",
       'NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id)',
     ]
     const addArray = (column: string, values: string[]) => {
@@ -858,7 +863,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         [context.tenantId, projectId, parentId])).rows[0] as { id: string; type: string; title: string; ancestry_path: string } | undefined
       if (!parentRow) throw new Error('RELATION_OUT_OF_SCOPE')
       if (type === 'STORY' && parentRow.type !== 'EPIC') throw new Error('VALIDATION_ERROR')
-      if ((type === 'TASK' || type === 'BUG') && !['STORY', 'TASK', 'BUG'].includes(parentRow.type)) throw new Error('VALIDATION_ERROR')
+      if ((type === 'TASK' || type === 'BUG' || type === 'EXTERNAL') && !['STORY', 'TASK', 'BUG', 'EXTERNAL'].includes(parentRow.type)) throw new Error('VALIDATION_ERROR')
       ancestryPath = [...(JSON.parse(parentRow.ancestry_path) as Array<{ id: string; title: string; type: string }>), { id: parentRow.id, title: parentRow.title, type: parentRow.type }]
     }
 
@@ -1075,6 +1080,13 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       },
       async updateAvatarUrl(context: PersistenceContext, userId: string, avatarUrl: string | null): Promise<void> {
         await q('UPDATE users SET avatar_url = $1 WHERE tenant_id = $2 AND id = $3', [avatarUrl, context.tenantId, userId])
+      },
+      async linkExternalIdentity(context: PersistenceContext, userId: string, idp: 'MICROSOFT' | 'GOOGLE', subject: string): Promise<void> {
+        const rows = await q('SELECT external_subject FROM users WHERE tenant_id = $1 AND id = $2', [context.tenantId, userId])
+        const current = rows[0] as { external_subject: string | null } | undefined
+        if (!current) throw new Error('USER_NOT_FOUND')
+        if (current.external_subject !== null && current.external_subject !== subject) throw new Error('EXTERNAL_IDENTITY_CONFLICT')
+        await q('UPDATE users SET external_idp = $1, external_subject = $2 WHERE tenant_id = $3 AND id = $4', [idp, subject, context.tenantId, userId])
       },
     },
 
@@ -1781,7 +1793,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
                FROM items AS item
                INNER JOIN item_sprints AS link
                  ON link.tenant_id = item.tenant_id AND link.item_id = item.id AND link.sprint_id = $2
-               WHERE item.tenant_id = $3 AND item.project_id = $4 AND item.type IN ('TASK', 'BUG')
+               WHERE item.tenant_id = $3 AND item.project_id = $4 AND item.type IN ('TASK', 'BUG', 'EXTERNAL')
                  AND NOT EXISTS (
                    SELECT 1 FROM items AS child
                    WHERE child.tenant_id = item.tenant_id AND child.project_id = item.project_id AND child.parent_id = item.id
@@ -2309,9 +2321,11 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
     itemDependencies: {
       async list(context: PersistenceContext, projectId: string, itemId: string): Promise<ItemDependencyWithTarget[]> {
         const rows = await q(
-          `SELECT d.*, i.title AS target_title, i.type AS target_type, i.sequence_code AS target_sequence_code
+          `SELECT d.*, i.title AS target_title, i.type AS target_type, i.sequence_code AS target_sequence_code,
+            i.project_id AS target_project_id, p.name AS target_project_name
            FROM item_dependencies d
            JOIN items i ON i.id = d.depends_on_item_id AND i.tenant_id = d.tenant_id
+           LEFT JOIN projects p ON p.id = i.project_id AND p.tenant_id = d.tenant_id
            WHERE d.tenant_id = $1 AND d.project_id = $2 AND d.item_id = $3
            ORDER BY d.created_at, d.id`,
           [context.tenantId, projectId, itemId],
@@ -2337,13 +2351,10 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           // [T38] Reserva/replay idempotente na MESMA transação da dependência.
           await assertJournalAvailablePg(client, context)
           const result = await client.query(
-            `INSERT INTO item_dependencies (id, tenant_id, project_id, item_id, depends_on_item_id, dependency_type, lag_days, created_at, updated_at)
-             SELECT $1, $2, $3, $4, $5, $6, $7, now(), now()
-             WHERE EXISTS (SELECT 1 FROM items WHERE tenant_id = $2 AND project_id = $3 AND id = $4)
-               AND EXISTS (SELECT 1 FROM items WHERE tenant_id = $2 AND project_id = $3 AND id = $5)
-               AND $4 <> $5
+            `INSERT INTO item_dependencies (id, tenant_id, project_id, item_id, depends_on_item_id, depends_on_project_id, dependency_type, lag_days, created_at, updated_at)
+             SELECT $1, $2, $3, $4, $5, $6, $7, $8, now(), now()
              RETURNING *`,
-            [generateId(), context.tenantId, projectId, itemId, input.dependsOnItemId, input.dependencyType ?? 'FS', input.lagDays ?? 0],
+            [generateId(), context.tenantId, projectId, itemId, input.dependsOnItemId, input.dependsOnProjectId ?? null, input.dependencyType ?? 'FS', input.lagDays ?? 0],
           )
           if (!result.rows[0]) throw new Error('ITEM_NOT_FOUND')
           const withTarget = await readItemDependencyWithTargetPg(client, context.tenantId, itemId, (result.rows[0] as PgRow).id as string)
@@ -2356,6 +2367,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         const sets: string[] = []
         const values: unknown[] = []
         if ('dependsOnItemId' in patch) { values.push(patch.dependsOnItemId); sets.push(`depends_on_item_id = $${values.length}`) }
+        if ('dependsOnProjectId' in patch) { values.push(patch.dependsOnProjectId); sets.push(`depends_on_project_id = $${values.length}`) }
         if ('dependencyType' in patch) { values.push(patch.dependencyType); sets.push(`dependency_type = $${values.length}`) }
         if ('lagDays' in patch) { values.push(patch.lagDays); sets.push(`lag_days = $${values.length}`) }
         if (!sets.length) return null
@@ -4276,7 +4288,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
               COALESCE((SELECT string_agg(s.sprint_id, ',' ORDER BY s.sprint_id) FROM item_sprints s WHERE s.tenant_id = i.tenant_id AND s.item_id = i.id), '') AS sprint_ids
             FROM items i
             WHERE i.tenant_id = $1 AND i.project_id = $2
-              AND i.type IN ('TASK', 'BUG') AND i.status IN ('NOT_STARTED', 'IN_PROGRESS', 'BLOCKED')
+              AND i.type IN ('TASK', 'BUG', 'EXTERNAL') AND i.status IN ('NOT_STARTED', 'IN_PROGRESS', 'BLOCKED')
               AND NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id)
               AND EXISTS (SELECT 1 FROM item_sprints link WHERE link.tenant_id = i.tenant_id AND link.item_id = i.id AND link.sprint_id = $3)
             ORDER BY i.id`, [tenantId, projectId, plan.sourceSprintId])).rows as PgRow[]

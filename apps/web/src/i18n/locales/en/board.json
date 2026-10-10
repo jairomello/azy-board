@@ -41,6 +41,7 @@
   "moduleViewMode": "Modules",
   "typeTask": "Task",
   "typeBug": "Bug",
+  "typeExternal": "Ext. Dependence",
   "priorityLow": "Low",
   "priorityMedium": "Medium",
   "priorityHigh": "High",
@@ -303,5 +304,15 @@
     "planning-gap:sprint": "No sprint",
     "planning-gap:version": "No version",
     "planning-gap:assignee": "Unassigned"
-  }
+  },
+  "scheduleRecalculate": "Recalculate dates",
+  "scheduleCriticalPath": "Critical path",
+  "scheduleHint": "Explicit rescheduling from dependencies.",
+  "scheduleNoDependencies": "Add dependencies to compute the critical path.",
+  "scheduleLoadError": "Failed to compute the critical path.",
+  "scheduleRecalculated": "{{count}} item(s) with adjusted dates.",
+  "scheduleRecalculateError": "Failed to recalculate dates.",
+  "dependenciesProject": "Target project",
+  "scheduleGroup": "Schedule",
+  "scheduleCriticalPathHint": "Highlights the critical-path items on the board (available once dependencies exist)."
 }

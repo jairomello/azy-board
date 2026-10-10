@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { BookOpen, Bug, CheckSquare, Layers, AlertCircle, AlertTriangle, ChevronRight } from 'lucide-react'
+import { BookOpen, Bug, CheckSquare, ExternalLink, Layers, AlertCircle, AlertTriangle, ChevronRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../lib/api'
 import { resolveAppUrl } from '../lib/appUrl'
@@ -51,6 +51,7 @@ function TypeIcon({ type }: { type: ItemType }) {
   if (type === 'BUG') return <Bug className="w-3.5 h-3.5 text-red-500" />
   if (type === 'STORY') return <BookOpen className="w-3.5 h-3.5 text-violet-500" />
   if (type === 'EPIC') return <Layers className="w-3.5 h-3.5 text-amber-500" />
+  if (type === 'EXTERNAL') return <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
   return <CheckSquare className="w-3.5 h-3.5 text-blue-500" />
 }
 
@@ -59,6 +60,7 @@ const CHILD_TYPE_BG: Record<ItemType, string> = {
   STORY: 'bg-violet-100 dark:bg-violet-950/40',
   EPIC: 'bg-amber-100 dark:bg-amber-950/40',
   TASK: 'bg-blue-100 dark:bg-blue-950/40',
+  EXTERNAL: 'bg-slate-100 dark:bg-slate-800/40',
 }
 
 function PriorityIcon({ priority }: { priority: Priority }) {

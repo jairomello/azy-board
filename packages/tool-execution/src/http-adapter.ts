@@ -644,6 +644,34 @@ export async function toolDeleteItemLink(api: ApiCall, projectId: string, itemId
   return { ok: true, linkId, itemId, projectId }
 }
 
+export async function toolListItemDependencies(api: ApiCall, projectId: string, itemId: string): Promise<unknown> {
+  return api(`/projects/${projectId}/items/${itemId}/dependencies`)
+}
+
+export async function toolCreateItemDependency(
+  api: ApiCall, projectId: string, itemId: string, dependsOnItemId: string,
+  dependsOnProjectId?: string | null, dependencyType?: 'FS' | 'SS' | 'SF' | 'FF' | null, lagDays?: number | null,
+): Promise<unknown> {
+  if (!dependsOnItemId?.trim()) throw new Error('dependsOnItemId é obrigatório')
+  return api(`/projects/${projectId}/items/${itemId}/dependencies`, 'POST', {
+    dependsOnItemId: dependsOnItemId.trim(),
+    dependsOnProjectId: dependsOnProjectId ?? null,
+    dependencyType: dependencyType ?? 'FS',
+    lagDays: lagDays ?? 0,
+  })
+}
+
+export async function toolUpdateItemDependency(api: ApiCall, projectId: string, itemId: string, dependencyId: string, changes: Record<string, unknown>): Promise<unknown> {
+  if (!dependencyId?.trim()) throw new Error('dependencyId é obrigatório')
+  return api(`/projects/${projectId}/items/${itemId}/dependencies/${dependencyId}`, 'PATCH', changes)
+}
+
+export async function toolDeleteItemDependency(api: ApiCall, projectId: string, itemId: string, dependencyId: string): Promise<unknown> {
+  if (!dependencyId?.trim()) throw new Error('dependencyId é obrigatório')
+  await api(`/projects/${projectId}/items/${itemId}/dependencies/${dependencyId}`, 'DELETE')
+  return { ok: true, dependencyId, itemId, projectId }
+}
+
 export async function toolUpdateChecklist(api: ApiCall, projectId: string, itemId: string, checklistId: string, changes: Record<string, unknown>): Promise<unknown> {
   return api(`/projects/${projectId}/items/${itemId}/checklists/${checklistId}`, 'PATCH', changes)
 }

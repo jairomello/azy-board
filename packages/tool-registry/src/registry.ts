@@ -135,6 +135,11 @@ const classifications: Record<string, ToolClassification> = {
   create_item_link: { domain: 'evidence', scope: 'item', operation: 'create' },
   update_item_link: { domain: 'evidence', scope: 'item', operation: 'update' },
   delete_item_link: { domain: 'evidence', scope: 'item', operation: 'delete' },
+  // Card T52 — dependências entre itens (grafo FS/SS/SF/FF).
+  list_item_dependencies: { domain: 'evidence', scope: 'item', operation: 'read', dependencyTools: ['list_tasks'] },
+  create_item_dependency: { domain: 'evidence', scope: 'item', operation: 'create', dependencyTools: ['list_tasks', 'list_item_dependencies'] },
+  update_item_dependency: { domain: 'evidence', scope: 'item', operation: 'update', dependencyTools: ['list_item_dependencies'] },
+  delete_item_dependency: { domain: 'evidence', scope: 'item', operation: 'delete', dependencyTools: ['list_item_dependencies'] },
   list_checklists: { domain: 'evidence', scope: 'item', operation: 'read' },
   create_checklist: { domain: 'evidence', scope: 'item', operation: 'create' },
   update_checklist: { domain: 'evidence', scope: 'item', operation: 'update' },
@@ -396,6 +401,12 @@ function schemaFor(field: string, isRequired: boolean, toolName?: string): Recor
   if (field === 'description') return nullable({ type: 'string', description: `Descrição em Markdown (até ${TOOL_TEXT_LIMITS.description} caracteres).` })
   if (field === 'ref') return nullable({ type: 'string', description: `Referência curta usada por parentRef (até ${TOOL_TEXT_LIMITS.ref} caracteres).` })
   if (field === 'columnName') return nullable({ type: 'string', description: `Nome exato da coluna de destino (até ${TOOL_TEXT_LIMITS.columnName} caracteres).` })
+  // Card T52 — dependências entre itens.
+  if (field === 'dependencyId') return nullable({ type: 'string', description: 'ID da dependência pertencente ao item identificado por itemId (obtido em list_item_dependencies).' })
+  if (field === 'dependsOnItemId') return nullable({ type: 'string', description: 'Board item/card ID do qual o item de origem depende.' })
+  if (field === 'dependsOnProjectId') return nullable({ type: 'string', description: 'Projeto do item dependido (cross-project); quando omitido, assume o projeto da origem.' })
+  if (field === 'dependencyType') return { type: ['string', 'null'], enum: ['FS', 'SS', 'SF', 'FF', null], description: 'Tipo de dependência (padrão FS): FS Término-Início, SS Início-Início, SF Início-Término, FF Término-Término.' }
+  if (field === 'lagDays') return nullable({ type: 'number', description: 'Retardo em dias (inteiro, positivo ou negativo; padrão 0).' })
   return nullable({ type: 'string' })
 }
 
@@ -528,6 +539,7 @@ const friendlyNames: Record<string, string> = {
   set_member_squad: 'Definir squad do membro', update_squad: 'Editar squad', update_module: 'Editar módulo',
   update_tag: 'Editar tag', update_cost_center: 'Editar centro de custo',
   list_item_links: 'Listar links', create_item_link: 'Adicionar link', update_item_link: 'Atualizar link', delete_item_link: 'Remover link',
+  list_item_dependencies: 'Listar dependências', create_item_dependency: 'Adicionar dependência', update_item_dependency: 'Atualizar dependência', delete_item_dependency: 'Remover dependência',
 }
 
 export function friendlyToolName(name: string): string {
@@ -580,6 +592,10 @@ const toolDescriptions: Record<string, string> = {
   create_item_link: 'Cria um link externo no item. Requer name e url (HTTP/HTTPS sem credenciais); description é opcional. Apenas persiste os metadados: não lê nem acessa o conteúdo da URL.',
   update_item_link: 'Atualiza nome, URL ou descrição de um link do item. Requer linkId e ao menos um de name/url/description.',
   delete_item_link: 'Remove um link externo do item. Requer linkId.',
+  list_item_dependencies: 'Lista as dependências de um item (itemId de origem). Cada dependência referencia o item do qual ele depende (dependsOnItemId), o tipo (FS/SS/SF/FF) e o retardo em dias. Use para descobrir o dependencyId antes de editar ou remover.',
+  create_item_dependency: 'Cria uma dependência no item de origem: dependsOnItemId é obrigatório; dependsOnProjectId (opcional) permite dependência cross-project e defaults para o projeto atual; dependencyType tem default FS e lagDays default 0 (inteiro, positivo ou negativo). Rejeita auto-dependência, par duplicado e ciclos.',
+  update_item_dependency: 'Atualiza uma dependência existente. Requer dependencyId e ao menos um de dependsOnItemId/dependsOnProjectId/dependencyType/lagDays. Revalida auto-dependência, unicidade do par e ciclos no servidor.',
+  delete_item_dependency: 'Remove uma dependência existente do item. Requer dependencyId (obtido em list_item_dependencies).',
   claim_task: 'Atribui o item ao usuário atual (claim). Use apenas quando o item estiver disponível.',
   move_task: 'Move um item para a coluna informada pelo nome exato (ou ID).',
   complete_task: 'Conclui um item. Para card folha, move-o para a coluna com baseStatus DONE.',

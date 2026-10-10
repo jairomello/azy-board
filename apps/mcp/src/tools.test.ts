@@ -8,18 +8,22 @@ import {
   toolClaimTask,
   toolCompleteTask,
   toolCreateChecklist,
+  toolCreateItemDependency,
   toolCreateItemLink,
   toolCreateTask,
+  toolDeleteItemDependency,
   toolDeleteItemLink,
   toolGetCurrentSprint,
   toolGetBoard,
   toolGetDashboardMetrics,
   toolGetScreenOverview,
   toolListChecklists,
+  toolListItemDependencies,
   toolListItemLinks,
   toolListModules,
   toolListTasks,
   toolMoveTask,
+  toolUpdateItemDependency,
   toolUpdateItemLink,
   toolUpdateSprint,
   toolUpdateVersion,
@@ -646,6 +650,31 @@ describe('ferramentas de link do item (T22)', () => {
     await expect(toolCreateItemLink(api, 'p1', 'i1', '', 'https://x.com')).rejects.toThrow('name é obrigatório')
     await expect(toolCreateItemLink(api, 'p1', 'i1', 'Doc', '')).rejects.toThrow('url é obrigatório')
     await expect(toolDeleteItemLink(api, 'p1', 'i1', '')).rejects.toThrow('linkId é obrigatório')
+  })
+
+  test('dependências (T52): mapeiam para a API e validam argumentos', async () => {
+    const calls: Array<{ path: string; method: string; body?: unknown }> = []
+    const api: ApiCall = async (path, method = 'GET', body) => {
+      calls.push({ path, method, body })
+      return { id: 'd1' }
+    }
+
+    await toolListItemDependencies(api, 'p1', 'i1')
+    expect(calls[0]).toEqual({ path: '/projects/p1/items/i1/dependencies', method: 'GET' })
+
+    const created = await toolCreateItemDependency(api, 'p1', 'i1', 'target-1', 'p2', 'FS', 3)
+    expect(calls[1]).toEqual({ path: '/projects/p1/items/i1/dependencies', method: 'POST', body: { dependsOnItemId: 'target-1', dependsOnProjectId: 'p2', dependencyType: 'FS', lagDays: 3 } })
+    expect(created).toEqual({ id: 'd1' })
+
+    await toolUpdateItemDependency(api, 'p1', 'i1', 'd1', { lagDays: 5 })
+    expect(calls[2]).toEqual({ path: '/projects/p1/items/i1/dependencies/d1', method: 'PATCH', body: { lagDays: 5 } })
+
+    await toolDeleteItemDependency(api, 'p1', 'i1', 'd1')
+    expect(calls[3]).toEqual({ path: '/projects/p1/items/i1/dependencies/d1', method: 'DELETE' })
+
+    await expect(toolCreateItemDependency(api, 'p1', 'i1', '')).rejects.toThrow('dependsOnItemId é obrigatório')
+    await expect(toolUpdateItemDependency(api, 'p1', 'i1', '', { lagDays: 1 })).rejects.toThrow('dependencyId é obrigatório')
+    await expect(toolDeleteItemDependency(api, 'p1', 'i1', '')).rejects.toThrow('dependencyId é obrigatório')
   })
 })
 

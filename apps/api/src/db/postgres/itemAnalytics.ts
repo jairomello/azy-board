@@ -17,7 +17,7 @@ export interface PgItemSnapshot {
 interface MetricsRow { total: number; done: number; points: number; done_points: number }
 
 function snapshotCounters(snapshot: PgItemSnapshot | null): MetricsRow {
-  if (!snapshot || !snapshot.isLeaf || !['TASK', 'BUG'].includes(snapshot.type) || snapshot.status === 'ARCHIVED') {
+  if (!snapshot || !snapshot.isLeaf || !['TASK', 'BUG', 'EXTERNAL'].includes(snapshot.type) || snapshot.status === 'ARCHIVED') {
     return { total: 0, done: 0, points: 0, done_points: 0 }
   }
   const points = snapshot.points ?? 0

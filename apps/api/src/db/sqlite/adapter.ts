@@ -94,23 +94,27 @@ function asMutation(context: PersistenceContext): MutationContext {
 
 function readDependencyWithTargetSqlite(sqlite: Database, tenantId: string, itemId: string, dependencyId: string): ItemDependencyWithTarget | null {
   const row = sqlite.query<{
-    id: string; tenantId: string; projectId: string; itemId: string; dependsOnItemId: string
+    id: string; tenantId: string; projectId: string; itemId: string; dependsOnItemId: string; dependsOnProjectId: string | null
     dependencyType: string; lagDays: number; createdAt: string; updatedAt: string
     targetTitle: string; targetType: string; targetSequenceCode: string | null
+    targetProjectId: string; targetProjectName: string | null
   }, [string, string, string]>(`SELECT d.id, d.tenant_id AS tenantId, d.project_id AS projectId, d.item_id AS itemId,
-      d.depends_on_item_id AS dependsOnItemId, d.dependency_type AS dependencyType, d.lag_days AS lagDays,
+      d.depends_on_item_id AS dependsOnItemId, d.depends_on_project_id AS dependsOnProjectId,
+      d.dependency_type AS dependencyType, d.lag_days AS lagDays,
       d.created_at AS createdAt, d.updated_at AS updatedAt,
-      i.title AS targetTitle, i.type AS targetType, i.sequence_code AS targetSequenceCode
+      i.title AS targetTitle, i.type AS targetType, i.sequence_code AS targetSequenceCode,
+      i.project_id AS targetProjectId, p.name AS targetProjectName
     FROM item_dependencies d
     JOIN items i ON i.id = d.depends_on_item_id AND i.tenant_id = d.tenant_id
+    LEFT JOIN projects p ON p.id = i.project_id AND p.tenant_id = d.tenant_id
     WHERE d.tenant_id = ? AND d.item_id = ? AND d.id = ?`).get(tenantId, itemId, dependencyId)
   if (!row) return null
   return {
     id: row.id, tenantId: row.tenantId, projectId: row.projectId, itemId: row.itemId,
-    dependsOnItemId: row.dependsOnItemId,
+    dependsOnItemId: row.dependsOnItemId, dependsOnProjectId: row.dependsOnProjectId,
     dependencyType: row.dependencyType as ItemDependencyType,
     lagDays: row.lagDays, createdAt: row.createdAt, updatedAt: row.updatedAt,
-    dependsOn: { id: row.dependsOnItemId, title: row.targetTitle, type: row.targetType as ItemType, sequenceCode: row.targetSequenceCode },
+    dependsOn: { id: row.dependsOnItemId, title: row.targetTitle, type: row.targetType as ItemType, sequenceCode: row.targetSequenceCode, projectId: row.targetProjectId, projectName: row.targetProjectName },
   }
 }
 
@@ -373,7 +377,7 @@ function readTransitionCandidatesSqlite(sqlite: Database, tenantId: string, proj
       (SELECT group_concat(s.sprint_id, ',') FROM item_sprints s WHERE s.tenant_id = i.tenant_id AND s.item_id = i.id) AS sprint_ids
     FROM items i
     WHERE i.tenant_id = ? AND i.project_id = ?
-      AND i.type IN ('TASK', 'BUG') AND i.status IN ('NOT_STARTED', 'IN_PROGRESS', 'BLOCKED')
+      AND i.type IN ('TASK', 'BUG', 'EXTERNAL') AND i.status IN ('NOT_STARTED', 'IN_PROGRESS', 'BLOCKED')
       AND NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id)
       AND EXISTS (SELECT 1 FROM item_sprints link WHERE link.tenant_id = i.tenant_id AND link.item_id = i.id AND link.sprint_id = ?)
   `).all(tenantId, projectId, sourceSprintId)
@@ -488,7 +492,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
   const dashboardLeafConditions = (context: PersistenceContext, projectId: string, filter?: DashboardPopulationFilter) => {
     const conditions = [
       eq(items.tenantId, context.tenantId), eq(items.projectId, projectId),
-      inArray(items.type, ['TASK', 'BUG']), sql`${items.status} <> 'ARCHIVED'`,
+      inArray(items.type, ['TASK', 'BUG', 'EXTERNAL']), sql`${items.status} <> 'ARCHIVED'`,
       sql`NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = ${context.tenantId} AND child.project_id = ${projectId} AND child.parent_id = ${items.id})`,
     ]
     if (!filter) return conditions
@@ -589,6 +593,14 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
       },
       async updateAvatarUrl(context, userId, avatarUrl) {
         await database.update(users).set({ avatarUrl }).where(and(eq(users.tenantId, context.tenantId), eq(users.id, userId)))
+      },
+      async linkExternalIdentity(context, userId, idp, subject) {
+        const current = await database.query.users.findFirst({ where: and(eq(users.tenantId, context.tenantId), eq(users.id, userId)) })
+        if (!current) throw new Error('USER_NOT_FOUND')
+        if (current.externalSubject !== null && current.externalSubject !== subject) throw new Error('EXTERNAL_IDENTITY_CONFLICT')
+        await database.update(users)
+          .set({ externalIdp: idp, externalSubject: subject })
+          .where(and(eq(users.tenantId, context.tenantId), eq(users.id, userId)))
       },
     },
     tenants: {
@@ -1215,7 +1227,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
               FROM items AS item
               INNER JOIN item_sprints AS link
                 ON link.tenant_id = item.tenant_id AND link.item_id = item.id AND link.sprint_id = ?
-              WHERE item.tenant_id = ? AND item.project_id = ? AND item.type IN ('TASK', 'BUG')
+              WHERE item.tenant_id = ? AND item.project_id = ? AND item.type IN ('TASK', 'BUG', 'EXTERNAL')
                 AND NOT EXISTS (
                   SELECT 1 FROM items AS child
                   WHERE child.tenant_id = item.tenant_id AND child.project_id = item.project_id AND child.parent_id = item.id
@@ -1793,17 +1805,20 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           targetTitle: items.title,
           targetType: items.type,
           targetSequenceCode: items.sequenceCode,
+          targetProjectId: items.projectId,
+          targetProjectName: projects.name,
         }).from(itemDependencies)
           .innerJoin(items, and(eq(items.id, itemDependencies.dependsOnItemId), eq(items.tenantId, context.tenantId)))
+          .leftJoin(projects, and(eq(projects.id, items.projectId), eq(projects.tenantId, context.tenantId)))
           .where(and(
             eq(itemDependencies.tenantId, context.tenantId),
             eq(itemDependencies.projectId, projectId),
             eq(itemDependencies.itemId, itemId),
           ))
           .orderBy(asc(itemDependencies.createdAt), asc(itemDependencies.id))
-        return rows.map(({ dependency, targetTitle, targetType, targetSequenceCode }) => ({
+        return rows.map(({ dependency, targetTitle, targetType, targetSequenceCode, targetProjectId, targetProjectName }) => ({
           ...dependency,
-          dependsOn: { id: dependency.dependsOnItemId, title: targetTitle, type: targetType as ItemType, sequenceCode: targetSequenceCode },
+          dependsOn: { id: dependency.dependsOnItemId, title: targetTitle, type: targetType as ItemType, sequenceCode: targetSequenceCode, projectId: targetProjectId, projectName: targetProjectName },
         }))
       },
       async listByProject(context, projectId): Promise<ItemDependencyRecord[]> {
@@ -1828,8 +1843,8 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           assertJournalAvailable(sqlite, context)
           const now = new Date().toISOString()
           const id = generateId()
-          sqlite.query('INSERT INTO item_dependencies (id, tenant_id, project_id, item_id, depends_on_item_id, dependency_type, lag_days, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-            .run(id, context.tenantId, projectId, itemId, input.dependsOnItemId, input.dependencyType ?? 'FS', input.lagDays ?? 0, now, now)
+          sqlite.query('INSERT INTO item_dependencies (id, tenant_id, project_id, item_id, depends_on_item_id, depends_on_project_id, dependency_type, lag_days, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(id, context.tenantId, projectId, itemId, input.dependsOnItemId, input.dependsOnProjectId ?? null, input.dependencyType ?? 'FS', input.lagDays ?? 0, now, now)
           const withTarget = readDependencyWithTargetSqlite(sqlite, context.tenantId, itemId, id)!
           appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
           reserveJournal(sqlite, context, JSON.stringify({ status: 201, body: withTarget }))
@@ -1839,11 +1854,12 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
       async update(context, projectId, itemId, dependencyId, patch: ItemDependencyPatch): Promise<ItemDependencyWithTarget | null> {
         return runSqliteAtomic(sqlite, () => {
           const sets: string[] = ['updated_at = ?']
-          const params: Array<string | number> = [new Date().toISOString()]
+          const params: Array<string | number | null> = [new Date().toISOString()]
           if (patch.dependsOnItemId !== undefined) { sets.push('depends_on_item_id = ?'); params.push(patch.dependsOnItemId) }
+          if (patch.dependsOnProjectId !== undefined) { sets.push('depends_on_project_id = ?'); params.push(patch.dependsOnProjectId) }
           if (patch.dependencyType !== undefined) { sets.push('dependency_type = ?'); params.push(patch.dependencyType) }
           if (patch.lagDays !== undefined) { sets.push('lag_days = ?'); params.push(patch.lagDays) }
-          const updated = sqlite.query<{ id: string }, Array<string | number>>(`UPDATE item_dependencies SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND item_id = ? AND id = ? RETURNING id`)
+          const updated = sqlite.query<{ id: string }, Array<string | number | null>>(`UPDATE item_dependencies SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND item_id = ? AND id = ? RETURNING id`)
             .get(...params, context.tenantId, projectId, itemId, dependencyId)
           if (!updated) return null
           appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })

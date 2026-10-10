@@ -8,11 +8,12 @@ import {
   toolCreateSprint, toolCreateSquad, toolCreateTag, toolCreateTask, toolCreateVersion,
   toolDeleteChecklist, toolDeleteChecklistItem, toolDeleteItem, toolDeleteItemLink, toolDeleteProject,
   toolGetBoard, toolGetCurrentSprint, toolGetDashboardMetrics, toolGetProject, toolGetScreenOverview, toolGetShadowMarkdown, toolGetTree,
-  toolListAttachments, toolListChecklists, toolListColumns, toolListCostCenters, toolListItemLinks, toolListItemLogs,
+  toolListAttachments, toolListChecklists, toolListColumns, toolListCostCenters, toolListItemLinks, toolListItemLogs, toolListItemDependencies,
   toolReadAttachment,
   toolListMembers, toolListModules, toolListProjects, toolListSprints, toolListSquads,
   toolListTags, toolListTasks, toolListVersions, toolMoveTask, toolPrepareStructureDuplication, toolDuplicateStructure, toolPrepareSprintTransition, toolApplySprintTransition, toolQueryPlanningGaps, toolReorderColumns,
   toolReorderItems, toolReleaseTask, toolRemoveMember, toolSetItemTags, toolUnarchiveItem,
+  toolCreateItemDependency, toolUpdateItemDependency, toolDeleteItemDependency,
   toolUpdateChecklist, toolUpdateChecklistItem, toolUpdateItem, toolUpdateItemLink, toolUpdateItemLog,
   toolUpdateMember, toolUpdateProject, toolUpdateSprint, toolUpdateItems, toolUpdateVersion,
   toolSetMemberSquad, toolUpdateSquad, toolUpdateModule, toolUpdateTag, toolUpdateCostCenter,
@@ -212,6 +213,10 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'delete_checklist_item': return toolDeleteChecklistItem(api, args.projectId as string, args.itemId as string, args.checklistId as string, args.checklistItemId as string)
     case 'update_item_log': return toolUpdateItemLog(api, args.projectId as string, args.itemId as string, args.logId as string, pruneNullValues(args.changes as Record<string, unknown>))
     case 'update_item_link': return toolUpdateItemLink(api, args.projectId as string, args.itemId as string, args.linkId as string, pruneNullValues({ name: args.name, url: args.url, description: args.description }))
+    case 'list_item_dependencies': return toolListItemDependencies(api, args.projectId as string, args.itemId as string)
+    case 'create_item_dependency': return toolCreateItemDependency(api, args.projectId as string, args.itemId as string, args.dependsOnItemId as string, args.dependsOnProjectId as string | null | undefined, args.dependencyType as 'FS' | 'SS' | 'SF' | 'FF' | null | undefined, args.lagDays as number | null | undefined)
+    case 'update_item_dependency': return toolUpdateItemDependency(api, args.projectId as string, args.itemId as string, args.dependencyId as string, pruneNullValues({ dependsOnItemId: args.dependsOnItemId, dependsOnProjectId: args.dependsOnProjectId, dependencyType: args.dependencyType, lagDays: args.lagDays }))
+    case 'delete_item_dependency': return toolDeleteItemDependency(api, args.projectId as string, args.itemId as string, args.dependencyId as string)
     case 'batch': {
       // [T37] Chave estável por tool (run:hash) como agentRunId, quando disponível.
       const batchArgs = args as Parameters<typeof toolBatch>[1]

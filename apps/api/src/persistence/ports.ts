@@ -133,6 +133,9 @@ export interface IdentityPort {
   updateUserGroup(context: PersistenceContext, userId: string, group: GlobalGroup): Promise<void>
   updateUserPreferences(context: PersistenceContext, userId: string, patch: UserPreferencesPatch): Promise<PublicUserRecord | null>
   updateAvatarUrl(context: PersistenceContext, userId: string, avatarUrl: string | null): Promise<void>
+  // Card T45 — vincula a identidade externa (login integrado) a um usuário existente.
+  // Rejeita conflito quando o usuário já está vinculado a outro subject.
+  linkExternalIdentity(context: PersistenceContext, userId: string, idp: 'MICROSOFT' | 'GOOGLE', subject: string): Promise<void>
 }
 
 export interface TenantPort {

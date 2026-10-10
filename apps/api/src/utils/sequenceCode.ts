@@ -4,9 +4,9 @@
  * Fonte única do prefixo por tipo e do cálculo do próximo número: a rota REST
  * single-item e a criação em lote precisam da mesma regra para não divergir.
  */
-export const SEQUENCE_PREFIX: Record<string, string> = { EPIC: 'E', STORY: 'S', TASK: 'T', BUG: 'B' }
+export const SEQUENCE_PREFIX: Record<string, string> = { EPIC: 'E', STORY: 'S', TASK: 'T', BUG: 'B', EXTERNAL: 'X' }
 
-export const SEQUENCE_CODE_PATTERN = /^[ESTB]\d+$/
+export const SEQUENCE_CODE_PATTERN = /^[ESTBX]\d+$/
 
 export function sequencePrefix(type: string): string {
   return SEQUENCE_PREFIX[type] ?? 'T'

@@ -356,6 +356,18 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     const hasChange = ['name', 'url', 'description'].some(field => input[field] !== undefined && input[field] !== null)
     if (!hasChange) throw new Error('update_item_link exige ao menos um de name, url ou description')
   }
+  // Card T52 — dependências entre itens (grafo FS/SS/SF/FF).
+  if (name === 'create_item_dependency' || name === 'update_item_dependency') {
+    if (name === 'create_item_dependency' && (input.dependsOnItemId == null || input.dependsOnItemId === '')) throw new Error('create_item_dependency requer dependsOnItemId')
+    if (name === 'update_item_dependency') {
+      const hasChange = ['dependsOnItemId', 'dependsOnProjectId', 'dependencyType', 'lagDays'].some(field => input[field] !== undefined && input[field] !== null)
+      if (!hasChange) throw new Error('update_item_dependency exige ao menos um de dependsOnItemId, dependsOnProjectId, dependencyType ou lagDays')
+    }
+    if (input.dependsOnItemId != null) assertNonEmptyString(input.dependsOnItemId, 'dependsOnItemId', 128)
+    if (input.dependsOnProjectId != null) assertNonEmptyString(input.dependsOnProjectId, 'dependsOnProjectId', 128)
+    if (input.dependencyType != null) assertEnum(input.dependencyType, 'dependencyType', ['FS', 'SS', 'SF', 'FF'])
+    if (input.lagDays != null && !Number.isInteger(input.lagDays)) throw new Error('lagDays deve ser um inteiro')
+  }
   if (name === 'create_version') {
     if (input.status != null) assertEnum(input.status, 'status', VERSION_STATUSES)
     if (input.releaseDate != null) assertIsoDay(input.releaseDate, 'releaseDate')

@@ -271,12 +271,17 @@ export interface ItemDependencyTarget {
   title: string
   type: ItemType
   sequenceCode: string | null
+  /** Projeto do item dependido; relevante para dependências cross-project. */
+  projectId: string
+  projectName: string | null
 }
 
 export interface ItemDependency {
   id: string
   itemId: string
   dependsOnItemId: string
+  /** Projeto do item dependido; null em linhas legadas (mesmo projeto). */
+  dependsOnProjectId: string | null
   dependencyType: ItemDependencyType
   lagDays: number
   createdAt: string

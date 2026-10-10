@@ -13,7 +13,7 @@ import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
 import { confirmationSchema, createItemSchema, itemLogSchema, itemSprintSchema, itemTagsSchema, moveItemSchema, parseJson, parseOptionalJson, reorderItemsSchema, updateItemLogSchema, updateItemSchema, updateWorkLogSchema, workLogSchema } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
-import type { ItemLogRecord, ItemRecord, ItemDependencyRecord, ItemDependencyWithTarget } from '../persistence/models'
+import type { ItemLogRecord, ItemRecord, ItemDependencyRecord, ItemDependencyTargetSummary, ItemDependencyWithTarget } from '../persistence/models'
 import { emitDomainEvent, findOperationId } from '../services/domainEventOutbox'
 import { createItemApplication, moveItemApplication, updateItemApplication } from '../application/items'
 import { loadItemWithRelations } from '../application/itemRules'
@@ -23,10 +23,14 @@ itemsRouter.use('*', authMiddleware)
 
 /** Resumo de dependências por item, agregado sem N+1 (uma leitura de arestas do projeto). */
 function dependencyIndexByItem(
-  items: Array<{ id: string; title: string; type: ItemType; sequenceCode: string | null }>,
+  items: Array<{ id: string; projectId: string; title: string; type: ItemType; sequenceCode: string | null }>,
   edges: ItemDependencyRecord[],
+  extraTargets: Map<string, ItemDependencyTargetSummary> = new Map(),
 ): Map<string, { dependencies: Array<Pick<ItemDependencyWithTarget, 'dependsOnItemId' | 'dependencyType' | 'lagDays' | 'dependsOn'>>; dependencyCount: number }> {
-  const summaryByItem = new Map(items.map(item => [item.id, item]))
+  const summaryByItem = new Map<string, ItemDependencyTargetSummary>(
+    items.map(item => [item.id, { id: item.id, title: item.title, type: item.type, sequenceCode: item.sequenceCode, projectId: item.projectId, projectName: null }]),
+  )
+  for (const [id, summary] of extraTargets) summaryByItem.set(id, summary)
   const byOrigin = new Map<string, Array<Pick<ItemDependencyWithTarget, 'dependsOnItemId' | 'dependencyType' | 'lagDays' | 'dependsOn'>>>()
   for (const edge of edges) {
     const list = byOrigin.get(edge.itemId) ?? []
@@ -34,11 +38,41 @@ function dependencyIndexByItem(
       dependsOnItemId: edge.dependsOnItemId,
       dependencyType: edge.dependencyType,
       lagDays: edge.lagDays,
-      dependsOn: summaryByItem.get(edge.dependsOnItemId) ?? { id: edge.dependsOnItemId, title: '', type: 'TASK' as ItemType, sequenceCode: null },
+      dependsOn: summaryByItem.get(edge.dependsOnItemId)
+        ?? { id: edge.dependsOnItemId, title: '', type: 'TASK' as ItemType, sequenceCode: null, projectId: edge.dependsOnProjectId ?? items[0]?.projectId ?? '', projectName: null },
     })
     byOrigin.set(edge.itemId, list)
   }
   return new Map([...byOrigin].map(([itemId, dependencies]) => [itemId, { dependencies, dependencyCount: dependencies.length }]))
+}
+
+// [TENANT] Resolve os resumos de itens dependidos que estão em OUTROS projetos
+// (cross-project), buscando por projeto acessível do mesmo tenant.
+async function resolveCrossProjectDependencyTargets(
+  projectContext: ReturnType<typeof userPersistenceContext>,
+  edges: ItemDependencyRecord[],
+  projectId: string,
+): Promise<Map<string, ItemDependencyTargetSummary>> {
+  const missingByProject = new Map<string, string[]>()
+  for (const edge of edges) {
+    const targetProjectId = edge.dependsOnProjectId
+    if (!targetProjectId || targetProjectId === projectId) continue
+    const ids = missingByProject.get(targetProjectId) ?? []
+    if (!ids.includes(edge.dependsOnItemId)) ids.push(edge.dependsOnItemId)
+    missingByProject.set(targetProjectId, ids)
+  }
+  const result = new Map<string, ItemDependencyTargetSummary>()
+  for (const [targetProjectId, ids] of missingByProject) {
+    const project = await persistence.projects.getProject(projectContext, targetProjectId)
+    const projectName = project?.name ?? null
+    const targets = await persistence.items.listItems(projectContext, targetProjectId)
+    for (const item of targets) {
+      if (ids.includes(item.id)) {
+        result.set(item.id, { id: item.id, title: item.title, type: item.type, sequenceCode: item.sequenceCode, projectId: targetProjectId, projectName })
+      }
+    }
+  }
+  return result
 }
 
 function auditContext(c: Context<HonoEnv>): { actorType: ActivityActorType; source: ActivitySource; actorLabel: string | null } {
@@ -98,7 +132,8 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
   const assigneeMap = new Map(assignees.map(assignee => [assignee.id, assignee]))
   // [TENANT] Arestas de dependência do projeto, agregadas em um único mapa (sem N+1).
   const dependencyEdges = await persistence.itemDependencies.listByProject(projectContext, projectId)
-  const dependencyIndex = dependencyIndexByItem(activeItems, dependencyEdges)
+  const extraTargets = await resolveCrossProjectDependencyTargets(projectContext, dependencyEdges, projectId)
+  const dependencyIndex = dependencyIndexByItem(activeItems, dependencyEdges, extraTargets)
   const treeItems = activeItems.map(item => {
     const dependency = dependencyIndex.get(item.id)
     return {
@@ -135,7 +170,7 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
     return children.map(child => {
       const nested = buildChildren(child.id, depth + 1)
       const hasChildren = treeItems.some(item => item.parentId === child.id)
-      const leafItems = !hasChildren && ['TASK', 'BUG'].includes(child.type)
+      const leafItems = !hasChildren && ['TASK', 'BUG', 'EXTERNAL'].includes(child.type)
 
       if (filterAssigneeId && leafItems && child.assigneeId !== filterAssigneeId) return null
       if (sprintItemIds && leafItems && !sprintItemIds.has(child.id)) return null
@@ -277,7 +312,8 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
 
   // [TENANT] Arestas de dependência do projeto, agregadas em um único mapa (sem N+1).
   const dependencyEdges = await persistence.itemDependencies.listByProject(userPersistenceContext(ctx), projectId)
-  const dependencyIndex = dependencyIndexByItem(allItems, dependencyEdges)
+  const extraTargets = await resolveCrossProjectDependencyTargets(userPersistenceContext(ctx), dependencyEdges, projectId)
+  const dependencyIndex = dependencyIndexByItem(allItems, dependencyEdges, extraTargets)
 
   const projected = withProgress.map(item => {
     const dependency = dependencyIndex.get(item.id)

@@ -32,3 +32,15 @@ export interface RequestContext {
   email: string
   globalGroup: GlobalGroup
 }
+
+// Card T45 — provedor de autenticação humana definido na instalação.
+export type AuthProvider = 'LOCAL' | 'MICROSOFT' | 'GOOGLE'
+
+// Resposta pública de `GET /auth/providers` — nunca contém segredos.
+export interface AuthProvidersResponse {
+  provider: AuthProvider
+  /** Nome de exibição do provedor (ex.: "Microsoft", "Google"). */
+  providerName: string | null
+  /** URL de início do fluxo OAuth quando o provedor é integrado. */
+  oauthStartUrl: string | null
+}

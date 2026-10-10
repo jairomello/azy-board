@@ -46,7 +46,7 @@ export function dashboardDimensionTuple(snapshot: DashboardDimensionSnapshot): D
 }
 
 export function dashboardDimensionMetrics(snapshot: DashboardDimensionSnapshot | null): DashboardDimensionMetrics {
-  if (!snapshot || !snapshot.isLeaf || !['TASK', 'BUG'].includes(snapshot.type) || snapshot.status === 'ARCHIVED') return zero()
+  if (!snapshot || !snapshot.isLeaf || !['TASK', 'BUG', 'EXTERNAL'].includes(snapshot.type) || snapshot.status === 'ARCHIVED') return zero()
   const points = snapshot.points ?? 0
   return { total: 1, done: snapshot.status === 'DONE' ? 1 : 0, points, donePoints: snapshot.status === 'DONE' ? points : 0 }
 }

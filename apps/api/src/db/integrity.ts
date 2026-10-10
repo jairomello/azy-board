@@ -304,6 +304,14 @@ const CHECKS: CheckDefinition[] = [
           WHERE items.tenant_id <> item_dependencies.tenant_id`,
   },
   {
+    check: 'item_dependency_target_project_mismatch',
+    table: 'item_dependencies',
+    sql: `SELECT COUNT(*) AS count FROM item_dependencies
+          JOIN items ON items.id = item_dependencies.depends_on_item_id AND items.tenant_id = item_dependencies.tenant_id
+          WHERE item_dependencies.depends_on_project_id IS NOT NULL
+            AND item_dependencies.depends_on_project_id <> items.project_id`,
+  },
+  {
     check: 'orphan_tag_project',
     table: 'tags',
     sql: `SELECT COUNT(*) AS count FROM tags WHERE NOT EXISTS (SELECT 1 FROM projects WHERE projects.id = tags.project_id AND projects.tenant_id = tags.tenant_id)`,

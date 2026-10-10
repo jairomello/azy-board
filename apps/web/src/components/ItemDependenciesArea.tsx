@@ -11,7 +11,7 @@ interface Props { itemId: string; projectId: string; canEdit: boolean }
 interface CandidateItem {
   id: string
   title: string
-  type: 'EPIC' | 'STORY' | 'TASK' | 'BUG'
+  type: 'EPIC' | 'STORY' | 'TASK' | 'BUG' | 'EXTERNAL'
   sequenceCode: string | null
   parentId: string | null
 }
@@ -30,6 +30,8 @@ export function ItemDependenciesArea({ itemId, projectId, canEdit }: Props) {
   const { toast } = useToast()
   const [dependencies, setDependencies] = useState<ItemDependency[]>([])
   const [candidates, setCandidates] = useState<CandidateItem[]>([])
+  const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([])
+  const [candidateProjectId, setCandidateProjectId] = useState<string>(projectId)
   const [pickerText, setPickerText] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [highlight, setHighlight] = useState(-1)
@@ -41,25 +43,46 @@ export function ItemDependenciesArea({ itemId, projectId, canEdit }: Props) {
   const [draft, setDraft] = useState<Draft>(emptyDraft)
   const baseUrl = `/projects/${projectId}/items/${itemId}/dependencies`
 
+  const loadDependencies = useCallback(async (signal?: AbortSignal) => {
+    const list = await api.get<ItemDependency[]>(baseUrl, { signal })
+    setDependencies(list)
+    return list
+  }, [baseUrl])
+
+  const loadCandidates = useCallback(async (targetProjectId: string, signal?: AbortSignal) => {
+    const projectItems = await api.get<{ data: CandidateItem[] }>(`/projects/${targetProjectId}/items`, { signal })
+    setCandidates(projectItems.data)
+  }, [])
+
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     try {
-      const [list, projectItems] = await Promise.all([
-        api.get<ItemDependency[]>(baseUrl, { signal }),
-        api.get<{ data: CandidateItem[] }>(`/projects/${projectId}/items`, { signal }),
+      const [projectsList] = await Promise.all([
+        api.get<Array<{ id: string; name: string }>>('/projects', { signal }).catch(() => []),
+        loadDependencies(signal),
       ])
-      setDependencies(list)
-      setCandidates(projectItems.data)
+      setProjects(projectsList)
+      setCandidateProjectId(projectId)
+      await loadCandidates(projectId, signal)
     } catch (error) {
       if ((error as { name?: string }).name !== 'AbortError') toast(t('dependenciesLoadError'), 'error')
     } finally { setLoading(false) }
-  }, [baseUrl, projectId, t, toast])
+  }, [loadDependencies, loadCandidates, projectId, t, toast])
 
   useEffect(() => {
     const controller = new AbortController()
     void load(controller.signal)
     return () => controller.abort()
   }, [load])
+
+  // Troca o projeto de busca do seletor (cross-project): recarrega os candidatos.
+  const changeCandidateProject = useCallback((nextProjectId: string) => {
+    setCandidateProjectId(nextProjectId)
+    setDraft(previous => ({ ...previous, dependsOnItemId: '' }))
+    setPickerText('')
+    const controller = new AbortController()
+    void loadCandidates(nextProjectId, controller.signal).catch(() => {})
+  }, [loadCandidates])
 
   const linkedIds = useMemo(() => new Set(dependencies.map(dependency => dependency.dependsOnItemId)), [dependencies])
 
@@ -116,6 +139,7 @@ export function ItemDependenciesArea({ itemId, projectId, canEdit }: Props) {
     try {
       const payload = {
         dependsOnItemId: draft.dependsOnItemId,
+        dependsOnProjectId: candidateProjectId === projectId ? null : candidateProjectId,
         dependencyType: draft.dependencyType,
         lagDays: Number.parseInt(draft.lagDays, 10) || 0,
       }
@@ -139,6 +163,12 @@ export function ItemDependenciesArea({ itemId, projectId, canEdit }: Props) {
   }
 
   function edit(dependency: ItemDependency) {
+    // Dependência cross-project: aponta a busca de candidatos para o projeto do alvo.
+    const targetProjectId = dependency.dependsOn.projectId !== projectId ? dependency.dependsOn.projectId : projectId
+    if (targetProjectId !== candidateProjectId) {
+      setCandidateProjectId(targetProjectId)
+      void loadCandidates(targetProjectId).catch(() => {})
+    }
     setEditingId(dependency.id)
     setDraft({
       dependsOnItemId: dependency.dependsOnItemId,
@@ -190,6 +220,12 @@ export function ItemDependenciesArea({ itemId, projectId, canEdit }: Props) {
     </div>
 
     {canEdit && formOpen && <div className="space-y-3 rounded-lg border border-border p-3">
+      {projects.length > 1 && <label className="block space-y-1">
+        <span className="text-xs font-medium">{t('dependenciesProject', { defaultValue: 'Projeto do alvo' })}</span>
+        <select aria-label={t('dependenciesProject', { defaultValue: 'Projeto do alvo' })} className={inputClass} value={candidateProjectId} onChange={event => changeCandidateProject(event.target.value)}>
+          {projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+        </select>
+      </label>}
       <div className="relative">
           <label className="block space-y-1">
             <span className="text-xs font-medium">{t('dependenciesTarget')}</span>
@@ -228,6 +264,7 @@ export function ItemDependenciesArea({ itemId, projectId, canEdit }: Props) {
                 <li
                   key={entry.item.id}
                   role="option"
+                  tabIndex={-1}
                   aria-selected={draft.dependsOnItemId === entry.item.id}
                   className={`flex items-center whitespace-nowrap rounded px-2 py-1.5 font-mono text-xs ${highlight === index ? 'bg-primary/10 ring-1 ring-primary/40' : ''} cursor-pointer hover:bg-muted`}
                   onMouseDown={event => event.preventDefault()}
@@ -255,6 +292,7 @@ export function ItemDependenciesArea({ itemId, projectId, canEdit }: Props) {
         <p className="flex min-w-0 items-center gap-1.5">
           {itemIdentifier(dependency.dependsOn) && <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-semibold text-foreground">{itemIdentifier(dependency.dependsOn)}</span>}
           <span className="min-w-0 truncate text-sm font-medium text-foreground">{dependency.dependsOn.title}</span>
+          {dependency.dependsOn.projectId !== projectId && dependency.dependsOn.projectName && <span className="shrink-0 rounded bg-slate-500/10 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300">{dependency.dependsOn.projectName}</span>}
         </p>
         <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">{dependency.dependencyType}</span><span>{typeLabel(dependency.dependencyType)}</span><ArrowRight className="h-3 w-3" /><span>{t('dependenciesLagDays', { days: dependency.lagDays })}</span></p>
       </div>

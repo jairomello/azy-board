@@ -337,6 +337,13 @@
       "when": 1791504000000,
       "tag": "0047_item-dependencies",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1791590400000,
+      "tag": "0048_dependencias-externas-e-login",
+      "breakpoints": true
     }
   ]
 }

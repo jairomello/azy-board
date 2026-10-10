@@ -31,6 +31,8 @@ interface BoardColumnsProps {
   onTitleSave: (id: string, title: string) => void
   onDelete?: (id: string) => void
   onArchive?: (id: string) => void
+  // Card T49 — itens do caminho crítico a destacar.
+  criticalIds?: ReadonlySet<string> | null
 }
 
 export function BoardColumns({
@@ -49,6 +51,7 @@ export function BoardColumns({
   onTitleSave,
   onDelete,
   onArchive,
+  criticalIds = null,
 }: BoardColumnsProps) {
   const { t } = useTranslation('board')
 
@@ -84,7 +87,7 @@ export function BoardColumns({
                 <div className="board-column-cards flex-1 px-3 pt-2 pb-9 space-y-2">
                   <SortableContext id={`${laneId}-cards-${column.id}`} items={columnTasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
                     {columnTasks.map(task => (
-                      <KanbanCard key={task.id} card={task} onOpenDetail={onOpenDetail} onTitleSave={onTitleSave} onDelete={onDelete} onArchive={onArchive} />
+                      <KanbanCard key={task.id} card={task} onOpenDetail={onOpenDetail} onTitleSave={onTitleSave} onDelete={onDelete} onArchive={onArchive} critical={criticalIds?.has(task.id)} />
                     ))}
                   </SortableContext>
                 </div>

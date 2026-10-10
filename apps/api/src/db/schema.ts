@@ -46,6 +46,10 @@ export const users = sqliteTable('users', {
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
   email: text('email').notNull(),
   passwordHash: text('password_hash').notNull(),
+  // [TENANT] Identidade externa vinculada (login integrado Microsoft/Google).
+  // Nullable: usuários locais não possuem vínculo. Par (idp, subject) é único.
+  externalIdp: text('external_idp', { enum: ['MICROSOFT', 'GOOGLE'] }),
+  externalSubject: text('external_subject'),
   name: text('name').notNull(),
   // [TENANT] Grupo global é interpretado dentro do tenant da sessão.
   globalGroup: text('global_group', { enum: ['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT'] }).notNull().default('TEAM_MEMBER'),
@@ -66,6 +70,8 @@ export const users = sqliteTable('users', {
   // (case-insensitive), além da normalização feita na aplicação.
   // [DB-SWAP] Em PostgreSQL: CREATE UNIQUE INDEX users_email_unique ON users (lower(email));
   emailUnique: uniqueIndex('users_email_unique').on(sql`lower(${table.email})`),
+  // Par (provedor externo, subject) único quando ambos preenchidos
+  externalIdentityUnique: uniqueIndex('users_external_identity_unique').on(table.externalIdp, table.externalSubject),
   // [TENANT] Valores permitidos para o grupo global
   groupCheck: check('users_global_group_check', sql`${table.globalGroup} IN ('TEAM_MEMBER','MANAGER','ADMIN','ROOT')`),
 }))
@@ -547,8 +553,9 @@ export const items = sqliteTable('items', {
   tenantId: text('tenant_id').notNull().references(() => tenants.id),
   projectId: text('project_id').notNull(),
   // Discriminante de tipo — determina modal, campos exibidos e regras de hierarquia
+  // EXTERNAL = dependência externa (trabalho de terceiros/outra equipe)
   type: text('type', {
-    enum: ['EPIC', 'STORY', 'TASK', 'BUG'],
+    enum: ['EPIC', 'STORY', 'TASK', 'BUG', 'EXTERNAL'],
   }).notNull().default('TASK'),
   // Identificador visual sequencial por tipo e projeto (ex: E1, S1, T1, B3)
   sequenceCode: text('sequence_code'),
@@ -618,7 +625,7 @@ export const items = sqliteTable('items', {
   pointsCheck: check('items_points_check', sql`${table.points} IS NULL OR ${table.points} >= 0`),
   positionCheck: check('items_position_check', sql`${table.position} >= 0`),
   datesCheck: check('items_dates_check', sql`${table.startDate} IS NULL OR ${table.dueDate} IS NULL OR ${table.dueDate} >= ${table.startDate}`),
-  typeCheck: check('items_type_check', sql`${table.type} IN ('EPIC','STORY','TASK','BUG')`),
+  typeCheck: check('items_type_check', sql`${table.type} IN ('EPIC','STORY','TASK','BUG','EXTERNAL')`),
 }))
 
 // ---------------------------------------------------------------------------
@@ -897,6 +904,9 @@ export const itemDependencies = sqliteTable('item_dependencies', {
   // [TENANT] Origem e alvo pertencem ao mesmo tenant/projeto
   itemId: text('item_id').notNull(),
   dependsOnItemId: text('depends_on_item_id').notNull(),
+  // [TENANT] Projeto do item alvo — permite dependência cross-project.
+  // Nullable em linhas legadas; derivado do alvo quando informado.
+  dependsOnProjectId: text('depends_on_project_id'),
   // Término-Início (FS) é o default, como no MS Project
   dependencyType: text('dependency_type', { enum: ['FS', 'SS', 'SF', 'FF'] }).notNull().default('FS'),
   // Retardo em dias; positivo = folga, negativo = antecipação
@@ -906,6 +916,8 @@ export const itemDependencies = sqliteTable('item_dependencies', {
 }, (table) => ({
   itemFk: foreignKey(() => ({ columns: [table.tenantId, table.itemId], foreignColumns: [items.tenantId, items.id] })).onDelete('cascade'),
   dependsOnFk: foreignKey(() => ({ columns: [table.tenantId, table.dependsOnItemId], foreignColumns: [items.tenantId, items.id] })).onDelete('cascade'),
+  // [TENANT] FK do projeto do alvo (cross-project) — nullable em linhas legadas
+  dependsOnProjectFk: foreignKey(() => ({ columns: [table.tenantId, table.dependsOnProjectId], foreignColumns: [projects.tenantId, projects.id] })),
   // Um único vínculo por par (origem, alvo) dentro do tenant
   pairUnique: uniqueIndex('item_dependencies_pair_unique').on(table.tenantId, table.itemId, table.dependsOnItemId),
   itemList: index('item_dependencies_tenant_project_item_idx').on(table.tenantId, table.projectId, table.itemId, table.createdAt),

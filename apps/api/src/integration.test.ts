@@ -2403,6 +2403,170 @@ describe('dependências entre itens (Card T46)', () => {
   })
 })
 
+describe('dependências cross-project (Card T50)', () => {
+  let tenantId: string
+  let member: { id: string; email: string }
+  let memberToken: string
+  let projectA: string
+  let projectB: string
+  let projectC: string
+  let projectHidden: string
+  let itemA: string
+  let targetB: string
+  let targetC: string
+  let targetHidden: string
+
+  const now = new Date().toISOString()
+
+  async function seedProject(id: string, name: string, extra: Record<string, unknown> = {}) {
+    await db.insert(projects).values({
+      id, tenantId, name, description: null, boardMode: 'HIERARCHICAL', simpleStoryId: null,
+      managerUserId: null, isRestricted: true, isHidden: false, createdAt: now, ...extra,
+    })
+  }
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'CrossDep', slug: `xd-${tenantId}`, createdAt: now })
+    member = await createUser(tenantId, 'xd-member@test.local', 'Membro XD', 'TEAM_MEMBER')
+    memberToken = await token(member.id, tenantId, member.email)
+
+    projectA = generateId(); projectB = generateId(); projectC = generateId(); projectHidden = generateId()
+    await seedProject(projectA, 'Projeto A', { isRestricted: false })
+    await seedProject(projectB, 'Projeto B')
+    await seedProject(projectC, 'Projeto C (sem acesso)')
+    await seedProject(projectHidden, 'Projeto Oculto', { isHidden: true, isRestricted: false })
+    // O membro tem escrita em A e B; sem acesso em C e no projeto oculto.
+    await db.insert(memberships).values([
+      { id: generateId(), tenantId, userId: member.id, projectId: projectA, role: 'MEMBER', createdAt: now },
+      { id: generateId(), tenantId, userId: member.id, projectId: projectB, role: 'MEMBER', createdAt: now },
+    ])
+
+    const base = { tenantId, type: 'TASK' as const, parentId: null, moduleId: null, columnId: null, ancestryPath: '[]', status: 'NOT_STARTED' as const, priority: 'MEDIUM' as const, position: 0, authorId: member.id, createdAt: now, updatedAt: now }
+    itemA = generateId(); targetB = generateId(); targetC = generateId(); targetHidden = generateId()
+    await db.insert(items).values([
+      { ...base, id: itemA, projectId: projectA, title: 'A (origem)' },
+      { ...base, id: targetB, projectId: projectB, title: 'B (alvo)' },
+      { ...base, id: targetC, projectId: projectC, title: 'C (alvo sem acesso)' },
+      { ...base, id: targetHidden, projectId: projectHidden, title: 'Oculto (alvo)' },
+    ])
+  })
+
+  test('cria dependência cross-project apontando projeto acessível', async () => {
+    const res = await request(`/projects/${projectA}/items/${itemA}/dependencies`, memberToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dependsOnItemId: targetB, dependsOnProjectId: projectB, dependencyType: 'FS', lagDays: 2 }),
+    })
+    expect(res.status).toBe(201)
+    const created = await res.json() as { dependsOnProjectId: string | null; dependsOn: { projectId: string; projectName: string } }
+    expect(created.dependsOnProjectId).toBe(projectB)
+    expect(created.dependsOn.projectId).toBe(projectB)
+    expect(created.dependsOn.projectName).toBe('Projeto B')
+  })
+
+  test('alvo em projeto inacessível é rejeitado sem revelar existência (anti-IDOR)', async () => {
+    const res = await request(`/projects/${projectA}/items/${itemA}/dependencies`, memberToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dependsOnItemId: targetC, dependsOnProjectId: projectC }),
+    })
+    expect(res.status).toBe(422)
+  })
+
+  test('alvo em projeto oculto sem membership é rejeitado mesmo para ADMIN global', async () => {
+    const admin = await createUser(tenantId, 'xd-admin@test.local', 'Admin XD', 'ADMIN')
+    const adminToken = await signJwt({ sub: admin.id, tenantId, email: admin.email, role: 'user', globalGroup: 'ADMIN' })
+    const res = await request(`/projects/${projectA}/items/${itemA}/dependencies`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dependsOnItemId: targetHidden, dependsOnProjectId: projectHidden }),
+    })
+    expect(res.status).toBe(422)
+  })
+
+  test('ciclo que atravessa projetos é rejeitado (arestas dos dois projetos)', async () => {
+    // Já existe A → B(target). Criar de volta B(target) → A fecha o ciclo.
+    const res = await request(`/projects/${projectB}/items/${targetB}/dependencies`, memberToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dependsOnItemId: itemA, dependsOnProjectId: projectA }),
+    })
+    expect(res.status).toBe(409)
+  })
+
+  test('payload de GET /items expõe projeto do alvo na listagem do board', async () => {
+    const list = await request(`/projects/${projectA}/items`, memberToken)
+    expect(list.status).toBe(200)
+    const leaf = ((await list.json()) as { data: Array<Record<string, unknown>> }).data.find(item => item.id === itemA)
+    const deps = (leaf!.dependencies as Array<{ dependsOn: { projectId: string; projectName: string } }>)
+    expect(deps[0]!.dependsOn).toMatchObject({ projectId: projectB, projectName: 'Projeto B' })
+  })
+})
+
+describe('cronograma e caminho crítico (T48/T49)', () => {
+  let tenantId: string
+  let member: { id: string; email: string }
+  let memberToken: string
+  let projectId: string
+  let predId: string
+  let succId: string
+  let loneId: string
+  const now = new Date().toISOString()
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Schedule', slug: `sc-${tenantId}`, createdAt: now })
+    member = await createUser(tenantId, 'sc-member@test.local', 'Membro SC', 'TEAM_MEMBER')
+    memberToken = await token(member.id, tenantId, member.email)
+    projectId = generateId()
+    await db.insert(projects).values({
+      id: projectId, tenantId, name: 'Projeto cronograma', description: null,
+      boardMode: 'HIERARCHICAL', simpleStoryId: null, managerUserId: null, isRestricted: false, isHidden: false, createdAt: now,
+    })
+    await db.insert(memberships).values([{ id: generateId(), tenantId, userId: member.id, projectId, role: 'MEMBER', createdAt: now }])
+    const base = { tenantId, projectId, type: 'TASK' as const, parentId: null, moduleId: null, columnId: null, ancestryPath: '[]', status: 'NOT_STARTED' as const, priority: 'MEDIUM' as const, position: 0, authorId: member.id, createdAt: now, updatedAt: now }
+    predId = generateId(); succId = generateId(); loneId = generateId()
+    await db.insert(items).values([
+      { ...base, id: predId, title: 'Predecessor', startDate: '2026-01-01', dueDate: '2026-01-05' },
+      { ...base, id: succId, title: 'Sucessor', startDate: null, dueDate: null },
+      { ...base, id: loneId, title: 'Sem vínculo', startDate: '2026-02-01', dueDate: '2026-02-03' },
+    ])
+    // succ depende de pred (FS, retardo 2). lone não participa.
+    await db.insert(itemDependencies).values({
+      id: generateId(), tenantId, projectId, itemId: succId, dependsOnItemId: predId, dependencyType: 'FS', lagDays: 2, createdAt: now, updatedAt: now,
+    })
+  })
+
+  test('POST /schedule/recalculate propaga FS + retardo e preserva não vinculados', async () => {
+    const res = await request(`/projects/${projectId}/schedule/recalculate`, memberToken, { method: 'POST' })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { updatedCount: number; checkedCount: number }
+    expect(body.updatedCount).toBeGreaterThanOrEqual(1)
+    // Sucessor deve começar em 2026-01-07 (fim do predecessor + 2 de retardo).
+    const list = await request(`/projects/${projectId}/items`, memberToken)
+    const data = ((await list.json()) as { data: Array<Record<string, unknown>> }).data
+    expect(data.find(item => item.id === succId)).toMatchObject({ startDate: '2026-01-07', dueDate: '2026-01-07' })
+    // Item concluído não é recalculado (aqui usamos o "sem vínculo" como controle: permanece).
+    expect(data.find(item => item.id === loneId)).toMatchObject({ startDate: '2026-02-01', dueDate: '2026-02-03' })
+  })
+
+  test('GET /schedule/critical-path destaca a cadeia do grafo', async () => {
+    const res = await request(`/projects/${projectId}/schedule/critical-path`, memberToken)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { criticalPath: string[]; dependencyCount: number }
+    expect(body.dependencyCount).toBe(1)
+    expect(body.criticalPath).toContain(predId)
+    expect(body.criticalPath).toContain(succId)
+    // lone não está no caminho crítico.
+    expect(body.criticalPath).not.toContain(loneId)
+  })
+
+  test('GET /auth/providers expõe o provedor local padrão sem segredos', async () => {
+    const res = await request('/auth/providers', '', { method: 'GET' })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { provider: string; oauthStartUrl: string | null }
+    expect(body.provider).toBe('LOCAL')
+    expect(body.oauthStartUrl).toBeNull()
+  })
+})
+
 describe('reparenting transacional', () => {
   let tenantId: string
   let admin: { id: string; email: string }

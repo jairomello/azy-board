@@ -50,7 +50,7 @@ function toFilterState(snapshot: AssistantScreenSnapshot | undefined): Visibilit
     return value
   }
   const list = (value: AssistantScreenFilterValue | undefined): string[] => (Array.isArray(value) ? value : [])
-  const types = list(raw.types).filter((item): item is 'EPIC' | 'STORY' | 'TASK' | 'BUG' => ['EPIC', 'STORY', 'TASK', 'BUG'].includes(item))
+  const types = list(raw.types).filter((item): item is 'EPIC' | 'STORY' | 'TASK' | 'BUG' | 'EXTERNAL' => ['EPIC', 'STORY', 'TASK', 'BUG', 'EXTERNAL'].includes(item))
   return {
     moduleId: scalar(raw.moduleId), sprintId: scalar(raw.sprintId), assigneeId: scalar(raw.assigneeId),
     squadId: scalar(raw.squadId), versionId: scalar(raw.versionId), priority: scalar(raw.priority),

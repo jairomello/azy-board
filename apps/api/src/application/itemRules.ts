@@ -80,7 +80,7 @@ export async function validateHierarchy(
   const parent = await persistence.items.getItem(systemContext(tenantId), projectId, parentId)
   if (!parent) return `parentId "${parentId}" não encontrado neste projeto`
   if (type === 'STORY' && parent.type !== 'EPIC') return `STORY deve ser filha de EPIC, mas "${parent.title}" (${parentId}) é ${parent.type}`
-  if ((type === 'TASK' || type === 'BUG') && !['STORY', 'TASK', 'BUG'].includes(parent.type)) {
+  if ((type === 'TASK' || type === 'BUG' || type === 'EXTERNAL') && !['STORY', 'TASK', 'BUG', 'EXTERNAL'].includes(parent.type)) {
     return `${type} não pode ser filho direto de ${parent.type} ("${parent.title}"). Hierarquia: EPIC → STORY → TASK/BUG. Crie uma STORY filha do EPIC e use o ID da STORY como parentId.`
   }
   return null

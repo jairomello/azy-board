@@ -88,7 +88,7 @@ export async function createSprintCycle(tx: AnalyticsDb, tenantId: string, proje
   }).from(items).innerJoin(itemSprints, and(
     eq(itemSprints.tenantId, items.tenantId), eq(itemSprints.itemId, items.id), eq(itemSprints.sprintId, sprintId),
   )).where(and(
-    eq(items.tenantId, tenantId), eq(items.projectId, projectId), inArray(items.type, ['TASK', 'BUG']),
+    eq(items.tenantId, tenantId), eq(items.projectId, projectId), inArray(items.type, ['TASK', 'BUG', 'EXTERNAL']),
     sql`NOT EXISTS (
       SELECT 1 FROM items AS child
       WHERE child.tenant_id = ${tenantId} AND child.project_id = ${projectId} AND child.parent_id = ${items.id}

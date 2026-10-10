@@ -110,9 +110,10 @@ const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: 'CANCELLED', label: 'Cancelada' },
 ]
 
-const TYPE_OPTIONS: { value: 'TASK' | 'BUG'; label: string }[] = [
+const TYPE_OPTIONS: { value: 'TASK' | 'BUG' | 'EXTERNAL'; label: string }[] = [
   { value: 'TASK', label: 'Tarefa' },
   { value: 'BUG', label: 'Bug' },
+  { value: 'EXTERNAL', label: 'Dep. Externa' },
 ]
 
 interface ChildModalState {
@@ -174,7 +175,7 @@ export function ItemModal({
   const [title, setTitle] = useState(item.title)
   const [priority, setPriority] = useState<Priority>(item.priority)
   const [status, setStatus] = useState<TaskStatus>(item.status)
-  const [type, setType] = useState<'TASK' | 'BUG'>((item.type === 'BUG' ? 'BUG' : 'TASK'))
+  const [type, setType] = useState<'TASK' | 'BUG' | 'EXTERNAL'>(item.type === 'BUG' ? 'BUG' : item.type === 'EXTERNAL' ? 'EXTERNAL' : 'TASK')
   const [assigneeId, setAssigneeId] = useState<string>(item.assigneeId ?? item.assignee?.id ?? '')
   const [parentId, setParentId] = useState<string | null>(item.parentId ?? null)
   const [selectedTags, setSelectedTags] = useState<Tag[]>(
@@ -430,7 +431,7 @@ export function ItemModal({
                   {!item.isLeaf && <div className="flex gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300"><Info className="mt-0.5 h-4 w-4 shrink-0" /><p className="text-xs leading-relaxed">{t('moveBlocked')}</p></div>}
                   <div className="rounded-lg border border-border bg-card p-4"><h3 className="mb-3 text-sm font-semibold">{t('descriptionLabel')}</h3>{draftRecovered && <div role="status" className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300"><p className="text-xs leading-relaxed">{t('drafts.descriptionRecovered')}</p><button type="button" onClick={discardDraft} className="shrink-0 rounded px-2 py-1 text-xs font-medium underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-primary">{t('drafts.discard')}</button></div>}<RichTextEditor key={item.id} content={description} onChange={setDescription} placeholder={t('richText.itemPlaceholder')} fieldLabel={t('richText.itemField')} minHeight="120px" /></div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    {property(t('itemTypeLabel'), <select value={type} onChange={e => setType(e.target.value as 'TASK' | 'BUG')} className={fieldClass}>{TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}
+                    {property(t('itemTypeLabel'), <select value={type} onChange={e => setType(e.target.value as 'TASK' | 'BUG' | 'EXTERNAL')} className={fieldClass}>{TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}
                     {epics.length > 0 && property(t('parentStory'), <StorySelector epics={epics} stories={stories} value={parentId} onChange={setParentId} onCreateStory={onCreateStory} />)}
                     {property(t('tagsLabel'), <TagSelector allTags={projectTags} selected={selectedTags} onSelect={setSelectedTags} onCreate={onCreateTag} onEdit={onEditTag} />)}
                     {projectCostCenters.length > 0 && property(t('costCenterLabel'), <select value={costCenterId} onChange={e => setCostCenterId(e.target.value)} className={fieldClass}><option value="">{t('none')}</option>{projectCostCenters.map(cc => <option key={cc.id} value={cc.id}>{cc.code}{cc.description ? ` — ${cc.description}` : ''}</option>)}</select>)}

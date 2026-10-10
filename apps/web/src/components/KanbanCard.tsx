@@ -25,6 +25,7 @@ const TYPE_STYLES: Record<ItemType, { label: string; cls: string }> = {
   STORY: { label: 'Story', cls: 'bg-violet-100 text-violet-700 dark:bg-violet-900 dark:text-violet-300' },
   TASK:  { label: 'Task',  cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' },
   BUG:   { label: 'Bug',   cls: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' },
+  EXTERNAL: { label: 'Dep. Externa', cls: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
 }
 
 const STATUS_INDICATOR: Record<TaskStatus, string> = {
@@ -69,9 +70,11 @@ interface Props {
   onTitleSave?: (id: string, title: string) => void
   onDelete?: (id: string) => void
   onArchive?: (id: string) => void
+  // Card T49 — destaque visual de itens do caminho crítico.
+  critical?: boolean
 }
 
-export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchive }: Props) {
+export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchive, critical = false }: Props) {
   const { t } = useTranslation('board')
   const { toast } = useToast()
   const [breadcrumbOpen, setBreadcrumbOpen] = useState(false)
@@ -154,7 +157,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
         transition,
         opacity: isDragging ? 0.4 : 1,
       }}
-      className={`kanban-card relative group flex border-l-[3px] ${STATUS_INDICATOR[card.status]} ${!card.isLeaf ? 'opacity-70' : ''}`}
+      className={`kanban-card relative group flex border-l-[3px] ${STATUS_INDICATOR[card.status]} ${!card.isLeaf ? 'opacity-70' : ''} ${critical ? 'ring-2 ring-amber-400/80' : ''}`}
     >
       {/* ── Grip: único lugar com listeners + setActivatorNodeRef ── */}
       <div

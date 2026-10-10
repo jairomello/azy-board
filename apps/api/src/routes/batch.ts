@@ -199,7 +199,7 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
       if (!title || title.length > 500) throw new Error('INVALID_TITLE')
       update.title = changedFields.has('title') ? title : item.title
       if (changedFields.has('priority') && !['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].includes(String(update.priority))) throw new Error('INVALID_PRIORITY')
-      if (changedFields.has('type') && !['TASK', 'BUG'].includes(String(update.type))) throw new Error('INVALID_TYPE')
+      if (changedFields.has('type') && !['TASK', 'BUG', 'EXTERNAL'].includes(String(update.type))) throw new Error('INVALID_TYPE')
       if (changedFields.has('status') && !['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'].includes(String(update.status))) throw new Error('INVALID_STATUS')
       if (changedFields.has('points') && update.points !== null && (!Number.isInteger(update.points) || Number(update.points) < 0)) throw new Error('INVALID_POINTS')
       updatesById.set(item.id, update)
@@ -225,7 +225,7 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
         const parent = next.parentId ? resulting.get(next.parentId) : null
         if (next.type === 'EPIC' && (next.parentId || !next.moduleId)) throw new Error('INVALID_HIERARCHY')
         if (next.type === 'STORY' && parent?.type !== 'EPIC') throw new Error('INVALID_HIERARCHY')
-        if ((next.type === 'TASK' || next.type === 'BUG') && parent && !['STORY', 'TASK', 'BUG'].includes(parent.type)) throw new Error('INVALID_HIERARCHY')
+        if ((next.type === 'TASK' || next.type === 'BUG' || next.type === 'EXTERNAL') && parent && !['STORY', 'TASK', 'BUG', 'EXTERNAL'].includes(parent.type)) throw new Error('INVALID_HIERARCHY')
       }
     }
     const pathCache = new Map<string, Array<{ id: string; title: string; type: string }>>()
@@ -329,7 +329,7 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
     }
     const code = error instanceof Error ? error.message : 'BULK_UPDATE_FAILED'
     if (code === 'SEQUENCE_CODE_DUPLICATED') return c.json({ code, error: 'O sequenceCode informado já existe neste projeto.' }, 409)
-    if (code === 'INVALID_SEQUENCE_CODE') return c.json({ code, error: 'sequenceCode deve seguir o padrão [ESTB]\\d+ (ex.: T12).' }, 422)
+    if (code === 'INVALID_SEQUENCE_CODE') return c.json({ code, error: 'sequenceCode deve seguir o padrão [ESTBX]\\d+ (ex.: T12).' }, 422)
     return c.json({ code, error: 'Nenhuma alteração foi aplicada. Revise os filtros e valores informados.' }, 422)
   }
 })
@@ -361,12 +361,12 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
     const body = operation.args ?? operation.body ?? {}
     const tool = operation.tool ?? (operation.method === 'POST' && operation.path === '/items' ? 'create_task' : '')
     const rawType = body.type
-    const validType = rawType === 'EPIC' || rawType === 'STORY' || rawType === 'TASK' || rawType === 'BUG'
+    const validType = rawType === 'EPIC' || rawType === 'STORY' || rawType === 'TASK' || rawType === 'BUG' || rawType === 'EXTERNAL'
     const rawPriority = body.priority
     const priority = rawPriority === 'LOW' || rawPriority === 'MEDIUM' || rawPriority === 'HIGH' || rawPriority === 'CRITICAL'
       ? rawPriority
       : undefined
-    const isWork = validType && (rawType === 'TASK' || rawType === 'BUG')
+    const isWork = validType && (rawType === 'TASK' || rawType === 'BUG' || rawType === 'EXTERNAL')
     const explicitSprintIds = Array.isArray(body.sprintIds)
       ? (body.sprintIds as unknown[]).filter((id): id is string => typeof id === 'string' && id.trim() !== '')
       : body.sprintId === null

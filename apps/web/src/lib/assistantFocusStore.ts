@@ -13,7 +13,7 @@ import type {
 export interface FocusLevelState {
   depth: number
   itemId: string
-  type: 'EPIC' | 'STORY' | 'TASK' | 'BUG'
+  type: 'EPIC' | 'STORY' | 'TASK' | 'BUG' | 'EXTERNAL'
   activeTab: AssistantItemArea
   activeEntity: AssistantFocusEntity | null
 }

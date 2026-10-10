@@ -69,6 +69,9 @@ export interface UserCredentialRecord {
   lightShellTheme: LightShellTheme
   language: Language
   autoThemeByTime: boolean
+  // Card T45 — identidade externa vinculada (nullable para usuários locais).
+  externalIdp?: 'MICROSOFT' | 'GOOGLE' | null
+  externalSubject?: string | null
 }
 
 export type PublicUserRecord = Omit<UserCredentialRecord, 'passwordHash'>
@@ -507,6 +510,8 @@ export interface ItemDependencyRecord {
   itemId: string
   /** Item do qual o item de origem depende. */
   dependsOnItemId: string
+  /** Projeto do item dependido; null em linhas legadas (mesmo projeto). */
+  dependsOnProjectId: string | null
   dependencyType: ItemDependencyType
   /** Retardo em dias; positivo = folga, negativo = antecipação. */
   lagDays: number
@@ -520,14 +525,17 @@ export interface ItemDependencyTargetSummary {
   title: string
   type: ItemType
   sequenceCode: string | null
+  /** Projeto do item dependido; relevante para dependências cross-project. */
+  projectId: string
+  projectName: string | null
 }
 
 export interface ItemDependencyWithTarget extends ItemDependencyRecord {
   dependsOn: ItemDependencyTargetSummary
 }
 
-export type NewItemDependencyRecord = Pick<ItemDependencyRecord, 'dependsOnItemId'> & Partial<Pick<ItemDependencyRecord, 'dependencyType' | 'lagDays'>>
-export type ItemDependencyPatch = Partial<Pick<ItemDependencyRecord, 'dependsOnItemId' | 'dependencyType' | 'lagDays'>>
+export type NewItemDependencyRecord = Pick<ItemDependencyRecord, 'dependsOnItemId'> & Partial<Pick<ItemDependencyRecord, 'dependsOnProjectId' | 'dependencyType' | 'lagDays'>>
+export type ItemDependencyPatch = Partial<Pick<ItemDependencyRecord, 'dependsOnItemId' | 'dependsOnProjectId' | 'dependencyType' | 'lagDays'>>
 
 export interface TenantAttachmentSettingsRecord {
   tenantId: string

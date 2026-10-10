@@ -52,6 +52,7 @@ export function AddCardForm({ versions = [], sprints = [], onAdd, onCancel }: Pr
       >
         <option value="TASK">{t('typeTask')}</option>
         <option value="BUG">{t('typeBug')}</option>
+        <option value="EXTERNAL">{t('typeExternal')}</option>
       </select>
        <select aria-label={t('filterSprint')} value={sprintId} onChange={e => setSprintId(e.target.value)} className="w-full px-2 py-1 text-xs bg-background border border-border rounded-lg outline-none focus:border-primary">
         <option value="">{t('noSprint')}</option>

@@ -12,8 +12,10 @@ export function todayUtc(now: Date = new Date()): string {
   return now.toISOString().slice(0, 10)
 }
 
+// Card folha de trabalho (TASK/BUG e, desde a mudança de dependências externas,
+// EXTERNAL): recebem coluna, sprint/versão vigentes e ícone default.
 export function isWorkCard(type: string | null | undefined): boolean {
-  return type === 'TASK' || type === 'BUG'
+  return type === 'TASK' || type === 'BUG' || type === 'EXTERNAL'
 }
 
 // [TENANT] Sprint vigente: status OPEN e data atual dentro de [startDate, endDate].

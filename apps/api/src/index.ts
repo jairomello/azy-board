@@ -9,6 +9,7 @@ import { itemsRouter } from './routes/items'
 import { attachmentSettingsRouter, attachmentsRouter } from './routes/attachments'
 import { itemLinksRouter } from './routes/itemLinks'
 import { itemDependenciesRouter } from './routes/itemDependencies'
+import { scheduleRouter } from './routes/schedule'
 import { checklistsRouter } from './routes/checklists'
 import { shadowMarkdownRouter } from './routes/shadowMarkdown'
 import { apiKeysRouter, userApiKeysRouter } from './routes/apiKeys'
@@ -112,6 +113,7 @@ api.route('/projects/:projectId/batch', batchRouter)
 api.route('/projects/:projectId/items/:itemId/attachments', attachmentsRouter)
 api.route('/projects/:projectId/items/:itemId/links', itemLinksRouter)
 api.route('/projects/:projectId/items/:itemId/dependencies', itemDependenciesRouter)
+api.route('/projects/:projectId/schedule', scheduleRouter)
 api.route('/tenant/attachments', attachmentSettingsRouter)
 api.route('/projects/:projectId/items/:itemId/checklists', checklistsRouter)
 api.route('/projects/:projectId/board.md', shadowMarkdownRouter)

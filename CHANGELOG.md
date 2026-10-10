@@ -9,6 +9,30 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ## [Unreleased]
 
+### Added
+
+- Novo tipo de item **dependência externa** (`EXTERNAL`), card folha com código
+  de sequência `X` e rótulos PT-BR "Dep. Externa" / EN "Ext. Dependence",
+  usado para registrar trabalho de terceiros que destrava o projeto.
+- **Dependências cross-project (T50):** o alvo de uma dependência pode estar em
+  outro projeto acessível do mesmo tenant, com anti-IDOR (projetos restritos e
+  ocultos respeitados) e ciclos validados sobre as arestas dos projetos
+  envolvidos. Payloads de item expõem `projectId`/`projectName` do alvo.
+- **Replanejamento explícito de datas (T48):** ação `POST /schedule/recalculate`
+  propaga início/fim dos itens não concluídos conforme FS/SS/SF/FF e retardo,
+  no estilo MS Project (item com duas datas = duração fixa; com uma = marco;
+  concluídos ficam pinados; cross-project fica fora do recálculo local).
+- **Caminho crítico (T49):** `GET /schedule/critical-path` calcula a cadeia de
+  maior duração; toggle no menu de opções do board destaca os cards críticos.
+- **Tools MCP para dependências (T52):** `list_item_dependencies`,
+  `create_item_dependency`, `update_item_dependency` e `delete_item_dependency`
+  no catálogo compartilhado (leitura `VIEWER`, escrita `MEMBER`).
+- **Login integrado opcional (T45):** provedor escolhido na instalação
+  (`AZYBOARD_AUTH_PROVIDER` = `LOCAL`/`MICROSOFT`/`GOOGLE`), tela de login
+  adaptada, OAuth/OIDC com PKCE e verificação RS256 da JWKS, vínculo por
+  e-mail canônico sem auto-provisionamento e desativação do login por senha
+  fora do modo local.
+
 ### Changed
 
 - `list_tasks` agora retorna payload leve paginado por padrão (`limit=50`, sem descrições completas) e aceita projeção declarativa com `fields`.

@@ -28,6 +28,12 @@ const JWT_SECRET = new TextEncoder().encode(
   configuredSecret ?? 'azy-board-dev-secret-change-in-production'
 )
 
+// Card T45 — segredo reutilizado para assinar o cookie efêmero do fluxo OAuth
+// (state + PKCE verifier), sem expor o payload a adulteração.
+export function oauthCookieSecret(): string {
+  return configuredSecret ?? 'azy-board-dev-secret-change-in-production'
+}
+
 // [SESSION] Nome do cookie de sessão compartilhado por login, renovação e logout.
 export const SESSION_COOKIE = 'session'
 

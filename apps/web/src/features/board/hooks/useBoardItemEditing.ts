@@ -15,7 +15,7 @@ import { runOptimisticMutation } from '../model/mutation'
 import { computeIsLeaf, upsertItem, type Column, type ItemData, type Module } from '../model/types'
 
 export interface NewItemCreation {
-  type: 'TASK' | 'BUG'
+  type: 'TASK' | 'BUG' | 'EXTERNAL'
   columnId?: string
   costCenterId?: string | null
   title?: string

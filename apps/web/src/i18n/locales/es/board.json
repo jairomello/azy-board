@@ -41,6 +41,7 @@
   "moduleViewMode": "Módulos",
   "typeTask": "Tarea",
   "typeBug": "Error",
+  "typeExternal": "Dep. Externa",
   "priorityLow": "Baja",
   "priorityMedium": "Media",
   "priorityHigh": "Alta",
@@ -303,5 +304,15 @@
     "planning-gap:sprint": "Sin sprint",
     "planning-gap:version": "Sin versión",
     "planning-gap:assignee": "Sin responsable"
-  }
+  },
+  "scheduleRecalculate": "Recalcular fechas",
+  "scheduleCriticalPath": "Ruta crítica",
+  "scheduleHint": "Replanificación explícita según dependencias.",
+  "scheduleNoDependencies": "Registra dependencias para calcular la ruta crítica.",
+  "scheduleLoadError": "Error al calcular la ruta crítica.",
+  "scheduleRecalculated": "{{count}} elemento(s) con fechas ajustadas.",
+  "scheduleRecalculateError": "Error al recalcular fechas.",
+  "dependenciesProject": "Proyecto del destino",
+  "scheduleGroup": "Cronograma",
+  "scheduleCriticalPathHint": "Resalta en el tablero los elementos de la ruta crítica (disponible con dependencias registradas)."
 }
