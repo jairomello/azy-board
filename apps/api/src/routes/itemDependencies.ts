@@ -85,7 +85,29 @@ itemDependenciesRouter.patch('/:dependencyId', requireRole('MEMBER'), async (c) 
   if (!scope) return c.json({ error: 'Item não encontrado' }, 404)
   const parsed = await parseJson(c, updateItemDependencySchema)
   if (!parsed.ok) return parsed.response
-  const updated = await persistence.itemDependencies.update(scope.persistenceContext, scope.projectId, scope.itemId, c.req.param('dependencyId')!, parsed.data)
+
+  const dependencyId = c.req.param('dependencyId')!
+  const existing = await persistence.itemDependencies.get(scope.persistenceContext, scope.projectId, scope.itemId, dependencyId)
+  if (!existing) return c.json({ error: 'Dependência não encontrada' }, 404)
+
+  // Troca do alvo: valida auto-dependência, existência no projeto, unicidade do
+  // par e bloqueio de ciclo (excluindo o vínculo em edição).
+  if (parsed.data.dependsOnItemId !== undefined && parsed.data.dependsOnItemId !== existing.dependsOnItemId) {
+    if (parsed.data.dependsOnItemId === scope.itemId) {
+      return c.json({ code: 'SELF_DEPENDENCY', error: 'Um item não pode depender de si mesmo.' }, 400)
+    }
+    const target = await persistence.items.getItem(scope.persistenceContext, scope.projectId, parsed.data.dependsOnItemId)
+    if (!target) return c.json({ code: 'INVALID_TARGET', error: 'O item dependido não pertence ao projeto.' }, 422)
+    const edges = await persistence.itemDependencies.listByProject(scope.persistenceContext, scope.projectId)
+    if (edges.some(edge => edge.id !== existing.id && edge.itemId === scope.itemId && edge.dependsOnItemId === parsed.data.dependsOnItemId)) {
+      return c.json({ code: 'DUPLICATE_DEPENDENCY', error: 'Este item já depende do item informado.' }, 409)
+    }
+    if (wouldCreateCycle(edges.filter(edge => edge.id !== existing.id), scope.itemId, parsed.data.dependsOnItemId)) {
+      return c.json({ code: 'DEPENDENCY_CYCLE', error: 'Essa dependência criaria um ciclo (direto ou indireto) e foi rejeitada.' }, 409)
+    }
+  }
+
+  const updated = await persistence.itemDependencies.update(scope.persistenceContext, scope.projectId, scope.itemId, dependencyId, parsed.data)
   if (!updated) return c.json({ error: 'Dependência não encontrada' }, 404)
   return c.json(updated)
 })

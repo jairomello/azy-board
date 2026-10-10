@@ -2355,6 +2355,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       async update(context: PersistenceContext, projectId: string, itemId: string, dependencyId: string, patch: ItemDependencyPatch): Promise<ItemDependencyWithTarget | null> {
         const sets: string[] = []
         const values: unknown[] = []
+        if ('dependsOnItemId' in patch) { values.push(patch.dependsOnItemId); sets.push(`depends_on_item_id = $${values.length}`) }
         if ('dependencyType' in patch) { values.push(patch.dependencyType); sets.push(`dependency_type = $${values.length}`) }
         if ('lagDays' in patch) { values.push(patch.lagDays); sets.push(`lag_days = $${values.length}`) }
         if (!sets.length) return null

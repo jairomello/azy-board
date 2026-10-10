@@ -2310,6 +2310,40 @@ describe('dependências entre itens (Card T46)', () => {
     expect(await db.select().from(itemDependencies).where(and(eq(itemDependencies.itemId, itemA), eq(itemDependencies.dependsOnItemId, itemD)))).toHaveLength(1)
   })
 
+  test('editar permite trocar o alvo respeitando auto-dependência, ciclo e validade', async () => {
+    const created = await request(`/projects/${projectId}/items/${itemC}/dependencies`, memberToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dependsOnItemId: itemD }),
+    })
+    expect(created.status).toBe(201)
+    const dep = (await created.json()) as { id: string }
+
+    // Troca para alvo que fecharia ciclo (A→C já existe) é rejeitada.
+    const cycle = await request(`/projects/${projectId}/items/${itemC}/dependencies/${dep.id}`, memberToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dependsOnItemId: itemA }),
+    })
+    expect(cycle.status).toBe(409)
+    expect(((await cycle.json()) as { error: { code: string } }).error.code).toBe('DEPENDENCY_CYCLE')
+
+    // Auto-dependência na edição.
+    const selfEdit = await request(`/projects/${projectId}/items/${itemC}/dependencies/${dep.id}`, memberToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dependsOnItemId: itemC }),
+    })
+    expect(selfEdit.status).toBe(400)
+
+    // Alvo inexistente na edição.
+    const missingEdit = await request(`/projects/${projectId}/items/${itemC}/dependencies/${dep.id}`, memberToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dependsOnItemId: generateId() }),
+    })
+    expect(missingEdit.status).toBe(422)
+
+    // Volta ao alvo original com tipo/retardo atualizados.
+    const revert = await request(`/projects/${projectId}/items/${itemC}/dependencies/${dep.id}`, memberToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dependsOnItemId: itemD, dependencyType: 'SS', lagDays: 2 }),
+    })
+    expect(revert.status).toBe(200)
+    expect(await revert.json()).toMatchObject({ dependsOnItemId: itemD, dependencyType: 'SS', lagDays: 2 })
+  })
+
   test('payload de list e da árvore expõe dependencies e dependencyCount', async () => {
     const projectId2 = generateId()
     const now = new Date().toISOString()

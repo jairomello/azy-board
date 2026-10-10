@@ -192,17 +192,6 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
               {card.sequenceCode}
             </span>
           )}
-          {/* Indicador de dependências: somente leitura, omitido quando zero */}
-          {(card.dependencyCount ?? 0) > 0 && (
-            <span
-              className="dependencies-count flex items-center gap-0.5 text-muted-foreground"
-              aria-label={t('dependenciesCardLabel', { count: card.dependencyCount })}
-              title={t('dependenciesCardLabel', { count: card.dependencyCount })}
-            >
-              <Workflow className="h-3 w-3" />
-              <span className="text-[10px] font-semibold leading-none">{card.dependencyCount}</span>
-            </span>
-          )}
           {/* Ações: copiar, arquivar, excluir. Visíveis em hover e no foco por teclado. */}
           <div
             className={`ml-auto flex flex-shrink-0 items-center justify-end gap-0.5 opacity-0 pointer-events-none transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 ${hasActionArea ? 'w-[84px]' : ''}`}
@@ -363,6 +352,17 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
             >
               <GitBranch className="w-3 h-3" />
               {card.childrenCount}
+            </span>
+          )}
+          {/* Indicador de dependências: somente leitura, omitido quando zero */}
+          {(card.dependencyCount ?? 0) > 0 && (
+            <span
+              className="dependencies-count flex items-center gap-0.5 text-xs text-muted-foreground"
+              aria-label={t('dependenciesCardLabel', { count: card.dependencyCount })}
+              title={t('dependenciesCardLabel', { count: card.dependencyCount })}
+            >
+              <Workflow className="w-3 h-3" />
+              <span className="font-medium leading-none">{card.dependencyCount}</span>
             </span>
           )}
           {card.assignee && (

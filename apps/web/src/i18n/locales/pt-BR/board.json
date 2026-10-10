@@ -222,6 +222,7 @@
   "dependenciesType": "Tipo",
   "dependenciesLag": "Retardo (dias)",
   "dependenciesSearch": "Buscar item...",
+  "dependenciesEmptyList": "Nenhum item encontrado",
   "dependenciesEmpty": "Nenhuma dependência cadastrada neste item.",
   "dependenciesLoading": "Carregando dependências...",
   "dependenciesEdit": "Editar dependência",

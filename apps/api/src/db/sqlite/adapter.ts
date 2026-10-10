@@ -1840,6 +1840,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return runSqliteAtomic(sqlite, () => {
           const sets: string[] = ['updated_at = ?']
           const params: Array<string | number> = [new Date().toISOString()]
+          if (patch.dependsOnItemId !== undefined) { sets.push('depends_on_item_id = ?'); params.push(patch.dependsOnItemId) }
           if (patch.dependencyType !== undefined) { sets.push('dependency_type = ?'); params.push(patch.dependencyType) }
           if (patch.lagDays !== undefined) { sets.push('lag_days = ?'); params.push(patch.lagDays) }
           const updated = sqlite.query<{ id: string }, Array<string | number>>(`UPDATE item_dependencies SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND item_id = ? AND id = ? RETURNING id`)

@@ -81,7 +81,7 @@ export function BoardColumns({
                     )}
                   </div>
                 )}
-                <div className="board-column-cards flex-1 px-3 pt-2 space-y-2">
+                <div className="board-column-cards flex-1 px-3 pt-2 pb-9 space-y-2">
                   <SortableContext id={`${laneId}-cards-${column.id}`} items={columnTasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
                     {columnTasks.map(task => (
                       <KanbanCard key={task.id} card={task} onOpenDetail={onOpenDetail} onTitleSave={onTitleSave} onDelete={onDelete} onArchive={onArchive} />

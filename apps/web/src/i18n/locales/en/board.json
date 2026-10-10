@@ -222,6 +222,7 @@
   "dependenciesType": "Type",
   "dependenciesLag": "Lag (days)",
   "dependenciesSearch": "Search item...",
+  "dependenciesEmptyList": "No items found",
   "dependenciesEmpty": "No dependencies on this item.",
   "dependenciesLoading": "Loading dependencies...",
   "dependenciesEdit": "Edit dependency",

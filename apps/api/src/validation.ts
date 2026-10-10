@@ -324,6 +324,7 @@ export const createItemDependencySchema = z.object({
   lagDays: z.number().int().optional(),
 }).strict()
 export const updateItemDependencySchema = z.object({
+  dependsOnItemId: z.string().trim().min(1).optional(),
   dependencyType: itemDependencyTypeSchema.optional(),
   lagDays: z.number().int().optional(),
 }).strict().refine(value => Object.keys(value).length > 0, 'Informe ao menos um campo para atualizar.')

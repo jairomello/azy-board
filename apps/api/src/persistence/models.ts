@@ -527,7 +527,7 @@ export interface ItemDependencyWithTarget extends ItemDependencyRecord {
 }
 
 export type NewItemDependencyRecord = Pick<ItemDependencyRecord, 'dependsOnItemId'> & Partial<Pick<ItemDependencyRecord, 'dependencyType' | 'lagDays'>>
-export type ItemDependencyPatch = Partial<Pick<ItemDependencyRecord, 'dependencyType' | 'lagDays'>>
+export type ItemDependencyPatch = Partial<Pick<ItemDependencyRecord, 'dependsOnItemId' | 'dependencyType' | 'lagDays'>>
 
 export interface TenantAttachmentSettingsRecord {
   tenantId: string

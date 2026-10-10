@@ -70,11 +70,19 @@ O sistema SHALL impedir a criação ou edição de uma dependência que introduz
 
 ### Requirement: Editar e remover dependências
 
-O sistema SHALL permitir a usuários com permissão de escrita editar o tipo e o retardo de uma dependência existente e remover individualmente uma dependência. Campos omitidos em edição parcial SHALL permanecer inalterados. A edição SHALL respeitar o bloqueio de ciclos.
+O sistema SHALL permitir a usuários com permissão de escrita editar o item dependido, o tipo e o retardo de uma dependência existente e remover individualmente uma dependência. A edição do alvo SHALL respeitar auto-dependência, unicidade do par e bloqueio de ciclos. Campos omitidos em edição parcial SHALL permanecer inalterados.
 
 #### Scenario: Editar tipo e retardo
 - **WHEN** um membro autorizado atualiza o tipo ou o retardo de uma dependência do item
 - **THEN** o sistema persiste somente os campos enviados e retorna a dependência atualizada
+
+#### Scenario: Trocar o item dependido na edição
+- **WHEN** um membro autorizado altera o `dependsOnItemId` de uma dependência para um alvo válido do projeto, sem auto-dependência, sem duplicar um par existente e sem fechar ciclo
+- **THEN** o sistema persiste a troca e retorna a dependência com o novo alvo
+
+#### Scenario: Edição que fecharia ciclo é rejeitada
+- **WHEN** alterar o alvo de uma dependência introduziria um ciclo, direto ou indireto
+- **THEN** o sistema rejeita a operação sem modificar a dependência
 
 #### Scenario: Remover dependência
 - **WHEN** um membro autorizado remove uma dependência do item
