@@ -2,6 +2,7 @@
 // Sem dependência de transporte HTTP; executeSharedTool fica em apps/mcp.
 
 import type { AssistantScreen, AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
+import { ICON_CATALOG } from '@azy-board/ui-contracts'
 import { MCP_TOOL_POLICIES, type McpPolicy } from './policies.js'
 import { PLANNING_GAP_LIMITS, TOOL_TEXT_LIMITS } from './limits.js'
 import { toolFields, requiredFieldsFor, nestedRequiredFieldsFor, isRegisteredTool, OPERATION_ARGS_REQUIRED, SHARED_TOOL_NAMES } from './fields.js'
@@ -372,6 +373,9 @@ function schemaFor(field: string, isRequired: boolean, toolName?: string): Recor
   if (field === 'projectId') return { ...nullable({ type: 'string' }), description: 'Project ID (UUID) or the exact project name; names are resolved against the projects accessible to the API key.' }
   // Card T25 — squadId aceita ID (SET) ou null (CLEAR); nunca cria membership.
   if (field === 'squadId') return { type: ['string', 'null'], description: 'Squad ID to associate (SET) or null to clear the member squad (CLEAR). Requires an existing project membership.' }
+  // Card T53 — `icon` enumera o catálogo compartilhado (projeto/item); `color` fica
+  // livre pois o campo é compartilhado com tags (hex #RRGGBB validado na API).
+  if (field === 'icon') return { type: ['string', 'null'], enum: [...ICON_CATALOG, null], description: 'Nome do ícone do catálogo compartilhado (kebab-case); null usa o default.' }
   if (field === 'color') return { ...nullable({ type: 'string' }), description: 'Cor hex no formato #RRGGBB.' }
   if (field === 'code') return { ...nullable({ type: 'string' }), description: 'Código do centro de custo (único por projeto).' }
   if (field === 'limit' && toolName === 'query_planning_gaps') return { ...nullable({ type: 'integer', minimum: 1, maximum: PLANNING_GAP_LIMITS.maxPageSize }), description: `Tamanho da página (padrão ${PLANNING_GAP_LIMITS.defaultPageSize}, máximo ${PLANNING_GAP_LIMITS.maxPageSize}).` }

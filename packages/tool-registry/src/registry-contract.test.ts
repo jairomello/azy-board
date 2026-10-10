@@ -390,3 +390,42 @@ describe('catálogo de composição de squads e cadastros (T25)', () => {
     expect(new Set(requiredFieldsFor('update_module'))).toEqual(new Set(['projectId', 'moduleId', 'name']))
   })
 })
+
+describe('validação de ícones contra o catálogo (Card T53)', () => {
+  test('update_item e update_items rejeitam icon fora do catálogo', () => {
+    expect(() => validateToolArguments('update_item', {
+      projectId: 'p', itemId: 'i', changes: [{ field: 'icon', operation: 'SET', value: 'not-an-icon' }],
+    })).toThrow('deve pertencer ao catálogo')
+    expect(() => validateToolArguments('update_items', {
+      projectId: 'p', filters: { matchAll: true }, changes: [{ field: 'icon', operation: 'SET', value: 'icon-x' }],
+    })).toThrow('deve pertencer ao catálogo')
+  })
+
+  test('update_item aceita icon válido do catálogo', () => {
+    expect(() => validateToolArguments('update_item', {
+      projectId: 'p', itemId: 'i', changes: [{ field: 'icon', operation: 'SET', value: 'rocket' }],
+    })).not.toThrow()
+  })
+
+  test('schema exposto enumera o catálogo no campo icon (create_task e create_project)', () => {
+    const createTask = byName.get('create_task')!.inputSchema.properties.icon as { enum?: unknown[] }
+    const createProject = byName.get('create_project')!.inputSchema.properties.icon as { enum?: unknown[] }
+    for (const schema of [createTask, createProject]) {
+      expect(schema.enum).toContain('rocket')
+      expect(schema.enum).toContain('git-branch')
+      expect(schema.enum).toContain(null)
+      for (const name of ['bug', 'kanban-square', 'brain-circuit']) {
+        expect(schema.enum).toContain(name)
+      }
+    }
+  })
+
+  test('create_task aceita ícone válido do catálogo', () => {
+    expect(() => validateToolArguments('create_task', { projectId: 'p', title: 'Card', icon: 'server' })).not.toThrow()
+  })
+
+  test('color permanece livre no schema MCP (compartilhado com tags)', () => {
+    const updateTag = byName.get('update_tag')!.inputSchema.properties.color as { enum?: unknown[] }
+    expect(updateTag.enum).toBeUndefined()
+  })
+})

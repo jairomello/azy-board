@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { z } from 'zod'
+import { isIconColor, isIconName } from '@azy-board/ui-contracts'
 import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { authMiddleware, requireRole } from '../middleware/auth'
@@ -62,8 +63,8 @@ const planSchema = z.object({
     notes: z.string().nullable(),
     priority: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
     points: z.number().finite().nullable(),
-    icon: z.string().nullable(),
-    color: z.string().nullable(),
+    icon: z.string().refine(isIconName, 'Ícone não pertence ao catálogo').nullable(),
+    color: z.string().refine(isIconColor, 'Cor não pertence à paleta de ícones').nullable(),
     costCenterId: z.string().nullable(),
     tagIds: z.array(z.string()),
     sprintIds: z.array(z.string()),

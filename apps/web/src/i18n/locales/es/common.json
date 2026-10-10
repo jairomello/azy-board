@@ -171,7 +171,20 @@
     "defaultColor": "Color predeterminado del tema",
     "noIconFound": "No se encontró ningún ícono",
     "clear": "Quitar personalización",
-    "apply": "Aplicar"
+    "apply": "Aplicar",
+    "category": "Categoría",
+    "allIcons": "Todos",
+    "categories": {
+      "technology": "Tecnología",
+      "itil": "ITIL y Servicios",
+      "project": "Gestión y Proyectos",
+      "data": "Datos e IA",
+      "communication": "Comunicación y Tiempo",
+      "organization": "Personas y Organización",
+      "documents": "Documentos",
+      "commerce": "Comercio y Logros",
+      "media": "Medios y Ocio"
+    }
   },
   "adminUsers": {
     "context": "Usuarios del tenant",

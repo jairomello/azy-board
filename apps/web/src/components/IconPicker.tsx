@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ICON_CATALOG } from '@azy-board/ui-contracts'
+import { ICON_CATALOG, ICON_CATEGORIES, type IconCategoryId } from '@azy-board/ui-contracts'
 import { iconComponent } from '../lib/iconCatalog'
 
 interface Props {
@@ -8,18 +8,45 @@ interface Props {
   onChange: (icon: string | null) => void
 }
 
-// Galeria de ícones do catálogo compartilhado, com busca e opção de limpar (default).
+// Galeria de ícones do catálogo compartilhado, com filtro por categoria,
+// busca e opção de limpar (default).
 export function IconPicker({ value, onChange }: Props) {
   const { t } = useTranslation('common')
   const [search, setSearch] = useState('')
+  const [category, setCategory] = useState<IconCategoryId | 'all'>('all')
 
   const options = useMemo(() => {
+    const scoped = category === 'all' ? ICON_CATALOG : ICON_CATEGORIES.find(item => item.id === category)?.icons ?? []
     const term = search.trim().toLowerCase()
-    return term ? ICON_CATALOG.filter(name => name.includes(term)) : ICON_CATALOG
-  }, [search])
+    return term ? scoped.filter(name => name.includes(term)) : scoped
+  }, [search, category])
+
+  const categoryClass = (active: boolean) =>
+    `px-2 py-0.5 text-[11px] rounded-full border ${active ? 'border-primary bg-primary/10 text-primary' : 'border-transparent text-muted-foreground hover:bg-muted'}`
 
   return (
     <div className="space-y-2">
+      <div className="flex items-center gap-1 flex-wrap" aria-label={t('appearance.category')}>
+        <button
+          type="button"
+          aria-pressed={category === 'all'}
+          onClick={() => setCategory('all')}
+          className={categoryClass(category === 'all')}
+        >
+          {t('appearance.allIcons')}
+        </button>
+        {ICON_CATEGORIES.map(item => (
+          <button
+            key={item.id}
+            type="button"
+            aria-pressed={category === item.id}
+            onClick={() => setCategory(item.id)}
+            className={categoryClass(category === item.id)}
+          >
+            {t(`appearance.categories.${item.id}`)}
+          </button>
+        ))}
+      </div>
       <input
         value={search}
         onChange={event => setSearch(event.target.value)}

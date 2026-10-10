@@ -171,7 +171,20 @@
     "defaultColor": "Theme default color",
     "noIconFound": "No icon found",
     "clear": "Remove customization",
-    "apply": "Apply"
+    "apply": "Apply",
+    "category": "Category",
+    "allIcons": "All",
+    "categories": {
+      "technology": "Technology",
+      "itil": "ITIL & Services",
+      "project": "Management & Projects",
+      "data": "Data & AI",
+      "communication": "Communication & Time",
+      "organization": "People & Organization",
+      "documents": "Documents",
+      "commerce": "Commerce & Achievements",
+      "media": "Media & Leisure"
+    }
   },
   "adminUsers": {
     "context": "Tenant users",

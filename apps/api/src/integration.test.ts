@@ -3141,6 +3141,46 @@ describe('aparência de projeto e item (Card T14)', () => {
     })
     expect(invalid.status).toBe(400)
   })
+
+  test('batch rejeita ícone fora do catálogo sem criar itens', async () => {
+    const project = await criarProjetoSimples('Projeto Batch Ícone Inválido')
+    const response = await request(`/projects/${project.id}/batch`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        operations: [{
+          tool: 'create_task',
+          args: { ref: 'r1', title: 'Card com ícone inválido', type: 'TASK', icon: 'not-an-icon' },
+        }],
+      }),
+    })
+    expect(response.status).toBe(400)
+    const list = await request(`/projects/${project.id}/items`, adminToken)
+    const body = await list.json() as { items?: Array<{ title: string }> } | Array<{ title: string }>
+    const items = Array.isArray(body) ? body : (body.items ?? [])
+    expect(items.some(item => item.title === 'Card com ícone inválido')).toBe(false)
+  })
+
+  test('duplicação de estrutura rejeita plano com ícone fora do catálogo', async () => {
+    const project = await criarProjetoSimples('Projeto Duplicação Ícone Inválido')
+    const created = await request(`/projects/${project.id}/items`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Card origem', type: 'TASK', icon: 'bug' }),
+    })
+    expect(created.status).toBe(201)
+    const source = await created.json() as { id: string }
+    const prepared = await request(`/projects/${project.id}/structure-duplication/prepare`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceRootId: source.id }),
+    })
+    expect(prepared.status).toBe(200)
+    const plan = await prepared.json() as { items: Array<{ icon: string | null }> }
+    plan.items[0]!.icon = 'not-an-icon'
+    const applied = await request(`/projects/${project.id}/structure-duplication/apply`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan }),
+    })
+    expect(applied.status).toBe(400)
+  })
 })
 
 describe('gestão de squads e cadastros pelo catálogo (T25)', () => {

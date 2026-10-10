@@ -28,6 +28,34 @@ describe('IconPicker', () => {
     expect(labels).not.toContain('bug')
   })
 
+  test('filtra por categoria usando os chips', () => {
+    render(<IconPicker value={null} onChange={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Tecnologia' }))
+    const labels = screen.getAllByRole('option').map((element: HTMLElement) => element.getAttribute('aria-label'))
+    expect(labels).toContain('code')
+    expect(labels).toContain('git-branch')
+    expect(labels).not.toContain('rocket')
+  })
+
+  test('combina categoria e busca', async () => {
+    const user = userEvent.setup()
+    render(<IconPicker value={null} onChange={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Tecnologia' }))
+    await user.type(screen.getByRole('textbox'), 'git')
+    const labels = screen.getAllByRole('option').map((element: HTMLElement) => element.getAttribute('aria-label'))
+    expect(labels).toContain('git-branch')
+    expect(labels).not.toContain('code')
+    expect(labels).not.toContain('rocket')
+  })
+
+  test('voltar para "Todos" restaura o catálogo completo', async () => {
+    render(<IconPicker value={null} onChange={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Tecnologia' }))
+    expect(screen.getAllByRole('option').length).toBeLessThan(60)
+    fireEvent.click(screen.getByRole('button', { name: 'Todos' }))
+    expect(screen.getAllByRole('option').length).toBeGreaterThan(150)
+  })
+
   test('permite voltar ao ícone padrão', () => {
     const calls: Array<string | null> = []
     render(<IconPicker value="rocket" onChange={value => calls.push(value)} />)

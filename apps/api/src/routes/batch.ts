@@ -9,7 +9,7 @@ import { batchSchema, batchUpdateSchema, parseJson } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
 import type { BatchItemCreateOperation, BatchItemUpdate, ItemPatch } from '../persistence/ports'
-import { DEFAULT_ITEM_ICON } from '@azy-board/ui-contracts'
+import { DEFAULT_ITEM_ICON, isIconName } from '@azy-board/ui-contracts'
 import { resolveActiveSprint, resolveActiveVersion } from '../services/creationDefaults'
 import { emitDomainEvent, findOperationId } from '../services/domainEventOutbox'
 import { applyItemBatchApplication, createItemsBatchApplication } from '../application/batch'
@@ -344,6 +344,14 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
   const atomic = input.atomic === true
   const key = input.idempotencyKey
   const payload = { projectId, operations: input.operations, atomic }
+  // Valida `icon` contra o catálogo ANTES de normalizar/restringir: batch aceita
+  // args livres e a integridade do catálogo não pode ser contornada pela rota.
+  for (const operation of input.operations) {
+    const body = operation.args ?? operation.body ?? {}
+    if ('icon' in body && body.icon !== null && body.icon !== undefined && !isIconName(body.icon)) {
+      return c.json({ code: 'INVALID_REQUEST', error: `Ícone não pertence ao catálogo: ${String(body.icon)}`, retryable: false }, 400)
+    }
+  }
   // [T38] Hash canônico calculado antes da transação; reserva/replay no commit.
   const commandHash = key ? await payloadHash(payload) : null
 

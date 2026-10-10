@@ -5,70 +5,102 @@ import type { ItemDependencyType, ItemType, Priority, TaskStatus } from '@azy-bo
 // Catálogo de ícones do produto — fonte única dos nomes válidos (kebab-case),
 // servido por lucide-react (ISC). Compartilhado por web, API e MCP; o mapa de
 // nomes para componentes React vive apenas no web (apps/web/src/lib/iconCatalog.ts).
-export const ICON_CATALOG = [
-  'folder',
-  'folder-kanban',
-  'layout-dashboard',
-  'rocket',
-  'target',
-  'flag',
-  'star',
-  'bookmark',
-  'heart',
-  'zap',
-  'flame',
-  'lightbulb',
-  'bug',
-  'wrench',
-  'hammer',
-  'settings',
-  'shield',
-  'lock',
-  'key',
-  'globe',
-  'map',
-  'compass',
-  'palette',
-  'brush',
-  'pen-tool',
-  'code',
-  'terminal',
-  'database',
-  'server',
-  'cloud',
-  'cpu',
-  'smartphone',
-  'monitor',
-  'camera',
-  'image',
-  'film',
-  'music',
-  'gamepad-2',
-  'trophy',
-  'medal',
-  'award',
-  'gift',
-  'shopping-cart',
-  'credit-card',
-  'wallet',
-  'briefcase',
-  'building-2',
-  'home',
-  'users',
-  'user',
-  'calendar',
-  'clock',
-  'bell',
-  'mail',
-  'message-square',
-  'file-text',
-  'clipboard-list',
-  'book-open',
-  'graduation-cap',
-  'activity',
+// O catálogo é organizado em categorias estáveis (ICON_CATEGORIES) e a lista plana
+// ICON_CATALOG deriva da ordem das categorias, mantendo uma única fonte de nomes.
+export const ICON_CATEGORY_IDS = [
+  'technology',
+  'itil',
+  'project',
+  'data',
+  'communication',
+  'organization',
+  'documents',
+  'commerce',
+  'media',
 ] as const
 
-export type IconName = (typeof ICON_CATALOG)[number]
+export type IconCategoryId = (typeof ICON_CATEGORY_IDS)[number]
+
+export const ICON_CATEGORIES = [
+  {
+    id: 'technology',
+    icons: [
+      'code', 'terminal', 'git-branch', 'git-merge', 'git-pull-request', 'git-commit', 'github', 'gitlab',
+      'container', 'box', 'boxes', 'package', 'webhook', 'network', 'wifi', 'router',
+      'hard-drive', 'memory-stick', 'circuit-board', 'cpu', 'smartphone', 'monitor', 'plug', 'cable',
+      'qr-code', 'binary', 'braces', 'blocks', 'workflow', 'waypoints', 'bot', 'bug',
+      'zap', 'lightbulb', 'settings', 'server', 'cloud',
+    ],
+  },
+  {
+    id: 'itil',
+    icons: [
+      'ticket', 'ticket-check', 'clipboard-check', 'clipboard-x', 'list-checks', 'refresh-cw', 'rotate-cw', 'repeat',
+      'recycle', 'life-buoy', 'heart-pulse', 'stethoscope', 'siren', 'triangle-alert', 'octagon-alert', 'shield-check',
+      'shield-alert', 'shield', 'lock', 'key', 'headset', 'phone-call', 'history', 'gauge',
+      'timer', 'hourglass', 'circle-help', 'file-warning', 'bell-ring', 'activity',
+    ],
+  },
+  {
+    id: 'project',
+    icons: [
+      'folder-kanban', 'kanban', 'kanban-square', 'layout-dashboard', 'columns', 'layout-grid', 'list-todo', 'list-tree',
+      'table', 'chart-column', 'chart-line', 'chart-pie', 'chart-gantt', 'chart-no-axes-combined', 'trending-up', 'trending-down',
+      'milestone', 'flag-triangle-right', 'goal', 'crosshair', 'route', 'signpost', 'signpost-big', 'scaling',
+      'layers', 'archive', 'archive-restore', 'inbox', 'folders', 'folder-tree', 'folder-git', 'folder-clock',
+      'calendar-check', 'calendar-range', 'calendar-clock', 'rocket', 'target', 'flag', 'flame',
+    ],
+  },
+  {
+    id: 'data',
+    icons: [
+      'database', 'database-zap', 'database-backup', 'brain-circuit', 'brain', 'sparkles', 'atom', 'orbit',
+      'dna', 'flask-conical', 'test-tube', 'test-tube-diagonal', 'test-tubes', 'wand-sparkles', 'wand', 'scan-face',
+      'fingerprint', 'table-2', 'list-filter', 'sliders-horizontal', 'arrow-up-down', 'scan', 'radar', 'signal',
+    ],
+  },
+  {
+    id: 'communication',
+    icons: [
+      'calendar', 'clock', 'bell', 'alarm-clock', 'watch', 'mail', 'mail-check', 'send',
+      'message-square', 'messages-square', 'message-circle', 'phone', 'phone-incoming', 'phone-outgoing', 'phone-missed',
+    ],
+  },
+  {
+    id: 'organization',
+    icons: [
+      'users', 'user', 'users-round', 'user-round', 'user-cog', 'user-plus', 'home', 'building',
+      'building-2', 'landmark', 'factory', 'warehouse', 'construction', 'hard-hat', 'truck', 'briefcase',
+      'id-card', 'badge-check', 'contact', 'heart', 'star', 'bookmark', 'globe', 'map', 'compass',
+    ],
+  },
+  {
+    id: 'documents',
+    icons: [
+      'folder', 'file-text', 'clipboard-list', 'book-open', 'book-marked', 'book', 'file', 'files',
+      'file-check', 'file-x', 'file-clock', 'palette', 'brush', 'pen-tool', 'pen', 'pencil',
+      'highlighter', 'folder-plus', 'folder-search', 'notebook-pen', 'graduation-cap',
+    ],
+  },
+  {
+    id: 'commerce',
+    icons: [
+      'trophy', 'medal', 'award', 'gem', 'crown', 'diamond', 'store', 'badge',
+      'gift', 'shopping-cart', 'credit-card', 'wallet',
+    ],
+  },
+  {
+    id: 'media',
+    icons: [
+      'camera', 'image', 'film', 'music', 'gamepad-2', 'tv', 'presentation', 'headphones',
+      'gallery-horizontal', 'gallery-vertical', 'joystick', 'radio', 'satellite', 'antenna',
+    ],
+  },
+] as const
+
+export type IconName = (typeof ICON_CATEGORIES)[number]['icons'][number]
+
+export const ICON_CATALOG: readonly IconName[] = ICON_CATEGORIES.flatMap(category => category.icons)
 
 export const DEFAULT_PROJECT_ICON: IconName = 'folder-kanban'
 export const DEFAULT_ITEM_ICON: IconName = 'file-text'

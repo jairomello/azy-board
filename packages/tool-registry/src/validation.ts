@@ -1,6 +1,7 @@
 import { isRegisteredTool, PROJECTION_FIELDS, requiredFieldsFor, toolFields } from './fields.js'
 import { normalizeDurationArguments } from './duration.js'
 import { PLANNING_GAP_LIMITS, TOOL_TEXT_LIMITS } from './limits.js'
+import { isIconName } from '@azy-board/ui-contracts'
 
 // Campos internos injetados por harness/executores que não fazem parte do schema
 // exposto (ex.: assistantHarness adiciona atomic: true em batch; T25 injeta as
@@ -268,7 +269,7 @@ export function validateToolArguments(name: string, args: Record<string, unknown
       if (raw.field === 'status' && raw.operation === 'SET') assertEnum(raw.value, 'status', ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'])
       if (raw.field === 'points' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^\d+$/.test(raw.value))) throw new Error('points deve ser um inteiro não negativo')
       if (raw.field === 'sequenceCode' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^[ESTB]\d+$/.test(raw.value))) throw new Error('sequenceCode deve seguir o padrão [ESTB]\\d+ (ex.: T12)')
-      if (raw.field === 'icon' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^[a-z0-9-]+$/.test(raw.value))) throw new Error('icon deve ser um nome kebab-case do catálogo de ícones')
+      if (raw.field === 'icon' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !isIconName(raw.value))) throw new Error('icon deve pertencer ao catálogo de ícones')
       if (raw.field === 'color' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(raw.value))) throw new Error('color deve ser um hex no formato #RRGGBB')
     }
   } else if (name === 'check_item') {
