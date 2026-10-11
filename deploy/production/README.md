@@ -69,9 +69,8 @@ As imagens API, Web de produção e Caddy são publicadas no GHCR pelo job
 Cada imagem recebe uma tag imutável `sha-<commit>`; o deploy deve selecionar o
 mesmo SHA nos três serviços. O comando `bash /opt/azyboard/deploy.sh sha-<40-hex>` atualiza as
 imagens, cria um backup local dos dados existentes, executa migrations e espera
-a API ficar saudável. Antes de migration em uma instalação com dados, confirmar
-que o backup local foi copiado para o destino externo. Não fazer downgrade de
-schema.
+a API ficar saudável. A cópia externa é recomendada para recuperação de desastre,
+mas não é uma pré-condição para o rollout. Não fazer downgrade de schema.
 
 ## Backup
 
