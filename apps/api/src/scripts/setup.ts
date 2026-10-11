@@ -24,7 +24,7 @@ const tenantName = args[0] ?? 'Minha Empresa'
 const tenantSlug = args[1] ?? 'minha-empresa'
 const adminEmail = normalizeEmail(args[2] ?? 'admin@example.com')
 const adminPassword = args[3] ?? process.env.ADMIN_PASSWORD
-const adminName = args[4] ?? 'Administrador'
+const adminName = args[4] ?? process.env.ADMIN_NAME ?? 'Administrador'
 
 if (!adminPassword) {
   throw new Error('Informe a senha do administrador como quarto argumento ou em ADMIN_PASSWORD.')
@@ -59,9 +59,9 @@ console.log('✅ Tenant criado com sucesso!')
 console.log(`   ID do tenant: ${tenant.id}`)
 console.log(`\n✅ Usuário administrador criado!`)
 console.log(`   E-mail:  ${adminEmail}`)
-console.log(`   Senha:   ${adminPassword}`)
+console.log('   Senha:   definida (não exibida por segurança)')
 console.log('\n⚠️  Guarde essas credenciais com segurança.')
-console.log('   Para produção, altere a senha após o primeiro login.\n')
+console.log('   A senha não é gravada nos logs do setup.\n')
 
 // Libera pool/conexões do processo de setup (não mantém a CLI aberta).
 await closeRuntime()

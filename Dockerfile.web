@@ -35,7 +35,8 @@ RUN bun run build
 
 # --- Runtime nginx -----------------------------------------------------------
 FROM nginx:1.29-alpine
-COPY docker/nginx-web.conf.template /etc/nginx/templates/default.conf.template
+ARG AZYBOARD_NGINX_CONFIG=docker/nginx-web.conf.template
+COPY ${AZYBOARD_NGINX_CONFIG} /etc/nginx/templates/default.conf.template
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 # AZYBOARD_API_UPSTREAM é substituído pelo entrypoint oficial do nginx
 # (envsubst em /etc/nginx/templates). Apenas variáveis definidas são

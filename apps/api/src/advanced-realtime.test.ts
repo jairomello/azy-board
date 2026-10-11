@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createServer } from 'node:net'
 import { Client } from 'pg'
 import IORedis from 'ioredis'
 import { shouldRunPostgresTests } from './db/postgres/pgTestSupport'
@@ -88,6 +89,22 @@ async function waitForReady(port: number, timeoutMs = 30_000): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, 250))
   }
   throw new Error(`API na porta ${port} não ficou pronta`)
+}
+
+async function availablePort(): Promise<number> {
+  const server = createServer()
+  return new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address()
+      if (!address || typeof address === 'string') {
+        server.close()
+        reject(new Error('Não foi possível reservar uma porta TCP de teste'))
+        return
+      }
+      server.close(error => error ? reject(error) : resolve(address.port))
+    })
+  })
 }
 
 async function startInstance(port: number): Promise<ServerHandle> {
@@ -186,7 +203,9 @@ async function apiLogin(port: number, email: string, password: string): Promise<
   const response = await fetch(`http://127.0.0.1:${port}/api/auth/login`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }),
   })
-  expect(response.status).toBe(200)
+  if (response.status !== 200) {
+    throw new Error(`Login ADVANCED falhou (${response.status}): ${await response.text()}`)
+  }
   const match = (response.headers.get('set-cookie') ?? '').match(/session=([^;]+)/)
   expect(match).toBeTruthy()
   return `session=${match![1]}`
@@ -254,11 +273,11 @@ describe.skipIf(!run)('[T39] duas instâncias ADVANCED (PostgreSQL + Valkey)', (
     const { seedAdvancedFixtures } = await import('./scripts/advancedFixtures')
     fixtures = await seedAdvancedFixtures(runtime.persistence, { hashPassword, password: 'SenhaForte123!' })
 
-    serverA = await startInstance(3101)
+    serverA = await startInstance(await availablePort())
     cookieA = await apiLogin(serverA.port, fixtures[0]!.adminEmail, fixtures[0]!.adminPassword)
     projectA = await apiCreateProject(serverA.port, cookieA, 'Projeto Realtime A')
     moduleA = await firstModule(serverA.port, cookieA, projectA)
-    serverB = await startInstance(3102)
+    serverB = await startInstance(await availablePort())
   }, 60_000)
 
   afterAll(async () => {

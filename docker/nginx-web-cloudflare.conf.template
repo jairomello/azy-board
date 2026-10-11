@@ -1,0 +1,63 @@
+# Variante exclusiva da imagem de produção atrás de Cloudflare Tunnel + Caddy.
+# A origem não publica portas no host; CF-Connecting-IP é confiável apenas
+# porque este serviço só recebe tráfego do proxy Caddy dentro da rede Docker.
+
+map $http_cf_connecting_ip $azyboard_client_ip {
+  default $http_cf_connecting_ip;
+  ""      $remote_addr;
+}
+
+map $http_x_forwarded_proto $azyboard_forwarded_proto {
+  default $http_x_forwarded_proto;
+  ""      $scheme;
+}
+
+server {
+  listen 80;
+  server_name _;
+  root /usr/share/nginx/html;
+  index index.html;
+
+  add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; frame-ancestors 'none';" always;
+  add_header X-Frame-Options "DENY" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header Referrer-Policy "no-referrer" always;
+
+  gzip on;
+  gzip_types text/css application/javascript application/json image/svg+xml;
+
+  location /api/ {
+    proxy_pass ${AZYBOARD_API_UPSTREAM};
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $azyboard_client_ip;
+    proxy_set_header X-Forwarded-For $azyboard_client_ip;
+    proxy_set_header X-Forwarded-Proto $azyboard_forwarded_proto;
+  }
+
+  location /uploads/ {
+    proxy_pass ${AZYBOARD_API_UPSTREAM};
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $azyboard_client_ip;
+    proxy_set_header X-Forwarded-For $azyboard_client_ip;
+    proxy_set_header X-Forwarded-Proto $azyboard_forwarded_proto;
+  }
+
+  location = /ws {
+    proxy_pass ${AZYBOARD_API_UPSTREAM};
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $azyboard_client_ip;
+    proxy_set_header X-Forwarded-For $azyboard_client_ip;
+    proxy_set_header X-Forwarded-Proto $azyboard_forwarded_proto;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+  }
+
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+}

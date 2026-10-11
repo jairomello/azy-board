@@ -1,0 +1,226 @@
+# Produção pública do Azy Board atrás de Cloudflare Tunnel.
+# Nenhum serviço publica portas no host: o Apache existente permanece isolado.
+# Requer Docker Compose v2 e o arquivo privado /opt/azyboard/.env.production.
+name: azyboard-production
+
+x-logging: &bounded-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    logging: *bounded-logging
+    shm_size: 96mb
+    mem_limit: 256m
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-azyboard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD obrigatório}
+      POSTGRES_DB: ${POSTGRES_DB:-azyboard}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - max_connections=40
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_parallel_workers=1
+      - -c
+      - max_parallel_workers_per_gather=1
+    volumes:
+      - /opt/azyboard/data/postgres:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  valkey:
+    image: valkey/valkey:8
+    restart: unless-stopped
+    logging: *bounded-logging
+    mem_limit: 48m
+    command:
+      - valkey-server
+      - --requirepass
+      - ${VALKEY_PASSWORD:?VALKEY_PASSWORD obrigatório}
+      - --maxmemory
+      - 32mb
+      - --maxmemory-policy
+      - noeviction
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$VALKEY_PASSWORD valkey-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  migrate:
+    image: ghcr.io/jairomello/azy-board/api:${AZYBOARD_IMAGE_TAG:-latest}
+    restart: "no"
+    logging: *bounded-logging
+    command: ["migrate"]
+    mem_limit: 256m
+    environment: &api-environment
+      AZYBOARD_INSTALL_PROFILE: ADVANCED
+      DATABASE_URL: postgresql://${POSTGRES_USER:-azyboard}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD obrigatório}@postgres:5432/${POSTGRES_DB:-azyboard}
+      REDIS_URL: redis://:${VALKEY_PASSWORD:?VALKEY_PASSWORD obrigatório}@valkey:6379
+      AZYBOARD_INSTANCE_DIR: /data
+      UPLOADS_DIR: /app/uploads
+      STORAGE_ADAPTER: local
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET obrigatório}
+      ASSISTANT_ENCRYPTION_KEY: ${ASSISTANT_ENCRYPTION_KEY:?ASSISTANT_ENCRYPTION_KEY obrigatório}
+      FRONTEND_URL: https://azyboard.jairo.tools
+      NODE_ENV: production
+      TRUST_PROXY: "true"
+      AZYBOARD_AUTH_PROVIDER: ${AZYBOARD_AUTH_PROVIDER:-LOCAL}
+      AZYBOARD_AGENT_WORKER_MODE: SEPARATE
+    volumes:
+      - /opt/azyboard/data/instance:/data
+      - /opt/azyboard/data/uploads:/app/uploads
+    networks:
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    image: ghcr.io/jairomello/azy-board/api:${AZYBOARD_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *bounded-logging
+    mem_limit: 256m
+    environment: *api-environment
+    volumes:
+      - /opt/azyboard/data/instance:/data
+      - /opt/azyboard/data/uploads:/app/uploads
+    networks:
+      - backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  agent-worker:
+    image: ghcr.io/jairomello/azy-board/api:${AZYBOARD_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *bounded-logging
+    command: ["worker"]
+    mem_limit: 128m
+    environment: *api-environment
+    volumes:
+      - /opt/azyboard/data/instance:/data
+      - /opt/azyboard/data/uploads:/app/uploads
+    networks:
+      - backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
+  web:
+    image: ghcr.io/jairomello/azy-board/web:${AZYBOARD_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *bounded-logging
+    mem_limit: 48m
+    environment:
+      AZYBOARD_API_UPSTREAM: http://api:3000
+    networks:
+      - backend
+      - edge
+    depends_on:
+      api:
+        condition: service_healthy
+
+  caddy:
+    image: ghcr.io/jairomello/azy-board/caddy:${AZYBOARD_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    logging: *bounded-logging
+    mem_limit: 80m
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL obrigatório}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN obrigatório}
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - edge
+    depends_on:
+      web:
+        condition: service_started
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    logging: *bounded-logging
+    mem_limit: 48m
+    command:
+      - tunnel
+      - --no-autoupdate
+      - run
+      - --token
+      - ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN obrigatório}
+    networks:
+      - edge
+    depends_on:
+      - caddy
+
+  setup:
+    image: ghcr.io/jairomello/azy-board/api:${AZYBOARD_IMAGE_TAG:-latest}
+    profiles: ["bootstrap"]
+    logging: *bounded-logging
+    command:
+      - setup
+      - ${TENANT_NAME:-Azyboard}
+      - ${TENANT_SLUG:-azyboard}
+      - ${ADMIN_EMAIL:-admin@example.com}
+    environment:
+      <<: *api-environment
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrador}
+    volumes:
+      - /opt/azyboard/data/instance:/data
+      - /opt/azyboard/data/uploads:/app/uploads
+    networks:
+      - backend
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
+networks:
+  backend:
+    driver: bridge
+  edge:
+    driver: bridge
+
+volumes:
+  caddy-data:
+  caddy-config:
