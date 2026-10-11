@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core'
+import { customType, pgTable, text, integer, boolean, doublePrecision, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
 // [DB-SWAP] Schema PostgreSQL — equivalente ao SQLite em schema.ts.
@@ -7,6 +7,7 @@ import { sql } from 'drizzle-orm'
 // são adicionadas nas migrations como SQL bruto; o pg-core não as tipifica bem.
 
 const defaultNowIso = () => sql`(to_char(now() AT TIME ZONE 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))`
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' })
 
 // ---------------------------------------------------------------------------
 // INSTALLATION METADATA
@@ -75,7 +76,7 @@ export const userAvatars = pgTable('user_avatars', {
   width: integer('width').notNull(),
   height: integer('height').notNull(),
   contentHash: text('content_hash').notNull(),
-  data: text('data').notNull(), // bytea em SQL bruto; converter no adapter
+  data: bytea('data').notNull(),
   updatedAt: text('updated_at').notNull().default(defaultNowIso()),
 }, (table) => ({
   pk: primaryKey({ columns: [table.tenantId, table.userId] }),

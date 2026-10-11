@@ -53,6 +53,28 @@ describe.skipIf(!runPostgres)('Migrations PostgreSQL', () => {
     }
   })
 
+  test('armazena bytes binários de avatar em bytea sem conversão UTF-8', async () => {
+    const client = await getClient()
+    try {
+      await resetDatabase(client)
+      const migrationsDir = join(import.meta.dir, 'migrations')
+      for (const file of ['0000_pale_warlock.sql', '0001_composite_fks.sql', '0021_user_avatar_data_bytea.sql']) {
+        await client.query(readFileSync(join(migrationsDir, file), 'utf8'))
+      }
+      await client.query("INSERT INTO tenants (id, name, slug) VALUES ('avatar-tenant', 'Avatar', 'avatar')")
+      await client.query("INSERT INTO users (id, tenant_id, email, password_hash, name) VALUES ('avatar-user', 'avatar-tenant', 'avatar@example.test', 'hash', 'Avatar')")
+      const image = Buffer.from([0, 255, 1, 128, 10, 13])
+      await client.query(`INSERT INTO user_avatars (tenant_id, user_id, mime_type, size_bytes, width, height, content_hash, data)
+        VALUES ('avatar-tenant', 'avatar-user', 'image/png', $1, 1, 1, 'binary-test', $2)`, [image.length, image])
+      const stored = await client.query("SELECT data FROM user_avatars WHERE tenant_id = 'avatar-tenant' AND user_id = 'avatar-user'")
+      expect(Buffer.from(stored.rows[0]!.data)).toEqual(image)
+      const column = await client.query("SELECT data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_avatars' AND column_name = 'data'")
+      expect(column.rows[0]?.data_type).toBe('bytea')
+    } finally {
+      await client.end()
+    }
+  })
+
   test('migra provider singleton para o primeiro modelo e mantém isolamento da credencial', async () => {
     const client = await getClient()
     try {
