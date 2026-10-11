@@ -28,7 +28,7 @@ Adicione ao seu `.claude/settings.json`:
 <!-- BEGIN GENERATED: mcp-catalog -->
 <!-- GERADO AUTOMATICAMENTE por scripts/generate-docs.ts — não editar; rode `bun run generate:docs`. -->
 
-Catálogo com 79 ferramentas, derivado de `packages/tool-registry/src/registry.ts`.
+Catálogo com 83 ferramentas, derivado de `packages/tool-registry/src/registry.ts`.
 
 | Ferramenta | Descrição |
 |---|---|
@@ -48,7 +48,7 @@ Catálogo com 79 ferramentas, derivado de `packages/tool-registry/src/registry.t
 | `create_checklist` | Create a named checklist on a board card. itemId is the parent card ID, not a checklist or checklist item ID. |
 | `create_column` | Cria uma coluna no board com name e baseStatus (NOT_STARTED, IN_PROGRESS ou DONE). |
 | `create_cost_center` | Cria um centro de custo no projeto com code e description opcional. |
-| `create_item_dependency` | Cria uma dependência no item de origem (dependsOnItemId obrigatório). dependsOnProjectId (opcional) permite dependência cross-project e assume o projeto atual; dependencyType tem default FS e lagDays default 0 (inteiro, positivo ou negativo). Rejeita auto-dependência, par duplicado e ciclos. |
+| `create_item_dependency` | Cria uma dependência no item de origem: dependsOnItemId é obrigatório; dependsOnProjectId (opcional) permite dependência cross-project e defaults para o projeto atual; dependencyType tem default FS e lagDays default 0 (inteiro, positivo ou negativo). Rejeita auto-dependência, par duplicado e ciclos. |
 | `create_item_link` | Cria um link externo no item. Requer name e url (HTTP/HTTPS sem credenciais); description é opcional. Apenas persiste os metadados: não lê nem acessa o conteúdo da URL. |
 | `create_item_log` | Registra um apontamento de trabalho no item. activity é texto curto (até 20000 caracteres); durationMin é a duração em minutos (inteiro não negativo) e duration aceita formato humano-legível (ex.: 1h30), normalizado para minutos. A data do registro é o momento atual; não há suporte a data retroativa. |
 | `create_module` | Cria um módulo no projeto. |
@@ -77,7 +77,7 @@ Catálogo com 79 ferramentas, derivado de `packages/tool-registry/src/registry.t
 | `list_checklists` | List checklists and their steps for a board card. itemId is the parent card ID. Returns dueDate, assigneeId and description on steps when the project enables advancedChecklists. |
 | `list_columns` | Lista as colunas do board com seus status base. |
 | `list_cost_centers` | Lista os centros de custo do projeto. |
-| `list_item_dependencies` | Lista as dependências de um item (itemId de origem): dependsOnItemId, tipo (FS/SS/SF/FF) e retardo em dias. Use para descobrir o dependencyId antes de editar ou remover. |
+| `list_item_dependencies` | Lista as dependências de um item (itemId de origem). Cada dependência referencia o item do qual ele depende (dependsOnItemId), o tipo (FS/SS/SF/FF) e o retardo em dias. Use para descobrir o dependencyId antes de editar ou remover. |
 | `list_item_links` | Lista os links externos associados a um item do board. Requer projectId e itemId; use para descobrir o linkId antes de editar ou remover. |
 | `list_item_logs` | Lista os logs de trabalho de um item do board. |
 | `list_members` | Lista os membros do projeto. |
@@ -104,7 +104,7 @@ Catálogo com 79 ferramentas, derivado de `packages/tool-registry/src/registry.t
 | `update_checklist_item` | Atualiza o texto/estado de um passo da checklist. changes aceita text, checked, dueDate, assigneeId e description (os três últimos exigem checklists detalhados no projeto). |
 | `update_cost_center` | Edita o código e/ou a descrição de um centro de custo do projeto. O código é único por projeto. Exige ADMIN. |
 | `update_item` | Atualiza um item específico. changes aceita a lista {field, operation, value}; as operações CLEAR, TODAY, OFFSET_DAYS e COPY_CREATED_DATE dependem do campo. |
-| `update_item_dependency` | Atualiza uma dependência existente. Requer dependencyId e ao menos um de dependsOnItemId/dependsOnProjectId/dependencyType/lagDays. Revalida auto-dependência, unicidade e ciclos no servidor. |
+| `update_item_dependency` | Atualiza uma dependência existente. Requer dependencyId e ao menos um de dependsOnItemId/dependsOnProjectId/dependencyType/lagDays. Revalida auto-dependência, unicidade do par e ciclos no servidor. |
 | `update_item_link` | Atualiza nome, URL ou descrição de um link do item. Requer linkId e ao menos um de name/url/description. |
 | `update_item_log` | Atualiza o texto e/ou a duração de um log de trabalho. |
 | `update_items` | Atomically update one or many active items selected by filters. For bulk moves, set filters.column to the source column, preserve every other requested criterion, and add a column SET change with the destination. Generic tasks or cards in a bulk move covers leaf TASK and BUG items unless the user explicitly restricts the type. Also supports fixed values, clearing fields, relative dates, today, and copying each item creation date. Use itemIds for one item and matchAll only for every item without narrower filters. |

@@ -64,11 +64,20 @@ async function addCardToFirstColumn(page: Page, title: string) {
   await page.getByText(title, { exact: true }).waitFor({ timeout: 15_000 })
 }
 
-async function dragCard(page: Page, cardTitle: string, target: { x: number; y: number }) {
+function cardDragHandle(page: Page, cardTitle: string) {
   const cardText = page.getByText(cardTitle, { exact: true }).first()
-  const grip = cardText.locator('xpath=ancestor::div[.//*[@title="Arrastar card"]][1]').locator('[title="Arrastar card"]')
-  const source = await grip.boundingBox()
-  assert(source, `não localizou o grip do card ${cardTitle}`)
+  return cardText.locator('xpath=ancestor::div[.//*[@title="Arrastar card"]][1]').locator('[title="Arrastar card"] svg')
+}
+
+async function dragCard(page: Page, cardTitle: string, target: { x: number; y: number }) {
+  // O grip ocupa toda a altura do card. Se a parte inferior estiver cortada
+  // pelo scroll da coluna, o centro do grip fica fora da área clicável. O SVG
+  // pequeno é o alvo visível do handle. Centralizá-lo evita começar no limite
+  // inferior do scrollport, onde o pointer pode ser cancelado durante o drag.
+  const dragHandle = cardDragHandle(page, cardTitle)
+  await dragHandle.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest' }))
+  const source = await dragHandle.boundingBox()
+  assert(source, `não localizou a alça visível do card ${cardTitle}`)
 
   const start = { x: source!.x + source!.width / 2, y: source!.y + source!.height / 2 }
   await page.mouse.move(start.x, start.y)
@@ -91,12 +100,14 @@ function columnContainer(page: Page, columnName: string) {
 }
 
 async function dragCardToColumn(page: Page, cardTitle: string, columnName: string) {
+  await cardDragHandle(page, cardTitle).evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest' }))
   const box = await columnContainer(page, columnName).boundingBox()
   assert(box, `não localizou a coluna ${columnName}`)
   await dragCard(page, cardTitle, { x: box!.x + box!.width / 2, y: box!.y + box!.height - 28 })
 }
 
 async function dragCardAboveCard(page: Page, cardTitle: string, targetTitle: string) {
+  await cardDragHandle(page, cardTitle).evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest' }))
   const target = page.getByText(targetTitle, { exact: true }).first()
   const box = await target.boundingBox()
   assert(box, `não localizou o card ${targetTitle}`)

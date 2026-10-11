@@ -1,4 +1,5 @@
 import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
@@ -63,7 +64,7 @@ function verifyPackageCycle(): void {
 }
 
 async function buildAndBootIsolatedApi(): Promise<void> {
-  const stagingRoot = mkdtempSync(join('/tmp/opencode', 'azy-api-no-mcp-'))
+  const stagingRoot = mkdtempSync(join(tmpdir(), 'azy-api-no-mcp-'))
   try {
     const stagedApi = join(stagingRoot, 'apps/api')
     cpSync(join(root, 'apps/api/src'), join(stagedApi, 'src'), { recursive: true })

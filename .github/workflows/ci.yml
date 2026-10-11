@@ -85,6 +85,7 @@ jobs:
       NODE_ENV: test
       PORT: "3001"
       FRONTEND_URL: http://localhost:5173
+      UPLOADS_DIR: /tmp/azy-ci-smoke-uploads
       AZYBOARD_API_TARGET: http://localhost:3001
       SMOKE_URL: http://localhost:5173
       SMOKE_API_URL: http://localhost:3001
@@ -115,7 +116,7 @@ jobs:
         run: bun run --cwd apps/api src/scripts/seed-smoke.ts
       - name: Subir API
         run: |
-          mkdir -p tmp/ci
+          mkdir -p tmp/ci "$UPLOADS_DIR"
           setsid bun run --cwd apps/api src/index.ts > tmp/ci/azy-api.log 2>&1 &
           echo $! > tmp/ci/azy-api.pid
           for i in $(seq 1 60); do

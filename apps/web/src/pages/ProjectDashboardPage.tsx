@@ -16,7 +16,6 @@ import { burnupData, hoursByAuthorData, progressData, rankingData, statusData, t
 import { ChartEmptyState, ChartLegend, DashboardCard, Donut, DonutComparison, Gauge, HorizontalRankingBar, MetricValue, SimpleBars, TimeArea } from '../components/dashboard/DashboardVisuals'
 
 type Option = { id: string; name: string }
-type Catalogs = { modules: Option[]; sprints: Option[]; versions: Option[]; squads: Option[]; members: Option[] }
 const initialFilters: DashboardFilters = { from: '', to: '', moduleId: '', sprintId: '', versionId: '', squadId: '', assigneeId: '', type: '' }
 
 function queryString(filters: DashboardFilters) { const params = new URLSearchParams(); for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value); return params.toString() }

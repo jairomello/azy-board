@@ -253,7 +253,8 @@
               "EPIC",
               "STORY",
               "TASK",
-              "BUG"
+              "BUG",
+              "EXTERNAL"
             ]
           },
           "sequenceCode": {
@@ -261,7 +262,7 @@
               {
                 "type": "string",
                 "maxLength": 20,
-                "pattern": "^[ESTB]\\d+$"
+                "pattern": "^[ESTBX]\\d+$"
               },
               {
                 "type": "null"
@@ -511,7 +512,8 @@
             "type": "string",
             "enum": [
               "TASK",
-              "BUG"
+              "BUG",
+              "EXTERNAL"
             ]
           },
           "sequenceCode": {
@@ -519,7 +521,7 @@
               {
                 "type": "string",
                 "maxLength": 20,
-                "pattern": "^[ESTB]\\d+$"
+                "pattern": "^[ESTBX]\\d+$"
               },
               {
                 "type": "null"
@@ -795,7 +797,8 @@
                         "EPIC",
                         "STORY",
                         "TASK",
-                        "BUG"
+                        "BUG",
+                        "EXTERNAL"
                       ]
                     }
                   },
@@ -1246,7 +1249,12 @@
               "ocean",
               "emerald",
               "graphite",
-              "classic"
+              "classic",
+              "ruby",
+              "amber",
+              "amethyst",
+              "rose",
+              "silver"
             ]
           },
           "language": {
