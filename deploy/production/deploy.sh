@@ -19,7 +19,7 @@ if [[ "$(stat -c '%a' "$ENV_FILE")" != 600 ]]; then
   exit 2
 fi
 
-export AZYBOARD_IMAGE_TAG
+export AZYBOARD_IMAGE_TAG="$IMAGE_TAG"
 compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
 # Backup local antes de qualquer migration. Staging local não substitui a cópia
