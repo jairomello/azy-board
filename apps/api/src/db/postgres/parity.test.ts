@@ -150,6 +150,42 @@ async function setupPostgres(): Promise<{ ports: PersistencePorts; pool: Pool; c
 }
 
 describe.skipIf(!runPostgres)('Paridade SIMPLE ↔ ADVANCED', () => {
+  test('limites de governança persistem e são lidos com nomes de coluna PostgreSQL', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const tenantSqlite = await sqlite.ports.tenants.createTenant({ name: 'Tenant Governança', slug: `governance-sqlite-${crypto.randomUUID()}` })
+      const tenantPg = await pg.ports.tenants.createTenant({ name: 'Tenant Governança', slug: `governance-pg-${crypto.randomUUID()}` })
+      const patch = {
+        requestsPerMinute: 42,
+        maxActivePerUser: 4,
+        maxActivePerTenant: 12,
+        dailyBudgetMicros: 2_500_000,
+        tenantDailyBudgetMicros: 9_000_000,
+        maxSteps: 18,
+        maxToolCalls: 55,
+        maxInputTokens: 90_000,
+        maxOutputTokens: 12_000,
+        maxPayloadBytes: 750_000,
+        timeoutMs: 120_000,
+      }
+      const now = new Date().toISOString()
+      await Promise.all([
+        sqlite.ports.agent.saveGovernance(makeContext(tenantSqlite.id), patch, now),
+        pg.ports.agent.saveGovernance(makeContext(tenantPg.id), patch, now),
+      ])
+      const [sqliteSettings, pgSettings] = await Promise.all([
+        sqlite.ports.agent.getSettings(makeContext(tenantSqlite.id)),
+        pg.ports.agent.getSettings(makeContext(tenantPg.id)),
+      ])
+      expect(sqliteSettings).toMatchObject(patch)
+      expect(pgSettings).toMatchObject(patch)
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+
   test('modelos do agente têm a mesma ordem, disponibilidade e revogação nos dois adapters', async () => {
     const sqlite = await setupSqlite()
     const pg = await setupPostgres()

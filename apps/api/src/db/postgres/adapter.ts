@@ -383,6 +383,20 @@ function mapAssistantSettings(row: PgRow) {
   }
 }
 
+const governanceSqlColumns = {
+  requestsPerMinute: 'requests_per_minute',
+  maxActivePerUser: 'max_active_per_user',
+  maxActivePerTenant: 'max_active_per_tenant',
+  dailyBudgetMicros: 'daily_budget_micros',
+  tenantDailyBudgetMicros: 'tenant_daily_budget_micros',
+  maxSteps: 'max_steps',
+  maxToolCalls: 'max_tool_calls',
+  maxInputTokens: 'max_input_tokens',
+  maxOutputTokens: 'max_output_tokens',
+  maxPayloadBytes: 'max_payload_bytes',
+  timeoutMs: 'timeout_ms',
+} as const
+
 function mapAssistantModelConfig(row: PgRow): AssistantModelConfigRecord {
   return {
     id: row.id as string, tenantId: row.tenant_id as string,
@@ -3105,13 +3119,18 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         )
       },
       async saveGovernance(context, patch, updatedAt) {
-        const fields = Object.keys(patch)
-        const sets = fields.map((f, i) => `${f} = $${i + 3}`).join(', ')
+        const entries = Object.entries(patch).map(([key, value]) => {
+          const column = governanceSqlColumns[key as keyof typeof governanceSqlColumns]
+          if (!column) throw new Error(`Unsupported governance field: ${key}`)
+          return { column, value }
+        })
+        const columns = entries.map(entry => entry.column)
+        const sets = columns.map((column, i) => `${column} = $${i + 3}`).join(', ')
         await q(
-          `INSERT INTO assistant_settings (tenant_id, enabled, validation_status, updated_at, ${fields.join(', ')})
-           VALUES ($1, false, 'UNVALIDATED', $2, ${fields.map((_, i) => `$${i + 3}`).join(', ')})
+          `INSERT INTO assistant_settings (tenant_id, enabled, validation_status, updated_at, ${columns.join(', ')})
+           VALUES ($1, false, 'UNVALIDATED', $2, ${entries.map((_, i) => `$${i + 3}`).join(', ')})
            ON CONFLICT (tenant_id) DO UPDATE SET ${sets}, updated_at = $2`,
-          [context.tenantId, updatedAt, ...Object.values(patch)],
+          [context.tenantId, updatedAt, ...entries.map(entry => entry.value)],
         )
       },
       async saveProvider(context, input, previousCredentialId) {
