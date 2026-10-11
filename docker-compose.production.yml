@@ -50,6 +50,8 @@ services:
     restart: unless-stopped
     logging: *bounded-logging
     mem_limit: 48m
+    environment:
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD:?VALKEY_PASSWORD obrigatório}
     command:
       - valkey-server
       - --requirepass
