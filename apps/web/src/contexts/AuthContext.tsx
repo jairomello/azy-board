@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import { api } from '../lib/api'
 import { queryClient } from '../lib/queryClient'
-import { queryKeys } from '../lib/queryKeys'
 import i18n from '../i18n'
 import { gravarMostrarProjetosOcultos, lerMostrarProjetosOcultos } from '../lib/sessionPreferences'
 import { gravarEmailLembrado, limparEmailLembrado } from '../lib/rememberedEmail'
@@ -139,8 +138,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function updateName(name: string) {
     const data = await api.patch<{ user: User }>('/users/me', { name })
     setUser(normalizeUser(data.user))
-    // Listagens administrativas exibem o nome; invalida o cache para não manter o antigo.
-    void queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers(user?.id) })
+    // Listagens administrativas exibem o nome; invalida o cache para não manter o antigo
+    // (chave escopada pela identidade, igual a queryKeys.adminUsers).
+    void queryClient.invalidateQueries({ queryKey: ['auth', user?.id ?? 'anonymous', 'adminUsers'] })
   }
 
   async function updateAvatar(file: Blob) {

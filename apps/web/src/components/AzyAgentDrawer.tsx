@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bot,
   Check,
@@ -11,7 +11,6 @@ import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import { useAssistant } from "../contexts/AssistantContext";
 import { MarkdownText } from "./MarkdownText";
-import { RunActivity } from "./RunActivity";
 import { notifyAssistantMutation } from "../lib/dataEvents";
 import { receiveViewCommand } from "../lib/assistantViewStore";
 import { MAX_MESSAGE_BYTES } from '@azy-board/assistant-contracts';
@@ -45,6 +44,9 @@ interface Run {
     expiresAt: string;
   } | null;
 }
+
+// Card T55 — atividade do run carregada sob demanda, fora do bundle inicial (§web-bundle-budget).
+const RunActivity = lazy(() => import("./RunActivity").then(module => ({ default: module.RunActivity })));
 
 const CLIENT_RUN_TIMEOUT_MS = 180_000;
 const MAX_MESSAGE_CHARS = MAX_MESSAGE_BYTES;
@@ -507,7 +509,11 @@ export function AzyAgentDrawer() {
                       ) : null}
                     </div>
                   ))}
-                  {run && <RunActivity key={run.id} run={run} />}
+                  {run && (
+                    <Suspense fallback={null}>
+                      <RunActivity key={run.id} run={run} />
+                    </Suspense>
+                  )}
                   {error && (
                     <p
                       role="alert"

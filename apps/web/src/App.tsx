@@ -3,10 +3,10 @@ import { Suspense, lazy } from 'react'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ToastProvider } from './components/Toast'
 import { AssistantProvider } from './contexts/AssistantContext'
-import { AzyAgentDrawer } from './components/AzyAgentDrawer'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import RootAssistantSettings from './components/RootAssistantSettings'
 
+const AzyAgentDrawer = lazy(() => import('./components/AzyAgentDrawer').then(module => ({ default: module.AzyAgentDrawer })))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage'))
 const BoardPage = lazy(() => import('./pages/BoardPage'))
@@ -44,7 +44,9 @@ export default function App() {
         </Routes>
       </Suspense>
       </AppErrorBoundary>
-      <AzyAgentDrawer />
+      <Suspense fallback={null}>
+        <AzyAgentDrawer />
+      </Suspense>
       </AssistantProvider>
       </ToastProvider>
     </AuthProvider>
