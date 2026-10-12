@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 import { api } from '../lib/api'
 import { queryClient } from '../lib/queryClient'
+import { queryKeys } from '../lib/queryKeys'
 import i18n from '../i18n'
 import { gravarMostrarProjetosOcultos, lerMostrarProjetosOcultos } from '../lib/sessionPreferences'
 import { gravarEmailLembrado, limparEmailLembrado } from '../lib/rememberedEmail'
@@ -37,6 +38,7 @@ interface AuthContextValue {
   login: (email: string, password: string, remember?: boolean) => Promise<void>
   logout: () => Promise<void>
   updatePreferences: (preferences: PreferenceUpdate) => Promise<void>
+  updateName: (name: string) => Promise<void>
   updateAvatar: (file: Blob) => Promise<void>
   removeAvatar: () => Promise<void>
   showHiddenProjects: boolean
@@ -133,6 +135,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   // Foto de perfil: sobe o recorte comprimido e reflete o usuário atualizado.
+  // Card T54: edita o nome de exibição e reflete o usuário devolvido pelo servidor.
+  async function updateName(name: string) {
+    const data = await api.patch<{ user: User }>('/users/me', { name })
+    setUser(normalizeUser(data.user))
+    // Listagens administrativas exibem o nome; invalida o cache para não manter o antigo.
+    void queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers(user?.id) })
+  }
+
   async function updateAvatar(file: Blob) {
     const form = new FormData()
     form.append('file', file, 'avatar.webp')
@@ -157,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, updatePreferences, updateAvatar, removeAvatar, showHiddenProjects, setShowHiddenProjects }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, updatePreferences, updateName, updateAvatar, removeAvatar, showHiddenProjects, setShowHiddenProjects }}>
       {children}
     </AuthContext.Provider>
   )

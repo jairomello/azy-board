@@ -13,7 +13,7 @@ import { userPersistenceContext } from '../persistence/context'
 
 const THEMES = new Set<Theme>(['light', 'dark'])
 const LANGUAGES = new Set<Language>(['pt-BR', 'en', 'es'])
-const ALLOWED_FIELDS = new Set(['theme', 'lightShellTheme', 'language', 'autoThemeByTime'])
+const ALLOWED_FIELDS = new Set(['name', 'theme', 'lightShellTheme', 'language', 'autoThemeByTime'])
 
 export const usersRouter = new Hono<HonoEnv>()
 usersRouter.use('*', authMiddleware)
@@ -83,7 +83,7 @@ usersRouter.patch('/me', async (c) => {
 
   const keys = Object.keys(body)
   if (keys.length === 0 || keys.some((key) => !ALLOWED_FIELDS.has(key))) {
-    return c.json({ error: 'Informe ao menos uma preferência válida' }, 400)
+    return c.json({ error: 'Informe ao menos um campo válido' }, 400)
   }
   if (body.theme !== undefined && !THEMES.has(body.theme as Theme)) {
     return c.json({ error: 'Tema inválido' }, 400)
@@ -96,6 +96,14 @@ usersRouter.patch('/me', async (c) => {
   }
 
   const ctx = c.get('ctx') as RequestContext
+
+  // [TENANT] Nome de exibição: alvo derivado exclusivamente da sessão (anti-IDOR),
+  // e o e-mail (login) permanece imutável e fora do schema.
+  if (body.name !== undefined) {
+    const named = await persistence.identity.updateUserName(userPersistenceContext(ctx), ctx.userId, body.name)
+    if (!named) return c.json({ error: 'Usuário não encontrado' }, 404)
+  }
+
   const updates: Partial<{
     theme: Theme
     lightShellTheme: LightShellTheme
@@ -108,7 +116,9 @@ usersRouter.patch('/me', async (c) => {
   if (body.autoThemeByTime !== undefined) updates.autoThemeByTime = body.autoThemeByTime
 
   // [TENANT] O alvo é derivado exclusivamente da sessão e filtrado por usuário + tenant.
-  const user = await persistence.identity.updateUserPreferences(userPersistenceContext(ctx), ctx.userId, updates)
+  const user = Object.keys(updates).length > 0
+    ? await persistence.identity.updateUserPreferences(userPersistenceContext(ctx), ctx.userId, updates)
+    : await persistence.identity.findUser(userPersistenceContext(ctx), ctx.userId)
 
   if (!user) return c.json({ error: 'Usuário não encontrado' }, 404)
   return c.json({ user: {

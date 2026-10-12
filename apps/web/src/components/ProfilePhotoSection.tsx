@@ -4,6 +4,7 @@ import { Camera, Loader2, Trash2 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from './Toast'
 import { UserAvatar } from './UserAvatar'
+import { ProfileNameField } from './ProfileNameField'
 import { AvatarCropDialog } from './AvatarCropDialog'
 import { isAcceptedAvatarFile, readFileAsDataUrl } from '../lib/avatarImage'
 
@@ -63,12 +64,9 @@ export function ProfilePhotoSection() {
 
   return (
     <section className="bg-card border border-border rounded-xl px-5 py-4 mb-5 shadow-sm">
-      <div className="flex items-center gap-4">
+      <div className="flex items-start gap-4">
         {user && <UserAvatar user={user} size="lg" />}
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold text-foreground truncate">{user?.name}</p>
-          <p className="text-sm text-muted-foreground truncate">{user?.email}</p>
-        </div>
+        <ProfileNameField />
         <div className="flex flex-col sm:flex-row gap-2">
           <button
             type="button"

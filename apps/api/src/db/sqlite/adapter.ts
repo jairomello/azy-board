@@ -591,6 +591,12 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         const row = await database.query.users.findFirst({ where: and(eq(users.tenantId, context.tenantId), eq(users.id, userId)) })
         return row ? mapPublicUser(row) : null
       },
+      async updateUserName(context, userId, name) {
+        // [TENANT] Nome de exibição: atualização escopada por tenant e usuário.
+        await database.update(users).set({ name }).where(and(eq(users.tenantId, context.tenantId), eq(users.id, userId)))
+        const row = await database.query.users.findFirst({ where: and(eq(users.tenantId, context.tenantId), eq(users.id, userId)) })
+        return row ? mapPublicUser(row) : null
+      },
       async updateAvatarUrl(context, userId, avatarUrl) {
         await database.update(users).set({ avatarUrl }).where(and(eq(users.tenantId, context.tenantId), eq(users.id, userId)))
       },

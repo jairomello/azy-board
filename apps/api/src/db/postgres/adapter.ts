@@ -1092,6 +1092,12 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         const row = await q1('SELECT * FROM users WHERE tenant_id = $1 AND id = $2', [context.tenantId, userId])
         return row ? mapPublicUser(row) : null
       },
+      async updateUserName(context: PersistenceContext, userId: string, name: string): Promise<PublicUserRecord | null> {
+        // [TENANT] Nome de exibição: atualização escopada por tenant e usuário.
+        await q('UPDATE users SET name = $1 WHERE tenant_id = $2 AND id = $3', [name, context.tenantId, userId])
+        const row = await q1('SELECT * FROM users WHERE tenant_id = $1 AND id = $2', [context.tenantId, userId])
+        return row ? mapPublicUser(row) : null
+      },
       async updateAvatarUrl(context: PersistenceContext, userId: string, avatarUrl: string | null): Promise<void> {
         await q('UPDATE users SET avatar_url = $1 WHERE tenant_id = $2 AND id = $3', [avatarUrl, context.tenantId, userId])
       },

@@ -186,6 +186,32 @@ describe.skipIf(!runPostgres)('Paridade SIMPLE ↔ ADVANCED', () => {
     }
   })
 
+  test('atualização do nome de exibição é equivalente e escopada por tenant', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const tenantSqlite = await sqlite.ports.tenants.createTenant({ name: 'T', slug: `name-sqlite-${crypto.randomUUID()}` })
+      const tenantPg = await pg.ports.tenants.createTenant({ name: 'T', slug: `name-pg-${crypto.randomUUID()}` })
+      const userSqlite = await sqlite.ports.identity.createUser({ tenantId: tenantSqlite.id, actorUserId: null, actorKind: 'SYSTEM' }, { email: `n-${crypto.randomUUID()}@test.local`, passwordHash: 'h', name: 'Nome Antigo', globalGroup: 'TEAM_MEMBER' })
+      const userPg = await pg.ports.identity.createUser({ tenantId: tenantPg.id, actorUserId: null, actorKind: 'SYSTEM' }, { email: `n-${crypto.randomUUID()}@test.local`, passwordHash: 'h', name: 'Nome Antigo', globalGroup: 'TEAM_MEMBER' })
+      const ctxSqlite = { tenantId: tenantSqlite.id, actorUserId: userSqlite.id, actorKind: 'USER' as const }
+      const ctxPg = { tenantId: tenantPg.id, actorUserId: userPg.id, actorKind: 'USER' as const }
+      const updatedSqlite = await sqlite.ports.identity.updateUserName(ctxSqlite, userSqlite.id, 'Nome Novo')
+      const updatedPg = await pg.ports.identity.updateUserName(ctxPg, userPg.id, 'Nome Novo')
+      expect(updatedSqlite?.name).toBe('Nome Novo')
+      expect(updatedPg?.name).toBe('Nome Novo')
+      expect((await sqlite.ports.identity.findUser(ctxSqlite, userSqlite.id))?.name).toBe('Nome Novo')
+      expect((await pg.ports.identity.findUser(ctxPg, userPg.id))?.name).toBe('Nome Novo')
+      // Escopo por tenant: contexto de outro tenant não altera o usuário.
+      const stranger = await sqlite.ports.identity.updateUserName({ ...ctxSqlite, tenantId: 'outro-tenant' }, userSqlite.id, 'Invasor')
+      expect(stranger).toBeNull()
+      expect((await sqlite.ports.identity.findUser(ctxSqlite, userSqlite.id))?.name).toBe('Nome Novo')
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+
   test('modelos do agente têm a mesma ordem, disponibilidade e revogação nos dois adapters', async () => {
     const sqlite = await setupSqlite()
     const pg = await setupPostgres()

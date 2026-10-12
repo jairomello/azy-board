@@ -132,6 +132,9 @@ export interface IdentityPort {
   createUser(context: PersistenceContext, input: NewUserRecord): Promise<UserCredentialRecord>
   updateUserGroup(context: PersistenceContext, userId: string, group: GlobalGroup): Promise<void>
   updateUserPreferences(context: PersistenceContext, userId: string, patch: UserPreferencesPatch): Promise<PublicUserRecord | null>
+  // Card T54 — atualiza o nome de exibição do próprio usuário, sempre escopado
+  // por (tenant_id, userId); o e-mail (login) não é alterável por este caminho.
+  updateUserName(context: PersistenceContext, userId: string, name: string): Promise<PublicUserRecord | null>
   updateAvatarUrl(context: PersistenceContext, userId: string, avatarUrl: string | null): Promise<void>
   // Card T45 — vincula a identidade externa (login integrado) a um usuário existente.
   // Rejeita conflito quando o usuário já está vinculado a outro subject.

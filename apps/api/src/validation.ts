@@ -182,7 +182,7 @@ export const createUserSchema = z.object({ email: z.string().trim().email().max(
   if (issues.length > 0) ctx.addIssue({ code: 'custom', path: ['password'], message: issues.join('; ') })
 })
 export const groupSchema = z.object({ globalGroup: z.enum(['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT']) }).strict()
-export const preferencesSchema = z.object({ theme: z.enum(['light', 'dark']).optional(), lightShellTheme: z.enum(LIGHT_SHELL_THEMES).optional(), language: z.enum(['pt-BR', 'en', 'es']).optional(), autoThemeByTime: z.boolean().optional() }).strict()
+export const preferencesSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), theme: z.enum(['light', 'dark']).optional(), lightShellTheme: z.enum(LIGHT_SHELL_THEMES).optional(), language: z.enum(['pt-BR', 'en', 'es']).optional(), autoThemeByTime: z.boolean().optional() }).strict()
 export const projectApiKeySchema = z.object({ name: z.string().trim().min(1).max(200), aiModelName: z.string().max(200).optional(), permissionScope: z.array(z.string().min(1)).optional(), expiresAt: z.string().nullable().optional() }).strict()
 export const userApiKeySchema = projectApiKeySchema.extend({ projectScope: z.array(z.string().min(1)).optional() }).strict()
 const governanceShape = {

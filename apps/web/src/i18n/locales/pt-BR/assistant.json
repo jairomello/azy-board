@@ -17,6 +17,8 @@
   "sources": "Fontes",
   "working": "Azy Agent trabalhando...",
   "processing": "Processando...",
+  "runActivity": "Atividade da execução",
+  "runModel": "Modelo",
   "answerQuestion": "Aguardando sua resposta...",
   "approval": "Aprovação necessária",
   "approve": "Aprovar",

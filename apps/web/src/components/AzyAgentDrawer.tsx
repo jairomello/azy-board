@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { api, ApiError } from "../lib/api";
 import { useAssistant } from "../contexts/AssistantContext";
 import { MarkdownText } from "./MarkdownText";
+import { RunActivity } from "./RunActivity";
 import { notifyAssistantMutation } from "../lib/dataEvents";
 import { receiveViewCommand } from "../lib/assistantViewStore";
 import { MAX_MESSAGE_BYTES } from '@azy-board/assistant-contracts';
@@ -35,6 +36,7 @@ interface Run {
   id: string;
   status: string;
   cursor: number;
+  model?: string | null;
   errorCode?: string | null;
   tools?: { toolName: string; displayName?: string; status: string; resultSummary?: string | null }[];
   approval?: {
@@ -505,25 +507,7 @@ export function AzyAgentDrawer() {
                       ) : null}
                     </div>
                   ))}
-                  {run &&
-                    !["WAITING_APPROVAL", "COMPLETED", "FAILED", "CANCELLED", "EXPIRED"].includes(
-                      run.status,
-                    ) && (
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        {run.status === "WAITING_USER"
-                          ? t("answerQuestion")
-                          : t("working")}
-                        {run.tools?.map((tool, index) => (
-                          <span
-                            key={`${tool.toolName}-${index}`}
-                            className="rounded bg-muted px-1"
-                          >
-                            {tool.displayName ?? tool.toolName.replace(/_/g, " ")}: {tool.status}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                  {run && <RunActivity key={run.id} run={run} />}
                   {error && (
                     <p
                       role="alert"

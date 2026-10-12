@@ -3,7 +3,7 @@
 Definir o login de humanos, a proteção de rotas, o RBAC server-side e a autenticação por API Key de agentes.
 ## Requirements
 ### Requirement: Autenticação de humanos via login fixo (MVP)
-O sistema SHALL autenticar usuários humanos via e-mail e senha. A identidade do usuário SHALL ser global e determinada pelo e-mail canônico (lower + trim); o `tenant_id` SHALL ser derivado da identidade resolvida, e não SHALL ser usado para desambiguar o login. No seed de desenvolvimento, a senha SHALL ser fornecida por `SEED_ADMIN_PASSWORD` e nunca SHALL ser publicada na documentação ou no código. A senha SHALL ser armazenada como hash bcrypt, nunca em texto plano.
+Quando o provedor de autenticação configurado na instalação for local, o sistema SHALL autenticar usuários humanos via e-mail e senha. A identidade do usuário SHALL ser global e determinada pelo e-mail canônico (lower + trim); o `tenant_id` SHALL ser derivado da identidade resolvida, e não SHALL ser usado para desambiguar o login. No seed de desenvolvimento, a senha SHALL ser fornecida por `SEED_ADMIN_PASSWORD` e nunca SHALL ser publicada na documentação ou no código. A senha SHALL ser armazenada como hash bcrypt, nunca em texto plano.
 
 #### Scenario: Login bem-sucedido
 - **WHEN** usuário envia e-mail e senha corretos
@@ -28,6 +28,10 @@ O sistema SHALL autenticar usuários humanos via e-mail e senha. A identidade do
 #### Scenario: Token expirado ou além do limite absoluto
 - **WHEN** usuário faz requisição com JWT expirado ou com sessão além do limite absoluto de persistência
 - **THEN** sistema retorna 401 e frontend redireciona para login
+
+#### Scenario: Login local desativado com provedor integrado
+- **WHEN** o provedor configurado não é local e uma requisição tenta autenticar com e-mail e senha
+- **THEN** o sistema recusa a autenticação por senha e direciona a autenticação ao provedor integrado
 
 ---
 
