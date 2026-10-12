@@ -123,4 +123,22 @@ describe('ProjectPlanningModal (Card T59)', () => {
     await waitFor(() => expect(calls.some(call => call.path === '/tenant/attachments/enabled')).toBe(true))
     expect(screen.queryByRole('tab', { name: /Todos os anexos/ })).not.toBeInTheDocument()
   })
+
+  test('mantém altura fixa independente da aba ativa', async () => {
+    const user = userEvent.setup()
+    render(<ProjectPlanningModal projectId="project-1" onClose={() => {}} />)
+
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog.className).toContain('h-[90vh]')
+    expect(dialog.className).not.toContain('max-h-[90vh]')
+    // A área de conteúdo rola dentro da altura fixa.
+    const content = dialog.querySelector('.overflow-y-auto')
+    expect(content).not.toBeNull()
+
+    // Trocar de aba não altera a altura do diálogo.
+    links = [{ id: 'l1', itemId: 'item-1', name: 'Wiki', url: 'https://wiki.example.com', description: null, item: { id: 'item-1', title: 'Card A', sequenceCode: 'T1', type: 'TASK' } }]
+    await user.click(screen.getByRole('tab', { name: /Todos os links/ }))
+    await screen.findByRole('link', { name: /Wiki/ })
+    expect(screen.getByRole('dialog').className).toContain('h-[90vh]')
+  })
 })

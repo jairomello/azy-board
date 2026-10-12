@@ -193,7 +193,7 @@ export function ProjectPlanningModal({ projectId, onClose, onSaved }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <section role="dialog" aria-modal="true" aria-labelledby="project-planning-title" className="relative flex w-full max-w-[900px] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl max-h-[90vh]">
+      <section role="dialog" aria-modal="true" aria-labelledby="project-planning-title" className="relative flex w-full max-w-[900px] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl h-[90vh] min-h-[360px]">
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-3 sm:px-6 sm:py-4">
           <div className="min-w-0">
             <h2 id="project-planning-title" className="text-base font-semibold text-foreground">{t('board:projectPlanningTitle')}</h2>
