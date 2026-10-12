@@ -429,3 +429,21 @@ describe('validação de ícones contra o catálogo (Card T53)', () => {
     expect(updateTag.enum).toBeUndefined()
   })
 })
+
+describe('filtro de última alteração em list_tasks (T57)', () => {
+  test('schema expõe o campo opcional com o enum de janelas', () => {
+    const schema = byName.get('list_tasks')!.inputSchema.properties.updatedWithin as { type?: unknown; enum?: unknown[] }
+    expect(schema).toBeDefined()
+    expect(schema.type).toEqual(['string', 'null'])
+    for (const value of ['1d', '2d', '3d', '5d', '1w', '1m', 'current-sprint']) {
+      expect(schema.enum).toContain(value)
+    }
+    expect(toolFields.list_tasks.fields).toContain('updatedWithin')
+    expect(requiredFieldsFor('list_tasks')).toEqual(['projectId'])
+  })
+
+  test('aceita janela válida e rejeita valor fora do enum', () => {
+    expect(() => validateToolArguments('list_tasks', { projectId: 'p', updatedWithin: '3d' })).not.toThrow()
+    expect(() => validateToolArguments('list_tasks', { projectId: 'p', updatedWithin: '2w' })).toThrow('updatedWithin inválido')
+  })
+})

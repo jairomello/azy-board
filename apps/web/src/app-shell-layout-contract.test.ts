@@ -60,6 +60,16 @@ describe('contrato do shell integrado', () => {
     expect(shell.includes('relative z-0')).toBe(false)
   })
 
+  test('mantem a barra de comando acima do conteudo do board para os menus nao ficarem atras', async () => {
+    const shell = await source('./components/AppShell.tsx')
+    // O backdrop-blur cria stacking context; sem z positivo a barra (e seus
+    // popovers) pinta abaixo do <main> do board, que e irmao posterior.
+    const block = shell.slice(shell.indexOf('{commandBar && ('), shell.indexOf('{/* statusRail */}') !== -1 ? shell.indexOf('{/* statusRail */}') : shell.length)
+    const commandBarSegment = block.slice(0, block.indexOf('</div>'))
+    contains(commandBarSegment, 'backdrop-blur-xl')
+    contains(commandBarSegment, 'relative z-30')
+  })
+
   test('preserva slots, drawer e tokens de tema existentes', async () => {
     const shell = await source('./components/AppShell.tsx')
 

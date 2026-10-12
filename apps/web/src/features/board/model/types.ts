@@ -78,6 +78,7 @@ export const DEFAULT_FILTERS: BoardFilterState = {
   status: '',
   authorId: '',
   costCenterId: '',
+  updatedWithin: '',
   hideEmptyEpics: false,
   hideEmptyStories: false,
   showSubtasks: false,

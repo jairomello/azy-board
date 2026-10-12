@@ -23,6 +23,7 @@ export interface BoardFilterState {
   status: string
   authorId: string
   costCenterId: string
+  updatedWithin: string
   hideEmptyEpics: boolean
   hideEmptyStories: boolean
   squadId: string
@@ -81,6 +82,7 @@ export function BoardFilters({
     filters.status,
     filters.authorId,
     filters.costCenterId,
+    filters.updatedWithin,
   ].filter(Boolean).length
 
   function update(partial: Partial<BoardFilterState>) {
@@ -100,6 +102,7 @@ export function BoardFilters({
       status: '',
       authorId: '',
       costCenterId: '',
+      updatedWithin: '',
       hideEmptyEpics: false,
       hideEmptyStories: false,
       showSubtasks: filters.showSubtasks,
@@ -272,6 +275,16 @@ export function BoardFilters({
         {costCenters.map(center => (
           <option key={center.id} value={center.id}>{center.code}{center.description ? ` - ${center.description}` : ''}</option>
         ))}
+      </select>
+      <select aria-label={t('filterUpdated')} value={filters.updatedWithin} onChange={e => update({ updatedWithin: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
+         <option value="">{t('filterUpdated')}</option>
+         <option value="1d">{t('recentLastDay')}</option>
+         <option value="2d">{t('recent2d')}</option>
+         <option value="3d">{t('recent3d')}</option>
+         <option value="5d">{t('recent5d')}</option>
+         <option value="1w">{t('recentWeek')}</option>
+         <option value="current-sprint">{t('recentCurrentSprint')}</option>
+         <option value="1m">{t('recentMonth')}</option>
       </select>
       </div>}
 

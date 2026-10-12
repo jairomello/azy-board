@@ -30,7 +30,7 @@ export const toolFields: Record<string, ToolFields> = {
   apply_sprint_transition: { fields: ['projectId', 'plan', 'idempotencyKey'], required: ['projectId', 'plan'] },
   get_shadow_markdown: { fields: ['projectId'], required: ['projectId'] },
   get_current_sprint: { fields: ['projectId'], required: ['projectId'] },
-  list_tasks: { fields: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'onlyLeaves', 'includeDescriptions', 'fields', 'limit', 'cursor'], required: ['projectId'] },
+  list_tasks: { fields: ['projectId', 'type', 'status', 'assigneeId', 'sprintId', 'tagIds', 'parentId', 'columnId', 'moduleId', 'updatedWithin', 'onlyLeaves', 'includeDescriptions', 'fields', 'limit', 'cursor'], required: ['projectId'] },
   list_modules: { fields: ['projectId'], required: ['projectId'] },
   list_columns: { fields: ['projectId'], required: ['projectId'] },
   list_sprints: { fields: ['projectId'], required: ['projectId'] },

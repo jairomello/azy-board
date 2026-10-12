@@ -3341,3 +3341,154 @@ describe('gestão de squads e cadastros pelo catálogo (T25)', () => {
     expect(await conflict.json()).toMatchObject({ error: { code: 'IDEMPOTENCY_CONFLICT' } })
   })
 })
+
+describe('filtro por última alteração (T57)', () => {
+  let tenantId: string
+  let adminToken: string
+  let projectId: string
+  let storyId: string
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Tenant T57', slug: `t57-${tenantId}`, createdAt: new Date().toISOString() })
+    const admin = await createUser(tenantId, 't57-admin@test.local', 'Admin T57')
+    adminToken = await token(admin.id, tenantId, admin.email)
+    const projectResponse = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto T57', boardMode: 'HIERARCHICAL' }),
+    })
+    projectId = (await projectResponse.json() as { id: string }).id
+    const hierarchy = await seedHierarchyFixture(tenantId, projectId, admin.id, 't57')
+    storyId = hierarchy.storyId
+  })
+
+  test('recorta por janela e rejeita valor inválido', async () => {
+    const recent = await request(`/projects/${projectId}/items`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Recente', type: 'TASK', parentId: storyId }),
+    })
+    const recentId = (await recent.json() as { id: string }).id
+    const old = await request(`/projects/${projectId}/items`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Antigo', type: 'TASK', parentId: storyId }),
+    })
+    const oldId = (await old.json() as { id: string }).id
+    const tenDaysAgo = new Date(Date.now() - 10 * 86_400_000).toISOString()
+    await db.update(items).set({ updatedAt: tenDaysAgo }).where(eq(items.id, oldId))
+
+    const list = async (query: string) => {
+      const response = await request(`/projects/${projectId}/items?leaf=true&${query}`, adminToken)
+      expect(response.status).toBe(200)
+      return (await response.json() as { data: Array<{ id: string; title: string }> }).data
+    }
+
+    const week = await list('updatedWithin=1w')
+    expect(week.map(item => item.id)).toContain(recentId)
+    expect(week.map(item => item.id)).not.toContain(oldId)
+
+    const month = await list('updatedWithin=1m')
+    expect(month.map(item => item.id)).toContain(recentId)
+    expect(month.map(item => item.id)).toContain(oldId)
+
+    const invalid = await request(`/projects/${projectId}/items?updatedWithin=2w`, adminToken)
+    expect(invalid.status).toBe(422)
+    expect(await invalid.json()).toMatchObject({ error: { code: 'INVALID_UPDATED_WITHIN', retryable: false } })
+  })
+})
+
+describe('datas automáticas pela sprint (T58)', () => {
+  let tenantId: string
+  let adminId: string
+  let adminToken: string
+  let projectId: string
+  let storyId: string
+  let sprintId: string
+  const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10)
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Tenant T58', slug: `t58-${tenantId}`, createdAt: new Date().toISOString() })
+    const admin = await createUser(tenantId, 't58-admin@test.local', 'Admin T58')
+    adminId = admin.id
+    adminToken = await token(admin.id, tenantId, admin.email)
+    const projectResponse = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto T58', boardMode: 'HIERARCHICAL' }),
+    })
+    projectId = (await projectResponse.json() as { id: string }).id
+    storyId = (await seedHierarchyFixture(tenantId, projectId, adminId, 't58')).storyId
+    const sprintResponse = await request(`/projects/${projectId}/sprints`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Sprint atual', startDate: day(-2), endDate: day(5) }),
+    })
+    sprintId = (await sprintResponse.json() as { id: string }).id
+    await request(`/projects/${projectId}/sprints/${sprintId}/activate`, adminToken, { method: 'PATCH' })
+  })
+
+  test('task criada sem datas herda as datas da sprint vigente', async () => {
+    const created = await request(`/projects/${projectId}/items`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Sem datas', type: 'TASK', parentId: storyId }),
+    })
+    expect(created.status).toBe(201)
+    const task = await created.json() as { id: string; startDate: string; dueDate: string }
+    expect(task.startDate).toBe(day(-2))
+    expect(task.dueDate).toBe(day(5))
+  })
+
+  test('datas informadas têm precedência', async () => {
+    const created = await request(`/projects/${projectId}/items`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Com datas', type: 'TASK', parentId: storyId, startDate: '2026-01-05', dueDate: '2026-01-06' }),
+    })
+    const task = await created.json() as { startDate: string; dueDate: string }
+    expect(task.startDate).toBe('2026-01-05')
+    expect(task.dueDate).toBe('2026-01-06')
+  })
+
+  test('criação em lote herda as datas da sprint vigente', async () => {
+    const response = await request(`/projects/${projectId}/batch`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        atomic: true,
+        operations: [
+          { tool: 'create_task', args: { ref: 'a', title: 'Lote A', type: 'TASK', parentId: storyId } },
+          { tool: 'create_task', args: { ref: 'b', title: 'Lote B', type: 'TASK', parentId: storyId } },
+        ],
+      }),
+    })
+    expect(response.status).toBe(200)
+    const listed = await request(`/projects/${projectId}/items?sprintId=${sprintId}&type=TASK`, adminToken)
+    const data = (await listed.json() as { data: Array<{ title: string; startDate: string | null; dueDate: string | null }> }).data
+    for (const title of ['Lote A', 'Lote B']) {
+      const item = data.find(candidate => candidate.title === title)
+      expect(item?.startDate).toBe(day(-2))
+      expect(item?.dueDate).toBe(day(5))
+    }
+  })
+
+  test('alterar a sprint de um item existente não recalcula datas', async () => {
+    const created = await request(`/projects/${projectId}/items`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Item fixo', type: 'TASK', parentId: storyId, sprintId }),
+    })
+    const task = await created.json() as { id: string; startDate: string; dueDate: string }
+    expect(task.startDate).toBe(day(-2))
+
+    const secondSprint = await request(`/projects/${projectId}/sprints`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Sprint futura', startDate: day(30), endDate: day(40) }),
+    })
+    const secondSprintId = (await secondSprint.json() as { id: string }).id
+
+    const patched = await request(`/projects/${projectId}/items/${task.id}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sprintId: secondSprintId }),
+    })
+    expect(patched.status).toBe(200)
+    const refreshed = await request(`/projects/${projectId}/items/${task.id}`, adminToken)
+    const updated = await refreshed.json() as { startDate: string; dueDate: string }
+    expect(updated.startDate).toBe(task.startDate)
+    expect(updated.dueDate).toBe(task.dueDate)
+  })
+})

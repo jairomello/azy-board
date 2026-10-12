@@ -94,3 +94,40 @@ describe('boardView — agrupamento', () => {
     expect(selectOrphanCards([orphan, virtual, task]).map(card => card.id)).toEqual(['orphan-1'])
   })
 })
+
+describe('boardView — filtro de última alteração (T57)', () => {
+  const epic = item({ id: 'epic-1', type: 'EPIC', title: 'Épico' })
+  const story = item({ id: 'story-1', type: 'STORY', title: 'História', parentId: 'epic-1', ancestryPath: epicPath('epic-1') })
+  const recent = item({
+    id: 'task-recent', type: 'TASK', title: 'Recente', parentId: 'story-1',
+    ancestryPath: storyPath('epic-1', 'story-1'), updatedAt: new Date().toISOString(),
+  })
+  const old = item({
+    id: 'task-old', type: 'TASK', title: 'Antigo', parentId: 'story-1',
+    ancestryPath: storyPath('epic-1', 'story-1'), updatedAt: new Date(Date.now() - 10 * 86_400_000).toISOString(),
+  })
+  const sprintItem = item({
+    id: 'task-sprint', type: 'TASK', title: 'Da sprint', parentId: 'story-1',
+    ancestryPath: storyPath('epic-1', 'story-1'), itemSprints: [{ sprintId: 'sprint-current' }],
+  })
+
+  const select = (updatedWithin: string, activeSprintId: string | null = null) => selectBoardCards({
+    ...baseInput, allItems: [epic, story, recent, old, sprintItem], filters: filters({ updatedWithin }),
+    epics: [epic], stories: [story], storyIdSet: new Set(['story-1']), activeSprintId,
+  }).map(card => card.id)
+
+  test('janela de semana mantém o recente e remove o antigo', () => {
+    const ids = select('1w')
+    expect(ids).toContain('task-recent')
+    expect(ids).not.toContain('task-old')
+  })
+
+  test('janela de mês inclui o antigo', () => {
+    expect(select('1m')).toContain('task-old')
+  })
+
+  test('current-sprint usa a sprint vigente', () => {
+    expect(select('current-sprint', 'sprint-current')).toEqual(['task-sprint'])
+    expect(select('current-sprint', null)).toEqual([])
+  })
+})

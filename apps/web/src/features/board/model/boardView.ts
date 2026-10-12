@@ -5,6 +5,7 @@
 // HTTP e sem estado: a tela só compõe o resultado. Preserva a Leaf Rule, os
 // filtros por projeto e a fonte única de motivos de visibilidade (T18).
 import { populationFilterReasons, type ItemVisibilityInput, type VisibilityFilterState } from '@azy-board/ui-contracts'
+import { updatedWithinStart, type UpdatedWithin } from '@azy-board/domain'
 import type { Tag } from '../../../components/TagSelector'
 import type { BoardFilterState } from '../../../components/BoardFilters'
 import {
@@ -27,6 +28,7 @@ export interface BoardPopulationInput {
   storyIdSet: Set<string>
   squadMembersMap: Map<string, Set<string>>
   isSimpleBoard: boolean
+  activeSprintId?: string | null
 }
 
 export interface EpicGroup {
@@ -35,11 +37,22 @@ export interface EpicGroup {
   storyGroups: StoryLaneGroup[]
 }
 
+// [T57] Recorte por última alteração (dias-calendário no fuso do projeto) ou
+// pela sprint vigente (`current-sprint`).
+function matchesUpdatedWithin(item: ItemData, updatedWithin: string, activeSprintId: string | null | undefined): boolean {
+  if (!updatedWithin) return true
+  if (updatedWithin === 'current-sprint') {
+    return Boolean(activeSprintId && item.itemSprints?.some(link => link.sprintId === activeSprintId))
+  }
+  const boundary = updatedWithinStart(updatedWithin as Exclude<UpdatedWithin, 'current-sprint'>, new Date())
+  return (item.updatedAt ?? '') >= boundary
+}
+
 // Cards visíveis: primeiro nível (pai é STORY ou órfão) ou Leaf Rule quando
 // `showSubtasks`, sempre passando pelos motivos de visibilidade compartilhados
 // com o avaliador de escopo do agente.
 export function selectBoardCards(input: BoardPopulationInput): ItemData[] {
-  const { allItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard } = input
+  const { allItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId } = input
 
   let result: ItemData[]
   if (filters.showSubtasks) {
@@ -73,6 +86,7 @@ export function selectBoardCards(input: BoardPopulationInput): ItemData[] {
     squadMemberIds: filters.squadId ? [...(squadMembersMap.get(filters.squadId) ?? [])] : undefined,
   })
   result = result.filter(item => populationFilterReasons(toVisibilityInput(item), visibilityFilters).length === 0)
+  result = result.filter(item => matchesUpdatedWithin(item, filters.updatedWithin, activeSprintId))
 
   // Histórias folha aparecem como cards arrastáveis quando "Histórias no board" ativo.
   if (!isSimpleBoard && filters.storyDisplay === 'cards' && columns.length > 0) {
@@ -108,6 +122,7 @@ export function selectBoardCards(input: BoardPopulationInput): ItemData[] {
     if (filters.status) leafStories = leafStories.filter(story => story.status === filters.status)
     if (filters.authorId) leafStories = leafStories.filter(story => matchesMemberFilter(story.authorId, story.author?.id, filters.authorId))
     if (filters.costCenterId) leafStories = leafStories.filter(story => matchesScalarFilter(story.costCenterId, filters.costCenterId))
+    leafStories = leafStories.filter(story => matchesUpdatedWithin(story, filters.updatedWithin, activeSprintId))
     result = [...result, ...leafStories]
   }
 

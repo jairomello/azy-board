@@ -74,10 +74,13 @@ export async function createItemApplication(input: ApplicationAuthorization & {
   const workCard = isWorkCard(type)
   let effectiveSprintId: string | null = body.sprintId ?? null
   if (body.sprintId === undefined && workCard) effectiveSprintId = (await resolveActiveSprint(projectContext, projectId))?.id ?? null
+  // [T58] Sprint efetiva capturada também para herdar as datas na criação.
+  let effectiveSprint: { startDate: string; endDate: string } | null = null
   if (effectiveSprintId) {
     const sprint = await persistence.planning.getSprint(projectContext, projectId, effectiveSprintId)
     if (!sprint) return { ok: false, status: 400, body: { error: 'Sprint não encontrada neste projeto' } }
     if (sprint.status === 'CLOSED') return { ok: false, status: 409, body: { error: 'Não é possível associar itens a uma sprint fechada' } }
+    effectiveSprint = sprint
   }
 
   let effectiveVersionId: string | null = body.versionId ?? null
@@ -125,8 +128,8 @@ export async function createItemApplication(input: ApplicationAuthorization & {
     authorId: context.userId,
     versionId: effectiveVersionId,
     costCenterId,
-    startDate: body.startDate ?? null,
-    dueDate: body.dueDate ?? null,
+    startDate: body.startDate === undefined ? (effectiveSprint?.startDate ?? null) : body.startDate,
+    dueDate: body.dueDate === undefined ? (effectiveSprint?.endDate ?? null) : body.dueDate,
     icon: effectiveIcon,
     color: body.color ?? null,
     position: 0,

@@ -211,9 +211,11 @@ export default function BoardPage() {
   // IDs das STORYs — usados para identificar TASK/BUG de primeiro nível
   const storyIdSet = useMemo(() => new Set(stories.map(s => s.id)), [stories])
 
+  const activeSprintId = useMemo(() => sprints.find(sprint => sprint.status === 'OPEN')?.id ?? null, [sprints])
+
   const boardCards = useMemo(() => selectBoardCards({
-    allItems: scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard,
-  }), [scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard])
+    allItems: scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId,
+  }), [scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId])
 
   // Card T49 — o toggle de caminho crítico só é oferecido com dependências no board.
   const projectDepsAvailable = useMemo(
@@ -416,6 +418,8 @@ export default function BoardPage() {
     squad: tBoard('filterSquad'), assignee: tBoard('filterAssignee'), author: tBoard('filterAuthor'), costCenter: tBoard('filterCostCenter'),
     sprintEmpty: tBoard('noSprint'), versionEmpty: tBoard('noVersion'), assigneeEmpty: tBoard('unassigned'), authorEmpty: tBoard('noAuthor'), costCenterEmpty: tBoard('noCostCenter'),
     priority: tBoard('filterPriority'), status: tBoard('filterStatus'), type: tBoard('filterType'), tag: tBoard('filterTag'),
+    updated: tBoard('filterUpdated'),
+    updatedValues: { '1d': tBoard('recentLastDay'), '2d': tBoard('recent2d'), '3d': tBoard('recent3d'), '5d': tBoard('recent5d'), '1w': tBoard('recentWeek'), '1m': tBoard('recentMonth'), 'current-sprint': tBoard('recentCurrentSprint') },
     hideEmptyEpics: tBoard('hideEmptyEpics'), hideEmptyStories: tBoard('hideEmptyStories'), showSubtasks: tBoard('showSubtasks'),
     storyDisplay: tBoard('storyDisplay'), moduleViewMode: tBoard('moduleViewMode'), typeValues: { TASK: tBoard('typeTask'), BUG: tBoard('typeBug') },
     priorityValues: { LOW: tBoard('priorityLow'), MEDIUM: tBoard('priorityMedium'), HIGH: tBoard('priorityHigh'), CRITICAL: tBoard('priorityCritical') },

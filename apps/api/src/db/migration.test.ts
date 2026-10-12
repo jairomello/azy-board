@@ -409,6 +409,21 @@ describe('migration de aparência de projeto e item (Card T14)', () => {
   })
 })
 
+describe('migration do índice de última alteração (Card T57)', () => {
+  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+
+  test('cria items_tenant_project_updated_idx com foreign_key_check limpo', () => {
+    const sqlite = new Database(':memory:')
+    const database = drizzle(sqlite, { schema })
+    migrate(database, { migrationsFolder })
+    migrate(database, { migrationsFolder })
+    const indexes = sqlite.query("PRAGMA index_list('items')").all() as Array<{ name: string }>
+    expect(indexes.map(index => index.name)).toContain('items_tenant_project_updated_idx')
+    expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([])
+    sqlite.close()
+  })
+})
+
 describe('migration de dependências entre itens (Card T46)', () => {
   const migrationsFolder = new URL('./migrations', import.meta.url).pathname
 

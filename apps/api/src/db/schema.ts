@@ -612,6 +612,8 @@ export const items = sqliteTable('items', {
   // [TENANT] Habilita FKs compostas (inclusive a auto-FK de hierarquia)
   tenantIdUnique: uniqueIndex('items_tenant_id_id_unique').on(table.tenantId, table.id),
   hierarchyLookup: index('items_tenant_project_parent_idx').on(table.tenantId, table.projectId, table.parentId),
+  // [T57] Janelas de última alteração filtram por (tenant, projeto, updated_at)
+  updatedLookup: index('items_tenant_project_updated_idx').on(table.tenantId, table.projectId, table.updatedAt),
   projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
   moduleFk: foreignKey(() => ({ columns: [table.tenantId, table.moduleId], foreignColumns: [modules.tenantId, modules.id] })),
   columnFk: foreignKey(() => ({ columns: [table.tenantId, table.columnId], foreignColumns: [columns.tenantId, columns.id] })),

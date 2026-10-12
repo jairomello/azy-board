@@ -10,6 +10,7 @@ import { appendDomainEventSync } from './domainEventOutbox'
 import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
 import { buildBatchUpdateResponse } from '../../persistence/commandResponses'
 import { readItemSnapshot, readItemSnapshots, recordDeletedItemEventsBatch, recordItemEvent, type SqliteItemSnapshot } from './itemAnalytics'
+import { touchItemMarkerSqlite, parseAncestorIds } from '../itemTouch'
 
 interface ItemRow {
   id: string
@@ -54,6 +55,16 @@ interface AncestryNode {
 }
 
 const MAX_HIERARCHY_DEPTH = 50
+
+// [T57] Marca somente os ancestrais (usado quando o próprio item foi removido).
+// [TENANT] Restringe a atualização ao tenant e ao projeto.
+function touchAncestorsOnly(database: Database, tenantId: string, projectId: string, ancestryPath: string | null | undefined, now = new Date().toISOString()): void {
+  const ids = parseAncestorIds(ancestryPath)
+  if (!ids.length) return
+  const placeholders = ids.map(() => '?').join(', ')
+  database.query(`UPDATE items SET updated_at = ? WHERE tenant_id = ? AND project_id = ? AND id IN (${placeholders})`)
+    .run(now, tenantId, projectId, ...ids)
+}
 
 const itemColumns = {
   type: 'type',
@@ -533,11 +544,11 @@ function createBatchItemInsideTransaction(database: Database, context: MutationC
   const sequenceCode = nextBatchSequenceCode(database, context.tenantId, projectId, type)
   database.query(`INSERT INTO items
     (id, tenant_id, project_id, type, sequence_code, parent_id, module_id, column_id, ancestry_path, title, description,
-     status, priority, points, assignee_id, author_id, version_id, icon, position, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NOT_STARTED', ?, ?, ?, ?, ?, ?, 0, ?, ?)`)
+     status, priority, points, assignee_id, author_id, version_id, icon, start_date, due_date, position, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NOT_STARTED', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`)
     .run(id, context.tenantId, projectId, type, sequenceCode, parentId, moduleId, firstColumn, JSON.stringify(ancestryPath), title,
       operation.description ?? null, priority, operation.points ?? null, assigneeId, context.actorUserId,
-      operation.versionId ?? null, operation.icon ?? null, now, now)
+      operation.versionId ?? null, operation.icon ?? null, operation.startDate ?? null, operation.dueDate ?? null, now, now)
 
   // Card T35 — vínculo automático de sprint no lote (antes inexistente).
   if (operation.sprintIds !== undefined) {
@@ -586,6 +597,9 @@ export function createSqliteItemUnitOfWork(database: Database) {
         const columns = Object.keys(values)
         database.query(`INSERT INTO items (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`)
           .run(...columns.map(column => values[column] as string | number | null))
+
+        // [T57] Criar subtask marca o item e seus ancestrais como alterados.
+        touchItemMarkerSqlite(database, context.tenantId, input.projectId, id, now)
 
         if (relations.tagIds !== undefined) replaceRelations(database, 'item_tags', 'tag_id', context.tenantId, input.projectId, id, relations.tagIds)
         if (relations.sprintIds !== undefined) replaceRelations(database, 'item_sprints', 'sprint_id', context.tenantId, input.projectId, id, relations.sprintIds)
@@ -652,6 +666,9 @@ export function createSqliteItemUnitOfWork(database: Database) {
         const columns = Object.keys(values)
         database.query(`UPDATE items SET ${columns.map(column => `${column} = ?`).join(', ')} WHERE tenant_id = ? AND project_id = ? AND id = ?`)
           .run(...columns.map(column => values[column] as string | number | null), context.tenantId, projectId, itemId)
+
+        // [T57] Alterar um item marca seus ancestrais como alterados.
+        touchItemMarkerSqlite(database, context.tenantId, projectId, itemId, values.updated_at as string)
 
         if (relations.tagIds !== undefined) replaceRelations(database, 'item_tags', 'tag_id', context.tenantId, projectId, itemId, relations.tagIds)
         if (relations.sprintIds !== undefined) replaceRelations(database, 'item_sprints', 'sprint_id', context.tenantId, projectId, itemId, relations.sprintIds)
@@ -740,6 +757,9 @@ export function createSqliteItemUnitOfWork(database: Database) {
         }
         writeAncestryPaths(database, context.tenantId, projectId, pathUpdates)
 
+        // [T57] Reparentar marca o item e a nova cadeia de ancestrais.
+        touchItemMarkerSqlite(database, context.tenantId, projectId, itemId, new Date().toISOString())
+
         const after = readItemSnapshot(database, context.tenantId, projectId, itemId)
         if (before && after) recordItemEvent(database, context, { projectId, itemId, eventType: 'ITEM_REPARENTED', before, after })
         if (oldParentBefore && root.parent_id) {
@@ -791,6 +811,8 @@ export function createSqliteItemUnitOfWork(database: Database) {
         const before = readItemSnapshot(database, context.tenantId, projectId, itemId)
         database.query('UPDATE items SET column_id = ?, status = ?, updated_at = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
           .run(column.id, column.baseStatus, new Date().toISOString(), context.tenantId, projectId, itemId)
+        // [T57] Mover o card marca seus ancestrais como alterados.
+        touchItemMarkerSqlite(database, context.tenantId, projectId, itemId)
         if (before) {
           insertActivity(database, context, itemId, context.mutation.activity ?? `Movido de '${fromColumnName}' para '${column.name}'`)
           recordItemEvent(database, context, { projectId, itemId, eventType: 'STATUS_CHANGED', before, after: readItemSnapshot(database, context.tenantId, projectId, itemId) })
@@ -802,7 +824,12 @@ export function createSqliteItemUnitOfWork(database: Database) {
     deleteItemSubtree(context: MutationContext, projectId: string, itemId: string, options: { recordAnalyticsEvents?: boolean } = {}): string[] {
       return runSqliteAtomic(database, () => {
         const subtree = collectSubtree(database, context.tenantId, projectId, itemId)
+        // [T57] Ancestrais do item removido são marcados como alterados (lidos antes do delete).
+        const rootRow = database.query<{ ancestryPath: string }, [string, string, string]>(
+          'SELECT ancestry_path AS ancestryPath FROM items WHERE tenant_id = ? AND project_id = ? AND id = ?',
+        ).get(context.tenantId, projectId, itemId)
         deleteItemsInsideTransaction(database, context, projectId, subtree, options.recordAnalyticsEvents ?? true)
+        if (rootRow) touchAncestorsOnly(database, context.tenantId, projectId, rootRow.ancestryPath)
         return subtree
       })
     },

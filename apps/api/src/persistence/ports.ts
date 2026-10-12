@@ -655,6 +655,9 @@ export interface BatchItemCreateOperation {
   sprintIds?: string[]
   versionId?: string | null
   icon?: string | null
+  // [T58] Datas herdadas da sprint quando a criação não as informa.
+  startDate?: string | null
+  dueDate?: string | null
 }
 
 export interface BatchItemCreateResult {

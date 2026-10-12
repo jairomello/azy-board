@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Info, Plus, Check, X, ChevronLeft, ChevronRight, CheckSquare, ListChecks, History, CalendarDays, UserRound, Paperclip, Link2, Workflow } from 'lucide-react'
 import type { ItemType, Priority, TaskStatus } from '@azy-board/domain'
@@ -9,6 +9,7 @@ import { AppearancePopover } from './AppearancePopover'
 import { itemIconComponent } from '../lib/iconCatalog'
 import { StorySelector } from './StorySelector'
 import { AddCardForm } from './AddCardForm'
+import { suggestDatesForSprint } from './itemSprintDates'
 import { ChecklistSection } from './ChecklistSection'
 import { CardChildrenSection } from './CardChildrenSection'
 import { ActivityLogPanel } from './ActivityLogPanel'
@@ -50,6 +51,8 @@ export interface ProjectSprint {
   id: string
   name: string
   status: 'PROPOSED' | 'OPEN' | 'CLOSED'
+  startDate?: string
+  endDate?: string
 }
 
 export interface CostCenter {
@@ -187,6 +190,21 @@ export function ItemModal({
   const [points, setPoints] = useState(item.points?.toString() ?? '')
   const [startDate, setStartDate] = useState(item.startDate ?? '')
   const [dueDate, setDueDate] = useState(item.dueDate ?? '')
+  // [T58] Datas digitadas pelo usuário não são substituídas por sugestões da sprint.
+  const datesTouchedRef = useRef(false)
+
+  // [T58] Na criação, escolher a sprint sugere as datas da sprint (editáveis).
+  function handleSprintChange(nextId: string) {
+    setSprintId(nextId)
+    if (item.id !== '__new__') return
+    const next = suggestDatesForSprint(
+      projectSprints.find(candidate => candidate.id === nextId),
+      { startDate, dueDate },
+      datesTouchedRef.current,
+    )
+    setStartDate(next.startDate)
+    setDueDate(next.dueDate)
+  }
   const { description, setDescription, draftRecovered, discardDraft, commitDraft } = useItemDescriptionDraft(projectId, item.id, item.description ?? null)
   const [sequenceCode, setSequenceCode] = useState(item.sequenceCode ?? '')
   const [icon, setIcon] = useState<string | null>(item.icon ?? null)
@@ -448,7 +466,7 @@ export function ItemModal({
 
               <aside className="min-w-0 space-y-5 rounded-lg border border-border bg-muted/20 p-4">
                 <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><CheckSquare className="h-4 w-4 text-primary" />{t('properties')}</h3><div className="space-y-3">{property(t('statusLabel'), <select value={status} onChange={e => setStatus(e.target.value as TaskStatus)} className={fieldClass}>{STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}{property(t('filterAssignee'), <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)} className={fieldClass}><option value="">{t('unassigned')}</option>{members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}</select>)}{property(t('priorityLabel'), <select value={priority} onChange={e => setPriority(e.target.value as Priority)} className={fieldClass}>{PRIORITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}</div></div>
-                <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><CalendarDays className="h-4 w-4 text-primary" />{t('planning')}</h3><div className="space-y-3">{property(t('filterSprint'), <select value={sprintId} onChange={e => setSprintId(e.target.value)} className={fieldClass}><option value="">{t('noSprint')}</option>{projectSprints.length === 0 && <option disabled>{t('noSprints')}</option>}{projectSprints.filter(sprint => sprint.status !== 'CLOSED').map(sprint => <option key={sprint.id} value={sprint.id}>{sprint.name}</option>)}</select>)}{property(t('filterVersion'), <select value={versionId} onChange={e => setVersionId(e.target.value)} className={fieldClass}><option value="">{t('noVersion')}</option>{projectVersions.length === 0 && <option disabled>{t('noVersions')}</option>}{projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select>)}{property(t('pointsLabel'), <input type="number" min="0" value={points} onChange={e => setPoints(e.target.value)} className={fieldClass} placeholder="0" />)}<div className="grid grid-cols-2 gap-2">{property(t('startDate'), <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={fieldClass} />)}{property(t('dueDate'), <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className={fieldClass} />)}</div></div></div>
+                <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><CalendarDays className="h-4 w-4 text-primary" />{t('planning')}</h3><div className="space-y-3">{property(t('filterSprint'), <select value={sprintId} onChange={e => handleSprintChange(e.target.value)} className={fieldClass}><option value="">{t('noSprint')}</option>{projectSprints.length === 0 && <option disabled>{t('noSprints')}</option>}{projectSprints.filter(sprint => sprint.status !== 'CLOSED').map(sprint => <option key={sprint.id} value={sprint.id}>{sprint.name}</option>)}</select>)}{property(t('filterVersion'), <select value={versionId} onChange={e => setVersionId(e.target.value)} className={fieldClass}><option value="">{t('noVersion')}</option>{projectVersions.length === 0 && <option disabled>{t('noVersions')}</option>}{projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select>)}{property(t('pointsLabel'), <input type="number" min="0" value={points} onChange={e => setPoints(e.target.value)} className={fieldClass} placeholder="0" />)}<div className="grid grid-cols-2 gap-2">{property(t('startDate'), <input type="date" value={startDate} onChange={e => { datesTouchedRef.current = true; setStartDate(e.target.value) }} className={fieldClass} />)}{property(t('dueDate'), <input type="date" value={dueDate} onChange={e => { datesTouchedRef.current = true; setDueDate(e.target.value) }} className={fieldClass} />)}</div></div></div>
                 <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><UserRound className="h-4 w-4 text-primary" />{t('information')}</h3><div className="space-y-3">{property(t('codeLabel'), <input value={sequenceCode} onChange={e => setSequenceCode(e.target.value)} placeholder={t('autoGenerated')} className={fieldClass} />)}{property(t('authorLabel'), <div className={`${fieldClass} flex items-center gap-2 text-muted-foreground`}>{item.author?.avatarUrl ? <img src={resolveAppUrl(item.author.avatarUrl)} alt={item.author.name} className="h-5 w-5 rounded-full" /> : <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary">{item.author?.name?.charAt(0).toUpperCase() ?? '?'}</span>}<span className="truncate">{item.author?.name ?? '—'}</span></div>)}</div></div>
               </aside>
             </div>

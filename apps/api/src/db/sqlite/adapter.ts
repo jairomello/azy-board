@@ -79,6 +79,7 @@ import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
 import { applyDimensionProjectionBackfill, applyDimensionProjectionBaselineBackfill, readItemSnapshot as readAnalyticsSnapshot, recordItemEvent as recordAnalyticsEvent, type SqliteItemSnapshot } from './itemAnalytics'
 import { fingerprintTransition } from '../../services/sprintTransition'
 import { buildPlanningGapSnapshot, planningGapPage, type PlanningGapCandidate } from '../../services/planningGaps'
+import { touchItemMarkerSqlite } from '../itemTouch'
 
 function asMutation(context: PersistenceContext): MutationContext {
   return {
@@ -228,10 +229,22 @@ function checklistProgressInTx(sqlite: Database, tenantId: string, itemId: strin
 }
 
 function emitChecklistUpdated(sqlite: Database, tenantId: string, projectId: string, itemId: string, checklistId: string): void {
+  // [T57] Alterar checklist marca o card dono (e ancestrais) como alterado.
+  touchItemMarker(sqlite, tenantId, projectId, itemId)
   appendDomainEventSync(sqlite, {
     tenantId, projectId, type: 'CHECKLIST_UPDATED',
     payload: { itemId, checklistId, progress: checklistProgressInTx(sqlite, tenantId, itemId) },
   })
+}
+
+// [T57] Alias local do helper compartilhado que marca o item dono + ancestrais.
+const touchItemMarker = touchItemMarkerSqlite
+
+// [T57] Registro dependente alterado: marca o card dono + ancestrais e emite o
+// evento de domínio de invalidação na MESMA transação.
+function emitItemUpdatedSync(sqlite: Database, tenantId: string, projectId: string, itemId: string): void {
+  touchItemMarker(sqlite, tenantId, projectId, itemId)
+  appendDomainEventSync(sqlite, { tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
 }
 
 function mapItemLog(row: typeof itemLogs.$inferSelect, author: { id: string; name: string; avatarUrl: string | null } | null = null): ItemLogRecord {
@@ -1648,7 +1661,6 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return row ? mapItemLog(row, row.author ? { id: row.author.id, name: row.author.name, avatarUrl: row.author.avatarUrl } : null) : null
       },
       async createItemLog(context: MutationContext, projectId, itemId, input: NewItemLogRecord) {
-        void projectId
         return runSqliteAtomic(sqlite, () => {
           // [T38] Reserva/replay idempotente na MESMA transação do log.
           assertJournalAvailable(sqlite, context)
@@ -1661,6 +1673,8 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           sqlite.query('INSERT INTO item_logs (id, tenant_id, item_id, author_id, type, actor_type, actor_label, source, activity, duration_min, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
             .run(id, context.tenantId, itemId, context.actorUserId, input.type, context.mutation.actorType,
               context.mutation.actorLabel, context.mutation.actorSource, input.activity, input.durationMin ?? null, now, now)
+          // [T57] Apontamento de trabalho marca o card dono + ancestrais.
+          touchItemMarker(sqlite, context.tenantId, projectId, itemId, now)
           const log = mapItemLog(sqlite.query<never, [string]>(
             'SELECT id, tenant_id AS tenantId, item_id AS itemId, author_id AS authorId, type, actor_type AS actorType, actor_label AS actorLabel, source, activity, duration_min AS durationMin, created_at AS createdAt, updated_at AS updatedAt FROM item_logs WHERE id = ?',
           ).get(id)!)
@@ -1669,17 +1683,19 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         })
       },
       async updateItemLog(context, projectId, itemId, logId, patch: ItemLogPatch) {
-        void projectId
         const result = await database.update(itemLogs).set({ ...patch, updatedAt: new Date().toISOString() }).where(and(
           eq(itemLogs.tenantId, context.tenantId), eq(itemLogs.itemId, itemId), eq(itemLogs.id, logId),
         )).returning()
+        // [T57] Apontamento editado marca o card dono + ancestrais.
+        if (result[0]) touchItemMarker(sqlite, context.tenantId, projectId, itemId)
         return result[0] ? mapItemLog(result[0]) : null
       },
       async deleteItemLog(context, projectId, itemId, logId) {
-        void projectId
         const result = await database.delete(itemLogs).where(and(
           eq(itemLogs.tenantId, context.tenantId), eq(itemLogs.itemId, itemId), eq(itemLogs.id, logId),
         )).returning({ id: itemLogs.id })
+        // [T57] Apontamento removido marca o card dono + ancestrais.
+        if (result.length > 0) touchItemMarker(sqlite, context.tenantId, projectId, itemId)
         return result.length > 0
       },
     },
@@ -1703,7 +1719,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
             .run(id, context.tenantId, itemId, input.fileName, input.originalName, input.mimeType, input.sizeBytes,
               input.storagePath, input.storageProvider ?? 'local', input.label ?? null, input.referenceDate ?? null,
               input.description ?? null, now)
-          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          emitItemUpdatedSync(sqlite, context.tenantId, projectId, itemId)
           return {
             id, tenantId: context.tenantId, itemId, fileName: input.fileName, originalName: input.originalName,
             mimeType: input.mimeType, sizeBytes: input.sizeBytes, storagePath: input.storagePath,
@@ -1730,7 +1746,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
               .get(...params, context.tenantId, itemId, attachmentId) as AttachmentRow | null
             if (!row) return null
           }
-          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          emitItemUpdatedSync(sqlite, context.tenantId, projectId, itemId)
           return mapAttachment(row)
         })
       },
@@ -1748,7 +1764,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
             (id, tenant_id, storage_path, resource_type, status, attempts, available_at, created_at, updated_at)
             VALUES (?, ?, ?, 'ATTACHMENT', 'PENDING', 0, ?, ?, ?)`)
             .run(generateId(), context.tenantId, row.storage_path, now, now, now)
-          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          emitItemUpdatedSync(sqlite, context.tenantId, projectId, itemId)
           return {
             id: row.id, tenantId: row.tenant_id, itemId: row.item_id, fileName: row.filename,
             originalName: row.original_name, mimeType: row.mime_type, sizeBytes: row.size,
@@ -1775,7 +1791,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           sqlite.query('INSERT INTO item_links (id, tenant_id, project_id, item_id, name, url, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
             .run(id, context.tenantId, projectId, itemId, input.name, input.url, input.description ?? null, now, now)
           const row = sqlite.query<ItemLinkRecord, [string]>('SELECT id, tenant_id AS tenantId, project_id AS projectId, item_id AS itemId, name, url, description, created_at AS createdAt, updated_at AS updatedAt FROM item_links WHERE id = ?').get(id)!
-          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          emitItemUpdatedSync(sqlite, context.tenantId, projectId, itemId)
           reserveJournal(sqlite, context, JSON.stringify({ status: 201, body: row }))
           return { ...row }
         })
@@ -1790,7 +1806,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           const row = sqlite.query<ItemLinkRecord, Array<string | null>>(`UPDATE item_links SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND item_id = ? AND id = ? RETURNING id, tenant_id AS tenantId, project_id AS projectId, item_id AS itemId, name, url, description, created_at AS createdAt, updated_at AS updatedAt`)
             .get(...params, context.tenantId, projectId, itemId, linkId)
           if (!row) return null
-          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          emitItemUpdatedSync(sqlite, context.tenantId, projectId, itemId)
           return { ...row }
         })
       },
@@ -1799,7 +1815,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           const result = sqlite.query('DELETE FROM item_links WHERE tenant_id = ? AND project_id = ? AND item_id = ? AND id = ?')
             .run(context.tenantId, projectId, itemId, linkId)
           if (result.changes === 0) return false
-          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          emitItemUpdatedSync(sqlite, context.tenantId, projectId, itemId)
           return true
         })
       },
@@ -1852,7 +1868,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           sqlite.query('INSERT INTO item_dependencies (id, tenant_id, project_id, item_id, depends_on_item_id, depends_on_project_id, dependency_type, lag_days, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
             .run(id, context.tenantId, projectId, itemId, input.dependsOnItemId, input.dependsOnProjectId ?? null, input.dependencyType ?? 'FS', input.lagDays ?? 0, now, now)
           const withTarget = readDependencyWithTargetSqlite(sqlite, context.tenantId, itemId, id)!
-          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          emitItemUpdatedSync(sqlite, context.tenantId, projectId, itemId)
           reserveJournal(sqlite, context, JSON.stringify({ status: 201, body: withTarget }))
           return withTarget
         })
@@ -1868,7 +1884,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           const updated = sqlite.query<{ id: string }, Array<string | number | null>>(`UPDATE item_dependencies SET ${sets.join(', ')} WHERE tenant_id = ? AND project_id = ? AND item_id = ? AND id = ? RETURNING id`)
             .get(...params, context.tenantId, projectId, itemId, dependencyId)
           if (!updated) return null
-          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          emitItemUpdatedSync(sqlite, context.tenantId, projectId, itemId)
           return readDependencyWithTargetSqlite(sqlite, context.tenantId, itemId, dependencyId)
         })
       },
@@ -1877,7 +1893,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           const result = sqlite.query('DELETE FROM item_dependencies WHERE tenant_id = ? AND project_id = ? AND item_id = ? AND id = ?')
             .run(context.tenantId, projectId, itemId, dependencyId)
           if (result.changes === 0) return false
-          appendDomainEventSync(sqlite, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          emitItemUpdatedSync(sqlite, context.tenantId, projectId, itemId)
           return true
         })
       },

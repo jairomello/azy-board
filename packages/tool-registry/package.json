@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@azy-board/assistant-contracts": "workspace:*",
+    "@azy-board/domain": "workspace:*",
     "@azy-board/ui-contracts": "workspace:*"
   },
   "devDependencies": {

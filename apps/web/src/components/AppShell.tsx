@@ -379,7 +379,7 @@ export function AppShell({
 
       <div data-shell-workspace className="min-h-0 min-w-0 flex-1 flex flex-col lg:col-start-2 lg:row-start-2 lg:pl-3">
         {commandBar && (
-          <div className="mx-3 mt-3 flex-shrink-0 rounded-xl border border-border/80 bg-surface-floating/90 shadow-[0_8px_24px_rgba(20,35,50,0.09)] backdrop-blur-xl lg:mx-0">
+          <div className="relative z-30 mx-3 mt-3 flex-shrink-0 rounded-xl border border-border/80 bg-surface-floating/90 shadow-[0_8px_24px_rgba(20,35,50,0.09)] backdrop-blur-xl lg:mx-0">
             {commandBar}
           </div>
         )}

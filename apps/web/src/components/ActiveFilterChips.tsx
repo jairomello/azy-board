@@ -5,7 +5,7 @@ import { isEmptyFilterValue } from '../features/board/model/types'
 
 export type ActiveFilterKey =
   | 'moduleId' | 'sprintId' | 'versionId' | 'squadId' | 'assigneeId' | 'authorId'
-  | 'costCenterId' | 'priority' | 'status' | 'types' | 'tagIds'
+  | 'costCenterId' | 'priority' | 'status' | 'types' | 'tagIds' | 'updatedWithin'
   | 'hideEmptyEpics' | 'hideEmptyStories' | 'showSubtasks' | 'storyDisplay' | 'moduleViewMode'
 
 export interface ActiveFilter {
@@ -32,6 +32,7 @@ export interface ActiveFilterLabels {
   filterLabel: string
   module: string; sprint: string; version: string; squad: string; assignee: string; author: string
   costCenter: string; priority: string; status: string; type: string; tag: string
+  updated: string; updatedValues: Record<string, string>
   sprintEmpty: string; versionEmpty: string; assigneeEmpty: string; authorEmpty: string; costCenterEmpty: string
   hideEmptyEpics: string; hideEmptyStories: string; showSubtasks: string; storyDisplay: string; moduleViewMode: string
   typeValues: Record<string, string>; priorityValues: Record<string, string>; statusValues: Record<string, string>
@@ -68,6 +69,7 @@ export function normalizeActiveBoardFilters(filters: BoardFilterState, catalogs:
   add('status', filters.status, labels.status, labels.statusValues[filters.status] ?? shortId(filters.status))
   for (const type of filters.types) add('types', type, labels.type, labels.typeValues[type] ?? shortId(type))
   for (const tagId of filters.tagIds) add('tagIds', tagId, labels.tag, catalogs.tags.find(tag => tag.id === tagId)?.name ?? shortId(tagId))
+  add('updatedWithin', filters.updatedWithin, labels.updated, labels.updatedValues[filters.updatedWithin] ?? shortId(filters.updatedWithin))
   if (filters.hideEmptyEpics) add('hideEmptyEpics', 'true', labels.hideEmptyEpics, labels.enabled)
   if (filters.hideEmptyStories && filters.storyDisplay === 'lanes' && context.view !== 'tree') add('hideEmptyStories', 'true', labels.hideEmptyStories, labels.enabled)
   if (filters.showSubtasks && context.view !== 'tree') add('showSubtasks', 'true', labels.showSubtasks, labels.enabled)

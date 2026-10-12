@@ -9,12 +9,13 @@ import { ActiveFilterChips, type ActiveFilterCatalogs, type ActiveFilterKey, typ
 const labels: ActiveFilterLabels = {
   filterLabel: 'Filtros ativos', module: 'Módulo', sprint: 'Sprint', version: 'Versão', squad: 'Squad', assignee: 'Responsável', author: 'Autor',
   costCenter: 'Centro de custo', priority: 'Prioridade', status: 'Situação', type: 'Tipo', tag: 'Tag', hideEmptyEpics: 'Ocultar épicos vazios', hideEmptyStories: 'Ocultar histórias vazias', showSubtasks: 'Mostrar subtasks', storyDisplay: 'Histórias', moduleViewMode: 'Módulos',
+  updated: 'Alterados', updatedValues: { '3d': 'Últimos 3 dias' },
   sprintEmpty: 'Sem sprint', versionEmpty: 'Sem versão', assigneeEmpty: 'Não atribuído', authorEmpty: 'Sem autor', costCenterEmpty: 'Sem centro de custo',
   typeValues: { TASK: 'Task', BUG: 'Bug' }, priorityValues: { HIGH: 'Alta' }, statusValues: { DONE: 'Concluída' }, storyDisplayCards: 'como cards', moduleViewTabs: 'como abas', enabled: 'ativado', remove: 'Remover filtro',
 }
 
 const filters: BoardFilterState = {
-  moduleId: 'module-1', sprintId: '', assigneeId: '', squadId: '', types: ['TASK'], tagIds: [], versionId: '', priority: '', status: '', authorId: '', costCenterId: '',
+  moduleId: 'module-1', sprintId: '', assigneeId: '', squadId: '', types: ['TASK'], tagIds: [], versionId: '', priority: '', status: '', authorId: '', costCenterId: '', updatedWithin: '',
   hideEmptyEpics: false, hideEmptyStories: false, showSubtasks: false, storyDisplay: 'lanes', moduleViewMode: 'hierarchy',
 }
 

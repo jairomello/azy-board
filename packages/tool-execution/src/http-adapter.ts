@@ -701,9 +701,9 @@ export async function toolUpdateItemLog(api: ApiCall, projectId: string, itemId:
 
 export async function toolListTasks(
   api: ApiCall,
-  args: { projectId: string; type?: string; sprintId?: string; assigneeId?: string; status?: string; tagIds?: string[]; parentId?: string; columnId?: string; moduleId?: string; onlyLeaves?: boolean; includeDescriptions?: boolean; fields?: string[]; cursor?: string; limit?: number }
+  args: { projectId: string; type?: string; sprintId?: string; assigneeId?: string; status?: string; tagIds?: string[]; parentId?: string; columnId?: string; moduleId?: string; updatedWithin?: string; onlyLeaves?: boolean; includeDescriptions?: boolean; fields?: string[]; cursor?: string; limit?: number }
 ): Promise<Item[] | Page<Item>> {
-  const { projectId, sprintId, type, assigneeId, status, tagIds, parentId, columnId, moduleId, cursor, limit = 50, onlyLeaves = true, includeDescriptions = false, fields } = args
+  const { projectId, sprintId, type, assigneeId, status, tagIds, parentId, columnId, moduleId, updatedWithin, cursor, limit = 50, onlyLeaves = true, includeDescriptions = false, fields } = args
   const params = new URLSearchParams({ leaf: String(onlyLeaves), limit: String(limit), includeDescriptions: String(includeDescriptions) })
   if (sprintId) params.set('sprintId', sprintId)
   if (type)     params.set('type', type)
@@ -713,6 +713,7 @@ export async function toolListTasks(
   if (parentId) params.set('parentId', parentId)
   if (columnId) params.set('columnId', columnId)
   if (moduleId) params.set('moduleId', moduleId)
+  if (updatedWithin) params.set('updatedWithin', updatedWithin)
   if (cursor) params.set('cursor', cursor)
   if (fields?.length) params.set('fields', fields.join(','))
   return api(`/projects/${projectId}/items?${params}`) as Promise<Item[] | Page<Item>>

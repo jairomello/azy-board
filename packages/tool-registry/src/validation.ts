@@ -2,6 +2,7 @@ import { isRegisteredTool, PROJECTION_FIELDS, requiredFieldsFor, toolFields } fr
 import { normalizeDurationArguments } from './duration.js'
 import { PLANNING_GAP_LIMITS, TOOL_TEXT_LIMITS } from './limits.js'
 import { isIconName } from '@azy-board/ui-contracts'
+import { UPDATED_WITHIN_VALUES } from '@azy-board/domain'
 
 // Campos internos injetados por harness/executores que não fazem parte do schema
 // exposto (ex.: assistantHarness adiciona atomic: true em batch; T25 injeta as
@@ -248,6 +249,9 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     const allowed = new Set(PROJECTION_FIELDS)
     const unknown = (input.fields as string[]).find(field => !allowed.has(field))
     if (unknown) throw new Error(`fields contém campo desconhecido: ${unknown}`)
+  }
+  if (name === 'list_tasks' && input.updatedWithin != null) {
+    assertEnum(input.updatedWithin, 'updatedWithin', UPDATED_WITHIN_VALUES)
   }
   if ((name === 'update_item' || name === 'update_items')) {
     if (!Array.isArray(input.changes) || input.changes.length < 1 || input.changes.length > 20) throw new Error('changes deve conter entre 1 e 20 alterações')

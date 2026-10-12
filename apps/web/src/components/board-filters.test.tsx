@@ -10,7 +10,7 @@ const t = (key: string, options?: Record<string, unknown>) => i18n.t(key, { ns: 
 
 const baseFilters: BoardFilterState = {
   moduleId: '', sprintId: '', assigneeId: '', types: [], tagIds: [], versionId: '', priority: '', status: '',
-  authorId: '', costCenterId: '', hideEmptyEpics: false, hideEmptyStories: false, squadId: '', showSubtasks: false,
+  authorId: '', costCenterId: '', updatedWithin: '', hideEmptyEpics: false, hideEmptyStories: false, squadId: '', showSubtasks: false,
   storyDisplay: 'lanes', moduleViewMode: 'hierarchy',
 }
 
@@ -80,6 +80,16 @@ describe('BoardFilters (DOM por papel/rótulo)', () => {
     await user.click(screen.getByRole('button', { name: t('moduleViewTabs') }))
 
     expect(mudancas[mudancas.length - 1]?.moduleViewMode).toBe('tabs')
+  })
+
+  test('filtra por janela de última alteração', async () => {
+    const user = userEvent.setup()
+    const mudancas: BoardFilterState[] = []
+    renderFilters({}, f => mudancas.push(f))
+
+    await user.selectOptions(screen.getByRole('combobox', { name: t('filterUpdated') }), '3d')
+
+    expect(mudancas[mudancas.length - 1]?.updatedWithin).toBe('3d')
   })
 
   test('limpa os filtros de dados preservando subtasks, visão e modo de módulo', async () => {

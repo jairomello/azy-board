@@ -52,6 +52,10 @@ Fluxo recomendado: `list_tasks` para obter o `itemId`, `list_checklists` para ob
 
 Para marcar vários passos, prefira `check_items` com no máximo 100 entradas. Cada entrada aceita os três IDs ou `checklistName` + `text`/`position`; a operação é atômica dentro de cada card, e `failures` informa o índice de cada entrada rejeitada. A busca semântica normaliza espaços externos/internos e caixa, mas nunca escolhe entre candidatos duplicados.
 
+### Cards alterados recentemente
+
+`list_tasks` aceita `updatedWithin` para responder "quais cards mudaram nos últimos N dias". Valores: `1d` (último dia/ontem), `2d`, `3d`, `5d`, `1w` (semana), `1m` (mês) e `current-sprint` (sprint vigente). As janelas são dias-calendário no fuso do projeto e cobrem a última alteração do card **ou** de seus dependentes (checklists, links, anexos, dependências, histórico e subtasks).
+
 ### Transição revisável de sprint
 
 `prepare_sprint_transition` (ADMIN, somente-leitura) monta o plano de carry-over; `apply_sprint_transition` (ADMIN) aplica o plano aprovado atomicamente e de forma idempotente (T38). O plano acrescenta a sprint de destino aos pendentes elegíveis (TASK/BUG folhas `NOT_STARTED`/`IN_PROGRESS`/`BLOCKED`) preservando a origem e demais vínculos, e fecha o ciclo da origem como `CLOSED` sem ativar o destino. Concluídos (`DONE`/`CANCELLED`), pais, arquivados e itens fora da origem permanecem intactos.

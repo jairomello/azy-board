@@ -96,6 +96,7 @@ import { applyDimensionProjectionBackfill, applyDimensionProjectionBaselineBackf
 import { fingerprintSource, validateDuplicationDestination, StructureDuplicationError, type SourceChecklistFact, type SourceFacts, type SourceLinkFact } from '../../services/structureDuplication'
 import { fingerprintTransition } from '../../services/sprintTransition'
 import { buildPlanningGapSnapshot, planningGapPage, type PlanningGapCandidate } from '../../services/planningGaps'
+import { parseAncestorIds, touchedItemIds } from '../itemTouch'
 
 // ---------------------------------------------------------------------------
 // Mapeamento de linhas SQL para records de domínio
@@ -729,10 +730,43 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
 
   /** [T38] CHECKLIST_UPDATED com progresso consolidado, na transação do comando. */
   async function emitChecklistUpdatedPg(client: PoolClient, tenantId: string, projectId: string, itemId: string, checklistId: string): Promise<void> {
+    // [T57] Alterar checklist marca o card dono (e ancestrais) como alterado.
+    await touchItemMarkerPg(client, tenantId, projectId, itemId)
     await appendDomainEventPg(client, {
       tenantId, projectId, type: 'CHECKLIST_UPDATED',
       payload: { itemId, checklistId, progress: await checklistProgressPg(client, tenantId, itemId) },
     })
+  }
+
+  // [T57] Marca o item dono e seus ancestrais como alterados em UMA sentença.
+  // [TENANT] Restringe a atualização ao tenant e ao projeto do item.
+  async function touchItemMarkerPg(client: PoolClient, tenantId: string, projectId: string, itemId: string, now = new Date().toISOString()): Promise<void> {
+    const row = await client.query('SELECT ancestry_path FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3', [tenantId, projectId, itemId])
+    if (!row.rows[0]) return
+    const ids = touchedItemIds(itemId, row.rows[0].ancestry_path as string)
+    await client.query('UPDATE items SET updated_at = $1 WHERE tenant_id = $2 AND project_id = $3 AND id = ANY($4::text[])', [now, tenantId, projectId, ids])
+  }
+
+  // [T57] Registro dependente alterado: marca o card dono + ancestrais e emite o
+  // evento de domínio de invalidação na MESMA transação.
+  async function emitItemUpdatedPg(client: PoolClient, tenantId: string, projectId: string, itemId: string): Promise<void> {
+    await touchItemMarkerPg(client, tenantId, projectId, itemId)
+    await appendDomainEventPg(client, { tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+  }
+
+  // [T57] Marca somente ancestrais (item removido) — usado no delete de subtask.
+  async function touchAncestorsOnlyPg(client: PoolClient, tenantId: string, projectId: string, ancestryPath: string | null | undefined, now = new Date().toISOString()): Promise<void> {
+    const ids = parseAncestorIds(ancestryPath)
+    if (!ids.length) return
+    await client.query('UPDATE items SET updated_at = $1 WHERE tenant_id = $2 AND project_id = $3 AND id = ANY($4::text[])', [now, tenantId, projectId, ids])
+  }
+
+  // [T57] Variante fora de transação explícita (comandos que usam o pool).
+  async function touchItemMarkerPgPool(tenantId: string, projectId: string, itemId: string, now = new Date().toISOString()): Promise<void> {
+    const row = await q1('SELECT ancestry_path FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3', [tenantId, projectId, itemId])
+    if (!row) return
+    const ids = touchedItemIds(itemId, row.ancestry_path as string)
+    await q('UPDATE items SET updated_at = $1 WHERE tenant_id = $2 AND project_id = $3 AND id = ANY($4::text[])', [now, tenantId, projectId, ids])
   }
 
   async function _appendDomainEventsInTx(client: PoolClient, context: MutationContext, projectId: string): Promise<void> {
@@ -894,11 +928,11 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
     const sequenceCode = await nextBatchSequenceCodePg(client, context.tenantId, projectId, type)
     await client.query(
       `INSERT INTO items (id, tenant_id, project_id, type, sequence_code, parent_id, module_id, column_id, ancestry_path, title, description,
-         status, priority, points, assignee_id, author_id, version_id, icon, position, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'NOT_STARTED', $12, $13, $14, $15, $16, $17, 0, $18, $19)`,
+         status, priority, points, assignee_id, author_id, version_id, icon, start_date, due_date, position, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'NOT_STARTED', $12, $13, $14, $15, $16, $17, $18, $19, 0, $20, $21)`,
       [id, context.tenantId, projectId, type, sequenceCode, parentId, moduleId, columnId, JSON.stringify(ancestryPath), title,
        operation.description ?? null, priority, operation.points ?? null, assigneeId, context.actorUserId ?? null,
-       operation.versionId ?? null, operation.icon ?? null, now, now],
+       operation.versionId ?? null, operation.icon ?? null, operation.startDate ?? null, operation.dueDate ?? null, now, now],
     )
     if (operation.sprintIds !== undefined) {
       await replaceItemSprintsPg(client, context.tenantId, projectId, id, operation.sprintIds)
@@ -933,6 +967,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       sets.push(`updated_at = $${idx++}`)
       params.push(now)
       await client.query(`UPDATE items SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3`, params)
+      // [T57] Alteração em lote marca os ancestrais de cada item.
+      await touchItemMarkerPg(client, context.tenantId, projectId, operation.itemId, now)
       if (operation.sprintIds !== undefined) {
         await replaceItemSprintsPg(client, context.tenantId, projectId, operation.itemId, operation.sprintIds)
       }
@@ -2166,7 +2202,6 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return row ? mapItemLog(row) : null
       },
       async createItemLog(context: MutationContext, projectId: string, itemId: string, input: Record<string, unknown>): Promise<ItemLogRecord> {
-        void projectId
         return tx(async (client) => {
           // [T38] Reserva/replay idempotente na MESMA transação do log.
           await assertJournalAvailablePg(client, context)
@@ -2180,12 +2215,14 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
              input.activity, input.durationMin ?? null, now, now],
           )
           if (!result.rows[0]) throw new Error('Falha ao criar log no adapter PostgreSQL.')
+          // [T57] Apontamento de trabalho marca o card dono + ancestrais.
+          await touchItemMarkerPg(client, context.tenantId, projectId, itemId, now)
           const log = mapItemLog(result.rows[0] as PgRow)
           await reserveJournalPg(client, context, JSON.stringify({ status: 201, body: { id: log.id, durationMin: log.durationMin } }))
           return log
         })
       },
-      async updateItemLog(context: PersistenceContext, _projectId: string, itemId: string, logId: string, patch: ItemLogPatch): Promise<ItemLogRecord | null> {
+      async updateItemLog(context: PersistenceContext, projectId: string, itemId: string, logId: string, patch: ItemLogPatch): Promise<ItemLogRecord | null> {
         const sets: string[] = []
         const params: unknown[] = [context.tenantId, itemId, logId]
         let idx = 4
@@ -2193,13 +2230,23 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         if (patch.durationMin !== undefined) { sets.push(`duration_min = $${idx++}`); params.push(patch.durationMin) }
         if (!sets.length) return null
         sets.push(`updated_at = $${idx++}`); params.push(new Date().toISOString())
-        const row = await q1(`UPDATE item_logs SET ${sets.join(', ')} WHERE tenant_id = $1 AND item_id = $2 AND id = $3 RETURNING *`, params)
-        return row ? mapItemLog(row) : null
+        return tx(async (client) => {
+          const row = (await client.query(`UPDATE item_logs SET ${sets.join(', ')} WHERE tenant_id = $1 AND item_id = $2 AND id = $3 RETURNING *`, params)).rows[0]
+          if (!row) return null
+          // [T57] Apontamento editado marca o card dono + ancestrais.
+          await touchItemMarkerPg(client, context.tenantId, projectId, itemId)
+          return mapItemLog(row as PgRow)
+        })
       },
-      async deleteItemLog(context: PersistenceContext, _projectId: string, itemId: string, logId: string): Promise<boolean> {
-        const rows = await q('DELETE FROM item_logs WHERE tenant_id = $1 AND item_id = $2 AND id = $3 RETURNING id',
-          [context.tenantId, itemId, logId])
-        return rows.length > 0
+      async deleteItemLog(context: PersistenceContext, projectId: string, itemId: string, logId: string): Promise<boolean> {
+        return tx(async (client) => {
+          const rows = (await client.query('DELETE FROM item_logs WHERE tenant_id = $1 AND item_id = $2 AND id = $3 RETURNING id',
+            [context.tenantId, itemId, logId])).rows
+          if (!rows.length) return false
+          // [T57] Apontamento removido marca o card dono + ancestrais.
+          await touchItemMarkerPg(client, context.tenantId, projectId, itemId)
+          return true
+        })
       },
     },
 
@@ -2235,7 +2282,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             [generateId(), context.tenantId, itemId, input.fileName, input.originalName, input.mimeType, input.sizeBytes, input.storagePath, input.storageProvider ?? 'local', input.label ?? null, input.referenceDate ?? null, input.description ?? null],
           )
           if (!result.rows[0]) throw new Error('Falha ao criar anexo no adapter PostgreSQL.')
-          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          await emitItemUpdatedPg(client, context.tenantId, projectId, itemId)
           return mapAttachment(result.rows[0] as PgRow)
         })
       },
@@ -2249,7 +2296,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           return tx(async (client) => {
             const existing = await client.query('SELECT * FROM attachments WHERE tenant_id = $1 AND item_id = $2 AND id = $3', [context.tenantId, itemId, attachmentId])
             if (!existing.rows[0]) return null
-            await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+            await emitItemUpdatedPg(client, context.tenantId, projectId, itemId)
             return mapAttachment(existing.rows[0] as PgRow)
           })
         }
@@ -2260,7 +2307,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             values,
           )
           if (!result.rows[0]) return null
-          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          await emitItemUpdatedPg(client, context.tenantId, projectId, itemId)
           return mapAttachment(result.rows[0] as PgRow)
         })
       },
@@ -2276,7 +2323,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
              ON CONFLICT (tenant_id, storage_path) WHERE status = 'PENDING' DO NOTHING`,
             [generateId(), context.tenantId, attachment.storagePath],
           )
-          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          await emitItemUpdatedPg(client, context.tenantId, projectId, itemId)
           return attachment
         })
       },
@@ -2303,7 +2350,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             [generateId(), context.tenantId, projectId, itemId, input.name, input.url, input.description ?? null],
           )
           if (!result.rows[0]) throw new Error('ITEM_NOT_FOUND')
-          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          await emitItemUpdatedPg(client, context.tenantId, projectId, itemId)
           const link = mapItemLink(result.rows[0] as PgRow)
           await reserveJournalPg(client, context, JSON.stringify({ status: 201, body: link }))
           return link
@@ -2324,7 +2371,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             values,
           )
           if (!result.rows[0]) return null
-          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          await emitItemUpdatedPg(client, context.tenantId, projectId, itemId)
           return mapItemLink(result.rows[0] as PgRow)
         })
       },
@@ -2332,7 +2379,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return tx(async (client) => {
           const result = await client.query('DELETE FROM item_links WHERE tenant_id = $1 AND project_id = $2 AND item_id = $3 AND id = $4 RETURNING id', [context.tenantId, projectId, itemId, linkId])
           if ((result.rowCount ?? 0) === 0) return false
-          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          await emitItemUpdatedPg(client, context.tenantId, projectId, itemId)
           return true
         })
       },
@@ -2378,7 +2425,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           )
           if (!result.rows[0]) throw new Error('ITEM_NOT_FOUND')
           const withTarget = await readItemDependencyWithTargetPg(client, context.tenantId, itemId, (result.rows[0] as PgRow).id as string)
-          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          await emitItemUpdatedPg(client, context.tenantId, projectId, itemId)
           await reserveJournalPg(client, context, JSON.stringify({ status: 201, body: withTarget }))
           return withTarget
         })
@@ -2399,7 +2446,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             values,
           )
           if (!result.rows[0]) return null
-          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          await emitItemUpdatedPg(client, context.tenantId, projectId, itemId)
           return readItemDependencyWithTargetPg(client, context.tenantId, itemId, dependencyId)
         })
       },
@@ -2407,7 +2454,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         return tx(async (client) => {
           const result = await client.query('DELETE FROM item_dependencies WHERE tenant_id = $1 AND project_id = $2 AND item_id = $3 AND id = $4 RETURNING id', [context.tenantId, projectId, itemId, dependencyId])
           if ((result.rowCount ?? 0) === 0) return false
-          await appendDomainEventPg(client, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.itemUpdated, payload: { itemIds: [itemId] } })
+          await emitItemUpdatedPg(client, context.tenantId, projectId, itemId)
           return true
         })
       },
@@ -3722,6 +3769,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
              input.position ?? 0, input.startDate ?? null, input.dueDate ?? null,
              context.actorUserId ?? null, input.versionId ?? null, input.icon ?? null, input.color ?? null, now, now],
           )
+          // [T57] Criar subtask marca o item e seus ancestrais como alterados.
+          await touchItemMarkerPg(client, context.tenantId, input.projectId, id, now)
           if (relations?.tagIds?.length) {
             for (const tagId of [...new Set(relations.tagIds)]) {
               await client.query('INSERT INTO item_tags (tenant_id, item_id, tag_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
@@ -3798,6 +3847,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           if (sets.length) {
             sets.push(`updated_at = $${idx++}`); params.push(new Date().toISOString())
             await client.query(`UPDATE items SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3`, params)
+            // [T57] Alterar um item marca seus ancestrais como alterados.
+            await touchItemMarkerPg(client, context.tenantId, projectId, itemId)
           }
           if (relations?.tagIds) {
             await client.query('DELETE FROM item_tags WHERE tenant_id = $1 AND item_id = $2', [context.tenantId, itemId])
@@ -3932,6 +3983,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
 
           const after = await readItemSnapshot(client, context.tenantId, projectId, itemId)
           if (before && after) await recordItemEvent(client, context, { projectId, itemId, eventType: 'ITEM_REPARENTED', before, after })
+          // [T57] Reparentar marca o item e a nova cadeia de ancestrais.
+          await touchItemMarkerPg(client, context.tenantId, projectId, itemId)
           if (oldParentBefore && root.parent_id) {
             await recordItemEvent(client, context, {
               projectId, itemId: root.parent_id, eventType: 'LEAF_CHANGED', before: oldParentBefore,
@@ -3952,6 +4005,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
            WHERE tenant_id = $4 AND project_id = $5 AND id = $6 AND assignee_id IS NULL RETURNING id`,
           [assigneeId, apiKeyId ?? null, columnId ?? null, context.tenantId, projectId, itemId],
         )
+        // [T57] Card assumido marca os ancestrais como alterados.
+        if (rows.length > 0) await touchItemMarkerPgPool(context.tenantId, projectId, itemId)
         return rows.length > 0
       },
       async releaseItem(context, projectId, itemId, activity) {
@@ -3967,6 +4022,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
                context.mutation.actorLabel, context.mutation.actorSource, activity, now, now],
             )
           }
+          // [T57] Trabalho liberado marca os ancestrais como alterados.
+          await touchItemMarkerPg(client, context.tenantId, projectId, itemId)
         })
       },
       async moveItem(context, projectId, itemId, column, fromColumnName) {
@@ -3976,6 +4033,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           const before = await readItemSnapshot(client, context.tenantId, projectId, itemId)
           await client.query('UPDATE items SET column_id = $1, status = $2, updated_at = now() WHERE tenant_id = $3 AND project_id = $4 AND id = $5',
             [column.id, column.baseStatus, context.tenantId, projectId, itemId])
+          // [T57] Mover o card marca seus ancestrais como alterados.
+          await touchItemMarkerPg(client, context.tenantId, projectId, itemId)
           const now = new Date().toISOString()
           await client.query(
             `INSERT INTO item_logs (id, tenant_id, item_id, author_id, type, actor_type, actor_label, source, activity, duration_min, created_at, updated_at)
@@ -4009,6 +4068,10 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           if (!itemIds.length) throw new Error('ITEM_NOT_FOUND')
 
           const snapshots = await readItemSnapshots(client, context.tenantId, projectId, itemIds)
+          // [T57] Ancestrais do item removido, lidos antes do delete.
+          const rootAncestryRow = await client.query('SELECT ancestry_path FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+            [context.tenantId, projectId, itemId])
+          const rootAncestry = (rootAncestryRow.rows[0] as { ancestry_path: string } | undefined)?.ancestry_path
           const parentIds = [...new Set([...snapshots.values()].flatMap(snapshot => snapshot.parentId ? [snapshot.parentId] : []))]
           const parentSnapshots = await readItemSnapshots(client, context.tenantId, projectId, parentIds)
           const attachmentRows = await client.query(
@@ -4057,6 +4120,9 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           await client.query('DELETE FROM item_dependencies WHERE tenant_id = $1 AND depends_on_item_id = ANY($2::text[])', [context.tenantId, itemIds])
           await client.query('DELETE FROM item_logs WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
           await client.query('DELETE FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = ANY($3::text[])', [context.tenantId, projectId, itemIds])
+
+          // [T57] Ancestrais do item removido são marcados como alterados.
+          await touchAncestorsOnlyPg(client, context.tenantId, projectId, rootAncestry)
 
           const externalParentIds = parentIds.filter(parentId => !itemIds.includes(parentId))
           const remainingChildRows = externalParentIds.length

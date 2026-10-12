@@ -4,6 +4,7 @@ import { authMiddleware, requireRole } from '../middleware/auth'
 import { addTreeProgress, type TreeProgressNode } from '../services/treeProgress'
 import type { RequestContext } from '@azy-board/api-contracts'
 import type { ActivityActorType, ActivitySource, ItemType } from '@azy-board/domain'
+import { UPDATED_WITHIN_VALUES, isUpdatedWithin, updatedWithinStart, type UpdatedWithin } from '@azy-board/domain'
 import { parseWorkDuration } from '@azy-board/ui-contracts'
 import { PROJECTION_FIELDS } from '@azy-board/tool-registry'
 import { IDEMPOTENCY_RETENTION_MS, payloadHash } from '../services/idempotency'
@@ -17,9 +18,16 @@ import type { ItemLogRecord, ItemRecord, ItemDependencyRecord, ItemDependencyTar
 import { emitDomainEvent, findOperationId } from '../services/domainEventOutbox'
 import { createItemApplication, moveItemApplication, updateItemApplication } from '../application/items'
 import { loadItemWithRelations } from '../application/itemRules'
+import { resolveActiveSprint } from '../services/creationDefaults'
 
 export const itemsRouter = new Hono<HonoEnv>()
 itemsRouter.use('*', authMiddleware)
+
+/** [T57] Janela válida de última alteração, ou null quando não informada. */
+function parseUpdatedWithin(raw: string | undefined): UpdatedWithin | null | 'invalid' {
+  if (raw === undefined || raw === '') return null
+  return isUpdatedWithin(raw) ? raw : 'invalid'
+}
 
 /** Resumo de dependências por item, agregado sem N+1 (uma leitura de arestas do projeto). */
 function dependencyIndexByItem(
@@ -227,6 +235,13 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
   const assigneeIdFilter = c.req.query('assigneeId')
   const statusFilter = c.req.query('status')
   const tagIdsFilter = c.req.query('tagIds')?.split(',').filter(Boolean) ?? []
+  const updatedWithin = parseUpdatedWithin(c.req.query('updatedWithin'))
+  if (updatedWithin === 'invalid') {
+    return c.json({
+      error: `Valor inválido para updatedWithin: "${c.req.query('updatedWithin')}". Opções: ${UPDATED_WITHIN_VALUES.join(', ')}`,
+      code: 'INVALID_UPDATED_WITHIN', retryable: false, details: { field: 'updatedWithin' },
+    }, 422)
+  }
   const requestedLimit = c.req.query('limit')
   const cursor = c.req.query('cursor')
   const includeDescriptions = c.req.query('includeDescriptions') === 'true'
@@ -280,6 +295,16 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
   if (sprintIdFilter) {
     const sprint = await persistence.planning.getSprint(userPersistenceContext(ctx), projectId, sprintIdFilter)
     allItems = sprint ? allItems.filter(item => item.itemSprints.some(link => link.sprintId === sprint.id)) : []
+  }
+
+  // [T57] Janela de última alteração: `current-sprint` usa a sprint vigente; as
+  // demais usam o início do dia-calendário no fuso do projeto.
+  if (updatedWithin === 'current-sprint') {
+    const activeSprint = await resolveActiveSprint(userPersistenceContext(ctx), projectId)
+    allItems = activeSprint ? allItems.filter(item => item.itemSprints.some(link => link.sprintId === activeSprint.id)) : []
+  } else if (updatedWithin) {
+    const boundary = updatedWithinStart(updatedWithin, new Date())
+    allItems = allItems.filter(item => item.updatedAt >= boundary)
   }
 
   // Leaf Rule: calcular isLeaf client-side

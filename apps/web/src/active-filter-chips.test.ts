@@ -6,12 +6,13 @@ import { EMPTY_FILTER_VALUE } from './features/board/model/types'
 const labels: ActiveFilterLabels = {
   filterLabel: 'Active filters', module: 'Module', sprint: 'Sprint', version: 'Version', squad: 'Squad', assignee: 'Assignee', author: 'Author',
   costCenter: 'Cost center', priority: 'Priority', status: 'Status', type: 'Type', tag: 'Tag', hideEmptyEpics: 'Hide empty epics', hideEmptyStories: 'Hide empty stories', showSubtasks: 'Show subtasks', storyDisplay: 'Stories', moduleViewMode: 'Modules',
+  updated: 'Updated', updatedValues: { '3d': 'Last 3 days', 'current-sprint': 'Current sprint' },
   sprintEmpty: 'No sprint', versionEmpty: 'No version', assigneeEmpty: 'Unassigned', authorEmpty: 'No author', costCenterEmpty: 'No cost center',
   typeValues: { TASK: 'Task', BUG: 'Bug' }, priorityValues: { HIGH: 'High' }, statusValues: { DONE: 'Done' }, storyDisplayCards: 'as cards', moduleViewTabs: 'as tabs', enabled: 'enabled', remove: 'Remove filter',
 }
 
 const filters: BoardFilterState = {
-  moduleId: 'module-1', sprintId: 'sprint-1', assigneeId: 'member-1', squadId: 'squad-1', types: ['TASK', 'BUG'], tagIds: ['tag-1', 'missing-tag'], versionId: 'version-1', priority: 'HIGH', status: 'DONE', authorId: 'member-2', costCenterId: 'cc-1',
+  moduleId: 'module-1', sprintId: 'sprint-1', assigneeId: 'member-1', squadId: 'squad-1', types: ['TASK', 'BUG'], tagIds: ['tag-1', 'missing-tag'], versionId: 'version-1', priority: 'HIGH', status: 'DONE', authorId: 'member-2', costCenterId: 'cc-1', updatedWithin: '3d',
   hideEmptyEpics: true, hideEmptyStories: true, showSubtasks: true, storyDisplay: 'cards', moduleViewMode: 'tabs',
 }
 
@@ -22,10 +23,10 @@ const catalogs = {
 
 describe('filtros ativos do Board', () => {
   test('não cria chips para o estado padrão e cria um por valor selecionado', () => {
-    const defaults = { ...filters, moduleId: '', sprintId: '', assigneeId: '', squadId: '', types: [], tagIds: [], versionId: '', priority: '', status: '', authorId: '', costCenterId: '', hideEmptyEpics: false, hideEmptyStories: false, showSubtasks: false, storyDisplay: 'lanes' as const, moduleViewMode: 'hierarchy' as const }
+    const defaults = { ...filters, moduleId: '', sprintId: '', assigneeId: '', squadId: '', types: [], tagIds: [], versionId: '', priority: '', status: '', authorId: '', costCenterId: '', updatedWithin: '', hideEmptyEpics: false, hideEmptyStories: false, showSubtasks: false, storyDisplay: 'lanes' as const, moduleViewMode: 'hierarchy' as const }
     expect(JSON.stringify(normalizeActiveBoardFilters(defaults, catalogs, labels))).toBe('[]')
     const active = normalizeActiveBoardFilters(filters, catalogs, labels)
-    expect(active.length).toBe(17)
+    expect(active.length).toBe(18)
     expect(active.find(item => item.key === 'moduleId')?.valueLabel).toBe('Payments')
     expect(active.find(item => item.value === 'missing-tag')?.valueLabel).toBe('missing-tag')
   })

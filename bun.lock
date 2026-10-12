@@ -172,6 +172,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@azy-board/assistant-contracts": "workspace:*",
+        "@azy-board/domain": "workspace:*",
         "@azy-board/ui-contracts": "workspace:*",
       },
       "devDependencies": {

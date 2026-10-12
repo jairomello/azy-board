@@ -362,8 +362,25 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
     return body.type === 'TASK' || body.type === 'BUG'
   })
   const projectContext = userPersistenceContext(ctx)
-  const activeSprintId = hasWorkCard ? (await resolveActiveSprint(projectContext, projectId))?.id ?? null : null
+  const activeSprint = hasWorkCard ? await resolveActiveSprint(projectContext, projectId) : null
+  const activeSprintId = activeSprint?.id ?? null
   const activeVersionId = hasWorkCard ? (await resolveActiveVersion(projectContext, projectId))?.id ?? null : null
+  // [T58] Datas das sprints conhecidas (vigente + explícitas) para herdar na criação.
+  const sprintDates = new Map<string, { startDate: string; endDate: string }>()
+  if (activeSprint) sprintDates.set(activeSprint.id, { startDate: activeSprint.startDate, endDate: activeSprint.endDate })
+  const batchSprintIds = new Set<string>()
+  for (const operation of input.operations) {
+    const body = operation.args ?? operation.body ?? {}
+    const ids = Array.isArray(body.sprintIds)
+      ? (body.sprintIds as unknown[])
+      : typeof body.sprintId === 'string' ? [body.sprintId] : []
+    for (const id of ids) if (typeof id === 'string' && id.trim()) batchSprintIds.add(id)
+  }
+  for (const sprintId of batchSprintIds) {
+    if (sprintDates.has(sprintId)) continue
+    const sprint = await persistence.planning.getSprint(projectContext, projectId, sprintId)
+    if (sprint) sprintDates.set(sprintId, { startDate: sprint.startDate, endDate: sprint.endDate })
+  }
 
   const operations: BatchItemCreateOperation[] = input.operations.map(operation => {
     const body = operation.args ?? operation.body ?? {}
@@ -382,6 +399,9 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
         : typeof body.sprintId === 'string'
           ? [body.sprintId]
           : undefined
+    // [T58] Datas da sprint escolhida (explícita ou vigente) para herdar.
+    const chosenSprintId = explicitSprintIds?.[0] ?? activeSprintId ?? null
+    const chosenSprintDates = chosenSprintId ? sprintDates.get(chosenSprintId) ?? null : null
     return {
       tool,
       title: typeof body.title === 'string' ? body.title : null,
@@ -398,6 +418,9 @@ batchRouter.post('/', requireRole('MEMBER'), async (c) => {
       sprintIds: isWork ? (explicitSprintIds ?? (activeSprintId ? [activeSprintId] : [])) : undefined,
       versionId: isWork ? ('versionId' in body ? (typeof body.versionId === 'string' ? body.versionId : null) : activeVersionId) : undefined,
       icon: isWork ? ('icon' in body ? (typeof body.icon === 'string' ? body.icon : null) : DEFAULT_ITEM_ICON) : undefined,
+      // [T58] Sem data informada, herda as datas da sprint escolhida.
+      startDate: isWork ? (typeof body.startDate === 'string' ? body.startDate : chosenSprintDates?.startDate ?? null) : undefined,
+      dueDate: isWork ? (typeof body.dueDate === 'string' ? body.dueDate : chosenSprintDates?.endDate ?? null) : undefined,
     }
   })
 

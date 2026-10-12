@@ -2,6 +2,7 @@
 // Sem dependência de transporte HTTP; executeSharedTool fica em apps/mcp.
 
 import type { AssistantScreen, AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
+import { UPDATED_WITHIN_VALUES } from '@azy-board/domain'
 import { ICON_CATALOG } from '@azy-board/ui-contracts'
 import { MCP_TOOL_POLICIES, type McpPolicy } from './policies.js'
 import { PLANNING_GAP_LIMITS, TOOL_TEXT_LIMITS } from './limits.js'
@@ -355,6 +356,7 @@ function schemaFor(field: string, isRequired: boolean, toolName?: string): Recor
   }
   if (field === 'includeDescriptions') return { ...nullable({ type: 'boolean' }), description: 'Inclui description/scope/notes completos. Padrão false (texto resumido) para reduzir o payload.' }
   if (field === 'includeDetails') return { ...nullable({ type: 'boolean' }), description: 'Devolve description/persona/goal/benefit/acceptanceCriteria/notes/scope e demais metadados por item. Padrão false (projeção de resumo) para reduzir o payload.' }
+  if (field === 'updatedWithin') return { type: ['string', 'null'], enum: [...UPDATED_WITHIN_VALUES, null], description: 'Recorta por última alteração: 1d/2d/3d/5d (dias-calendário no fuso do projeto), 1w (semana), 1m (mês) ou current-sprint (sprint vigente).' }
   if (field === 'metric') return { type: 'string', enum: ['snapshot', 'burnup', 'aging', 'hours', 'sprint'], description: 'Métrica oficial do Dashboard: snapshot (Progresso/WIP/Bloqueados/Atrasados/Carga), burnup, aging, hours ou sprint.' }
   if (field === 'includeItems') return { ...nullable({ type: 'boolean' }), description: 'Inclui uma amostra limitada dos itens que compõem o indicador (padrão true).' }
   if (field === 'from' || field === 'to') return { ...nullable({ type: 'string' }), description: 'Data UTC no formato AAAA-MM-DD (período do burnup/horas).' }
