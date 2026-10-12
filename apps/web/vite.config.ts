@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv, type PluginOption } from 'vite'
 import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
 // `base: './'` gera paths relativos nos assets do build, o que permite
@@ -15,8 +16,24 @@ export default defineConfig(({ mode }) => {
   // O build padrão permanece sem o plugin e sem artefatos extras.
   const analyze = env.AZYBOARD_ANALYZE === '1'
 
+  // T60 — versão do build embutida no bundle. Fonte: .build-info.json gerado por
+  // `bun run build:version`; env como alternativa; 'dev' quando ausente.
+  let appVersion = process.env.AZYBOARD_BUILD_VERSION || env.AZYBOARD_BUILD_VERSION || 'dev'
+  let buildDate = process.env.AZYBOARD_BUILD_DATE || env.AZYBOARD_BUILD_DATE || ''
+  try {
+    const parsed = JSON.parse(readFileSync(path.resolve(__dirname, '../../.build-info.json'), 'utf8')) as { version?: unknown; buildDate?: unknown }
+    if (typeof parsed.version === 'string' && parsed.version) appVersion = parsed.version
+    if (typeof parsed.buildDate === 'string') buildDate = parsed.buildDate
+  } catch {
+    // Sem .build-info.json (ex.: dev local): mantém o fallback.
+  }
+
   return {
   base: basePath,
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+    __BUILD_DATE__: JSON.stringify(buildDate),
+  },
   plugins: [react(), ...(analyze ? [visualizer({ filename: 'dist/stats.html', gzipSize: true, template: 'treemap' }) as PluginOption] : [])],
   resolve: {
     alias: {

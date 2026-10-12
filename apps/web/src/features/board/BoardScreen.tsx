@@ -48,6 +48,7 @@ import { useBoardPreferences } from './hooks/useBoardPreferences'
 import { useBoardData } from './hooks/useBoardData'
 import { BoardLanes } from './components/BoardLanes'
 import { BoardModals } from './components/BoardModals'
+import { ProjectPlanningModal } from '../../components/ProjectPlanningModal'
 import { useBoardInteraction } from './hooks/useBoardInteraction'
 import { useBoardArchiving } from './hooks/useBoardArchiving'
 import { useBoardItemEditing } from './hooks/useBoardItemEditing'
@@ -120,6 +121,7 @@ export default function BoardPage() {
   const [recalculating, setRecalculating] = useState(false)
   const queryClient = useQueryClient()
   const [moduleModalOpen, setModuleModalOpen] = useState(false)
+  const [planningOpen, setPlanningOpen] = useState(false)
   const location = useLocation()
   const [newModuleName, setNewModuleName] = useState('')
   const [newModuleDescription, setNewModuleDescription] = useState('')
@@ -433,6 +435,7 @@ export default function BoardPage() {
       projectName={projectName}
       projectIcon={projectIcon}
       projectColor={projectColor}
+      onProjectNameActivate={() => setPlanningOpen(true)}
       assistantSelectedItem={assistantSelectedItem}
       assistantScreen={view === 'tree' ? 'project-board-tree' : 'project-board-kanban'}
       assistantBoardView={view}
@@ -622,6 +625,10 @@ export default function BoardPage() {
         )}
         </div>
       </div>
+
+      {planningOpen && projectId && (
+        <ProjectPlanningModal projectId={projectId} onClose={() => setPlanningOpen(false)} />
+      )}
 
       <BoardModals
         projectId={projectId!}

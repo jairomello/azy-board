@@ -322,5 +322,17 @@
   "scheduleRecalculateError": "Failed to recalculate dates.",
   "dependenciesProject": "Target project",
   "scheduleGroup": "Schedule",
-  "scheduleCriticalPathHint": "Highlights the critical-path items on the board (available once dependencies exist)."
+  "scheduleCriticalPathHint": "Highlights the critical-path items on the board (available once dependencies exist).",
+  "projectPlanningTitle": "Project planning",
+  "projectPlanningSubtitle": "Name, dates, estimates and scope",
+  "projectPlanningLoadError": "Could not load the project planning.",
+  "projectPlanningSaveError": "Could not save the project planning.",
+  "areaProjectPlanning": "Planning",
+  "areaAllLinks": "All links",
+  "areaAllAttachments": "All attachments",
+  "allLinksEmpty": "No links in this project.",
+  "allAttachmentsEmpty": "No attachments in this project.",
+  "allLinksLoadError": "Could not load the project links.",
+  "allAttachmentsLoadError": "Could not load the project attachments.",
+  "linkOrigin": "Origin"
 }

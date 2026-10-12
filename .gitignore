@@ -11,6 +11,8 @@ coverage/
 tmp/
 *.tsbuildinfo
 *.d.ts.map
+# Versão do build gerada por `bun run build:version` (Card T60).
+.build-info.json
 
 # Logs
 *.log

@@ -288,6 +288,8 @@ export interface WorkLogPort {
 
 export interface FilePort {
   listAttachments(context: PersistenceContext, projectId: string, itemId: string): Promise<AttachmentRecord[]>
+  /** Anexos de todos os cards do projeto (T59). Somente leitura agregada no escopo do projeto. */
+  listAttachmentsByProject(context: PersistenceContext, projectId: string): Promise<AttachmentRecord[]>
   getAttachment(context: PersistenceContext, projectId: string, itemId: string, attachmentId: string): Promise<AttachmentRecord | null>
   createAttachment(context: PersistenceContext, projectId: string, itemId: string, input: NewAttachmentRecord): Promise<AttachmentRecord>
   /** Atualiza metadados opcionais (patch parcial; null limpa o campo). Last-write-wins. */
@@ -298,6 +300,8 @@ export interface FilePort {
 
 export interface ItemLinkPort {
   list(context: PersistenceContext, projectId: string, itemId: string): Promise<ItemLinkRecord[]>
+  /** Links de todos os itens do projeto (T59). Somente leitura agregada no escopo do projeto. */
+  listByProject(context: PersistenceContext, projectId: string): Promise<ItemLinkRecord[]>
   // [T38] create recebe MutationContext para reserva/replay idempotente no commit.
   create(context: MutationContext, projectId: string, itemId: string, input: NewItemLinkRecord): Promise<ItemLinkRecord>
   update(context: PersistenceContext, projectId: string, itemId: string, linkId: string, patch: ItemLinkPatch): Promise<ItemLinkRecord | null>

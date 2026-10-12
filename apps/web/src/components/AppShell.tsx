@@ -25,6 +25,7 @@ import type { AssistantScreen } from '@azy-board/assistant-contracts'
 import type { AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 import { isProjectNameTruncated, truncateProjectName } from '../lib/projectName'
 import { projectIconComponent } from '../lib/iconCatalog'
+import { getBuildInfo } from '../lib/buildInfo'
 
 interface AppShellProps {
   children: ReactNode
@@ -38,6 +39,8 @@ interface AppShellProps {
   commandBar?: ReactNode
   statusRail?: ReactNode
   contentClassName?: string
+  /** T59 — quando fornecido, o nome do projeto no header vira um controle que abre a modal de planejamento. */
+  onProjectNameActivate?: () => void
   assistantSelectedItem?: AssistantSelectedItem | null
   assistantScreen?: AssistantScreen
   assistantBoardView?: 'kanban' | 'tree'
@@ -65,6 +68,7 @@ export function AppShell({
   commandBar,
   statusRail,
   contentClassName = '',
+  onProjectNameActivate,
   assistantSelectedItem,
   assistantScreen,
   assistantBoardView,
@@ -79,6 +83,7 @@ export function AppShell({
   const { t: tCommon } = useTranslation('common')
   const { t: tDashboard } = useTranslation('dashboard')
   const { t: tAssistant } = useTranslation('assistant')
+  const buildInfo = getBuildInfo()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [adminExpanded, setAdminExpanded] = useState(location.pathname.startsWith('/admin'))
   const inferredScreen: AssistantScreen = location.pathname === '/projects'
@@ -291,6 +296,9 @@ export function AppShell({
             <span className="truncate">{projectName ?? tCommon('workspace')}</span>
           </p>
           <p className="text-[11px] text-shell-muted mt-0.5">{tCommon('connectedWork')}</p>
+          <p data-build-version className="text-[11px] text-shell-muted mt-0.5">
+            {buildInfo.buildDate ? tCommon('buildVersionWithDate', { version: buildInfo.version, date: buildInfo.buildDate }) : tCommon('buildVersion', { version: buildInfo.version })}
+          </p>
         </div>
       </div>
     </div>
@@ -359,7 +367,20 @@ export function AppShell({
             <span>{sectionLabel}</span>
           </div>
           <div className="flex items-center gap-3 min-w-0">
-            <h1 className="text-sm sm:text-base font-semibold truncate" title={titleIsTruncated ? projectName : undefined} aria-label={titleIsTruncated ? projectName : undefined}>{displayTitle}</h1>
+            {onProjectNameActivate && projectId && projectName ? (
+              <button
+                type="button"
+                data-project-name-activate
+                onClick={onProjectNameActivate}
+                title={titleIsTruncated ? projectName : undefined}
+                aria-label={projectName}
+                className="min-w-0 truncate text-left text-sm sm:text-base font-semibold hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+              >
+                {displayTitle}
+              </button>
+            ) : (
+              <h1 className="text-sm sm:text-base font-semibold truncate" title={titleIsTruncated ? projectName : undefined} aria-label={titleIsTruncated ? projectName : undefined}>{displayTitle}</h1>
+            )}
             {headerMeta}
           </div>
         </div>

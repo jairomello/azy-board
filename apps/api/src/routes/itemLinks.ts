@@ -81,3 +81,33 @@ itemLinksRouter.delete('/:linkId', requireRole('MEMBER'), async (c) => {
   if (!deleted) return c.json({ error: 'Link não encontrado' }, 404)
   return c.json({ ok: true })
 })
+
+// GET /projects/:projectId/links — leitura agregada (somente leitura) de todos os
+// links dos itens do projeto (T59). Escopada por tenant/projeto; sem filtro por item.
+export const projectLinksRouter = new Hono<HonoEnv>()
+projectLinksRouter.use('*', authMiddleware)
+
+projectLinksRouter.get('/', requireRole('VIEWER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const projectId = c.req.param('projectId')!
+  const persistenceContext = userPersistenceContext(ctx)
+  // [TENANT] Escopo por tenant + projeto nas duas consultas (links e itens de origem).
+  const [links, items] = await Promise.all([
+    persistence.itemLinks.listByProject(persistenceContext, projectId),
+    persistence.items.listItems(persistenceContext, projectId),
+  ])
+  const origin = new Map(items.map(item => [item.id, item]))
+  return c.json(links.map(link => {
+    const item = origin.get(link.itemId)
+    return {
+      id: link.id,
+      itemId: link.itemId,
+      name: link.name,
+      url: link.url,
+      description: link.description,
+      createdAt: link.createdAt,
+      updatedAt: link.updatedAt,
+      item: item ? { id: item.id, title: item.title, sequenceCode: item.sequenceCode, type: item.type } : null,
+    }
+  }))
+})

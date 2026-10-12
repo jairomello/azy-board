@@ -13,6 +13,7 @@ import { canCreateProject } from '../permissions'
 import { VisibilityToggles } from '../components/VisibilityToggles'
 import { ProjectVisibilityBadges } from '../components/ProjectVisibilityBadges'
 import { AppearancePicker } from '../components/AppearancePicker'
+import { ProjectPlanningModal } from '../components/ProjectPlanningModal'
 import { projectIconComponent } from '../lib/iconCatalog'
 
 type ProjectRole = 'ADMIN' | 'MEMBER' | 'VIEWER'
@@ -40,9 +41,6 @@ export default function ProjectsPage() {
   const [newIcon, setNewIcon] = useState<string | null>(null)
   const [newColor, setNewColor] = useState<string | null>(null)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
-  const [editingName, setEditingName] = useState('')
-  const [editError, setEditError] = useState('')
-  const [savingEdit, setSavingEdit] = useState(false)
   const [deletingProject, setDeletingProject] = useState<Project | null>(null)
   const [deleting, setDeleting] = useState(false)
 
@@ -84,37 +82,10 @@ export default function ProjectsPage() {
 
   function openEdit(project: Project) {
     setEditingProject(project)
-    setEditingName(project.name)
-    setEditError('')
   }
 
   function closeEdit() {
     setEditingProject(null)
-    setEditingName('')
-    setEditError('')
-  }
-
-  async function saveProjectName(e: React.FormEvent) {
-    e.preventDefault()
-    if (!editingProject) return
-
-    const name = editingName.trim()
-    if (!name) {
-      setEditError(t('projectNameRequired'))
-      return
-    }
-
-    setSavingEdit(true)
-    setEditError('')
-    try {
-      await api.patch<Project>(`/projects/${editingProject.id}`, { name })
-      await invalidateProjects()
-      closeEdit()
-    } catch (error) {
-      if (!isAbortError(error)) setEditError(error instanceof Error ? error.message : t('projectUpdateFailed'))
-    } finally {
-      setSavingEdit(false)
-    }
   }
 
   async function deleteProject() {
@@ -285,37 +256,9 @@ export default function ProjectsPage() {
           </div>
         )}
 
-        {/* Modal de edição do nome do projeto */}
+        {/* Modal de Planejamento do Projeto (T59) — mesmo modal aberto pelo header do board */}
         {editingProject && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <form onSubmit={saveProjectName} className="bg-card border border-border rounded-2xl p-6 w-full max-w-md shadow-xl space-y-4">
-              <div>
-                 <h3 className="font-bold text-foreground text-lg">{t('editProject')}</h3>
-                 <p className="text-sm text-muted-foreground mt-1">{t('updateProjectName')}</p>
-              </div>
-              <div>
-                 <label htmlFor="edit-project-name" className="sr-only">{t('projectName')}</label>
-                <input
-                  id="edit-project-name"
-                  autoFocus
-                  type="text"
-                  required
-                  value={editingName}
-                  onChange={e => setEditingName(e.target.value)}
-                  aria-invalid={Boolean(editError)}
-                  aria-describedby={editError ? 'edit-project-error' : undefined}
-                  className="w-full rounded-lg border border-input bg-background px-4 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition"
-                />
-                {editError && <p id="edit-project-error" className="text-sm text-destructive mt-2">{editError}</p>}
-              </div>
-              <div className="flex gap-3 justify-end">
-                <button type="button" onClick={closeEdit} disabled={savingEdit} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition disabled:opacity-50">{t('cancel')}</button>
-                <button type="submit" disabled={savingEdit} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition disabled:opacity-50">
-                   {savingEdit ? t('saving') : t('saveChanges')}
-                </button>
-              </div>
-            </form>
-          </div>
+          <ProjectPlanningModal projectId={editingProject.id} onClose={closeEdit} onSaved={() => void invalidateProjects()} />
         )}
 
         {/* Confirmação de exclusão permanente do projeto */}

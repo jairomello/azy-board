@@ -6,8 +6,8 @@ import { columnsRouter } from './routes/columns'
 import { sprintsRouter } from './routes/sprints'
 import { tagsRouter } from './routes/tags'
 import { itemsRouter } from './routes/items'
-import { attachmentSettingsRouter, attachmentsRouter } from './routes/attachments'
-import { itemLinksRouter } from './routes/itemLinks'
+import { attachmentSettingsRouter, attachmentsRouter, projectAttachmentsRouter } from './routes/attachments'
+import { itemLinksRouter, projectLinksRouter } from './routes/itemLinks'
 import { itemDependenciesRouter } from './routes/itemDependencies'
 import { scheduleRouter } from './routes/schedule'
 import { checklistsRouter } from './routes/checklists'
@@ -35,6 +35,7 @@ import { securityHeadersMiddleware } from './middleware/securityHeaders'
 import { otelMiddleware } from './middleware/otel'
 import { configureReadinessProbes, healthRouter, runtimeReadinessProbes } from './routes/health'
 import { operationsRouter } from './routes/operations'
+import { versionRouter } from './routes/version'
 import type { HonoEnv } from './types/hono'
 import { startStorageCleanupWorker } from './services/storageCleanup'
 import { startAgentWorker } from './services/agentWorker'
@@ -98,6 +99,7 @@ app.use('*', clientIpMiddleware)
 
 // Rotas públicas
 app.route('/health', healthRouter)
+app.route('/version', versionRouter)
 app.route('/api/auth', authRouter)
 
 // Rotas protegidas
@@ -111,7 +113,9 @@ api.route('/projects/:projectId/tags', tagsRouter)
 api.route('/projects/:projectId/items', itemsRouter)
 api.route('/projects/:projectId/batch', batchRouter)
 api.route('/projects/:projectId/items/:itemId/attachments', attachmentsRouter)
+api.route('/projects/:projectId/attachments', projectAttachmentsRouter)
 api.route('/projects/:projectId/items/:itemId/links', itemLinksRouter)
+api.route('/projects/:projectId/links', projectLinksRouter)
 api.route('/projects/:projectId/items/:itemId/dependencies', itemDependenciesRouter)
 api.route('/projects/:projectId/schedule', scheduleRouter)
 api.route('/tenant/attachments', attachmentSettingsRouter)

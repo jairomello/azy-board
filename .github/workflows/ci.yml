@@ -28,6 +28,8 @@ jobs:
           restore-keys: ${{ runner.os }}-bun-
       - name: Instalar dependências
         run: bun install --frozen-lockfile
+      - name: Gerar versão do build (T60)
+        run: bun run build:version
       - name: Check (typecheck + lint + testes + build)
         run: bun run check
       - name: Publicar diagnóstico do check

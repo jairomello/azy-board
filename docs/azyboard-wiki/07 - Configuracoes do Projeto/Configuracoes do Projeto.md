@@ -23,6 +23,22 @@ A página reúne dez seções:
 - **Planejamento**: datas de início e término previstas, pontos e horas planejadas e escopo em texto rico.
 - **Fluxo do Board**, **Pessoas e organização** e as demais seções descritas abaixo.
 
+## Planejamento do projeto (modal)
+
+O planejamento do projeto também pode ser consultado fora do menu de Configurações, numa modal acessível por dois pontos:
+
+- o **nome do projeto no cabeçalho do Board**, que agora é um controle clicável; e
+- o botão **Editar** de cada projeto na tela de listagem de projetos.
+
+A modal reúne o nome do projeto, a Data de Início, a Data de Fim Previsto, o Total de Pontos Previsto, o Total de Horas Previsto e o Escopo. Administradores editam os campos ali mesmo; Membros e Visualizadores os veem em modo somente leitura.
+
+Além dos campos de planejamento, a modal traz duas abas de consulta **somente leitura** no escopo do projeto:
+
+- **Todos os links**: todos os links externos cadastrados nos cards do projeto, com a indicação do card de origem de cada um.
+- **Todos os anexos**: todos os anexos dos cards do projeto, também com a origem; a aba fica oculta quando os anexos estão desabilitados para a instalação.
+
+Essas abas apenas consultam e abrem/baixam o conteúdo; criar, editar ou remover links e anexos continua sendo feito na modal de cada card.
+
 ## Fluxo do Board
 
 - [[07 - Configuracoes do Projeto/Gerenciar Colunas do Board|Gerenciar colunas do Board]]

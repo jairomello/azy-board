@@ -3492,3 +3492,112 @@ describe('datas automáticas pela sprint (T58)', () => {
     expect(updated.dueDate).toBe(task.dueDate)
   })
 })
+
+describe('leituras agregadas por projeto (Card T59)', () => {
+  let tenantId: string
+  let member: { id: string; email: string }
+  let outsider: { id: string; email: string }
+  let memberToken: string
+  let outsiderToken: string
+  let foreignToken: string
+  let projectId: string
+  let emptyProjectId: string
+  let itemA: string
+  let itemB: string
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Agregado', slug: `agregado-${tenantId}`, createdAt: new Date().toISOString() })
+    member = await createUser(tenantId, 'agregado-member@test.local', 'Membro Agregado', 'TEAM_MEMBER')
+    outsider = await createUser(tenantId, 'agregado-outsider@test.local', 'Visitante Agregado', 'ADMIN')
+    memberToken = await token(member.id, tenantId, member.email)
+    outsiderToken = await token(outsider.id, tenantId, outsider.email)
+
+    // Tenant estrangeiro para provar isolamento.
+    const foreignTenantId = generateId()
+    await db.insert(tenants).values({ id: foreignTenantId, name: 'Estrangeiro', slug: `estrangeiro-${tenantId}`, createdAt: new Date().toISOString() })
+    const foreign = await createUser(foreignTenantId, 'agregado-foreign@test.local', 'Estrangeiro', 'ADMIN')
+    foreignToken = await token(foreign.id, foreignTenantId, foreign.email)
+
+    projectId = generateId()
+    await db.insert(projects).values({ id: projectId, tenantId, name: 'Projeto agregado', description: null, boardMode: 'HIERARCHICAL', simpleStoryId: null, managerUserId: null, isRestricted: true, isHidden: false, createdAt: new Date().toISOString() })
+    emptyProjectId = generateId()
+    await db.insert(projects).values({ id: emptyProjectId, tenantId, name: 'Projeto vazio', description: null, boardMode: 'HIERARCHICAL', simpleStoryId: null, managerUserId: null, isRestricted: false, isHidden: false, createdAt: new Date().toISOString() })
+    await db.insert(memberships).values([
+      { id: generateId(), tenantId, userId: member.id, projectId, role: 'MEMBER', createdAt: new Date().toISOString() },
+      { id: generateId(), tenantId, userId: member.id, projectId: emptyProjectId, role: 'MEMBER', createdAt: new Date().toISOString() },
+    ])
+
+    const now = new Date().toISOString()
+    itemA = generateId()
+    itemB = generateId()
+    await db.insert(items).values([
+      { id: itemA, tenantId, projectId, type: 'TASK', parentId: null, moduleId: null, columnId: null, ancestryPath: '[]', title: 'Card A', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, authorId: member.id, createdAt: now, updatedAt: now },
+      { id: itemB, tenantId, projectId, type: 'TASK', parentId: null, moduleId: null, columnId: null, ancestryPath: '[]', title: 'Card B', status: 'NOT_STARTED', priority: 'MEDIUM', position: 1, authorId: member.id, createdAt: now, updatedAt: now },
+    ])
+  })
+
+  test('GET /projects/:id/links agrega links de todos os cards com a origem', async () => {
+    for (const [itemId, name] of [[itemA, 'Link A'], [itemB, 'Link B']] as const) {
+      const created = await request(`/projects/${projectId}/items/${itemId}/links`, memberToken, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, url: `https://example.com/${name}` }),
+      })
+      expect(created.status).toBe(201)
+    }
+
+    const list = await request(`/projects/${projectId}/links`, memberToken)
+    expect(list.status).toBe(200)
+    const body = await list.json() as Array<{ name: string; itemId: string; item: { title: string } | null }>
+    expect(body).toHaveLength(2)
+    expect(body.map(link => link.name).sort()).toEqual(['Link A', 'Link B'])
+    const originTitles = body.map(link => link.item?.title).sort()
+    expect(originTitles).toEqual(['Card A', 'Card B'])
+
+    const empty = await request(`/projects/${emptyProjectId}/links`, memberToken)
+    expect(empty.status).toBe(200)
+    expect(await empty.json()).toEqual([])
+
+    expect([403, 404]).toContain((await request(`/projects/${projectId}/links`, outsiderToken)).status)
+    expect([403, 404]).toContain((await request(`/projects/${projectId}/links`, foreignToken)).status)
+  })
+
+  test('GET /projects/:id/attachments agrega anexos, preserva leitura com anexos desabilitados e isola', async () => {
+    await db.insert(tenantAttachmentSettings).values({ tenantId, enabled: false, provider: 'local', updatedAt: new Date().toISOString() })
+    const now = new Date().toISOString()
+    await db.insert(attachments).values([
+      { id: generateId(), tenantId, itemId: itemA, filename: 'a.txt', originalName: 'a.txt', mimeType: 'text/plain', size: 1, storagePath: `tenant/${itemA}/a.txt`, storageProvider: 'local', createdAt: now },
+      { id: generateId(), tenantId, itemId: itemB, filename: 'b.txt', originalName: 'b.txt', mimeType: 'text/plain', size: 1, storagePath: `tenant/${itemB}/b.txt`, storageProvider: 'local', createdAt: now },
+    ])
+
+    // Leitura preservada mesmo com anexos desabilitados (espelha o comportamento do item).
+    const list = await request(`/projects/${projectId}/attachments`, memberToken)
+    expect(list.status).toBe(200)
+    const body = await list.json() as Array<{ itemId: string; originalName: string; item: { title: string } | null; url: string }>
+    expect(body.map(file => file.originalName).sort()).toEqual(['a.txt', 'b.txt'])
+    expect(body.map(file => file.item?.title).sort()).toEqual(['Card A', 'Card B'])
+    expect(body.every(file => file.url.includes(`/items/${file.itemId}/attachments/`))).toBe(true)
+
+    const empty = await request(`/projects/${emptyProjectId}/attachments`, memberToken)
+    expect(empty.status).toBe(200)
+    expect(await empty.json()).toEqual([])
+
+    expect([403, 404]).toContain((await request(`/projects/${projectId}/attachments`, outsiderToken)).status)
+    expect([403, 404]).toContain((await request(`/projects/${projectId}/attachments`, foreignToken)).status)
+  })
+})
+
+describe('versão do build (Card T60)', () => {
+  test('GET /version responde sem sessão com versão e data, sem segredos', async () => {
+    const response = await app.fetch(new Request('http://test.local/version'))
+    expect(response.status).toBe(200)
+    const body = await response.json() as { version?: unknown; buildDate?: unknown }
+    expect(typeof body.version).toBe('string')
+    expect((body.version as string).length).toBeGreaterThan(0)
+    expect(typeof body.buildDate).toBe('string')
+    const serialized = JSON.stringify(body).toLowerCase()
+    for (const forbidden of ['secret', 'token', 'password', 'api_key', 'apikey']) {
+      expect(serialized.includes(forbidden)).toBe(false)
+    }
+  })
+})

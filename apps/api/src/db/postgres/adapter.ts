@@ -2265,6 +2265,17 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         )
         return rows.map(mapAttachment)
       },
+      async listAttachmentsByProject(context: PersistenceContext, projectId: string): Promise<AttachmentRecord[]> {
+        // [TENANT] Anexos de todos os cards do projeto; escopo por tenant + projeto via join em items.
+        const rows = await q(
+          `SELECT a.* FROM attachments a
+           JOIN items i ON i.tenant_id = a.tenant_id AND i.id = a.item_id
+           WHERE a.tenant_id = $1 AND i.project_id = $2
+           ORDER BY a.created_at, a.id`,
+          [context.tenantId, projectId],
+        )
+        return rows.map(mapAttachment)
+      },
       async getAttachment(context: PersistenceContext, projectId: string, itemId: string, attachmentId: string): Promise<AttachmentRecord | null> {
         const row = await q1(
           `SELECT a.* FROM attachments a
@@ -2336,6 +2347,16 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
            WHERE links.tenant_id = $1 AND links.project_id = $2 AND links.item_id = $3 AND items.project_id = $2
            ORDER BY links.created_at, links.id`,
           [context.tenantId, projectId, itemId],
+        )
+        return rows.map(mapItemLink)
+      },
+      async listByProject(context: PersistenceContext, projectId: string): Promise<ItemLinkRecord[]> {
+        // [TENANT] Links de todos os itens do projeto; escopo por tenant + projeto.
+        const rows = await q(
+          `SELECT links.* FROM item_links links JOIN items ON items.id = links.item_id AND items.tenant_id = links.tenant_id
+           WHERE links.tenant_id = $1 AND links.project_id = $2 AND items.project_id = $2
+           ORDER BY links.created_at, links.id`,
+          [context.tenantId, projectId],
         )
         return rows.map(mapItemLink)
       },

@@ -322,5 +322,17 @@
   "scheduleRecalculateError": "Error al recalcular fechas.",
   "dependenciesProject": "Proyecto del destino",
   "scheduleGroup": "Cronograma",
-  "scheduleCriticalPathHint": "Resalta en el tablero los elementos de la ruta crítica (disponible con dependencias registradas)."
+  "scheduleCriticalPathHint": "Resalta en el tablero los elementos de la ruta crítica (disponible con dependencias registradas).",
+  "projectPlanningTitle": "Planificación del proyecto",
+  "projectPlanningSubtitle": "Nombre, fechas, estimaciones y alcance",
+  "projectPlanningLoadError": "No se pudo cargar la planificación del proyecto.",
+  "projectPlanningSaveError": "No se pudo guardar la planificación del proyecto.",
+  "areaProjectPlanning": "Planificación",
+  "areaAllLinks": "Todos los enlaces",
+  "areaAllAttachments": "Todos los archivos adjuntos",
+  "allLinksEmpty": "No hay enlaces en este proyecto.",
+  "allAttachmentsEmpty": "No hay archivos adjuntos en este proyecto.",
+  "allLinksLoadError": "No se pudieron cargar los enlaces del proyecto.",
+  "allAttachmentsLoadError": "No se pudieron cargar los archivos adjuntos del proyecto.",
+  "linkOrigin": "Origen"
 }

@@ -236,5 +236,7 @@
       "bug": "Bug"
     }
   },
-  "loadMore": "Cargar más"
+  "loadMore": "Cargar más",
+  "buildVersion": "Versión {{version}}",
+  "buildVersionWithDate": "Versión {{version}} · {{date}}"
 }

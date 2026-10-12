@@ -322,5 +322,17 @@
   "scheduleRecalculateError": "Falha ao recalcular as datas.",
   "dependenciesProject": "Projeto do alvo",
   "scheduleGroup": "Cronograma",
-  "scheduleCriticalPathHint": "Destaca no board os itens do caminho crítico (disponível com dependências cadastradas)."
+  "scheduleCriticalPathHint": "Destaca no board os itens do caminho crítico (disponível com dependências cadastradas).",
+  "projectPlanningTitle": "Planejamento do projeto",
+  "projectPlanningSubtitle": "Nome, datas, estimativas e escopo",
+  "projectPlanningLoadError": "Não foi possível carregar o planejamento do projeto.",
+  "projectPlanningSaveError": "Não foi possível salvar o planejamento do projeto.",
+  "areaProjectPlanning": "Planejamento",
+  "areaAllLinks": "Todos os links",
+  "areaAllAttachments": "Todos os anexos",
+  "allLinksEmpty": "Nenhum link neste projeto.",
+  "allAttachmentsEmpty": "Nenhum anexo neste projeto.",
+  "allLinksLoadError": "Não foi possível carregar os links do projeto.",
+  "allAttachmentsLoadError": "Não foi possível carregar os anexos do projeto.",
+  "linkOrigin": "Origem"
 }

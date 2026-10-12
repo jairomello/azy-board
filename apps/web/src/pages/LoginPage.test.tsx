@@ -63,4 +63,13 @@ describe('LoginPage — lembrar-me (card T31)', () => {
 
     await waitFor(() => expect(loginCalls.some(call => call[0] === 'outro@test.local' && call[1] === 'segredo' && call[2] === false)).toBe(true))
   })
+
+  test('exibe a versão do build num canto, sem dados sensíveis (card T60)', () => {
+    renderLogin()
+    // Em testes não há injeção do Vite, então a versão cai para "dev".
+    const version = screen.getByText('Versão dev')
+    expect(version).toBeInTheDocument()
+    expect(version.textContent?.toLowerCase()).not.toContain('secret')
+    expect(version.textContent?.toLowerCase()).not.toContain('token')
+  })
 })

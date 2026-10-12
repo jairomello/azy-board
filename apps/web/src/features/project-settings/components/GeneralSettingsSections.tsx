@@ -1,11 +1,9 @@
-import { useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { BoardMode } from '@azy-board/domain'
-import { RichTextEditor } from '../../../components/RichTextEditor'
-import { toEditorHtml } from '../../../lib/richText'
 import { VisibilityToggles } from '../../../components/VisibilityToggles'
 import { AppearancePicker } from '../../../components/AppearancePicker'
 import { AccordionSection } from '../../../components/AccordionSection'
+import { ProjectPlanningFields } from '../../../components/ProjectPlanningFields'
 import { SettingsSection } from './SettingsSection'
 import type { Manager, Member } from '../model/types'
 
@@ -60,7 +58,6 @@ export function GeneralSettingsSections({
   savingAdvancedChecklists, advancedChecklistsError, savingPlanning, planningError, savingManager, onConfirmBoardMode, onCancelBoardMode, onSaveManager,
 }: GeneralSettingsProps) {
   const { t } = useTranslation(['settings', 'common'])
-  const scopeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const section = (id: string) => ({ isOpen: openSections.has(id), onToggle: onToggleSection })
 
   return <>
@@ -123,27 +120,19 @@ export function GeneralSettingsSections({
 
     <SettingsSection id="planning" title={t('settings:planning')} {...section('planning')}>
       <p className="text-sm text-muted-foreground mb-4">{t('settings:planningDescription')}</p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {[
-          ['planning-start-date', 'startDate', startDate, (value: string) => onPlanningChange('startDate', value || null), 'date', t('settings:startDate')],
-          ['planned-end-date', 'plannedEndDate', plannedEndDate, (value: string) => onPlanningChange('plannedEndDate', value || null), 'date', t('settings:plannedEndDate')],
-          ['planned-points', 'plannedPoints', plannedPoints, (value: string) => onPlanningChange('plannedPoints', value ? Number(value) : null), 'number', t('settings:plannedPoints')],
-          ['planned-hours', 'plannedHours', plannedHours, (value: string) => onPlanningChange('plannedHours', value ? Number(value) : null), 'number', t('settings:plannedHours')],
-        ].map(([id, field, value, save, type, label]) => <div key={id as string}>
-          <label htmlFor={id as string} className="block text-sm font-medium text-foreground mb-1">{label as string}</label>
-          <input id={id as string} type={type as string} value={value as string} disabled={!isAdmin || savingPlanning}
-            onChange={e => onPlanningFieldChange(field as 'startDate' | 'plannedEndDate' | 'plannedPoints' | 'plannedHours', e.target.value)}
-            onBlur={e => (save as (value: string) => void)(e.target.value)}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50" />
-        </div>)}
-      </div>
-      <div className="mt-4">
-        <label className="block text-sm font-medium text-foreground mb-1">{t('settings:scope')}</label>
-        {isAdmin ? <RichTextEditor content={scope} onChange={html => { onScopeChange(html); if (scopeTimerRef.current) clearTimeout(scopeTimerRef.current); scopeTimerRef.current = setTimeout(() => onPlanningChange('scope', html || null), 800) }} placeholder={t('settings:scopePlaceholder')} minHeight="160px" showExpand fieldLabel={t('settings:scope')} />
-          : scope ? <div className="prose prose-sm dark:prose-invert max-w-none rounded-lg border border-border p-3" dangerouslySetInnerHTML={{ __html: toEditorHtml(scope) }} /> : <p className="text-sm text-muted-foreground italic">—</p>}
-      </div>
-      {!isAdmin && <p className="text-xs text-muted-foreground mt-3">{t('settings:adminOnly')}</p>}
-      {planningError && <p className="text-sm text-destructive mt-3">{planningError}</p>}
+      <ProjectPlanningFields
+        startDate={startDate}
+        plannedEndDate={plannedEndDate}
+        plannedPoints={plannedPoints}
+        plannedHours={plannedHours}
+        scope={scope}
+        isAdmin={isAdmin}
+        saving={savingPlanning}
+        error={planningError}
+        onPlanningChange={onPlanningChange}
+        onPlanningFieldChange={onPlanningFieldChange}
+        onScopeChange={onScopeChange}
+      />
     </SettingsSection>
 
     <AccordionSection id="manager" title={t('settings:projectManager')} {...section('manager')}>

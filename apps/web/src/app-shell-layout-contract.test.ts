@@ -96,4 +96,20 @@ describe('contrato do shell integrado', () => {
     expect(guardIndex).toBeLessThan(adminIndex)
     expect(nav.lastIndexOf('items.push(')).toBeLessThan(adminIndex)
   })
+
+  test('o nome do projeto abre a modal de planejamento quando onProjectNameActivate e fornecido', async () => {
+    const shell = await source('./components/AppShell.tsx')
+    contains(shell, 'onProjectNameActivate?: () => void')
+    contains(shell, 'data-project-name-activate')
+    contains(shell, 'onClick={onProjectNameActivate}')
+    // Fallback preservado: sem a prop, o titulo continua um <h1> estatico.
+    contains(shell, '<h1 className="text-sm sm:text-base font-semibold truncate"')
+  })
+
+  test('exibe a versao do build na sidebar (T60)', async () => {
+    const shell = await source('./components/AppShell.tsx')
+    contains(shell, 'data-build-version')
+    contains(shell, "tCommon('buildVersion'")
+    contains(shell, "tCommon('buildVersionWithDate'")
+  })
 })

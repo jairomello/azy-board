@@ -5,7 +5,7 @@ import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
 import { eq } from 'drizzle-orm'
 import * as schema from '../schema'
 import { createSqlitePersistencePorts } from './adapter'
-import type { PersistenceContext } from '../../persistence/models'
+import type { MutationContext, PersistenceContext } from '../../persistence/models'
 
 const migrationsFolder = new URL('../migrations', import.meta.url).pathname
 
@@ -315,6 +315,40 @@ describe('adapter SQLite dos ports', () => {
     expect(await ports.avatars.get('tenant-b', user.id)).toBeNull()
     await ports.avatars.remove('tenant-a', user.id)
     expect(await ports.avatars.get('tenant-a', user.id)).toBeNull()
+    sqlite.close()
+  })
+
+  test('leituras agregadas por projeto isolam tenant e projeto (T59)', async () => {
+    const { sqlite, ports } = setup()
+    const mutation = (tenantId = 'tenant-a'): MutationContext => ({
+      ...context,
+      tenantId,
+      mutation: { origin: 'REST', correlationId: null, actorType: 'HUMAN', actorSource: 'REST', actorLabel: null },
+    })
+
+    const projectA = await ports.projects.createProject(context, { name: 'Projeto A links', boardMode: 'SIMPLE' })
+    const itemA1 = await ports.items.createItem(context, { projectId: projectA.id, type: 'TASK', title: 'Item A1' })
+    const itemA2 = await ports.items.createItem(context, { projectId: projectA.id, type: 'TASK', title: 'Item A2' })
+
+    const projectB = await ports.projects.createProject({ ...context, tenantId: 'tenant-b' }, { name: 'Projeto B links', boardMode: 'SIMPLE' })
+    const itemB1 = await ports.items.createItem({ ...context, tenantId: 'tenant-b' }, { projectId: projectB.id, type: 'TASK', title: 'Item B1' })
+
+    await ports.itemLinks.create(mutation(), projectA.id, itemA1.id, { name: 'Link A1', url: 'https://a1.example.com' })
+    await ports.itemLinks.create(mutation(), projectA.id, itemA2.id, { name: 'Link A2', url: 'https://a2.example.com' })
+    await ports.itemLinks.create(mutation('tenant-b'), projectB.id, itemB1.id, { name: 'Link B1', url: 'https://b1.example.com' })
+
+    expect((await ports.itemLinks.listByProject(context, projectA.id)).map(link => link.name).sort()).toEqual(['Link A1', 'Link A2'])
+    // [TENANT] tenant-a não enxerga o projeto de tenant-b e vice-versa.
+    expect(await ports.itemLinks.listByProject(context, projectB.id)).toEqual([])
+    expect(await ports.itemLinks.listByProject({ ...context, tenantId: 'tenant-b' }, projectA.id)).toEqual([])
+
+    await ports.files.createAttachment(context, projectA.id, itemA1.id, { fileName: 'a1.bin', originalName: 'a1.txt', mimeType: 'text/plain', sizeBytes: 1, storagePath: 'tenant-a/a1.bin' })
+    await ports.files.createAttachment(context, projectA.id, itemA2.id, { fileName: 'a2.bin', originalName: 'a2.txt', mimeType: 'text/plain', sizeBytes: 1, storagePath: 'tenant-a/a2.bin' })
+    await ports.files.createAttachment({ ...context, tenantId: 'tenant-b' }, projectB.id, itemB1.id, { fileName: 'b1.bin', originalName: 'b1.txt', mimeType: 'text/plain', sizeBytes: 1, storagePath: 'tenant-b/b1.bin' })
+
+    expect((await ports.files.listAttachmentsByProject(context, projectA.id)).map(file => file.originalName).sort()).toEqual(['a1.txt', 'a2.txt'])
+    expect(await ports.files.listAttachmentsByProject(context, projectB.id)).toEqual([])
+    expect(await ports.files.listAttachmentsByProject({ ...context, tenantId: 'tenant-b' }, projectA.id)).toEqual([])
     sqlite.close()
   })
 

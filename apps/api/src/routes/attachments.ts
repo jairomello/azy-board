@@ -449,3 +449,30 @@ attachmentsRouter.delete('/:attachmentId', requireRole('MEMBER'), async (c) => {
 
   return c.json({ ok: true })
 })
+
+// GET /projects/:projectId/attachments — leitura agregada (somente leitura) de todos
+// os anexos dos cards do projeto (T59). Escopada por tenant/projeto. A leitura é
+// preservada mesmo com anexos desabilitados (desabilitar bloqueia upload/edição/remoção,
+// não a leitura), consistente com a leitura de conteúdo do item.
+export const projectAttachmentsRouter = new Hono<HonoEnv>()
+projectAttachmentsRouter.use('*', authMiddleware)
+
+projectAttachmentsRouter.get('/', requireRole('VIEWER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const projectId = c.req.param('projectId')!
+  const persistenceContext = userPersistenceContext(ctx)
+  // [TENANT] Escopo por tenant + projeto nas duas consultas (anexos e itens de origem).
+  const [attachments, items] = await Promise.all([
+    persistence.files.listAttachmentsByProject(persistenceContext, projectId),
+    persistence.items.listItems(persistenceContext, projectId),
+  ])
+  const origin = new Map(items.map(item => [item.id, item]))
+  return c.json(attachments.map(attachment => {
+    const item = origin.get(attachment.itemId)
+    return {
+      ...serializeAttachment(projectId, attachment.itemId, attachment),
+      itemId: attachment.itemId,
+      item: item ? { id: item.id, title: item.title, sequenceCode: item.sequenceCode, type: item.type } : null,
+    }
+  }))
+})

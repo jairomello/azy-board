@@ -1705,6 +1705,13 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           .where(and(eq(attachments.tenantId, context.tenantId), eq(items.tenantId, context.tenantId), eq(items.projectId, projectId), eq(items.id, itemId)))
         return rows.map(row => mapAttachment(row.attachment))
       },
+      async listAttachmentsByProject(context, projectId) {
+        // [TENANT] Anexos de todos os cards do projeto; escopo por tenant + projeto via join em items.
+        const rows = await database.select({ attachment: attachments }).from(attachments).innerJoin(items, eq(attachments.itemId, items.id))
+          .where(and(eq(attachments.tenantId, context.tenantId), eq(items.tenantId, context.tenantId), eq(items.projectId, projectId)))
+          .orderBy(asc(attachments.createdAt), asc(attachments.id))
+        return rows.map(row => mapAttachment(row.attachment))
+      },
       async getAttachment(context, projectId, itemId, attachmentId) {
         const row = await database.select({ attachment: attachments }).from(attachments).innerJoin(items, eq(attachments.itemId, items.id))
           .where(and(eq(attachments.tenantId, context.tenantId), eq(items.tenantId, context.tenantId), eq(items.projectId, projectId), eq(items.id, itemId), eq(attachments.id, attachmentId)))
@@ -1779,6 +1786,13 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
       async list(context, projectId, itemId): Promise<ItemLinkRecord[]> {
         const rows = await database.select({ link: itemLinks }).from(itemLinks).innerJoin(items, eq(itemLinks.itemId, items.id))
           .where(and(eq(itemLinks.tenantId, context.tenantId), eq(itemLinks.projectId, projectId), eq(items.tenantId, context.tenantId), eq(items.projectId, projectId), eq(items.id, itemId)))
+          .orderBy(asc(itemLinks.createdAt), asc(itemLinks.id))
+        return rows.map(({ link }) => ({ ...link }))
+      },
+      async listByProject(context, projectId): Promise<ItemLinkRecord[]> {
+        // [TENANT] Links de todos os itens do projeto; escopo por tenant + projeto.
+        const rows = await database.select({ link: itemLinks }).from(itemLinks).innerJoin(items, eq(itemLinks.itemId, items.id))
+          .where(and(eq(itemLinks.tenantId, context.tenantId), eq(itemLinks.projectId, projectId), eq(items.tenantId, context.tenantId), eq(items.projectId, projectId)))
           .orderBy(asc(itemLinks.createdAt), asc(itemLinks.id))
         return rows.map(({ link }) => ({ ...link }))
       },

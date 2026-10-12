@@ -32,6 +32,10 @@ RUN bun install --frozen-lockfile
 FROM deps AS build
 COPY . .
 WORKDIR /app/apps/api
+# T60: gera a versão do build antes de montar a API. Sem .git no contexto da
+# imagem, o contador cai para 1 na data do build; AZYBOARD_BUILD_NUMBER pode
+# ser informado pelo pipeline.
+RUN bun run /app/scripts/build-version.ts
 # index.js é o servidor; migrate.js e migrate-pg.js são os runners de migration
 # dos perfis SIMPLE e ADVANCED, usados pelo subcomando `migrate` do entrypoint.
 # worker.js é a entrada dedicada do worker de runs (T37, perfil ADVANCED/SEPARATE),
@@ -63,6 +67,8 @@ COPY --from=prod-deps /app/package.json ./package.json
 COPY --from=build /app/packages ./packages
 COPY --from=build /app/apps/api/package.json apps/api/package.json
 COPY --from=build /app/apps/api/dist apps/api/dist
+# T60: versão do build embarcada na imagem, lida pela rota pública GET /version.
+COPY --from=build /app/.build-info.json ./.build-info.json
 # Migrations embarcadas na imagem: mudanças de schema são revisadas junto com
 # a imagem em cada commit (fonte única de verdade do deploy).
 COPY --from=build /app/apps/api/src/db/migrations ./migrations
