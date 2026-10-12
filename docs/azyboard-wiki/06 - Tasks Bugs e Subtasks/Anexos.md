@@ -12,6 +12,8 @@ Anexos mantêm arquivos relevantes junto ao item de trabalho. Eles podem represe
 
 A funcionalidade de anexos é **configurável por organização (tenant)**. O administrador define, na aba de Anexos das configurações do projeto, se os anexos ficam habilitados e qual estratégia de armazenamento será usada. A janela de detalhes do item ganhou a aba **Anexos**, com envio, listagem, download, remoção e pré-visualização de imagens. A configuração também continua disponível pela **API REST** e pelo catálogo de ferramentas MCP (consulta).
 
+Imagens anexadas aparecem com uma **miniatura** nas listas de anexos — tanto na aba do item quanto na aba **Todos os anexos** do planejamento do projeto. A lista carrega de imediato e cada miniatura aparece assim que fica pronta; clicar na miniatura abre a imagem ampliada (lightbox). Na aba do projeto, o lightbox navega por todas as imagens do projeto.
+
 ## Habilitar e configurar anexos
 
 Na seção **Arquivos anexados** das configurações, o administrador escolhe:
@@ -40,7 +42,7 @@ Content-Type: multipart/form-data
 GET /api/projects/{projectId}/items/{itemId}/attachments
 ```
 
-Cada anexo apresenta nome original, tipo MIME, tamanho e data de inclusão. Pelo MCP, a ferramenta `list_attachments` retorna a lista de anexos de um item.
+Cada anexo apresenta nome original, tipo MIME, tamanho e data de inclusão. Anexos de imagem exibem ainda uma miniatura, carregada de forma independente por item. Pelo MCP, a ferramenta `list_attachments` retorna a lista de anexos de um item.
 
 ## Baixar um arquivo
 
@@ -95,6 +97,6 @@ A configuração do tenant (`tenant_attachment_settings`) guarda habilitado, pro
 
 ### Acesso e renderização
 
-Listagem, download e remoção exigem autenticação e membership no projeto; a consulta é isolada por tenant, projeto e item. Downloads passam por rota autorizada — não por URLs públicas. Apenas imagens raster aprovadas são renderizadas inline (lightbox); SVG e demais tipos ativos são entregues como `attachment`, com `X-Content-Type-Options: nosniff`. Remoções limpam o objeto físico de forma idempotente após o commit (outbox de limpeza).
+Listagem, download e remoção exigem autenticação e membership no projeto; a consulta é isolada por tenant, projeto e item. Downloads passam por rota autorizada — não por URLs públicas. Apenas imagens raster aprovadas são renderizadas inline (miniatura na lista e lightbox); a miniatura reusa o arquivo original pela rota autorizada, reduzido por CSS e carregado de forma assíncrona por item, sem gerar imagem no servidor. SVG e demais tipos ativos são entregues como `attachment`, com `X-Content-Type-Options: nosniff`. Remoções limpam o objeto físico de forma idempotente após o commit (outbox de limpeza).
 
 </details>

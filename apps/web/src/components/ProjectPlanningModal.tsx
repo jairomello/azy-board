@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ClipboardList, Link2, Paperclip, X } from 'lucide-react'
+import Lightbox from 'yet-another-react-lightbox'
+import 'yet-another-react-lightbox/styles.css'
 import type { GlobalGroup } from '@azy-board/domain'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import { canAccessProjectSettings } from '../permissions'
 import { ProjectPlanningFields, type PlanningField, type PlanningFieldOrScope } from './ProjectPlanningFields'
 import { ItemAreaTabs, type ItemAreaTab } from './ItemAreaTabs'
+import { AttachmentThumbnail } from './AttachmentThumbnail'
 import { MarkdownText } from './MarkdownText'
 import { resolveAppUrl } from '../lib/appUrl'
+import { isInlineImage } from '../lib/attachmentImage'
 import { formatDate } from '../lib/formatters'
 
 export interface PlanningProject {
@@ -281,20 +285,43 @@ function ProjectLinksList({ links, error }: { links: ProjectLinkRow[] | null; er
 // Aba agregada somente leitura: todos os anexos do projeto.
 function ProjectAttachmentsList({ attachments, error }: { attachments: ProjectAttachmentRow[] | null; error: string }) {
   const { t } = useTranslation(['board', 'common'])
+  const [lightboxIndex, setLightboxIndex] = useState(-1)
+  const list = attachments ?? []
+  const images = list.filter(attachment => isInlineImage(attachment.mimeType))
+
   if (error) return <p className="text-sm text-destructive">{error}</p>
   if (!attachments) return <p className="text-sm text-muted-foreground">{t('common:loading')}</p>
   if (attachments.length === 0) return <p className="text-sm text-muted-foreground">{t('board:allAttachmentsEmpty')}</p>
   return (
-    <ul className="space-y-3">
-      {attachments.map(attachment => (
-        <li key={attachment.id} className="rounded-lg border border-border p-3">
-          <div className="flex items-center justify-between gap-3">
-            <a href={resolveAppUrl(attachment.url)} className="text-sm font-medium text-primary hover:underline break-all" download>{attachment.label ?? attachment.originalName}</a>
-            <span className="text-[11px] text-muted-foreground shrink-0">{formatDate(attachment.createdAt)}</span>
-          </div>
-          <div className="mt-1 flex items-center gap-1.5"><span className="text-[11px] text-muted-foreground">{t('board:linkOrigin')}</span><OriginLabel item={attachment.item} /></div>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="space-y-3">
+        {attachments.map(attachment => {
+          const name = attachment.label ?? attachment.originalName
+          return (
+            <li key={attachment.id} className="rounded-lg border border-border p-3">
+              <div className="flex items-center gap-3">
+                <AttachmentThumbnail
+                  url={attachment.url}
+                  name={name}
+                  mimeType={attachment.mimeType}
+                  onOpen={isInlineImage(attachment.mimeType) ? () => setLightboxIndex(images.findIndex(image => image.id === attachment.id)) : undefined}
+                />
+                <div className="min-w-0 flex-1">
+                  <a href={resolveAppUrl(attachment.url)} className="text-sm font-medium text-primary hover:underline break-all" download>{name}</a>
+                  <div className="mt-1 flex items-center gap-1.5"><span className="text-[11px] text-muted-foreground">{t('board:linkOrigin')}</span><OriginLabel item={attachment.item} /></div>
+                </div>
+                <span className="text-[11px] text-muted-foreground shrink-0">{formatDate(attachment.createdAt)}</span>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+      <Lightbox
+        open={lightboxIndex >= 0}
+        index={lightboxIndex}
+        close={() => setLightboxIndex(-1)}
+        slides={images.map(attachment => ({ src: resolveAppUrl(attachment.url) ?? '', alt: attachment.label ?? attachment.originalName }))}
+      />
+    </>
   )
 }

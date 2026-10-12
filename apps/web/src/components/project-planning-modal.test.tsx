@@ -124,6 +124,26 @@ describe('ProjectPlanningModal (Card T59)', () => {
     expect(screen.queryByRole('tab', { name: /Todos os anexos/ })).not.toBeInTheDocument()
   })
 
+  test('aba "Todos os anexos" mostra miniatura e abre o lightbox do projeto', async () => {
+    attachmentsEnabled = true
+    attachments = [
+      { id: 'a1', itemId: 'item-1', originalName: 'Foto.png', label: 'Foto', mimeType: 'image/png', size: 10, createdAt: '2026-10-01T00:00:00.000Z', url: '/api/projects/project-1/items/item-1/attachments/a1/download', isImage: true, item: { id: 'item-1', title: 'Card A', sequenceCode: 'T1', type: 'TASK' } },
+      { id: 'a2', itemId: 'item-1', originalName: 'doc.pdf', label: 'Doc', mimeType: 'application/pdf', size: 10, createdAt: '2026-10-01T00:00:00.000Z', url: '/api/projects/project-1/items/item-1/attachments/a2/download', isImage: false, item: { id: 'item-1', title: 'Card A', sequenceCode: 'T1', type: 'TASK' } },
+    ]
+    const user = userEvent.setup()
+    render(<ProjectPlanningModal projectId="project-1" onClose={() => {}} />)
+
+    await user.click(await screen.findByRole('tab', { name: /Todos os anexos/ }))
+    const openButton = await screen.findByRole('button', { name: 'Abrir imagem Foto' })
+    // Origem "T1 · Card A" aparece para cada anexo do projeto.
+    expect(screen.getAllByText(/Card A/).length).toBe(2)
+    // PDF não vira miniatura acionável.
+    expect(screen.queryByRole('button', { name: 'Abrir imagem Doc' })).not.toBeInTheDocument()
+
+    await user.click(openButton)
+    await waitFor(() => expect(document.querySelector('[class*="yarl__"]')).not.toBeNull())
+  })
+
   test('mantém altura fixa independente da aba ativa', async () => {
     const user = userEvent.setup()
     render(<ProjectPlanningModal projectId="project-1" onClose={() => {}} />)

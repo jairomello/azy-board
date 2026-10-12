@@ -273,6 +273,7 @@
   "attachmentRemoveError": "No se pudo eliminar el adjunto.",
   "attachmentOpenImage": "Abrir imagen {{name}}",
   "attachmentImageAlt": "Adjunto de imagen {{name}}",
+  "attachmentThumbnailLoading": "Cargando miniatura…",
   "attachmentName": "Nombre",
   "attachmentReferenceDate": "Fecha de referencia",
   "attachmentDescription": "Descripción",

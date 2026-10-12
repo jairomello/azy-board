@@ -273,6 +273,7 @@
   "attachmentRemoveError": "Não foi possível remover o anexo.",
   "attachmentOpenImage": "Abrir imagem {{name}}",
   "attachmentImageAlt": "Anexo de imagem {{name}}",
+  "attachmentThumbnailLoading": "Carregando miniatura…",
   "attachmentName": "Nome",
   "attachmentReferenceDate": "Data de referência",
   "attachmentDescription": "Descrição",

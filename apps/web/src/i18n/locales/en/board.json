@@ -273,6 +273,7 @@
   "attachmentRemoveError": "Could not remove the attachment.",
   "attachmentOpenImage": "Open image {{name}}",
   "attachmentImageAlt": "Image attachment {{name}}",
+  "attachmentThumbnailLoading": "Loading thumbnail…",
   "attachmentName": "Name",
   "attachmentReferenceDate": "Reference date",
   "attachmentDescription": "Description",

@@ -1,18 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, Download, FileText, Image as ImageIcon, Loader2, Paperclip, Pencil, Trash2, Upload, X } from 'lucide-react'
+import { Check, Download, Loader2, Paperclip, Pencil, Trash2, Upload, X } from 'lucide-react'
 import Lightbox from 'yet-another-react-lightbox'
 import 'yet-another-react-lightbox/styles.css'
 import type { Attachment } from '@azy-board/ui-contracts'
 import { api } from '../lib/api'
 import { resolveAppUrl } from '../lib/appUrl'
+import { isInlineImage } from '../lib/attachmentImage'
 import { formatDate } from '../lib/formatters'
+import { AttachmentThumbnail } from './AttachmentThumbnail'
 import { MarkdownText } from './MarkdownText'
 import { RichTextEditor } from './RichTextEditor'
 import { useToast } from './Toast'
-
-// [SECURITY] Apenas imagens raster aprovadas são exibidas inline na mesma origem.
-const INLINE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'image/bmp'])
 
 interface Props {
   itemId: string
@@ -76,7 +75,7 @@ export function AttachmentsArea({ itemId, projectId, canEdit }: Props) {
     return () => controller.abort()
   }, [load])
 
-  const imageAttachments = attachments.filter(attachment => INLINE_IMAGE_TYPES.has(attachment.mimeType))
+  const imageAttachments = attachments.filter(attachment => isInlineImage(attachment.mimeType))
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -178,28 +177,19 @@ export function AttachmentsArea({ itemId, projectId, canEdit }: Props) {
       {attachments.length > 0 && (
         <ul className="space-y-2">
           {attachments.map(attachment => {
-            const inline = INLINE_IMAGE_TYPES.has(attachment.mimeType)
+            const inline = isInlineImage(attachment.mimeType)
             const imageIndex = imageAttachments.findIndex(image => image.id === attachment.id)
             const editing = editingId === attachment.id
             const name = displayName(attachment)
             return (
               <li key={attachment.id} className="rounded-lg border border-border p-2">
                 <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    disabled={!inline}
-                    onClick={() => inline && setLightboxIndex(imageIndex)}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted disabled:cursor-default"
-                    aria-label={inline ? t('attachmentOpenImage', { name }) : undefined}
-                  >
-                    {inline ? (
-                      <img src={resolveAppUrl(attachment.url)} alt={t('attachmentImageAlt', { name })} className="h-full w-full object-cover" />
-                    ) : attachment.mimeType.startsWith('image/') ? (
-                      <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <FileText className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </button>
+                  <AttachmentThumbnail
+                    url={attachment.url}
+                    name={name}
+                    mimeType={attachment.mimeType}
+                    onOpen={inline ? () => setLightboxIndex(imageIndex) : undefined}
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm text-foreground">{name}</p>
                     <p className="text-xs text-muted-foreground">
