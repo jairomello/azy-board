@@ -13,6 +13,8 @@ import { useAssistant } from "../contexts/AssistantContext";
 import { MarkdownText } from "./MarkdownText";
 import { notifyAssistantMutation } from "../lib/dataEvents";
 import { receiveViewCommand } from "../lib/assistantViewStore";
+import { shouldShowPendingReply } from "../lib/assistantPending";
+import { RunPendingIndicator } from "./RunPendingIndicator";
 import { MAX_MESSAGE_BYTES } from '@azy-board/assistant-contracts';
 import type { AssistantViewCommand } from '@azy-board/assistant-contracts';
 
@@ -98,6 +100,7 @@ export function AzyAgentDrawer() {
   const [error, setError] = useState("");
   const [decisionPending, setDecisionPending] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
+  const [sending, setSending] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -107,6 +110,9 @@ export function AzyAgentDrawer() {
   const streamCursorRef = useRef(0);
   const streamRunIdRef = useRef<string | null>(null);
   const available = Boolean(availability?.enabled && availability.configured);
+  // Loader imediato: aparece ao enviar e some quando surgem etapas, texto
+  // transmitido ou a run atinge estado terminal/de espera.
+  const showPendingReply = shouldShowPendingReply({ sending, run, messages });
   const reconcileTerminalRun = useCallback(async (conversationId: string, runId: string) => {
     if (reconcilingRunsRef.current.has(runId)) return;
     reconcilingRunsRef.current.add(runId);
@@ -285,7 +291,7 @@ export function AzyAgentDrawer() {
   useEffect(() => {
     const element = messagesRef.current;
     if (element) element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
-  }, [messages, run?.status, error]);
+  }, [messages, run?.status, error, showPendingReply]);
   useEffect(() => {
     if (!run || !["QUEUED", "RUNNING"].includes(run.status)) return;
     const runId = run.id;
@@ -332,6 +338,7 @@ export function AzyAgentDrawer() {
       ...items,
       { id: `local-${Date.now()}`, role: "USER", content: text },
     ]);
+    setSending(true);
     try {
       if (run?.status === "WAITING_USER") {
         await api.post(`/assistant/runs/${run.id}/question`, { answer: text });
@@ -357,6 +364,8 @@ export function AzyAgentDrawer() {
         setError(e instanceof Error ? e.message : t("runFailed"))
       }
       setInput(text);
+    } finally {
+      setSending(false);
     }
   }
   async function decision(approved: boolean) {
@@ -509,6 +518,7 @@ export function AzyAgentDrawer() {
                       ) : null}
                     </div>
                   ))}
+                  {showPendingReply && <RunPendingIndicator />}
                   {run && (
                     <Suspense fallback={null}>
                       <RunActivity key={run.id} run={run} />

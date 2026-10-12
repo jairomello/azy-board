@@ -17,6 +17,7 @@
   "sources": "Fontes",
   "working": "Azy Agent trabalhando...",
   "processing": "Processando...",
+  "thinking": "Pensando...",
   "runActivity": "Atividade da execução",
   "runModel": "Modelo",
   "answerQuestion": "Aguardando sua resposta...",

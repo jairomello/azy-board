@@ -63,6 +63,11 @@ describe('contratos de interação do Azy Agent', () => {
     expect(activity.includes('tool.displayName')).toBe(true)
     expect(activity.includes('tool.toolName}:')).toBe(false)
   })
+  test('mostra indicador de resposta pendente antes das etapas do run', async () => {
+    const drawer = await source('./components/AzyAgentDrawer.tsx')
+    expect(drawer.includes('shouldShowPendingReply')).toBe(true)
+    expect(drawer.includes('RunPendingIndicator')).toBe(true)
+  })
   test('atividade do run usa accordion recolhido com modelo e etapas verticais', async () => {
     const activity = await source('./components/RunActivity.tsx')
     expect(activity.includes('AccordionSection')).toBe(true)

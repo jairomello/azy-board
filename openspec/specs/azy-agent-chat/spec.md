@@ -133,3 +133,18 @@ O cabeçalho do accordion de atividade SHALL exibir um rótulo localizado de pro
 - **WHEN** o run está aguardando resposta do usuário ou decisão de aprovação
 - **THEN** a animação de processamento para e a interface destaca a ação pendente
 
+### Requirement: Indicador imediato de resposta pendente
+O chat SHALL exibir imediatamente após o envio de uma mensagem um indicador de resposta pendente, com rótulo localizado e animação, enquanto a run não tiver produzido modelo, etapas de ferramenta nem texto transmitido, garantindo retorno visual mesmo quando o agente responde sem chamar ferramentas. O indicador SHALL dar lugar ao accordion de atividade quando surgirem etapas e SHALL deixar de ser exibido assim que a resposta começar a ser transmitida ou quando a run atingir estado terminal ou de espera.
+
+#### Scenario: Resposta sem ferramentas
+- **WHEN** o usuário envia uma mensagem e o agente responde sem chamar ferramentas
+- **THEN** o indicador de resposta pendente permanece visível desde o envio até a resposta começar a ser transmitida
+
+#### Scenario: Resposta com etapas
+- **WHEN** o run passa a expor modelo ou etapas de ferramenta
+- **THEN** o indicador de resposta pendente dá lugar ao accordion de atividade, que segue recolhido por padrão
+
+#### Scenario: Estado terminal ou de espera
+- **WHEN** o run atinge estado terminal ou aguarda o usuário
+- **THEN** o indicador de resposta pendente deixa de ser exibido
+
