@@ -74,7 +74,7 @@ export function ProfilePhotoSection() {
             type="button"
             onClick={() => inputRef.current?.click()}
             disabled={busy}
-            className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border border-border text-foreground hover:bg-muted transition disabled:opacity-50"
+            className="h-9 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border border-border text-foreground hover:bg-muted transition disabled:opacity-50"
           >
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
             {t('profilePhotoChange')}
@@ -84,7 +84,7 @@ export function ProfilePhotoSection() {
               type="button"
               onClick={() => void handleRemove()}
               disabled={busy}
-              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition disabled:opacity-50"
+              className="h-9 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition disabled:opacity-50"
             >
               {removing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
               {t('profilePhotoRemove')}

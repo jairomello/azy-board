@@ -46,6 +46,9 @@ export default function AccountPage() {
         {/* Perfil do usuário e foto de perfil */}
         <ProfilePhotoSection />
 
+        {/* Seção de senha (apenas login local) — junto dos dados de identidade */}
+        <PasswordSection />
+
         <section className="bg-card border border-border rounded-xl px-5 py-5 mb-5 shadow-sm">
           <div className="flex items-start gap-3 mb-5">
             <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
@@ -167,9 +170,6 @@ export default function AccountPage() {
           <ShowHiddenProjectsSwitch />
           <p className="text-xs text-muted-foreground mt-2">{t('showHiddenProjectsHint')}</p>
         </section>
-
-        {/* Seção de senha (apenas login local) */}
-        <PasswordSection />
 
         {/* Seção de API Keys */}
         <div className="bg-card border border-border rounded-xl px-5 py-5 shadow-sm">

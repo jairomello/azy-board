@@ -75,6 +75,22 @@ describe('McpConnectionGuide — orientação de conexão do MCP', () => {
     expect(screen.queryByText(/azb_/)).toBeNull()
   })
 
+  test('mantém o download da skill ao lado do copiar instrução, na mesma linha', () => {
+    render(<McpConnectionGuide />)
+    const instrucao = screen.getByRole('button', { name: /Copiar instrução para o agente/ })
+    const download = screen.getByRole('link', { name: /Baixar skill/ })
+    const linha = instrucao.parentElement
+
+    expect(linha).not.toBeNull()
+    expect(download.parentElement).toBe(linha)
+    // Mesmo container pai (linha do par); o happy-dom não calcula layout, então a
+    // classe que garante a linha única é verificada aqui como contrato do wrapper.
+    expect(String(linha?.className)).toContain('flex')
+    expect(String(linha?.className)).toContain('items-center')
+    // A linha agrupa exatamente os dois controles.
+    expect(linha?.children.length).toBe(2)
+  })
+
   test('exibe a dica de usar a skill com o comando oficial', () => {
     render(<McpConnectionGuide />)
     const dica = screen.getByText(/skill azyboard/)

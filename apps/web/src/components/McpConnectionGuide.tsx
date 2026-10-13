@@ -108,25 +108,27 @@ export function McpConnectionGuide() {
             </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => void handleCopy('instruction', t('mcpGuideInstruction', { url: mcpUrl }))}
-            className={`${copyButtonClass('instruction')} mt-2`}
-          >
-            {copied === 'instruction' ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
-            {copied === 'instruction' ? t('mcpGuideInstructionCopied') : t('mcpGuideCopyInstruction')}
-          </button>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleCopy('instruction', t('mcpGuideInstruction', { url: mcpUrl }))}
+              className={copyButtonClass('instruction')}
+            >
+              {copied === 'instruction' ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
+              {copied === 'instruction' ? t('mcpGuideInstructionCopied') : t('mcpGuideCopyInstruction')}
+            </button>
 
-          <a
-            href={downloadUrl}
-            download
-            onClick={(event) => void handleDownload(event)}
-            aria-disabled={downloading}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 mt-2 text-xs rounded-lg border border-border bg-background transition flex-shrink-0 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${downloading ? 'opacity-60 pointer-events-none' : ''}`}
-          >
-            <Download className="w-3.5 h-3.5" aria-hidden="true" />
-            {downloading ? t('mcpGuideDownloading') : t('mcpGuideDownloadSkill')}
-          </a>
+            <a
+              href={downloadUrl}
+              download
+              onClick={(event) => void handleDownload(event)}
+              aria-disabled={downloading}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border border-border bg-background transition flex-shrink-0 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${downloading ? 'opacity-60 pointer-events-none' : ''}`}
+            >
+              <Download className="w-3.5 h-3.5" aria-hidden="true" />
+              {downloading ? t('mcpGuideDownloading') : t('mcpGuideDownloadSkill')}
+            </a>
+          </div>
 
           {downloadFailed && (
             <p role="alert" className="text-xs text-red-600 dark:text-red-400 mt-2">{t('mcpGuideDownloadFailed')}</p>
