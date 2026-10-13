@@ -237,5 +237,12 @@
   "roleAdmin": "Admin",
   "dateRange": "{{start}} a {{end}}",
   "versionNamePlaceholder": "Ex: v1.0.0",
-  "memberEmailPlaceholder": "usuario@empresa.com"
+  "memberEmailPlaceholder": "usuario@empresa.com",
+  "hierarchyLevelsDescription": "Em projetos hierárquicos, simplifique a exibição ocultando níveis. Ao ligar, os itens existentes são recolhidos a um único.",
+  "hideModules": "Não exibir módulos",
+  "hideEpics": "Não exibir épicos",
+  "collapseConfirmTitle": "Ocultar este nível?",
+  "collapseConfirmDescription": "Os módulos/épicos existentes serão recolhidos a um item único. As histórias, tasks e bugs são preservados e você pode reverter depois.",
+  "collapseConfirm": "Ocultar",
+  "collapseSaveError": "Não foi possível atualizar as opções de exibição."
 }

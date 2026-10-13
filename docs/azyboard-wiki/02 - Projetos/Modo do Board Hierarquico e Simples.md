@@ -53,6 +53,17 @@ A conversão é feita em **Configurações do projeto > Formato do board** e exi
 
 A conversão preserva cards e seus dados relacionados. Antes de confirmar, a tela apresenta a contagem de itens afetados para a decisão ser consciente.
 
+## Ocultar módulos e épicos (projetos hierárquicos)
+
+Em um projeto **Hierárquico** é possível simplificar a exibição ocultando níveis, sem migrar para o modo Simples. Em **Configurações do projeto > Formato do board** há duas opções independentes:
+
+- **Não exibir módulos** — o projeto passa a operar com um **módulo único**; os épicos e histórias existentes são recolhidos a ele.
+- **Não exibir épicos** — o projeto passa a operar com um **épico único por módulo**; as histórias existentes são recolhidas a ele.
+
+Com as opções ligadas, o Board e a árvore pulam os níveis ocultados: o trabalho aparece a partir das histórias e tasks, sem módulos nem épicos. Os controles de criação (`Módulo` e `Épico`), o filtro de módulos e a seção **Módulos** das configurações deixam de ser exibidos.
+
+Ligar uma opção **recolhe** os módulos/épicos existentes a um item único (as histórias, tasks, bugs e seu conteúdo são preservados). Por isso a ação pede confirmação. As opções são **reversíveis**: ao desligar, o nível volta a aparecer, o item único pode ser renomeado e novos módulos/épicos podem ser criados.
+
 ## Regras e comportamentos
 
 - O modo é uma propriedade do projeto e vale para todas as pessoas e agentes.

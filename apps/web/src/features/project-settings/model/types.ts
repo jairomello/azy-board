@@ -23,6 +23,8 @@ export interface ProjectSettingsData {
   isRestricted: boolean
   isHidden: boolean
   advancedChecklists: boolean
+  hideModules: boolean
+  hideEpics: boolean
   startDate: string
   plannedEndDate: string
   plannedPoints: string
@@ -40,6 +42,8 @@ export interface SettingsProject {
   isRestricted?: boolean
   isHidden?: boolean
   advancedChecklists?: boolean
+  hideModules?: boolean
+  hideEpics?: boolean
   startDate?: string | null
   plannedEndDate?: string | null
   plannedPoints?: number | null

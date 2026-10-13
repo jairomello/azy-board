@@ -82,6 +82,9 @@ projectsRouter.post('/', async (c) => {
         isRestricted,
         isHidden,
         advancedChecklists: body.advancedChecklists ?? false,
+        // T61 — opções só valem para projetos hierárquicos.
+        hideModules: boardMode === 'HIERARCHICAL' ? (body.hideModules ?? false) : false,
+        hideEpics: boardMode === 'HIERARCHICAL' ? (body.hideEpics ?? false) : false,
         startDate: body.startDate ?? null,
         plannedEndDate: body.plannedEndDate ?? null,
         plannedPoints: body.plannedPoints ?? null,
@@ -280,6 +283,8 @@ projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
   if (body.isRestricted !== undefined) updates.isRestricted = body.isRestricted
   if (body.isHidden !== undefined) updates.isHidden = body.isHidden
   if (body.advancedChecklists !== undefined) updates.advancedChecklists = body.advancedChecklists
+  if (body.hideModules !== undefined) updates.hideModules = currentProject.boardMode === 'HIERARCHICAL' ? body.hideModules : false
+  if (body.hideEpics !== undefined) updates.hideEpics = currentProject.boardMode === 'HIERARCHICAL' ? body.hideEpics : false
 
   if (boardModeChanged && body.dryRun) {
     const [projectItems, projectModules] = await Promise.all([
@@ -299,6 +304,29 @@ projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
         modulesToRemove: body.boardMode === 'SIMPLE' ? projectModules.length : 0,
       },
     })
+  }
+
+  // T61 — ligar as opções de ocultar níveis dispara o recolhimento (módulo/épico único).
+  const desiredHideModules = body.hideModules ?? currentProject.hideModules
+  const desiredHideEpics = body.hideEpics ?? currentProject.hideEpics
+  const collapseNeeded = !boardModeChanged
+    && currentProject.boardMode === 'HIERARCHICAL'
+    && (
+      (desiredHideModules && !currentProject.hideModules)
+      || (desiredHideEpics && !currentProject.hideEpics)
+    )
+
+  if (collapseNeeded) {
+    try {
+      const collapsed = await persistence.unitOfWork.collapseProjectHierarchy(
+        userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST'), id,
+        { hideModules: Boolean(desiredHideModules), hideEpics: Boolean(desiredHideEpics) }, updates,
+      )
+      if (!collapsed) return c.json({ error: 'Projeto não encontrado' }, 404)
+      return c.json({ ...collapsed, role: c.get('memberRole') })
+    } catch {
+      return c.json({ error: 'Não foi possível recolher os níveis do projeto' }, 500)
+    }
   }
 
   if (boardModeChanged) {

@@ -144,6 +144,7 @@ function mapProject(row: typeof projects.$inferSelect): ProjectRecord {
   return {
     id: row.id, tenantId: row.tenantId, name: row.name, description: row.description,
     boardMode: row.boardMode, simpleStoryId: row.simpleStoryId, managerUserId: row.managerUserId,
+    hideModules: Boolean(row.hideModules), hideEpics: Boolean(row.hideEpics),
     isRestricted: row.isRestricted, isHidden: row.isHidden, advancedChecklists: row.advancedChecklists,
     startDate: row.startDate, plannedEndDate: row.plannedEndDate, plannedPoints: row.plannedPoints,
     plannedHours: row.plannedHours, scope: row.scope, icon: row.icon, color: row.color, createdAt: row.createdAt,
@@ -430,6 +431,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
   const unitOfWork: PersistencePorts['unitOfWork'] = {
     createProjectAggregate: async (...args) => projectCommands.createProjectAggregate(...args),
     convertProjectBoardMode: async (...args) => projectCommands.convertProjectBoardMode(...args),
+    collapseProjectHierarchy: async (...args) => projectCommands.collapseProjectHierarchy(...args),
     createItemWithRelations: async (...args) => itemCommands.createItemWithRelations(...args),
     updateItemWithRelations: async (...args) => itemCommands.updateItemWithRelations(...args),
     reparentSubtree: async (...args) => itemCommands.reparentSubtree(...args),
@@ -752,6 +754,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         const [row] = await database.insert(projects).values({
           id: generateId(), tenantId: context.tenantId, ...input,
           simpleStoryId: input.simpleStoryId ?? null, managerUserId: input.managerUserId ?? context.actorUserId,
+          hideModules: input.hideModules ?? false, hideEpics: input.hideEpics ?? false,
           isRestricted: input.isRestricted ?? false, isHidden: input.isHidden ?? false,
           advancedChecklists: input.advancedChecklists ?? false, startDate: input.startDate ?? null,
           plannedEndDate: input.plannedEndDate ?? null, plannedPoints: input.plannedPoints ?? null,
@@ -766,6 +769,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           const fields: Array<[keyof ProjectPatch, string]> = [
             ['name', 'name'], ['description', 'description'], ['boardMode', 'board_mode'],
             ['simpleStoryId', 'simple_story_id'], ['managerUserId', 'manager_user_id'],
+            ['hideModules', 'hide_modules'], ['hideEpics', 'hide_epics'],
             ['isRestricted', 'is_restricted'], ['isHidden', 'is_hidden'], ['advancedChecklists', 'advanced_checklists'],
             ['startDate', 'start_date'], ['plannedEndDate', 'planned_end_date'], ['plannedPoints', 'planned_points'],
             ['plannedHours', 'planned_hours'], ['scope', 'scope'], ['icon', 'icon'], ['color', 'color'],
@@ -778,7 +782,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           }
           if (!sets.length) return null
           const row = sqlite.query<never, Array<string | number | boolean | null>>(
-            `UPDATE projects SET ${sets.join(', ')} WHERE tenant_id = ? AND id = ? RETURNING id, tenant_id AS tenantId, name, description, board_mode AS boardMode, simple_story_id AS simpleStoryId, manager_user_id AS managerUserId, is_restricted AS isRestricted, is_hidden AS isHidden, advanced_checklists AS advancedChecklists, start_date AS startDate, planned_end_date AS plannedEndDate, planned_points AS plannedPoints, planned_hours AS plannedHours, scope, icon, color, created_at AS createdAt`,
+            `UPDATE projects SET ${sets.join(', ')} WHERE tenant_id = ? AND id = ? RETURNING id, tenant_id AS tenantId, name, description, board_mode AS boardMode, simple_story_id AS simpleStoryId, hide_modules AS hideModules, hide_epics AS hideEpics, manager_user_id AS managerUserId, is_restricted AS isRestricted, is_hidden AS isHidden, advanced_checklists AS advancedChecklists, start_date AS startDate, planned_end_date AS plannedEndDate, planned_points AS plannedPoints, planned_hours AS plannedHours, scope, icon, color, created_at AS createdAt`,
           ).get(...params, context.tenantId, projectId)
           if (!row) return null
           emitMetadataEvent(sqlite, context.tenantId, projectId, 'project')

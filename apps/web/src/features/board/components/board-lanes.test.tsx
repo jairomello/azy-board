@@ -60,3 +60,23 @@ describe('BoardLanes — toggles dos accordions', () => {
     expect(calls.some(call => call[0] === 'module' && call[1] === 'mod-1')).toBe(true)
   })
 })
+
+describe('BoardLanes — níveis ocultos (T61)', () => {
+  test('oculta módulos: não renderiza o cabeçalho de módulo e mostra o épico', () => {
+    renderLanes({ hideModules: true })
+    expect(screen.queryByRole('button', { name: /Módulo Um/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Epic A/ })).toBeInTheDocument()
+  })
+
+  test('oculta épicos: não renderiza o cabeçalho de épico e mantém o módulo', () => {
+    renderLanes({ hideEpics: true })
+    expect(screen.getByRole('button', { name: /Módulo Um/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Epic A/ })).not.toBeInTheDocument()
+  })
+
+  test('oculta módulos e épicos: não renderiza nenhum dos dois cabeçalhos', () => {
+    renderLanes({ hideModules: true, hideEpics: true })
+    expect(screen.queryByRole('button', { name: /Módulo Um/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Epic A/ })).not.toBeInTheDocument()
+  })
+})

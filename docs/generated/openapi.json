@@ -72,6 +72,12 @@
           "advancedChecklists": {
             "type": "boolean"
           },
+          "hideModules": {
+            "type": "boolean"
+          },
+          "hideEpics": {
+            "type": "boolean"
+          },
           "startDate": {
             "anyOf": [
               {
@@ -173,6 +179,12 @@
             "type": "boolean"
           },
           "advancedChecklists": {
+            "type": "boolean"
+          },
+          "hideModules": {
+            "type": "boolean"
+          },
+          "hideEpics": {
             "type": "boolean"
           },
           "startDate": {

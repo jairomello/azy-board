@@ -40,6 +40,9 @@ interface BoardLanesProps {
   onEditStory: (story: ItemData) => void
   onEditEpic: (epic: ItemData) => void
   noModuleLabel: string
+  // T61 — níveis ocultos na apresentação hierárquica.
+  hideModules?: boolean
+  hideEpics?: boolean
   // Card T49 — itens do caminho crítico a destacar.
   criticalIds?: ReadonlySet<string> | null
 }
@@ -48,24 +51,27 @@ export function BoardLanes({
   simpleBoard, simpleStory, simpleCards, showStoryLanes, orphanCards, visibleModuleGroups, columns, versions, sprints,
   collapsedEpics, collapsedModules, collapsedStories, columnAddForms, onToggleEpic, onToggleModule, onToggleStory,
   onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, onEditStory, onEditEpic,
-  noModuleLabel, criticalIds = null,
+  noModuleLabel, hideModules = false, hideEpics = false, criticalIds = null,
 }: BoardLanesProps) {
+  const renderEpicGroup = (group: EpicLaneGroup) => (
+    <Swimlane key={group.epic.id} {...laneProps(group.epic.id, group.epic.title, columns, versions, sprints, group.tasks, collapsedEpics.has(group.epic.id), columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, () => onEditEpic(group.epic), criticalIds)}
+      hideHeader={hideEpics}
+      onToggle={() => onToggleEpic(group.epic.id)}
+      storyGroups={showStoryLanes ? group.storyGroups : undefined}
+      collapsedStories={collapsedStories}
+      onToggleStory={onToggleStory}
+      onEditStory={onEditStory}
+      defaultParentId={group.storyGroups.find(story => story.story)?.story?.id ?? null}
+    />
+  )
   return (
     <>
       {simpleBoard && simpleStory && <Swimlane {...laneProps(simpleStory.id, simpleStory.title, columns, versions, sprints, simpleCards, false, columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, null, criticalIds)} />}
       {!simpleBoard && orphanCards.length > 0 && <Swimlane {...laneProps('orphan', noModuleLabel, columns, versions, sprints, orphanCards, collapsedEpics.has('orphan'), columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, null, criticalIds)} allowAdd={false} onToggle={() => onToggleEpic('orphan')} />}
-      {!simpleBoard && visibleModuleGroups.map(({ module, epics }) => (
+      {!simpleBoard && hideModules && visibleModuleGroups.flatMap(({ epics }) => epics).map(renderEpicGroup)}
+      {!simpleBoard && !hideModules && visibleModuleGroups.map(({ module, epics }) => (
         <ModuleSwimlane key={module.id} title={module.name} epicCount={epics.length} progress={moduleProgress(epics)} points={modulePoints(epics)} collapsed={collapsedModules.has(module.id)} onToggle={() => onToggleModule(module.id)}>
-          {epics.map(group => (
-            <Swimlane key={group.epic.id} {...laneProps(group.epic.id, group.epic.title, columns, versions, sprints, group.tasks, collapsedEpics.has(group.epic.id), columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, () => onEditEpic(group.epic), criticalIds)}
-              onToggle={() => onToggleEpic(group.epic.id)}
-              storyGroups={showStoryLanes ? group.storyGroups : undefined}
-              collapsedStories={collapsedStories}
-              onToggleStory={onToggleStory}
-              onEditStory={onEditStory}
-              defaultParentId={group.storyGroups.find(story => story.story)?.story?.id ?? null}
-            />
-          ))}
+          {epics.map(renderEpicGroup)}
         </ModuleSwimlane>
       ))}
     </>
@@ -95,21 +101,23 @@ interface SwimlaneProps {
   columnAddForms: Record<string, boolean>; onShowAddForm: (id: string) => void; onHideAddForm: (id: string) => void; onCardCreate: BoardLanesProps['onCardCreate']
   onOpenDetail: (id: string) => void; onTitleSave: (id: string, title: string) => void; onDelete: (id: string) => void; onArchive: (id: string) => void
   onEditEpic: (() => void) | null; criticalIds?: ReadonlySet<string> | null; storyGroups?: StoryLaneGroup[]; collapsedStories?: Set<string>; onToggleStory?: (id: string) => void; defaultParentId?: string | null; allowAdd?: boolean; onEditStory?: (story: ItemData) => void
+  /** T61 — quando o nível de épico está oculto, o cabeçalho da swimlane não é renderizado. */
+  hideHeader?: boolean
 }
 
 function Swimlane(props: SwimlaneProps) {
   const { t } = useTranslation('board')
-  const { tasks, collapsed, storyGroups } = props
+  const { tasks, collapsed, storyGroups, hideHeader = false } = props
   const progress = tasks.length ? Math.round((tasks.filter(task => task.status === 'DONE').length / tasks.length) * 100) : 0
   return <section className="mb-4 rounded-xl border border-border/80 bg-surface p-2.5 sm:p-3 shadow-sm">
-    <div className="flex items-center gap-3 w-full mb-3 px-1">
+    {!hideHeader && <div className="flex items-center gap-3 w-full mb-3 px-1">
       <button onClick={props.onToggle} aria-expanded={!collapsed} className="flex items-center gap-2.5 flex-1 text-left group min-w-0">
         <svg className={`w-4 h-4 text-muted-foreground transition-transform ${collapsed ? '' : 'rotate-90'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
         <div className="min-w-0"><span className="font-semibold text-sm text-foreground block truncate">{props.title}</span><span className="text-[11px] text-muted-foreground">{storyGroups ? `${storyGroups.length} ${storyGroups.length === 1 ? 'história' : 'histórias'} · ${tasks.length} ${tasks.length === 1 ? 'card' : 'cards'}` : `${tasks.length} ${tasks.length === 1 ? 'item' : 'itens'}`}</span></div>
         <div className="ml-auto hidden sm:flex items-center gap-2 w-36"><div className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-status-done rounded-full" style={{ width: `${progress}%` }} /></div><span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{progress}%</span></div>
       </button>
       {props.onEditEpic && <button onClick={props.onEditEpic} className="text-muted-foreground hover:text-foreground transition flex-shrink-0 p-1 rounded hover:bg-muted" title={t('editEpic')}><Pencil className="w-3.5 h-3.5" /></button>}
-    </div>
+    </div>}
     {!collapsed && storyGroups && <div className="ml-2 sm:ml-4 pl-3 sm:pl-5 border-l-2 border-violet-400/30 space-y-2.5">{storyGroups.length === 0 && <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">{t('noStoriesInEpic')}</div>}{storyGroups.map(group => <StorySwimlane key={group.id} group={group} {...props} collapsed={props.collapsedStories?.has(group.id) ?? false} onToggle={() => props.onToggleStory?.(group.id)} onEdit={group.story ? () => props.onEditStory?.(group.story!) : undefined} />)}</div>}
     {!collapsed && !storyGroups && <BoardColumns laneId={props.swimlaneId} columns={props.columns} versions={props.versions} sprints={props.sprints} tasks={props.tasks} parentId={props.defaultParentId ?? undefined} allowAdd={props.allowAdd ?? true} columnAddForms={props.columnAddForms} onShowAddForm={props.onShowAddForm} onHideAddForm={props.onHideAddForm} onCardCreate={props.onCardCreate} onOpenDetail={props.onOpenDetail} onTitleSave={props.onTitleSave} onDelete={props.onDelete} onArchive={props.onArchive} criticalIds={props.criticalIds} />}
   </section>

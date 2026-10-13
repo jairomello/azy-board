@@ -16,6 +16,8 @@ interface ProjectRow {
   description: string | null
   board_mode: BoardMode
   simple_story_id: string | null
+  hide_modules: boolean
+  hide_epics: boolean
   manager_user_id: string | null
   is_restricted: boolean
   is_hidden: boolean
@@ -34,6 +36,7 @@ function mapProject(row: ProjectRow): ProjectRecord {
   return {
     id: row.id, tenantId: row.tenant_id, name: row.name, description: row.description,
     boardMode: row.board_mode, simpleStoryId: row.simple_story_id, managerUserId: row.manager_user_id,
+    hideModules: Boolean(row.hide_modules), hideEpics: Boolean(row.hide_epics),
     isRestricted: row.is_restricted, isHidden: row.is_hidden, advancedChecklists: row.advanced_checklists,
     startDate: row.start_date, plannedEndDate: row.planned_end_date, plannedPoints: row.planned_points,
     plannedHours: row.planned_hours, scope: row.scope, icon: row.icon, color: row.color, createdAt: row.created_at,
@@ -58,6 +61,7 @@ function findOrCreateStory(database: Database, tenantId: string, projectId: stri
 
 const projectPatchColumns = {
   name: 'name', description: 'description', managerUserId: 'manager_user_id',
+  hideModules: 'hide_modules', hideEpics: 'hide_epics',
   isRestricted: 'is_restricted', isHidden: 'is_hidden', advancedChecklists: 'advanced_checklists',
   startDate: 'start_date', plannedEndDate: 'planned_end_date', plannedPoints: 'planned_points',
   plannedHours: 'planned_hours', scope: 'scope', icon: 'icon', color: 'color',
@@ -89,6 +93,8 @@ export function createSqliteProjectUnitOfWork(database: Database) {
         description: projectInput.description ?? null,
         boardMode: projectInput.boardMode,
         simpleStoryId,
+        hideModules: projectInput.hideModules ?? false,
+        hideEpics: projectInput.hideEpics ?? false,
         managerUserId: projectInput.managerUserId ?? context.actorUserId,
         isRestricted: projectInput.isRestricted ?? false,
         isHidden: projectInput.isHidden ?? false,
@@ -105,11 +111,12 @@ export function createSqliteProjectUnitOfWork(database: Database) {
 
       return runSqliteAtomic(database, () => {
         database.query(`INSERT INTO projects
-          (id, tenant_id, name, description, board_mode, simple_story_id, manager_user_id, is_restricted, is_hidden,
+          (id, tenant_id, name, description, board_mode, simple_story_id, hide_modules, hide_epics, manager_user_id, is_restricted, is_hidden,
            advanced_checklists, start_date, planned_end_date, planned_points, planned_hours, scope, icon, color, created_at)
-          VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
           .run(
-            project.id, project.tenantId, project.name, project.description, project.boardMode, project.managerUserId,
+            project.id, project.tenantId, project.name, project.description, project.boardMode,
+            project.hideModules, project.hideEpics, project.managerUserId,
             project.isRestricted, project.isHidden, project.advancedChecklists, project.startDate, project.plannedEndDate,
             project.plannedPoints, project.plannedHours, project.scope, project.icon, project.color, project.createdAt,
           )
@@ -233,6 +240,118 @@ export function createSqliteProjectUnitOfWork(database: Database) {
         }
 
         updateProjectRow(database, context.tenantId, projectId, targetBoardMode, simpleStoryId, patch)
+        const updated = database.query<ProjectRow, [string, string]>(
+          'SELECT * FROM projects WHERE tenant_id = ? AND id = ?',
+        ).get(context.tenantId, projectId)
+        if (!updated) return null
+        appendDomainEventSync(database, { tenantId: context.tenantId, projectId, type: DOMAIN_EVENT_TYPES.projectMetadataChanged, payload: { section: 'project' } })
+        return mapProject(updated)
+      })
+    },
+
+    // T61 — recolhe módulos/épicos a um item único conforme as opções de ocultar níveis.
+    collapseProjectHierarchy(
+      context: MutationContext,
+      projectId: string,
+      options: { hideModules: boolean; hideEpics: boolean },
+      patch: ProjectPatch = {},
+    ): ProjectRecord | null {
+      return runSqliteAtomic(database, () => {
+        const project = database.query<ProjectRow, [string, string]>(
+          'SELECT * FROM projects WHERE tenant_id = ? AND id = ?',
+        ).get(context.tenantId, projectId)
+        if (!project) return null
+        const now = new Date().toISOString()
+
+        if (project.board_mode === 'SIMPLE') {
+          // As opções não se aplicam ao modo SIMPLE: persiste ambas desligadas.
+          updateProjectRow(database, context.tenantId, projectId, project.board_mode, project.simple_story_id, {
+            ...patch, hideModules: false, hideEpics: false,
+          })
+        } else {
+          // 1) Recolhe módulos a um único módulo, quando pedido.
+          let primaryModuleId: string | null = null
+          if (options.hideModules) {
+            const first = database.query<{ id: string }, [string, string]>(
+              'SELECT id FROM modules WHERE tenant_id = ? AND project_id = ? ORDER BY position, id LIMIT 1',
+            ).get(context.tenantId, projectId)
+            primaryModuleId = first?.id ?? null
+            if (!primaryModuleId) {
+              primaryModuleId = generateId()
+              database.query('INSERT INTO modules (id, tenant_id, project_id, name, description, position) VALUES (?, ?, ?, ?, NULL, 0)')
+                .run(primaryModuleId, context.tenantId, projectId, 'Geral')
+            }
+            // Move todos os épicos para o módulo único e remove os demais módulos.
+            database.query('UPDATE items SET module_id = ?, updated_at = ? WHERE tenant_id = ? AND project_id = ? AND type = ? AND (module_id IS NULL OR module_id <> ?)')
+              .run(primaryModuleId, now, context.tenantId, projectId, 'EPIC', primaryModuleId)
+            database.query('DELETE FROM modules WHERE tenant_id = ? AND project_id = ? AND id <> ?')
+              .run(context.tenantId, projectId, primaryModuleId)
+          }
+
+          // 2) Recolhe épicos a um único épico por módulo, quando pedido.
+          if (options.hideEpics) {
+            const modules = database.query<{ id: string }, [string, string]>(
+              'SELECT id FROM modules WHERE tenant_id = ? AND project_id = ? ORDER BY position, id',
+            ).all(context.tenantId, projectId)
+            const moduleIds = modules.length > 0
+              ? modules.map(module => module.id)
+              : [primaryModuleId].filter((id): id is string => Boolean(id))
+            let firstEpic: { id: string; title: string } | null = null
+
+            for (const moduleId of moduleIds) {
+              let epic = database.query<{ id: string; title: string }, [string, string, string]>(
+                "SELECT id, title FROM items WHERE tenant_id = ? AND project_id = ? AND type = 'EPIC' AND module_id = ? ORDER BY position, id LIMIT 1",
+              ).get(context.tenantId, projectId, moduleId)
+              if (!epic) {
+                const epicId = generateId()
+                database.query(`INSERT INTO items
+                  (id, tenant_id, project_id, type, parent_id, module_id, ancestry_path, title, status, priority, position, created_at, updated_at)
+                  VALUES (?, ?, ?, 'EPIC', NULL, ?, '[]', 'Fluxo contínuo', 'NOT_STARTED', 'MEDIUM', 0, ?, ?)`)
+                  .run(epicId, context.tenantId, projectId, moduleId, now, now)
+                epic = { id: epicId, title: 'Fluxo contínuo' }
+              }
+              if (!firstEpic) firstEpic = epic
+
+              const otherEpics = database.query<{ id: string }, [string, string, string, string]>(
+                "SELECT id FROM items WHERE tenant_id = ? AND project_id = ? AND type = 'EPIC' AND module_id = ? AND id <> ?",
+              ).all(context.tenantId, projectId, moduleId, epic.id)
+              const storyPath = JSON.stringify([{ id: epic.id, title: epic.title, type: 'EPIC' }])
+              for (const other of otherEpics) {
+                const stories = database.query<{ id: string }, [string, string, string]>(
+                  "SELECT id FROM items WHERE tenant_id = ? AND project_id = ? AND type = 'STORY' AND parent_id = ?",
+                ).all(context.tenantId, projectId, other.id)
+                for (const story of stories) {
+                  const before = readItemSnapshot(database, context.tenantId, projectId, story.id)
+                  database.query('UPDATE items SET parent_id = ?, ancestry_path = ?, updated_at = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
+                    .run(epic.id, storyPath, now, context.tenantId, projectId, story.id)
+                  const after = readItemSnapshot(database, context.tenantId, projectId, story.id)
+                  if (before && after) recordItemEvent(database, context, { projectId, itemId: story.id, eventType: 'ITEM_REPARENTED', before, after })
+                }
+                deleteSqliteItemsInsideTransaction(database, context, projectId, [other.id], true)
+              }
+            }
+
+            // Histórias sem épico pai (ex.: criadas antes de existir épico) vão para o épico único.
+            if (firstEpic) {
+              const orphans = database.query<{ id: string }, [string, string, string, string]>(
+                "SELECT id FROM items WHERE tenant_id = ? AND project_id = ? AND type = 'STORY' AND (parent_id IS NULL OR parent_id NOT IN (SELECT id FROM items WHERE tenant_id = ? AND project_id = ? AND type = 'EPIC'))",
+              ).all(context.tenantId, projectId, context.tenantId, projectId)
+              const orphanPath = JSON.stringify([{ id: firstEpic.id, title: firstEpic.title, type: 'EPIC' }])
+              for (const story of orphans) {
+                const before = readItemSnapshot(database, context.tenantId, projectId, story.id)
+                database.query('UPDATE items SET parent_id = ?, ancestry_path = ?, updated_at = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
+                  .run(firstEpic.id, orphanPath, now, context.tenantId, projectId, story.id)
+                const after = readItemSnapshot(database, context.tenantId, projectId, story.id)
+                if (before && after) recordItemEvent(database, context, { projectId, itemId: story.id, eventType: 'ITEM_REPARENTED', before, after })
+              }
+            }
+          }
+
+          updateProjectRow(database, context.tenantId, projectId, project.board_mode, project.simple_story_id, {
+            ...patch, hideModules: options.hideModules, hideEpics: options.hideEpics,
+          })
+        }
+
         const updated = database.query<ProjectRow, [string, string]>(
           'SELECT * FROM projects WHERE tenant_id = ? AND id = ?',
         ).get(context.tenantId, projectId)

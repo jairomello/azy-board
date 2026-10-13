@@ -39,7 +39,7 @@ describe('contratos de UI dos modos de board', () => {
     const itemModal = await source('./components/ItemModal.tsx')
     contains(board, 'simpleBoard={isSimpleBoard}')
     contains(lanes, '{simpleBoard && simpleStory && <Swimlane')
-    contains(lanes, '{!simpleBoard && visibleModuleGroups.map')
+    contains(lanes, '{!simpleBoard && !hideModules && visibleModuleGroups.map')
     contains(commandBar, 'showExpandCollapse={view === \'kanban\' && boardMode === \'HIERARCHICAL\'}')
     contains(commandBar, 'showModuleViewMode={view === \'kanban\' && boardMode === \'HIERARCHICAL\'}')
      contains(filters, "t('filterSprint')")

@@ -120,6 +120,8 @@ export interface ProjectRecord {
   description: string | null
   boardMode: BoardMode
   simpleStoryId: string | null
+  hideModules: boolean
+  hideEpics: boolean
   managerUserId: string | null
   isRestricted: boolean
   isHidden: boolean

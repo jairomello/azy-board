@@ -237,5 +237,12 @@
   "roleAdmin": "Admin",
   "dateRange": "{{start}} to {{end}}",
   "versionNamePlaceholder": "e.g. v1.0.0",
-  "memberEmailPlaceholder": "user@company.com"
+  "memberEmailPlaceholder": "user@company.com",
+  "hierarchyLevelsDescription": "In hierarchical projects, simplify the view by hiding levels. Enabling collapses existing items into a single one.",
+  "hideModules": "Do not show modules",
+  "hideEpics": "Do not show epics",
+  "collapseConfirmTitle": "Hide this level?",
+  "collapseConfirmDescription": "Existing modules/epics will be collapsed into a single item. Stories, tasks and bugs are preserved and you can revert later.",
+  "collapseConfirm": "Hide",
+  "collapseSaveError": "Could not update the display options."
 }

@@ -12,6 +12,8 @@ interface GeneralSettingsProps {
   isRestricted: boolean
   isHidden: boolean
   advancedChecklists: boolean
+  hideModules: boolean
+  hideEpics: boolean
   startDate: string
   plannedEndDate: string
   plannedPoints: string
@@ -48,14 +50,22 @@ interface GeneralSettingsProps {
   onConfirmBoardMode: () => void
   onCancelBoardMode: () => void
   onSaveManager: () => void
+  /** T61 — opções de ocultar módulos/épicos. */
+  onCollapseChange: (field: 'hideModules' | 'hideEpics', value: boolean) => void
+  pendingCollapse: 'hideModules' | 'hideEpics' | null
+  savingCollapse: boolean
+  collapseError: string
+  onConfirmCollapse: () => void
+  onCancelCollapse: () => void
 }
 
 export function GeneralSettingsSections({
-  boardMode, isRestricted, isHidden, advancedChecklists, startDate, plannedEndDate, plannedPoints, plannedHours,
+  boardMode, isRestricted, isHidden, advancedChecklists, hideModules, hideEpics, startDate, plannedEndDate, plannedPoints, plannedHours,
   scope, icon, color, manager, managerUserId, members, isAdmin, openSections, onToggleSection,
   onBoardModeChange, onAppearanceChange, savingAppearance, appearanceError, onVisibilityChange, onAdvancedChecklistsChange, onPlanningChange, onPlanningFieldChange, onManagerChange, onScopeChange,
   pendingBoardMode, savingBoardMode, boardModeError, savingVisibility, visibilityError,
   savingAdvancedChecklists, advancedChecklistsError, savingPlanning, planningError, savingManager, onConfirmBoardMode, onCancelBoardMode, onSaveManager,
+  onCollapseChange, pendingCollapse, savingCollapse, collapseError, onConfirmCollapse, onCancelCollapse,
 }: GeneralSettingsProps) {
   const { t } = useTranslation(['settings', 'common'])
   const section = (id: string) => ({ isOpen: openSections.has(id), onToggle: onToggleSection })
@@ -75,6 +85,20 @@ export function GeneralSettingsSections({
           <span className="block text-xs text-muted-foreground mt-1">{t('settings:hierarchicalBoardDescription')}</span>
         </label>
       </div>
+      {boardMode === 'HIERARCHICAL' && (
+        <div className="mt-4 space-y-2 border-t border-border pt-4">
+          <p className="text-sm text-muted-foreground">{t('settings:hierarchyLevelsDescription')}</p>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" checked={hideModules} disabled={!isAdmin || savingCollapse} onChange={event => onCollapseChange('hideModules', event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
+            <span className="text-sm text-foreground">{t('settings:hideModules')}</span>
+          </label>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" checked={hideEpics} disabled={!isAdmin || savingCollapse} onChange={event => onCollapseChange('hideEpics', event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
+            <span className="text-sm text-foreground">{t('settings:hideEpics')}</span>
+          </label>
+          {collapseError && <p className="text-sm text-destructive">{collapseError}</p>}
+        </div>
+      )}
       {!isAdmin && <p className="text-xs text-muted-foreground mt-3">{t('settings:adminOnly')}</p>}
       {boardModeError && <p className="text-sm text-destructive mt-3">{boardModeError}</p>}
     </SettingsSection>
@@ -141,5 +165,7 @@ export function GeneralSettingsSections({
     </AccordionSection>
 
     {pendingBoardMode === 'SIMPLE' && <div className="fixed inset-0 z-50 flex items-center justify-center p-4"><div className="absolute inset-0 bg-black/50" onClick={onCancelBoardMode} /><div role="dialog" aria-modal="true" aria-labelledby="simple-mode-title" className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-md p-6"><h3 id="simple-mode-title" className="font-semibold text-foreground mb-2">{t('settings:simpleBoardQuestion')}</h3><p className="text-sm text-muted-foreground mb-4">{t('settings:simpleBoardConversionDescription')}</p><div className="flex gap-2 justify-end"><button onClick={onCancelBoardMode} disabled={savingBoardMode} className="px-3 py-1.5 text-sm bg-muted text-muted-foreground rounded-lg">{t('common:cancel')}</button><button onClick={onConfirmBoardMode} disabled={savingBoardMode} className="px-4 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg">{savingBoardMode ? t('settings:converting') : t('settings:confirmConversion')}</button></div></div></div>}
+
+    {pendingCollapse && <div className="fixed inset-0 z-50 flex items-center justify-center p-4"><div className="absolute inset-0 bg-black/50" onClick={onCancelCollapse} /><div role="dialog" aria-modal="true" aria-labelledby="collapse-title" className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-md p-6"><h3 id="collapse-title" className="font-semibold text-foreground mb-2">{t('settings:collapseConfirmTitle')}</h3><p className="text-sm text-muted-foreground mb-4">{t('settings:collapseConfirmDescription')}</p><div className="flex gap-2 justify-end"><button onClick={onCancelCollapse} disabled={savingCollapse} className="px-3 py-1.5 text-sm bg-muted text-muted-foreground rounded-lg">{t('common:cancel')}</button><button onClick={onConfirmCollapse} disabled={savingCollapse} className="px-4 py-1.5 text-sm bg-primary text-primary-foreground rounded-lg">{savingCollapse ? t('common:loading') : t('settings:collapseConfirm')}</button></div></div></div>}
   </>
 }

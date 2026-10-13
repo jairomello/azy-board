@@ -83,6 +83,8 @@ export default function BoardPage() {
     projectName,
     boardMode,
     simpleStoryId,
+    hideModules,
+    hideEpics,
     advancedChecklists,
     projectIcon, projectColor,
     loading,
@@ -457,6 +459,8 @@ export default function BoardPage() {
           onDensityChange={setDensity}
            modules={modules}
            boardMode={boardMode}
+          hideModules={hideModules}
+          hideEpics={hideEpics}
           sprints={sprints}
           members={members}
           squads={projectSquads}
@@ -557,7 +561,7 @@ export default function BoardPage() {
               }}
               onDragCancel={() => { lastOverRef.current = null; setActiveId(null) }}
             >
-                {!isSimpleBoard && filters.moduleViewMode === 'tabs' && moduleGroups.length > 0 && (
+                {!isSimpleBoard && !hideModules && filters.moduleViewMode === 'tabs' && moduleGroups.length > 0 && (
                 <div role="tablist" aria-label={tBoard('moduleViewTabs')} className="mb-3 flex gap-1.5 overflow-x-auto rounded-xl border border-border/80 bg-surface p-1">
                   {moduleGroups.map(({ module }) => (
                     <button
@@ -581,6 +585,8 @@ export default function BoardPage() {
                   simpleCards={boardCards}
                   showStoryLanes={filters.storyDisplay === 'lanes'}
                   orphanCards={orphanCards}
+                  hideModules={hideModules}
+                  hideEpics={hideEpics}
                   moduleGroups={moduleGroups}
                   visibleModuleGroups={visibleModuleGroups}
                   columns={columns}

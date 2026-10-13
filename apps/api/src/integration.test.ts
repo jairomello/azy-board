@@ -3601,3 +3601,100 @@ describe('versão do build (Card T60)', () => {
     }
   })
 })
+
+describe('opções de ocultar módulos e épicos (Card T61)', () => {
+  let tenantId: string
+  let admin: { id: string; email: string }
+  let viewer: { id: string; email: string }
+  let adminToken: string
+  let viewerToken: string
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Niveis', slug: `niveis-${tenantId}`, createdAt: new Date().toISOString() })
+    admin = await createUser(tenantId, 'niveis-admin@test.local', 'Admin Niveis', 'ADMIN')
+    viewer = await createUser(tenantId, 'niveis-viewer@test.local', 'Viewer Niveis', 'TEAM_MEMBER')
+    adminToken = await token(admin.id, tenantId, admin.email)
+    viewerToken = await token(viewer.id, tenantId, viewer.email)
+  })
+
+  test('cria, lê e edita as opções, rejeitando valores não booleanos e escrita de não-admin', async () => {
+    const create = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto níveis', hideModules: true, hideEpics: true }),
+    })
+    expect(create.status).toBe(201)
+    const created = await create.json() as { id: string; hideModules: boolean; hideEpics: boolean }
+    expect(created).toMatchObject({ hideModules: true, hideEpics: true })
+
+    // VIEWER precisa de membership para ler o projeto, mas não pode escrever.
+    await db.insert(memberships).values({ id: generateId(), tenantId, userId: viewer.id, projectId: created.id, role: 'VIEWER', createdAt: new Date().toISOString() })
+
+    const read = await request(`/projects/${created.id}`, adminToken)
+    expect(read.status).toBe(200)
+    expect(await read.json()).toMatchObject({ hideModules: true, hideEpics: true })
+
+    const patch = await request(`/projects/${created.id}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hideEpics: false }),
+    })
+    expect(patch.status).toBe(200)
+    expect(await patch.json()).toMatchObject({ hideModules: true, hideEpics: false })
+
+    const invalid = await request(`/projects/${created.id}`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hideModules: 'sim' }),
+    })
+    expect(invalid.status).toBe(400)
+
+    // VIEWER só lê; escrita é restrita a ADMIN.
+    const viewerRead = await request(`/projects/${created.id}`, viewerToken)
+    expect(viewerRead.status).toBe(200)
+    const forbidden = await request(`/projects/${created.id}`, viewerToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hideModules: false }),
+    })
+    expect(forbidden.status).toBe(403)
+  })
+})
+
+describe('tree view pula níveis ocultos (Card T61)', () => {
+  async function seed(flags: { hideModules: boolean; hideEpics: boolean }) {
+    const tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Arvore', slug: `arvore-${tenantId}`, createdAt: new Date().toISOString() })
+    const admin = await createUser(tenantId, `arvore-${tenantId}@test.local`, 'Arvore Admin', 'ADMIN')
+    const sessionToken = await token(admin.id, tenantId, admin.email)
+    const projectId = generateId()
+    await db.insert(projects).values({ id: projectId, tenantId, name: 'Arvore', description: null, boardMode: 'HIERARCHICAL', simpleStoryId: null, hideModules: flags.hideModules, hideEpics: flags.hideEpics, managerUserId: null, isRestricted: false, isHidden: false, createdAt: new Date().toISOString() })
+    await db.insert(memberships).values({ id: generateId(), tenantId, userId: admin.id, projectId, role: 'ADMIN', createdAt: new Date().toISOString() })
+    await seedHierarchyFixture(tenantId, projectId, admin.id)
+    return { sessionToken, projectId }
+  }
+
+  test('sem opções: raiz são módulos', async () => {
+    const { sessionToken, projectId } = await seed({ hideModules: false, hideEpics: false })
+    const body = await (await request(`/projects/${projectId}/items/tree`, sessionToken)).json() as Array<{ type: string }>
+    expect(body.every(node => node.type === 'module')).toBe(true)
+  })
+
+  test('hideModules: raiz são épicos', async () => {
+    const { sessionToken, projectId } = await seed({ hideModules: true, hideEpics: false })
+    const body = await (await request(`/projects/${projectId}/items/tree`, sessionToken)).json() as Array<{ type: string }>
+    expect(body.length).toBeGreaterThan(0)
+    expect(body.every(node => node.type === 'EPIC')).toBe(true)
+  })
+
+  test('hideEpics: módulo contém histórias direto', async () => {
+    const { sessionToken, projectId } = await seed({ hideModules: false, hideEpics: true })
+    const body = await (await request(`/projects/${projectId}/items/tree`, sessionToken)).json() as Array<{ type: string; children: Array<{ type: string }> }>
+    expect(body.every(node => node.type === 'module')).toBe(true)
+    expect(body.flatMap(node => node.children).every(child => child.type === 'STORY')).toBe(true)
+  })
+
+  test('hideModules + hideEpics: raiz são histórias', async () => {
+    const { sessionToken, projectId } = await seed({ hideModules: true, hideEpics: true })
+    const body = await (await request(`/projects/${projectId}/items/tree`, sessionToken)).json() as Array<{ type: string }>
+    expect(body.length).toBeGreaterThan(0)
+    expect(body.every(node => node.type === 'STORY')).toBe(true)
+  })
+})

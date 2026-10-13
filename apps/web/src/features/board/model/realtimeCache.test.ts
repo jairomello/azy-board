@@ -10,7 +10,7 @@ function item(id: string, extra: Partial<ItemData> = {}): ItemData {
 function board(allItems: ItemData[]): BoardData {
   return {
     columns: [], allItems, modules: [], sprints: [], members: [], projectTags: [], projectVersions: [],
-    projectCostCenters: [], projectSquads: [], projectName: 'P', boardMode: 'HIERARCHICAL', simpleStoryId: null, advancedChecklists: false,
+    projectCostCenters: [], projectSquads: [], projectName: 'P', boardMode: 'HIERARCHICAL', simpleStoryId: null, hideModules: false, hideEpics: false, advancedChecklists: false,
     projectIcon: null, projectColor: null,
   }
 }

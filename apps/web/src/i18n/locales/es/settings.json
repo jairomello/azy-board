@@ -237,5 +237,12 @@
   "roleAdmin": "Admin",
   "dateRange": "{{start}} a {{end}}",
   "versionNamePlaceholder": "Ej: v1.0.0",
-  "memberEmailPlaceholder": "usuario@empresa.com"
+  "memberEmailPlaceholder": "usuario@empresa.com",
+  "hierarchyLevelsDescription": "En proyectos jerárquicos, simplifica la vista ocultando niveles. Al activar, los elementos existentes se reducen a uno solo.",
+  "hideModules": "No mostrar módulos",
+  "hideEpics": "No mostrar épicas",
+  "collapseConfirmTitle": "¿Ocultar este nivel?",
+  "collapseConfirmDescription": "Los módulos/épicas existentes se reducirán a un único elemento. Las historias, tareas y bugs se conservan y puedes revertir después.",
+  "collapseConfirm": "Ocultar",
+  "collapseSaveError": "No se pudieron actualizar las opciones de visualización."
 }

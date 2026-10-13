@@ -130,4 +130,15 @@ describe('BoardFilters (DOM por papel/rótulo)', () => {
       expect(control).toHaveAccessibleName()
     }
   })
+
+  test('T61 — sem módulos disponíveis (nível oculto) o filtro de módulo não é exibido', () => {
+    render(
+      <BoardFilters
+        modules={[]} sprints={[]} members={[]} tags={[]} versions={[]} costCenters={[]} squads={[]}
+        filters={baseFilters} onChange={() => {}} showSubtasks={false} onToggleSubtasks={() => {}}
+        storiesAsCards={false} onToggleStoryDisplay={() => {}} showExpandCollapse onExpandAll={() => {}} onCollapseAll={() => {}}
+      />,
+    )
+    expect(screen.queryByRole('combobox', { name: t('filterModule') })).not.toBeInTheDocument()
+  })
 })

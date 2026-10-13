@@ -692,6 +692,8 @@ export interface BatchItemCreateResult {
 export interface UnitOfWork {
   createProjectAggregate(context: MutationContext, input: CreateProjectAggregateInput): Promise<ProjectRecord>
   convertProjectBoardMode(context: MutationContext, projectId: string, targetBoardMode: BoardMode, patch?: ProjectPatch): Promise<ProjectRecord | null>
+  /** T61 — recolhe módulos/épicos a um item único conforme as opções de ocultar níveis. */
+  collapseProjectHierarchy(context: MutationContext, projectId: string, options: { hideModules: boolean; hideEpics: boolean }, patch?: ProjectPatch): Promise<ProjectRecord | null>
   createItemWithRelations(context: MutationContext, input: NewItemRecord, relations?: ItemRelationsMutation): Promise<ItemRecord>
   updateItemWithRelations(context: MutationContext, projectId: string, itemId: string, patch: ItemPatch, relations?: ItemRelationsMutation): Promise<ItemRecord | null>
   reparentSubtree(context: MutationContext, projectId: string, itemId: string, newParentId: string | null): Promise<void>

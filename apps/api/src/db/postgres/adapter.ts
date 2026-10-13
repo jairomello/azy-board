@@ -148,6 +148,8 @@ function mapProject(row: PgRow): ProjectRecord {
     description: row.description as string | null,
     boardMode: row.board_mode as ProjectRecord['boardMode'],
     simpleStoryId: row.simple_story_id as string | null,
+    hideModules: row.hide_modules as boolean,
+    hideEpics: row.hide_epics as boolean,
     managerUserId: row.manager_user_id as string | null,
     isRestricted: row.is_restricted as boolean,
     isHidden: row.is_hidden as boolean,
@@ -1333,11 +1335,12 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       async createProject(context: PersistenceContext, input: NewProjectRecord): Promise<ProjectRecord> {
         const id = generateId()
         const row = await q1(
-          `INSERT INTO projects (id, tenant_id, name, description, board_mode, simple_story_id, manager_user_id, is_restricted, is_hidden, advanced_checklists, start_date, planned_end_date, planned_points, planned_hours, scope, icon, color, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now())
+          `INSERT INTO projects (id, tenant_id, name, description, board_mode, simple_story_id, hide_modules, hide_epics, manager_user_id, is_restricted, is_hidden, advanced_checklists, start_date, planned_end_date, planned_points, planned_hours, scope, icon, color, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, now())
            RETURNING *`,
           [id, context.tenantId, input.name, input.description ?? null, input.boardMode,
-           input.simpleStoryId ?? null, input.managerUserId ?? context.actorUserId,
+           input.simpleStoryId ?? null, input.hideModules ?? false, input.hideEpics ?? false,
+           input.managerUserId ?? context.actorUserId,
            input.isRestricted ?? false, input.isHidden ?? false, input.advancedChecklists ?? false,
            input.startDate ?? null, input.plannedEndDate ?? null, input.plannedPoints ?? null,
            input.plannedHours ?? null, input.scope ?? null, input.icon ?? null, input.color ?? null],
@@ -1352,6 +1355,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         const fields: Record<string, string> = {
           name: 'name', description: 'description', boardMode: 'board_mode',
           simpleStoryId: 'simple_story_id', managerUserId: 'manager_user_id',
+          hideModules: 'hide_modules', hideEpics: 'hide_epics',
           isRestricted: 'is_restricted', isHidden: 'is_hidden',
           advancedChecklists: 'advanced_checklists', startDate: 'start_date',
           plannedEndDate: 'planned_end_date', plannedPoints: 'planned_points',
@@ -3709,9 +3713,10 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           const projectInput = input.project
           const simpleStoryId = projectInput.boardMode === 'SIMPLE' ? generateId() : null
           await client.query(
-            `INSERT INTO projects (id, tenant_id, name, description, board_mode, simple_story_id, manager_user_id, is_restricted, is_hidden, advanced_checklists, start_date, planned_end_date, planned_points, planned_hours, scope, created_at)
-             VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+            `INSERT INTO projects (id, tenant_id, name, description, board_mode, simple_story_id, hide_modules, hide_epics, manager_user_id, is_restricted, is_hidden, advanced_checklists, start_date, planned_end_date, planned_points, planned_hours, scope, created_at)
+             VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
             [projectId, context.tenantId, projectInput.name, projectInput.description ?? null, projectInput.boardMode,
+             projectInput.hideModules ?? false, projectInput.hideEpics ?? false,
              projectInput.managerUserId ?? context.actorUserId, projectInput.isRestricted ?? false, projectInput.isHidden ?? false,
              projectInput.advancedChecklists ?? false, projectInput.startDate ?? null, projectInput.plannedEndDate ?? null,
              projectInput.plannedPoints ?? null, projectInput.plannedHours ?? null, projectInput.scope ?? null, now],
@@ -3750,6 +3755,78 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       },
       async convertProjectBoardMode(_context, _projectId, _targetBoardMode, _patch = {}) {
         throw new Error('NOT_IMPLEMENTED: convertProjectBoardMode')
+      },
+      // T61 — recolhe módulos/épicos a um item único (paridade com o adapter SQLite).
+      async collapseProjectHierarchy(context: MutationContext, projectId: string, options: { hideModules: boolean; hideEpics: boolean }) {
+        return tx(async (client) => {
+          const projectRow = (await client.query('SELECT * FROM projects WHERE tenant_id = $1 AND id = $2', [context.tenantId, projectId])).rows[0] as PgRow | undefined
+          if (!projectRow) return null
+
+          if ((projectRow.board_mode as string) === 'SIMPLE') {
+            await client.query('UPDATE projects SET hide_modules = false, hide_epics = false WHERE tenant_id = $1 AND id = $2', [context.tenantId, projectId])
+            await emitMetadataEventPg(client, context.tenantId, projectId, 'project')
+            const row = (await client.query('SELECT * FROM projects WHERE tenant_id = $1 AND id = $2', [context.tenantId, projectId])).rows[0] as PgRow
+            return mapProject(row)
+          }
+
+          let primaryModuleId: string | null = null
+          if (options.hideModules) {
+            const first = await client.query('SELECT id FROM modules WHERE tenant_id = $1 AND project_id = $2 ORDER BY position, id LIMIT 1', [context.tenantId, projectId])
+            primaryModuleId = (first.rows[0] as { id: string } | undefined)?.id ?? null
+            if (!primaryModuleId) {
+              primaryModuleId = generateId()
+              await client.query('INSERT INTO modules (id, tenant_id, project_id, name, description, position) VALUES ($1, $2, $3, $4, NULL, 0)',
+                [primaryModuleId, context.tenantId, projectId, 'Geral'])
+            }
+            await client.query("UPDATE items SET module_id = $1, updated_at = now() WHERE tenant_id = $2 AND project_id = $3 AND type = 'EPIC' AND (module_id IS NULL OR module_id <> $1)",
+              [primaryModuleId, context.tenantId, projectId])
+            await client.query('DELETE FROM modules WHERE tenant_id = $1 AND project_id = $2 AND id <> $3', [context.tenantId, projectId, primaryModuleId])
+          }
+
+          if (options.hideEpics) {
+            const modulesRes = await client.query('SELECT id FROM modules WHERE tenant_id = $1 AND project_id = $2 ORDER BY position, id', [context.tenantId, projectId])
+            const moduleIds = (modulesRes.rows as Array<{ id: string }>).map(row => row.id)
+            const targets = moduleIds.length > 0 ? moduleIds : (primaryModuleId ? [primaryModuleId] : [])
+
+            for (const moduleId of targets) {
+              const epicRes = await client.query("SELECT id, title FROM items WHERE tenant_id = $1 AND project_id = $2 AND type = 'EPIC' AND module_id = $3 ORDER BY position, id LIMIT 1",
+                [context.tenantId, projectId, moduleId])
+              let epic = epicRes.rows[0] as { id: string; title: string } | undefined
+              if (!epic) {
+                const epicId = generateId()
+                await client.query(`INSERT INTO items (id, tenant_id, project_id, type, parent_id, module_id, ancestry_path, title, status, priority, position, created_at, updated_at)
+                  VALUES ($1, $2, $3, 'EPIC', NULL, $4, '[]', 'Fluxo contínuo', 'NOT_STARTED', 'MEDIUM', 0, now(), now())`,
+                  [epicId, context.tenantId, projectId, moduleId])
+                epic = { id: epicId, title: 'Fluxo contínuo' }
+              }
+
+              const othersRes = await client.query("SELECT id FROM items WHERE tenant_id = $1 AND project_id = $2 AND type = 'EPIC' AND module_id = $3 AND id <> $4",
+                [context.tenantId, projectId, moduleId, epic.id])
+              const otherIds = (othersRes.rows as Array<{ id: string }>).map(row => row.id)
+              const storyPath = JSON.stringify([{ id: epic.id, title: epic.title, type: 'EPIC' }])
+              for (const otherId of otherIds) {
+                const stories = await client.query("SELECT id FROM items WHERE tenant_id = $1 AND project_id = $2 AND type = 'STORY' AND parent_id = $3",
+                  [context.tenantId, projectId, otherId])
+                for (const story of stories.rows as Array<{ id: string }>) {
+                  const before = await readItemSnapshot(client, context.tenantId, projectId, story.id)
+                  await client.query('UPDATE items SET parent_id = $1, ancestry_path = $2, updated_at = now() WHERE tenant_id = $3 AND project_id = $4 AND id = $5',
+                    [epic.id, storyPath, context.tenantId, projectId, story.id])
+                  const after = await readItemSnapshot(client, context.tenantId, projectId, story.id)
+                  if (before && after) await recordItemEvent(client, context, { projectId, itemId: story.id, eventType: 'ITEM_REPARENTED', before, after })
+                }
+              }
+              if (otherIds.length > 0) {
+                await client.query('DELETE FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = ANY($3::text[])', [context.tenantId, projectId, otherIds])
+              }
+            }
+          }
+
+          await client.query('UPDATE projects SET hide_modules = $3, hide_epics = $4 WHERE tenant_id = $1 AND id = $2',
+            [context.tenantId, projectId, options.hideModules, options.hideEpics])
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'project')
+          const row = (await client.query('SELECT * FROM projects WHERE tenant_id = $1 AND id = $2', [context.tenantId, projectId])).rows[0] as PgRow
+          return mapProject(row)
+        })
       },
       async createItemWithRelations(context, input, relations) {
         return tx(async (client) => {

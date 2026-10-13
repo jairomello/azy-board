@@ -35,6 +35,8 @@ interface Props {
   onDensityChange: (density: 'comfortable' | 'compact') => void
   modules: Option[]
   boardMode: BoardMode
+  hideModules?: boolean
+  hideEpics?: boolean
   sprints: Sprint[]
   members: Member[]
   squads: Option[]
@@ -65,6 +67,8 @@ export function BoardCommandBar({
   onDensityChange,
   modules,
   boardMode,
+  hideModules = false,
+  hideEpics = false,
   sprints,
   members,
   squads,
@@ -191,7 +195,7 @@ export function BoardCommandBar({
               )}
             </div>
             <BoardFilters
-              modules={modules}
+              modules={hideModules ? [] : modules}
               sprints={sprints}
               members={members}
               squads={squads}
@@ -270,7 +274,7 @@ export function BoardCommandBar({
                   </div>
                 )}
                 <BoardFilters
-                 modules={modules}
+                 modules={hideModules ? [] : modules}
                  sprints={sprints}
                  members={members}
                  squads={squads}
@@ -355,7 +359,8 @@ export function BoardCommandBar({
                    ['TASK', t('typeTask'), CheckSquare, 'text-blue-600 bg-blue-500/10'],
                    ['BUG', t('typeBug'), Bug, 'text-red-600 bg-red-500/10'],
                    ['EXTERNAL', t('typeExternal'), ExternalLink, 'text-slate-600 bg-slate-500/10'],
-                ] as const).filter(([type]) => boardMode === 'HIERARCHICAL' || type === 'TASK' || type === 'BUG' || type === 'EXTERNAL').map(([type, label, Icon, colors]) => (
+                ] as const).filter(([type]) => (boardMode === 'HIERARCHICAL' || type === 'TASK' || type === 'BUG' || type === 'EXTERNAL')
+                  && (type !== 'MODULE' || !hideModules) && (type !== 'EPIC' || !hideEpics)).map(([type, label, Icon, colors]) => (
                   <button
                     key={type}
                     onClick={() => {

@@ -384,6 +384,10 @@ export const projects = sqliteTable('projects', {
   boardMode: text('board_mode', { enum: ['HIERARCHICAL', 'SIMPLE'] }).notNull().default('HIERARCHICAL'),
   // [TENANT] A STORY fixa sempre pertence ao mesmo projeto/tenant; a validação ocorre no serviço de conversão.
   simpleStoryId: text('simple_story_id'),
+  // [TENANT] T61 — opções independentes de ocultar módulos/épicos em projetos
+  // HIERARCHICAL (recolhidos a um item único). Ignoradas em SIMPLE.
+  hideModules: integer('hide_modules', { mode: 'boolean' }).notNull().default(false),
+  hideEpics: integer('hide_epics', { mode: 'boolean' }).notNull().default(false),
   // Gerente Geral do Projeto — campo informativo, sem RBAC adicional
   managerUserId: text('manager_user_id'),
   // [TENANT] Restrito: o projeto só aparece na listagem para quem tem vínculo (membro ou gerente),

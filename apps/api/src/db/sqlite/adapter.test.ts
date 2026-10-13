@@ -384,3 +384,84 @@ describe('adapter SQLite dos ports', () => {
     sqlite.close()
   })
 })
+
+describe('recolhimento de módulos e épicos (Card T61)', () => {
+  const mutation: MutationContext = {
+    ...context,
+    mutation: { origin: 'REST', correlationId: null, actorType: 'HUMAN', actorSource: 'REST', actorLabel: null },
+  }
+
+  test('recolhe vários módulos a um único e um épico por módulo, preservando cards', async () => {
+    const { sqlite, ports } = setup()
+    const project = await ports.projects.createProject(context, { name: 'Colapso', boardMode: 'HIERARCHICAL' })
+    const moduleA = await ports.projects.createModule(context, project.id, { name: 'A' })
+    const moduleB = await ports.projects.createModule(context, project.id, { name: 'B' })
+    const epicA1 = await ports.items.createItem(context, { projectId: project.id, type: 'EPIC', title: 'E-A1', moduleId: moduleA.id })
+    const epicA2 = await ports.items.createItem(context, { projectId: project.id, type: 'EPIC', title: 'E-A2', moduleId: moduleA.id })
+    const epicB1 = await ports.items.createItem(context, { projectId: project.id, type: 'EPIC', title: 'E-B1', moduleId: moduleB.id })
+    const storyA1 = await ports.items.createItem(context, { projectId: project.id, type: 'STORY', title: 'S-A1', parentId: epicA1.id })
+    await ports.items.createItem(context, { projectId: project.id, type: 'STORY', title: 'S-A2', parentId: epicA2.id })
+    await ports.items.createItem(context, { projectId: project.id, type: 'STORY', title: 'S-B1', parentId: epicB1.id })
+    const taskA1 = await ports.items.createItem(context, { projectId: project.id, type: 'TASK', title: 'T-A1', parentId: storyA1.id })
+
+    // Recolhe módulos: tudo em um módulo único.
+    await ports.unitOfWork.collapseProjectHierarchy(mutation, project.id, { hideModules: true, hideEpics: false }, { hideModules: true })
+    const modules = await ports.projects.listModules(context, project.id)
+    expect(modules).toHaveLength(1)
+    const epicsAfterModules = (await ports.items.listItems(context, project.id)).filter(item => item.type === 'EPIC')
+    expect(epicsAfterModules.every(epic => epic.moduleId === modules[0]!.id)).toBe(true)
+
+    // Recolhe épicos: um épico por módulo (agora módulo único) e histórias reparentadas.
+    await ports.unitOfWork.collapseProjectHierarchy(mutation, project.id, { hideModules: true, hideEpics: true }, { hideEpics: true })
+    const epics = (await ports.items.listItems(context, project.id)).filter(item => item.type === 'EPIC')
+    expect(epics).toHaveLength(1)
+    const stories = (await ports.items.listItems(context, project.id)).filter(item => item.type === 'STORY')
+    expect(stories).toHaveLength(3)
+    expect(stories.every(story => story.parentId === epics[0]!.id)).toBe(true)
+    // Cards preservados (ID e conteúdo).
+    expect((await ports.items.getItem(context, project.id, taskA1.id))?.title).toBe('T-A1')
+    expect((await ports.items.getItem(context, project.id, storyA1.id))?.id).toBe(storyA1.id)
+    sqlite.close()
+  })
+
+  test('recolhe a um épico por módulo sem ocultar módulos', async () => {
+    const { sqlite, ports } = setup()
+    const project = await ports.projects.createProject(context, { name: 'Épicos', boardMode: 'HIERARCHICAL' })
+    const moduleA = await ports.projects.createModule(context, project.id, { name: 'A' })
+    const moduleB = await ports.projects.createModule(context, project.id, { name: 'B' })
+    await ports.items.createItem(context, { projectId: project.id, type: 'EPIC', title: 'A1', moduleId: moduleA.id })
+    const a2 = await ports.items.createItem(context, { projectId: project.id, type: 'EPIC', title: 'A2', moduleId: moduleA.id })
+    const b1 = await ports.items.createItem(context, { projectId: project.id, type: 'EPIC', title: 'B1', moduleId: moduleB.id })
+    const sA2 = await ports.items.createItem(context, { projectId: project.id, type: 'STORY', title: 'SA2', parentId: a2.id })
+    const sB1 = await ports.items.createItem(context, { projectId: project.id, type: 'STORY', title: 'SB1', parentId: b1.id })
+
+    await ports.unitOfWork.collapseProjectHierarchy(mutation, project.id, { hideModules: false, hideEpics: true }, { hideEpics: true })
+    const modules = await ports.projects.listModules(context, project.id)
+    expect(modules).toHaveLength(2)
+    const epics = (await ports.items.listItems(context, project.id)).filter(item => item.type === 'EPIC')
+    expect(epics).toHaveLength(2)
+    expect(new Set(epics.map(epic => epic.moduleId))).toEqual(new Set([moduleA.id, moduleB.id]))
+    const keptA = epics.find(epic => epic.moduleId === moduleA.id)!
+    const keptB = epics.find(epic => epic.moduleId === moduleB.id)!
+    expect((await ports.items.getItem(context, project.id, sA2.id))?.parentId).toBe(keptA.id)
+    expect((await ports.items.getItem(context, project.id, sB1.id))?.parentId).toBe(keptB.id)
+    sqlite.close()
+  })
+
+  test('cria módulo e épico únicos quando não existem e ignora o recolhimento em SIMPLE', async () => {
+    const { sqlite, ports } = setup()
+    const project = await ports.projects.createProject(context, { name: 'Vazio', boardMode: 'HIERARCHICAL' })
+    const story = await ports.items.createItem(context, { projectId: project.id, type: 'STORY', title: 'S' })
+    await ports.unitOfWork.collapseProjectHierarchy(mutation, project.id, { hideModules: true, hideEpics: true }, { hideModules: true, hideEpics: true })
+    expect(await ports.projects.listModules(context, project.id)).toHaveLength(1)
+    const epics = (await ports.items.listItems(context, project.id)).filter(item => item.type === 'EPIC')
+    expect(epics).toHaveLength(1)
+    expect((await ports.items.getItem(context, project.id, story.id))?.parentId).toBe(epics[0]!.id)
+
+    // Isolamento: tenant errado não altera nada e retorna null.
+    const other = await ports.unitOfWork.collapseProjectHierarchy({ ...mutation, tenantId: 'tenant-b' }, project.id, { hideModules: true, hideEpics: true }, {})
+    expect(other).toBeNull()
+    expect(await ports.projects.listModules(context, project.id)).toHaveLength(1)
+    sqlite.close()
+  })
+})

@@ -695,3 +695,57 @@ async function seedDuplicationPlanOnly(ports: PersistencePorts) {
   const plan = await buildDuplicationPlanForTest(ports, scope, projectRecord!, ids.story, ids.epic)
   return { scope, mut, project, ids, plan }
 }
+
+async function seedHierarchy(ports: PersistencePorts) {
+  const tenant = await ports.tenants.createTenant({ name: 'Niveis', slug: `niveis-${crypto.randomUUID()}` })
+  const ctx: PersistenceContext = { tenantId: tenant.id, actorUserId: null, actorKind: 'SYSTEM', globalGroup: 'ADMIN' }
+  const user = await ports.identity.createUser(ctx, { email: `niveis-${crypto.randomUUID()}@test.local`, passwordHash: 'h', name: 'N', globalGroup: 'ADMIN' })
+  const scope: PersistenceContext = { tenantId: tenant.id, actorUserId: user.id, actorKind: 'USER', globalGroup: 'ADMIN' }
+  const mut = { ...scope, mutation: { origin: 'REST', actorType: 'HUMAN' as const, actorSource: 'REST' as const, actorLabel: null } }
+  const project = await ports.projects.createProject(scope, { name: 'Niveis', boardMode: 'HIERARCHICAL' })
+  await ports.projects.createModule(scope, project.id, { name: 'A' })
+  await ports.projects.createModule(scope, project.id, { name: 'B' })
+  // Em PostgreSQL o paridade de criação usa o lote; mantém-se o mesmo caminho no SQLite.
+  await ports.unitOfWork.createItemsBatch(mut, project.id, [
+    { tool: 'create_task', ref: 'a1', title: 'A1', type: 'EPIC', moduleName: 'A' },
+    { tool: 'create_task', ref: 'a2', title: 'A2', type: 'EPIC', moduleName: 'A' },
+    { tool: 'create_task', ref: 'b1', title: 'B1', type: 'EPIC', moduleName: 'B' },
+    { tool: 'create_task', ref: 'sa1', title: 'SA1', type: 'STORY', parentRef: 'a1' },
+    { tool: 'create_task', ref: 'sa2', title: 'SA2', type: 'STORY', parentRef: 'a2' },
+    { tool: 'create_task', ref: 'sb1', title: 'SB1', type: 'STORY', parentRef: 'b1' },
+  ], { atomic: true })
+  return { scope, mut, project }
+}
+
+async function collapseFacts(ports: PersistencePorts, scope: PersistenceContext, mut: MutationContext, projectId: string) {
+  await ports.unitOfWork.collapseProjectHierarchy(mut, projectId, { hideModules: false, hideEpics: true }, { hideEpics: true })
+  const modules = await ports.projects.listModules(scope, projectId)
+  const items = await ports.items.listItems(scope, projectId)
+  const epics = items.filter(item => item.type === 'EPIC')
+  const stories = items.filter(item => item.type === 'STORY')
+  return {
+    modules: modules.length,
+    epics: epics.length,
+    modulesWithEpic: new Set(epics.map(epic => epic.moduleId)).size,
+    stories: stories.length,
+    storiesWithEpicParent: stories.filter(story => epics.some(epic => epic.id === story.parentId)).length,
+  }
+}
+
+describe.skipIf(!runPostgres)('Paridade do recolhimento de níveis (T61)', () => {
+  test('hideEpics recolhe a um épico por módulo de forma equivalente entre adapters', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const s = await seedHierarchy(sqlite.ports)
+      const p = await seedHierarchy(pg.ports)
+      const factsSqlite = await collapseFacts(sqlite.ports, s.scope, s.mut, s.project.id)
+      const factsPg = await collapseFacts(pg.ports, p.scope, p.mut, p.project.id)
+      expect(factsSqlite).toEqual(factsPg)
+      expect(factsSqlite).toEqual({ modules: 2, epics: 2, modulesWithEpic: 2, stories: 3, storiesWithEpicParent: 3 })
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+})

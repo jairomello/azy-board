@@ -205,19 +205,32 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
     }]))
   }
 
-  const tree = (filterModuleId ? allModules.filter(m => m.id === filterModuleId) : allModules)
+  const epicNodes = epics.map(epic => ({
+    ...epic,
+    ancestryPath: [],
+    isLeaf: false,
+    children: buildChildren(epic.id, 2),
+  }))
+  const moduleNodes = (filterModuleId ? allModules.filter(m => m.id === filterModuleId) : allModules)
     .map(mod => ({
       ...mod,
       type: 'module' as const,
-      children: epics
-        .filter(e => e.moduleId === mod.id)
-        .map(epic => ({
-          ...epic,
-          ancestryPath: [],
-          isLeaf: false,
-          children: buildChildren(epic.id, 2),
-        })),
+      children: epicNodes.filter(e => e.moduleId === mod.id),
     }))
+
+  // T61 — pula os níveis ocultos na árvore (aplica-se também à visão hierárquica).
+  const hideModules = project?.boardMode === 'HIERARCHICAL' && project.hideModules === true
+  const hideEpics = project?.boardMode === 'HIERARCHICAL' && project.hideEpics === true
+  let tree: TreeProgressNode[]
+  if (hideModules && hideEpics) {
+    tree = epicNodes.flatMap(node => node.children)
+  } else if (hideModules) {
+    tree = epicNodes
+  } else if (hideEpics) {
+    tree = moduleNodes.map(mod => ({ ...mod, children: mod.children.flatMap(epic => epic.children) }))
+  } else {
+    tree = moduleNodes
+  }
 
   return c.json(addTreeProgress(tree))
 })

@@ -31,6 +31,9 @@ const projectFields = {
   isRestricted: z.boolean().optional(),
   isHidden: z.boolean().optional(),
   advancedChecklists: z.boolean().optional(),
+  // T61 — opções de ocultar níveis em projetos hierárquicos.
+  hideModules: z.boolean().optional(),
+  hideEpics: z.boolean().optional(),
   startDate: optionalDate,
   plannedEndDate: optionalDate,
   plannedPoints: z.number().finite().nullable().optional(),

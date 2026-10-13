@@ -23,7 +23,7 @@ export type SettingsSectionName =
 
 const EMPTY_PROJECT: ProjectSettingsData = {
   projectName: '', manager: null, managerUserId: '', boardMode: 'HIERARCHICAL',
-  isRestricted: false, isHidden: false, advancedChecklists: false, startDate: '', plannedEndDate: '',
+  isRestricted: false, isHidden: false, advancedChecklists: false, hideModules: false, hideEpics: false, startDate: '', plannedEndDate: '',
   plannedPoints: '', plannedHours: '', scope: '', icon: null, color: null,
 }
 
@@ -71,6 +71,8 @@ export function useProjectSettingsData(projectId: string | undefined) {
       isRestricted: Boolean(project.isRestricted),
       isHidden: Boolean(project.isHidden),
       advancedChecklists: Boolean(project.advancedChecklists),
+      hideModules: Boolean(project.hideModules),
+      hideEpics: Boolean(project.hideEpics),
       startDate: project.startDate ?? '',
       plannedEndDate: project.plannedEndDate ?? '',
       plannedPoints: project.plannedPoints != null ? String(project.plannedPoints) : '',
@@ -110,6 +112,8 @@ export function useProjectSettingsData(projectId: string | undefined) {
      setIsRestricted: (value: boolean) => setData(previous => updateSettingsField(previous, 'isRestricted', value)),
      setIsHidden: (value: boolean) => setData(previous => updateSettingsField(previous, 'isHidden', value)),
      setAdvancedChecklists: (value: boolean) => setData(previous => updateSettingsField(previous, 'advancedChecklists', value)),
+     setHideModules: (value: boolean) => setData(previous => updateSettingsField(previous, 'hideModules', value)),
+     setHideEpics: (value: boolean) => setData(previous => updateSettingsField(previous, 'hideEpics', value)),
      setStartDate: (value: string) => setData(previous => updateSettingsField(previous, 'startDate', value)),
      setPlannedEndDate: (value: string) => setData(previous => updateSettingsField(previous, 'plannedEndDate', value)),
      setPlannedPoints: (value: string) => setData(previous => updateSettingsField(previous, 'plannedPoints', value)),

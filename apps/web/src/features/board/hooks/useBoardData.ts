@@ -35,6 +35,8 @@ export interface BoardData {
   projectName: string
   boardMode: BoardMode
   simpleStoryId: string | null
+  hideModules: boolean
+  hideEpics: boolean
   advancedChecklists: boolean
   projectIcon: string | null
   projectColor: string | null
@@ -86,6 +88,8 @@ const EMPTY_BOARD: BoardData = {
   projectName: '',
   boardMode: 'HIERARCHICAL',
   simpleStoryId: null,
+  hideModules: false,
+  hideEpics: false,
   advancedChecklists: false,
   projectIcon: null,
   projectColor: null,
@@ -180,7 +184,7 @@ export function useBoardData(projectId: string | undefined) {
         api.get<ProjectVersion[]>(`/projects/${pid}/versions`, { signal }).catch(() => [] as ProjectVersion[]),
         api.get<CostCenter[]>(`/projects/${pid}/cost-centers`, { signal }).catch(() => [] as CostCenter[]),
         api.get<{ id: string; name: string }[]>(`/projects/${pid}/squads`, { signal }).catch(() => []),
-        api.get<ProjectContext>(`/projects/${pid}`, { signal }).catch(() => ({ name: '', boardMode: 'HIERARCHICAL' as const, simpleStoryId: null, advancedChecklists: false, icon: null, color: null })),
+        api.get<ProjectContext>(`/projects/${pid}`, { signal }).catch(() => ({ name: '', boardMode: 'HIERARCHICAL' as const, simpleStoryId: null, hideModules: false, hideEpics: false, advancedChecklists: false, icon: null, color: null })),
       ])
       return {
         columns: cols,
@@ -195,6 +199,8 @@ export function useBoardData(projectId: string | undefined) {
         projectName: proj.name,
         boardMode: proj.boardMode ?? 'HIERARCHICAL',
         simpleStoryId: proj.simpleStoryId ?? null,
+        hideModules: Boolean(proj.hideModules),
+        hideEpics: Boolean(proj.hideEpics),
         advancedChecklists: Boolean(proj.advancedChecklists),
         projectIcon: proj.icon ?? null,
         projectColor: proj.color ?? null,
@@ -274,6 +280,8 @@ export function useBoardData(projectId: string | undefined) {
     projectName: data.projectName, setProjectName,
     boardMode: data.boardMode, setBoardMode,
     simpleStoryId: data.simpleStoryId, setSimpleStoryId,
+    hideModules: data.hideModules,
+    hideEpics: data.hideEpics,
     advancedChecklists: data.advancedChecklists, setAdvancedChecklists,
     projectIcon: data.projectIcon, projectColor: data.projectColor,
     loading: query.isPending, setLoading,
