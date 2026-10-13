@@ -134,8 +134,12 @@ export function createMcpServer(apiCall: ApiCall, options: McpServerOptions = {}
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name } = request.params
     const args: Record<string, unknown> = { ...(request.params.arguments ?? {}) }
-    // [DEFAULT PROJECT] injeta o projeto padrão quando projectId não é informado
-    if (defaultProjectId && (args.projectId === undefined || args.projectId === null || args.projectId === '')) {
+    // [DEFAULT PROJECT] injeta o projeto padrão apenas quando a ferramenta aceita
+    // `projectId`; ferramentas globais (ex.: list_projects) não recebem o campo e
+    // permanecem válidas com um contexto de projeto configurado.
+    const definition = getSharedToolDefinitions([name])[0]
+    const acceptsProjectId = definition?.inputSchema.properties.projectId !== undefined
+    if (defaultProjectId && acceptsProjectId && (args.projectId === undefined || args.projectId === null || args.projectId === '')) {
       args.projectId = defaultProjectId
     }
 

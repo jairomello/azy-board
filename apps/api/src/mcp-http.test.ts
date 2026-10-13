@@ -127,6 +127,11 @@ describe('MCP remoto por Streamable HTTP', () => {
     const contextual = await rpc(readKey, { jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'list_modules', arguments: {} } }, { 'X-Azyboard-Project-Id': projectId })
     expect(toolResult(contextual).isError ?? false).toBe(false)
 
+    // Ferramentas globais (sem projectId no schema) não recebem o projeto do
+    // contexto e continuam válidas.
+    const global = await rpc(readKey, { jsonrpc: '2.0', id: 61, method: 'tools/call', params: { name: 'list_projects', arguments: {} } }, { 'X-Azyboard-Project-Id': projectId })
+    expect(toolResult(global).isError ?? false).toBe(false)
+
     // Ausente e sem contexto: falha acionável, sem executar.
     const missing = await rpc(readKey, { jsonrpc: '2.0', id: 7, method: 'tools/call', params: { name: 'list_modules', arguments: {} } })
     const error = toolResult(missing).structuredContent as { error?: { code?: string; message?: string } } | undefined
