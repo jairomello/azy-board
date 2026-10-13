@@ -43,7 +43,7 @@ repositório** (não há Dockerfile gerado fora do repo):
 | `Dockerfile` | imagem da API (multi-stage, `ARG BUN_VERSION` espelhando `.bun-version`) |
 | `Dockerfile.web` | imagem Web (build do Vite + nginx), build arg `AZYBOARD_BASE_PATH` |
 | `docker/entrypoint-api.sh` | subcomandos `api` (padrão) e `migrate` (job de rollout) |
-| `docker/nginx-web.conf.template` | nginx do web (estático, SPA fallback, proxy de `/api` e `/ws`) |
+| `docker/nginx-web.conf.template` | nginx do web (estático, SPA fallback, proxy de `/api`, `/ws` e `/mcp`) |
 | `docker-compose.simple.yml` | perfil SIMPLE (SQLite) |
 | `docker-compose.advanced.yml` | perfil ADVANCED (PostgreSQL + Valkey) |
 
@@ -63,6 +63,64 @@ versionados; ajuste conforme a rede do seu ambiente):
 3. `/app/ws` → `azyboard:3000`, com rewrite para `/ws` e suporte a
    upgrade WebSocket HTTP/1.1.
 
+4. `/app/mcp` → `azyboard:3000`, com rewrite para `/mcp` e **sem** buffering de
+   resposta (JSON-RPC em resposta JSON; ver `## MCP remoto (Streamable HTTP)`).
+
+## MCP remoto (Streamable HTTP)
+
+Além do transporte `stdio` local (`apps/mcp`), a instalação publica um endpoint
+MCP remoto no mesmo serviço da API, na rota `/mcp` (fora de `/api`, pois o corpo
+é JSON-RPC e não o envelope REST).
+
+- **Autenticação**: API Key no cabeçalho `Authorization: Bearer azb_...`,
+  revalidada a cada requisição (Owner, tenant, grupo, membership, `projectScope`
+  e `permissionScope`). A chave nunca é repassada a terceiros nem logada.
+- **Projeto**: não há projeto padrão por ambiente. Informe `projectId` no
+  argumento da ferramenta ou, opcionalmente, no cabeçalho
+  `X-Azyboard-Project-Id` como contexto de sessão.
+- **Idempotência**: mutações aceitam `Idempotency-Key`; repetir a mesma chave e
+  payload devolve o mesmo resultado sem efeito duplicado.
+- **Escala**: modo stateless com resposta JSON (sem afinidade de sessão), sem
+  novo container/serviço — reutiliza as imagens `api` e `web`.
+- **Rollback**: defina `AZYBOARD_MCP_HTTP_ENABLED=false` na API para desligar o
+  endpoint (responde 404) sem remover o pacote nem alterar o transporte stdio.
+
+O nginx do web precisa repassar `/mcp` **sem buffering** e com HTTP/1.1:
+
+```nginx
+location = /mcp {
+  proxy_pass ${AZYBOARD_API_UPSTREAM};
+  proxy_http_version 1.1;
+  proxy_buffering off;
+  proxy_set_header Connection '';
+  proxy_read_timeout 300s;
+  proxy_send_timeout 300s;
+}
+```
+
+### Teste de conectividade
+
+Com uma API Key válida, o comando abaixo reproduz o handshake e a listagem de
+ferramentas (ajuste `HOST` e `EASYBOARD_API_KEY`):
+
+```bash
+HOST=https://example.com
+curl -sS "$HOST/mcp" \
+  -H "Authorization: Bearer $EASYBOARD_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
+
+curl -sS "$HOST/mcp" \
+  -H "Authorization: Bearer $EASYBOARD_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+```
+
+A resposta é JSON-RPC; o segundo comando deve listar as ferramentas (`list_tasks`,
+`list_modules`, ...). Sem credencial válida a resposta é `401`.
+
 ## Pré-requisitos
 
 - **Docker** e **Docker Compose v2** (`docker compose` — o serviço `migrate`
@@ -81,6 +139,8 @@ versionados; ajuste conforme a rede do seu ambiente):
 - `UPLOADS_DIR=/app/uploads` — volume de uploads (definido pela imagem).
 - `FRONTEND_URL=https://example.com/app/` (origem permitido pelo CORS).
 - `JWT_SECRET`: segredo para assinar o cookie de sessão.
+- `AZYBOARD_MCP_HTTP_ENABLED` (opcional): `false` desliga o endpoint MCP remoto
+  `/mcp` para rollback rápido; ausente ou qualquer outro valor mantém ligado.
 
 Os valores de domínio, host, caminhos privados e credenciais devem ser
 configurados somente na infraestrutura do ambiente, nunca neste repositório.

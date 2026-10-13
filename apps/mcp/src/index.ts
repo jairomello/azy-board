@@ -1,5 +1,5 @@
 /**
- * Servidor MCP do Azy Board — transporte stdio
+ * Servidor MCP do Azy Board — adaptador de transporte stdio.
  *
  * Configure no cliente MCP com:
  *   EASYBOARD_API_KEY=azb_xxx EASYBOARD_URL=http://localhost:3000 bun run apps/mcp/src/index.ts
@@ -9,20 +9,17 @@
  *   Quando configurado, `projectId` torna-se opcional nas ferramentas e o
  *   servidor injeta o valor padrão em cada chamada.
  *
- * O catálogo oficial compartilhado vive em `registry.ts`; este arquivo é apenas
- * o adaptador de transporte stdio. Hierarquia, políticas e validação estão no
- * registry e em `validation.ts`.
+ * O core do protocolo (servidor de ferramentas, schemas opcionais, envelope de
+ * erro) vive em `@azy-board/mcp-protocol`; este arquivo é apenas o adaptador
+ * stdio: resolve a configuração local e injeta o `ApiCall` HTTP.
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js'
-import type { ApiCall } from '@azy-board/tool-execution'
-import { applyOptionalFields, hasMcpPolicy } from '@azy-board/tool-registry'
-import { executeSharedTool, getSharedToolDefinitions, sanitizeToolOutput, type ToolDefinition } from '@azy-board/tool-execution'
+import { createMcpServer, parseApiResponse, ApiError } from '@azy-board/mcp-protocol'
+
+// Reexportado para compatibilidade com consumidores/testes existentes.
+export { createMcpServer, ApiError } from '@azy-board/mcp-protocol'
+export type { McpServerOptions, McpResolvedContext } from '@azy-board/mcp-protocol'
 
 // [TENANT] API Key autentica o agente como o Owner humano vinculado — resolvido pelo middleware da API
 export async function makeApiCall(apiUrl: string, apiKey: string, options: { timeoutMs?: number } = {}) {
@@ -47,129 +44,8 @@ export async function makeApiCall(apiUrl: string, apiKey: string, options: { tim
     } finally {
       clearTimeout(timeout)
     }
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => null) as { code?: string; error?: string | { code?: string; message?: string; retryable?: boolean; details?: unknown }; retryable?: boolean } | null
-      const error = body?.error
-      if (error && typeof error === 'object') throw new ApiError(error.code ?? `HTTP_${res.status}`, error.message ?? `Erro HTTP ${res.status}`, error.retryable === true, error.details)
-      throw new ApiError(body?.code ?? `HTTP_${res.status}`, typeof error === 'string' ? error : `Erro HTTP ${res.status}`, body?.retryable ?? res.status >= 500)
-    }
-    const contentType = res.headers.get('content-type') ?? ''
-    if (!contentType.includes('application/json')) return res.text()
-    try {
-      const payload = await res.json() as { data?: unknown; error?: { code?: string; message?: string; retryable?: boolean; details?: unknown } }
-      if (payload.error) {
-        throw new ApiError(payload.error.code ?? `HTTP_${res.status}`, payload.error.message ?? `Erro HTTP ${res.status}`, payload.error.retryable === true, payload.error.details)
-      }
-      return payload.data
-    } catch (error) {
-      if (error instanceof ApiError) throw error
-      throw new ApiError('INVALID_API_RESPONSE', 'A API retornou JSON inválido', true)
-    }
+    return parseApiResponse(res)
   }
-}
-
-export class ApiError extends Error {
-  constructor(readonly code: string, message: string, readonly retryable: boolean, readonly details: unknown = null) {
-    super(message)
-    this.name = 'ApiError'
-  }
-}
-
-function validationDetails(toolName: string, args: Record<string, unknown>, message: string) {
-  const missing = message.match(/Campo obrigatório ausente: (\w+)/)?.[1]
-  const invalidField = message.match(/Campo de alteração inválido: (\w+)/)?.[1]
-  const unknownField = message.match(/Campo desconhecido: (\w+)/)?.[1]
-  const field = missing ?? invalidField ?? unknownField ?? message.match(/(?:^|\s)([a-zA-Z][\w.]*) (?:deve|é|contém|inválido)/)?.[1] ?? 'arguments'
-  const path = invalidField ? `changes.${invalidField}` : field
-  const snippet = missing
-    ? JSON.stringify({ [missing]: '<valor>' })
-    : toolName === 'check_item'
-      ? '{ "itemId": "<card>", "checklistName": "Checklist", "text": "Passo", "checked": true }'
-      : toolName === 'check_items'
-        ? '{ "projectId": "<projeto>", "items": [{ "itemId": "<card>", "checked": true }] }'
-        : JSON.stringify(args)
-  return { path, cause: message, snippet }
-}
-
-export type McpServerOptions = {
-  /** Projeto padrão da codebase (AZYBOARD_PROJECT_ID). Torna `projectId` opcional nas ferramentas. */
-  defaultProjectId?: string
-}
-
-function withOptionalFields(tool: ToolDefinition): ToolDefinition {
-  return { ...tool, inputSchema: applyOptionalFields(tool.inputSchema, tool.name) }
-}
-
-// [DEFAULT PROJECT] Com projeto padrão configurado, `projectId` vira opcional no schema.
-function withOptionalProjectId(tool: ToolDefinition, defaultProjectId: string): ToolDefinition {
-  if (!tool.inputSchema.required.includes('projectId')) return tool
-  return {
-    ...tool,
-    description: `${tool.description} Se projectId for omitido, o projeto padrão pré-configurado é usado.`,
-    inputSchema: {
-      ...tool.inputSchema,
-      required: tool.inputSchema.required.filter(field => field !== 'projectId'),
-      properties: {
-        ...tool.inputSchema.properties,
-        projectId: { type: ['string', 'null'], description: `Opcional — padrão: projeto pré-configurado via AZYBOARD_PROJECT_ID (${defaultProjectId}). Aceita ID ou nome exato do projeto.` },
-      },
-    },
-  }
-}
-
-export function createMcpServer(apiCall: ApiCall, options: McpServerOptions = {}) {
-  const { defaultProjectId } = options
-  const server = new Server(
-    { name: 'azy-board', version: '1.0.0' },
-    { capabilities: { tools: {} } }
-  )
-
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: getSharedToolDefinitions()
-      .map(withOptionalFields)
-      .map(tool => defaultProjectId ? withOptionalProjectId(tool, defaultProjectId) : tool)
-      .map(({ policy: _policy, namespace: _namespace, ...tool }) => tool),
-  }))
-
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name } = request.params
-    const args: Record<string, unknown> = { ...(request.params.arguments ?? {}) }
-    // [DEFAULT PROJECT] injeta o projeto padrão da codebase quando projectId não é informado
-    if (defaultProjectId && (args.projectId === undefined || args.projectId === null || args.projectId === '')) {
-      args.projectId = defaultProjectId
-    }
-
-    function ok(data: unknown) {
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
-        structuredContent: Array.isArray(data) ? { data } : (data && typeof data === 'object' ? data : { data }),
-      }
-    }
-
-    try {
-      if (!hasMcpPolicy(name)) throw new ApiError('MCP_POLICY_REQUIRED', 'Ferramenta não autorizada', false)
-      // Both transports use the same executor. The API resolves this MCP owner
-      // from the key; the internal adapter supplies the authenticated human.
-      return ok(sanitizeToolOutput(await executeSharedTool(name, args, {
-        api: apiCall,
-        context: { source: 'mcp', userId: 'api-key-owner', tenantId: 'api-key-tenant', globalGroup: 'TEAM_MEMBER' },
-      })))
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Erro desconhecido'
-      const code = error instanceof ApiError ? error.code : message.match(/^([A-Z][A-Z0-9_]+):/)?.[1] ?? 'MCP_VALIDATION_ERROR'
-      const retryable = error instanceof ApiError ? error.retryable : false
-      const details = error instanceof ApiError ? error.details : validationDetails(name, args, message)
-      const errorPayload = { error: { code, message, retryable, details } }
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(errorPayload) }],
-        structuredContent: errorPayload,
-        isError: true,
-      }
-    }
-  })
-
-  return server
 }
 
 // Bootstrap do transporte stdio. Extraído para permitir um entrypoint dedicado

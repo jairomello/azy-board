@@ -1,11 +1,13 @@
-import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 const root = process.cwd()
-const forbiddenApiImports = /(?:from\s*|import\s*\()\s*['"][^'"]*(?:apps\/mcp|mcp\/src|@azy-board\/mcp)[^'"]*['"]/g
-const forbiddenExecutionImports = /(?:from\s*|import\s*\()\s*['"][^'"]*(?:apps\/(?:api|mcp)|@modelcontextprotocol|\bhono\b|\bdrizzle-orm\b)[^'"]*['"]/g
+// `@azy-board/mcp-protocol` é o pacote NEUTRO (permitido à API); o que continua
+// proibido é acoplar o app `apps/mcp` ou depender do transporte diretamente.
+const forbiddenApiImports = /(?:from\s*|import\s*\()\s*['"][^'"]*(?:apps\/mcp|mcp\/src|@azy-board\/mcp(?!-))[^'"]*['"]/g
+const forbiddenExecutionImports = /(?:from\s*|import\s*\()\s*['"][^'"]*(?:apps\/(?:api|mcp)|@azy-board\/mcp|@modelcontextprotocol|\bhono\b|\bdrizzle-orm\b)[^'"]*['"]/g
 
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
@@ -24,7 +26,7 @@ function verifyImports(base: string, pattern: RegExp, message: string): void {
 }
 
 // Dependências workspace são dirigidas para baixo: app -> aplicação compartilhada -> catálogo.
-const workspacePackages = new Map<string, { dependencies: string[]; path: string }>()
+const workspacePackages = new Map<string, { dependencies: string[]; allDependencies: string[]; path: string }>()
 for (const area of ['apps', 'packages']) {
   for (const entry of readdirSync(join(root, area), { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
@@ -34,6 +36,7 @@ for (const area of ['apps', 'packages']) {
       if (manifest.name) workspacePackages.set(manifest.name, {
         path: relative(root, packagePath),
         dependencies: Object.keys(manifest.dependencies ?? {}).filter(name => name.startsWith('@azy-board/')),
+        allDependencies: Object.keys(manifest.dependencies ?? {}),
       })
     } catch { /* Diretório auxiliar sem package.json. */ }
   }
@@ -53,13 +56,23 @@ function visitPackage(name: string, chain: string[] = []): void {
 }
 
 function verifyPackageCycle(): void {
-  for (const name of ['@azy-board/api', '@azy-board/mcp', '@azy-board/tool-execution']) visitPackage(name)
+  for (const name of ['@azy-board/api', '@azy-board/mcp', '@azy-board/mcp-protocol', '@azy-board/tool-execution']) visitPackage(name)
   const apiManifest = JSON.parse(readFileSync(join(root, 'apps/api/package.json'), 'utf8')) as { dependencies?: Record<string, string> }
   if (apiManifest.dependencies?.['@azy-board/mcp'] || apiManifest.dependencies?.['@modelcontextprotocol/sdk']) {
     throw new Error('apps/api/package.json não pode depender do transporte/SDK MCP.')
   }
+  if (!apiManifest.dependencies?.['@azy-board/mcp-protocol']) {
+    throw new Error('apps/api/package.json deve hospedar o MCP pelo pacote neutro @azy-board/mcp-protocol.')
+  }
   if (workspacePackages.get('@azy-board/tool-execution')?.dependencies.some(name => name !== '@azy-board/tool-registry')) {
     throw new Error('tool-execution deve depender somente do tool-registry entre os pacotes workspace.')
+  }
+  // [FRONTEIRA] O SDK MCP fica concentrado no pacote neutro; nem a API nem a
+  // camada de execução podem declará-lo.
+  for (const name of ['@azy-board/api', '@azy-board/tool-execution']) {
+    if (workspacePackages.get(name)?.allDependencies.includes('@modelcontextprotocol/sdk')) {
+      throw new Error(`${name} não pode declarar @modelcontextprotocol/sdk; use @azy-board/mcp-protocol.`)
+    }
   }
 }
 
@@ -71,6 +84,11 @@ async function buildAndBootIsolatedApi(): Promise<void> {
     // Este node_modules contém somente as dependências declaradas pela API;
     // não inclui o workspace apps/mcp nem o SDK MCP.
     symlinkSync(join(root, 'apps/api/node_modules'), join(stagingRoot, 'node_modules'), 'dir')
+    // O pacote neutro de protocolo MCP (que concentra o SDK) entra no staging
+    // para a build isolada, pois a API o hospeda; as fontes de apps/mcp seguem
+    // ausentes, garantindo que o app MCP não seja requisito de boot.
+    mkdirSync(join(stagingRoot, 'packages'), { recursive: true })
+    symlinkSync(join(root, 'packages/mcp-protocol'), join(stagingRoot, 'packages/mcp-protocol'), 'dir')
     const environment = {
       ...process.env,
       NODE_ENV: 'test',

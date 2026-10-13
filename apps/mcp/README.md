@@ -4,7 +4,22 @@ Servidor MCP (Model Context Protocol) para integração do Azy Board com agentes
 de IA como Claude Code, Codex e OpenCode. O objetivo é permitir que um code
 agent descubra, configure e execute um projeto sem operar a interface manualmente.
 
-## Configuração no Claude Code
+## Transportes
+
+O mesmo catálogo de ferramentas é servido por dois transportes:
+
+- **stdio (local)**: processo `bun run apps/mcp/src/index.ts` na sua máquina,
+  com a API Key e o projeto padrão em variáveis de ambiente.
+- **Streamable HTTP (remoto)**: endpoint `/mcp` hospedado junto da API da
+  instalação. O cliente se conecta por URL + `Authorization`, sem processo local
+  e sem `AZYBOARD_PROJECT_ID`. O endpoint é stateless (resposta JSON), revalida
+  a credencial a cada requisição e aceita `Idempotency-Key` nas mutações. O
+  projeto é informado por argumento ou pelo cabeçalho `X-Azyboard-Project-Id`.
+
+O core do protocolo vive no pacote neutro `packages/mcp-protocol`; `apps/mcp` é
+apenas o adaptador stdio.
+
+## Configuração no Claude Code (modo stdio)
 
 Adicione ao seu `.claude/settings.json`:
 
@@ -21,6 +36,32 @@ Adicione ao seu `.claude/settings.json`:
     }
   }
 }
+```
+
+## Configuração remota (Streamable HTTP)
+
+Para uma instalação hospedada, registre o endpoint e a credencial no cabeçalho:
+
+```json
+{
+  "mcpServers": {
+    "azy-board": {
+      "type": "streamable-http",
+      "url": "https://azyboard.exemplo.com/mcp",
+      "headers": { "Authorization": "Bearer azb_sua_chave_aqui" }
+    }
+  }
+}
+```
+
+Verificação rápida do handshake (substitua host e chave):
+
+```bash
+curl -sS "https://azyboard.exemplo.com/mcp" \
+  -H "Authorization: Bearer $EASYBOARD_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
 
 ## Ferramentas disponíveis
@@ -152,11 +193,11 @@ Quando o projeto tem `advancedChecklists = true` (configuração do projeto em S
 
 Eles podem ser informados em `add_checklist_item` e `add_checklist_item_to_task`, e alterados em `update_checklist_item` via `changes` (ex.: `{ "dueDate": "2026-10-01", "assigneeId": "user-1" }`). `list_checklists` retorna os campos quando habilitados. Em projetos sem a opção, enviar esses campos retorna erro de validação e os passos permanecem simples (apenas `text` e `checked`).
 
-## Projeto padrão da codebase (`AZYBOARD_PROJECT_ID`)
+## Projeto padrão da codebase (`AZYBOARD_PROJECT_ID`, somente modo stdio)
 
 Quando um agente trabalha sempre no mesmo projeto (caso típico: um repositório
 de código vinculado a um projeto do Azy Board), defina `AZYBOARD_PROJECT_ID` no
-ambiente do servidor MCP. Efeitos:
+ambiente do servidor MCP (modo stdio). Efeitos:
 
 - `projectId` passa a ser **opcional** em todas as ferramentas; quando omitido,
   o servidor injeta o projeto padrão.
@@ -220,7 +261,7 @@ Para reduzir chamadas repetidas, prefira operações em lote:
    → Card movido para coluna DONE; progresso do pai atualizado
 ```
 
-## Variáveis de ambiente
+## Variáveis de ambiente (modo stdio)
 
 | Variável | Descrição | Padrão |
 |---|---|---|
@@ -228,14 +269,20 @@ Para reduzir chamadas repetidas, prefira operações em lote:
 | `EASYBOARD_URL` | URL base da API | `http://localhost:3000` |
 | `AZYBOARD_PROJECT_ID` | Projeto padrão da codebase; torna `projectId` opcional nas ferramentas | opcional |
 
+No modo remoto não há variáveis de ambiente do cliente: a credencial vai no
+cabeçalho `Authorization` e o projeto no argumento ou em
+`X-Azyboard-Project-Id`. Na API, `AZYBOARD_MCP_HTTP_ENABLED=false` desliga o
+endpoint `/mcp` (rollback).
+
 ## Autorização
 
-A chave autentica o agente como seu Owner humano. O servidor resolve, em cada
-chamada, o tenant, grupo global (`TEAM_MEMBER`, `MANAGER`, `ADMIN` ou `ROOT`),
-membership/papel local e estado da chave. O payload nunca pode alterar esses
-valores. `projectScope` e `permissionScope` são restrições adicionais, nunca
-privilégios novos; chave expirada, revogada, inválida ou fora do escopo é
-rejeitada sem revelar o recurso.
+A chave autentica o agente como seu Owner humano. Nos dois transportes, a API
+resolve **a cada chamada** o tenant, grupo global (`TEAM_MEMBER`, `MANAGER`,
+`ADMIN` ou `ROOT`), membership/papel local e estado da chave. O payload nunca
+pode alterar esses valores (identidade, tenant, grupo, `projectScope` e
+`permissionScope` vindos dos argumentos são recusados). `projectScope` e
+`permissionScope` são restrições adicionais, nunca privilégios novos; chave
+expirada, revogada, inválida ou fora do escopo é rejeitada sem revelar o recurso.
 
 Leituras exigem papel local `VIEWER`, conteúdo exige `MEMBER`, configuração do
 projeto exige `ADMIN`, e `create_project` exige grupo global `MANAGER`. O módulo

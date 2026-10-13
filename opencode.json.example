@@ -15,6 +15,14 @@
         "EASYBOARD_URL": "http://localhost:3000",
         "AZYBOARD_PROJECT_ID": ""
       }
+    },
+    "azy-board-remoto": {
+      "type": "remote",
+      "url": "https://azyboard.exemplo.com/mcp",
+      "enabled": false,
+      "headers": {
+        "Authorization": "Bearer {env:EASYBOARD_API_KEY}"
+      }
     }
   }
 }

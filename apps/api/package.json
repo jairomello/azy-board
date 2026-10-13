@@ -18,6 +18,7 @@
     "@azy-board/api-contracts": "workspace:*",
     "@azy-board/assistant-contracts": "workspace:*",
     "@azy-board/domain": "workspace:*",
+    "@azy-board/mcp-protocol": "workspace:*",
     "@azy-board/realtime-contracts": "workspace:*",
     "@azy-board/tool-execution": "workspace:*",
     "@azy-board/tool-registry": "workspace:*",

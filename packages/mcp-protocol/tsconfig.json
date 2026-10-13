@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "types": ["bun-types"],
+    "paths": {
+      "@azy-board/tool-registry": ["../tool-registry/src/index.ts"],
+      "@azy-board/tool-execution": ["../tool-execution/src/index.ts"],
+      "@azy-board/assistant-contracts": ["../assistant-contracts/src/index.ts"],
+      "@azy-board/domain": ["../domain/src/index.ts"],
+      "@azy-board/ui-contracts": ["../ui-contracts/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

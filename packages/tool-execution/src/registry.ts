@@ -102,7 +102,10 @@ export async function resolveCostCenterId(api: ApiCall, projectId: string, selec
 }
 
 export function assertHumanContext(context: HumanToolContext): void {
-  if (context.source !== 'azy-agent') return
+  // [SEGURANÇA] MCP e Azy Agent exigem identidade resolvida no servidor: o
+  // contexto não pode ser forjado no executor (nem em branco). Defesa em
+  // profundidade — a autorização real continua na API por credencial.
+  if (context.source !== 'azy-agent' && context.source !== 'mcp') return
   if (!context.userId || !context.tenantId || !context.globalGroup) throw new Error('USER_CONTEXT_REQUIRED')
 }
 

@@ -36,6 +36,7 @@ import { otelMiddleware } from './middleware/otel'
 import { configureReadinessProbes, healthRouter, runtimeReadinessProbes } from './routes/health'
 import { operationsRouter } from './routes/operations'
 import { versionRouter } from './routes/version'
+import { mcpRouter } from './routes/mcp'
 import type { HonoEnv } from './types/hono'
 import { startStorageCleanupWorker } from './services/storageCleanup'
 import { startAgentWorker } from './services/agentWorker'
@@ -101,6 +102,10 @@ app.use('*', clientIpMiddleware)
 app.route('/health', healthRouter)
 app.route('/version', versionRouter)
 app.route('/api/auth', authRouter)
+
+// MCP remoto (Streamable HTTP) — fora de /api (corpo JSON-RPC) e com auth por
+// requisição; ver routes/mcp.ts e DEPLOY.md.
+app.route('/mcp', mcpRouter)
 
 // Rotas protegidas
 const api = app.basePath('/api')

@@ -19,6 +19,7 @@
         "@azy-board/api-contracts": "workspace:*",
         "@azy-board/assistant-contracts": "workspace:*",
         "@azy-board/domain": "workspace:*",
+        "@azy-board/mcp-protocol": "workspace:*",
         "@azy-board/realtime-contracts": "workspace:*",
         "@azy-board/tool-execution": "workspace:*",
         "@azy-board/tool-registry": "workspace:*",
@@ -53,6 +54,7 @@
       "name": "@azy-board/mcp",
       "dependencies": {
         "@azy-board/assistant-contracts": "workspace:*",
+        "@azy-board/mcp-protocol": "workspace:*",
         "@azy-board/tool-execution": "workspace:*",
         "@azy-board/tool-registry": "workspace:*",
         "@azy-board/types": "workspace:*",
@@ -143,6 +145,19 @@
     "packages/domain": {
       "name": "@azy-board/domain",
       "version": "0.0.1",
+      "devDependencies": {
+        "bun-types": "latest",
+        "typescript": "^5.6.0",
+      },
+    },
+    "packages/mcp-protocol": {
+      "name": "@azy-board/mcp-protocol",
+      "version": "0.0.1",
+      "dependencies": {
+        "@azy-board/tool-execution": "workspace:*",
+        "@azy-board/tool-registry": "workspace:*",
+        "@modelcontextprotocol/sdk": "^1.0.0",
+      },
       "devDependencies": {
         "bun-types": "latest",
         "typescript": "^5.6.0",
@@ -257,6 +272,8 @@
     "@azy-board/domain": ["@azy-board/domain@workspace:packages/domain"],
 
     "@azy-board/mcp": ["@azy-board/mcp@workspace:apps/mcp"],
+
+    "@azy-board/mcp-protocol": ["@azy-board/mcp-protocol@workspace:packages/mcp-protocol"],
 
     "@azy-board/realtime-contracts": ["@azy-board/realtime-contracts@workspace:packages/realtime-contracts"],
 
@@ -970,7 +987,7 @@
 
     "buffer-image-size": ["buffer-image-size@0.6.4", "", { "dependencies": { "@types/node": "*" } }, "sha512-nEh+kZOPY1w+gcCMobZ6ETUp9WfibndnosbpwB1iJk/8Gt5ZF2bhS6+B6bPYz424KtwsR6Rflc3tCz1/ghX2dQ=="],
 
-    "bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
+    "bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
 
     "bundle-name": ["bundle-name@4.1.0", "", { "dependencies": { "run-applescript": "^7.0.0" } }, "sha512-tjwM5exMg6BGRI+kNmTntNsvdZS1X8BFYS6tnJ2hdH0kVxM6/eVZ2xy+FqStSWvYmtfFMDLIxurorHwDKfDz5Q=="],
 
@@ -1627,14 +1644,6 @@
     "zod": ["zod@4.6.4", "", {}, "sha512-AXSD6hvGdvRjajG/l1cC+d6IrhH+sjmPKtYeQdJIK8MFJl3LyClzS+o/YsVC+zQZPupAaeH5skwwm8YqYH7BqA=="],
 
     "zod-to-json-schema": ["zod-to-json-schema@3.25.2", "", { "peerDependencies": { "zod": "^3.25.28 || ^4" } }, "sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA=="],
-
-    "@azy-board/assistant-contracts/bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
-
-    "@azy-board/domain/bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
-
-    "@azy-board/tool-registry/bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
-
-    "@azy-board/ui-contracts/bun-types": ["bun-types@1.4.3", "", { "dependencies": { "@types/node": "*", "undici-types": "*" } }, "sha512-tinRJNGOmUN+tEAsn2y2e942n9JHRHR42iUYzDH75NmhJqVBokGSQkkfSFdNWwsANIdrK6ACH9t01M452YyTwg=="],
 
     "@babel/core/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 

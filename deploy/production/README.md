@@ -88,3 +88,37 @@ uploads. Backups automáticos da Vultr estão atualmente desativados.
   retenção curta e destino externo.
 - Manter as regras atuais de UFW para 22/80/443 enquanto o Apache estiver em uso.
   Não publicar portas Docker para API, PostgreSQL ou Valkey.
+
+## MCP remoto (Streamable HTTP)
+
+O endpoint MCP remoto vive na API (`/mcp`) e é alcançado pelo mesmo hostname
+público: Cloudflare Tunnel → Caddy (`https://azyboard.jairo.tools:8443`) →
+nginx do web (`web:80`) → API. O nginx do web repassa `/mcp` sem buffering com
+HTTP/1.1 (`location = /mcp`, ver `docker/nginx-web.conf.template`); o Caddy e o
+Tunnel não exigem regra nova porque todo o tráfego já passa por `web:80`.
+
+Autenticação por `Authorization: Bearer azb_...`, revalidada a cada requisição.
+Projeto informado no argumento da ferramenta ou no cabeçalho
+`X-Azyboard-Project-Id`; mutações aceitam `Idempotency-Key`. O endpoint é
+stateless (resposta JSON) e não adiciona container nem serviço.
+
+Teste de conectividade no host (ou de qualquer cliente com rede até o
+hostname), com uma API Key válida:
+
+```bash
+curl -sS https://azyboard.jairo.tools/mcp \
+  -H "Authorization: Bearer $EASYBOARD_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
+
+curl -sS https://azyboard.jairo.tools/mcp \
+  -H "Authorization: Bearer $EASYBOARD_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
+```
+
+O segundo comando lista as ferramentas; sem credencial válida a resposta é 401.
+Para rollback do endpoint, definir `AZYBOARD_MCP_HTTP_ENABLED=false` no serviço
+`api` (responde 404) — o transporte `stdio` local permanece disponível.

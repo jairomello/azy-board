@@ -47,7 +47,7 @@
     "evals:gate": "bun run scripts/evalGate.ts",
     "evals:env": "bun run scripts/buildEvalEnv.ts",
     "lint": "bun run scripts/lint.ts",
-    "typecheck": "bun run --cwd packages/types typecheck && bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck && bun run --cwd apps/mcp typecheck",
+    "typecheck": "bun run --cwd packages/types typecheck && bun run --cwd packages/mcp-protocol typecheck && bun run --cwd apps/api typecheck && bun run --cwd apps/web typecheck && bun run --cwd apps/mcp typecheck",
     "check": "bun run typecheck && bun run lint && bun run check:persistence && bun run check:api-boundary && bun test --isolate && bun run build"
   },
   "devDependencies": {

@@ -22,6 +22,7 @@ COPY packages/api-contracts/package.json packages/api-contracts/
 COPY packages/assistant-contracts/package.json packages/assistant-contracts/
 COPY packages/domain/package.json packages/domain/
 COPY packages/realtime-contracts/package.json packages/realtime-contracts/
+COPY packages/mcp-protocol/package.json packages/mcp-protocol/
 COPY packages/tool-registry/package.json packages/tool-registry/
 COPY packages/tool-execution/package.json packages/tool-execution/
 COPY packages/types/package.json packages/types/
