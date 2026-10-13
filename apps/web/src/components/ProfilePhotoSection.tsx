@@ -67,7 +67,9 @@ export function ProfilePhotoSection() {
       <div className="flex items-start gap-4">
         {user && <UserAvatar user={user} size="lg" />}
         <ProfileNameField />
-        <div className="flex flex-col sm:flex-row gap-2">
+        {/* mt-5 = altura do rótulo "Nome de exibição" (text-xs + mb-1), para que
+            "Alterar foto"/"Remover foto" fiquem na mesma linha do input e do "Salvar nome". */}
+        <div className="mt-5 flex flex-col sm:flex-row gap-2">
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
