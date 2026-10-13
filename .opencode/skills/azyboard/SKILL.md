@@ -54,7 +54,7 @@ Use o Azy Board como fonte compartilhada de planejamento e execução para pesso
 - Não crie TASK/BUG diretamente sob EPIC. Consulte EPICs e STORYs com `list_tasks` e `onlyLeaves: false`.
 - Não repita cegamente operações após conflito. Trate `retryable: false` como erro definitivo.
 - Use `dryRun` antes de arquivar ou excluir em cascata e peça confirmação antes da ação destrutiva.
-- A skill e os roteiros usam apenas placeholders de credencial; a API Key vai em variável de ambiente ou cofre do cliente, nunca em arquivo versionado. O `projectId` não é segredo; a chave é. Ao configurar o MCP em um code agent, siga `references/mcp-setup.md` (comando `/azyboard-setup-mcp`).
+- A skill e os roteiros usam apenas placeholders de credencial; a API Key vai em variável de ambiente ou cofre do cliente, nunca em arquivo versionado. O `projectId` não é segredo; a chave é. Ao configurar o MCP em um code agent (OpenCode, Claude Code ou Codex; Windows, Linux ou macOS), siga `references/mcp-setup.md` (comando `/azyboard-setup-mcp`). Quando o usuário já tem a URL do MCP e a chave, conduza a conexão com o script cross-platform `scripts/connect-mcp.mjs`, que pergunta a chave no terminal e grava a configuração — nunca peça a chave no chat.
 
 ## Payload, limites e erros comuns
 

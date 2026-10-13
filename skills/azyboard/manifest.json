@@ -19,6 +19,10 @@
     "references/playbooks.md",
     "references/mcp-setup.md"
   ],
+  "scripts": [
+    "scripts/connect-mcp.mjs",
+    "scripts/connect-mcp.sh"
+  ],
   "distribution": {
     "claudeCode": "Copy SKILL.md and commands/*.md into the client's skill/commands locations.",
     "openCode": "Register SKILL.md as a project skill and map commands/*.md to the client's command convention.",

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Plus, Copy, Check, Trash2, KeyRound } from 'lucide-react'
 import { useApiKeys } from '../hooks/useApiKeys'
 import { formatDate } from '../lib/formatters'
+import { McpConnectionGuide } from './McpConnectionGuide'
 
 export function ApiKeysSection() {
   const { t } = useTranslation('settings')
@@ -67,6 +68,8 @@ export function ApiKeysSection() {
           {t('newApiKey')}
         </button>
       </div>
+
+      <McpConnectionGuide />
 
       {error && <p role="alert" className="rounded-lg bg-red-50 text-red-700 p-3 text-sm mb-3">{error}</p>}
 

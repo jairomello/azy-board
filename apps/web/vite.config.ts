@@ -60,6 +60,9 @@ export default defineConfig(({ mode }) => {
       '/api': { target: apiTarget, changeOrigin: true },
       '/uploads': { target: apiTarget, changeOrigin: true },
       '/ws': { target: apiTarget, changeOrigin: true, ws: true },
+      // MCP remoto: sem o proxy, `/mcp` cairia no SPA em desenvolvimento e a URL
+      // exibida na conta não funcionaria.
+      '/mcp': { target: apiTarget, changeOrigin: true },
     },
   },
   build: {

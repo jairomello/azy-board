@@ -77,44 +77,139 @@ MCP do Azy Board.
 
 ### Modo remoto (Streamable HTTP)
 
-Nenhum processo local: o cliente fala HTTP com a instalação. Registre o endpoint
-e a credencial no cabeçalho (o formato varia por cliente — alguns usam `url` +
-`headers`, outros um bloco equivalente):
+Nenhum processo local: o cliente fala HTTP com a instalação. A URL é a da
+instalação + `/mcp` (ex.: `https://azyboard.exemplo.com/mcp`) e a credencial vai
+no cabeçalho `Authorization`. O formato muda conforme o cliente.
+
+**OpenCode** (`opencode.json`) — bloco `mcp`:
 
 ```json
 {
-  "mcpServers": {
+  "mcp": {
     "azy-board": {
-      "type": "streamable-http",
+      "type": "remote",
       "url": "https://<instalação>/mcp",
-      "headers": {
-        "Authorization": "Bearer azb_sua_chave_aqui"
-      }
+      "enabled": true,
+      "oauth": false,
+      "headers": { "Authorization": "Bearer azb_sua_chave_aqui" }
     }
   }
 }
 ```
 
-- A URL pública é a da instalação + `/mcp` (ex.: `https://azyboard.exemplo.com/mcp`).
-- O projeto de contexto é opcional e pode ir no cabeçalho
-  `X-Azyboard-Project-Id: <uuid>`; sem ele, informe `projectId` no argumento de
-  cada ferramenta que o exige.
+**Claude Code** (`.mcp.json` do projeto ou `~/.claude.json`) — bloco `mcpServers`:
+
+```json
+{
+  "mcpServers": {
+    "azy-board": {
+      "type": "http",
+      "url": "https://<instalação>/mcp",
+      "headers": { "Authorization": "Bearer azb_sua_chave_aqui" }
+    }
+  }
+}
+```
+
+Alternativa por CLI:
+`claude mcp add --transport http azy-board https://<instalação>/mcp --header "Authorization: Bearer azb_sua_chave_aqui"`.
+
+**OpenAI Codex** (`~/.codex/config.toml`) — seção `mcp_servers` (TOML):
+
+```toml
+[mcp_servers.azy-board]
+url = "https://<instalação>/mcp"
+http_headers = { "Authorization" = "Bearer azb_sua_chave_aqui" }
+```
+
+Alternativa por CLI: `codex mcp add azy-board --url https://<instalação>/mcp`
+(o Codex também aceita `bearer_token_env_var` para não guardar o segredo no TOML).
+
+Comum aos três:
+
+- O projeto de contexto é opcional e vai no cabeçalho `X-Azyboard-Project-Id: <uuid>`
+  (no mesmo bloco de headers); sem ele, informe `projectId` no argumento de cada
+  ferramenta que o exige.
 - Mutações aceitam `Idempotency-Key` para repetição segura.
 - **Não existe** `AZYBOARD_PROJECT_ID` por ambiente no modo remoto: o projeto é
   sempre informado explicitamente (cabeçalho ou argumento), nunca derivado da
   credencial.
 
-### Onde fica o arquivo de configuração
+### Conexão assistida pelo agente (script)
 
-Localize o arquivo do cliente em uso em vez de assumir um caminho fixo:
+Quando o usuário já sabe a URL do MCP e tem uma API Key, o agente conduz a
+conexão com um script que **pergunta a chave no terminal** — o segredo não passa
+pelo chat. O conector é cross-platform (**Windows, Linux e macOS**):
+[`scripts/connect-mcp.mjs`](../scripts/connect-mcp.mjs) (Node 18+), com o wrapper
+POSIX [`scripts/connect-mcp.sh`](../scripts/connect-mcp.sh).
 
-- **Claude Code**: configuração de servidores MCP (ex.: `.mcp.json` do projeto ou o arquivo de settings do cliente).
-- **OpenCode**: `opencode.json` (ou o arquivo de config indicado pelo cliente).
-- **Codex**: arquivo de configuração de MCP do Codex.
+Roteiro do agente:
 
-Preserve a estrutura exigida pelo cliente (nomes de chaves podem variar: `env`
-vs `environment`, `args` etc.). Em caso de dúvida, consulte a documentação do
-próprio cliente.
+1. Descubra o **sistema operacional** e o **cliente** (OpenCode, Claude Code ou
+   Codex). Não invente a URL nem peça a chave no chat.
+2. Entregue o comando para o usuário rodar **no terminal dele**, conforme o SO:
+
+   ```bash
+   # Linux / macOS (ou WSL/Git Bash)
+   node /caminho/connect-mcp.mjs --client opencode --url https://<instalação>/mcp
+   # sem informar o cliente, o script pergunta:
+   node /caminho/connect-mcp.mjs --url https://<instalação>/mcp
+   ```
+
+   ```powershell
+   # Windows (PowerShell)
+   node C:\caminho\connect-mcp.mjs --client codex --url https://<instalação>/mcp
+   ```
+
+3. O script pede a **API Key com entrada oculta**, valida o handshake
+   (`initialize` + `tools/list`) e grava a configuração do cliente (JSON para
+   OpenCode/Claude; TOML para Codex), com backup do arquivo anterior.
+4. Peça que o usuário execute e informe o resultado; depois verifique a conexão
+   (recarregue o cliente / chame `list_modules`) e reporte o catálogo.
+
+Flags:
+
+| Flag | Efeito |
+|---|---|
+| `--client opencode\|claude\|codex\|generic` | Cliente alvo (padrão: pergunta). |
+| `--url <url>` | URL do MCP (padrão: pergunta). |
+| `--scope project\|user` | Escopo do arquivo (padrão: `project` p/ opencode/claude; `user` p/ codex). |
+| `--config <arquivo>` | Caminho explícito do arquivo de configuração. |
+| `--name <nome>` | Nome do servidor no cliente (padrão: `azy-board`). |
+| `--project-id <uuid>` | Projeto de contexto (cabeçalho `X-Azyboard-Project-Id`). |
+| `--print` | Só valida e imprime a configuração, sem gravar. |
+| `--force` | Permite gravar em arquivo versionado (com aviso). |
+
+Notas:
+
+- `generic` (e clientes sem gravação automática) apenas imprime o bloco para colar.
+- Exige **Node.js 18+** (ou o wrapper com Bun). Sem Node, use a configuração
+  manual das seções acima.
+- O script avisa se o arquivo de destino é **versionado no git**.
+
+### Onde fica o arquivo de configuração por cliente e sistema
+
+Caminhos comuns (confirme o do cliente; há escopo de projeto e de usuário):
+
+| Cliente | Escopo | Linux | macOS | Windows |
+|---|---|---|---|---|
+| OpenCode | projeto | `./opencode.json` | `./opencode.json` | `.\opencode.json` |
+| OpenCode | usuário | `~/.config/opencode/opencode.json` | `~/.config/opencode/opencode.json` | `%USERPROFILE%\.config\opencode\opencode.json` |
+| Claude Code | projeto | `./.mcp.json` | `./.mcp.json` | `.\.mcp.json` |
+| Claude Code | usuário | `~/.claude.json` | `~/.claude.json` | `%USERPROFILE%\.claude.json` |
+| Codex | usuário | `~/.codex/config.toml` | `~/.codex/config.toml` | `%USERPROFILE%\.codex\config.toml` |
+
+Observações:
+
+- O OpenCode também aceita `opencode.jsonc` e as variáveis
+  `OPENCODE_CONFIG`/`OPENCODE_CONFIG_DIR`.
+- O `.mcp.json` do Claude Code pode ser versionado no projeto: não coloque a chave
+  lá sem garantir que o arquivo esteja no `.gitignore` — prefira o escopo de
+  usuário (`~/.claude.json`).
+- O Codex usa TOML (`[mcp_servers.<nome>]`), diferente dos clientes JSON.
+- No Windows, `%USERPROFILE%` é o diretório do usuário (ex.: `C:\Users\voce`); em
+  PowerShell o caminho equivalente é `$env:USERPROFILE`.
+
 
 ### Projeto padrão da codebase (somente modo stdio)
 

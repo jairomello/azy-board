@@ -84,6 +84,11 @@ MCP remoto no mesmo serviço da API, na rota `/mcp` (fora de `/api`, pois o corp
   novo container/serviço — reutiliza as imagens `api` e `web`.
 - **Rollback**: defina `AZYBOARD_MCP_HTTP_ENABLED=false` na API para desligar o
   endpoint (responde 404) sem remover o pacote nem alterar o transporte stdio.
+- **Descoberta da URL**: a página de conta (`/account`) exibe, na seção de
+  Chaves de API, a URL do MCP da instalação (origem atual + base path + `/mcp`)
+  com botão de copiar e uma instrução pronta para o code agent. A derivação é
+  feita no cliente a partir de `window.location.origin` e `window.__BASE_PATH__`,
+  então a URL exibida acompanha a publicação (raiz ou subpath).
 
 O nginx do web precisa repassar `/mcp` **sem buffering** e com HTTP/1.1:
 
