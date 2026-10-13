@@ -43,6 +43,18 @@ describe('contrato de campos opcionais do MCP', () => {
     expect(schema.required).toEqual(['name'])
   })
 
+  test('ferramentas de projeto expõem hideModules/hideEpics opcionais com descrição', async () => {
+    for (const name of ['create_project', 'update_project', 'create_project_structure']) {
+      const tool = (await exposedTools()).find(item => item.name === name)!
+      const schema = tool.inputSchema as unknown as { required: string[]; properties: Record<string, { type: unknown; description?: string }> }
+      for (const field of ['hideModules', 'hideEpics']) {
+        expect(schema.required).not.toContain(field)
+        expect(schema.properties[field]?.type).toEqual(['boolean', 'null'])
+        expect(String(schema.properties[field]?.description)).toContain('HIERARCHICAL')
+      }
+    }
+  })
+
   test('operations expõe args exigindo apenas os campos realmente obrigatórios', async () => {
     for (const name of ['batch', 'create_project_structure']) {
       const tool = (await exposedTools()).find(item => item.name === name)!
@@ -236,6 +248,46 @@ describe('coerção de tipos e campos desconhecidos na fronteira de execução',
     expect(paths[0]).toContain('leaf=false')
     expect(paths[0]).toContain('limit=5')
     expect(paths[0]).toContain('includeDescriptions=true')
+  })
+
+  test('hideModules/hideEpics são encaminhados na criação e na edição e omitidos quando ausentes', async () => {
+    const calls: Array<{ path: string; method?: string; body?: unknown }> = []
+    const api: ApiCall = async (path, method, body) => { calls.push({ path, method, body }); return { id: UUID } }
+
+    await executeSharedTool('create_project', { name: 'Projeto níveis', hideModules: true, hideEpics: 'false' }, { api, context })
+    expect(calls[0]).toMatchObject({ path: '/projects', method: 'POST' })
+    expect(calls[0]!.body).toMatchObject({ hideModules: true, hideEpics: false })
+
+    await executeSharedTool('update_project', { projectId: UUID, hideEpics: true }, { api, context })
+    expect(calls[1]).toMatchObject({ path: `/projects/${UUID}`, method: 'PATCH' })
+    expect(calls[1]!.body).toMatchObject({ hideEpics: true })
+
+    await executeSharedTool('create_project', { name: 'Sem níveis' }, { api, context })
+    expect(calls[2]!.body).not.toHaveProperty('hideModules')
+    expect(calls[2]!.body).not.toHaveProperty('hideEpics')
+
+    await executeSharedTool('update_project', { projectId: UUID, hideModules: null }, { api, context })
+    expect(calls[3]!.body).not.toHaveProperty('hideModules')
+  })
+
+  test('create_project_structure propaga hideModules/hideEpics ao projeto criado', async () => {
+    const calls: Array<{ path: string; method?: string; body?: unknown }> = []
+    const api: ApiCall = async (path, method, body) => { calls.push({ path, method, body }); return { id: UUID, results: [] } }
+    await executeSharedTool('create_project_structure', {
+      name: 'Com estrutura',
+      hideModules: true,
+      operations: [{ tool: 'create_task', args: { ref: 'a', title: 'T', type: 'TASK' } }],
+    }, { api, context })
+    expect(calls[0]).toMatchObject({ path: '/projects', method: 'POST' })
+    expect(calls[0]!.body).toMatchObject({ hideModules: true })
+  })
+
+  test('hideModules/hideEpics com valor não booleano falham antes da rede', async () => {
+    let called = false
+    const api: ApiCall = async () => { called = true; return { id: UUID } }
+    await expect(executeSharedTool('create_project', { name: 'X', hideModules: 'sim' }, { api, context })).rejects.toThrow('hideModules deve ser booleano')
+    await expect(executeSharedTool('update_project', { projectId: UUID, hideEpics: 'talvez' }, { api, context })).rejects.toThrow('hideEpics deve ser booleano')
+    expect(called).toBe(false)
   })
 
   test('fields como string JSON aplica projeção', async () => {

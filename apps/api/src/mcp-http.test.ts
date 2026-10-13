@@ -184,6 +184,49 @@ describe('MCP remoto por Streamable HTTP', () => {
     }
   })
 
+  test('opções de ocultar níveis: cria, edita e relê pelo tools/call', async () => {
+    // Chave de nível de usuário (sem escopo de projeto), como o MCP remoto cria projeto.
+    const keyResponse = await request('/api-keys', session, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'MCP níveis', permissionScope: ['read', 'write', 'admin'] }),
+    })
+    expect(keyResponse.status).toBe(201)
+    const levelsKey = (await keyResponse.json() as { key: string }).key
+
+    const creation = await rpc(levelsKey, { jsonrpc: '2.0', id: 20, method: 'tools/call', params: {
+      name: 'create_project',
+      arguments: { name: 'MCP níveis hierárquico', hideModules: true, hideEpics: false },
+    } })
+    expect(toolResult(creation).isError ?? false).toBe(false)
+    const created = toolResult(creation).structuredContent as { id?: string; hideModules?: boolean; hideEpics?: boolean } | undefined
+    expect(created?.id).toBeTruthy()
+    expect(created).toMatchObject({ hideModules: true, hideEpics: false })
+
+    const semOpcoes = await rpc(levelsKey, { jsonrpc: '2.0', id: 21, method: 'tools/call', params: {
+      name: 'create_project', arguments: { name: 'MCP níveis padrão' },
+    } })
+    expect(toolResult(semOpcoes).structuredContent).toMatchObject({ hideModules: false, hideEpics: false })
+
+    // Valor não booleano falha com erro acionável apontando o campo.
+    const invalido = await rpc(levelsKey, { jsonrpc: '2.0', id: 22, method: 'tools/call', params: {
+      name: 'update_project', arguments: { projectId: created!.id, hideModules: 'sim' },
+    } })
+    expect(toolResult(invalido).isError).toBe(true)
+    expect(JSON.stringify(toolResult(invalido))).toContain('hideModules')
+
+    // Ligar a opção na edição e conferir o estado final por get_project.
+    const update = await rpc(levelsKey, { jsonrpc: '2.0', id: 23, method: 'tools/call', params: {
+      name: 'update_project', arguments: { projectId: created!.id, hideEpics: true },
+    } })
+    expect(toolResult(update).isError ?? false).toBe(false)
+    expect(toolResult(update).structuredContent).toMatchObject({ hideModules: true, hideEpics: true })
+
+    const read = await rpc(levelsKey, { jsonrpc: '2.0', id: 24, method: 'tools/call', params: {
+      name: 'get_project', arguments: { projectId: created!.id },
+    } })
+    expect(toolResult(read).structuredContent).toMatchObject({ hideModules: true, hideEpics: true })
+  })
+
   test('paridade REST/MCP HTTP/agente para criação de tarefa', async () => {
     const rest = await request(`/projects/${projectId}/items`, session, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

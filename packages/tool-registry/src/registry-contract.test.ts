@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { applyOptionalFields, getSharedToolDefinitions, nestedRequiredFieldsFor, requiredFieldsFor, SHARED_TOOL_NAMES, toolFields } from './registry.js'
+import { coerceArgumentsBySchema } from './coercion.js'
 import { normalizePlanningGapArguments, validateToolArguments } from './validation.js'
 import { TOOL_TEXT_LIMITS } from './limits.js'
 
@@ -132,6 +133,30 @@ describe('contrato de fonte única do catálogo MCP', () => {
     expect(() => validateToolArguments('update_version', { projectId: 'p', versionId: 'v', changes: [{ field: 'status', operation: 'SET', value: 'OPEN' }] })).toThrow('status inválido')
     expect(() => validateToolArguments('update_sprint', { projectId: 'p', sprintId: 's', changes: [{ field: 'endDate', operation: 'SET', value: '14/11/2026' }] })).toThrow('AAAA-MM-DD')
     expect(() => validateToolArguments('update_version', { projectId: 'p', versionId: 'v', changes: [{ field: 'name', operation: 'SET', value: 'x' }, { field: 'name', operation: 'SET', value: 'y' }] })).toThrow('duplicado')
+  })
+
+  test('ferramentas de projeto expõem hideModules/hideEpics como opcionais tipados', () => {
+    for (const name of ['create_project', 'update_project', 'create_project_structure']) {
+      const properties = byName.get(name)!.inputSchema.properties
+      for (const field of ['hideModules', 'hideEpics']) {
+        expect(properties[field]).toMatchObject({ type: ['boolean', 'null'] })
+        expect(String((properties[field] as { description?: string }).description)).toContain('HIERARCHICAL')
+        expect(requiredFieldsFor(name)).not.toContain(field)
+      }
+    }
+  })
+
+  test('ferramentas de projeto validam hideModules/hideEpics e preservam a coerção textual', () => {
+    expect(() => validateToolArguments('create_project', { name: 'P', hideModules: true, hideEpics: false })).not.toThrow()
+    expect(() => validateToolArguments('update_project', { projectId: 'p', hideEpics: true })).not.toThrow()
+    expect(() => validateToolArguments('create_project', { name: 'P', hideModules: 'sim' })).toThrow('hideModules deve ser booleano')
+    expect(() => validateToolArguments('update_project', { projectId: 'p', hideEpics: 1 })).toThrow('hideEpics deve ser booleano')
+    // A coerção roda antes da validação no caminho de execução: "true" textual vira boolean.
+    const coerced = coerceArgumentsBySchema('update_project', { projectId: 'p', hideModules: 'true' })
+    expect(coerced.hideModules).toBe(true)
+    expect(() => validateToolArguments('update_project', coerced)).not.toThrow()
+    // Campo de topo não declarado continua rejeitado citando os aceitos.
+    expect(() => validateToolArguments('create_project', { name: 'P', ocultarModulos: true })).toThrow('Campo desconhecido: ocultarModulos em create_project')
   })
 
   test('create_version aceita campos opcionais e mantém name obrigatório', () => {

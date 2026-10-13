@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { and, eq } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
-import { toolCreateTask, toolListTasks } from '@azy-board/tool-execution'
+import { toolCreateProject, toolCreateTask, toolGetProject, toolListTasks, toolUpdateProject } from '@azy-board/tool-execution'
 import { ATTACHMENT_READ_MAX_BYTES, ATTACHMENT_READ_MAX_CHARS } from '@azy-board/assistant-contracts'
 
 process.env.DATABASE_URL = ':memory:'
@@ -3696,5 +3696,89 @@ describe('tree view pula níveis ocultos (Card T61)', () => {
     const body = await (await request(`/projects/${projectId}/items/tree`, sessionToken)).json() as Array<{ type: string }>
     expect(body.length).toBeGreaterThan(0)
     expect(body.every(node => node.type === 'STORY')).toBe(true)
+  })
+})
+
+describe('opções de ocultar níveis pelo caminho do MCP (hideModules/hideEpics)', () => {
+  let tenantId: string
+  let adminId: string
+  let adminToken: string
+  let globalKey: string
+
+  async function createKey(name: string, projectId?: string, permissionScope: string[] = ['read', 'write']): Promise<string> {
+    const created = await request('/api-keys', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, permissionScope, ...(projectId ? { projectScope: [projectId] } : {}) }),
+    })
+    expect(created.status).toBe(201)
+    return (await created.json() as { key: string }).key
+  }
+
+  function keyApi(apiKey: string) {
+    return (path: string, method = 'GET', body?: unknown) => mcpApiCall(apiKey, path, method, body)
+  }
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Niveis MCP', slug: `niveis-mcp-${tenantId}`, createdAt: new Date().toISOString() })
+    const admin = await createUser(tenantId, 'niveis-mcp@test.local', 'Admin Niveis MCP', 'ADMIN')
+    adminId = admin.id
+    adminToken = await token(admin.id, tenantId, admin.email)
+    // O MCP remoto cria projeto com chave de nível de usuário (sem escopo de projeto).
+    globalKey = await createKey('Chave global níveis')
+  })
+
+  test('criação: opções informadas, ausentes e projeto simples', async () => {
+    const api = keyApi(globalKey)
+    const comOpcoes = await toolCreateProject(api, { name: 'Níveis MCP com opções', hideModules: true, hideEpics: true })
+    expect(comOpcoes).toMatchObject({ hideModules: true, hideEpics: true })
+    expect(await toolGetProject(api, comOpcoes.id)).toMatchObject({ hideModules: true, hideEpics: true })
+
+    const semOpcoes = await toolCreateProject(api, { name: 'Níveis MCP sem opções' })
+    expect(semOpcoes).toMatchObject({ hideModules: false, hideEpics: false })
+
+    const simples = await toolCreateProject(api, { name: 'Níveis MCP simples', boardMode: 'SIMPLE', hideModules: true, hideEpics: true })
+    expect(simples).toMatchObject({ hideModules: false, hideEpics: false })
+    expect(await toolGetProject(api, simples.id)).toMatchObject({ hideModules: false, hideEpics: false })
+  })
+
+  test('edição: liga a opção, recolhe a hierarquia com o patch e é idempotente', async () => {
+    const projectResponse = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Níveis MCP recolhimento', boardMode: 'HIERARCHICAL' }),
+    })
+    expect(projectResponse.status).toBe(201)
+    const projectId = (await projectResponse.json() as { id: string }).id
+    await seedHierarchyFixture(tenantId, projectId, adminId, 'n1')
+    await seedHierarchyFixture(tenantId, projectId, adminId, 'n2')
+    const api = keyApi(await createKey('Chave níveis projeto', projectId, ['read', 'write', 'admin']))
+
+    // O projeto hierárquico nasce com o módulo padrão "Geral" + os dois da fixture.
+    expect((await db.select().from(modules).where(eq(modules.projectId, projectId))).length).toBeGreaterThan(1)
+
+    const recolhido = await toolUpdateProject(api, projectId, { hideModules: true, description: 'Recolhido pelo MCP' })
+    expect(recolhido).toMatchObject({ hideModules: true, description: 'Recolhido pelo MCP' })
+
+    const modulosDepois = await db.select().from(modules).where(eq(modules.projectId, projectId))
+    expect(modulosDepois.length).toBe(1)
+    const epicsDepois = await db.select().from(items).where(and(eq(items.projectId, projectId), eq(items.type, 'EPIC')))
+    expect(epicsDepois.length).toBe(2)
+    expect(epicsDepois.every(epic => epic.moduleId === modulosDepois[0]!.id)).toBe(true)
+
+    // Repetir a mesma chamada não recolhe de novo nem duplica registros.
+    const repetido = await toolUpdateProject(api, projectId, { hideModules: true, description: 'Recolhido pelo MCP' })
+    expect(repetido).toMatchObject({ hideModules: true, description: 'Recolhido pelo MCP' })
+    expect((await db.select().from(modules).where(eq(modules.projectId, projectId))).length).toBe(1)
+    expect((await db.select().from(items).where(and(eq(items.projectId, projectId), eq(items.type, 'EPIC')))).length).toBe(2)
+
+    // Ligar hideEpics recolhe os épicos a um por módulo e reparenta as histórias.
+    await toolUpdateProject(api, projectId, { hideEpics: true })
+    const epicsFinais = await db.select().from(items).where(and(eq(items.projectId, projectId), eq(items.type, 'EPIC')))
+    const historiasFinais = await db.select().from(items).where(and(eq(items.projectId, projectId), eq(items.type, 'STORY')))
+    expect(epicsFinais.length).toBe(1)
+    expect(historiasFinais.length).toBe(2)
+    expect(historiasFinais.every(story => story.parentId === epicsFinais[0]!.id)).toBe(true)
+    expect(await toolGetProject(api, projectId)).toMatchObject({ hideModules: true, hideEpics: true })
   })
 })

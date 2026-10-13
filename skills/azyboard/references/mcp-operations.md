@@ -27,6 +27,19 @@ Use `list_modules` antes de criar EPIC quando necessário. `create_task` resolve
 
 `onlyLeaves` é `true` por padrão. Use `false` para navegar pais. Apenas folhas são cards Kanban móveis; pais agregam progresso e pontos.
 
+### Visibilidade dos níveis no board
+
+Em projeto `HIERARCHICAL`, `create_project`, `create_project_structure` e `update_project` aceitam `hideModules` e `hideEpics` (booleanos opcionais, padrão `false`) para ocultar o nível de módulos e/ou de épicos:
+
+```text
+create_project(name, boardMode: "HIERARCHICAL", hideModules: true)      # board sem nível de módulos
+update_project(projectId, changes: { hideEpics: true })                  # oculta épicos
+```
+
+- Valem **apenas** em `HIERARCHICAL`; em projeto `SIMPLE` os dois permanecem `false` mesmo se informados como `true`.
+- Em `update_project`, **ligar** uma opção (de `false` para `true`) recolhe a hierarquia no mesmo passo: os épicos passam a um módulo único e/ou os épicos se recolhem a um por módulo, com as histórias reparentadas. Repetir a chamada é idempotente — nada é recolhido de novo.
+- Omitir os campos mantém o padrão `false`; não pergunte por eles sem motivo. O resultado aparece em `get_project`.
+
 ## Mutação
 
 - Crie ou atualize somente depois de ler o estado atual.

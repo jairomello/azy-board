@@ -364,6 +364,8 @@ function schemaFor(field: string, isRequired: boolean, toolName?: string): Recor
   if (toolName === 'query_planning_gaps' && field === 'timeZone') return { ...nullable({ type: 'string' }), description: 'Fuso IANA obrigatório ao usar hoje/amanhã (ex.: America/Sao_Paulo).' }
   if (field === 'onlyLeaves' || field === 'atomic' || field === 'confirm' || field === 'dryRun' || field === 'checked') return nullable({ type: 'boolean' })
   if (field === 'advancedChecklists') return { ...nullable({ type: 'boolean' }), description: 'Habilita data, responsável e descrição nos itens de checklist do projeto (padrão false).' }
+  if (field === 'hideModules') return { ...nullable({ type: 'boolean' }), description: 'Projeto HIERARCHICAL: oculta o nível de módulos no board (padrão false).' }
+  if (field === 'hideEpics') return { ...nullable({ type: 'boolean' }), description: 'Projeto HIERARCHICAL: oculta o nível de épicos no board (padrão false).' }
   if (field === 'plannedPoints') return { ...nullable({ type: 'number' }), description: 'Estimated total story points for the project.' }
   if (field === 'plannedHours') return { ...nullable({ type: 'number' }), description: 'Estimated total hours for the project.' }
   if (field === 'startDate') return { ...nullable({ type: 'string' }), description: 'Planned start date in YYYY-MM-DD format.' }
@@ -557,8 +559,8 @@ export const SKILL_COMMAND_INTENTS = Object.freeze({
 } as const)
 
 const toolDescriptions: Record<string, string> = {
-  create_project: 'Create an Azy Board project. Only name is required. Use null for an unspecified description or boardMode and never ask for optional values. The authenticated user is assigned as manager by the server.',
-  create_project_structure: 'Create a project and an ordered hierarchy of up to 50 items in one approved operation. Use refs and parentRefs instead of database IDs; moduleName resolves an existing module by name.',
+  create_project: 'Create an Azy Board project. Only name is required. Use null for an unspecified description or boardMode and never ask for optional values. In HIERARCHICAL projects, hideModules/hideEpics hide the module/epic level on the board (default false; always false in SIMPLE). The authenticated user is assigned as manager by the server.',
+  create_project_structure: 'Create a project and an ordered hierarchy of up to 50 items in one approved operation. Use refs and parentRefs instead of database IDs; moduleName resolves an existing module by name. hideModules/hideEpics apply to the created HIERARCHICAL project (default false; always false in SIMPLE).',
   create_task: 'Create a single EPIC, STORY, TASK or BUG. SIMPLE projects: TASK/BUG auto-assign to the project story; parentId and moduleId are optional. HIERARCHICAL projects: parentId required for TASK/BUG (a STORY, TASK or BUG) and for STORY (an EPIC); EPIC is a root with moduleId. New TASK/BUG items are automatically linked to the current sprint (OPEN and today within its dates) and to the upcoming version, and receive a default icon; pass icon to override the icon (other auto-links can be changed later with update_items).',
   batch: 'Create an ordered hierarchy of up to 50 EPIC, STORY, TASK, or BUG items in one atomic approval. Use refs and parentRefs instead of database IDs. Use moduleName for EPIC items; a module referenced by name that does not exist yet is created automatically. New TASK/BUG items are automatically linked to the current sprint (OPEN and today within its dates) and to the upcoming version, and receive a default icon.',
   update_items: 'Atomically update one or many active items selected by filters. For bulk moves, set filters.column to the source column, preserve every other requested criterion, and add a column SET change with the destination. Generic tasks or cards in a bulk move covers leaf TASK and BUG items unless the user explicitly restricts the type. Also supports fixed values, clearing fields, relative dates, today, and copying each item creation date. Use itemIds for one item and matchAll only for every item without narrower filters.',
@@ -619,7 +621,7 @@ const toolDescriptions: Record<string, string> = {
   update_checklist_item: 'Atualiza o texto/estado de um passo da checklist. changes aceita text, checked, dueDate, assigneeId e description (os três últimos exigem checklists detalhados no projeto).',
   delete_checklist_item: 'Exclui um passo da checklist.',
   update_item_log: 'Atualiza o texto e/ou a duração de um log de trabalho.',
-  update_project: 'Atualiza campos do projeto (nome, descrição, boardMode, planejamento). Omita os campos que não devem mudar.',
+  update_project: 'Atualiza campos do projeto (nome, descrição, boardMode, planejamento). Omita os campos que não devem mudar. Em projeto HIERARCHICAL, ligar hideModules/hideEpics oculta o nível correspondente e recolhe a hierarquia; em SIMPLE permanecem false.',
   create_module: 'Cria um módulo no projeto.',
   create_column: 'Cria uma coluna no board com name e baseStatus (NOT_STARTED, IN_PROGRESS ou DONE).',
   reorder_columns: 'Reordena as colunas do board conforme a lista order.',

@@ -93,8 +93,8 @@ Catálogo com 83 ferramentas, derivado de `packages/tool-registry/src/registry.t
 | `create_item_link` | Cria um link externo no item. Requer name e url (HTTP/HTTPS sem credenciais); description é opcional. Apenas persiste os metadados: não lê nem acessa o conteúdo da URL. |
 | `create_item_log` | Registra um apontamento de trabalho no item. activity é texto curto (até 20000 caracteres); durationMin é a duração em minutos (inteiro não negativo) e duration aceita formato humano-legível (ex.: 1h30), normalizado para minutos. A data do registro é o momento atual; não há suporte a data retroativa. |
 | `create_module` | Cria um módulo no projeto. |
-| `create_project` | Create an Azy Board project. Only name is required. Use null for an unspecified description or boardMode and never ask for optional values. The authenticated user is assigned as manager by the server. |
-| `create_project_structure` | Create a project and an ordered hierarchy of up to 50 items in one approved operation. Use refs and parentRefs instead of database IDs; moduleName resolves an existing module by name. |
+| `create_project` | Create an Azy Board project. Only name is required. Use null for an unspecified description or boardMode and never ask for optional values. In HIERARCHICAL projects, hideModules/hideEpics hide the module/epic level on the board (default false; always false in SIMPLE). The authenticated user is assigned as manager by the server. |
+| `create_project_structure` | Create a project and an ordered hierarchy of up to 50 items in one approved operation. Use refs and parentRefs instead of database IDs; moduleName resolves an existing module by name. hideModules/hideEpics apply to the created HIERARCHICAL project (default false; always false in SIMPLE). |
 | `create_sprint` | Cria uma sprint com name, startDate e endDate (YYYY-MM-DD). |
 | `create_squad` | Cria um squad no projeto. |
 | `create_tag` | Cria uma tag no projeto; color é opcional. |
@@ -151,7 +151,7 @@ Catálogo com 83 ferramentas, derivado de `packages/tool-registry/src/registry.t
 | `update_items` | Atomically update one or many active items selected by filters. For bulk moves, set filters.column to the source column, preserve every other requested criterion, and add a column SET change with the destination. Generic tasks or cards in a bulk move covers leaf TASK and BUG items unless the user explicitly restricts the type. Also supports fixed values, clearing fields, relative dates, today, and copying each item creation date. Use itemIds for one item and matchAll only for every item without narrower filters. |
 | `update_member` | Atualiza o papel de um membro do projeto. Para trocar ou limpar o squad sem alterar o papel, use set_member_squad. |
 | `update_module` | Renomeia um módulo do projeto. Exige ADMIN. |
-| `update_project` | Atualiza campos do projeto (nome, descrição, boardMode, planejamento). Omita os campos que não devem mudar. |
+| `update_project` | Atualiza campos do projeto (nome, descrição, boardMode, planejamento). Omita os campos que não devem mudar. Em projeto HIERARCHICAL, ligar hideModules/hideEpics oculta o nível correspondente e recolhe a hierarquia; em SIMPLE permanecem false. |
 | `update_sprint` | Edita o nome e/ou as datas de uma sprint existente. Use changes com { field, operation: "SET", value }; fields aceitos: name, startDate e endDate (YYYY-MM-DD). A edição preserva o status e os ciclos da sprint; abrir/encerrar continuam em activate_sprint/close_sprint. |
 | `update_squad` | Renomeia um squad do projeto. Exige ADMIN. |
 | `update_tag` | Edita o nome e/ou a cor de uma tag do projeto. Exige MEMBER ou superior. |
