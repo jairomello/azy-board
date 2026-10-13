@@ -41,11 +41,19 @@ RUN bun run /app/scripts/build-version.ts
 # dos perfis SIMPLE e ADVANCED, usados pelo subcomando `migrate` do entrypoint.
 # worker.js é a entrada dedicada do worker de runs (T37, perfil ADVANCED/SEPARATE),
 # sem listener HTTP.
+#
+# `--external sharp` em TODAS as entradas (mesmo tratamento do `bun run build`):
+# o sharp é nativo e resolve o binário da plataforma com `require` dinâmico de
+# `@img/sharp-<platform>-<arch>`, que só existe aninhado em
+# `node_modules/sharp/node_modules/`. Ao inlinar o sharp no bundle, esse require
+# passa a ser resolvido a partir de `dist/` e falha com "Could not load the
+# "sharp" module using the linuxmusl-x64 runtime" — derrubando a inicialização
+# de qualquer módulo do grafo que o importe (ex.: routes/users -> avatarImage).
 RUN bun run build \
-  && bun build src/db/migrate.ts --outfile dist/migrate.js --target bun \
-  && bun build src/db/postgres/migrate.ts --outfile dist/migrate-pg.js --target bun \
-  && bun build src/scripts/setup.ts --outfile dist/setup.js --target bun \
-  && bun build src/worker.ts --outfile dist/worker.js --target bun
+  && bun build src/db/migrate.ts --outfile dist/migrate.js --target bun --external sharp \
+  && bun build src/db/postgres/migrate.ts --outfile dist/migrate-pg.js --target bun --external sharp \
+  && bun build src/scripts/setup.ts --outfile dist/setup.js --target bun --external sharp \
+  && bun build src/worker.ts --outfile dist/worker.js --target bun --external sharp
 
 # --- Apenas dependências de produção (sharp e demais externas do bundle) ---
 FROM deps AS prod-deps
