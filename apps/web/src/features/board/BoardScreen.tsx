@@ -413,7 +413,7 @@ export default function BoardPage() {
     }
   }
 
-  const visibleModuleGroups = filters.moduleViewMode === 'tabs'
+  const visibleModuleGroups = filters.moduleViewMode === 'tabs' && !hideModules
     ? moduleGroups.filter(group => group.module.id === activeModuleId)
     : moduleGroups
 

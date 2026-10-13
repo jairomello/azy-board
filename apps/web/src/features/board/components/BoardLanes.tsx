@@ -54,7 +54,7 @@ export function BoardLanes({
   noModuleLabel, hideModules = false, hideEpics = false, criticalIds = null,
 }: BoardLanesProps) {
   const renderEpicGroup = (group: EpicLaneGroup) => (
-    <Swimlane key={group.epic.id} {...laneProps(group.epic.id, group.epic.title, columns, versions, sprints, group.tasks, collapsedEpics.has(group.epic.id), columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, () => onEditEpic(group.epic), criticalIds)}
+    <Swimlane key={group.epic.id} {...laneProps(group.epic.id, group.epic.title, columns, versions, sprints, group.tasks, hideEpics ? false : collapsedEpics.has(group.epic.id), columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, () => onEditEpic(group.epic), criticalIds)}
       hideHeader={hideEpics}
       onToggle={() => onToggleEpic(group.epic.id)}
       storyGroups={showStoryLanes ? group.storyGroups : undefined}

@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test'
 import { render } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BoardLanes } from './BoardLanes'
-import type { ItemData, Module } from '../model/types'
+import type { ItemData, Module, StoryLaneGroup } from '../model/types'
 
 const epic = { id: 'epic-1', title: 'Epic A', type: 'EPIC', isLeaf: false, status: 'NOT_STARTED', points: 5 } as unknown as ItemData
 const task = { id: 'task-1', title: 'Tarefa', type: 'TASK', isLeaf: true, status: 'NOT_STARTED', columnId: 'col-1' } as unknown as ItemData
@@ -78,5 +78,21 @@ describe('BoardLanes — níveis ocultos (T61)', () => {
     renderLanes({ hideModules: true, hideEpics: true })
     expect(screen.queryByRole('button', { name: /Módulo Um/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Epic A/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('BoardLanes — épico oculto renderiza conteúdo (T61)', () => {
+  test('com épico oculto, o conteúdo aparece mesmo com o épico recolhido por padrão', () => {
+    const storyGroup = {
+      id: 'story-1', title: 'História X',
+      story: { id: 'story-1', title: 'História X', type: 'STORY' } as unknown as ItemData,
+      tasks: [task],
+    } as StoryLaneGroup
+    renderLanes({
+      hideEpics: true,
+      showStoryLanes: true,
+      visibleModuleGroups: [{ module, epics: [{ epic, tasks: [], storyGroups: [storyGroup] }] }],
+    })
+    expect(screen.getByText('História X')).toBeInTheDocument()
   })
 })
