@@ -3342,6 +3342,168 @@ describe('gestão de squads e cadastros pelo catálogo (T25)', () => {
   })
 })
 
+describe('candidatos a membro do projeto', () => {
+  let tenantId: string
+  let otherTenantId: string
+  let admin: { id: string; email: string }
+  let member: { id: string; email: string }
+  let manager: { id: string; email: string }
+  let otherTenantUser: { id: string; email: string }
+  let adminToken: string
+  let memberToken: string
+  let managerToken: string
+  let projectId: string
+  let otherTenantProjectId: string
+
+  interface Candidate { id: string; name: string; email: string; avatarUrl: string | null; globalGroup: string; isMember: boolean }
+
+  async function candidates(session: string, id = projectId) {
+    return request(`/projects/${id}/member-candidates`, session)
+  }
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    otherTenantId = generateId()
+    await db.insert(tenants).values([
+      { id: tenantId, name: 'Candidatos', slug: `cand-${tenantId}`, createdAt: new Date().toISOString() },
+      { id: otherTenantId, name: 'Candidatos Outro', slug: `cand-out-${otherTenantId}`, createdAt: new Date().toISOString() },
+    ])
+    admin = await createUser(tenantId, 'cand-admin@test.local', 'Admin Candidatos', 'ADMIN')
+    member = await createUser(tenantId, 'cand-member@test.local', 'Membro Candidatos', 'TEAM_MEMBER')
+    manager = await createUser(tenantId, 'cand-manager@test.local', 'Gerente Candidatos', 'MANAGER')
+    otherTenantUser = await createUser(otherTenantId, 'cand-outro@test.local', 'Usuário de Outro Tenant', 'ADMIN')
+    adminToken = await token(admin.id, tenantId, admin.email)
+    memberToken = await token(member.id, tenantId, member.email)
+    managerToken = await token(manager.id, tenantId, manager.email)
+
+    const created = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Projeto Candidatos', boardMode: 'HIERARCHICAL' }),
+    })
+    projectId = (await created.json() as { id: string }).id
+    await request(`/projects/${projectId}/members`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: member.email, role: 'MEMBER' }),
+    })
+
+    const otherToken = await token(otherTenantUser.id, otherTenantId, otherTenantUser.email)
+    const otherProject = await request('/projects', otherToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Projeto de Outro Tenant', boardMode: 'HIERARCHICAL' }),
+    })
+    otherTenantProjectId = (await otherProject.json() as { id: string }).id
+  })
+
+  test('administrador do projeto recebe os usuários do tenant com isMember', async () => {
+    const response = await candidates(adminToken)
+    expect(response.status).toBe(200)
+    const body = await response.json() as Candidate[]
+
+    // O membro adicionado no setup vem sinalizado; quem não tem membership, não.
+    expect(body.find(item => item.id === member.id)).toMatchObject({ isMember: true, email: member.email, globalGroup: 'TEAM_MEMBER' })
+    expect(body.find(item => item.id === manager.id)).toMatchObject({ isMember: false, globalGroup: 'MANAGER' })
+    // O criador do projeto entra como membro, então também vem sinalizado.
+    expect(body.find(item => item.id === admin.id)).toMatchObject({ isMember: true, globalGroup: 'ADMIN' })
+
+    // O seletor depende de ordem estável por nome.
+    expect(body.map(item => item.name)).toEqual([...body.map(item => item.name)].sort((a, b) => a.localeCompare(b, 'pt-BR')))
+    for (const item of body) expect(item).toHaveProperty('avatarUrl')
+  })
+
+  test('não expõe usuários de outro tenant', async () => {
+    const body = await (await candidates(adminToken)).json() as Candidate[]
+    expect(body.some(item => item.email === otherTenantUser.email)).toBe(false)
+    expect(body.some(item => item.id === otherTenantUser.id)).toBe(false)
+  })
+
+  test('membro de equipe não lista candidatos', async () => {
+    const response = await candidates(memberToken)
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ error: { code: 'FORBIDDEN' } })
+  })
+
+  test('gerente sem vínculo não acessa projeto restrito', async () => {
+    const restricted = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Restrito Candidatos', boardMode: 'HIERARCHICAL', isRestricted: true }),
+    })
+    const restrictedId = (await restricted.json() as { id: string }).id
+
+    const response = await candidates(managerToken, restrictedId)
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ error: { code: 'RESOURCE_NOT_FOUND' } })
+  })
+
+  test('projeto de outro tenant não é encontrado', async () => {
+    const response = await candidates(adminToken, otherTenantProjectId)
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ error: { code: 'RESOURCE_NOT_FOUND' } })
+  })
+})
+
+describe('adição de membro por identificador', () => {
+  let tenantId: string
+  let otherTenantId: string
+  let target: { id: string; email: string }
+  let otherTenantUser: { id: string; email: string }
+  let adminToken: string
+  let projectId: string
+
+  async function addMember(body: Record<string, unknown>) {
+    return request(`/projects/${projectId}/members`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    })
+  }
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    otherTenantId = generateId()
+    await db.insert(tenants).values([
+      { id: tenantId, name: 'AddMembro', slug: `add-${tenantId}`, createdAt: new Date().toISOString() },
+      { id: otherTenantId, name: 'AddMembro Outro', slug: `add-out-${otherTenantId}`, createdAt: new Date().toISOString() },
+    ])
+    const admin = await createUser(tenantId, 'addm-admin@test.local', 'Admin AddMembro', 'ADMIN')
+    target = await createUser(tenantId, 'addm-target@test.local', 'Alvo AddMembro', 'TEAM_MEMBER')
+    otherTenantUser = await createUser(otherTenantId, 'addm-outro@test.local', 'Alvo de Outro Tenant', 'TEAM_MEMBER')
+    adminToken = await token(admin.id, tenantId, admin.email)
+
+    const created = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Projeto AddMembro', boardMode: 'HIERARCHICAL' }),
+    })
+    projectId = (await created.json() as { id: string }).id
+  })
+
+  test('adiciona por userId e recusa a repetição', async () => {
+    const created = await addMember({ userId: target.id, role: 'VIEWER' })
+    expect(created.status).toBe(201)
+    expect(await created.json()).toMatchObject({ ok: true, user: { id: target.id, email: target.email } })
+
+    const duplicate = await addMember({ userId: target.id, role: 'MEMBER' })
+    expect(duplicate.status).toBe(409)
+  })
+
+  test('exige exatamente um identificador', async () => {
+    const missing = await addMember({ role: 'MEMBER' })
+    expect(missing.status).toBe(400)
+
+    const both = await addMember({ userId: target.id, email: target.email, role: 'MEMBER' })
+    expect(both.status).toBe(400)
+  })
+
+  test('rejeita usuário de outro tenant por identificador', async () => {
+    const response = await addMember({ userId: otherTenantUser.id, role: 'MEMBER' })
+    expect(response.status).toBe(404)
+  })
+
+  test('mantém o caminho por e-mail para clientes existentes', async () => {
+    const byEmail = await createUser(tenantId, 'addm-email@test.local', 'Alvo por E-mail', 'TEAM_MEMBER')
+    const response = await addMember({ email: byEmail.email, role: 'MEMBER' })
+    expect(response.status).toBe(201)
+    expect(await response.json()).toMatchObject({ ok: true, user: { id: byEmail.id } })
+  })
+
+  test('e-mail de outro tenant não é encontrado', async () => {
+    const response = await addMember({ email: otherTenantUser.email, role: 'MEMBER' })
+    expect(response.status).toBe(404)
+  })
+})
+
 describe('filtro por última alteração (T57)', () => {
   let tenantId: string
   let adminToken: string

@@ -542,6 +542,28 @@ projectsRouter.get('/:id/members', requireRole('VIEWER'), async (c) => {
   return c.json(result)
 })
 
+// GET /projects/:id/member-candidates — usuários do tenant como candidatos a membro.
+// Serve ao seletor das configurações: a lista de membros é um recorte desta lista.
+projectsRouter.get('/:id/member-candidates', requireRole('ADMIN'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const projectId = c.req.param('id')!
+
+  // [TENANT] Usuários e memberships são lidos com tenant_id do contexto autenticado;
+  // nenhum usuário de outro tenant é exposto nem considerado como membro.
+  const [users, members] = await Promise.all([
+    persistence.identity.listUsers(userPersistenceContext(ctx)),
+    persistence.projects.listProjectMembers(userPersistenceContext(ctx), projectId),
+  ])
+  const memberIds = new Set(members.map(member => member.userId))
+
+  return c.json(users
+    .map(user => ({
+      id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl,
+      globalGroup: user.globalGroup, isMember: memberIds.has(user.id),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
+})
+
 // GET /projects/:id/squads — listar squads com contagem de membros
 projectsRouter.get('/:id/squads', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
@@ -632,9 +654,14 @@ projectsRouter.post('/:id/members', requireRole('ADMIN'), async (c) => {
     if (!squad) return c.json({ error: 'Squad não encontrado neste projeto' }, 400)
   }
 
-  // Buscar usuário por email dentro do mesmo tenant
-  // [TENANT] tenant_id garante que só usuários do mesmo tenant podem ser adicionados
-  const foundUser = await persistence.identity.findUserByCanonicalEmail(body.email)
+  // Resolve o usuário pelo identificador informado, sempre dentro do tenant.
+  // [TENANT] tenant_id garante que só usuários do mesmo tenant podem ser adicionados,
+  // tanto na busca por id quanto na busca por e-mail canônico.
+  const foundUser = body.userId
+    ? await persistence.identity.findUser(userPersistenceContext(ctx), body.userId)
+    : body.email
+      ? await persistence.identity.findUserByCanonicalEmail(body.email)
+      : null
   if (!foundUser || foundUser.tenantId !== ctx.tenantId) return c.json({ error: 'Usuário não encontrado no tenant' }, 404)
   const user = { id: foundUser.id, name: foundUser.name, email: foundUser.email, avatarUrl: foundUser.avatarUrl }
 

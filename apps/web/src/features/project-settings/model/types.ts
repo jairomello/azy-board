@@ -2,6 +2,9 @@ import type { BoardMode, Column, Sprint } from '@azy-board/domain'
 
 export type { Column, Sprint }
 export interface Member { userId: string; name: string; email: string; role: string; squadId?: string | null; squadName?: string | null; avatarUrl?: string | null }
+// Usuário do tenant como candidato a membro; `isMember` sinaliza quem já tem
+// membership ativa no projeto (aparece na lista, mas não é selecionável).
+export interface MemberCandidate { id: string; name: string; email: string; avatarUrl?: string | null; globalGroup: string; isMember: boolean }
 export interface Squad { id: string; name: string; memberCount: number }
 export interface Module { id: string; name: string; position: number }
 export interface CostCenter { id: string; code: string; description?: string | null; sortOrder: number }

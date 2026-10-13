@@ -366,7 +366,17 @@ export const projectMemberSchema = z.object({
   expectedSquadId: z.string().min(1).nullable().optional(),
   expectedRole: z.enum(['ADMIN', 'MEMBER', 'VIEWER']).optional(),
 }).strict()
-export const addProjectMemberSchema = z.object({ email: z.string().trim().email().max(320), role: z.enum(['ADMIN', 'MEMBER', 'VIEWER']), squadId: z.string().min(1).nullable().optional() }).strict()
+// Adicionar membro aceita exatamente um identificador: `userId` (preferido pela
+// UI, sem ambiguidade de canonicalização) ou `email` (compatibilidade com a
+// ferramenta de agente `add_member` e clientes existentes).
+export const addProjectMemberSchema = z.object({
+  userId: z.string().trim().min(1).optional(),
+  email: z.string().trim().email().max(320).optional(),
+  role: z.enum(['ADMIN', 'MEMBER', 'VIEWER']),
+  squadId: z.string().min(1).nullable().optional(),
+}).strict().refine(body => Boolean(body.userId) !== Boolean(body.email), {
+  message: 'Informe exatamente um entre userId e email',
+})
 export const costCenterSchema = z.object({ code: z.string().trim().min(1).max(100), description: optionalText(2_000).nullable().optional() }).strict()
 export const updateCostCenterSchema = costCenterSchema.partial().extend({ expectedCode: z.string().trim().min(1).max(100).optional() }).strict()
 

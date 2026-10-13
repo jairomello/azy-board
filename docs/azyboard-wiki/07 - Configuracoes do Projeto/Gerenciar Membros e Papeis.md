@@ -25,12 +25,12 @@ O papel vale para aquele projeto. Uma pessoa pode ser administradora em um proje
 ## Adicionar um membro
 
 1. Selecione **Adicionar membro**.
-2. Informe o e-mail da pessoa.
+2. Busque a pessoa pelo nome ou pelo e-mail e escolha-a na lista de usuários.
 3. Escolha o papel inicial.
 4. Se desejar, escolha um squad.
-5. Confirme em **Adicionar**.
+5. Confirme em **Confirmar**.
 
-A pessoa precisa possuir uma conta no mesmo ambiente organizacional. Um usuário já associado ao projeto não pode ser adicionado novamente.
+A lista apresenta os usuários do mesmo ambiente organizacional. Quem já participa do projeto aparece marcado como **Já é membro** e não pode ser escolhido; se ninguém estiver disponível, o sistema informa e mantém a confirmação desabilitada.
 
 ## Editar papel ou squad
 
@@ -84,7 +84,7 @@ Os membros disponíveis alimentam o campo **Responsável** dos itens. Ao adicion
 
 O acesso é representado por uma associação entre usuário, projeto e tenant. Ela armazena o papel e uma referência opcional ao squad.
 
-Ao adicionar alguém, o backend procura o e-mail no mesmo tenant, rejeita duplicidade e cria a associação. Alterações e remoções são filtradas por tenant e projeto. O middleware compara o papel mínimo de cada rota segundo a ordem `VIEWER < MEMBER < ADMIN`.
+A lista de candidatos devolve os usuários do tenant ativo com a indicação de quem já possui associação ao projeto. Ao adicionar alguém, a associação é criada pelo identificador do usuário, sempre dentro do mesmo tenant, e a duplicidade é rejeitada. O envio por e-mail continua aceito para agentes e clientes existentes. Alterações e remoções são filtradas por tenant e projeto. O middleware compara o papel mínimo de cada rota segundo a ordem `VIEWER < MEMBER < ADMIN`.
 
 </details>
 

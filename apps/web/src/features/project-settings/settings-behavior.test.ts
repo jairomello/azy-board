@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { canAccessProjectSettings, runDeleteMutation, runSettingsMutation, updateSettingsField } from './model/behavior'
-import type { ProjectSettingsData } from './model/types'
+import { canAccessProjectSettings, filterMemberCandidates, memberCandidateState, runDeleteMutation, runSettingsMutation, updateSettingsField } from './model/behavior'
+import type { MemberCandidate, ProjectSettingsData } from './model/types'
 
 const data: ProjectSettingsData = {
   projectName: 'Projeto', manager: null, managerUserId: '', boardMode: 'HIERARCHICAL',
@@ -62,5 +62,43 @@ describe('comportamentos observáveis das seções de Settings', () => {
     })
     expect(result).toBe(true)
     expect(JSON.stringify(events)).toBe(JSON.stringify(['success']))
+  })
+})
+
+describe('seletor de membros a partir dos usuários do tenant', () => {
+  const candidates: MemberCandidate[] = [
+    { id: 'u1', name: 'Ana Souza', email: 'ana@empresa.com', avatarUrl: null, globalGroup: 'TEAM_MEMBER', isMember: false },
+    { id: 'u2', name: 'Bruno Lima', email: 'bruno@empresa.com', avatarUrl: null, globalGroup: 'MANAGER', isMember: true },
+    { id: 'u3', name: 'Carla Dias', email: 'carla@outro.com', avatarUrl: null, globalGroup: 'ADMIN', isMember: false },
+  ]
+
+  test('filtra por nome sem diferenciar maiúsculas', () => {
+    expect(filterMemberCandidates(candidates, 'ana').map(item => item.id)).toEqual(['u1'])
+    expect(filterMemberCandidates(candidates, 'BRUNO').map(item => item.id)).toEqual(['u2'])
+  })
+
+  test('filtra por e-mail', () => {
+    expect(filterMemberCandidates(candidates, 'outro.com').map(item => item.id)).toEqual(['u3'])
+    expect(filterMemberCandidates(candidates, 'empresa.com').map(item => item.id)).toEqual(['u1', 'u2'])
+  })
+
+  test('termo vazio mantém a lista completa e sem correspondência fica vazia', () => {
+    expect(filterMemberCandidates(candidates, '   ').map(item => item.id)).toEqual(['u1', 'u2', 'u3'])
+    expect(filterMemberCandidates(candidates, 'inexistente')).toEqual([])
+  })
+
+  test('sinaliza quem já é membro sem removê-lo da lista', () => {
+    const visible = filterMemberCandidates(candidates, '')
+    expect(visible.find(item => item.id === 'u2')).toMatchObject({ isMember: true })
+    expect(visible.find(item => item.id === 'u1')).toMatchObject({ isMember: false })
+  })
+
+  test('estado do seletor prioriza erro e distingue vazio de pronto', () => {
+    expect(memberCandidateState({ loading: false, hasError: true, visible: candidates })).toBe('error')
+    expect(memberCandidateState({ loading: true, hasError: false, visible: candidates })).toBe('loading')
+    expect(memberCandidateState({ loading: false, hasError: false, visible: candidates })).toBe('ready')
+    // Todos já são membros: nada selecionável.
+    expect(memberCandidateState({ loading: false, hasError: false, visible: candidates.filter(item => item.isMember) })).toBe('empty')
+    expect(memberCandidateState({ loading: false, hasError: false, visible: [] })).toBe('empty')
   })
 })

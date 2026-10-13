@@ -9,6 +9,7 @@ import type {
   CostCenter,
   Manager,
   Member,
+  MemberCandidate,
   Module,
   ProjectSettingsData,
   ProjectVersion,
@@ -18,8 +19,13 @@ import type {
 } from '../model/types'
 import { canAccessProjectSettings, updateSettingsField } from '../model/behavior'
 
+// Seções de metadados vindas do servidor (eventos do WebSocket).
 export type SettingsSectionName =
   | 'columns' | 'members' | 'squads' | 'modules' | 'versions' | 'costCenters' | 'sprints' | 'project'
+
+// Seções do cache de Settings. `memberCandidates` é derivada (usuários do tenant
+// cruzados com as memberships) e não chega por evento do servidor.
+export type SettingsQuerySection = SettingsSectionName | 'memberCandidates'
 
 const EMPTY_PROJECT: ProjectSettingsData = {
   projectName: '', manager: null, managerUserId: '', boardMode: 'HIERARCHICAL',
@@ -34,7 +40,7 @@ export function useProjectSettingsData(projectId: string | undefined) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const key = useCallback(
-    (section: SettingsSectionName) => queryKeys.settings(user?.id, projectId, section),
+    (section: SettingsQuerySection) => queryKeys.settings(user?.id, projectId, section),
     [user?.id, projectId],
   )
 
@@ -46,6 +52,16 @@ export function useProjectSettingsData(projectId: string | undefined) {
   const costCentersQuery = useQuery({ queryKey: key('costCenters'), enabled: Boolean(projectId), queryFn: ({ signal }) => api.get<CostCenter[]>(`/projects/${projectId}/cost-centers`, { signal }) })
   const sprintsQuery = useQuery({ queryKey: key('sprints'), enabled: Boolean(projectId), queryFn: ({ signal }) => api.get<Sprint[]>(`/projects/${projectId}/sprints`, { signal }).catch(() => [] as Sprint[]) })
   const projectQuery = useQuery({ queryKey: key('project'), enabled: Boolean(projectId), queryFn: ({ signal }) => api.get<SettingsProject>(`/projects/${projectId}`, { signal }) })
+
+  // Quem administra o projeto é quem pode ver o seletor; a consulta de candidatos
+  // só é disparada nesse caso (a rota exige papel de administração no projeto).
+  const currentMember = (membersQuery.data ?? []).find(member => member.userId === user?.id)
+  const isAdmin = canAccessProjectSettings(user?.globalGroup) && (currentMember?.role === 'ADMIN' || ['MANAGER', 'ADMIN', 'ROOT'].includes(user?.globalGroup ?? ''))
+  const memberCandidatesQuery = useQuery({
+    queryKey: key('memberCandidates'),
+    enabled: Boolean(projectId) && isAdmin,
+    queryFn: ({ signal }) => api.get<MemberCandidate[]>(`/projects/${projectId}/member-candidates`, { signal }),
+  })
 
   const columns = columnsQuery.data ?? []
   const members = membersQuery.data ?? []
@@ -85,8 +101,12 @@ export function useProjectSettingsData(projectId: string | undefined) {
 
   // Padrão reconciliado: mutações pedem a invalidação da(s) seção(ões) afetada(s)
   // após o sucesso; o cache nunca é editado antes da resposta.
+  // Candidatos derivam de usuários + memberships, então invalidar `members`
+  // invalida `memberCandidates` junto.
   const invalidate = useCallback((...sections: SettingsSectionName[]) => {
-    return Promise.all(sections.map(section => queryClient.invalidateQueries({ queryKey: key(section) })))
+    const targets = new Set<SettingsQuerySection>(sections.flatMap(section => section === 'members' ? [section, 'memberCandidates'] : [section]))
+    const list = Array.from(targets)
+    return Promise.all(list.map(section => queryClient.invalidateQueries({ queryKey: key(section) })))
   }, [queryClient, key])
 
   // Invalida todas as seções de Settings (ex.: reconexão do WebSocket).
@@ -98,9 +118,6 @@ export function useProjectSettingsData(projectId: string | undefined) {
   const applyProject = useCallback((project: SettingsProject) => {
     queryClient.setQueryData(key('project'), project)
   }, [queryClient, key])
-
-  const currentMember = members.find(member => member.userId === user?.id)
-  const isAdmin = canAccessProjectSettings(user?.globalGroup) && (currentMember?.role === 'ADMIN' || ['MANAGER', 'ADMIN', 'ROOT'].includes(user?.globalGroup ?? ''))
 
   return {
     user,
@@ -122,6 +139,9 @@ export function useProjectSettingsData(projectId: string | undefined) {
      setIcon: (value: string | null) => setData(previous => updateSettingsField(previous, 'icon', value)),
      setColor: (value: string | null) => setData(previous => updateSettingsField(previous, 'color', value)),
     columns, members, squads, modules, versions, costCenters, sprints,
+    memberCandidates: memberCandidatesQuery.data ?? [],
+    memberCandidatesLoading: memberCandidatesQuery.isLoading,
+    memberCandidatesError: memberCandidatesQuery.error,
     invalidate, invalidateAll, applyProject,
     currentMember, isAdmin,
   }
