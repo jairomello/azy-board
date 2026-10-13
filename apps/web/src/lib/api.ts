@@ -80,9 +80,32 @@ function combineSignals(primary?: AbortSignal | null, secondary?: AbortSignal | 
   return controller.signal
 }
 
+// Redireciona para o login quando a sessão expira. Em deploy path-based (ex.:
+// /azyboard/), o href usa window.__BASE_PATH__ (injetado pelo proxy) e o
+// pathname é normalizado para ser relativo ao base, para que o navigate
+// (redirect) do React Router resolva correto.
+function redirectToLogin(): never {
+  const BASE_PATH = ((window as { __BASE_PATH__?: string }).__BASE_PATH__ || '').replace(/\/+$/, '')
+  let currentPath = window.location.pathname
+  if (BASE_PATH && currentPath.startsWith(BASE_PATH)) {
+    currentPath = currentPath.slice(BASE_PATH.length) || '/'
+  }
+  window.location.href = `${BASE_PATH}/login?redirect=${encodeURIComponent(currentPath)}`
+  throw new Error('Sessão expirada')
+}
+
+/** Converte uma resposta não-ok no ApiError de domínio. */
+async function parseErrorResponse(res: Response): Promise<ApiError> {
+  const body = await res.json().catch(() => null) as { error?: string | { code?: string; message?: string; details?: unknown; retryable?: boolean }; code?: string } | null
+  const error = body?.error
+  if (error && typeof error === 'object') {
+    return new ApiError(error.message ?? `HTTP ${res.status}`, res.status, error.code, error.details, error.retryable === true)
+  }
+  return new ApiError(typeof error === 'string' ? error : `HTTP ${res.status}`, res.status, body?.code)
+}
+
 async function executeRequest<T>(path: string, options: ApiRequestOptions): Promise<T> {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, ...init } = options
-  // FormData não pode receber Content-Type manual: o browser define o boundary.
   const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData
   const timeout = createTimeoutSignal(timeoutMs)
   const signal = combineSignals(init.signal, timeout.signal)
@@ -110,26 +133,11 @@ async function executeRequest<T>(path: string, options: ApiRequestOptions): Prom
   }
 
   if (res.status === 401 && path !== '/auth/me') {
-    // Redirecionar para login quando sessão expirar.
-    // Em deploy path-based (ex.: /azyboard/), o href usa window.__BASE_PATH__
-    // (injetado pelo proxy) e o pathname e normalizado para ser relativo ao
-    // base, para que o navigate(redirect) do React Router resolva correto.
-    const BASE_PATH = ((window as { __BASE_PATH__?: string }).__BASE_PATH__ || '').replace(/\/+$/, '')
-    let currentPath = window.location.pathname
-    if (BASE_PATH && currentPath.startsWith(BASE_PATH)) {
-      currentPath = currentPath.slice(BASE_PATH.length) || '/'
-    }
-    window.location.href = `${BASE_PATH}/login?redirect=${encodeURIComponent(currentPath)}`
-    throw new Error('Sessão expirada')
+    redirectToLogin()
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => null) as { error?: string | { code?: string; message?: string; details?: unknown; retryable?: boolean }; code?: string } | null
-    const error = body?.error
-    if (error && typeof error === 'object') {
-      throw new ApiError(error.message ?? `HTTP ${res.status}`, res.status, error.code, error.details, error.retryable === true)
-    }
-    throw new ApiError(typeof error === 'string' ? error : `HTTP ${res.status}`, res.status, body?.code)
+    throw await parseErrorResponse(res)
   }
 
   if (res.status === 204) return undefined as T
@@ -152,6 +160,44 @@ async function request<T>(path: string, options: ApiRequestOptions = {}): Promis
   }
 }
 
+/** Arquivo binário baixado pela API (ex.: `.zip` da skill oficial). */
+export interface DownloadedFile {
+  blob: Blob
+  fileName: string | null
+}
+
+function fileNameFromDisposition(disposition: string | null): string | null {
+  if (!disposition) return null
+  const match = /filename="?([^";]+)"?/i.exec(disposition)
+  return match?.[1] ?? null
+}
+
+// Download binário pela mesma porta HTTP: mantém cookie de sessão, timeout,
+// redirecionamento de sessão expirada e tratamento de erro do cliente comum.
+async function downloadFile(path: string, options: ApiRequestOptions = {}): Promise<DownloadedFile> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, ...init } = options
+  const timeout = createTimeoutSignal(timeoutMs)
+  const signal = combineSignals(init.signal, timeout.signal)
+
+  let res: Response
+  try {
+    res = await fetch(`${BASE}${path}`, { ...init, signal, credentials: 'include' })
+  } catch (error) {
+    if (timeout.didTimeout() && !init.signal?.aborted) {
+      throw new ApiError('Tempo limite excedido ao falar com o servidor', 408, 'TIMEOUT', null, true)
+    }
+    if (isAbortError(error)) throw error
+    throw new ApiError(error instanceof Error ? error.message : 'Falha de rede', 0, 'NETWORK_ERROR', null, true)
+  } finally {
+    timeout.cleanup()
+  }
+
+  if (res.status === 401 && path !== '/auth/me') redirectToLogin()
+  if (!res.ok) throw await parseErrorResponse(res)
+
+  return { blob: await res.blob(), fileName: fileNameFromDisposition(res.headers.get('Content-Disposition')) }
+}
+
 export const api = {
   get: <T>(path: string, options?: ApiRequestOptions) => request<T>(path, options),
   post: <T>(path: string, body: unknown, options?: ApiRequestOptions) => request<T>(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
@@ -166,6 +212,8 @@ export const api = {
   upload: <T>(path: string, formData: FormData, options?: ApiRequestOptions) => request<T>(path, { ...options, method: 'PUT', body: formData }),
   // Upload multipart via POST (endpoint de anexos).
   postForm: <T>(path: string, formData: FormData, options?: ApiRequestOptions) => request<T>(path, { ...options, method: 'POST', body: formData }),
+  // Download binário (ex.: `.zip` da skill oficial) pela porta HTTP única.
+  download: (path: string, options?: ApiRequestOptions) => downloadFile(path, options),
 }
 
 export function cn(...classes: (string | undefined | false | null)[]) {

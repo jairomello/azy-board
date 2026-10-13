@@ -159,6 +159,19 @@ describe('contrato de fonte única do catálogo MCP', () => {
     expect(() => validateToolArguments('create_project', { name: 'P', ocultarModulos: true })).toThrow('Campo desconhecido: ocultarModulos em create_project')
   })
 
+  test('delete_project expõe dryRun opcional com descrição própria', () => {
+    const tool = byName.get('delete_project')!
+    const properties = tool.inputSchema.properties as Record<string, { type?: unknown; description?: string }>
+    expect(properties.dryRun).toMatchObject({ type: ['boolean', 'null'] })
+    expect(String(properties.dryRun?.description)).toContain('Pré-visualização')
+    expect(Object.keys(properties)).toEqual(['projectId', 'dryRun'])
+    expect(requiredFieldsFor('delete_project')).toEqual(['projectId'])
+    expect(() => validateToolArguments('delete_project', { projectId: 'p', dryRun: true })).not.toThrow()
+    expect(() => validateToolArguments('delete_project', { projectId: 'p', dryRun: false })).not.toThrow()
+    expect(() => validateToolArguments('delete_project', { projectId: 'p', dryRun: 'sim' })).toThrow('dryRun deve ser booleano')
+    expect(coerceArgumentsBySchema('delete_project', { projectId: 'p', dryRun: 'true' }).dryRun).toBe(true)
+  })
+
   test('create_version aceita campos opcionais e mantém name obrigatório', () => {
     expect(new Set(requiredFieldsFor('create_version'))).toEqual(new Set(['projectId', 'name']))
     const properties = byName.get('create_version')!.inputSchema.properties

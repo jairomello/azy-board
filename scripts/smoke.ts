@@ -98,6 +98,32 @@ const adminCookie = await login(adminEmail, adminPassword)
 await expectStatus(webUrl, '/api/auth/me', 200, { cookie: adminCookie })
 console.log('OK login/cookie e /api/auth/me autenticado')
 
+// change official-skill-download: a skill oficial é baixável como .zip autenticado.
+await expectStatus(webUrl, '/api/skills/azyboard/download', 401)
+const skillResponse = await expectStatus(webUrl, '/api/skills/azyboard/download', 200, { cookie: adminCookie })
+assert(skillResponse.headers.get('content-type')?.includes('application/zip'), 'download da skill não retornou application/zip')
+assert(/attachment; filename="azyboard-skill-.+\.zip"/.test(skillResponse.headers.get('content-disposition') ?? ''), 'download da skill sem Content-Disposition esperado')
+const skillBytes = new Uint8Array(await skillResponse.arrayBuffer())
+assert(skillBytes[0] === 0x50 && skillBytes[1] === 0x4b && skillBytes[2] === 0x03 && skillBytes[3] === 0x04, 'download da skill não é um arquivo ZIP')
+console.log('OK download da skill oficial (.zip) autenticado e 401 sem sessão')
+
+// change account-password-change: troca de senha pelo próprio usuário (login local).
+const passwordEmail = `pw-${crypto.randomUUID()}@smoke.invalid`
+const passwordCurrent = 'SmokeAtual123!'
+const passwordNew = 'SmokeNova456!'
+await expectStatus(webUrl, '/api/users', 201, {
+  method: 'POST', cookie: adminCookie, body: { email: passwordEmail, name: 'Senha Smoke', password: passwordCurrent, globalGroup: 'TEAM_MEMBER' },
+})
+const passwordCookie = await login(passwordEmail, passwordCurrent)
+await expectStatus(webUrl, '/api/users/me/password', 401, {
+  method: 'PATCH', cookie: passwordCookie, body: { currentPassword: 'Errada999!', newPassword: passwordNew, confirmPassword: passwordNew },
+})
+await expectStatus(webUrl, '/api/users/me/password', 200, {
+  method: 'PATCH', cookie: passwordCookie, body: { currentPassword: passwordCurrent, newPassword: passwordNew, confirmPassword: passwordNew },
+})
+await login(passwordEmail, passwordNew)
+console.log('OK troca de senha do próprio usuário no login local')
+
 const projectId = await createProject(adminCookie, `Smoke principal ${crypto.randomUUID()}`)
 const viewerCreated = await expectStatus(webUrl, '/api/users', 201, {
   method: 'POST', cookie: adminCookie,

@@ -43,6 +43,14 @@ describe('contrato de campos opcionais do MCP', () => {
     expect(schema.required).toEqual(['name'])
   })
 
+  test('delete_project expõe dryRun opcional com descrição, sem alterar required', async () => {
+    const tool = (await exposedTools()).find(item => item.name === 'delete_project')!
+    const schema = tool.inputSchema as unknown as { required: string[]; properties: Record<string, { type: unknown; description?: string }> }
+    expect(schema.required).toEqual(['projectId'])
+    expect(schema.properties.dryRun?.type).toEqual(['boolean', 'null'])
+    expect(String(schema.properties.dryRun?.description)).toContain('Pré-visualização')
+  })
+
   test('ferramentas de projeto expõem hideModules/hideEpics opcionais com descrição', async () => {
     for (const name of ['create_project', 'update_project', 'create_project_structure']) {
       const tool = (await exposedTools()).find(item => item.name === name)!
@@ -288,6 +296,21 @@ describe('coerção de tipos e campos desconhecidos na fronteira de execução',
     await expect(executeSharedTool('create_project', { name: 'X', hideModules: 'sim' }, { api, context })).rejects.toThrow('hideModules deve ser booleano')
     await expect(executeSharedTool('update_project', { projectId: UUID, hideEpics: 'talvez' }, { api, context })).rejects.toThrow('hideEpics deve ser booleano')
     expect(called).toBe(false)
+  })
+
+  test('delete_project encaminha dryRun no DELETE e o omite quando ausente', async () => {
+    const calls: Array<{ path: string; method?: string; body?: unknown }> = []
+    const api: ApiCall = async (path, method, body) => { calls.push({ path, method, body }); return { ok: true } }
+
+    await executeSharedTool('delete_project', { projectId: UUID, dryRun: true }, { api, context })
+    expect(calls[0]).toMatchObject({ path: `/projects/${UUID}`, method: 'DELETE', body: { dryRun: true } })
+
+    await executeSharedTool('delete_project', { projectId: UUID }, { api, context })
+    expect(calls[1]).toMatchObject({ path: `/projects/${UUID}`, method: 'DELETE' })
+    expect(calls[1]!.body).toBeUndefined()
+
+    await expect(executeSharedTool('delete_project', { projectId: UUID, dryRun: 'sim' }, { api, context })).rejects.toThrow('dryRun deve ser booleano')
+    expect(calls).toHaveLength(2)
   })
 
   test('fields como string JSON aplica projeção', async () => {

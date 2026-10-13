@@ -58,7 +58,8 @@ ENV NODE_ENV=production \
     PORT=3000 \
     MIGRATIONS_DIR=/app/migrations \
     PG_MIGRATIONS_DIR=/app/migrations-pg \
-    UPLOADS_DIR=/app/uploads
+    UPLOADS_DIR=/app/uploads \
+    AZYBOARD_SKILL_DIR=/app/skills/azyboard
 # O linker isolado do Bun mantém o store em node_modules/.bun e symlinks por
 # workspace (apps/api/node_modules); copiar ambos é necessário para resolver
 # dependências nativas em runtime (sharp/@img).
@@ -66,6 +67,9 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=prod-deps /app/apps/api/node_modules apps/api/node_modules
 COPY --from=prod-deps /app/package.json ./package.json
 COPY --from=build /app/packages ./packages
+# Skill oficial embarcada para download em Minha conta (change official-skill-download);
+# o caminho precisa casar com AZYBOARD_SKILL_DIR definido no ENV abaixo.
+COPY --from=build /app/skills/azyboard ./skills/azyboard
 COPY --from=build /app/apps/api/package.json apps/api/package.json
 COPY --from=build /app/apps/api/dist apps/api/dist
 # T60: versão do build embarcada na imagem, lida pela rota pública GET /version.

@@ -1,10 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, Copy, Link2, Sparkles } from 'lucide-react'
+import { Check, Copy, Download, Link2, Sparkles } from 'lucide-react'
 import { copyTextToClipboard } from '../lib/clipboard'
+import { api } from '../lib/api'
+import { resolveAppUrl } from '../lib/appUrl'
 import { resolveMcpUrl } from '../lib/mcpUrl'
 
 type CopyTarget = 'url' | 'instruction'
+
+const SKILL_DOWNLOAD_HREF = '/api/skills/azyboard/download'
+// Caminho relativo ao BASE do cliente HTTP (`api.download`), que já recebe o
+// `/api` internamente e é prefixado com o base path pelo interceptor global.
+const SKILL_DOWNLOAD_PATH = '/skills/azyboard/download'
+
+/** Dispara o download de um blob via âncora temporária. */
+function triggerBlobDownload(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fileName
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
 
 // Orientação de conexão do MCP exibida no topo da seção de API Keys: explica a
 // finalidade da chave, mostra a URL do MCP da instalação e oferece a cópia da
@@ -15,7 +34,10 @@ export function McpConnectionGuide() {
 
   const [copied, setCopied] = useState<CopyTarget | null>(null)
   const [failed, setFailed] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [downloadFailed, setDownloadFailed] = useState(false)
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const downloadUrl = resolveAppUrl(SKILL_DOWNLOAD_HREF)
 
   useEffect(() => () => {
     if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
@@ -40,6 +62,23 @@ export function McpConnectionGuide() {
     : copied === 'instruction'
       ? t('mcpGuideInstructionCopied')
       : ''
+
+  async function handleDownload(event: React.MouseEvent<HTMLAnchorElement>) {
+    if (!downloadUrl) return
+    // Intercepta o clique para poder comunicar falhas; sem rede o usuário vê o
+    // aviso em vez de um erro silencioso do navegador.
+    event.preventDefault()
+    setDownloading(true)
+    setDownloadFailed(false)
+    try {
+      const { blob, fileName } = await api.download(SKILL_DOWNLOAD_PATH)
+      triggerBlobDownload(blob, fileName ?? 'azyboard-skill.zip')
+    } catch {
+      setDownloadFailed(true)
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   function copyButtonClass(target: CopyTarget) {
     return `flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg border bg-background transition flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
@@ -77,6 +116,21 @@ export function McpConnectionGuide() {
             {copied === 'instruction' ? <Check className="w-3.5 h-3.5" aria-hidden="true" /> : <Copy className="w-3.5 h-3.5" aria-hidden="true" />}
             {copied === 'instruction' ? t('mcpGuideInstructionCopied') : t('mcpGuideCopyInstruction')}
           </button>
+
+          <a
+            href={downloadUrl}
+            download
+            onClick={(event) => void handleDownload(event)}
+            aria-disabled={downloading}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 mt-2 text-xs rounded-lg border border-border bg-background transition flex-shrink-0 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${downloading ? 'opacity-60 pointer-events-none' : ''}`}
+          >
+            <Download className="w-3.5 h-3.5" aria-hidden="true" />
+            {downloading ? t('mcpGuideDownloading') : t('mcpGuideDownloadSkill')}
+          </a>
+
+          {downloadFailed && (
+            <p role="alert" className="text-xs text-red-600 dark:text-red-400 mt-2">{t('mcpGuideDownloadFailed')}</p>
+          )}
 
           <span role="status" aria-live="polite" className="sr-only">{statusMessage}</span>
 

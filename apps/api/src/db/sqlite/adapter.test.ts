@@ -465,3 +465,27 @@ describe('recolhimento de módulos e épicos (Card T61)', () => {
     sqlite.close()
   })
 })
+
+describe('adapter SQLite — troca de senha do usuário', () => {
+  test('grava o novo hash, é escopada por tenant e não expõe passwordHash', async () => {
+    const { sqlite, database, ports } = setup()
+    const now = new Date().toISOString()
+    const userId = crypto.randomUUID()
+    await database.insert(schema.users).values({
+      id: userId, tenantId: 'tenant-a', email: `${userId}@test.local`, passwordHash: 'antigo', name: 'Senha',
+      globalGroup: 'TEAM_MEMBER', createdAt: now, theme: 'light', lightShellTheme: 'petroleum', language: 'pt-BR',
+    })
+    const selfContext: PersistenceContext = { tenantId: 'tenant-a', actorUserId: userId, actorKind: 'USER' }
+
+    const updated = await ports.identity.updateUserPassword(selfContext, userId, 'novo-hash')
+    expect(updated).not.toBeNull()
+    expect((updated as Record<string, unknown>).passwordHash).toBeUndefined()
+    expect((await database.query.users.findFirst({ where: eq(schema.users.id, userId) }))?.passwordHash).toBe('novo-hash')
+
+    // Escopo por tenant: contexto de outro tenant não altera o usuário.
+    const stranger = await ports.identity.updateUserPassword({ ...selfContext, tenantId: 'tenant-b' }, userId, 'invasor')
+    expect(stranger).toBeNull()
+    expect((await database.query.users.findFirst({ where: eq(schema.users.id, userId) }))?.passwordHash).toBe('novo-hash')
+    sqlite.close()
+  })
+})

@@ -362,7 +362,11 @@ function schemaFor(field: string, isRequired: boolean, toolName?: string): Recor
   if (field === 'from' || field === 'to') return { ...nullable({ type: 'string' }), description: 'Data UTC no formato AAAA-MM-DD (período do burnup/horas).' }
   if (toolName === 'query_planning_gaps' && field === 'referenceDate') return { ...nullable({ type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' }), description: 'Data de referência YYYY-MM-DD obrigatória ao usar hoje/amanhã.' }
   if (toolName === 'query_planning_gaps' && field === 'timeZone') return { ...nullable({ type: 'string' }), description: 'Fuso IANA obrigatório ao usar hoje/amanhã (ex.: America/Sao_Paulo).' }
-  if (field === 'onlyLeaves' || field === 'atomic' || field === 'confirm' || field === 'dryRun' || field === 'checked') return nullable({ type: 'boolean' })
+  // Pré-visualização de operação destrutiva (delete_project): informa o que
+  // seria afetado sem excluir nem alterar nada. A confirmação é uma nova
+  // chamada sem o campo.
+  if (field === 'dryRun') return { ...nullable({ type: 'boolean' }), description: 'Pré-visualização (padrão false): true devolve as contagens do que seria afetado e não exclui nem altera nada.' }
+  if (field === 'onlyLeaves' || field === 'atomic' || field === 'confirm' || field === 'checked') return nullable({ type: 'boolean' })
   if (field === 'advancedChecklists') return { ...nullable({ type: 'boolean' }), description: 'Habilita data, responsável e descrição nos itens de checklist do projeto (padrão false).' }
   if (field === 'hideModules') return { ...nullable({ type: 'boolean' }), description: 'Projeto HIERARCHICAL: oculta o nível de módulos no board (padrão false).' }
   if (field === 'hideEpics') return { ...nullable({ type: 'boolean' }), description: 'Projeto HIERARCHICAL: oculta o nível de épicos no board (padrão false).' }

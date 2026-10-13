@@ -44,3 +44,15 @@ export interface AuthProvidersResponse {
   /** URL de início do fluxo OAuth quando o provedor é integrado. */
   oauthStartUrl: string | null
 }
+
+// change account-password-change — troca de senha pelo próprio usuário no
+// login local. O valor nunca é ecoado de volta em respostas ou logs.
+export interface ChangePasswordRequest {
+  currentPassword: string
+  newPassword: string
+  confirmPassword: string
+}
+
+export interface ChangePasswordResponse {
+  ok: true
+}

@@ -45,6 +45,7 @@ update_project(projectId, changes: { hideEpics: true })                  # ocult
 - Crie ou atualize somente depois de ler o estado atual.
 - Use `claim_task` para reservar TASK/BUG e `release_task` para liberar.
 - Use `move_task` com nome exato da coluna; prefira `complete_task` ao concluir.
+- Antes de excluir em cascata, faça a **pré-visualização** com `delete_project(projectId, dryRun: true)`: ela devolve as contagens do que seria afetado (itens, módulos, membros, colunas, sprints, versões, squads, tags, conversas) e **não exclui nada**. A exclusão é uma nova chamada **sem** `dryRun` (exige ADMIN); `dryRun` não confirma nada por si só.
 - Prefira operações em lote a chamadas repetidas: `batch_move` move até 500 cards para uma coluna atomicamente; `update_items` atualiza campos por filtro; `batch` cria hierarquias.
 - Use `batch` para criações relacionadas que se beneficiem de atomicidade, com `idempotencyKey` quando houver reenvio possível.
 - Use checklist para passos verificáveis da mesma unidade; use subtask quando houver responsável, estimativa ou ciclo Kanban independente.

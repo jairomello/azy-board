@@ -186,6 +186,24 @@ export const createUserSchema = z.object({ email: z.string().trim().email().max(
 })
 export const groupSchema = z.object({ globalGroup: z.enum(['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT']) }).strict()
 export const preferencesSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), theme: z.enum(['light', 'dark']).optional(), lightShellTheme: z.enum(LIGHT_SHELL_THEMES).optional(), language: z.enum(['pt-BR', 'en', 'es']).optional(), autoThemeByTime: z.boolean().optional() }).strict()
+
+// change account-password-change — troca de senha do próprio usuário (login local).
+// Aplica a política compartilhada (passwordPolicyIssues) e exige composição:
+// ao menos uma maiúscula, um dígito e um símbolo.
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1).max(200),
+  newPassword: z.string().min(1).max(200),
+  confirmPassword: z.string().min(1).max(200),
+}).strict().superRefine((value, ctx) => {
+  if (value.newPassword !== value.confirmPassword) {
+    ctx.addIssue({ code: 'custom', path: ['confirmPassword'], message: 'A confirmação não confere com a nova senha' })
+  }
+  const issues = passwordPolicyIssues(value.newPassword)
+  if (issues.length > 0) ctx.addIssue({ code: 'custom', path: ['newPassword'], message: issues.join('; ') })
+  if (!/[A-Z]/.test(value.newPassword)) ctx.addIssue({ code: 'custom', path: ['newPassword'], message: 'A nova senha precisa de ao menos uma letra maiúscula' })
+  if (!/[0-9]/.test(value.newPassword)) ctx.addIssue({ code: 'custom', path: ['newPassword'], message: 'A nova senha precisa de ao menos um número' })
+  if (!/[^A-Za-z0-9]/.test(value.newPassword)) ctx.addIssue({ code: 'custom', path: ['newPassword'], message: 'A nova senha precisa de ao menos um símbolo' })
+})
 export const projectApiKeySchema = z.object({ name: z.string().trim().min(1).max(200), aiModelName: z.string().max(200).optional(), permissionScope: z.array(z.string().min(1)).optional(), expiresAt: z.string().nullable().optional() }).strict()
 export const userApiKeySchema = projectApiKeySchema.extend({ projectScope: z.array(z.string().min(1)).optional() }).strict()
 const governanceShape = {
@@ -393,6 +411,7 @@ const openApiSchemaMap = {
   VersionRequest: versionSchema,
   CreateUserRequest: createUserSchema,
   PreferencesRequest: preferencesSchema,
+  ChangePasswordRequest: changePasswordSchema,
   ApiKeyRequest: userApiKeySchema,
 } as const
 

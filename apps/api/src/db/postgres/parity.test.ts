@@ -212,8 +212,34 @@ describe.skipIf(!runPostgres)('Paridade SIMPLE ↔ ADVANCED', () => {
     }
   })
 
-  test('modelos do agente têm a mesma ordem, disponibilidade e revogação nos dois adapters', async () => {
+  test('troca de senha grava o hash, é escopada por tenant e não expõe passwordHash', async () => {
     const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const tenantSqlite = await sqlite.ports.tenants.createTenant({ name: 'T', slug: `pw-sqlite-${crypto.randomUUID()}` })
+      const tenantPg = await pg.ports.tenants.createTenant({ name: 'T', slug: `pw-pg-${crypto.randomUUID()}` })
+      const userSqlite = await sqlite.ports.identity.createUser({ tenantId: tenantSqlite.id, actorUserId: null, actorKind: 'SYSTEM' }, { email: `p-${crypto.randomUUID()}@test.local`, passwordHash: 'antigo', name: 'Senha', globalGroup: 'TEAM_MEMBER' })
+      const userPg = await pg.ports.identity.createUser({ tenantId: tenantPg.id, actorUserId: null, actorKind: 'SYSTEM' }, { email: `p-${crypto.randomUUID()}@test.local`, passwordHash: 'antigo', name: 'Senha', globalGroup: 'TEAM_MEMBER' })
+      const ctxSqlite = { tenantId: tenantSqlite.id, actorUserId: userSqlite.id, actorKind: 'USER' as const }
+      const ctxPg = { tenantId: tenantPg.id, actorUserId: userPg.id, actorKind: 'USER' as const }
+      const updatedSqlite = await sqlite.ports.identity.updateUserPassword(ctxSqlite, userSqlite.id, 'novo-hash')
+      const updatedPg = await pg.ports.identity.updateUserPassword(ctxPg, userPg.id, 'novo-hash')
+      // Retorno público: nunca expõe o hash.
+      expect((updatedSqlite as Record<string, unknown>).passwordHash).toBeUndefined()
+      expect((updatedPg as Record<string, unknown>).passwordHash).toBeUndefined()
+      expect((await sqlite.ports.identity.findUserByCanonicalEmail(userSqlite.email))?.passwordHash).toBe('novo-hash')
+      expect((await pg.ports.identity.findUserByCanonicalEmail(userPg.email))?.passwordHash).toBe('novo-hash')
+      // Escopo por tenant: contexto de outro tenant não altera o usuário.
+      const stranger = await sqlite.ports.identity.updateUserPassword({ ...ctxSqlite, tenantId: 'outro-tenant' }, userSqlite.id, 'invasor')
+      expect(stranger).toBeNull()
+      expect((await sqlite.ports.identity.findUserByCanonicalEmail(userSqlite.email))?.passwordHash).toBe('novo-hash')
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+
+  test('modelos do agente têm a mesma ordem, disponibilidade e revogação nos dois adapters', async () => {    const sqlite = await setupSqlite()
     const pg = await setupPostgres()
     try {
       const tenantSqlite = await sqlite.ports.tenants.createTenant({ name: 'Tenant Modelos', slug: 'tenant-modelos' })

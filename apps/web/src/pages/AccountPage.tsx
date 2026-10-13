@@ -4,6 +4,7 @@ import type { LightShellTheme, Theme } from '@azy-board/ui-contracts'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiKeysSection } from '../components/ApiKeysSection'
 import { ProfilePhotoSection } from '../components/ProfilePhotoSection'
+import { PasswordSection } from '../components/PasswordSection'
 import { ShowHiddenProjectsSwitch } from '../components/ShowHiddenProjectsSwitch'
 import { useToast } from '../components/Toast'
 import { AppShell } from '../components/AppShell'
@@ -166,6 +167,9 @@ export default function AccountPage() {
           <ShowHiddenProjectsSwitch />
           <p className="text-xs text-muted-foreground mt-2">{t('showHiddenProjectsHint')}</p>
         </section>
+
+        {/* Seção de senha (apenas login local) */}
+        <PasswordSection />
 
         {/* Seção de API Keys */}
         <div className="bg-card border border-border rounded-xl px-5 py-5 shadow-sm">

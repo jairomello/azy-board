@@ -15,6 +15,7 @@ import { shadowMarkdownRouter } from './routes/shadowMarkdown'
 import { apiKeysRouter, userApiKeysRouter } from './routes/apiKeys'
 import { versionsRouter } from './routes/versions'
 import { usersRouter } from './routes/users'
+import { skillsRouter } from './routes/skills'
 import { batchRouter } from './routes/batch'
 import { configureRealtimeAuthorizer, configureRealtimeBus, startHeartbeat, stopHeartbeat, wsHandler } from './services/websocket'
 import type { WsClientData } from './services/websocket'
@@ -130,6 +131,7 @@ api.route('/projects/:projectId/api-keys', apiKeysRouter)
 api.route('/api-keys', userApiKeysRouter)
 api.route('/projects/:projectId/versions', versionsRouter)
 api.route('/users', usersRouter)
+api.route('/skills', skillsRouter)
 api.route('/projects/:projectId/dashboard', dashboardRouter)
 api.route('/projects/:projectId/planning-gaps', planningGapsRouter)
 api.route('/projects/:projectId/structure-duplication', structureDuplicationRouter)

@@ -1288,6 +1288,33 @@
         },
         "additionalProperties": false
       },
+      "ChangePasswordRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "newPassword": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "confirmPassword": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "currentPassword",
+          "newPassword",
+          "confirmPassword"
+        ],
+        "additionalProperties": false
+      },
       "ApiKeyRequest": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",

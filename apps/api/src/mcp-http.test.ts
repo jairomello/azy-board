@@ -227,6 +227,63 @@ describe('MCP remoto por Streamable HTTP', () => {
     expect(toolResult(read).structuredContent).toMatchObject({ hideModules: true, hideEpics: true })
   })
 
+  test('delete_project: dryRun devolve contagens sem excluir e a chamada sem dryRun exclui', async () => {
+    const alvo = await request('/projects', session, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto para preview', boardMode: 'HIERARCHICAL' }),
+    })
+    expect(alvo.status).toBe(201)
+    const alvoId = (await alvo.json() as { id: string }).id
+
+    const chave = await request('/api-keys', session, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'MCP exclusão', projectScope: [alvoId], permissionScope: ['read', 'write', 'admin'] }),
+    })
+    expect(chave.status).toBe(201)
+    const adminKey = (await chave.json() as { key: string }).key
+
+    const preview = await rpc(adminKey, { jsonrpc: '2.0', id: 30, method: 'tools/call', params: { name: 'delete_project', arguments: { projectId: alvoId, dryRun: true } } })
+    expect(toolResult(preview).isError ?? false).toBe(false)
+    const contagens = toolResult(preview).structuredContent as { dryRun?: boolean; counts?: Record<string, number> } | undefined
+    expect(contagens?.dryRun).toBe(true)
+    expect(typeof contagens?.counts?.items).toBe('number')
+    expect(Object.keys(contagens?.counts ?? {})).toEqual(expect.arrayContaining(['items', 'modules', 'members', 'columns']))
+
+    // O preview não exclui: o projeto continua acessível.
+    const depoisDoPreview = await rpc(adminKey, { jsonrpc: '2.0', id: 31, method: 'tools/call', params: { name: 'get_project', arguments: { projectId: alvoId } } })
+    expect(toolResult(depoisDoPreview).isError ?? false).toBe(false)
+
+    const exclusao = await rpc(adminKey, { jsonrpc: '2.0', id: 32, method: 'tools/call', params: { name: 'delete_project', arguments: { projectId: alvoId } } })
+    expect(toolResult(exclusao).isError ?? false).toBe(false)
+
+    const restantes = await (await request('/projects', session)).json() as Array<{ id: string }>
+    expect(restantes.some(projeto => projeto.id === alvoId)).toBe(false)
+  })
+
+  test('delete_project: preview e exclusão exigem a mesma permissão ADMIN', async () => {
+    const alvo = await request('/projects', session, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Projeto sem permissão de exclusão' }),
+    })
+    expect(alvo.status).toBe(201)
+    const alvoId = (await alvo.json() as { id: string }).id
+
+    const chave = await request('/api-keys', session, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'MCP sem admin', projectScope: [alvoId], permissionScope: ['read', 'write'] }),
+    })
+    expect(chave.status).toBe(201)
+    const semAdmin = (await chave.json() as { key: string }).key
+
+    for (const [id, argumentos] of [[40, { projectId: alvoId, dryRun: true }], [41, { projectId: alvoId }]] as const) {
+      const negado = await rpc(semAdmin, { jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'delete_project', arguments: argumentos } })
+      expect(toolResult(negado).isError).toBe(true)
+    }
+
+    const restantes = await (await request('/projects', session)).json() as Array<{ id: string }>
+    expect(restantes.some(projeto => projeto.id === alvoId)).toBe(true)
+  })
+
   test('paridade REST/MCP HTTP/agente para criação de tarefa', async () => {
     const rest = await request(`/projects/${projectId}/items`, session, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

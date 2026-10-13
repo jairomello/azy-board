@@ -1,6 +1,6 @@
 import { screen } from '../test/setup'
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { render } from '@testing-library/react'
+import { fireEvent, render } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as bunTest from 'bun:test'
 import i18n from '../i18n'
@@ -104,5 +104,62 @@ describe('McpConnectionGuide — orientação de conexão do MCP', () => {
     const dica = screen.getByText(/skill azyboard/)
     expect(dica.textContent).toContain('/azyboard-setup-mcp')
     expect(dica.textContent).toContain('te guía')
+  })
+})
+
+describe('McpConnectionGuide — download da skill oficial', () => {
+  const fetchCalls: string[] = []
+  let fetchResponse: { ok: boolean; status: number; headers: Headers; blob: () => Promise<Blob>; json: () => Promise<unknown> }
+
+  beforeEach(() => {
+    fetchCalls.length = 0
+    fetchResponse = {
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'Content-Disposition': 'attachment; filename="azyboard-skill-1.0.1.zip"' }),
+      blob: async () => new Blob([new Uint8Array([0x50, 0x4b, 0x03, 0x04])]),
+      json: async () => ({}),
+    }
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      fetchCalls.push(typeof input === 'string' ? input : input.toString())
+      return fetchResponse as unknown as Response
+    }) as typeof fetch
+    const urlStatics = URL as unknown as Record<string, unknown>
+    urlStatics.createObjectURL = () => 'blob:skill'
+    urlStatics.revokeObjectURL = () => {}
+  })
+
+  test('exibe o link de download ao lado do controle de instrução', () => {
+    render(<McpConnectionGuide />)
+    const link = screen.getByRole('link', { name: /Baixar skill/ })
+    expect(link.getAttribute('href')).toBe('/api/skills/azyboard/download')
+    expect(link.hasAttribute('download')).toBe(true)
+  })
+
+  test('reflete o base path no link de download', () => {
+    globalWithWindow.window.__BASE_PATH__ = '/azyboard/'
+    render(<McpConnectionGuide />)
+    const link = screen.getByRole('link', { name: /Baixar skill/ })
+    expect(link.getAttribute('href')).toBe('/azyboard/api/skills/azyboard/download')
+  })
+
+  test('baixa o arquivo ao acionar o link sem exibir erro', async () => {
+    render(<McpConnectionGuide />)
+    fireEvent.click(screen.getByRole('link', { name: /Baixar skill/ }))
+    expect(fetchCalls).toEqual(['/api/skills/azyboard/download'])
+    expect(await screen.findByRole('link', { name: /Baixar skill/ })).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  test('comunica falha no download mantendo os demais controles', async () => {
+    const user = userEvent.setup()
+    fetchResponse = { ok: false, status: 500, headers: new Headers(), blob: async () => new Blob(), json: async () => ({ error: { message: 'falha' } }) }
+    render(<McpConnectionGuide />)
+    fireEvent.click(screen.getByRole('link', { name: /Baixar skill/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível baixar a skill.')
+    // Os controles existentes continuam operando após a falha.
+    await user.click(screen.getByRole('button', { name: /Copiar URL/ }))
+    expect(state.copied).toHaveLength(1)
+    expect(state.copied[0]).toContain('/mcp')
   })
 })

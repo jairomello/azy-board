@@ -227,6 +227,7 @@ export function validateToolArguments(name: string, args: Record<string, unknown
   if (input.advancedChecklists != null && typeof input.advancedChecklists !== 'boolean') throw new Error('advancedChecklists deve ser booleano')
   if (input.hideModules != null && typeof input.hideModules !== 'boolean') throw new Error('hideModules deve ser booleano')
   if (input.hideEpics != null && typeof input.hideEpics !== 'boolean') throw new Error('hideEpics deve ser booleano')
+  if (input.dryRun != null && typeof input.dryRun !== 'boolean') throw new Error('dryRun deve ser booleano')
   if (input.ref != null) assertNonEmptyString(input.ref, 'ref', TOOL_TEXT_LIMITS.ref)
   if (input.columnName != null) assertNonEmptyString(input.columnName, 'columnName', TOOL_TEXT_LIMITS.columnName)
   if (input.url != null) assertHttpUrl(input.url, 'url')

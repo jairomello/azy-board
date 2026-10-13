@@ -3,11 +3,12 @@ import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { isLightShellTheme, type Language, type LightShellTheme, type Theme } from '@azy-board/ui-contracts'
 import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
-import { hasGlobalGroup, hashPassword, isGlobalGroup } from '../services/auth'
+import { hasGlobalGroup, hashPassword, isGlobalGroup, verifyPassword } from '../services/auth'
 import { normalizeEmail } from '../utils/email'
-import { createUserSchema, groupSchema, parseJson, preferencesSchema } from '../validation'
+import { changePasswordSchema, createUserSchema, groupSchema, parseJson, preferencesSchema } from '../validation'
 import { avatarStore } from '../services/avatarStore'
 import { AvatarValidationError, MAX_AVATAR_SIZE, normalizeAvatar } from '../services/avatarImage'
+import { resolveAuthConfig } from '../services/authConfig'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
 
@@ -125,6 +126,42 @@ usersRouter.patch('/me', async (c) => {
     id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl,
     theme: user.theme, lightShellTheme: user.lightShellTheme, language: user.language, autoThemeByTime: user.autoThemeByTime,
   } })
+})
+
+// PATCH /users/me/password — troca de senha pelo próprio usuário (login local).
+usersRouter.patch('/me/password', async (c) => {
+  // Com provedor integrado (Microsoft/Google) não há senha local a alterar.
+  if (resolveAuthConfig().provider !== 'LOCAL') {
+    return c.json({ error: 'Troca de senha indisponível — a autenticação é gerenciada pelo provedor integrado.', code: 'PASSWORD_CHANGE_DISABLED', retryable: false }, 403)
+  }
+
+  const parsed = await parseJson(c, changePasswordSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
+  const ctx = c.get('ctx') as RequestContext
+
+  // [TENANT] Alvo derivado exclusivamente da sessão (anti-IDOR) e filtrado por
+  // usuário + tenant — nenhum identificador de usuário vem do cliente.
+  const user = await persistence.identity.findUser(userPersistenceContext(ctx), ctx.userId)
+  if (!user) return c.json({ error: 'Usuário não encontrado' }, 404)
+
+  // [SECURITY] A senha atual é reverificada no servidor antes de qualquer gravação.
+  const valid = await verifyPassword(body.currentPassword, user.passwordHash)
+  if (!valid) return c.json({ error: 'Senha atual incorreta' }, 401)
+
+  if (body.newPassword === body.currentPassword) {
+    return c.json({ error: 'A nova senha precisa ser diferente da atual' }, 400)
+  }
+
+  const updated = await persistence.identity.updateUserPassword(
+    userPersistenceContext(ctx),
+    ctx.userId,
+    await hashPassword(body.newPassword),
+  )
+  if (!updated) return c.json({ error: 'Usuário não encontrado' }, 404)
+
+  // Nunca ecoa a senha nem o hash; apenas confirma a operação.
+  return c.json({ ok: true })
 })
 
 // PUT /users/me/avatar — upload multipart da foto de perfil

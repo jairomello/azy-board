@@ -67,7 +67,7 @@ export const toolFields: Record<string, ToolFields> = {
   update_item: { fields: ['projectId', 'itemId', 'changes'], required: ['projectId', 'itemId', 'changes'], nested: { 'changes[]': ['field', 'operation'] } },
   update_items: { fields: ['projectId', 'filters', 'changes'], required: ['projectId', 'filters', 'changes'], nested: { filters: [], 'changes[]': ['field', 'operation'] } },
   delete_item: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
-  delete_project: { fields: ['projectId'], required: ['projectId'] },
+  delete_project: { fields: ['projectId', 'dryRun'], required: ['projectId'] },
   archive_item: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
   unarchive_item: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
   set_item_tags: { fields: ['projectId', 'itemId', 'tagIds'], required: ['projectId', 'itemId', 'tagIds'] },
