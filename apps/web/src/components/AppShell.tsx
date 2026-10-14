@@ -329,12 +329,18 @@ export function AppShell({
         </div>
       )}
 
-      {/* z-10 mantém o header (e menus internos, como o do perfil) acima da
-          workspace do board, que cria stacking context próprio via backdrop-blur,
-          sem competir com overlays globais (z-50) nem com a sidebar (z-20). */}
+      {/* Escala de camadas do shell. A ordem de pintura entre irmãos é decidida
+          aqui e precisa ser: conteúdo da workspace (auto) < slot `commandBar`
+          (z-20) < header (z-30) < sidebar (z-40) < overlays globais (z-50:
+          modais e drawer mobile).
+          O header fica ACIMA da command bar porque os popovers que ele hospeda
+          (perfil, idioma e tema) ficam presos no seu contexto de empilhamento —
+          o `z-50` de cada popover vale só dentro dele.
+          A sidebar fica acima do header para preservar a emenda visual em `lg`
+          (`-ml-3` + `rounded-l-none`). */}
       <header
         data-shell-header
-        className="shell-surface relative z-10 mx-3 mt-3 h-16 flex-shrink-0 rounded-2xl border border-shell-border bg-shell-header text-shell-foreground shadow-[0_10px_28px_rgba(20,35,50,0.13)] px-3 sm:px-5 flex items-center gap-3 lg:col-start-2 lg:row-start-1 lg:-ml-3 lg:mr-0 lg:mt-0 lg:pl-8 lg:rounded-l-none lg:rounded-r-2xl lg:border-l-0"
+        className="shell-surface relative z-30 mx-3 mt-3 h-16 flex-shrink-0 rounded-2xl border border-shell-border bg-shell-header text-shell-foreground shadow-[0_10px_28px_rgba(20,35,50,0.13)] px-3 sm:px-5 flex items-center gap-3 lg:col-start-2 lg:row-start-1 lg:-ml-3 lg:mr-0 lg:mt-0 lg:pl-8 lg:rounded-l-none lg:rounded-r-2xl lg:border-l-0"
       >
         <button
           onClick={() => setMobileOpen(true)}
@@ -393,14 +399,14 @@ export function AppShell({
 
       <aside
         data-shell-sidebar
-        className="relative z-20 hidden lg:block lg:col-start-1 lg:row-start-1 lg:row-span-2 min-h-0 overflow-hidden rounded-2xl border border-shell-border bg-shell-sidebar shadow-[12px_0_24px_-10px_rgba(3,15,23,0.72),0_16px_40px_rgba(3,15,23,0.24)] lg:border-r-0"
+        className="relative z-40 hidden lg:block lg:col-start-1 lg:row-start-1 lg:row-span-2 min-h-0 overflow-hidden rounded-2xl border border-shell-border bg-shell-sidebar shadow-[12px_0_24px_-10px_rgba(3,15,23,0.72),0_16px_40px_rgba(3,15,23,0.24)] lg:border-r-0"
       >
         {sidebar}
       </aside>
 
       <div data-shell-workspace className="min-h-0 min-w-0 flex-1 flex flex-col lg:col-start-2 lg:row-start-2 lg:pl-3">
         {commandBar && (
-          <div className="relative z-30 mx-3 mt-3 flex-shrink-0 rounded-xl border border-border/80 bg-surface-floating/90 shadow-[0_8px_24px_rgba(20,35,50,0.09)] backdrop-blur-xl lg:mx-0">
+          <div className="relative z-20 mx-3 mt-3 flex-shrink-0 rounded-xl border border-border/80 bg-surface-floating/90 shadow-[0_8px_24px_rgba(20,35,50,0.09)] backdrop-blur-xl lg:mx-0">
             {commandBar}
           </div>
         )}
