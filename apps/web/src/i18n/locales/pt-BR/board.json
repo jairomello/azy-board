@@ -328,6 +328,7 @@
   "projectPlanningSubtitle": "Nome, datas, estimativas e escopo",
   "projectPlanningLoadError": "Não foi possível carregar o planejamento do projeto.",
   "projectPlanningSaveError": "Não foi possível salvar o planejamento do projeto.",
+  "projectPlanningNameRequired": "O nome do projeto é obrigatório.",
   "areaProjectPlanning": "Planejamento",
   "areaAllLinks": "Todos os links",
   "areaAllAttachments": "Todos os anexos",

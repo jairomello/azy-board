@@ -328,6 +328,7 @@
   "projectPlanningSubtitle": "Name, dates, estimates and scope",
   "projectPlanningLoadError": "Could not load the project planning.",
   "projectPlanningSaveError": "Could not save the project planning.",
+  "projectPlanningNameRequired": "Project name is required.",
   "areaProjectPlanning": "Planning",
   "areaAllLinks": "All links",
   "areaAllAttachments": "All attachments",

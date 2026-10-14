@@ -19,6 +19,7 @@ let members: Array<{ userId: string; role: string }>
 let links: unknown[]
 let attachments: unknown[]
 let attachmentsEnabled: boolean
+let patchFailure: { status: number; error: string } | null
 const fetchOriginal = globalThis.fetch
 
 function jsonResponse(body: unknown, status = 200) {
@@ -38,9 +39,17 @@ function installFetchStub() {
     if (method === 'GET' && path === '/tenant/attachments/enabled') return jsonResponse({ enabled: attachmentsEnabled })
     if (method === 'GET' && path === '/projects/project-1/links') return jsonResponse(links)
     if (method === 'GET' && path === '/projects/project-1/attachments') return jsonResponse(attachments)
-    if (method === 'PATCH' && path === '/projects/project-1') return jsonResponse({ ...project, ...body })
+    if (method === 'PATCH' && path === '/projects/project-1') {
+      if (patchFailure) return jsonResponse({ error: patchFailure.error }, patchFailure.status)
+      project = { ...project, ...body }
+      return jsonResponse(project)
+    }
     return jsonResponse({ error: 'não encontrado' }, 404)
   }) as typeof fetch
+}
+
+function patchCalls() {
+  return calls.filter(call => call.method === 'PATCH')
 }
 
 beforeEach(async () => {
@@ -52,32 +61,141 @@ beforeEach(async () => {
   links = []
   attachments = []
   attachmentsEnabled = false
+  patchFailure = null
   installFetchStub()
 })
 
 afterEach(() => { globalThis.fetch = fetchOriginal })
 
+/** Abre a modal e espera os campos carregarem. */
+async function openModal(props: { onClose?: () => void; onSaved?: (project: unknown) => void } = {}) {
+  const view = render(<ProjectPlanningModal projectId="project-1" onClose={props.onClose ?? (() => {})} onSaved={props.onSaved} />)
+  await screen.findByLabelText('Nome do projeto')
+  return view
+}
+
+function saveButton() {
+  return screen.getByRole('button', { name: 'Salvar' })
+}
+
+type User = ReturnType<typeof userEvent.setup>
+
+// Nota de ambiente: o happy-dom não entrega `user.clear` ao React (só a via de
+// teclado chega ao `onChange`), então os campos são esvaziados com backspaces.
+async function clearField(user: User, label: string) {
+  const input = screen.getByLabelText(label) as HTMLInputElement
+  await user.click(input)
+  const backspaces = '{backspace}'.repeat(input.value.length)
+  if (backspaces) await user.type(input, backspaces)
+}
+
+async function typeInto(user: User, label: string, value: string) {
+  await clearField(user, label)
+  await user.type(screen.getByLabelText(label), value)
+}
+
 describe('ProjectPlanningModal (Card T59)', () => {
-  test('ADMIN edita um campo de planejamento e persiste via PATCH', async () => {
-    render(<ProjectPlanningModal projectId="project-1" onClose={() => {}} />)
+  test('ADMIN altera um campo, nada é enviado antes do clique e o PATCH leva apenas o campo alterado', async () => {
+    await openModal()
 
-    const startDate = await screen.findByLabelText('Data de Início')
-    fireEvent.change(startDate, { target: { value: '2026-03-01' } })
-    fireEvent.blur(startDate)
+    const user = userEvent.setup()
+    await typeInto(user, 'Total de Pontos Previsto', '12')
+    expect(patchCalls()).toEqual([])
 
-    await waitFor(() => expect(calls.find(call => call.method === 'PATCH')).toMatchObject({ body: { startDate: '2026-03-01' } }))
-    expect(calls.find(call => call.method === 'PATCH')?.path).toBe('/projects/project-1')
+    await user.click(saveButton())
+
+    await waitFor(() => expect(patchCalls()).toHaveLength(1))
+    expect(patchCalls()[0]).toMatchObject({ path: '/projects/project-1', body: { plannedPoints: 12 } })
   })
 
-  test('MEMBER/VIEWER veem os campos em modo leitura', async () => {
+  test('o botão de salvar fica indisponível sem alterações', async () => {
+    await openModal()
+
+    expect(saveButton()).toBeDisabled()
+    expect(patchCalls()).toEqual([])
+  })
+
+  test('o nome do projeto é persistido ao salvar', async () => {
+    await openModal()
+
+    const user = userEvent.setup()
+    await typeInto(user, 'Nome do projeto', 'Projeto Renomeado')
+    await user.click(saveButton())
+
+    await waitFor(() => expect(patchCalls()).toHaveLength(1))
+    expect(patchCalls()[0].body).toEqual({ name: 'Projeto Renomeado' })
+  })
+
+  test('nome vazio bloqueia a gravação e indica obrigatoriedade', async () => {
+    await openModal()
+
+    const user = userEvent.setup()
+    await clearField(user, 'Nome do projeto')
+    await user.click(saveButton())
+
+    expect(await screen.findByText('O nome do projeto é obrigatório.')).toBeInTheDocument()
+    expect(patchCalls()).toEqual([])
+  })
+
+  test('cancelar descarta o rascunho e fecha sem gravar', async () => {
+    const closed: string[] = []
+    await openModal({ onClose: () => { closed.push('cancelar') } })
+
+    const user = userEvent.setup()
+    await typeInto(user, 'Total de Pontos Previsto', '12')
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(closed).toEqual(['cancelar'])
+    expect(patchCalls()).toEqual([])
+  })
+
+  test('fechar pela cruz descarta o rascunho sem gravar', async () => {
+    const closed: string[] = []
+    await openModal({ onClose: () => { closed.push('fechar') } })
+
+    const user = userEvent.setup()
+    await typeInto(user, 'Total de Pontos Previsto', '12')
+    await user.click(screen.getByRole('button', { name: 'Fechar' }))
+
+    expect(closed).toEqual(['fechar'])
+    expect(patchCalls()).toEqual([])
+  })
+
+  test('falha de gravação aparece no rodapé, preserva o rascunho e libera nova tentativa', async () => {
+    patchFailure = { status: 409, error: 'Já existe um projeto com esse nome' }
+    await openModal()
+
+    const user = userEvent.setup()
+    await typeInto(user, 'Total de Pontos Previsto', '12')
+    await user.click(saveButton())
+
+    expect(await screen.findByText('Já existe um projeto com esse nome')).toBeInTheDocument()
+    expect((screen.getByLabelText('Total de Pontos Previsto') as HTMLInputElement).value).toBe('12')
+    expect(saveButton()).not.toBeDisabled()
+  })
+
+  test('reabrir a modal exibe os valores persistidos no servidor', async () => {
+    const first = await openModal()
+    const user = userEvent.setup()
+    await typeInto(user, 'Total de Pontos Previsto', '12')
+    await user.click(saveButton())
+    await waitFor(() => expect(patchCalls()).toHaveLength(1))
+    first.unmount()
+
+    await openModal()
+    expect((screen.getByLabelText('Total de Pontos Previsto') as HTMLInputElement).value).toBe('12')
+  })
+
+  test('MEMBER/VIEWER veem os campos em modo leitura e sem rodapé de ações', async () => {
     authState.user = { id: 'user-2', globalGroup: 'TEAM_MEMBER' }
     members = [{ userId: 'user-2', role: 'VIEWER' }]
-    render(<ProjectPlanningModal projectId="project-1" onClose={() => {}} />)
+    await openModal()
 
     const startDate = await screen.findByLabelText('Data de Início')
     expect(startDate).toBeDisabled()
-    const name = screen.getByLabelText('Nome do projeto')
-    expect(name).toBeDisabled()
+    expect(screen.getByLabelText('Nome do projeto')).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Salvar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Cancelar' })).not.toBeInTheDocument()
   })
 
   test('aba "Todos os links" lista os links do projeto com origem e sem controles de edição', async () => {
@@ -151,9 +269,10 @@ describe('ProjectPlanningModal (Card T59)', () => {
     const dialog = await screen.findByRole('dialog')
     expect(dialog.className).toContain('h-[90vh]')
     expect(dialog.className).not.toContain('max-h-[90vh]')
-    // A área de conteúdo rola dentro da altura fixa.
+    // A área de conteúdo rola dentro da altura fixa e o rodapé de ações fica fora dela.
     const content = dialog.querySelector('.overflow-y-auto')
     expect(content).not.toBeNull()
+    expect(content?.contains(saveButton())).toBe(false)
 
     // Trocar de aba não altera a altura do diálogo.
     links = [{ id: 'l1', itemId: 'item-1', name: 'Wiki', url: 'https://wiki.example.com', description: null, item: { id: 'item-1', title: 'Card A', sequenceCode: 'T1', type: 'TASK' } }]

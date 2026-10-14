@@ -7,7 +7,7 @@ import type { GlobalGroup } from '@azy-board/domain'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import { canAccessProjectSettings } from '../permissions'
-import { ProjectPlanningFields, type PlanningField, type PlanningFieldOrScope } from './ProjectPlanningFields'
+import { ProjectPlanningFields, type PlanningField } from './ProjectPlanningFields'
 import { ItemAreaTabs, type ItemAreaTab } from './ItemAreaTabs'
 import { AttachmentThumbnail } from './AttachmentThumbnail'
 import { MarkdownText } from './MarkdownText'
@@ -81,21 +81,46 @@ function draftFromProject(project: PlanningProject): Draft {
   }
 }
 
+function draftFromNumber(value: number | null | undefined): string {
+  return value != null ? String(value) : ''
+}
+
+// Campos do rascunho que divergem do projeto carregado; apenas eles vão no PATCH.
+// O nome é comparado sem espaços nas pontas, como a API o normaliza.
+function planningPatch(project: PlanningProject, draft: Draft): Record<string, string | number | null> {
+  const patch: Record<string, string | number | null> = {}
+  const name = draft.name.trim()
+  if (name !== project.name) patch.name = name
+  if (draft.startDate !== (project.startDate ?? '')) patch.startDate = draft.startDate || null
+  if (draft.plannedEndDate !== (project.plannedEndDate ?? '')) patch.plannedEndDate = draft.plannedEndDate || null
+  if (draft.plannedPoints !== draftFromNumber(project.plannedPoints)) patch.plannedPoints = draft.plannedPoints ? Number(draft.plannedPoints) : null
+  if (draft.plannedHours !== draftFromNumber(project.plannedHours)) patch.plannedHours = draft.plannedHours ? Number(draft.plannedHours) : null
+  if (draft.scope !== (project.scope ?? '')) patch.scope = draft.scope || null
+  return patch
+}
+
 function canEditProject(globalGroup: GlobalGroup | undefined, role: string | undefined): boolean {
   return canAccessProjectSettings(globalGroup) && (role === 'ADMIN' || ['MANAGER', 'ADMIN', 'ROOT'].includes(globalGroup ?? ''))
 }
 
+// A modal grava pelo rodapé; o componente compartilhado de campos não persiste nada aqui.
+const ignorePlanningChange = () => {}
+
 // Modal de Planejamento do Projeto (T59). Combina os campos de planejamento do
 // projeto com as abas somente leitura de todos os links e todos os anexos do projeto.
+// A gravação é explícita: as alterações ficam num rascunho local e só vão para a API
+// quando o usuário aciona Salvar; cancelar ou fechar descarta o rascunho.
 export function ProjectPlanningModal({ projectId, onClose, onSaved }: Props) {
   const { t } = useTranslation(['board', 'settings', 'common'])
   const { user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const [project, setProject] = useState<PlanningProject | null>(null)
   const [draft, setDraft] = useState<Draft>(emptyDraft)
   const [isAdmin, setIsAdmin] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const [nameError, setNameError] = useState('')
   const [activeArea, setActiveArea] = useState<Area>('planning')
   const [attachmentsEnabled, setAttachmentsEnabled] = useState(false)
   const [links, setLinks] = useState<ProjectLinkRow[] | null>(null)
@@ -107,13 +132,16 @@ export function ProjectPlanningModal({ projectId, onClose, onSaved }: Props) {
     let active = true
     setLoading(true)
     setLoadError('')
+    setSaveError('')
+    setNameError('')
     Promise.all([
       api.get<PlanningProject>(`/projects/${projectId}`),
       api.get<ProjectMember[]>(`/projects/${projectId}/members`).catch(() => [] as ProjectMember[]),
     ])
-      .then(([project, members]) => {
+      .then(([loaded, members]) => {
         if (!active) return
-        setDraft(draftFromProject(project))
+        setProject(loaded)
+        setDraft(draftFromProject(loaded))
         const me = members.find(member => member.userId === user?.id)
         setIsAdmin(canEditProject(user?.globalGroup, me?.role))
       })
@@ -130,22 +158,35 @@ export function ProjectPlanningModal({ projectId, onClose, onSaved }: Props) {
     return () => { active = false }
   }, [])
 
-  const patchProject = useCallback(async (patch: Record<string, string | number | null>) => {
+  const planningChanges = useMemo(
+    () => (project ? planningPatch(project, draft) : {}),
+    [project, draft],
+  )
+  const hasChanges = Object.keys(planningChanges).length > 0
+  const canSave = isAdmin && !saving && hasChanges
+
+  const onSave = useCallback(async () => {
+    if (!project) return
+    if (!draft.name.trim()) {
+      setNameError(t('board:projectPlanningNameRequired'))
+      return
+    }
+    const changes = planningPatch(project, draft)
+    if (Object.keys(changes).length === 0) return
     setSaving(true)
     setSaveError('')
+    setNameError('')
     try {
-      const updated = await api.patch<PlanningProject>(`/projects/${projectId}`, patch)
+      const updated = await api.patch<PlanningProject>(`/projects/${projectId}`, changes)
+      setProject(updated)
+      setDraft(draftFromProject(updated))
       onSaved?.(updated)
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : t('board:projectPlanningSaveError'))
     } finally {
       setSaving(false)
     }
-  }, [projectId, onSaved, t])
-
-  const onPlanningChange = useCallback((field: PlanningFieldOrScope, value: string | number | null) => {
-    void patchProject({ [field]: value })
-  }, [patchProject])
+  }, [draft, onSaved, project, projectId, t])
 
   const onPlanningFieldChange = useCallback((field: PlanningField, value: string) => {
     setDraft(previous => ({ ...previous, [field]: value }))
@@ -222,9 +263,11 @@ export function ProjectPlanningModal({ projectId, onClose, onSaved }: Props) {
                   <div>
                     <label htmlFor="project-planning-name" className="block text-sm font-medium text-foreground mb-1">{t('common:projectName')}</label>
                     <input id="project-planning-name" type="text" value={draft.name} disabled={!isAdmin || saving}
-                      onChange={e => setDraft(previous => ({ ...previous, name: e.target.value }))}
-                      onBlur={e => { const value = e.target.value.trim(); if (value && value !== draft.name) void patchProject({ name: value }) }}
+                      onChange={e => { setDraft(previous => ({ ...previous, name: e.target.value })); setNameError('') }}
+                      aria-invalid={nameError ? true : undefined}
+                      aria-describedby={nameError ? 'project-planning-name-error' : undefined}
                       className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50" />
+                    {nameError && <p id="project-planning-name-error" role="alert" className="mt-1 text-sm text-destructive">{nameError}</p>}
                   </div>
                   <ProjectPlanningFields
                     startDate={draft.startDate}
@@ -234,8 +277,9 @@ export function ProjectPlanningModal({ projectId, onClose, onSaved }: Props) {
                     scope={draft.scope}
                     isAdmin={isAdmin}
                     saving={saving}
-                    error={saveError}
-                    onPlanningChange={onPlanningChange}
+                    error=""
+                    saveMode="manual"
+                    onPlanningChange={ignorePlanningChange}
                     onPlanningFieldChange={onPlanningFieldChange}
                     onScopeChange={onScopeChange}
                   />
@@ -252,6 +296,16 @@ export function ProjectPlanningModal({ projectId, onClose, onSaved }: Props) {
             </div>
           )}
         </div>
+
+        {!loading && !loadError && activeArea === 'planning' && isAdmin && (
+          <footer className="flex shrink-0 flex-col gap-2 border-t border-border px-4 py-3 sm:px-6">
+            {saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={onClose} disabled={saving} className="rounded-lg bg-muted px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted/80 disabled:opacity-50">{t('common:cancel')}</button>
+              <button type="button" onClick={() => void onSave()} disabled={!canSave} className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{saving ? t('common:saving') : t('common:save')}</button>
+            </div>
+          </footer>
+        )}
       </section>
     </div>
   )

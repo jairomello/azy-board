@@ -32,6 +32,8 @@ O planejamento do projeto também pode ser consultado fora do menu de Configura�
 
 A modal reúne o nome do projeto, a Data de Início, a Data de Fim Previsto, o Total de Pontos Previsto, o Total de Horas Previsto e o Escopo. Administradores editam os campos ali mesmo; Membros e Visualizadores os veem em modo somente leitura.
 
+Na modal a gravação é explícita: o rodapé traz **Salvar** e **Cancelar**. As alterações ficam pendentes até você acionar **Salvar** (que envia de uma vez só os campos alterados) e **Cancelar**, a cruz, o ESC ou o clique fora fecham a modal descartando o que não foi salvo. A seção **Planejamento** da página de Configurações continua gravando automaticamente ao sair de cada campo.
+
 Além dos campos de planejamento, a modal traz duas abas de consulta **somente leitura** no escopo do projeto:
 
 - **Todos os links**: todos os links externos cadastrados nos cards do projeto, com a indicação do card de origem de cada um.
