@@ -5,7 +5,9 @@ O Azy Board identifica cada build com uma versão no formato **`YYYY.MM.DD.N`**:
 - `YYYY.MM.DD` é a data do build em **UTC**;
 - `N` é um contador que **reinicia em `1` a cada dia** e conta os builds daquele dia.
 
-A versão é sempre acompanhada da **data do build** nos pontos onde é exibida.
+A interface exibe **somente o número da versão** — a data já está dentro dele. A
+**data do build** continua sendo produzida, transportada e servida pelo endpoint
+público de versão, para conferir qual build está publicado sem abrir o repositório.
 
 ## Como a versão é gerada
 
@@ -49,7 +51,7 @@ repassar esses args ou quando o job de publicação deixa de calculá-los e inje
 
 Depois de publicar, confira a versão em qualquer um destes pontos:
 
-- **Tela de login**: a versão e a data aparecem num canto da tela, mesmo sem sessão.
+- **Tela de login**: a versão aparece num canto da tela, mesmo sem sessão.
 - **Shell do sistema**: na barra lateral, abaixo de "Trabalho conectado".
 - **Endpoint público**: `GET /version` responde `{ "version": "YYYY.MM.DD.N", "buildDate": "YYYY-MM-DD" }` sem exigir sessão e sem expor segredos. O mesmo conteúdo está em `GET /api/version`, que fica atrás do prefixo encaminhado pelo proxy do web. Útil para verificar a versão implantada pela API.
 

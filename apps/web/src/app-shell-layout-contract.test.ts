@@ -138,10 +138,12 @@ describe('contrato do shell integrado', () => {
     contains(shell, '<h1 className="text-sm sm:text-base font-semibold truncate"')
   })
 
-  test('exibe a versao do build na sidebar (T60)', async () => {
+  test('exibe a versao do build na sidebar, sem a data do build (T60)', async () => {
     const shell = await source('./components/AppShell.tsx')
     contains(shell, 'data-build-version')
     contains(shell, "tCommon('buildVersion'")
-    contains(shell, "tCommon('buildVersionWithDate'")
+    // A data do build nao e exibida: o numero da versao ja carrega a data.
+    expect(shell.includes('buildVersionWithDate')).toBe(false)
+    expect(shell.includes('buildInfo.buildDate')).toBe(false)
   })
 })

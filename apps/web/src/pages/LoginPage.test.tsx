@@ -72,4 +72,19 @@ describe('LoginPage — lembrar-me (card T31)', () => {
     expect(version.textContent?.toLowerCase()).not.toContain('secret')
     expect(version.textContent?.toLowerCase()).not.toContain('token')
   })
+
+  test('mostra só o número da versão quando o bundle traz a data do build', async () => {
+    // O bundle publicado embute versão e data; a data não deve aparecer.
+    ;(globalThis as Record<string, unknown>).__APP_VERSION__ = '2026.10.14.3'
+    ;(globalThis as Record<string, unknown>).__BUILD_DATE__ = '2026-10-14'
+    await i18n.changeLanguage('pt-BR')
+    renderLogin()
+
+    const version = document.querySelector('[data-build-version]')
+    expect(version?.textContent).toBe('Versão 2026.10.14.3')
+    expect(document.body.textContent).not.toContain('2026-10-14')
+
+    delete (globalThis as Record<string, unknown>).__APP_VERSION__
+    delete (globalThis as Record<string, unknown>).__BUILD_DATE__
+  })
 })

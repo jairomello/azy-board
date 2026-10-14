@@ -239,6 +239,5 @@
     }
   },
   "loadMore": "Cargar más",
-  "buildVersion": "Versión {{version}}",
-  "buildVersionWithDate": "Versión {{version}} · {{date}}"
+  "buildVersion": "Versión {{version}}"
 }

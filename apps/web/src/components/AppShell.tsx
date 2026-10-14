@@ -297,7 +297,7 @@ export function AppShell({
           </p>
           <p className="text-[11px] text-shell-muted mt-0.5">{tCommon('connectedWork')}</p>
           <p data-build-version className="text-[11px] text-shell-muted mt-0.5">
-            {buildInfo.buildDate ? tCommon('buildVersionWithDate', { version: buildInfo.version, date: buildInfo.buildDate }) : tCommon('buildVersion', { version: buildInfo.version })}
+            {tCommon('buildVersion', { version: buildInfo.version })}
           </p>
         </div>
       </div>

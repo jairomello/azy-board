@@ -61,7 +61,7 @@ export default function LoginPage() {
       />
       <div className="absolute inset-0 bg-slate-950/45" aria-hidden="true" />
       <span data-build-version className="absolute bottom-2 right-3 z-20 text-[11px] text-slate-200/90 sm:bottom-3 sm:right-5">
-        {buildInfo.buildDate ? t('buildVersionWithDate', { version: buildInfo.version, date: buildInfo.buildDate }) : t('buildVersion', { version: buildInfo.version })}
+        {t('buildVersion', { version: buildInfo.version })}
       </span>
       <div className="relative z-10 w-full max-w-6xl mx-auto grid lg:min-h-[700px] lg:grid-cols-[1.05fr_0.95fr] rounded-3xl overflow-hidden border border-border bg-card shadow-[0_36px_110px_rgba(5,15,25,0.42)]">
         <section className="hidden lg:flex relative z-10 overflow-hidden bg-shell-sidebar text-shell-foreground p-12 flex-col">
