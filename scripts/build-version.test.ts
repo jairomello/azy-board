@@ -31,4 +31,21 @@ describe('numeração do build (YYYY.MM.DD.N)', () => {
     expect(isBuildVersion('1.4.0')).toBe(false)
     expect(isBuildVersion('2026-10-12.1')).toBe(false)
   })
+
+  // T60 (versao-do-build-visivel-no-produto): o pipeline resolve a versão uma vez e
+  // a injeta no build da imagem, que roda sem .git — o override tem de prevalecer.
+  test('override do pipeline prevalece e deriva a data da versão', () => {
+    const info = resolveBuildInfo(day, { version: '2026.10.14.9' })
+    expect(info).toEqual({ version: '2026.10.14.9', buildDate: '2026-10-14', number: 9 })
+  })
+
+  test('override aceita a data explícita do pipeline', () => {
+    const info = resolveBuildInfo(day, { version: '2026.10.14.9', buildDate: '2026-10-14' })
+    expect(info.buildDate).toBe('2026-10-14')
+  })
+
+  test('override fora do padrão é ignorado e cai no cálculo local', () => {
+    const info = resolveBuildInfo(day, { version: 'dev', buildNumber: 3 })
+    expect(info).toEqual({ version: '2026.10.12.3', buildDate: '2026-10-12', number: 3 })
+  })
 })

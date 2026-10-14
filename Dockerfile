@@ -33,9 +33,17 @@ RUN bun install --frozen-lockfile
 FROM deps AS build
 COPY . .
 WORKDIR /app/apps/api
-# T60: gera a versão do build antes de montar a API. Sem .git no contexto da
-# imagem, o contador cai para 1 na data do build; AZYBOARD_BUILD_NUMBER pode
-# ser informado pelo pipeline.
+# T60: gera a versão do build antes de montar a API. Cada imagem nasce com o seu
+# .build-info.json na raiz. Sem .git no contexto da imagem, o contador cai para 1
+# na data do build; o pipeline injeta a versão resolvida uma única vez (mesma do
+# web) por AZYBOARD_BUILD_VERSION/AZYBOARD_BUILD_DATE, e AZYBOARD_BUILD_NUMBER
+# permite injetar só o contador.
+ARG AZYBOARD_BUILD_VERSION=
+ARG AZYBOARD_BUILD_DATE=
+ARG AZYBOARD_BUILD_NUMBER=
+ENV AZYBOARD_BUILD_VERSION=${AZYBOARD_BUILD_VERSION}
+ENV AZYBOARD_BUILD_DATE=${AZYBOARD_BUILD_DATE}
+ENV AZYBOARD_BUILD_NUMBER=${AZYBOARD_BUILD_NUMBER}
 RUN bun run /app/scripts/build-version.ts
 # index.js é o servidor; migrate.js e migrate-pg.js são os runners de migration
 # dos perfis SIMPLE e ADVANCED, usados pelo subcomando `migrate` do entrypoint.

@@ -10,6 +10,10 @@
  * Uso:
  *   bun run scripts/build-version.ts          # grava .build-info.json e imprime
  *   bun run scripts/build-version.ts --json    # imprime { version, buildDate, number }
+ *
+ * Override do pipeline: `AZYBOARD_BUILD_VERSION` (com `AZYBOARD_BUILD_DATE`) tem
+ * precedência e é gravado como está, para que API e web do mesmo build recebam
+ * exatamente a mesma versão, mesmo dentro da imagem (sem `.git`).
  */
 import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
@@ -42,8 +46,21 @@ export function commitsOnDay(date: Date, cwd = process.cwd()): number {
   }
 }
 
-/** Resolve a versão do build considerando o override do pipeline. */
-export function resolveBuildInfo(date = new Date(), options: { buildNumber?: number | string | null; cwd?: string } = {}): BuildInfo {
+/** Resolve a versão do build: override completo do pipeline → contador do dia → commits do dia. */
+export function resolveBuildInfo(date = new Date(), options: { buildNumber?: number | string | null; version?: string | null; buildDate?: string | null; cwd?: string } = {}): BuildInfo {
+  // Override do pipeline: o CI resolve a versão uma única vez (com .git disponível)
+  // e a injeta no build das imagens, que rodam sem histórico git. Valor fora do
+  // padrão `YYYY.MM.DD.N` é ignorado e cai no cálculo local.
+  const versionOverride = (options.version ?? process.env.AZYBOARD_BUILD_VERSION)?.trim()
+  if (versionOverride && isBuildVersion(versionOverride)) {
+    const explicitDate = (options.buildDate ?? process.env.AZYBOARD_BUILD_DATE)?.trim()
+    return {
+      version: versionOverride,
+      buildDate: explicitDate || versionOverride.replace(/\./g, '-').slice(0, 10),
+      number: Number.parseInt(versionOverride.split('.').at(-1) ?? '1', 10) || 1,
+    }
+  }
+
   const raw = options.buildNumber ?? process.env.AZYBOARD_BUILD_NUMBER
   const override = raw != null && `${raw}`.trim() !== '' ? Number.parseInt(`${raw}`, 10) : null
   const number = override && override > 0 ? override : Math.max(1, commitsOnDay(date, options.cwd))

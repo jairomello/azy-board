@@ -32,6 +32,14 @@ COPY . .
 WORKDIR /app/apps/web
 ARG AZYBOARD_BASE_PATH=./
 ENV AZYBOARD_BASE_PATH=${AZYBOARD_BASE_PATH}
+# T60: o pipeline resolve a versão uma única vez (com .git disponível) e a injeta
+# aqui, para que o bundle embuta `YYYY.MM.DD.N` + data em vez do fallback 'dev'.
+# Sem os args (build local), vite.config.ts usa o .build-info.json e, na falta
+# dele, 'dev'.
+ARG AZYBOARD_BUILD_VERSION=
+ARG AZYBOARD_BUILD_DATE=
+ENV AZYBOARD_BUILD_VERSION=${AZYBOARD_BUILD_VERSION}
+ENV AZYBOARD_BUILD_DATE=${AZYBOARD_BUILD_DATE}
 RUN bun run build
 
 # --- Runtime nginx -----------------------------------------------------------

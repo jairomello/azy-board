@@ -16,17 +16,21 @@ export default defineConfig(({ mode }) => {
   // O build padrão permanece sem o plugin e sem artefatos extras.
   const analyze = env.AZYBOARD_ANALYZE === '1'
 
-  // T60 — versão do build embutida no bundle. Fonte: .build-info.json gerado por
-  // `bun run build:version`; env como alternativa; 'dev' quando ausente.
-  let appVersion = process.env.AZYBOARD_BUILD_VERSION || env.AZYBOARD_BUILD_VERSION || 'dev'
+  // T60 — versão do build embutida no bundle. Prioridade: env injetada pelo
+  // pipeline (vale também no build da imagem, onde não há .git) → .build-info.json
+  // gerado por `bun run build:version` (dev local) → 'dev'.
+  let appVersion = process.env.AZYBOARD_BUILD_VERSION || env.AZYBOARD_BUILD_VERSION || ''
   let buildDate = process.env.AZYBOARD_BUILD_DATE || env.AZYBOARD_BUILD_DATE || ''
   try {
     const parsed = JSON.parse(readFileSync(path.resolve(__dirname, '../../.build-info.json'), 'utf8')) as { version?: unknown; buildDate?: unknown }
-    if (typeof parsed.version === 'string' && parsed.version) appVersion = parsed.version
-    if (typeof parsed.buildDate === 'string') buildDate = parsed.buildDate
+    // O arquivo só preenche o que o pipeline não injetou: um .build-info.json
+    // antigo que entre no contexto do build não pode sobrescrever a versão publicada.
+    if (!appVersion && typeof parsed.version === 'string' && parsed.version) appVersion = parsed.version
+    if (!buildDate && typeof parsed.buildDate === 'string') buildDate = parsed.buildDate
   } catch {
-    // Sem .build-info.json (ex.: dev local): mantém o fallback.
+    // Sem .build-info.json (ex.: dev local): mantém o que veio do env.
   }
+  if (!appVersion) appVersion = 'dev'
 
   return {
   base: basePath,
@@ -63,6 +67,9 @@ export default defineConfig(({ mode }) => {
       // MCP remoto: sem o proxy, `/mcp` cairia no SPA em desenvolvimento e a URL
       // exibida na conta não funcionaria.
       '/mcp': { target: apiTarget, changeOrigin: true },
+      // Versão do build (T60): a rota pública vive fora de /api; sem o proxy ela
+      // cairia no SPA em desenvolvimento e o comportamento divergiria do deploy.
+      '/version': { target: apiTarget, changeOrigin: true },
     },
   },
   build: {

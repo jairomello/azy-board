@@ -102,6 +102,9 @@ app.use('*', clientIpMiddleware)
 // Rotas públicas
 app.route('/health', healthRouter)
 app.route('/version', versionRouter)
+// T60: o mesmo router atrás do prefixo que o proxy do web já encaminha (/api/),
+// para o endpoint público de versão continuar alcançável por quem só publica /api.
+app.route('/api/version', versionRouter)
 app.route('/api/auth', authRouter)
 
 // MCP remoto (Streamable HTTP) — fora de /api (corpo JSON-RPC) e com auth por

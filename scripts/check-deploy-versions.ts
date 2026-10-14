@@ -44,9 +44,39 @@ if (usosSetupBun === 0) {
   )
 }
 
+// T60 — a versão do build precisa chegar aos artefatos publicados: sem isso o
+// bundle do web e o .build-info.json da imagem caem no fallback 'dev'.
+const ARGS_DA_VERSAO = ['AZYBOARD_BUILD_VERSION', 'AZYBOARD_BUILD_DATE']
+for (const arquivo of ['Dockerfile', 'Dockerfile.web']) {
+  const conteudo = readFileSync(join(root, arquivo), 'utf8')
+  for (const arg of ARGS_DA_VERSAO) {
+    if (!new RegExp(`^ARG ${arg}=`, 'm').test(conteudo)) {
+      problemas.push(`${arquivo}: falta "ARG ${arg}=" para transportar a versão do build`)
+    }
+    if (!new RegExp(`^ENV ${arg}=\\$\\{${arg}\\}`, 'm').test(conteudo)) {
+      problemas.push(`${arquivo}: "${arg}" não é repassado ao build ("ENV ${arg}=\${${arg}}")`)
+    }
+  }
+}
+
+const jobPublicacao = workflow.split('publish-production-images:')[1] ?? ''
+if (!jobPublicacao.includes('scripts/build-version.ts')) {
+  problemas.push('ci.yml: o job de publicação de imagens não calcula a versão do build (scripts/build-version.ts)')
+}
+for (const [alvo, marcador] of [['API', 'Dockerfile'], ['web', 'Dockerfile.web']] as const) {
+  const bloco = jobPublicacao.split(`file: ${marcador}`)[1] ?? ''
+  for (const arg of ARGS_DA_VERSAO) {
+    // Montado por concatenação: `${{` dentro de template literal iniciaria interpolação.
+    const repasse = arg + '=${{ steps.'
+    if (!bloco.includes(repasse)) {
+      problemas.push(`ci.yml: a imagem da ${alvo} não recebe ${arg} como build-arg no job de publicação`)
+    }
+  }
+}
+
 if (problemas.length > 0) {
-  console.error('Coerência da versão do Bun no deploy FALHOU:')
+  console.error('Coerência da versão do Bun e do build no deploy FALHOU:')
   for (const problema of problemas) console.error(`  - ${problema}`)
   process.exit(1)
 }
-console.log(`Coerência OK: Bun ${versao} em .bun-version, Dockerfiles e workflow do CI.`)
+console.log(`Coerência OK: Bun ${versao} em .bun-version, Dockerfiles e workflow do CI; versão do build transportada nos dois artefatos.`)

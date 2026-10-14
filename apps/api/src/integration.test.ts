@@ -3762,6 +3762,15 @@ describe('versão do build (Card T60)', () => {
       expect(serialized.includes(forbidden)).toBe(false)
     }
   })
+
+  // change versao-do-build-visivel-no-produto: o proxy do web só encaminha /api/,
+  // então a mesma informação precisa estar alcançável atrás desse prefixo.
+  test('GET /api/version responde o mesmo conteúdo, sem sessão', async () => {
+    const direto = await app.fetch(new Request('http://test.local/version'))
+    const alias = await app.fetch(new Request('http://test.local/api/version'))
+    expect(alias.status).toBe(200)
+    expect(await alias.json()).toEqual(await direto.json())
+  })
 })
 
 describe('opções de ocultar módulos e épicos (Card T61)', () => {
