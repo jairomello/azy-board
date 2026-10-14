@@ -20,6 +20,7 @@ let links: unknown[]
 let attachments: unknown[]
 let attachmentsEnabled: boolean
 let patchFailure: { status: number; error: string } | null
+let patchGate: Promise<void> | null
 const fetchOriginal = globalThis.fetch
 
 function jsonResponse(body: unknown, status = 200) {
@@ -41,6 +42,7 @@ function installFetchStub() {
     if (method === 'GET' && path === '/projects/project-1/attachments') return jsonResponse(attachments)
     if (method === 'PATCH' && path === '/projects/project-1') {
       if (patchFailure) return jsonResponse({ error: patchFailure.error }, patchFailure.status)
+      if (patchGate) await patchGate
       project = { ...project, ...body }
       return jsonResponse(project)
     }
@@ -56,12 +58,13 @@ beforeEach(async () => {
   await i18n.changeLanguage('pt-BR')
   calls.length = 0
   authState.user = { id: 'user-1', globalGroup: 'ADMIN' }
-  project = { id: 'project-1', name: 'Projeto Planejado', startDate: null, plannedEndDate: null, plannedPoints: null, plannedHours: null, scope: null }
+  project = { id: 'project-1', name: 'Projeto Planejado', description: null, startDate: null, plannedEndDate: null, plannedPoints: null, plannedHours: null, scope: null }
   members = [{ userId: 'user-1', role: 'ADMIN' }]
   links = []
   attachments = []
   attachmentsEnabled = false
   patchFailure = null
+  patchGate = null
   installFetchStub()
 })
 
@@ -279,5 +282,138 @@ describe('ProjectPlanningModal (Card T59)', () => {
     await user.click(screen.getByRole('tab', { name: /Todos os links/ }))
     await screen.findByRole('link', { name: /Wiki/ })
     expect(screen.getByRole('dialog').className).toContain('h-[90vh]')
+  })
+
+  test('alterar só a descrição envia apenas a descrição no PATCH', async () => {
+    await openModal()
+
+    const user = userEvent.setup()
+    await typeInto(user, 'Descrição do projeto', 'Resumo do projeto')
+    expect(patchCalls()).toEqual([])
+
+    await user.click(saveButton())
+
+    await waitFor(() => expect(patchCalls()).toHaveLength(1))
+    expect(patchCalls()[0]).toMatchObject({ path: '/projects/project-1', body: { description: 'Resumo do projeto' } })
+  })
+
+  test('a descrição é gravada sem espaços nas pontas', async () => {
+    await openModal()
+
+    const user = userEvent.setup()
+    await typeInto(user, 'Descrição do projeto', '  Resumo com folga  ')
+    await user.click(saveButton())
+
+    await waitFor(() => expect(patchCalls()).toHaveLength(1))
+    expect(patchCalls()[0].body).toEqual({ description: 'Resumo com folga' })
+  })
+
+  test('o campo de descrição fica abaixo do nome, limita a 20.000 caracteres e desabilita ao salvar', async () => {
+    await openModal()
+
+    const description = screen.getByLabelText('Descrição do projeto') as HTMLTextAreaElement
+    expect(description.tagName).toBe('TEXTAREA')
+    expect(description.getAttribute('maxlength')).toBe('20000')
+    // O campo fica imediatamente abaixo do nome e acima das datas e estimativas.
+    const html = document.body.innerHTML
+    expect(html.indexOf('project-planning-name')).toBeLessThan(html.indexOf('project-planning-description'))
+    expect(html.indexOf('project-planning-description')).toBeLessThan(html.indexOf('planning-start-date'))
+    // Ajuda de preenchimento aponta o destino do texto (o card do projeto).
+    expect(screen.getByText(/card do projeto/i)).toBeInTheDocument()
+
+    let openGate: () => void = () => {}
+    patchGate = new Promise<void>(resolve => { openGate = resolve })
+    const user = userEvent.setup()
+    await typeInto(user, 'Descrição do projeto', 'Resumo')
+    await user.click(saveButton())
+
+    await waitFor(() => expect(description).toBeDisabled())
+    openGate()
+    await waitFor(() => expect(patchCalls()).toHaveLength(1))
+  })
+
+  test('descrição vazia grava string vazia e a modal reabre com o campo vazio', async () => {
+    project = { ...project, description: 'Resumo antigo' }
+    const first = await openModal()
+
+    const user = userEvent.setup()
+    await clearField(user, 'Descrição do projeto')
+    await user.click(saveButton())
+
+    await waitFor(() => expect(patchCalls()).toHaveLength(1))
+    expect(patchCalls()[0].body).toEqual({ description: '' })
+    first.unmount()
+
+    await openModal()
+    expect((screen.getByLabelText('Descrição do projeto') as HTMLTextAreaElement).value).toBe('')
+  })
+
+  test('descrição só com espaços é tratada como remoção do texto', async () => {
+    project = { ...project, description: 'Resumo antigo' }
+    await openModal()
+
+    const user = userEvent.setup()
+    await typeInto(user, 'Descrição do projeto', '   ')
+    await user.click(saveButton())
+
+    await waitFor(() => expect(patchCalls()).toHaveLength(1))
+    expect(patchCalls()[0].body).toEqual({ description: '' })
+  })
+
+  test('cancelar descarta a descrição sem gravar e mantém o valor do servidor', async () => {
+    project = { ...project, description: 'Resumo antigo' }
+    const closed: string[] = []
+    const first = await openModal({ onClose: () => { closed.push('cancelar') } })
+
+    const user = userEvent.setup()
+    await typeInto(user, 'Descrição do projeto', 'Resumo novo')
+    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+    expect(closed).toEqual(['cancelar'])
+    expect(patchCalls()).toEqual([])
+    first.unmount()
+
+    await openModal()
+    expect((screen.getByLabelText('Descrição do projeto') as HTMLTextAreaElement).value).toBe('Resumo antigo')
+  })
+
+  test('fechar pela cruz e ESC descartam a descrição sem gravar', async () => {
+    project = { ...project, description: 'Resumo antigo' }
+
+    const byCross: string[] = []
+    const crossView = await openModal({ onClose: () => { byCross.push('cruz') } })
+    const user = userEvent.setup()
+    await typeInto(user, 'Descrição do projeto', 'Resumo novo')
+    await user.click(screen.getByRole('button', { name: 'Fechar' }))
+    expect(byCross).toEqual(['cruz'])
+    crossView.unmount()
+
+    const byEscape: string[] = []
+    await openModal({ onClose: () => { byEscape.push('esc') } })
+    await typeInto(user, 'Descrição do projeto', 'Outro resumo')
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(byEscape).toEqual(['esc'])
+
+    expect(patchCalls()).toEqual([])
+  })
+
+  test('MEMBER/VIEWER veem a descrição em modo leitura, sem controles de edição', async () => {
+    authState.user = { id: 'user-2', globalGroup: 'TEAM_MEMBER' }
+    members = [{ userId: 'user-2', role: 'VIEWER' }]
+    project = { ...project, description: 'Resumo exibido no card' }
+    await openModal()
+
+    expect(screen.getByText('Resumo exibido no card')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Descrição do projeto')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Descrição do projeto' })).not.toBeInTheDocument()
+  })
+
+  test('descrição vazia aparece com o mesmo traço dos demais campos vazios', async () => {
+    authState.user = { id: 'user-2', globalGroup: 'TEAM_MEMBER' }
+    members = [{ userId: 'user-2', role: 'VIEWER' }]
+    await openModal()
+
+    // Descrição e escopo vazios usam o mesmo traço no modo leitura.
+    expect(screen.getAllByText('—')).toHaveLength(2)
   })
 })

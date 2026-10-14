@@ -135,6 +135,8 @@
   "openBoard": "Abrir tablero",
   "newProject": "Nuevo proyecto",
   "projectName": "Nombre del proyecto",
+  "projectDescription": "Descripción del proyecto",
+  "projectDescriptionPlaceholder": "Resumen mostrado en la tarjeta del proyecto en la pantalla de Proyectos.",
   "boardFormat": "Formato del tablero",
   "hierarchicalBoard": "Jerárquico: módulos, épicas e historias",
   "simpleBoard": "Simple: un solo Kanban",

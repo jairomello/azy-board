@@ -18,6 +18,7 @@ import { formatDate } from '../lib/formatters'
 export interface PlanningProject {
   id: string
   name: string
+  description?: string | null
   startDate?: string | null
   plannedEndDate?: string | null
   plannedPoints?: number | null
@@ -61,6 +62,7 @@ type Area = 'planning' | 'links' | 'attachments'
 
 interface Draft {
   name: string
+  description: string
   startDate: string
   plannedEndDate: string
   plannedPoints: string
@@ -68,11 +70,12 @@ interface Draft {
   scope: string
 }
 
-const emptyDraft: Draft = { name: '', startDate: '', plannedEndDate: '', plannedPoints: '', plannedHours: '', scope: '' }
+const emptyDraft: Draft = { name: '', description: '', startDate: '', plannedEndDate: '', plannedPoints: '', plannedHours: '', scope: '' }
 
 function draftFromProject(project: PlanningProject): Draft {
   return {
     name: project.name,
+    description: project.description ?? '',
     startDate: project.startDate ?? '',
     plannedEndDate: project.plannedEndDate ?? '',
     plannedPoints: project.plannedPoints != null ? String(project.plannedPoints) : '',
@@ -91,6 +94,11 @@ function planningPatch(project: PlanningProject, draft: Draft): Record<string, s
   const patch: Record<string, string | number | null> = {}
   const name = draft.name.trim()
   if (name !== project.name) patch.name = name
+  // A descrição é gravada sem espaços nas pontas e o valor vazio vai como '' (o
+  // schema estrito da API rejeita null nesse campo). A comparação também apara o
+  // valor carregado para que um texto antigo com espaços não habilite o Salvar.
+  const description = draft.description.trim()
+  if (description !== (project.description ?? '').trim()) patch.description = description
   if (draft.startDate !== (project.startDate ?? '')) patch.startDate = draft.startDate || null
   if (draft.plannedEndDate !== (project.plannedEndDate ?? '')) patch.plannedEndDate = draft.plannedEndDate || null
   if (draft.plannedPoints !== draftFromNumber(project.plannedPoints)) patch.plannedPoints = draft.plannedPoints ? Number(draft.plannedPoints) : null
@@ -268,6 +276,25 @@ export function ProjectPlanningModal({ projectId, onClose, onSaved }: Props) {
                       aria-describedby={nameError ? 'project-planning-name-error' : undefined}
                       className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50" />
                     {nameError && <p id="project-planning-name-error" role="alert" className="mt-1 text-sm text-destructive">{nameError}</p>}
+                  </div>
+                  <div>
+                    <label htmlFor="project-planning-description" className="block text-sm font-medium text-foreground mb-1">{t('common:projectDescription')}</label>
+                    {isAdmin ? (
+                      <>
+                        <textarea id="project-planning-description" value={draft.description} disabled={saving}
+                          rows={2}
+                          maxLength={20_000}
+                          placeholder={t('common:projectDescriptionPlaceholder')}
+                          aria-describedby="project-planning-description-help"
+                          onChange={e => setDraft(previous => ({ ...previous, description: e.target.value }))}
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground disabled:opacity-50" />
+                        <p id="project-planning-description-help" className="mt-1 text-xs text-muted-foreground">{t('common:projectDescriptionPlaceholder')}</p>
+                      </>
+                    ) : draft.description ? (
+                      <p className="whitespace-pre-wrap rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">{draft.description}</p>
+                    ) : (
+                      <p className="text-sm text-muted-foreground italic">—</p>
+                    )}
                   </div>
                   <ProjectPlanningFields
                     startDate={draft.startDate}

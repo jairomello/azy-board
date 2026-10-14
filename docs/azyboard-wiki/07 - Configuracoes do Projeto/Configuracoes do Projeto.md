@@ -30,7 +30,9 @@ O planejamento do projeto também pode ser consultado fora do menu de Configura�
 - o **nome do projeto no cabeçalho do Board**, que agora é um controle clicável; e
 - o botão **Editar** de cada projeto na tela de listagem de projetos.
 
-A modal reúne o nome do projeto, a Data de Início, a Data de Fim Previsto, o Total de Pontos Previsto, o Total de Horas Previsto e o Escopo. Administradores editam os campos ali mesmo; Membros e Visualizadores os veem em modo somente leitura.
+A modal reúne o nome do projeto, a **Descrição do projeto**, a Data de Início, a Data de Fim Previsto, o Total de Pontos Previsto, o Total de Horas Previsto e o Escopo. Administradores editam os campos ali mesmo; Membros e Visualizadores os veem em modo somente leitura.
+
+A **Descrição do projeto** é o texto simples exibido no card do projeto na tela de listagem de Projetos (o mesmo resumo que aparece abaixo do nome). Ela é diferente do **Escopo**, que é o conteúdo de planejamento em texto rico: mantendo a descrição em texto puro, o que você digita é exatamente o que o card mostra. Gravar a descrição vazia (ou só com espaços) remove o texto e o card volta a exibir a descrição padrão. O campo não aparece na seção **Planejamento** da página de Configurações — ele é editado apenas aqui na modal.
 
 Na modal a gravação é explícita: o rodapé traz **Salvar** e **Cancelar**. As alterações ficam pendentes até você acionar **Salvar** (que envia de uma vez só os campos alterados) e **Cancelar**, a cruz, o ESC ou o clique fora fecham a modal descartando o que não foi salvo. A seção **Planejamento** da página de Configurações continua gravando automaticamente ao sair de cada campo.
 

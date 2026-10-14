@@ -325,7 +325,7 @@
   "scheduleGroup": "Cronograma",
   "scheduleCriticalPathHint": "Destaca no board os itens do caminho crítico (disponível com dependências cadastradas).",
   "projectPlanningTitle": "Planejamento do projeto",
-  "projectPlanningSubtitle": "Nome, datas, estimativas e escopo",
+  "projectPlanningSubtitle": "Nome, descrição, datas, estimativas e escopo",
   "projectPlanningLoadError": "Não foi possível carregar o planejamento do projeto.",
   "projectPlanningSaveError": "Não foi possível salvar o planejamento do projeto.",
   "projectPlanningNameRequired": "O nome do projeto é obrigatório.",

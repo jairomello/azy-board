@@ -325,7 +325,7 @@
   "scheduleGroup": "Cronograma",
   "scheduleCriticalPathHint": "Resalta en el tablero los elementos de la ruta crítica (disponible con dependencias registradas).",
   "projectPlanningTitle": "Planificación del proyecto",
-  "projectPlanningSubtitle": "Nombre, fechas, estimaciones y alcance",
+  "projectPlanningSubtitle": "Nombre, descripción, fechas, estimaciones y alcance",
   "projectPlanningLoadError": "No se pudo cargar la planificación del proyecto.",
   "projectPlanningSaveError": "No se pudo guardar la planificación del proyecto.",
   "projectPlanningNameRequired": "El nombre del proyecto es obligatorio.",

@@ -232,13 +232,19 @@ os campos que divergirem dos valores carregados.
 ### Requirement: Campo de descrição do projeto na modal
 
 A modal SHALL oferecer, na aba de planejamento e para quem pode editar o projeto, um
-campo de Descrição do projeto em texto simples, com o limite de 20.000 caracteres
-aceito pela API, gravado pelo mesmo acionamento de salvar dos demais campos.
+campo de Descrição do projeto em texto simples, posicionado logo abaixo do Nome do
+projeto, com o limite de 20.000 caracteres aceito pela API, gravado pelo mesmo
+acionamento de salvar dos demais campos.
 
 #### Scenario: Editar e salvar a descrição
 
 - **WHEN** um ADMIN altera a Descrição do projeto e aciona o botão de salvar
 - **THEN** o sistema envia a descrição em `PATCH /projects/:id` e o card do projeto passa a exibir o texto salvo
+
+#### Scenario: Posição do campo na aba de planejamento
+
+- **WHEN** um ADMIN abre a modal na aba de planejamento
+- **THEN** o campo de Descrição do projeto aparece imediatamente abaixo do Nome do projeto e acima dos campos de datas e estimativas
 
 #### Scenario: Descrição gravada sem espaços nas pontas
 
@@ -279,3 +285,25 @@ sem controles de edição para usuários que não podem editar o projeto.
 
 - **WHEN** um usuário com papel MEMBER ou VIEWER abre a modal em um projeto com descrição
 - **THEN** a descrição é exibida em modo somente leitura, sem controles de edição
+
+### Requirement: Distinção entre a Descrição e o Escopo
+
+A modal SHALL deixar explícito que a Descrição do projeto é o resumo em texto simples
+exibido no card da tela de Projetos, enquanto o Escopo é o conteúdo de planejamento em
+texto rico: cada campo SHALL ter rótulo próprio e o campo de Descrição SHALL trazer
+ajuda de preenchimento que indique o destino do texto.
+
+#### Scenario: Rótulos próprios para Descrição e Escopo
+
+- **WHEN** um usuário abre a aba de planejamento da modal
+- **THEN** os campos de descrição e de escopo aparecem identificados por rótulos distintos, e nenhum deles exibe o conteúdo do outro
+
+#### Scenario: Ajuda do campo aponta o destino do texto
+
+- **WHEN** um ADMIN abre a modal em um projeto cuja descrição ainda não foi preenchida
+- **THEN** o campo de Descrição do projeto exibe ajuda de preenchimento que informa que o texto é o resumo mostrado no card do projeto
+
+#### Scenario: Escopo permanece texto rico
+
+- **WHEN** um ADMIN edita o campo Escopo na modal
+- **THEN** o campo segue com edição de texto rico (formatação e expansão), enquanto a Descrição permanece em texto simples
