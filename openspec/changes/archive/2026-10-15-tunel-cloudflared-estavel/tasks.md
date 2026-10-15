@@ -15,7 +15,7 @@ Board ref: B13 e T79 (projeto Azyboard)
 ## 3. Verificação integrada
 
 - [x] 3.1 Rodar `bun run check`, `bun run check:deploy-versions` e `bun run test:smoke` verdes na árvore final
-- [ ] 3.2 Confirmar no deploy de produção que o relatório traz a sonda pública e a contagem de erros de DNS, e que o túnel permanece conectado após a recriação dos containers
+- [x] 3.2 Confirmar no deploy de produção que o relatório traz a sonda pública e a contagem de erros de DNS, e que o túnel permanece conectado após a recriação dos containers
 
 ## Workflow follow-up
 
