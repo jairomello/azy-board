@@ -8,7 +8,7 @@ Definir como nomes de pessoas são exibidos nas superfícies de leitura do produ
 
 ### Requirement: Nome de pessoa exibido em duas partes
 
-As superfícies de leitura que exibem nomes de pessoas SHALL reduzir o nome a duas partes — a primeira e a última — e SHALL limitar o resultado a 24 caracteres, cortando com reticências quando exceder. O nome completo SHALL permanecer acessível por tooltip ou rótulo acessível, e SHALL NOT ser alterado em campos de escolha ou de edição.
+As superfícies de leitura que exibem nomes de pessoas SHALL reduzir o nome a duas partes — a primeira e a última — e SHALL limitar o resultado a 15 caracteres, cortando com reticências quando exceder. O nome completo SHALL permanecer acessível por tooltip ou rótulo acessível, e SHALL NOT ser alterado em campos de escolha ou de edição.
 
 #### Scenario: Nome com mais de duas partes
 
@@ -22,7 +22,7 @@ As superfícies de leitura que exibem nomes de pessoas SHALL reduzir o nome a du
 
 #### Scenario: Nome acima do limite é cortado com reticências
 
-- **WHEN** o nome em duas partes passa de 24 caracteres
+- **WHEN** o nome em duas partes passa de 15 caracteres
 - **THEN** a superfície corta o excesso e acrescenta reticências, mantendo o nome completo no tooltip
 
 #### Scenario: Nome único não inventa sobrenome

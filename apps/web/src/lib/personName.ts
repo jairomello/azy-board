@@ -1,5 +1,5 @@
 /** Limite de caracteres do nome exibido, incluindo as reticências do corte. */
-export const PERSON_NAME_MAX_LENGTH = 24
+export const PERSON_NAME_MAX_LENGTH = 15
 
 /**
  * Nome de pessoa pronto para exibição em superfícies de leitura.

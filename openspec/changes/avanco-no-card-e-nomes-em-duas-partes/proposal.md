@@ -10,7 +10,7 @@ Duas fricções ficaram visíveis no uso do board e do dashboard depois da mudan
 ## What Changes
 
 - A barra do card passa a refletir o **avanço** (peso da coluna refinado pelo checklist), a mesma regra das lanes, da árvore e do dashboard. O contador do checklist permanece, e a barra ganha rótulo acessível de avanço no fluxo.
-- Nomes de pessoas passam a ser exibidos em **duas partes** (primeira + última), limitados a 24 caracteres com reticências, mantendo o nome completo em tooltip/aria, nos chips de filtro ativo do board, no eixo da carga da equipe e na coluna Responsável da árvore.
+- Nomes de pessoas passam a ser exibidos em **duas partes** (primeira + última), limitados a 15 caracteres com reticências, mantendo o nome completo em tooltip/aria, nos chips de filtro ativo do board, no eixo da carga da equipe e na coluna Responsável da árvore.
 
 ## Capabilities
 

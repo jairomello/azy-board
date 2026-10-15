@@ -40,18 +40,18 @@ A barra passa a representar o avanço e aparece quando ele for maior que zero. O
 
 A barra ganha `title`/`aria-label` "Avanço no fluxo: X%" vindo de chave de tradução, para que a leitura assistiva não confunda a barra com conclusão.
 
-### D4 — Nomes: primeira + última parte, 24 caracteres
+### D4 — Nomes: primeira + última parte, 15 caracteres
 
 Um helper compartilhado no web aplica, em ordem:
 
 1. normaliza espaços (inclusive espaços múltiplos);
 2. se houver mais de duas partes, mantém a **primeira e a última** ("Thiago Corrêa Simas de Melo Porto" → "Thiago Porto");
-3. se o resultado passar de **24 caracteres**, corta e acrescenta "…";
+3. se o resultado passar de **15 caracteres**, corta e acrescenta "…";
 4. devolve o nome completo separadamente para `title`/`aria-label`.
 
-O limite de 24 caracteres foi escolhido por caber "Lorenzo Dall'Agnol" (18) sem cortar e ainda conter nomes compostos curtos.
+O limite de 15 caracteres vem da medição do eixo "Carga da Equipe": a calha tem 124 px com fonte de 11 px e o recharts quebra o rótulo em duas linhas a partir de ~88 px. Nas medições, "Francisco Prestes" (17 caracteres, 85 px) fica em uma linha e "Lorenzo Dall'Agnol" (18 caracteres, 92 px) quebra; com 15 caracteres o pior caso medido ("Maximiliano Fe…") fica em 85 px e permanece em uma linha.
 
-**Alternativas descartadas:** duas primeiras partes ("Thiago Corrêa") — menos identificável quando o sobrenome final é o usado; corte cego por caracteres — foi o que motivou o ajuste (perdia o sobrenome).
+**Alternativas descartadas:** duas primeiras partes ("Thiago Corrêa") — menos identificável quando o sobrenome final é o usado; corte cego por caracteres — foi o que motivou o ajuste (perdia o sobrenome); alargar a calha do eixo — encolheria o gráfico em vez de resolver o rótulo.
 
 ### D5 — Superfícies
 

@@ -10,7 +10,7 @@ Board ref: T75 e T76 (projeto Azyboard)
 
 ## 2. Exibição de nomes em duas partes
 
-- [x] 2.1 Criar o helper compartilhado de exibição de nomes (primeira + última parte, limite de 24 caracteres com reticências, nome completo devolvido à parte) com teste unitário cobrindo nome único, duas partes, três ou mais, espaços extras, acentos e limite exato (T76)
+- [x] 2.1 Criar o helper compartilhado de exibição de nomes (primeira + última parte, limite de 15 caracteres com reticências, nome completo devolvido à parte) com teste unitário cobrindo nome único, duas partes, três ou mais, espaços extras, acentos e limite exato (T76)
 - [x] 2.2 Aplicar a regra nos chips de filtro ativo do board, no eixo da carga da equipe e na coluna Responsável da árvore, mantendo o nome completo em `title`/`aria-label`; verificar com teste de componente e com o teste de contrato estrutural das superfícies (T76)
 
 ## 3. Verificação integrada

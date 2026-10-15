@@ -4,7 +4,8 @@ import { PERSON_NAME_MAX_LENGTH, displayPersonName } from './personName'
 describe('exibição de nomes de pessoas', () => {
   test('reduz a primeira e a última parte do nome', () => {
     expect(displayPersonName('Thiago Corrêa Simas de Melo Porto')).toBe('Thiago Porto')
-    expect(displayPersonName('Lorenzo Garcia Dall\u2019Agnol')).toBe('Lorenzo Dall\u2019Agnol')
+    // "Lorenzo Dall’Agnol" (18) passa do limite e é cortado.
+    expect(displayPersonName('Lorenzo Garcia Dall\u2019Agnol')).toBe('Lorenzo Dall\u2019A\u2026')
   })
 
   test('preserva nomes com uma ou duas partes', () => {
