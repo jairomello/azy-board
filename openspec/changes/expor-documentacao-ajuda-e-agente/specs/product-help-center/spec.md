@@ -44,6 +44,12 @@ A central de ajuda SHALL renderizar cada página a partir do markdown versionado
 - **WHEN** uma página referencia outra página por link relativo
 - **THEN** a navegação abre o destino dentro da central de ajuda
 
+#### Scenario: Publicação sob base path
+
+- **WHEN** a aplicação é publicada sob um base path (ex.: `/azyboard/`)
+- **THEN** os links internos da ajuda apontam para o caminho publicado, de modo que abrir em nova aba ou copiar o endereço chegue à página correta
+- **AND** a navegação interna continua resolvendo a rota relativa ao base path
+
 #### Scenario: Conteúdo sem reescrita paralela
 
 - **WHEN** uma página é exibida

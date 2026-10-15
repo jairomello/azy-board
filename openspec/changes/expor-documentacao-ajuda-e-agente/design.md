@@ -164,6 +164,12 @@ Integração:
 - Cada página é buscada sob demanda; nenhuma biblioteca nova entra no bundle,
   preservando o orçamento de bundle.
 - Todo HTTP passa por `apps/web/src/lib/api.ts` (contrato `web-api-client`).
+- **Base path**: em deploy path-based (ex.: `/azyboard/`) o `BrowserRouter` usa
+  `basename`, então a navegação interna já resolve sozinha — mas o `href` real
+  dos links da ajuda precisa do prefixo, senão abrir em nova aba ou copiar o
+  endereço aponta para a raiz do domínio. O prefixo vem de `appBasePath()`
+  (`lib/appUrl.ts`, fonte única do `window.__BASE_PATH__`) e é validado antes de
+  entrar no HTML renderizado.
 
 ### D7. i18n apenas do chrome da ajuda
 

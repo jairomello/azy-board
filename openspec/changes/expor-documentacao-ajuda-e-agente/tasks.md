@@ -41,7 +41,7 @@ Board ref: 35b480fa-9dc2-47e3-8400-954f472ff2ea (T65 — Azy Agent com acesso à
 
 - [x] 6.1 Embarcar `docs/azyboard-wiki` na imagem da API e definir `AZYBOARD_HELP_DIR` no `Dockerfile`; verificar com teste unitário de resolução de diretório apontando para o destino da imagem e com `bun run check:deploy-versions`
 - [x] 6.2 Documentar em `DEPLOY.md` o diretório embarcado e a variável, e garantir que a documentação de deploy segue íntegra rodando `bun run check:docs`
-- [ ] 6.3 Verificação integrada: `bun run check` e `bun run test:smoke` verdes; com sessão autenticada, confirmar na interface a navegação por tópicos, a leitura de uma página e o item `Ajuda`, e no chat confirmar uma resposta de uso com citação da página de origem
+- [x] 6.3 Verificação integrada: `bun run check` e `bun run test:smoke` verdes; com sessão autenticada, confirmar na interface a navegação por tópicos, a leitura de uma página e o item `Ajuda`, e no chat confirmar uma resposta de uso com citação da página de origem
 
 ## Workflow follow-up
 
