@@ -10,7 +10,7 @@ os documentos referenciam o artefato gerado em vez de repeti-lo.
 |---|---|---|
 | Código, schema e runtime | Fonte dos contratos | Tipos, schemas de validação, registry de ferramentas MCP, constantes de limites. |
 | `openspec/specs/` e `openspec/changes/` | Decisão e comportamento | Requisitos e cenários de comportamento do produto, decisões técnicas e histórico de mudanças. |
-| [`docs/azyboard-wiki/`](azyboard-wiki/) | Uso do produto | Passo a passo para pessoas usarem o Azy Board. |
+| [`docs/azyboard-wiki/`](azyboard-wiki/) | Uso do produto | Passo a passo para pessoas usarem o Azy Board. É a fonte da central de ajuda (`/help`) e da documentação consultada pelo Azy Agent. |
 | [`README.md`](../README.md) | Arquitetura e início rápido | Visão geral, stack, arquitetura e primeiros passos. |
 | [`CHANGELOG.md`](../CHANGELOG.md) | Histórico | O que mudou em cada versão. |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Padrões de engenharia | Convenções, fluxo de PR e definição de pronto. |
@@ -28,6 +28,16 @@ Não edite os arquivos manualmente nem replique seus valores em outros documento
 | [`generated/assistant-limits.md`](generated/assistant-limits.md) | `packages/types/src/assistantLimits.ts` |
 | [`generated/openapi.json`](generated/openapi.json) | `apps/api/src/validation.ts` |
 | `apps/mcp/README.md` (bloco do catálogo) | `packages/tool-registry/src/registry.ts` |
+
+## Central de ajuda
+
+A central de ajuda (`/help`, autenticada) e o Azy Agent servem o manual funcional
+a partir da wiki versionada. O escopo exposto — módulos `00`–`09` e a capa
+`Home.md`, com exclusão de `controle/`, `modelos/`, `.obsidian/` e das seções
+técnicas recolhíveis (`<details>`) — é declarado em um único ponto:
+`apps/api/src/services/helpContent.ts`. Nenhum outro ponto mantém uma lista
+própria do que é exposto, e a verificação automatizada falha se o conteúdo
+servido divergir dessa definição.
 
 ## Verificação
 

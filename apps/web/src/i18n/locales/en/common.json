@@ -239,5 +239,14 @@
     }
   },
   "loadMore": "Load more",
-  "buildVersion": "Version {{version}}"
+  "buildVersion": "Version {{version}}",
+  "help": {
+    "navLabel": "Help",
+    "title": "Help center",
+    "topics": "Topics",
+    "loading": "Loading the documentation…",
+    "error": "Could not load the documentation.",
+    "retry": "Try again",
+    "empty": "No topics available."
+  }
 }

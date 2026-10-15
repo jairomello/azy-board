@@ -15,6 +15,7 @@ const AccountPage = lazy(() => import('./pages/AccountPage'))
 const AdminUsersPage = lazy(() => import('./pages/AdminUsersPage'))
 const AdminAttachmentsPage = lazy(() => import('./pages/AdminAttachmentsPage'))
 const ProjectDashboardPage = lazy(() => import('./pages/ProjectDashboardPage'))
+const HelpPage = lazy(() => import('./pages/HelpPage'))
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -37,6 +38,8 @@ export default function App() {
           <Route path="/projects/:projectId/dashboard" element={<ProtectedRoute><ProjectDashboardPage /></ProtectedRoute>} />
           <Route path="/projects/:projectId/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
           <Route path="/account" element={<ProtectedRoute><AccountPage /></ProtectedRoute>} />
+          <Route path="/help" element={<ProtectedRoute><HelpPage /></ProtectedRoute>} />
+          <Route path="/help/:slug" element={<ProtectedRoute><HelpPage /></ProtectedRoute>} />
           <Route path="/admin/users" element={<ProtectedRoute><AdminUsersPage /></ProtectedRoute>} />
           <Route path="/admin/attachments" element={<ProtectedRoute><AdminAttachmentsPage /></ProtectedRoute>} />
           <Route path="/admin/assistant" element={<ProtectedRoute><RootAssistantSettings /></ProtectedRoute>} />

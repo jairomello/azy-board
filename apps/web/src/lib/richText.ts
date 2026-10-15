@@ -49,28 +49,33 @@ function isSafeUrl(url: string): boolean {
   return ALLOWED_PROTOCOLS.has(scheme[1].toLowerCase())
 }
 
-type RendererContext = { parser: { parseInline: (tokens: Token[]) => string } }
+export type MarkdownRendererContext = {
+  parser: { parseInline: (tokens: Token[]) => string; parse: (tokens: Token[]) => string }
+}
 
-marked.use({
-  renderer: {
-    html(token: Tokens.HTML | Tokens.Tag) {
-      if (/^<br\s*\/?>$/i.test(token.text.trim())) return '<br>'
-      return escapeHtml(token.text)
-    },
-    link(this: unknown, token: Tokens.Link) {
-      const text = (this as RendererContext).parser.parseInline(token.tokens)
-      if (!isSafeUrl(token.href)) return text
-      const title = token.title ? ` title="${escapeHtml(token.title)}"` : ''
-      return `<a href="${escapeHtml(token.href)}"${title}>${text}</a>`
-    },
-    image(this: unknown, token: Tokens.Image) {
-      const alt = escapeHtml(token.text)
-      if (!isSafeUrl(token.href)) return alt
-      const title = token.title ? ` title="${escapeHtml(token.title)}"` : ''
-      return `<img src="${escapeHtml(token.href)}" alt="${alt}"${title}>`
-    },
+// Regras de segurança compartilhadas por toda instância de `marked` do web
+// (descrições de cards e central de ajuda): HTML cru é escapado e URLs de link
+// e imagem passam por filtro de protocolo. Fonte única da regra.
+export const safeMarkdownRenderer = {
+  html(token: Tokens.HTML | Tokens.Tag) {
+    if (/^<br\s*\/?>$/i.test(token.text.trim())) return '<br>'
+    return escapeHtml(token.text)
   },
-})
+  link(this: MarkdownRendererContext, token: Tokens.Link) {
+    const text = this.parser.parseInline(token.tokens)
+    if (!isSafeUrl(token.href)) return text
+    const title = token.title ? ` title="${escapeHtml(token.title)}"` : ''
+    return `<a href="${escapeHtml(token.href)}"${title}>${text}</a>`
+  },
+  image(this: MarkdownRendererContext, token: Tokens.Image) {
+    const alt = escapeHtml(token.text)
+    if (!isSafeUrl(token.href)) return alt
+    const title = token.title ? ` title="${escapeHtml(token.title)}"` : ''
+    return `<img src="${escapeHtml(token.href)}" alt="${alt}"${title}>`
+  },
+}
+
+marked.use({ renderer: safeMarkdownRenderer })
 
 // Tags HTML conhecidas: separa HTML legado de Markdown (que pode começar com
 // autolink `<https://…>`, que NÃO é HTML).

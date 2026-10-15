@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { normalizeTerms } from './termNormalization'
 
 export const KNOWLEDGE_PACK_VERSION = '2026-10-03.1'
 const MAX_RESULTS = 5
@@ -28,7 +29,6 @@ const sources: KnowledgeSource[] = [
 ]
 
 function hash(value: string): string { return createHash('sha256').update(value).digest('hex') }
-function words(value: string): string[] { return value.toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[\u0300-\u036f]/g, '').match(/[a-z0-9_]+/g) ?? [] }
 
 export function buildKnowledgePack(input: readonly KnowledgeSource[] = sources): KnowledgeChunk[] {
   return input.flatMap(source => {
@@ -41,11 +41,11 @@ export const AZY_KNOWLEDGE_PACK = Object.freeze(buildKnowledgePack())
 export const KNOWLEDGE_PACK_SOURCES = Object.freeze(AZY_KNOWLEDGE_PACK.map(({ id, path, kind, sha256 }) => ({ id, path, kind, sha256 })))
 
 export function retrieveKnowledge(query: string, limit = MAX_RESULTS, pack: readonly KnowledgeChunk[] = AZY_KNOWLEDGE_PACK): KnowledgeResult[] {
-  const terms = words(query.slice(0, MAX_QUERY_LENGTH))
+  const terms = normalizeTerms(query.slice(0, MAX_QUERY_LENGTH))
   if (!terms.length) return []
   const unique = new Set(terms)
   return pack.map(chunk => {
-    const text = words(`${chunk.id} ${chunk.path} ${chunk.content}`)
+    const text = normalizeTerms(`${chunk.id} ${chunk.path} ${chunk.content}`)
     const score = [...unique].reduce((total, term) => total + (text.includes(term) ? 1 : 0), 0)
     return { ...chunk, score, excerpt: chunk.content.slice(0, 1_200) }
   }).filter(result => result.score > 0).sort((a, b) => b.score - a.score || a.chunkId.localeCompare(b.chunkId)).slice(0, Math.max(0, Math.min(limit, MAX_RESULTS)))

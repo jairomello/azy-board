@@ -142,6 +142,13 @@ A resposta é JSON-RPC; o segundo comando deve listar as ferramentas (`list_task
   `apps/api/src/db/migrations` em `/app/migrations` (revisadas junto com o
   código em cada commit).
 - `UPLOADS_DIR=/app/uploads` — volume de uploads (definido pela imagem).
+- `AZYBOARD_HELP_DIR=/app/help` — manual funcional embarcado pela imagem da API
+  (cópia de `docs/azyboard-wiki`). É a fonte da central de ajuda (`/help`) e da
+  documentação consultada pelo Azy Agent; o escopo exposto é definido em
+  `apps/api/src/services/helpContent.ts`. A ausência do diretório faz a ajuda
+  responder `HELP_UNAVAILABLE`, sem derrubar o restante da aplicação.
+- `AZYBOARD_SKILL_DIR=/app/skills/azyboard` — skill oficial embarcada, servida
+  para download em Minha conta.
 - `FRONTEND_URL=https://example.com/app/` (origem permitido pelo CORS).
 - `JWT_SECRET`: segredo para assinar o cookie de sessão.
 - `AZYBOARD_MCP_HTTP_ENABLED` (opcional): `false` desliga o endpoint MCP remoto

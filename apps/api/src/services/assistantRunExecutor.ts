@@ -9,6 +9,7 @@ import { createWorkerToolApi, loadRunContext } from './workerContext'
 import { executeSharedTool } from './assistantTools'
 import { explainItemVisibility } from './itemVisibility'
 import { openPlanningResult } from './planningGapCommand'
+import { resolveDocTool } from './assistantDocs'
 import { FallbackModelProvider, type FallbackModelCandidate } from './fallbackModelProvider'
 import { logger } from './logger'
 
@@ -165,6 +166,8 @@ export async function executeAssistantRun(
     explainItemVisibility,
     // Card T26 — abertura da população fixada do resultado de lacunas.
     openPlanningResult,
+    // Documentação do produto: consulta somente leitura resolvida no servidor.
+    readDocs: (_context, name, args) => resolveDocTool(name, args),
     assertAvailable: async () => {
       // [T37] Posse perdida bloqueia novos efeitos antes de qualquer novo dispatch.
       if (fence?.signal.aborted) throw new Error('LEASE_LOST')

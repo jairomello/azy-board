@@ -4,6 +4,7 @@ import { assistantEvents, assistantRuns, assistantToolCalls } from '../db/schema
 import type { AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 import { AssistantHarness, operationHash } from '../services/assistantHarness'
 import { executeSharedTool, friendlyToolName } from '../services/assistantTools'
+import { resolveDocTool } from '../services/assistantDocs'
 import { runAssertState } from './aggregate'
 import { judgeCase } from './judge'
 import { evaluateDeterministic } from './metrics'
@@ -80,6 +81,8 @@ async function runOnce(world: EvalWorld, config: ResolvedProviderConfig, dataset
         }
       },
       authorize: async () => {},
+      // Documentação do produto: mesma resolução de leitura usada em produção.
+      readDocs: (_context, name, args) => resolveDocTool(name, args),
     })
 
     let finalTextBuilder = ''

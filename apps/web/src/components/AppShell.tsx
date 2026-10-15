@@ -10,6 +10,7 @@ import {
   Bot,
   ChevronDown,
   Paperclip,
+  CircleHelp,
 } from 'lucide-react'
 import { LanguageSelector } from './LanguageSelector'
 import { ProfileDropdown } from './ProfileDropdown'
@@ -154,6 +155,13 @@ export function AppShell({
       href: '/account',
       icon: UserRound,
       active: location.pathname === '/account',
+    })
+    // Central de ajuda: disponível a todo usuário autenticado, antes do grupo Admin.
+    items.push({
+      label: tCommon('help.navLabel', { defaultValue: 'Ajuda' }),
+      href: '/help',
+      icon: CircleHelp,
+      active: location.pathname.startsWith('/help'),
     })
     if (user && canAccessAdmin(user.globalGroup)) {
       items.push({

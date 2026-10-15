@@ -239,5 +239,14 @@
     }
   },
   "loadMore": "Cargar más",
-  "buildVersion": "Versión {{version}}"
+  "buildVersion": "Versión {{version}}",
+  "help": {
+    "navLabel": "Ayuda",
+    "title": "Centro de ayuda",
+    "topics": "Temas",
+    "loading": "Cargando la documentación…",
+    "error": "No se pudo cargar la documentación.",
+    "retry": "Intentar de nuevo",
+    "empty": "No hay temas disponibles."
+  }
 }

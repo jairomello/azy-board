@@ -198,6 +198,39 @@ async function downloadFile(path: string, options: ApiRequestOptions = {}): Prom
   return { blob: await res.blob(), fileName: fileNameFromDisposition(res.headers.get('Content-Disposition')) }
 }
 
+/** Central de ajuda: índice de tópicos e páginas do manual versionado. */
+export interface HelpTopicSummary {
+  slug: string
+  title: string
+  order: number
+  path: string
+}
+
+export interface HelpModuleSummary {
+  id: string
+  title: string
+  order: number
+  pages: HelpTopicSummary[]
+}
+
+export interface HelpIndexResponse {
+  version: string
+  home: HelpTopicSummary | null
+  modules: HelpModuleSummary[]
+}
+
+export interface HelpPageResponse {
+  version: string
+  slug: string
+  title: string
+  order: number
+  path: string
+  moduleId: string | null
+  moduleTitle: string | null
+  sha256: string
+  markdown: string
+}
+
 export const api = {
   get: <T>(path: string, options?: ApiRequestOptions) => request<T>(path, options),
   post: <T>(path: string, body: unknown, options?: ApiRequestOptions) => request<T>(path, { ...options, method: 'POST', body: JSON.stringify(body) }),
@@ -214,6 +247,11 @@ export const api = {
   postForm: <T>(path: string, formData: FormData, options?: ApiRequestOptions) => request<T>(path, { ...options, method: 'POST', body: formData }),
   // Download binário (ex.: `.zip` da skill oficial) pela porta HTTP única.
   download: (path: string, options?: ApiRequestOptions) => downloadFile(path, options),
+  // Central de ajuda: conteúdo autenticado servido pela API (nunca asset público).
+  help: {
+    index: (options?: ApiRequestOptions) => request<HelpIndexResponse>('/help/index', options),
+    page: (slug: string, options?: ApiRequestOptions) => request<HelpPageResponse>(`/help/pages/${encodeURIComponent(slug)}`, options),
+  },
 }
 
 export function cn(...classes: (string | undefined | false | null)[]) {
