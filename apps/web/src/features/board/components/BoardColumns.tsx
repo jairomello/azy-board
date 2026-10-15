@@ -12,6 +12,7 @@ import { AddCardForm } from '../../../components/AddCardForm'
 import { KanbanCard } from '../../../components/KanbanCard'
 import type { ItemType } from '@azy-board/domain'
 import type { Column, ItemData, Sprint } from '../model/types'
+import { cardAdvance, columnAdvanceBands } from '../model/cardAdvance'
 import { sortBoardItemsByPosition } from '../model/interaction'
 import type { ProjectVersion } from '../../../components/ItemModal'
 
@@ -56,6 +57,8 @@ export function BoardColumns({
   const { t } = useTranslation('board')
 
   const columnSortableIds = columns.map(column => `${laneId}:col:${column.id}`)
+  // Faixas de avanço resolvidas uma vez por render; cada card usa a faixa da sua coluna.
+  const advanceBands = columnAdvanceBands(columns)
 
   return (
     <SortableContext id={`cols-${laneId}`} items={columnSortableIds} strategy={horizontalListSortingStrategy}>
@@ -87,7 +90,7 @@ export function BoardColumns({
                 <div className="board-column-cards flex-1 px-3 pt-2 pb-9 space-y-2">
                   <SortableContext id={`${laneId}-cards-${column.id}`} items={columnTasks.map(task => task.id)} strategy={verticalListSortingStrategy}>
                     {columnTasks.map(task => (
-                      <KanbanCard key={task.id} card={task} onOpenDetail={onOpenDetail} onTitleSave={onTitleSave} onDelete={onDelete} onArchive={onArchive} critical={criticalIds?.has(task.id)} />
+                      <KanbanCard key={task.id} card={task} advance={cardAdvance(advanceBands, task)} onOpenDetail={onOpenDetail} onTitleSave={onTitleSave} onDelete={onDelete} onArchive={onArchive} critical={criticalIds?.has(task.id)} />
                     ))}
                   </SortableContext>
                 </div>

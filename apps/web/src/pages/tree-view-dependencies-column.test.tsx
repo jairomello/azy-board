@@ -11,6 +11,7 @@ const treeData = [
     id: 'mod-1', name: 'Modulo', type: 'module', children: [
       {
         id: 'epic-1', title: 'Epic', type: 'EPIC',
+        assignee: { id: 'user-1', name: 'Thiago Corrêa Simas de Melo Porto' },
         dependencyCount: 1,
         dependencies: [{ dependsOnItemId: 'epic-2', dependencyType: 'FS', lagDays: 0, dependsOn: { id: 'epic-2', title: 'Epic 2', type: 'EPIC', sequenceCode: 'E2' } }],
         children: [],
@@ -46,6 +47,16 @@ beforeEach(async () => {
 
 afterEach(() => {
   globalThis.fetch = fetchOriginal
+})
+
+describe('TreeViewPage — coluna Responsável (T76)', () => {
+  test('exibe o nome em duas partes e o completo no tooltip', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><MemoryRouter><TreeViewPage projectId="project-1" /></MemoryRouter></QueryClientProvider>)
+
+    const celula = await screen.findByTitle('Thiago Corrêa Simas de Melo Porto')
+    expect(celula.textContent).toBe('Thiago Porto')
+  })
 })
 
 describe('TreeViewPage — coluna de dependências (Card T46)', () => {

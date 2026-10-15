@@ -2,6 +2,7 @@ import { X } from 'lucide-react'
 import type { Tag } from './TagSelector'
 import type { BoardFilterState } from './BoardFilters'
 import { isEmptyFilterValue } from '../features/board/model/types'
+import { displayPersonName } from '../lib/personName'
 
 export type ActiveFilterKey =
   | 'moduleId' | 'sprintId' | 'versionId' | 'squadId' | 'assigneeId' | 'authorId'
@@ -13,6 +14,8 @@ export interface ActiveFilter {
   value?: string
   filterLabel: string
   valueLabel: string
+  /** Texto completo para tooltip/rótulo acessível quando `valueLabel` é abreviado. */
+  valueTitle?: string
 }
 
 interface NamedOption { id: string; name: string }
@@ -46,12 +49,18 @@ export interface ActiveFilterVisualContext {
 
 const shortId = (id: string) => id.length > 12 ? `${id.slice(0, 8)}...` : id
 const catalogName = (options: NamedOption[], id: string) => options.find(option => option.id === id)?.name ?? shortId(id)
-const memberName = (members: ActiveFilterCatalogs['members'], id: string) => members.find(member => member.userId === id)?.name ?? shortId(id)
+const memberOption = (members: ActiveFilterCatalogs['members'], id: string) => members.find(member => member.userId === id)
+// Nome de pessoa exibido em duas partes; o nome completo fica em `valueTitle` (tooltip).
+const memberName = (members: ActiveFilterCatalogs['members'], id: string) => {
+  const member = memberOption(members, id)
+  return member ? displayPersonName(member.name) : shortId(id)
+}
+const memberFullName = (members: ActiveFilterCatalogs['members'], id: string) => memberOption(members, id)?.name
 
 export function normalizeActiveBoardFilters(filters: BoardFilterState, catalogs: ActiveFilterCatalogs, labels: ActiveFilterLabels, context: ActiveFilterVisualContext = {}): ActiveFilter[] {
   const result: ActiveFilter[] = []
-  const add = (key: ActiveFilterKey, value: string | undefined, filterLabel: string, valueLabel: string) => {
-    if (value) result.push({ key, value, filterLabel, valueLabel })
+  const add = (key: ActiveFilterKey, value: string | undefined, filterLabel: string, valueLabel: string, valueTitle?: string) => {
+    if (value) result.push({ key, value, filterLabel, valueLabel, ...(valueTitle ? { valueTitle } : {}) })
   }
   const emptyOr = (value: string, emptyLabel: string, resolved: string) =>
     isEmptyFilterValue(value) ? emptyLabel : resolved
@@ -59,8 +68,8 @@ export function normalizeActiveBoardFilters(filters: BoardFilterState, catalogs:
   add('sprintId', filters.sprintId, labels.sprint, emptyOr(filters.sprintId, labels.sprintEmpty, catalogName(catalogs.sprints, filters.sprintId)))
   add('versionId', filters.versionId, labels.version, emptyOr(filters.versionId, labels.versionEmpty, catalogName(catalogs.versions, filters.versionId)))
   add('squadId', filters.squadId, labels.squad, catalogName(catalogs.squads, filters.squadId))
-  add('assigneeId', filters.assigneeId, labels.assignee, emptyOr(filters.assigneeId, labels.assigneeEmpty, memberName(catalogs.members, filters.assigneeId)))
-  add('authorId', filters.authorId, labels.author, emptyOr(filters.authorId, labels.authorEmpty, memberName(catalogs.members, filters.authorId)))
+  add('assigneeId', filters.assigneeId, labels.assignee, emptyOr(filters.assigneeId, labels.assigneeEmpty, memberName(catalogs.members, filters.assigneeId)), emptyOr(filters.assigneeId, labels.assigneeEmpty, memberFullName(catalogs.members, filters.assigneeId) ?? shortId(filters.assigneeId)))
+  add('authorId', filters.authorId, labels.author, emptyOr(filters.authorId, labels.authorEmpty, memberName(catalogs.members, filters.authorId)), emptyOr(filters.authorId, labels.authorEmpty, memberFullName(catalogs.members, filters.authorId) ?? shortId(filters.authorId)))
   add('costCenterId', filters.costCenterId, labels.costCenter, emptyOr(filters.costCenterId, labels.costCenterEmpty, (() => {
     const center = catalogs.costCenters.find(item => item.id === filters.costCenterId)
     return center ? `${center.code}${center.description ? ` - ${center.description}` : ''}` : shortId(filters.costCenterId)
@@ -100,10 +109,11 @@ export function ActiveFilterChips({ filters, catalogs, labels, visualContext, on
   return (
     <div className="board-filter-chips flex min-w-0 flex-wrap items-center gap-1.5 rounded-xl border border-border/70 bg-surface/70 px-3 py-2" aria-label={labels.filterLabel} role="list">
       {activeFilters.map(filter => {
-        const accessibleLabel = `${labels.remove}: ${filter.filterLabel} ${filter.valueLabel}`
+        const fullValue = filter.valueTitle ?? filter.valueLabel
+        const accessibleLabel = `${labels.remove}: ${filter.filterLabel} ${fullValue}`
         return (
           <span key={`${filter.key}-${filter.value}`} role="listitem" className="inline-flex max-w-full items-center gap-1 rounded-full border border-primary/25 bg-primary/10 py-0.5 pl-2 pr-0.5 text-[11px] text-foreground">
-            <span className="max-w-[min(14rem,60vw)] truncate" title={`${filter.filterLabel}: ${filter.valueLabel}`}>
+            <span className="max-w-[min(14rem,60vw)] truncate" title={`${filter.filterLabel}: ${fullValue}`}>
               <span className="font-semibold">{filter.filterLabel}:</span> {filter.valueLabel}
             </span>
             <button type="button" aria-label={accessibleLabel} title={accessibleLabel} onClick={() => onRemove(filter.key, filter.value)} className="inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-primary/15 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1">

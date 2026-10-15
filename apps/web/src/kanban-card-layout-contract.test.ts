@@ -14,7 +14,8 @@ describe('contrato estrutural do layout do KanbanCard (T32 — proposta 01 Essen
     const breadcrumb = card.indexOf('{/* Breadcrumb em linha própria')
     const titulo = card.indexOf('{/* Título em destaque')
     const etiquetas = card.indexOf('{/* Etiquetas:')
-    const progresso = card.indexOf('{/* Progresso de checklist')
+    // T75 — a região entre etiquetas e rodapé passou a exibir o avanço do card.
+    const progresso = card.indexOf('{/* T75 — região de avanço entre etiquetas e rodapé')
     const rodape = card.indexOf('{/* Rodapé com divisor')
 
     expect(topo).toBeGreaterThan(-1)

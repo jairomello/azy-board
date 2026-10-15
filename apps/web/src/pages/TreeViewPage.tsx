@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Archive, Bug as BugIcon, Pencil, Plus } from 'lucide-react'
 import { api } from '../lib/api'
+import { displayPersonName } from '../lib/personName'
 import { invalidateTree, queryKeys } from '../lib/queryKeys'
 import { buildScreenSnapshot } from '../lib/assistantSnapshot'
 import { useAuth } from '../contexts/AuthContext'
@@ -161,7 +162,7 @@ function Row({ depth, label, type, status, points, progress, startDate, dueDate,
         )}
       </td>
       <td className="py-2 px-2 text-sm text-muted-foreground">
-        {assigneeName ?? '—'}
+        {assigneeName ? <span title={assigneeName}>{displayPersonName(assigneeName)}</span> : '—'}
       </td>
       <td className="py-2 px-2 text-sm text-right text-muted-foreground">
         {points != null && points > 0 ? points : '—'}

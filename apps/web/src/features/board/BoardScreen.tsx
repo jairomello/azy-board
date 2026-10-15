@@ -44,6 +44,7 @@ import { AppShell } from '../../components/AppShell'
 import { BoardCommandBar } from '../../components/BoardCommandBar'
 import { BoardContextHeader, BoardStatusRail } from '../../components/BoardContext'
 import { itemsAdvance, type ItemType } from '@azy-board/domain'
+import { cardAdvance, columnAdvanceBands } from './model/cardAdvance'
 import { useBoardPreferences } from './hooks/useBoardPreferences'
 import { useBoardData } from './hooks/useBoardData'
 import { BoardLanes } from './components/BoardLanes'
@@ -394,6 +395,8 @@ export default function BoardPage() {
     ? allItems.filter(item => item.itemSprints?.some(link => link.sprintId === activeSprint.id))
     : allDisplayed
   const sprintCompleted = sprintItems.filter(item => item.status === 'DONE').length
+  // T75 — faixas de avanço das colunas, usadas pelo preview de arraste (o board calcula por card).
+  const advanceBands = columnAdvanceBands(columns)
   // Avanço no fluxo do recorte exibido (mesma população do cabeçalho), separado da conclusão.
   const sprintAdvance = itemsAdvance(
     columns.map(column => ({ id: column.id, baseStatus: column.baseStatus, position: column.position, progressWeight: column.progressWeightOverride ?? null })),
@@ -621,7 +624,7 @@ export default function BoardPage() {
               <DragOverlay>
                 {activeCard && (
                   <div className="rotate-2 scale-105">
-                    <KanbanCard card={activeCard} />
+                    <KanbanCard card={activeCard} advance={cardAdvance(advanceBands, activeCard)} />
                   </div>
                 )}
                 {isColumnDrag && activeId && (

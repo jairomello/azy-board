@@ -1,4 +1,5 @@
 import type { DashboardAging, DashboardBurnup, DashboardHours, DashboardSnapshot } from '@azy-board/ui-contracts'
+import { displayPersonName } from './lib/personName'
 
 // Adaptadores dos gráficos do dashboard. Todo rótulo exibido vem dos recursos de
 // tradução: as funções recebem o `t` do namespace `dashboard` e devolvem dados prontos
@@ -62,7 +63,7 @@ export function rankingData(items: DashboardSnapshot['boxes']['blocked']['items'
 
 export function teamLoadData(snapshot: DashboardSnapshot, mode: 'items' | 'points', t: DashboardTranslator): ChartDatum[] {
   const members = snapshot.boxes.teamLoad.members.map(member => ({
-    name: member.userName,
+    name: displayPersonName(member.userName),
     title: member.userName,
     value: mode === 'items' ? Math.max(0, member.wipTotal - (member.blockedSubset ?? 0)) : Math.max(0, (member.wipPoints ?? 0) - (member.blockedPoints ?? 0)),
     pointsAvailable: member.wipPoints !== null,

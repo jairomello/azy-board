@@ -38,11 +38,11 @@ describe('rótulos dos rankings do dashboard (B8)', () => {
     expect(ranking.every(item => !String(item.name).includes('03aaeac2'))).toBe(true)
   })
 
-  test('carga da equipe preserva o nome completo para o tooltip (B10)', () => {
+  test('carga da equipe abrevia o nome no eixo e preserva o completo no tooltip (B10/T76)', () => {
     const current = snapshot({ teamLoad: { members: [{ userId: 'u', userName: 'Thiago Corrêa Simas de Melo Porto', squadId: null, squadName: null, wipTotal: 27, wipPoints: null, pointsCoverage: 0 }], unassignedWip: 0, unassignedWipPoints: null, pointsCoverage: 0 } })
     const load = teamLoadData(current, 'items', t)[0]
-    expect(load?.name).toBe('Thiago Corrêa Simas de Melo Porto')
-    // O eixo abrevia; o tooltip usa `title` com o nome completo.
+    // O eixo abrevia para duas partes; o tooltip usa `title` com o nome completo.
+    expect(load?.name).toBe('Thiago Porto')
     expect(load?.title).toBe('Thiago Corrêa Simas de Melo Porto')
   })
 

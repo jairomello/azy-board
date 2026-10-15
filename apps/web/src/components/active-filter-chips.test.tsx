@@ -24,6 +24,26 @@ const catalogs: ActiveFilterCatalogs = {
 }
 
 describe('ActiveFilterChips', () => {
+  test('exibe o nome da pessoa em duas partes e o completo no tooltip (T76)', () => {
+    const withMember: ActiveFilterCatalogs = {
+      ...catalogs,
+      members: [{ userId: 'user-1', name: 'Thiago Corrêa Simas de Melo Porto' }],
+    }
+    render(
+      <ActiveFilterChips
+        filters={{ ...filters, moduleId: '', types: [], assigneeId: 'user-1' }}
+        catalogs={withMember}
+        labels={labels}
+        onRemove={() => {}}
+      />,
+    )
+
+    // O chip mostra duas partes; o tooltip e o rótulo acessível mantêm o nome completo.
+    expect(screen.getByText('Thiago Porto')).toBeInTheDocument()
+    expect(screen.getByTitle('Responsável: Thiago Corrêa Simas de Melo Porto')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remover filtro: Responsável Thiago Corrêa Simas de Melo Porto' })).toBeInTheDocument()
+  })
+
   test('não renderiza a linha quando não há filtros ativos', () => {
     const { container } = render(
       <ActiveFilterChips filters={{ ...filters, moduleId: '', types: [] }} catalogs={catalogs} labels={labels} onRemove={() => {}} />,

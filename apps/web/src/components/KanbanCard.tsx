@@ -72,9 +72,11 @@ interface Props {
   onArchive?: (id: string) => void
   // Card T49 — destaque visual de itens do caminho crítico.
   critical?: boolean
+  // T75 — avanço do card (peso da coluna refinado pelo checklist), calculado pelo board.
+  advance?: number
 }
 
-export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchive, critical = false }: Props) {
+export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchive, critical = false, advance }: Props) {
   const { t } = useTranslation('board')
   const { toast } = useToast()
   const [breadcrumbOpen, setBreadcrumbOpen] = useState(false)
@@ -312,26 +314,37 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
           </div>
         )}
 
-        {/* Progresso de checklist — região própria entre etiquetas e rodapé */}
-        {card.checklistProgress && card.checklistProgress.total > 0 && (() => {
-          const { checked, total } = card.checklistProgress
-          const pct = Math.round((checked / total) * 100)
-          const done = checked === total
+        {/* T75 — região de avanço entre etiquetas e rodapé: barra do avanço e contador do checklist */}
+        {(() => {
+          const checklist = card.checklistProgress && card.checklistProgress.total > 0 ? card.checklistProgress : null
+          const percent = Math.max(0, Math.min(100, Math.round(advance ?? 0)))
+          if (!checklist && percent === 0) return null
+          const checklistDone = checklist ? checklist.checked === checklist.total : false
           return (
             <div className="checklist-progress space-y-0.5">
-              <div className="progress-copy flex items-center gap-1.5">
-                <svg className={`w-3 h-3 flex-shrink-0 ${done ? 'text-emerald-500' : 'text-muted-foreground'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                </svg>
-                <span className={`text-xs tabular-nums ${done ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
-                  {checked}/{total}
-                </span>
-              </div>
-              {checked > 0 && (
-                <div className="progress-track h-0.5 w-full rounded-full overflow-hidden">
+              {checklist && (
+                <div className="progress-copy flex items-center gap-1.5">
+                  <svg className={`w-3 h-3 flex-shrink-0 ${checklistDone ? 'text-emerald-500' : 'text-muted-foreground'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                  </svg>
+                  <span className={`text-xs tabular-nums ${checklistDone ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
+                    {checklist.checked}/{checklist.total}
+                  </span>
+                </div>
+              )}
+              {percent > 0 && (
+                <div
+                  className="progress-track h-0.5 w-full rounded-full overflow-hidden"
+                  role="progressbar"
+                  aria-valuenow={percent}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={t('progressAdvanceLabel', { percent })}
+                  title={t('progressAdvanceLabel', { percent })}
+                >
                   <div
-                    className={`h-full rounded-full transition-all ${done ? 'bg-emerald-500' : 'bg-primary/60'}`}
-                    style={{ width: `${pct}%` }}
+                    className={`h-full rounded-full transition-all ${percent === 100 ? 'bg-emerald-500' : 'bg-primary/60'}`}
+                    style={{ width: `${percent}%` }}
                   />
                 </div>
               )}

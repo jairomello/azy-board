@@ -64,3 +64,22 @@ O sistema SHALL formatar datas, horas, números, percentuais e mensagens relativ
 #### Scenario: Formatação atualizada após troca de idioma
 - **WHEN** usuário troca o idioma enquanto uma data ou número está visível
 - **THEN** valor é reformatado imediatamente sem recarregar a página
+
+### Requirement: Auditoria de texto de produto nos módulos de adaptação
+
+A auditoria de internacionalização SHALL cobrir também os módulos de adaptação e utilitários do web (arquivos `.ts` que produzem rótulos, unidades e séries exibidas), e SHALL NOT se limitar aos componentes. Textos de produto nesses módulos SHALL vir dos recursos de tradução, e a auditoria SHALL reportar literais exibidos que não estejam excecionados.
+
+#### Scenario: Literal de rótulo em módulo de adaptação reprova
+
+- **WHEN** um módulo de adaptação define um rótulo exibido em um gráfico sem passar pela tradução
+- **THEN** a auditoria reporta o arquivo e o literal
+
+#### Scenario: Rótulo traduzido passa
+
+- **WHEN** o rótulo exibido vem de uma chave de tradução presente nos três idiomas
+- **THEN** a auditoria conclui com sucesso
+
+#### Scenario: Conteúdo e identificadores não são reportados
+
+- **WHEN** o módulo usa identificadores técnicos, nomes próprios ou dados do usuário
+- **THEN** eles não são reportados como texto de produto

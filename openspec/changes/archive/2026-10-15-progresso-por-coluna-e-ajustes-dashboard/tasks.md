@@ -35,8 +35,8 @@ Board ref: T66–T73 e B8–B11 (cards do projeto Azyboard)
 
 ## 5. Dado de produção do NT-my-update
 
-- [ ] 5.1 Definir explicitamente o peso das colunas do projeto NT-my-update (sugestão: "Fazendo" = 50, "A Testar" = 90), sem mover cards e sem preencher pontos; verificar lendo as colunas do projeto pela API e confirmando os valores gravados (T73)
-- [ ] 5.2 Confirmar no board e no dashboard do NT-my-update que o avanço deixou de ser 0% com os cards em "A Testar" e que a conclusão continua em 0 de 33; verificar com leitura autenticada das duas telas (T73)
+- [x] 5.1 Definir explicitamente o peso das colunas do projeto NT-my-update (sugestão: "Fazendo" = 50, "A Testar" = 90), sem mover cards e sem preencher pontos; verificar lendo as colunas do projeto pela API e confirmando os valores gravados (T73)
+- [x] 5.2 Confirmar no board e no dashboard do NT-my-update que o avanço deixou de ser 0% com os cards em "A Testar" e que a conclusão continua em 0 de 33; verificar com leitura autenticada das duas telas (T73)
 
 ## 6. Verificação integrada
 

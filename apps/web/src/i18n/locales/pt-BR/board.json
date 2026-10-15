@@ -12,6 +12,7 @@
   "moduleTabLabel": "Módulo",
   "generalProgress": "Progresso Geral",
   "progressAdvance": "Avanço no fluxo",
+  "progressAdvanceLabel": "Avanço no fluxo: {{percent}}%",
   "progressDone": "Concluídos",
   "itemsCompletedOf": "{{completed}} de {{total}} itens concluídos",
   "advancePercent": "{{percent}}% de avanço",
