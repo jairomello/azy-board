@@ -69,7 +69,7 @@ curl -sS "https://azyboard.exemplo.com/mcp" \
 <!-- BEGIN GENERATED: mcp-catalog -->
 <!-- GERADO AUTOMATICAMENTE por scripts/generate-docs.ts — não editar; rode `bun run generate:docs`. -->
 
-Catálogo com 83 ferramentas, derivado de `packages/tool-registry/src/registry.ts`.
+Catálogo com 84 ferramentas, derivado de `packages/tool-registry/src/registry.ts`.
 
 | Ferramenta | Descrição |
 |---|---|
@@ -139,13 +139,13 @@ Catálogo com 83 ferramentas, derivado de `packages/tool-registry/src/registry.t
 | `reorder_columns` | Reordena as colunas do board conforme a lista order. |
 | `reorder_items` | Reordena os itens de uma coluna conforme a lista order de IDs. |
 | `set_item_tags` | Substitui as tags do item pela lista tagIds informada. |
-| `set_item_tokens` | Registra tokens de IA (entrada/saída) de vários cards em uma única chamada. `items` é a lista `{ itemId, tokensInput, tokensOutput }`; cada entrada é aplicada de forma independente e o total é derivado. Prefira esta ferramenta ao registrar tokens de muitos cards (ex.: backfill a partir dos logs de sessão). |
+| `set_item_tokens` | Registra tokens de IA (entrada/saída) de vários cards em uma única chamada. items é a lista { itemId, tokensInput, tokensOutput }; cada entrada é aplicada de forma independente e o total é derivado. Prefira esta ferramenta ao registrar tokens de muitos cards (ex.: backfill a partir dos logs de sessão). |
 | `set_member_squad` | Define, troca ou limpa o squad de um membro existente do projeto sem alterar o papel. squadId é o ID do squad (SET) ou null para limpar (CLEAR). Exige ADMIN e não adiciona a pessoa ao projeto. |
 | `unarchive_item` | Desarquiva um item. |
 | `update_checklist` | Atualiza nome/posição de uma checklist do item. |
 | `update_checklist_item` | Atualiza o texto/estado de um passo da checklist. changes aceita text, checked, dueDate, assigneeId e description (os três últimos exigem checklists detalhados no projeto). |
 | `update_cost_center` | Edita o código e/ou a descrição de um centro de custo do projeto. O código é único por projeto. Exige ADMIN. |
-| `update_item` | Atualiza um item específico. changes aceita a lista {field, operation, value}; as operações CLEAR, TODAY, OFFSET_DAYS e COPY_CREATED_DATE dependem do campo. Os campos `tokensInput`/`tokensOutput` registram o consumo de tokens de IA (inteiro não negativo); o total é derivado. |
+| `update_item` | Atualiza um item específico. changes aceita a lista {field, operation, value}; as operações CLEAR, TODAY, OFFSET_DAYS e COPY_CREATED_DATE dependem do campo. Os campos tokensInput/tokensOutput registram o consumo de tokens de IA (inteiro não negativo); o total é derivado. |
 | `update_item_dependency` | Atualiza uma dependência existente. Requer dependencyId e ao menos um de dependsOnItemId/dependsOnProjectId/dependencyType/lagDays. Revalida auto-dependência, unicidade do par e ciclos no servidor. |
 | `update_item_link` | Atualiza nome, URL ou descrição de um link do item. Requer linkId e ao menos um de name/url/description. |
 | `update_item_log` | Atualiza o texto e/ou a duração de um log de trabalho. |
