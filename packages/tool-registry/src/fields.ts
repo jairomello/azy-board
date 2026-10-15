@@ -64,6 +64,7 @@ export const toolFields: Record<string, ToolFields> = {
   add_checklist_item_to_task: { fields: ['projectId', 'itemId', 'checklistName', 'text', 'dueDate', 'assigneeId', 'description'], required: ['projectId', 'itemId', 'checklistName', 'text'] },
   check_item: { fields: ['projectId', 'itemId', 'checklistId', 'checklistItemId', 'checklistName', 'text', 'position', 'checked'], required: ['projectId', 'itemId', 'checked'] },
   check_items: { fields: ['projectId', 'items'], required: ['projectId', 'items'], nested: { 'items[]': ['itemId', 'checked'] } },
+  set_item_tokens: { fields: ['projectId', 'items'], required: ['projectId', 'items'], nested: { 'items[]': ['itemId'] } },
   update_item: { fields: ['projectId', 'itemId', 'changes'], required: ['projectId', 'itemId', 'changes'], nested: { 'changes[]': ['field', 'operation'] } },
   update_items: { fields: ['projectId', 'filters', 'changes'], required: ['projectId', 'filters', 'changes'], nested: { filters: [], 'changes[]': ['field', 'operation'] } },
   delete_item: { fields: ['projectId', 'itemId'], required: ['projectId', 'itemId'] },
@@ -112,7 +113,7 @@ export const toolFields: Record<string, ToolFields> = {
 export const PROJECTION_FIELDS: readonly string[] = [
   'id', 'title', 'type', 'status', 'columnId', 'isLeaf', 'parentId', 'moduleId', 'assigneeId', 'authorId',
   'description', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'childrenCount', 'checklistProgress',
-  'sprintId', 'sprintName', 'tagIds', 'tagNames', 'priority', 'points', 'costCenterId', 'versionId',
+  'sprintId', 'sprintName', 'tagIds', 'tagNames', 'priority', 'points', 'tokensInput', 'tokensOutput', 'tokensTotal', 'costCenterId', 'versionId',
   'blockedReason', 'startDate', 'dueDate', 'position', 'sequenceCode', 'ancestryPath', 'createdAt', 'updatedAt',
   'icon', 'color',
 ]

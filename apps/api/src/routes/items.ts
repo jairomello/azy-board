@@ -11,7 +11,7 @@ import { IDEMPOTENCY_RETENTION_MS, payloadHash } from '../services/idempotency'
 import { COMMAND_NAMESPACES, isIdempotencyConflict, isIdempotentReplay, isPendingBody, parseEnvelope } from '../persistence/idempotency'
 import { claimItem, releaseItem } from '../services/itemMutations'
 import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
-import { confirmationSchema, createItemSchema, itemLogSchema, itemSprintSchema, itemTagsSchema, moveItemSchema, parseJson, parseOptionalJson, reorderItemsSchema, updateItemLogSchema, updateItemSchema, updateWorkLogSchema, workLogSchema } from '../validation'
+import { confirmationSchema, createItemSchema, itemLogSchema, itemSprintSchema, itemTagsSchema, moveItemSchema, parseJson, parseOptionalJson, reorderItemsSchema, setItemTokensSchema, updateItemLogSchema, updateItemSchema, updateWorkLogSchema, workLogSchema } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
 import type { ItemLogRecord, ItemRecord, ItemDependencyRecord, ItemDependencyTargetSummary, ItemDependencyWithTarget } from '../persistence/models'
@@ -19,6 +19,7 @@ import { emitDomainEvent, findOperationId } from '../services/domainEventOutbox'
 import { createItemApplication, moveItemApplication, updateItemApplication } from '../application/items'
 import { loadItemWithRelations } from '../application/itemRules'
 import { resolveActiveSprint } from '../services/creationDefaults'
+import { tokensTotal, withTokensTotal } from '../utils/tokens'
 
 export const itemsRouter = new Hono<HonoEnv>()
 itemsRouter.use('*', authMiddleware)
@@ -363,6 +364,7 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
     const dependency = dependencyIndex.get(item.id)
     const flat = {
       ...item,
+      tokensTotal: tokensTotal(item.tokensInput, item.tokensOutput),
       sprintId: item.itemSprints[0]?.sprintId ?? null,
       sprintName: null,
       tagIds: item.itemTags.map(link => link.tag.id),
@@ -474,7 +476,7 @@ itemsRouter.get('/:itemId', requireRole('VIEWER'), async (c) => {
 
   const { itemSprints, ...itemFields } = item
   return c.json({
-    ...itemFields,
+    ...withTokensTotal(itemFields),
     itemSprints: itemSprints.map(link => ({ sprintId: link.sprintId, sprint: sprintById.get(link.sprintId) ?? null })),
     attachments,
     children: children.map(child => ({ id: child.id, title: child.title, type: child.type, status: child.status, priority: child.priority, points: child.points })),
@@ -555,7 +557,7 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   if (!id) return c.json({ error: 'Item não encontrado após criação' }, 500)
   const created = await loadItemWithRelations(ctx.tenantId, projectId, id)
   if (!created) return c.json({ error: 'Item não encontrado após criação' }, 500)
-  const payload = { ...created, isLeaf: true, childrenCount: 0, checklistProgress: null }
+  const payload = { ...created, tokensTotal: tokensTotal(created.tokensInput, created.tokensOutput), isLeaf: true, childrenCount: 0, checklistProgress: null }
 
   // Corpo final no journal após o commit; crash antes disso é retomável pela
   // referência PENDING gravada na mesma transação.
@@ -573,6 +575,63 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   }
   // [T38] O evento de criação é gravado pelo adapter no mesmo commit (item.created).
   return c.json(payload, 201)
+})
+
+// POST /projects/:projectId/items/tokens — registro massivo de tokens de IA (T77).
+// Cada entrada é validada e aplicada de forma independente (atomicidade por item):
+// um item inválido não impede a aplicação dos demais. O total é sempre derivado.
+itemsRouter.post('/tokens', requireRole('MEMBER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const projectId = c.req.param('projectId')!
+  const parsed = await parseJson(c, setItemTokensSchema)
+  if (!parsed.ok) return parsed.response
+  const body = parsed.data
+
+  const audit = auditContext(c)
+  const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  mutationContext.mutation.actorType = audit.actorType
+  mutationContext.mutation.actorSource = audit.source
+  mutationContext.mutation.actorLabel = audit.actorLabel
+  const actor = { actorType: audit.actorType, source: audit.source, actorLabel: audit.actorLabel }
+
+  const applied: Array<Record<string, unknown>> = []
+  const failed: Array<{ itemId: string; error: string }> = []
+  for (const entry of body.items) {
+    const changes: { tokensInput?: number | null; tokensOutput?: number | null } = {}
+    if (entry.tokensInput !== undefined) changes.tokensInput = entry.tokensInput
+    if (entry.tokensOutput !== undefined) changes.tokensOutput = entry.tokensOutput
+    if (Object.keys(changes).length === 0) {
+      failed.push({ itemId: entry.itemId, error: 'Informe tokensInput e/ou tokensOutput' })
+      continue
+    }
+    try {
+      const result = await updateItemApplication({
+        context: ctx,
+        permissionScope: c.get('apiKeyPermissionScope'),
+        projectId,
+        minimumRole: 'MEMBER',
+        mutationContext,
+        itemId: entry.itemId,
+        body: changes,
+        actor,
+      })
+      if (!result.ok) {
+        failed.push({ itemId: entry.itemId, error: String(result.body.error ?? 'Falha ao registrar tokens') })
+        continue
+      }
+      const record = result.record
+      applied.push(record
+        ? { itemId: record.id, tokensInput: record.tokensInput, tokensOutput: record.tokensOutput, tokensTotal: tokensTotal(record.tokensInput, record.tokensOutput) }
+        : { itemId: entry.itemId })
+    } catch (error) {
+      failed.push({ itemId: entry.itemId, error: error instanceof Error ? error.message : 'Falha ao registrar tokens' })
+    }
+  }
+
+  if (applied.length > 0) {
+    void emitDomainEvent({ tenantId: ctx.tenantId, projectId, type: 'ITEM_UPDATED', payload: { itemIds: applied.map(entry => entry.itemId) } })
+  }
+  return c.json({ matchedCount: body.items.length, updatedCount: applied.length, applied, failed })
 })
 
 // PATCH /projects/:projectId/items/:itemId/move — mover card para outra coluna
@@ -717,7 +776,7 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
 
   const updated = await loadItemWithRelations(ctx.tenantId, projectId, itemId)
   void emitDomainEvent({ tenantId: ctx.tenantId, projectId, type: 'ITEM_UPDATED', payload: { itemId, ...safeBody, updatedAt: updatedRecord.updatedAt, ...(tagIds !== undefined ? { itemTags: updated?.itemTags ?? [] } : {}) } })
-  return c.json({ item: updated })
+  return c.json({ item: updated ? withTokensTotal(updated) : updated })
 })
 
 // DELETE /projects/:projectId/items/:itemId — exclusão em cascata (filhos, checklists, tags)

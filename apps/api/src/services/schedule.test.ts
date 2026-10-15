@@ -8,7 +8,7 @@ function item(id: string, overrides: Partial<ItemRecord> = {}): ItemRecord {
     id, tenantId: 't', projectId: 'p', type: 'TASK', sequenceCode: null, parentId: null, moduleId: null,
     columnId: 'c', ancestryPath: '[]', title: id, description: null, persona: null, goal: null, benefit: null,
     acceptanceCriteria: null, notes: null, status: 'IN_PROGRESS', statusBeforeArchive: null, costCenterId: null,
-    priority: 'MEDIUM', points: null, assigneeId: null, assigneeApiKeyId: null, blockedReason: null,
+    priority: 'MEDIUM', points: null, tokensInput: null, tokensOutput: null, assigneeId: null, assigneeApiKeyId: null, blockedReason: null,
     position: 0, startDate: null, dueDate: null, versionId: null, icon: null, color: null, authorId: 'u', createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z',
     ...overrides,
   }

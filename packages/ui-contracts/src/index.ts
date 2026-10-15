@@ -187,6 +187,9 @@ export interface Card {
   priority: Priority
   status: TaskStatus
   points: number | null
+  tokensInput: number | null
+  tokensOutput: number | null
+  tokensTotal: number | null
   assigneeId: string | null
   assignee?: { id: string; name: string; avatarUrl: string | null } | null
   assigneeApiKey?: { aiModelName: string | null } | null
@@ -210,6 +213,9 @@ export function toCard(item: {
   priority: Priority
   status: TaskStatus
   points?: number | null
+  tokensInput?: number | null
+  tokensOutput?: number | null
+  tokensTotal?: number | null
   assigneeId?: string | null
   assignee?: { id: string; name: string; avatarUrl: string | null } | null
   assigneeApiKey?: { aiModelName: string | null } | null
@@ -231,6 +237,9 @@ export function toCard(item: {
     priority: item.priority,
     status: item.status,
     points: item.points ?? null,
+    tokensInput: item.tokensInput ?? null,
+    tokensOutput: item.tokensOutput ?? null,
+    tokensTotal: item.tokensTotal ?? (item.tokensInput == null && item.tokensOutput == null ? null : (item.tokensInput ?? 0) + (item.tokensOutput ?? 0)),
     assigneeId: item.assigneeId ?? null,
     assignee: item.assignee ?? null,
     assigneeApiKey: item.assigneeApiKey ?? null,

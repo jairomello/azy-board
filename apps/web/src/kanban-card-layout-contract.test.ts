@@ -57,6 +57,9 @@ describe('contrato estrutural do layout do KanbanCard (T32 — proposta 01 Essen
     const rodape = card.slice(card.indexOf('{/* Rodapé com divisor'))
     expect(rodape.includes('border-t border-border')).toBe(true)
     expect(rodape.includes('{card.points != null && (')).toBe(true)
+    // T77 — total de tokens exibido no rodapé só quando houver valor registrado.
+    expect(rodape.includes('{card.tokensTotal != null && (')).toBe(true)
+    expect(rodape.includes('formatTokens(card.tokensTotal)')).toBe(true)
     expect(rodape.includes('(card.childrenCount ?? 0) > 0 && (')).toBe(true)
     expect(rodape.includes('{card.assignee && (')).toBe(true)
     expect(rodape.includes('ml-auto')).toBe(true)

@@ -16,7 +16,7 @@ import {
   toolCreateItemDependency, toolUpdateItemDependency, toolDeleteItemDependency,
   toolUpdateChecklist, toolUpdateChecklistItem, toolUpdateItem, toolUpdateItemLink, toolUpdateItemLog,
   toolUpdateMember, toolUpdateProject, toolUpdateSprint, toolUpdateItems, toolUpdateVersion,
-  toolSetMemberSquad, toolUpdateSquad, toolUpdateModule, toolUpdateTag, toolUpdateCostCenter,
+  toolSetMemberSquad, toolUpdateSquad, toolUpdateModule, toolUpdateTag, toolUpdateCostCenter, toolSetItemTokens,
   type ApiCall,
 } from './http-adapter.js'
 import {
@@ -199,6 +199,7 @@ export async function executeSharedTool(name: string, args: Record<string, unkno
     case 'add_checklist_item_to_task': return toolAddChecklistItemToTask(api, args.projectId as string, args.itemId as string, args.checklistName as string, args.text as string, { dueDate: args.dueDate as string | null | undefined, assigneeId: args.assigneeId as string | null | undefined, description: args.description as string | null | undefined })
     case 'check_item': return toolCheckItem(api, args.projectId as string, args.itemId as string, args.checklistId as string | undefined, args.checklistItemId as string | undefined, args.checked as boolean, { checklistName: args.checklistName as string | undefined, text: args.text as string | undefined, position: args.position as number | undefined })
     case 'check_items': return toolCheckItems(api, args.projectId as string, args.items as Parameters<typeof toolCheckItems>[2])
+    case 'set_item_tokens': return toolSetItemTokens(api, args.projectId as string, args.items as Parameters<typeof toolSetItemTokens>[2])
     case 'update_item': return toolUpdateItem(api, args.projectId as string, args.itemId as string, args.changes as Parameters<typeof toolUpdateItem>[3], (execution.operationId ?? execution.context.runId))
     case 'release_task': return toolReleaseTask(api, args.projectId as string, args.taskId as string)
     case 'delete_item': return toolDeleteItem(api, args.projectId as string, args.itemId as string, args.dryRun as boolean | undefined)

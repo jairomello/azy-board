@@ -235,6 +235,16 @@ const CHECKS: CheckDefinition[] = [
     sql: `SELECT COUNT(*) AS count FROM items WHERE points IS NOT NULL AND points < 0`,
   },
   {
+    check: 'negative_tokens_input',
+    table: 'items',
+    sql: `SELECT COUNT(*) AS count FROM items WHERE tokens_input IS NOT NULL AND tokens_input < 0`,
+  },
+  {
+    check: 'negative_tokens_output',
+    table: 'items',
+    sql: `SELECT COUNT(*) AS count FROM items WHERE tokens_output IS NOT NULL AND tokens_output < 0`,
+  },
+  {
     check: 'negative_position',
     table: 'items',
     sql: `SELECT COUNT(*) AS count FROM items WHERE position < 0`,

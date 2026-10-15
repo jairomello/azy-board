@@ -7,6 +7,7 @@ import { UserAvatar } from './UserAvatar'
 import { InlineEdit } from './InlineEdit'
 import { useToast } from './Toast'
 import { formatCardReference } from '../lib/cardReference'
+import { formatTokens } from '../lib/formatters'
 import { copyTextToClipboard } from '../lib/clipboard'
 import type { ItemType, Priority, TaskStatus } from '@azy-board/domain'
 import type { AncestorNode, ChecklistProgress } from '@azy-board/ui-contracts'
@@ -45,6 +46,7 @@ export interface CardData {
   type?: ItemType | null
   sequenceCode?: string | null
   points?: number | null
+  tokensTotal?: number | null
   ancestryPath: string // JSON
   assignee?: { id: string; name: string; avatarUrl: string | null } | null
   authorId?: string | null
@@ -359,6 +361,11 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
           </span>
           {card.points != null && (
             <span className="points text-xs text-muted-foreground font-medium">{card.points}pt</span>
+          )}
+          {card.tokensTotal != null && (
+            <span className="tokens text-xs text-muted-foreground font-medium" title={`${card.tokensTotal} ${t('tokensLabel').toLowerCase()}`}>
+              {formatTokens(card.tokensTotal)} {t('tokensLabel').toLowerCase()}
+            </span>
           )}
           {/* Indicador de filhos diretos */}
           {(card.childrenCount ?? 0) > 0 && (

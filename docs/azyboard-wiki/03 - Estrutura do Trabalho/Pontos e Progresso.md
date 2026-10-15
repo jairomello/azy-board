@@ -29,6 +29,15 @@ Exemplo:
 
 Quando a pontuação de um item folha muda, os totais dos ancestrais também são atualizados.
 
+## Tokens de IA
+
+Além de pontos e horas, um card pode registrar quantos tokens de IA foram consumidos na implementação. O valor é útil para estimar, no futuro, o esforço de IA de features semelhantes.
+
+- Os campos **Tokens de entrada** e **Tokens de saída** ficam na janela de detalhes do item, ao lado dos pontos. Ambos são opcionais e inteiros não negativos.
+- O **total de tokens** é sempre a soma dos dois e aparece no card do board quando há valor registrado.
+- O valor pode ser informado manualmente, por `update_item`, ou em lote, para vários cards de uma vez (`set_item_tokens`) — inclusive a partir dos logs de sessão do agente.
+- Ao concluir um card executado por IA sem tokens registrados, o sistema emite um aviso (não bloqueante) sugerindo o registro.
+
 ## Cálculo do progresso
 
 O progresso considera a quantidade de itens folha concluídos:

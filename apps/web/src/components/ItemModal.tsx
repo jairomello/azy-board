@@ -19,6 +19,7 @@ import { AttachmentsArea } from './AttachmentsArea'
 import { itemTypeMeta } from '../lib/itemTypeMeta'
 import { api } from '../lib/api'
 import { resolveAppUrl } from '../lib/appUrl'
+import { formatTokens } from '../lib/formatters'
 import { useItemDescriptionDraft } from '../hooks/useItemDescriptionDraft'
 import type { AssistantFocusEntity, AssistantItemArea } from '@azy-board/assistant-contracts'
 import { clearFocusLevel, publishFocusLevel } from '../lib/assistantFocusStore'
@@ -70,6 +71,9 @@ export interface FullItemData {
   type?: ItemType | null
   sequenceCode?: string | null
   points?: number | null
+  tokensInput?: number | null
+  tokensOutput?: number | null
+  tokensTotal?: number | null
   description?: string | null
   startDate?: string | null
   dueDate?: string | null
@@ -188,8 +192,14 @@ export function ItemModal({
   const [sprintId, setSprintId] = useState<string>(item.itemSprints?.[0]?.sprintId ?? item.sprintId ?? '')
   const [costCenterId, setCostCenterId] = useState<string>(item.costCenterId ?? '')
   const [points, setPoints] = useState(item.points?.toString() ?? '')
+  const [tokensInput, setTokensInput] = useState(item.tokensInput?.toString() ?? '')
+  const [tokensOutput, setTokensOutput] = useState(item.tokensOutput?.toString() ?? '')
   const [startDate, setStartDate] = useState(item.startDate ?? '')
   const [dueDate, setDueDate] = useState(item.dueDate ?? '')
+  // T77 — total de tokens derivado do que está sendo digitado (nulo se vazio).
+  const tokensTotalPreview = tokensInput.trim() === '' && tokensOutput.trim() === ''
+    ? null
+    : (Number.parseInt(tokensInput, 10) || 0) + (Number.parseInt(tokensOutput, 10) || 0)
   // [T58] Datas digitadas pelo usuário não são substituídas por sugestões da sprint.
   const datesTouchedRef = useRef(false)
 
@@ -300,6 +310,8 @@ export function ItemModal({
     setSprintId(item.itemSprints?.[0]?.sprintId ?? item.sprintId ?? '')
     setCostCenterId(item.costCenterId ?? '')
     setPoints(item.points?.toString() ?? '')
+    setTokensInput(item.tokensInput?.toString() ?? '')
+    setTokensOutput(item.tokensOutput?.toString() ?? '')
     setStartDate(item.startDate ?? '')
     setDueDate(item.dueDate ?? '')
     setSequenceCode(item.sequenceCode ?? '')
@@ -366,6 +378,8 @@ export function ItemModal({
         parentId,
         assigneeId: assigneeId || null,
         points: points ? parseInt(points, 10) : null,
+        tokensInput: tokensInput ? parseInt(tokensInput, 10) : null,
+        tokensOutput: tokensOutput ? parseInt(tokensOutput, 10) : null,
         versionId: versionId || null,
         sprintId: sprintId || null,
         costCenterId: costCenterId || null,
@@ -466,7 +480,7 @@ export function ItemModal({
 
               <aside className="min-w-0 space-y-5 rounded-lg border border-border bg-muted/20 p-4">
                 <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><CheckSquare className="h-4 w-4 text-primary" />{t('properties')}</h3><div className="space-y-3">{property(t('statusLabel'), <select value={status} onChange={e => setStatus(e.target.value as TaskStatus)} className={fieldClass}>{STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}{property(t('filterAssignee'), <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)} className={fieldClass}><option value="">{t('unassigned')}</option>{members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}</select>)}{property(t('priorityLabel'), <select value={priority} onChange={e => setPriority(e.target.value as Priority)} className={fieldClass}>{PRIORITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}</div></div>
-                <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><CalendarDays className="h-4 w-4 text-primary" />{t('planning')}</h3><div className="space-y-3">{property(t('filterSprint'), <select value={sprintId} onChange={e => handleSprintChange(e.target.value)} className={fieldClass}><option value="">{t('noSprint')}</option>{projectSprints.length === 0 && <option disabled>{t('noSprints')}</option>}{projectSprints.filter(sprint => sprint.status !== 'CLOSED').map(sprint => <option key={sprint.id} value={sprint.id}>{sprint.name}</option>)}</select>)}{property(t('filterVersion'), <select value={versionId} onChange={e => setVersionId(e.target.value)} className={fieldClass}><option value="">{t('noVersion')}</option>{projectVersions.length === 0 && <option disabled>{t('noVersions')}</option>}{projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select>)}{property(t('pointsLabel'), <input type="number" min="0" value={points} onChange={e => setPoints(e.target.value)} className={fieldClass} placeholder="0" />)}<div className="grid grid-cols-2 gap-2">{property(t('startDate'), <input type="date" value={startDate} onChange={e => { datesTouchedRef.current = true; setStartDate(e.target.value) }} className={fieldClass} />)}{property(t('dueDate'), <input type="date" value={dueDate} onChange={e => { datesTouchedRef.current = true; setDueDate(e.target.value) }} className={fieldClass} />)}</div></div></div>
+                <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><CalendarDays className="h-4 w-4 text-primary" />{t('planning')}</h3><div className="space-y-3">{property(t('filterSprint'), <select value={sprintId} onChange={e => handleSprintChange(e.target.value)} className={fieldClass}><option value="">{t('noSprint')}</option>{projectSprints.length === 0 && <option disabled>{t('noSprints')}</option>}{projectSprints.filter(sprint => sprint.status !== 'CLOSED').map(sprint => <option key={sprint.id} value={sprint.id}>{sprint.name}</option>)}</select>)}{property(t('filterVersion'), <select value={versionId} onChange={e => setVersionId(e.target.value)} className={fieldClass}><option value="">{t('noVersion')}</option>{projectVersions.length === 0 && <option disabled>{t('noVersions')}</option>}{projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select>)}{property(t('pointsLabel'), <input type="number" min="0" value={points} onChange={e => setPoints(e.target.value)} className={fieldClass} placeholder="0" />)}{property(t('tokensInputLabel'), <input type="number" min="0" value={tokensInput} onChange={e => setTokensInput(e.target.value)} className={fieldClass} placeholder="0" disabled={currentUserRole === 'VIEWER'} />)}{property(t('tokensOutputLabel'), <input type="number" min="0" value={tokensOutput} onChange={e => setTokensOutput(e.target.value)} className={fieldClass} placeholder="0" disabled={currentUserRole === 'VIEWER'} />)}{tokensTotalPreview != null && <p className="text-xs text-muted-foreground" data-testid="tokens-total">{t('tokensLabel')}: {formatTokens(tokensTotalPreview)}</p>}<div className="grid grid-cols-2 gap-2">{property(t('startDate'), <input type="date" value={startDate} onChange={e => { datesTouchedRef.current = true; setStartDate(e.target.value) }} className={fieldClass} />)}{property(t('dueDate'), <input type="date" value={dueDate} onChange={e => { datesTouchedRef.current = true; setDueDate(e.target.value) }} className={fieldClass} />)}</div></div></div>
                 <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><UserRound className="h-4 w-4 text-primary" />{t('information')}</h3><div className="space-y-3">{property(t('codeLabel'), <input value={sequenceCode} onChange={e => setSequenceCode(e.target.value)} placeholder={t('autoGenerated')} className={fieldClass} />)}{property(t('authorLabel'), <div className={`${fieldClass} flex items-center gap-2 text-muted-foreground`}>{item.author?.avatarUrl ? <img src={resolveAppUrl(item.author.avatarUrl)} alt={item.author.name} className="h-5 w-5 rounded-full" /> : <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary">{item.author?.name?.charAt(0).toUpperCase() ?? '?'}</span>}<span className="truncate">{item.author?.name ?? '—'}</span></div>)}</div></div>
               </aside>
             </div>

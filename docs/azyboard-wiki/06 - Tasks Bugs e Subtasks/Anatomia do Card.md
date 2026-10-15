@@ -72,6 +72,7 @@ O rodapé pode apresentar:
 - Badge de tipo: `Story`, `Task` ou `Bug`.
 - Prioridade.
 - Pontos.
+- Total de tokens de IA, quando registrado no card (um número compacto, como `9,8 mi tokens`).
 - Quantidade de filhos diretos.
 - Avatar do responsável.
 - Identificação de IA quando o responsável é um agente.

@@ -213,6 +213,8 @@ function mapItem(row: PgRow): ItemRecord {
     costCenterId: row.cost_center_id as string | null,
     priority: row.priority as ItemRecord['priority'],
     points: row.points as number | null,
+    tokensInput: row.tokens_input as number | null,
+    tokensOutput: row.tokens_output as number | null,
     assigneeId: row.assignee_id as string | null,
     assigneeApiKeyId: row.assignee_api_key_id as string | null,
     blockedReason: row.blocked_reason as string | null,
@@ -675,6 +677,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
     persona: 'persona', goal: 'goal', benefit: 'benefit', acceptanceCriteria: 'acceptance_criteria',
     notes: 'notes', status: 'status', statusBeforeArchive: 'status_before_archive',
     costCenterId: 'cost_center_id', priority: 'priority', points: 'points',
+    tokensInput: 'tokens_input', tokensOutput: 'tokens_output',
     assigneeId: 'assignee_id', assigneeApiKeyId: 'assignee_api_key_id', blockedReason: 'blocked_reason',
     position: 'position', startDate: 'start_date', dueDate: 'due_date', versionId: 'version_id',
     icon: 'icon', color: 'color',
@@ -3879,13 +3882,14 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             }
           }
           await client.query(
-            `INSERT INTO items (id, tenant_id, project_id, type, sequence_code, parent_id, module_id, column_id, ancestry_path, title, description, persona, goal, benefit, acceptance_criteria, notes, status, status_before_archive, cost_center_id, priority, points, assignee_id, assignee_api_key_id, blocked_reason, position, start_date, due_date, author_id, version_id, icon, color, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)`,
+            `INSERT INTO items (id, tenant_id, project_id, type, sequence_code, parent_id, module_id, column_id, ancestry_path, title, description, persona, goal, benefit, acceptance_criteria, notes, status, status_before_archive, cost_center_id, priority, points, tokens_input, tokens_output, assignee_id, assignee_api_key_id, blocked_reason, position, start_date, due_date, author_id, version_id, icon, color, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35)`,
             [id, context.tenantId, input.projectId, input.type ?? 'TASK', input.sequenceCode ?? null,
              input.parentId ?? null, input.moduleId ?? null, input.columnId ?? null, ancestryPath,
              input.title, input.description ?? null, input.persona ?? null, input.goal ?? null, input.benefit ?? null,
              input.acceptanceCriteria ?? null, input.notes ?? null, input.status ?? 'NOT_STARTED', null,
              input.costCenterId ?? null, input.priority ?? 'MEDIUM', input.points ?? null,
+             input.tokensInput ?? null, input.tokensOutput ?? null,
              input.assigneeId ?? null, input.assigneeApiKeyId ?? null, input.blockedReason ?? null,
              input.position ?? 0, input.startDate ?? null, input.dueDate ?? null,
              context.actorUserId ?? null, input.versionId ?? null, input.icon ?? null, input.color ?? null, now, now],

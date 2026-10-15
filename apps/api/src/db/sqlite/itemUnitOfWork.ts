@@ -34,6 +34,8 @@ interface ItemRow {
   cost_center_id: string | null
   priority: ItemRecord['priority']
   points: number | null
+  tokens_input: number | null
+  tokens_output: number | null
   assignee_id: string | null
   assignee_api_key_id: string | null
   blocked_reason: string | null
@@ -85,6 +87,8 @@ const itemColumns = {
   costCenterId: 'cost_center_id',
   priority: 'priority',
   points: 'points',
+  tokensInput: 'tokens_input',
+  tokensOutput: 'tokens_output',
   assigneeId: 'assignee_id',
   assigneeApiKeyId: 'assignee_api_key_id',
   blockedReason: 'blocked_reason',
@@ -120,6 +124,8 @@ function toItem(row: ItemRow): ItemRecord {
     costCenterId: row.cost_center_id,
     priority: row.priority,
     points: row.points,
+    tokensInput: row.tokens_input,
+    tokensOutput: row.tokens_output,
     assigneeId: row.assignee_id,
     assigneeApiKeyId: row.assignee_api_key_id,
     blockedReason: row.blocked_reason,

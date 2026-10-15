@@ -55,7 +55,7 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
     costCenters, tags: projectTags, memberships: projectMemberships, users: tenantUsers, sprintLinks, tagLinks } = snapshot
   const filters = body.filters ?? {}
   const changes = body.changes
-  const allowedFields = new Set(['title', 'description', 'priority', 'type', 'status', 'points', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode'])
+  const allowedFields = new Set(['title', 'description', 'priority', 'type', 'status', 'points', 'tokensInput', 'tokensOutput', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode'])
   if (!Array.isArray(changes) || changes.length < 1 || changes.length > 20) return c.json({ code: 'VALIDATION_ERROR', error: 'changes deve conter entre 1 e 20 alterações' }, 422)
   const changedFields = new Set<string>()
   for (const change of changes) {
@@ -165,7 +165,7 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
       return { field, operation, value: change.value as string | null, relationId }
     })
     const relationFields: Record<string, string> = { assignee: 'assigneeId', column: 'columnId', parent: 'parentId', module: 'moduleId', version: 'versionId', costCenter: 'costCenterId' }
-    const labels: Record<string, string> = { title: 'Título', description: 'Descrição', priority: 'Prioridade', type: 'Tipo', status: 'Status', points: 'Pontos', assignee: 'Responsável', column: 'Coluna', parent: 'Pai', module: 'Módulo', startDate: 'Início', dueDate: 'Fim', blockedReason: 'Motivo do bloqueio', persona: 'Persona', goal: 'Objetivo', benefit: 'Benefício', acceptanceCriteria: 'Critérios de aceite', notes: 'Notas', version: 'Versão', costCenter: 'Centro de custo', sprint: 'Sprint' }
+    const labels: Record<string, string> = { title: 'Título', description: 'Descrição', priority: 'Prioridade', type: 'Tipo', status: 'Status', points: 'Pontos', tokensInput: 'Tokens de entrada', tokensOutput: 'Tokens de saída', assignee: 'Responsável', column: 'Coluna', parent: 'Pai', module: 'Módulo', startDate: 'Início', dueDate: 'Fim', blockedReason: 'Motivo do bloqueio', persona: 'Persona', goal: 'Objetivo', benefit: 'Benefício', acceptanceCriteria: 'Critérios de aceite', notes: 'Notas', version: 'Versão', costCenter: 'Centro de custo', sprint: 'Sprint' }
     const now = new Date().toISOString()
     const updatesById = new Map<string, Record<string, unknown>>()
     for (const item of matched) {
@@ -178,7 +178,7 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
         else if (change.operation === 'TODAY') update[targetField] = shiftedDate(0)
         else if (change.operation === 'OFFSET_DAYS') update[targetField] = shiftedDate(Number(change.value))
         else if (change.operation === 'COPY_CREATED_DATE') update[targetField] = item.createdAt.slice(0, 10)
-        else if (change.field === 'points') update[targetField] = Number(change.value)
+        else if (change.field === 'points' || change.field === 'tokensInput' || change.field === 'tokensOutput') update[targetField] = Number(change.value)
         else update[targetField] = change.value
       }
       const nextType = (update.type ?? item.type) as typeof item.type
@@ -202,6 +202,9 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
       if (changedFields.has('type') && !['TASK', 'BUG', 'EXTERNAL'].includes(String(update.type))) throw new Error('INVALID_TYPE')
       if (changedFields.has('status') && !['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'].includes(String(update.status))) throw new Error('INVALID_STATUS')
       if (changedFields.has('points') && update.points !== null && (!Number.isInteger(update.points) || Number(update.points) < 0)) throw new Error('INVALID_POINTS')
+      for (const tokenField of ['tokensInput', 'tokensOutput'] as const) {
+        if (changedFields.has(tokenField) && update[tokenField] !== null && (!Number.isInteger(update[tokenField]) || Number(update[tokenField]) < 0)) throw new Error('INVALID_TOKENS')
+      }
       updatesById.set(item.id, update)
     }
 

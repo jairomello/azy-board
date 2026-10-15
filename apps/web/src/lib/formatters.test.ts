@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import i18n from '../i18n'
-import { formatDate, formatDateValue, formatNumber, parseDateOnly } from './formatters'
+import { formatDate, formatDateValue, formatNumber, formatTokens, parseDateOnly } from './formatters'
 
 afterEach(async () => { await i18n.changeLanguage('pt-BR') })
 
@@ -24,6 +24,16 @@ describe('formatação por locale', () => {
   test('data curta de eixo mantém dia e mês', async () => {
     await i18n.changeLanguage('pt-BR')
     expect(formatDateValue('2026-10-13', { day: '2-digit', month: '2-digit' })).toBe('13/10')
+  })
+
+  test('total de tokens usa notação compacta por locale (T77)', async () => {
+    const norm = (value: string) => value.replace(/\u00a0/g, ' ')
+    await i18n.changeLanguage('pt-BR')
+    expect(formatTokens(950)).toBe('950')
+    expect(norm(formatTokens(1_500))).toBe('1,5 mil')
+    expect(norm(formatTokens(9_800_000))).toBe('9,8 mi')
+    await i18n.changeLanguage('en')
+    expect(norm(formatTokens(9_800_000))).toBe('9.8M')
   })
 })
 

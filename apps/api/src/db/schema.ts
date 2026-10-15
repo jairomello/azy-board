@@ -599,6 +599,10 @@ export const items = sqliteTable('items', {
     enum: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'],
   }).notNull().default('MEDIUM'),
   points: integer('points'),
+  // Consumo de tokens de IA na implementação do card (opcional). O total é
+  // sempre derivado da soma e nunca persistido como valor independente.
+  tokensInput: integer('tokens_input'),
+  tokensOutput: integer('tokens_output'),
   assigneeId: text('assignee_id'),
   assigneeApiKeyId: text('assignee_api_key_id'),
   blockedReason: text('blocked_reason'),
@@ -633,6 +637,8 @@ export const items = sqliteTable('items', {
   // [DB] parent_id → items(tenant_id, id): FK composta auto-referenciada declarada na
   // migration 0021 (não declarada aqui para evitar inferência circular de tipos)
   pointsCheck: check('items_points_check', sql`${table.points} IS NULL OR ${table.points} >= 0`),
+  tokensInputCheck: check('items_tokens_input_check', sql`${table.tokensInput} IS NULL OR ${table.tokensInput} >= 0`),
+  tokensOutputCheck: check('items_tokens_output_check', sql`${table.tokensOutput} IS NULL OR ${table.tokensOutput} >= 0`),
   positionCheck: check('items_position_check', sql`${table.position} >= 0`),
   datesCheck: check('items_dates_check', sql`${table.startDate} IS NULL OR ${table.dueDate} IS NULL OR ${table.dueDate} >= ${table.startDate}`),
   typeCheck: check('items_type_check', sql`${table.type} IN ('EPIC','STORY','TASK','BUG','EXTERNAL')`),

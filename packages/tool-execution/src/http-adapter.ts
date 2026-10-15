@@ -785,13 +785,23 @@ export async function toolMoveTask(
 
 export async function toolCompleteTask(api: ApiCall, projectId: string, taskId: string): Promise<unknown> {
   const item = await api(`/projects/${projectId}/items/${taskId}`) as Item
+  const hasTokens = item.tokensInput != null || item.tokensOutput != null
+  // Indício de execução por agente: card atribuído a uma API key.
+  const workedByAgent = item.assigneeApiKeyId != null
+  let result: unknown
   if (['TASK', 'BUG'].includes(item.type) && item.isLeaf) {
     const cols    = await api(`/projects/${projectId}/columns`) as Column[]
     const doneCol = cols.find(c => c.baseStatus === 'DONE')
     if (!doneCol) throw new Error('Nenhuma coluna mapeada para DONE no projeto')
-    return api(`/projects/${projectId}/items/${taskId}/move`, 'PATCH', { columnId: doneCol.id })
+    result = await api(`/projects/${projectId}/items/${taskId}/move`, 'PATCH', { columnId: doneCol.id })
+  } else {
+    result = await api(`/projects/${projectId}/items/${taskId}`, 'PATCH', { status: 'DONE' })
   }
-  return api(`/projects/${projectId}/items/${taskId}`, 'PATCH', { status: 'DONE' })
+  // T77 — aviso não bloqueante: card de agente concluído sem tokens registrados.
+  if (workedByAgent && !hasTokens && result && typeof result === 'object' && !Array.isArray(result)) {
+    return { ...(result as Record<string, unknown>), warning: 'Card concluído sem tokens de IA registrados. Registre o consumo com set_item_tokens (tokensInput/tokensOutput) para manter a base histórica de estimativas.' }
+  }
+  return result
 }
 
 export async function toolCreateTask(
@@ -1011,6 +1021,27 @@ export async function toolCheckItems(api: ApiCall, projectId: string, entries: C
     }
   }
   return result
+}
+
+export type SetItemTokensEntry = {
+  itemId: string
+  tokensInput?: number | null
+  tokensOutput?: number | null
+}
+
+// T77 — registro massivo de tokens de IA. Um único POST aplica cada entrada de
+// forma independente (atomicidade por item); a resposta separa aplicados e falhas.
+export async function toolSetItemTokens(api: ApiCall, projectId: string, entries: SetItemTokensEntry[]): Promise<unknown> {
+  if (!Array.isArray(entries) || entries.length < 1 || entries.length > 500) throw new Error('items deve conter entre 1 e 500 entradas')
+  const response = await api(`/projects/${projectId}/items/tokens`, 'POST', {
+    items: entries.map(entry => ({ itemId: entry.itemId, tokensInput: entry.tokensInput ?? null, tokensOutput: entry.tokensOutput ?? null })),
+  }) as { matchedCount?: number; updatedCount?: number; applied?: Array<Record<string, unknown>>; failed?: Array<Record<string, unknown>> } | null
+  return {
+    matched: response?.matchedCount ?? 0,
+    updated: response?.updatedCount ?? 0,
+    items: response?.applied ?? [],
+    failures: response?.failed ?? [],
+  }
 }
 
 async function resolveChecklistStep(api: ApiCall, projectId: string, itemId: string, checklistName?: string, text?: string, position?: number): Promise<{ checklistId: string; itemId: string }> {

@@ -150,6 +150,8 @@ const classifications: Record<string, ToolClassification> = {
   add_checklist_item_to_task: { domain: 'evidence', scope: 'item', operation: 'create' },
   check_item: { domain: 'evidence', scope: 'item', operation: 'update' },
   check_items: { domain: 'evidence', scope: 'item', operation: 'update' },
+  // T77 — registro massivo de tokens de IA por card (uma chamada, vários cards).
+  set_item_tokens: { domain: 'evidence', scope: 'item', operation: 'update' },
   update_checklist_item: { domain: 'evidence', scope: 'item', operation: 'update' },
   delete_checklist_item: { domain: 'evidence', scope: 'item', operation: 'delete' },
 
@@ -183,7 +185,7 @@ const itemChangeSchema = {
   items: {
     type: 'object', additionalProperties: false, required: ['field', 'operation', 'value'],
     properties: {
-      field: { type: 'string', enum: ['title', 'description', 'priority', 'type', 'status', 'points', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode', 'icon', 'color'] },
+      field: { type: 'string', enum: ['title', 'description', 'priority', 'type', 'status', 'points', 'tokensInput', 'tokensOutput', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode', 'icon', 'color'] },
       operation: { type: 'string', enum: ['SET', 'CLEAR', 'TODAY', 'OFFSET_DAYS', 'COPY_CREATED_DATE'] },
       value: { type: ['string', 'null'], description: 'Value for SET, or signed day count for OFFSET_DAYS. Use null for operations that need no value.' },
     },
@@ -342,18 +344,32 @@ function schemaFor(field: string, isRequired: boolean, toolName?: string): Recor
   if (field === 'tagIds' || field === 'order') return nullable({ type: 'array', items: { type: 'string' } })
   if (field === 'fields') return nullable({ type: 'array', items: { type: 'string' }, maxItems: 30, description: 'Campos da projeção; nomes desconhecidos são rejeitados.' })
   if (field === 'itemIds') return { ...nullable({ type: 'array', items: { type: 'string' } }), maxItems: 500, description: 'Item IDs to move (1 to 500).' }
-  if (field === 'items') return {
-    type: 'array', minItems: 1, maxItems: 100,
-    description: 'Passos a marcar/desmarcar; IDs ou checklistName + text/position.',
-    items: {
-      type: 'object', additionalProperties: false,
-      required: ['itemId', 'checklistId', 'checklistItemId', 'checklistName', 'text', 'position', 'checked'],
-      properties: {
-        itemId: { type: 'string' }, checklistId: { type: ['string', 'null'] }, checklistItemId: { type: ['string', 'null'] },
-        checklistName: { type: ['string', 'null'] }, text: { type: ['string', 'null'] }, position: { type: ['number', 'null'] }, checked: { type: 'boolean' },
-      },
-    },
-  }
+  if (field === 'items') return toolName === 'set_item_tokens'
+    ? {
+        type: 'array', minItems: 1, maxItems: 500,
+        description: 'Cards e respectivos tokens de IA a registrar; cada entrada é aplicada de forma independente.',
+        items: {
+          type: 'object', additionalProperties: false,
+          required: ['itemId', 'tokensInput', 'tokensOutput'],
+          properties: {
+            itemId: { type: 'string', description: 'Board item/card ID.' },
+            tokensInput: { type: ['number', 'null'], description: 'Tokens de entrada (inteiro não negativo) ou null.' },
+            tokensOutput: { type: ['number', 'null'], description: 'Tokens de saída (inteiro não negativo) ou null.' },
+          },
+        },
+      }
+    : {
+        type: 'array', minItems: 1, maxItems: 100,
+        description: 'Passos a marcar/desmarcar; IDs ou checklistName + text/position.',
+        items: {
+          type: 'object', additionalProperties: false,
+          required: ['itemId', 'checklistId', 'checklistItemId', 'checklistName', 'text', 'position', 'checked'],
+          properties: {
+            itemId: { type: 'string' }, checklistId: { type: ['string', 'null'] }, checklistItemId: { type: ['string', 'null'] },
+            checklistName: { type: ['string', 'null'] }, text: { type: ['string', 'null'] }, position: { type: ['number', 'null'] }, checked: { type: 'boolean' },
+          },
+        },
+      }
   if (field === 'includeDescriptions') return { ...nullable({ type: 'boolean' }), description: 'Inclui description/scope/notes completos. Padrão false (texto resumido) para reduzir o payload.' }
   if (field === 'includeDetails') return { ...nullable({ type: 'boolean' }), description: 'Devolve description/persona/goal/benefit/acceptanceCriteria/notes/scope e demais metadados por item. Padrão false (projeção de resumo) para reduzir o payload.' }
   if (field === 'updatedWithin') return { type: ['string', 'null'], enum: [...UPDATED_WITHIN_VALUES, null], description: 'Recorta por última alteração: 1d/2d/3d/5d (dias-calendário no fuso do projeto), 1w (semana), 1m (mês) ou current-sprint (sprint vigente).' }
@@ -388,6 +404,7 @@ function schemaFor(field: string, isRequired: boolean, toolName?: string): Recor
   if (field === 'code') return { ...nullable({ type: 'string' }), description: 'Código do centro de custo (único por projeto).' }
   if (field === 'limit' && toolName === 'query_planning_gaps') return { ...nullable({ type: 'integer', minimum: 1, maximum: PLANNING_GAP_LIMITS.maxPageSize }), description: `Tamanho da página (padrão ${PLANNING_GAP_LIMITS.defaultPageSize}, máximo ${PLANNING_GAP_LIMITS.maxPageSize}).` }
   if (field === 'limit' || field === 'points' || field === 'offset') return nullable({ type: 'number' })
+  if (field === 'tokensInput' || field === 'tokensOutput') return { ...nullable({ type: 'number' }), description: 'Tokens de IA consumidos (inteiro não negativo); o total é derivado da soma.' }
   if (field === 'durationMin') return { ...nullable({ type: 'number' }), description: 'Duração em minutos (inteiro não negativo); alternativa a duration.' }
   if (field === 'filters') return itemFiltersSchema
   if (toolName === 'query_planning_gaps' && field === 'scope') return planningGapScopeSchema
@@ -449,6 +466,17 @@ const itemMutationResponseSchema: SchemaNode = {
 }
 
 const checkItemsResponseSchema: SchemaNode = {
+  type: 'object', additionalProperties: false, required: ['matched', 'updated', 'items', 'failures'],
+  properties: {
+    matched: { type: 'number' }, updated: { type: 'number' },
+    items: { type: 'array', items: { type: 'object', additionalProperties: true } },
+    failures: { type: 'array', items: { type: 'object', additionalProperties: true } },
+  },
+}
+
+// T77 — resposta do registro massivo de tokens: forma alinhada a check_items,
+// com falhas identificadas por item.
+const setItemTokensResponseSchema: SchemaNode = {
   type: 'object', additionalProperties: false, required: ['matched', 'updated', 'items', 'failures'],
   properties: {
     matched: { type: 'number' }, updated: { type: 'number' },
@@ -547,7 +575,7 @@ const friendlyNames: Record<string, string> = {
   move_task: 'Mover item', complete_task: 'Concluir item', claim_task: 'Assumir item', release_task: 'Liberar item', archive_item: 'Arquivar item', unarchive_item: 'Desarquivar item',
   list_sprints: 'Listar sprints', create_sprint: 'Criar sprint', update_sprint: 'Editar sprint', activate_sprint: 'Ativar sprint', close_sprint: 'Fechar sprint', list_members: 'Listar membros',
   list_modules: 'Listar módulos', create_module: 'Criar módulo', list_versions: 'Listar versões', create_version: 'Criar versão', update_version: 'Editar versão', list_columns: 'Listar colunas', create_column: 'Criar coluna',
-  create_item_log: 'Registrar trabalho', update_item_log: 'Atualizar apontamento',
+  create_item_log: 'Registrar trabalho', update_item_log: 'Atualizar apontamento', set_item_tokens: 'Registrar tokens',
   set_member_squad: 'Definir squad do membro', update_squad: 'Editar squad', update_module: 'Editar módulo',
   update_tag: 'Editar tag', update_cost_center: 'Editar centro de custo',
   list_item_links: 'Listar links', create_item_link: 'Adicionar link', update_item_link: 'Atualizar link', delete_item_link: 'Remover link',
@@ -610,8 +638,9 @@ const toolDescriptions: Record<string, string> = {
   delete_item_dependency: 'Remove uma dependência existente do item. Requer dependencyId (obtido em list_item_dependencies).',
   claim_task: 'Atribui o item ao usuário atual (claim). Use apenas quando o item estiver disponível.',
   move_task: 'Move um item para a coluna informada pelo nome exato (ou ID).',
-  complete_task: 'Conclui um item. Para card folha, move-o para a coluna com baseStatus DONE.',
-  update_item: 'Atualiza um item específico. changes aceita a lista {field, operation, value}; as operações CLEAR, TODAY, OFFSET_DAYS e COPY_CREATED_DATE dependem do campo.',
+  complete_task: 'Conclui um item. Para card folha, move-o para a coluna com baseStatus DONE. Quando o card foi trabalhado por IA e não tem tokens registrados, a resposta inclui um aviso não bloqueante sugerindo registrar tokens (set_item_tokens).',
+  update_item: 'Atualiza um item específico. changes aceita a lista {field, operation, value}; as operações CLEAR, TODAY, OFFSET_DAYS e COPY_CREATED_DATE dependem do campo. Os campos tokensInput/tokensOutput registram o consumo de tokens de IA (inteiro não negativo); o total é derivado.',
+  set_item_tokens: 'Registra tokens de IA (entrada/saída) de vários cards em uma única chamada. items é a lista { itemId, tokensInput, tokensOutput }; cada entrada é aplicada de forma independente e o total é derivado. Prefira esta ferramenta ao registrar tokens de muitos cards (ex.: backfill a partir dos logs de sessão).',
   release_task: 'Libera a atribuição do item, removendo o responsável atual.',
   delete_item: 'Exclui um item. Ação destrutiva; suporta dryRun.',
   delete_project: 'Exclui um projeto e os registros dependentes. Ação destrutiva; suporta dryRun.',
@@ -668,7 +697,7 @@ export function getSharedToolDefinitions(names = SHARED_TOOL_NAMES): ToolDefinit
     policy: MCP_TOOL_POLICIES[name]!,
     namespace: discovery.has(name) ? 'discovery' : planning.has(name) ? 'planning' : 'mutation',
     routing: routingFor(name),
-     ...(['update_item', 'update_items'].includes(name) ? { responseSchema: itemMutationResponseSchema } : name === 'check_items' ? { responseSchema: checkItemsResponseSchema } : name === 'read_attachment' ? { responseSchema: attachmentReadResponseSchema } : name === 'query_planning_gaps' ? { responseSchema: planningGapQueryResponseSchema } : name === 'duplicate_structure' ? { responseSchema: structureDuplicationResultSchema } : name === 'apply_sprint_transition' ? { responseSchema: sprintTransitionResultSchema } : {}),
+     ...(['update_item', 'update_items'].includes(name) ? { responseSchema: itemMutationResponseSchema } : name === 'check_items' ? { responseSchema: checkItemsResponseSchema } : name === 'set_item_tokens' ? { responseSchema: setItemTokensResponseSchema } : name === 'read_attachment' ? { responseSchema: attachmentReadResponseSchema } : name === 'query_planning_gaps' ? { responseSchema: planningGapQueryResponseSchema } : name === 'duplicate_structure' ? { responseSchema: structureDuplicationResultSchema } : name === 'apply_sprint_transition' ? { responseSchema: sprintTransitionResultSchema } : {}),
   }))
 }
 

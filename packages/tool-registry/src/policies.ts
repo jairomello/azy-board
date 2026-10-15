@@ -18,7 +18,7 @@ export const MCP_TOOL_POLICIES: Readonly<Record<string, McpPolicy>> = {
   create_item_dependency: write, update_item_dependency: write, delete_item_dependency: write,
   list_checklists: read,
   claim_task: write, move_task: write, batch_move: write, complete_task: write, create_task: write,
-  create_checklist: write, add_checklist_item: write, add_checklist_item_to_task: write, check_item: write, check_items: write, update_item: write,
+  create_checklist: write, add_checklist_item: write, add_checklist_item_to_task: write, check_item: write, check_items: write, set_item_tokens: write, update_item: write,
   release_task: write, archive_item: write, unarchive_item: write, delete_item: write, set_item_tags: write,
   create_item_log: write, reorder_items: write, update_checklist: write,
   create_item_link: write, update_item_link: write, delete_item_link: write,

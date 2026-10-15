@@ -430,6 +430,8 @@ export interface ItemRecord {
   costCenterId: string | null
   priority: Priority
   points: number | null
+  tokensInput: number | null
+  tokensOutput: number | null
   assigneeId: string | null
   assigneeApiKeyId: string | null
   blockedReason: string | null

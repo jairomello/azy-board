@@ -124,6 +124,8 @@ export async function createItemApplication(input: ApplicationAuthorization & {
     status: 'NOT_STARTED',
     priority: body.priority ?? 'MEDIUM',
     points: body.points ?? null,
+    tokensInput: body.tokensInput ?? null,
+    tokensOutput: body.tokensOutput ?? null,
     assigneeId: body.assigneeId ?? null,
     authorId: context.userId,
     versionId: effectiveVersionId,
@@ -157,7 +159,7 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
   if (tagIds === null) return { ok: false, status: 400, body: { error: 'Uma ou mais tags não existem neste projeto' } }
 
   const writableFields = new Set([
-    'title', 'description', 'priority', 'type', 'status', 'points', 'assigneeId',
+    'title', 'description', 'priority', 'type', 'status', 'points', 'tokensInput', 'tokensOutput', 'assigneeId',
     'columnId', 'parentId', 'moduleId', 'startDate', 'dueDate', 'blockedReason',
     'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'versionId', 'costCenterId', 'sprintId', 'sequenceCode',
     'icon', 'color',
@@ -168,7 +170,7 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
   const project = await persistence.projects.getProject(projectContext, projectId)
   if (!project) return { ok: false, status: 404, body: { error: 'Projeto não encontrado' } }
 
-  const loggableFields = ['title', 'description', 'priority', 'assigneeId', 'points', 'startDate', 'dueDate', 'status'] as const
+  const loggableFields = ['title', 'description', 'priority', 'assigneeId', 'points', 'tokensInput', 'tokensOutput', 'startDate', 'dueDate', 'status'] as const
   const prevItem = await persistence.items.getItem(projectContext, projectId, itemId)
   if (!prevItem) return { ok: false, status: 404, body: { error: 'Item não encontrado' } }
 
@@ -236,7 +238,7 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
   }
 
   const labels: Record<typeof loggableFields[number], string> = {
-    title: 'Título', description: 'Descrição', priority: 'Prioridade', assigneeId: 'Responsável', points: 'Pontos', startDate: 'Início', dueDate: 'Fim', status: 'Status',
+    title: 'Título', description: 'Descrição', priority: 'Prioridade', assigneeId: 'Responsável', points: 'Pontos', tokensInput: 'Tokens de entrada', tokensOutput: 'Tokens de saída', startDate: 'Início', dueDate: 'Fim', status: 'Status',
   }
   const changes = loggableFields
     .filter(field => field in safeBody && String(safeBody[field]) !== String(prevItem[field]))

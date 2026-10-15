@@ -3953,3 +3953,85 @@ describe('opções de ocultar níveis pelo caminho do MCP (hideModules/hideEpics
     expect(await toolGetProject(api, projectId)).toMatchObject({ hideModules: true, hideEpics: true })
   })
 })
+
+// T77 — tokens de IA por card: registro em lote, total derivado e falhas por item.
+describe('T77 — tokens de IA por card', () => {
+  let tenantId: string, projectId: string, memberToken: string
+  let taskA: string, taskB: string
+
+  beforeAll(async () => {
+    const now = new Date().toISOString()
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Tokens', slug: `tok-${tenantId}`, createdAt: now })
+    const member = await createUser(tenantId, 'tok-member@test.local', 'Membro Tokens', 'TEAM_MEMBER')
+    memberToken = await token(member.id, tenantId, member.email)
+    projectId = generateId()
+    await db.insert(projects).values({
+      id: projectId, tenantId, name: 'Projeto tokens', description: null, boardMode: 'HIERARCHICAL',
+      simpleStoryId: null, managerUserId: null, isRestricted: false, isHidden: false, createdAt: now,
+    })
+    await db.insert(memberships).values({ id: generateId(), tenantId, userId: member.id, projectId, role: 'MEMBER', createdAt: now })
+    const epicId = generateId()
+    const storyId = generateId()
+    taskA = generateId()
+    taskB = generateId()
+    const base = { tenantId, projectId, moduleId: null, columnId: null, status: 'NOT_STARTED' as const, priority: 'MEDIUM' as const, position: 0, authorId: member.id, createdAt: now, updatedAt: now }
+    await db.insert(items).values([
+      { ...base, id: epicId, type: 'EPIC', parentId: null, ancestryPath: '[]', title: 'Épico tokens' },
+      { ...base, id: storyId, type: 'STORY', parentId: epicId, ancestryPath: JSON.stringify([{ id: epicId, title: 'Épico tokens', type: 'EPIC' }]), title: 'História tokens' },
+      { ...base, id: taskA, type: 'TASK', parentId: storyId, ancestryPath: JSON.stringify([{ id: epicId, title: 'Épico tokens', type: 'EPIC' }, { id: storyId, title: 'História tokens', type: 'STORY' }]), title: 'Card A' },
+      { ...base, id: taskB, type: 'TASK', parentId: storyId, ancestryPath: JSON.stringify([{ id: epicId, title: 'Épico tokens', type: 'EPIC' }, { id: storyId, title: 'História tokens', type: 'STORY' }]), title: 'Card B' },
+    ])
+  })
+
+  const postTokens = (session: string, body: unknown) => request(`/projects/${projectId}/items/tokens`, session, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })
+
+  test('registra tokens em lote com valores distintos e deriva o total', async () => {
+    const response = await postTokens(memberToken, {
+      items: [
+        { itemId: taskA, tokensInput: 1200, tokensOutput: 300 },
+        { itemId: taskB, tokensInput: 0, tokensOutput: 800 },
+      ],
+    })
+    expect(response.status).toBe(200)
+    const body = await response.json() as { matchedCount: number; updatedCount: number; applied: Array<Record<string, unknown>>; failed: unknown[] }
+    expect(body.matchedCount).toBe(2)
+    expect(body.updatedCount).toBe(2)
+    expect(body.failed).toEqual([])
+    expect(body.applied.find(entry => entry.itemId === taskA)).toMatchObject({ tokensInput: 1200, tokensOutput: 300, tokensTotal: 1500 })
+    expect(body.applied.find(entry => entry.itemId === taskB)).toMatchObject({ tokensTotal: 800 })
+
+    const detail = await request(`/projects/${projectId}/items/${taskA}`, memberToken)
+    const item = await detail.json() as { tokensInput: number | null; tokensOutput: number | null; tokensTotal: number | null }
+    expect(item).toMatchObject({ tokensInput: 1200, tokensOutput: 300, tokensTotal: 1500 })
+  })
+
+  test('item inválido no lote não impede os válidos e é reportado', async () => {
+    const response = await postTokens(memberToken, {
+      items: [
+        { itemId: taskA, tokensInput: 7 },
+        { itemId: 'card-inexistente', tokensInput: 7 },
+      ],
+    })
+    const body = await response.json() as { matchedCount: number; updatedCount: number; failed: Array<{ itemId: string }> }
+    expect(body.updatedCount).toBe(1)
+    expect(body.failed.map(entry => entry.itemId)).toContain('card-inexistente')
+  })
+
+  test('rejeita token negativo no lote', async () => {
+    const response = await postTokens(memberToken, { items: [{ itemId: taskA, tokensInput: -1 }] })
+    expect(response.status).toBe(400)
+  })
+
+  test('limpar os tokens remove o total derivado', async () => {
+    await request(`/projects/${projectId}/items/${taskB}`, memberToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tokensInput: null, tokensOutput: null }),
+    })
+    const detail = await request(`/projects/${projectId}/items/${taskB}`, memberToken)
+    const item = await detail.json() as { tokensInput: number | null; tokensOutput: number | null; tokensTotal: number | null }
+    expect(item).toMatchObject({ tokensInput: null, tokensOutput: null, tokensTotal: null })
+  })
+})

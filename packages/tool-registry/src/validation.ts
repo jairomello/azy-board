@@ -260,8 +260,8 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     if (!Array.isArray(input.changes) || input.changes.length < 1 || input.changes.length > 20) throw new Error('changes deve conter entre 1 e 20 alterações')
     const fields = new Set<string>()
     const dateFields = new Set(['startDate', 'dueDate'])
-    const clearableFields = new Set(['description', 'points', 'assignee', 'column', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode', 'icon', 'color'])
-    const allowedFields = new Set(['title', 'description', 'priority', 'type', 'status', 'points', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode', 'icon', 'color'])
+    const clearableFields = new Set(['description', 'points', 'tokensInput', 'tokensOutput', 'assignee', 'column', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode', 'icon', 'color'])
+    const allowedFields = new Set(['title', 'description', 'priority', 'type', 'status', 'points', 'tokensInput', 'tokensOutput', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode', 'icon', 'color'])
     for (const raw of input.changes as Array<Record<string, unknown>>) {
       if (!raw || typeof raw !== 'object' || Array.isArray(raw) || typeof raw.field !== 'string' || !allowedFields.has(raw.field)) throw new Error('changes[] deve conter field e operation (forma mínima: [{ "field": "title", "operation": "SET" }])')
       if (fields.has(raw.field)) throw new Error(`Campo duplicado em changes: ${raw.field}`)
@@ -275,6 +275,7 @@ export function validateToolArguments(name: string, args: Record<string, unknown
       if (raw.field === 'type' && raw.operation === 'SET') assertEnum(raw.value, 'type', ['TASK', 'BUG'])
       if (raw.field === 'status' && raw.operation === 'SET') assertEnum(raw.value, 'status', ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'])
       if (raw.field === 'points' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^\d+$/.test(raw.value))) throw new Error('points deve ser um inteiro não negativo')
+      if ((raw.field === 'tokensInput' || raw.field === 'tokensOutput') && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^\d+$/.test(raw.value))) throw new Error(`${raw.field} deve ser um inteiro não negativo`)
       if (raw.field === 'sequenceCode' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^[ESTB]\d+$/.test(raw.value))) throw new Error('sequenceCode deve seguir o padrão [ESTB]\\d+ (ex.: T12)')
       if (raw.field === 'icon' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !isIconName(raw.value))) throw new Error('icon deve pertencer ao catálogo de ícones')
       if (raw.field === 'color' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(raw.value))) throw new Error('color deve ser um hex no formato #RRGGBB')
@@ -295,6 +296,21 @@ export function validateToolArguments(name: string, args: Record<string, unknown
       const hasSemantic = typeof entry.checklistName === 'string' && (typeof entry.text === 'string' || typeof entry.position === 'number')
       if ((entry.checklistId != null) !== (entry.checklistItemId != null)) throw new Error(`items[${index}] exige checklistId e checklistItemId juntos`)
       if (!hasIds && !hasSemantic) throw new Error(`items[${index}] requer IDs ou checklistName + text/position`)
+    }
+  } else if (name === 'set_item_tokens') {
+    if (!Array.isArray(input.items) || input.items.length < 1 || input.items.length > 500) throw new Error('items deve conter entre 1 e 500 entradas')
+    for (const [index, raw] of (input.items as unknown[]).entries()) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error(`items[${index}] deve ser um objeto`)
+      const entry = raw as Record<string, unknown>
+      if (typeof entry.itemId !== 'string' || !entry.itemId.trim()) throw new Error(`items[${index}].itemId é obrigatório`)
+      const hasInput = entry.tokensInput !== undefined && entry.tokensInput !== null
+      const hasOutput = entry.tokensOutput !== undefined && entry.tokensOutput !== null
+      if (!hasInput && !hasOutput) throw new Error(`items[${index}] requer tokensInput e/ou tokensOutput (forma mínima: { "itemId": "<id>", "tokensInput": 1200 })`)
+      for (const tokenField of ['tokensInput', 'tokensOutput'] as const) {
+        const value = entry[tokenField]
+        if (value === undefined || value === null) continue
+        assertNonNegativeInteger(value, `items[${index}].${tokenField}`)
+      }
     }
   } else if (name === 'update_checklist_item') {
     const changes = input.changes

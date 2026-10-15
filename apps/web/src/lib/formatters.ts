@@ -39,3 +39,11 @@ export function formatDateTime(value: string | Date): string {
 export function formatNumber(value: number, options?: Intl.NumberFormatOptions): string {
   return new Intl.NumberFormat(currentLocale(), options).format(value)
 }
+
+/**
+ * T77 — total de tokens em formato compacto (ex.: 1,2 mi / 980 mil).
+ * Valores abaixo de mil saem por extenso; o tooltip costuma trazer o número exato.
+ */
+export function formatTokens(value: number): string {
+  return new Intl.NumberFormat(currentLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(value)
+}

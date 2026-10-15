@@ -69,6 +69,8 @@ export const createItemSchema = z.object({
   priority: prioritySchema.optional(),
   status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED']).optional(),
   points: z.number().finite().nullable().optional(),
+  tokensInput: z.number().int().min(0).nullable().optional(),
+  tokensOutput: z.number().int().min(0).nullable().optional(),
   ...itemTextFields,
   assigneeId: optionalId,
   startDate: optionalDate,
@@ -89,6 +91,8 @@ export const updateItemSchema = z.object({
   sequenceCode: z.string().regex(/^[ESTBX]\d+$/).max(20).nullable().optional(),
   status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED']).optional(),
   points: z.number().finite().min(0).nullable().optional(),
+  tokensInput: z.number().int().min(0).nullable().optional(),
+  tokensOutput: z.number().int().min(0).nullable().optional(),
   assigneeId: optionalId,
   columnId: optionalId,
   parentId: optionalId,
@@ -112,6 +116,16 @@ export const reorderItemsSchema = z.object({
 }).strict()
 
 export const moveItemSchema = z.object({ columnId: z.string().min(1) }).strict()
+
+// T77 — registro massivo de tokens por card. Cada entrada é validada e aplicada
+// de forma independente; o total é derivado e nunca informado.
+export const setItemTokensSchema = z.object({
+  items: z.array(z.object({
+    itemId: z.string().min(1),
+    tokensInput: z.number().int().min(0).nullable().optional(),
+    tokensOutput: z.number().int().min(0).nullable().optional(),
+  }).strict()).min(1).max(500),
+}).strict()
 
 const itemFiltersSchema = z.object({
   itemIds: z.array(z.string().min(1)).max(500).nullable().optional(),
