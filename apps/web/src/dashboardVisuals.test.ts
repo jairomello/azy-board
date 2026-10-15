@@ -75,13 +75,6 @@ describe('rótulos do dashboard vêm da tradução (B11)', () => {
     const hours: DashboardHours = { semantics: '', totalMinutes: 0, rows: [{ id: 'l', authorId: 'u', authorName: null, squadName: null, itemId: 'i', versionId: null, moduleId: null, durationMin: 30, createdAt: '2026-01-02T10:00:00Z' }] }
     expect(hoursByAuthorData(hours, marked)[0]?.name).toBe('<unknownAuthor>')
   })
-
-  test('o adaptador não mantém literais de produto em inglês', async () => {
-    const source = await fetch(new URL('./dashboardAdapters.ts', import.meta.url)).then(response => response.text())
-    for (const literal of ['Not started', 'In progress', 'Unassigned', 'Unknown author', 'Selected', 'Remaining']) {
-      expect(source.includes(`'${literal}'`)).toBe(false)
-    }
-  })
 })
 
 describe('dashboard translations', () => {

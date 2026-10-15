@@ -14,6 +14,15 @@ describe('contratos do dashboard do projeto', () => {
     contains(page, 'boxes.progressScope.advance')
   })
 
+  test('o adaptador não mantém literais de produto em inglês (B11)', async () => {
+    // Invariante não comportamental: os rótulos saem do tradutor, então o módulo não
+    // pode carregar texto de produto — o gate de i18n não enxerga literais de dado.
+    const adapters = await source('./dashboardAdapters.ts')
+    for (const literal of ['Not started', 'In progress', 'Unassigned', 'Unknown author', 'Selected', 'Remaining']) {
+      expect(adapters.includes(`'${literal}'`)).toBe(false)
+    }
+  })
+
   test('eixos por locale e cobertura parcial explicada (T71)', async () => {
     const charts = await source('./components/dashboard/DashboardCharts.tsx')
     contains(charts, "from '../../lib/formatters'")
