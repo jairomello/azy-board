@@ -72,6 +72,19 @@ imagens, cria um backup local dos dados existentes, executa migrations e espera
 a API ficar saudável. A cópia externa é recomendada para recuperação de desastre,
 mas não é uma pré-condição para o rollout. Não fazer downgrade de schema.
 
+Depois da API, o script espera o proxy (Caddy) ficar saudável e **sonda a URL
+pública através do túnel** antes de declarar sucesso: o `cloudflared` resolve a
+origem pelo nome do serviço, que deixa de existir enquanto o container do proxy é
+recriado. Se a sonda falhar, o túnel é reiniciado e a sonda repete; o relatório
+informa também quantos erros de resolução (`server misbehaving`) apareceram no log
+do túnel na janela do deploy. A URL sondada vem de `PUBLIC_URL` e tem como padrão
+`https://azyboard.jairo.tools`.
+
+Os serviços do compose declaram prontidão e as dependências usam condição de
+prontidão: o proxy só sobe com o web saudável, e o túnel só sobe com o proxy
+saudável. A imagem do `cloudflared` é fixada em versão concreta — tags flutuantes
+no compose de produção são reprovadas por `bun run check:deploy-versions`.
+
 ## Backup
 
 `/opt/azyboard/backups` é apenas staging local, não é backup contra perda da

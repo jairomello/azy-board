@@ -159,6 +159,12 @@ services:
     depends_on:
       api:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   caddy:
     image: ghcr.io/jairomello/azy-board/caddy:${AZYBOARD_IMAGE_TAG:-latest}
@@ -175,10 +181,18 @@ services:
       - edge
     depends_on:
       web:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      # O túnel conecta em caddy:8443; a prontidão é a porta aceitando conexão.
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8443"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
 
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    # Tag fixa: o compose de produção não usa tag flutuante (ver check:deploy-versions).
+    image: cloudflare/cloudflared:2026.10.0
     restart: unless-stopped
     logging: *bounded-logging
     mem_limit: 48m
@@ -191,7 +205,8 @@ services:
     networks:
       - edge
     depends_on:
-      - caddy
+      caddy:
+        condition: service_healthy
 
   setup:
     image: ghcr.io/jairomello/azy-board/api:${AZYBOARD_IMAGE_TAG:-latest}

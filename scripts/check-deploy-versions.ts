@@ -33,6 +33,35 @@ for (const arquivo of ['Dockerfile', 'Dockerfile.web']) {
   }
 }
 
+// Compose de produção: nenhuma imagem pode usar tag flutuante. Referências com
+// variável (`:${AZYBOARD_IMAGE_TAG:-latest}`) são resolvidas pelo deploy para uma
+// tag de commit e ficam fora desta checagem.
+const TAGS_FLUTUANTES = ['latest', 'stable', 'edge']
+const composeProducao = readFileSync(join(root, 'docker-compose.production.yml'), 'utf8')
+let servicoAtual = ''
+for (const linha of composeProducao.split('\n')) {
+  const cabecalho = linha.match(/^ {2}([A-Za-z0-9_-]+):\s*$/)
+  if (cabecalho) {
+    servicoAtual = cabecalho[1]
+    continue
+  }
+  const referencia = linha.match(/^\s+image:\s*(\S+)\s*$/)?.[1]
+  if (!referencia || referencia.includes('${')) continue
+  const semDigest = referencia.split('@')[0]!
+  const barra = semDigest.lastIndexOf('/')
+  const ultimoSegmento = semDigest.slice(barra + 1)
+  const doisPontos = ultimoSegmento.indexOf(':')
+  // Caminho do repositório sem a tag, para o exemplo da mensagem ficar correto
+  // mesmo quando a tag flutuante já está presente.
+  const caminho = doisPontos === -1 ? semDigest : `${semDigest.slice(0, barra + 1)}${ultimoSegmento.slice(0, doisPontos)}`
+  const tag = doisPontos === -1 ? '' : ultimoSegmento.slice(doisPontos + 1)
+  if (tag === '') {
+    problemas.push(`docker-compose.production.yml: serviço "${servicoAtual}" sem tag de versão na imagem "${referencia}"`)
+  } else if (TAGS_FLUTUANTES.includes(tag)) {
+    problemas.push(`docker-compose.production.yml: serviço "${servicoAtual}" usa tag flutuante "${tag}" em "${referencia}" (use versão concreta, ex.: "${caminho}:1.2.3")`)
+  }
+}
+
 const workflow = readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8')
 const usosSetupBun = workflow.split('oven-sh/setup-bun').length - 1
 const declaracoesVersionFile = workflow.split('bun-version-file: .bun-version').length - 1
