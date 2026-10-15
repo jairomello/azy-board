@@ -52,16 +52,29 @@ function neutralizeWikiLinks(markdown: string): string {
   })
 }
 
-export function renderHelpMarkdown(markdown: string): string {
+export function renderHelpMarkdown(markdown: string, options: { basePath?: string } = {}): string {
   const withoutEmbeds = markdown.replace(EMBED_RE, '')
-  return helpMarked.parse(neutralizeWikiLinks(withoutEmbeds.replace(LEADING_H1_RE, '')), { async: false })
+  const html = helpMarked.parse(neutralizeWikiLinks(withoutEmbeds.replace(LEADING_H1_RE, '')), { async: false })
+  const basePath = sanitizeBasePath(options.basePath ?? '')
+  // Deploy path-based: o `href` real precisa do prefixo, senão abrir em nova aba
+  // ou copiar o endereço apontaria para a raiz do domínio. A navegação interna
+  // continua pelo router, que já usa o `basename`.
+  return basePath ? html.split('href="/help/').join(`href="${basePath}/help/`) : html
+}
+
+// Base path confiável: vem do proxy que injeta `window.__BASE_PATH__`. Ainda
+// assim é validado antes de entrar no HTML renderizado.
+function sanitizeBasePath(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/, '')
+  return /^\/[A-Za-z0-9/_-]*$/.test(trimmed) ? trimmed : ''
 }
 
 /** Slug interno quando o href aponta para a própria ajuda; `null` caso contrário. */
-export function helpSlugFromHref(href: string | null | undefined): string | null {
+export function helpSlugFromHref(href: string | null | undefined, basePath = ''): string | null {
   if (!href) return null
+  const prefix = `${sanitizeBasePath(basePath)}${HELP_ROUTE_PREFIX}`
   const trimmed = href.trim()
-  if (!trimmed.startsWith(HELP_ROUTE_PREFIX)) return null
-  const slug = trimmed.slice(HELP_ROUTE_PREFIX.length).split(/[?#]/)[0] ?? ''
+  if (!trimmed.startsWith(prefix)) return null
+  const slug = (trimmed.slice(prefix.length).split(/[?#]/)[0] ?? '').replace(/\/+$/, '')
   return slug || null
 }

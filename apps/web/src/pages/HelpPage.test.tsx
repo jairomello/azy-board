@@ -121,6 +121,31 @@ describe('central de ajuda', () => {
     await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: 'Glossário' })).toBeInTheDocument())
   })
 
+  test('links internos recebem o base path do deploy', async () => {
+    const linkMarkdown = '# Azy Board\n\nVeja [o glossário](/help/00-glossario).'
+    const original = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const path = String(input).replace(/^\/api/, '').split('?')[0] ?? ''
+      if (path === '/help/index') return jsonResponse(index)
+      if (path === '/help/pages/home') return jsonResponse({ version: 'v1', slug: 'home', order: 0, path: 'Home.md', moduleId: null, moduleTitle: 'Início', sha256: 'a'.repeat(64), markdown: linkMarkdown, title: 'Azy Board' })
+      if (path === '/help/pages/00-glossario') return jsonResponse({ version: 'v1', slug: '00-glossario', order: 3, path: '00 - Inicio/Glossario.md', moduleId: '00', moduleTitle: 'Início', sha256: 'b'.repeat(64), markdown: '# Glossário\n\nTermos do produto.', title: 'Glossário' })
+      return original(input as RequestInfo)
+    }) as typeof fetch
+
+    ;(window as { __BASE_PATH__?: string }).__BASE_PATH__ = '/azyboard'
+    try {
+      renderHelp()
+      const link = await screen.findByRole('link', { name: 'o glossário' })
+      // Abrir em nova aba / copiar endereço precisa do prefixo do deploy.
+      expect(link).toHaveAttribute('href', '/azyboard/help/00-glossario')
+      // A navegação interna continua funcionando (o router usa o basename).
+      await userEvent.click(link)
+      await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: 'Glossário' })).toBeInTheDocument())
+    } finally {
+      delete (window as { __BASE_PATH__?: string }).__BASE_PATH__
+    }
+  })
+
   test('erro ao carregar a página mantém o índice navegável e permite tentar de novo', async () => {
     installFetchStub({ failPage: '04-conhecer-o-board' })
     renderHelp('/help/04-conhecer-o-board')

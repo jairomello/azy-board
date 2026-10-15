@@ -81,4 +81,26 @@ describe('slug interno a partir do href', () => {
     expect(helpSlugFromHref(null)).toBeNull()
     expect(helpSlugFromHref('/help/')).toBeNull()
   })
+
+  test('considera o base path do deploy', () => {
+    expect(helpSlugFromHref('/azyboard/help/04-conhecer-o-board', '/azyboard')).toBe('04-conhecer-o-board')
+    expect(helpSlugFromHref('/azyboard/help/04-conhecer-o-board/', '/azyboard/')).toBe('04-conhecer-o-board')
+    // Sem o base path esperado, o href de outra área não é tratado como ajuda.
+    expect(helpSlugFromHref('/outro/help/x', '/azyboard')).toBeNull()
+  })
+})
+
+describe('links da ajuda sob base path', () => {
+  test('prefixa os links internos quando o app é publicado em subpath', () => {
+    const markdown = 'Veja [o glossário](/help/00-glossario).'
+    expect(renderHelpMarkdown(markdown)).toContain('href="/help/00-glossario"')
+    expect(renderHelpMarkdown(markdown, { basePath: '/azyboard' })).toContain('href="/azyboard/help/00-glossario"')
+    expect(renderHelpMarkdown(markdown, { basePath: '/azyboard/' })).toContain('href="/azyboard/help/00-glossario"')
+  })
+
+  test('ignora base path inválido em vez de injetar no HTML', () => {
+    const markdown = 'Veja [o glossário](/help/00-glossario).'
+    expect(renderHelpMarkdown(markdown, { basePath: '/azyboard" onload="alert(1)' })).toContain('href="/help/00-glossario"')
+    expect(renderHelpMarkdown(markdown, { basePath: 'azyboard' })).toContain('href="/help/00-glossario"')
+  })
 })

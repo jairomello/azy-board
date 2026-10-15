@@ -9,12 +9,14 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { AppShell } from '../components/AppShell'
 import { api, type HelpIndexResponse, type HelpPageResponse } from '../lib/api'
+import { appBasePath } from '../lib/appUrl'
 import { helpSlugFromHref, renderHelpMarkdown } from '../lib/helpMarkdown'
 
 export default function HelpPage() {
   const { t } = useTranslation('common')
   const navigate = useNavigate()
   const { slug } = useParams<{ slug?: string }>()
+  const basePath = appBasePath()
   const contentRef = useRef<HTMLDivElement>(null)
   const [index, setIndex] = useState<HelpIndexResponse | null>(null)
   const [indexError, setIndexError] = useState(false)
@@ -51,7 +53,7 @@ export default function HelpPage() {
     contentRef.current?.scrollTo({ top: 0 })
   }, [page?.slug])
 
-  const html = useMemo(() => (page ? renderHelpMarkdown(page.markdown) : ''), [page])
+  const html = useMemo(() => (page ? renderHelpMarkdown(page.markdown, { basePath }) : ''), [page, basePath])
 
   // Links internos da ajuda navegam pelo router; o `href` real permanece para
   // abrir em nova aba ou copiar o endereço.
@@ -59,7 +61,7 @@ export default function HelpPage() {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     const anchor = (event.target as HTMLElement).closest('a')
     if (!anchor) return
-    const internalSlug = helpSlugFromHref(anchor.getAttribute('href'))
+    const internalSlug = helpSlugFromHref(anchor.getAttribute('href'), basePath)
     if (!internalSlug) return
     event.preventDefault()
     navigate(`/help/${internalSlug}`)
