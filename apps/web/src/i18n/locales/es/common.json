@@ -213,7 +213,7 @@
   "tree": {
     "collapseNode": "Colapsar {{label}}",
     "expandNode": "Expandir {{label}}",
-    "progressLabel": "Progreso: {{progress}}%",
+    "progressLabel": "Avance: {{progress}}%",
     "addChild": "Añadir {{type}} en {{label}}",
     "add": "Añadir {{type}}",
     "edit": "Editar {{label}}",
@@ -236,7 +236,8 @@
       "story": "Historia",
       "task": "Task",
       "bug": "Bug"
-    }
+    },
+    "advanceColumn": "Avance"
   },
   "loadMore": "Cargar más",
   "buildVersion": "Versión {{version}}",

@@ -1,6 +1,6 @@
 import { BookOpen, Pencil } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { ItemType } from '@azy-board/domain'
+import { itemsAdvance, type ItemType } from '@azy-board/domain'
 import { ModuleSwimlane } from '../../../components/ModuleSwimlane'
 import { BoardColumns } from './BoardColumns'
 import type { ProjectVersion } from '../../../components/ItemModal'
@@ -96,6 +96,29 @@ function modulePoints(epics: EpicLaneGroup[]) {
   return epics.flatMap(group => group.tasks).filter(item => item.isLeaf && ['TASK', 'BUG'].includes(item.type)).reduce((sum, item) => sum + (item.points ?? 0), 0)
 }
 
+// Avanço no fluxo (peso da coluna + checklist) e conclusão (DONE) são indicadores
+// distintos: a barra mostra o avanço, o contador mostra a entrega concluída.
+function laneProgress(columns: Column[], tasks: ItemData[]) {
+  const advance = itemsAdvance(
+    columns.map(column => ({ id: column.id, baseStatus: column.baseStatus, position: column.position, progressWeight: column.progressWeightOverride ?? null })),
+    tasks.map(task => ({ columnId: task.columnId, checklist: task.checklistProgress ?? null })),
+  )
+  return { advance, done: tasks.filter(task => task.status === 'DONE').length, total: tasks.length }
+}
+
+function LaneProgressBar({ advance, done, total, widthClass, labelClass }: { advance: number; done: number; total: number; widthClass: string; labelClass: string }) {
+  const { t } = useTranslation('board')
+  return (
+    <span className={`hidden sm:flex items-center gap-2 ${widthClass}`}>
+      <span className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden" title={t('progressAdvance')}>
+        <span className="block h-full bg-status-progress rounded-full" style={{ width: `${advance}%` }} />
+      </span>
+      <span className={`${labelClass} font-semibold tabular-nums text-muted-foreground`} title={t('progressAdvance')} data-lane-advance>{advance}%</span>
+      <span className={`${labelClass} tabular-nums text-muted-foreground/80`} title={t('progressDone')} data-lane-completion>{done}/{total}</span>
+    </span>
+  )
+}
+
 interface SwimlaneProps {
   swimlaneId: string; title: string; columns: Column[]; versions: ProjectVersion[]; sprints: Sprint[]; tasks: ItemData[]; collapsed: boolean; onToggle: () => void
   columnAddForms: Record<string, boolean>; onShowAddForm: (id: string) => void; onHideAddForm: (id: string) => void; onCardCreate: BoardLanesProps['onCardCreate']
@@ -108,13 +131,13 @@ interface SwimlaneProps {
 function Swimlane(props: SwimlaneProps) {
   const { t } = useTranslation('board')
   const { tasks, collapsed, storyGroups, hideHeader = false } = props
-  const progress = tasks.length ? Math.round((tasks.filter(task => task.status === 'DONE').length / tasks.length) * 100) : 0
+  const { advance, done, total } = laneProgress(props.columns, tasks)
   return <section className="mb-4 rounded-xl border border-border/80 bg-surface p-2.5 sm:p-3 shadow-sm">
     {!hideHeader && <div className="flex items-center gap-3 w-full mb-3 px-1">
       <button onClick={props.onToggle} aria-expanded={!collapsed} className="flex items-center gap-2.5 flex-1 text-left group min-w-0">
         <svg className={`w-4 h-4 text-muted-foreground transition-transform ${collapsed ? '' : 'rotate-90'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
         <div className="min-w-0"><span className="font-semibold text-sm text-foreground block truncate">{props.title}</span><span className="text-[11px] text-muted-foreground">{storyGroups ? `${storyGroups.length} ${storyGroups.length === 1 ? 'história' : 'histórias'} · ${tasks.length} ${tasks.length === 1 ? 'card' : 'cards'}` : `${tasks.length} ${tasks.length === 1 ? 'item' : 'itens'}`}</span></div>
-        <div className="ml-auto hidden sm:flex items-center gap-2 w-36"><div className="h-1.5 flex-1 bg-muted rounded-full overflow-hidden"><div className="h-full bg-status-done rounded-full" style={{ width: `${progress}%` }} /></div><span className="text-[11px] font-semibold tabular-nums text-muted-foreground">{progress}%</span></div>
+        <LaneProgressBar advance={advance} done={done} total={total} widthClass="ml-auto w-40" labelClass="text-[11px]" />
       </button>
       {props.onEditEpic && <button onClick={props.onEditEpic} className="text-muted-foreground hover:text-foreground transition flex-shrink-0 p-1 rounded hover:bg-muted" title={t('editEpic')}><Pencil className="w-3.5 h-3.5" /></button>}
     </div>}
@@ -125,6 +148,6 @@ function Swimlane(props: SwimlaneProps) {
 
 function StorySwimlane({ group, columns, versions, sprints, columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, collapsed, onToggle, onEdit, criticalIds }: SwimlaneProps & { group: StoryLaneGroup; onEdit?: () => void }) {
   const { t } = useTranslation('board')
-  const progress = group.tasks.length ? Math.round((group.tasks.filter(task => task.status === 'DONE').length / group.tasks.length) * 100) : 0
-  return <section className="relative rounded-lg border border-violet-300/50 dark:border-violet-500/25 bg-surface-raised overflow-hidden"><span className="absolute -left-[22px] sm:-left-[30px] top-6 w-4 sm:w-6 h-px bg-violet-400/40" aria-hidden /><div className={`flex items-center gap-2.5 px-3 py-2.5 ${collapsed ? '' : 'border-b border-border/70'} bg-violet-500/[0.045]`}><button onClick={onToggle} aria-expanded={!collapsed} className="min-w-0 flex-1 flex items-center gap-2.5 text-left"><svg className={`w-3.5 h-3.5 text-violet-500 transition-transform ${collapsed ? '' : 'rotate-90'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg><BookOpen className="w-3.5 h-3.5 text-violet-600" /><span className="min-w-0"><span className="block text-[10px] uppercase tracking-[0.12em] font-semibold text-violet-600">{group.story ? 'História' : 'Agrupamento'}</span><span className="block text-sm font-semibold text-foreground truncate">{group.title}</span></span><span className="ml-auto text-[11px] text-muted-foreground whitespace-nowrap">{group.tasks.length} {group.tasks.length === 1 ? 'card' : 'cards'}</span><span className="hidden sm:flex items-center gap-2 w-28"><span className="h-1 flex-1 bg-muted rounded-full overflow-hidden"><span className="block h-full bg-status-done" style={{ width: `${progress}%` }} /></span><span className="text-[10px] tabular-nums font-semibold text-muted-foreground">{progress}%</span></span></button>{onEdit && <button onClick={onEdit} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition" title={t('editStory')} aria-label={`${t('editStory')} ${group.title}`}><Pencil className="w-3.5 h-3.5" /></button>}</div>{!collapsed && <div className="p-2.5"><BoardColumns laneId={`story-${group.id}`} columns={columns} versions={versions} sprints={sprints} tasks={group.tasks} parentId={group.story?.id} columnAddForms={columnAddForms} onShowAddForm={onShowAddForm} onHideAddForm={onHideAddForm} onCardCreate={onCardCreate} onOpenDetail={onOpenDetail} onTitleSave={onTitleSave} onDelete={onDelete} onArchive={onArchive} criticalIds={criticalIds} /></div>}</section>
+  const { advance, done, total } = laneProgress(columns, group.tasks)
+  return <section className="relative rounded-lg border border-violet-300/50 dark:border-violet-500/25 bg-surface-raised overflow-hidden"><span className="absolute -left-[22px] sm:-left-[30px] top-6 w-4 sm:w-6 h-px bg-violet-400/40" aria-hidden /><div className={`flex items-center gap-2.5 px-3 py-2.5 ${collapsed ? '' : 'border-b border-border/70'} bg-violet-500/[0.045]`}><button onClick={onToggle} aria-expanded={!collapsed} className="min-w-0 flex-1 flex items-center gap-2.5 text-left"><svg className={`w-3.5 h-3.5 text-violet-500 transition-transform ${collapsed ? '' : 'rotate-90'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg><BookOpen className="w-3.5 h-3.5 text-violet-600" /><span className="min-w-0"><span className="block text-[10px] uppercase tracking-[0.12em] font-semibold text-violet-600">{group.story ? 'História' : 'Agrupamento'}</span><span className="block text-sm font-semibold text-foreground truncate">{group.title}</span></span><span className="ml-auto text-[11px] text-muted-foreground whitespace-nowrap">{group.tasks.length} {group.tasks.length === 1 ? 'card' : 'cards'}</span><LaneProgressBar advance={advance} done={done} total={total} widthClass="w-32" labelClass="text-[10px]" /></button>{onEdit && <button onClick={onEdit} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition" title={t('editStory')} aria-label={`${t('editStory')} ${group.title}`}><Pencil className="w-3.5 h-3.5" /></button>}</div>{!collapsed && <div className="p-2.5"><BoardColumns laneId={`story-${group.id}`} columns={columns} versions={versions} sprints={sprints} tasks={group.tasks} parentId={group.story?.id} columnAddForms={columnAddForms} onShowAddForm={onShowAddForm} onHideAddForm={onHideAddForm} onCardCreate={onCardCreate} onOpenDetail={onOpenDetail} onTitleSave={onTitleSave} onDelete={onDelete} onArchive={onArchive} criticalIds={criticalIds} /></div>}</section>
 }

@@ -142,6 +142,8 @@ export interface ColumnRecord {
   projectId: string
   name: string
   baseStatus: ColumnBaseStatus
+  /** Peso de avanço explícito (0–100); nulo = derivado do status base e da posição. */
+  progressWeight: number | null
   position: number
 }
 
@@ -701,6 +703,8 @@ export interface DashboardPopulationFilter {
 export interface DashboardSnapshotAggregateRow {
   status: string
   assigneeId: string | null
+  /** Coluna do item — base do avanço no dashboard (média ponderada pelo peso da coluna). */
+  columnId: string | null
   count: number
   estimatedCount: number
   points: number

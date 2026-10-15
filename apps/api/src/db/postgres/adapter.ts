@@ -169,6 +169,7 @@ function mapColumn(row: PgRow): ColumnRecord {
   return {
     id: row.id as string, tenantId: row.tenant_id as string, projectId: row.project_id as string,
     name: row.name as string, baseStatus: row.base_status as ColumnRecord['baseStatus'],
+    progressWeight: (row.progress_weight as number | null) ?? null,
     position: row.position as number,
   }
 }
@@ -1402,8 +1403,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           const position = (posResult.rows[0]?.cnt as number) ?? 0
           const id = generateId()
           const result = await client.query(
-            'INSERT INTO columns (id, tenant_id, project_id, name, base_status, position) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-            [id, context.tenantId, projectId, input.name, input.baseStatus, position],
+            'INSERT INTO columns (id, tenant_id, project_id, name, base_status, progress_weight, position) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+            [id, context.tenantId, projectId, input.name, input.baseStatus, input.progressWeight ?? null, position],
           )
           if (!result.rows[0]) throw new Error('Falha ao criar coluna no adapter PostgreSQL.')
           await emitMetadataEventPg(client, context.tenantId, projectId, 'columns')
@@ -1416,6 +1417,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         let idx = 4
         if (patch.name !== undefined) { sets.push(`name = $${idx++}`); params.push(patch.name) }
         if (patch.baseStatus !== undefined) { sets.push(`base_status = $${idx++}`); params.push(patch.baseStatus) }
+        // `null` limpa o peso explícito (volta ao derivado); ausente não altera.
+        if (patch.progressWeight !== undefined) { sets.push(`progress_weight = $${idx++}`); params.push(patch.progressWeight) }
         if (!sets.length) return null
         return tx(async (client) => {
           const result = await client.query(`UPDATE columns SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING *`, params)
@@ -2184,6 +2187,19 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         )
         return { checked: (row?.done as number) ?? 0, total: (row?.total as number) ?? 0 }
       },
+      // [TENANT] Progresso de checklist do projeto inteiro em uma consulta agregada.
+      async listChecklistProgressByProject(context: PersistenceContext, projectId: string): Promise<Map<string, ChecklistProgressRecord>> {
+        const rows = await q(
+          `SELECT c.item_id, count(ci.id)::int AS total, count(ci.id) FILTER (WHERE ci.checked)::int AS done
+           FROM checklists c
+           LEFT JOIN checklist_items ci ON ci.checklist_id = c.id
+           JOIN items i ON i.id = c.item_id AND i.tenant_id = c.tenant_id
+           WHERE c.tenant_id = $1 AND i.project_id = $2
+           GROUP BY c.item_id`,
+          [context.tenantId, projectId],
+        )
+        return new Map(rows.map(row => [row.item_id as string, { checked: (row.done as number) ?? 0, total: (row.total as number) ?? 0 }]))
+      },
     },
 
     // -----------------------------------------------------------------------
@@ -2833,7 +2849,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         const query = dashboardLeafWhere(context, projectId, filter)
         const params = [...query.params, today]
         const rows = await q(
-          `SELECT i.status, i.assignee_id,
+          `SELECT i.status, i.assignee_id, i.column_id,
                   COUNT(*)::int AS count,
                   COUNT(i.points)::int AS estimated_count,
                   COALESCE(SUM(i.points), 0)::int AS points,
@@ -2841,11 +2857,11 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
                   COUNT(*) FILTER (WHERE i.due_date IS NOT NULL AND i.due_date < $${params.length} AND i.status NOT IN ('DONE', 'CANCELLED'))::int AS overdue_count,
                   COALESCE(SUM(i.points) FILTER (WHERE i.due_date IS NOT NULL AND i.due_date < $${params.length} AND i.status NOT IN ('DONE', 'CANCELLED')), 0)::int AS overdue_points
            FROM items i WHERE ${query.where}
-           GROUP BY i.status, i.assignee_id`,
+           GROUP BY i.status, i.assignee_id, i.column_id`,
           params,
         )
         return rows.map(row => ({
-          status: row.status as string, assigneeId: row.assignee_id as string | null,
+          status: row.status as string, assigneeId: row.assignee_id as string | null, columnId: row.column_id as string | null,
           count: row.count as number, estimatedCount: row.estimated_count as number,
           points: row.points as number, donePoints: row.done_points as number, overdueCount: row.overdue_count as number, overduePoints: row.overdue_points as number,
         }))

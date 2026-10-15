@@ -12,7 +12,7 @@ await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url
 sqlite.exec('PRAGMA foreign_keys = ON;')
 
 const {
-  tenants, users, projects, items, itemSprints, sprints, sprintCycles, sprintCycleItems, projectAnalyticsCoverage, projectMetricsDaily, memberships, itemLogs,
+  tenants, users, projects, items, itemSprints, sprints, sprintCycles, sprintCycleItems, projectAnalyticsCoverage, projectMetricsDaily, memberships, itemLogs, columns,
 } = await import('./db/schema')
 const { signJwt } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
@@ -240,9 +240,15 @@ describe('rollup diário transacional (Item 13)', () => {
     await db.insert(projects).values({ id: snapshotProject, tenantId: snapshotTenant, name: 'Projeto oracle', managerUserId: adminId, createdAt: now })
     await db.insert(memberships).values({ id: generateId(), tenantId: snapshotTenant, userId: adminId, projectId: snapshotProject, role: 'ADMIN', createdAt: now })
     const overdueDate = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
+    // Colunas do projeto: base do avanço no dashboard (média ponderada pelo peso da coluna).
+    const wipColumnId = generateId(), doneColumnId = generateId()
+    await db.insert(columns).values([
+      { id: wipColumnId, tenantId: snapshotTenant, projectId: snapshotProject, name: 'A Testar', baseStatus: 'IN_PROGRESS', position: 0 },
+      { id: doneColumnId, tenantId: snapshotTenant, projectId: snapshotProject, name: 'Concluídas', baseStatus: 'DONE', position: 1 },
+    ])
     await db.insert(items).values([
-      { id: generateId(), tenantId: snapshotTenant, projectId: snapshotProject, type: 'TASK', title: 'Done estimada', status: 'DONE', priority: 'MEDIUM', points: 3, assigneeId: adminId, dueDate: null, position: 0, createdAt: now, updatedAt: now },
-      { id: generateId(), tenantId: snapshotTenant, projectId: snapshotProject, type: 'TASK', title: 'WIP sem estimativa', status: 'IN_PROGRESS', priority: 'MEDIUM', points: null, assigneeId: adminId, dueDate: null, position: 1, createdAt: now, updatedAt: now },
+      { id: generateId(), tenantId: snapshotTenant, projectId: snapshotProject, type: 'TASK', title: 'Done estimada', status: 'DONE', columnId: doneColumnId, priority: 'MEDIUM', points: 3, assigneeId: adminId, dueDate: null, position: 0, createdAt: now, updatedAt: now },
+      { id: generateId(), tenantId: snapshotTenant, projectId: snapshotProject, type: 'TASK', sequenceCode: 'T42', title: 'WIP sem estimativa', status: 'IN_PROGRESS', columnId: wipColumnId, priority: 'MEDIUM', points: null, assigneeId: adminId, dueDate: null, position: 1, createdAt: now, updatedAt: now },
       { id: generateId(), tenantId: snapshotTenant, projectId: snapshotProject, type: 'BUG', title: 'Bloqueado atrasado', status: 'BLOCKED', priority: 'HIGH', points: 2, assigneeId: adminId, dueDate: overdueDate, blockedReason: 'Dependência', position: 2, createdAt: now, updatedAt: now },
       { id: generateId(), tenantId: snapshotTenant, projectId: snapshotProject, type: 'BUG', title: 'Não iniciado', status: 'NOT_STARTED', priority: 'LOW', points: 0, assigneeId: null, dueDate: null, position: 3, createdAt: now, updatedAt: now },
       { id: generateId(), tenantId: snapshotTenant, projectId: snapshotProject, type: 'TASK', title: 'Agregador não elegível', status: 'IN_PROGRESS', priority: 'MEDIUM', points: 100, assigneeId: adminId, dueDate: overdueDate, position: 4, createdAt: now, updatedAt: now },
@@ -256,13 +262,15 @@ describe('rollup diário transacional (Item 13)', () => {
     const response = await request(`/projects/${snapshotProject}/dashboard/snapshot`, session)
     expect(response.status).toBe(200)
     const snapshot = await response.json() as { filters: { inapplicable: string[] }; boxes: {
-      progressScope: { total: number; done: number; points: number; donePoints: number; estimationCoverage: number | null }
+      progressScope: { total: number; done: number; advance: number; points: number; donePoints: number; estimationCoverage: number | null }
       wip: { total: number; byStatus: Record<string, number>; pointsCoverage: number | null }
       blocked: { total: number }
       overdue: { total: number; points: number; items: Array<{ title: string }>; remainingItems: Array<{ title: string }> }
       teamLoad: { members: Array<{ userId: string; wipTotal: number; blockedSubset: number; wipPoints: number | null; pointsCoverage: number | null }> }
     } }
     expect(snapshot.boxes.progressScope).toMatchObject({ total: 5, done: 1, points: 6, donePoints: 3, estimationCoverage: 80 })
+    // Avanço: 100 (concluída) + 90 (única coluna em progresso) e 0 nos itens sem coluna → 38.
+    expect(snapshot.boxes.progressScope.advance).toBe(38)
     expect(snapshot.boxes.wip).toMatchObject({ total: 2, byStatus: { IN_PROGRESS: 1, BLOCKED: 1 }, pointsCoverage: 80 })
     expect(snapshot.boxes.blocked.total).toBe(1)
     expect(snapshot.boxes.overdue).toMatchObject({ total: 1, items: [{ title: 'Bloqueado atrasado' }] })
@@ -292,13 +300,17 @@ describe('rollup diário transacional (Item 13)', () => {
     expect(wrongFilter.status).toBe(422)
 
     const agingPageResponse = await request(`/projects/${snapshotProject}/dashboard/aging?limit=1`, session)
-    const agingPage = await agingPageResponse.json() as { total: number; pagination: { hasMore: boolean; nextCursor: string | null }; items: Array<{ id: string }> }
+    const agingPage = await agingPageResponse.json() as { total: number; pagination: { hasMore: boolean; nextCursor: string | null }; items: Array<{ id: string; sequenceCode: string | null }> }
     expect(agingPage).toMatchObject({ total: 2, pagination: { limit: 1, hasMore: true } })
     expect(agingPage.items).toHaveLength(1)
     const agingNext = await request(`/projects/${snapshotProject}/dashboard/aging?limit=1&cursor=${encodeURIComponent(agingPage.pagination.nextCursor!)}`, session)
     const agingNextBody = await agingNext.json() as typeof agingPage
     expect(agingNextBody.items).toHaveLength(1)
     expect(agingNextBody.items[0]?.id).not.toBe(agingPage.items[0]?.id)
+    // Card B8 — o detalhe expõe o código sequencial do card para rótulos legíveis.
+    const agingCodes = [...agingPage.items, ...agingNextBody.items].map(item => item.sequenceCode)
+    expect(agingCodes).toContain('T42')
+    expect(agingCodes.every(code => code === null || typeof code === 'string')).toBe(true)
   })
 })
 

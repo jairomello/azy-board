@@ -509,6 +509,10 @@ export const columns = sqliteTable('columns', {
   baseStatus: text('base_status', {
     enum: ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'],
   }).notNull().default('NOT_STARTED'),
+  // Peso de avanço da coluna (0–100). Nulo = derivado do baseStatus e da posição
+  // entre as colunas do mesmo status (ver packages/domain progress.ts). A faixa é
+  // validada na API; o SQLite não aceita adicionar CHECK por ALTER TABLE.
+  progressWeight: integer('progress_weight'),
   position: integer('position').notNull().default(0),
 }, (table) => ({
   tenantIdUnique: uniqueIndex('columns_tenant_id_id_unique').on(table.tenantId, table.id),

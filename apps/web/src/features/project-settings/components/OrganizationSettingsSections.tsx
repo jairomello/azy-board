@@ -1,9 +1,9 @@
-import { useState, type FormEvent } from 'react'
-import { Check, Network, Pencil, Trash2, UserPlus, Users, X } from 'lucide-react'
+import { useMemo, useState, type FormEvent } from 'react'
+import { Check, Network, Pencil, RotateCcw, Trash2, UserPlus, Users, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccordionSection } from '../../../components/AccordionSection'
 import type { Column, CostCenter, Manager, Member, MemberCandidate, Squad } from '../model/types'
-import type { ColumnBaseStatus } from '@azy-board/domain'
+import { resolveColumnProgressWeights, type ColumnBaseStatus } from '@azy-board/domain'
 import { MemberDialog } from './MemberDialog'
 
 interface Props {
@@ -14,6 +14,7 @@ interface Props {
   openSections: Set<string>; onToggleSection: (id: string) => void
   onCreateColumn: (name: string, status: ColumnBaseStatus) => Promise<void>; onRenameColumn: (id: string, name: string) => Promise<void>
   onDeleteColumn: (column: Column, moveToColumnId: string) => Promise<void>
+  onUpdateColumnWeight: (id: string, weight: number | null) => Promise<void>
   onCreateSquad: (name: string) => Promise<void>; onRenameSquad: (id: string, name: string) => Promise<void>; onDeleteSquad: (squad: Squad) => Promise<void>
   onAddMember: (data: { userId: string; role: string; squadId: string }) => Promise<void>; onEditMember: (member: Member, role: string, squadId: string) => Promise<void>; onRemoveMember: (member: Member) => Promise<void>
   onCreateCostCenter: (code: string, description: string) => Promise<void>; onEditCostCenter: (id: string, code: string, description: string) => Promise<void>; onDeleteCostCenter: (id: string) => Promise<void>
@@ -21,6 +22,65 @@ interface Props {
 
 const statuses: ColumnBaseStatus[] = ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED']
 const roleLabel = (role: string, t: (key: string) => string) => role === 'ADMIN' ? 'Admin' : role === 'MEMBER' ? t('settings:roleMember') : role === 'VIEWER' ? t('settings:roleViewer') : role
+
+// Peso de avanço da coluna: o valor derivado aparece como sugestão (placeholder) e a ação
+// de restaurar volta ao derivado. Sem override, o campo fica vazio e vale o derivado.
+function ColumnWeightControl({ column, derivedWeight, isAdmin, onUpdate }: {
+  column: Column
+  derivedWeight: number
+  isAdmin: boolean
+  onUpdate: (id: string, weight: number | null) => Promise<void>
+}) {
+  const { t } = useTranslation('settings')
+  const override = column.progressWeightOverride ?? null
+  const effective = column.progressWeight ?? derivedWeight
+  const [draft, setDraft] = useState(override === null ? '' : String(override))
+
+  function commit() {
+    const trimmed = draft.trim()
+    if (trimmed === '') {
+      if (override !== null) void onUpdate(column.id, null)
+      return
+    }
+    const parsed = Number.parseInt(trimmed, 10)
+    if (!Number.isFinite(parsed)) { setDraft(override === null ? '' : String(override)); return }
+    const clamped = Math.max(0, Math.min(100, parsed))
+    if (clamped === override) { setDraft(String(clamped)); return }
+    void onUpdate(column.id, clamped)
+  }
+
+  return (
+    <span className="flex items-center gap-1.5">
+      <label className="text-xs text-muted-foreground" htmlFor={`column-weight-${column.id}`}>{t('columnProgressWeight')}</label>
+      <input
+        id={`column-weight-${column.id}`}
+        type="number"
+        min={0}
+        max={100}
+        inputMode="numeric"
+        value={draft}
+        placeholder={String(derivedWeight)}
+        disabled={!isAdmin}
+        onChange={event => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commit() } }}
+        className="w-16 rounded-lg border border-input bg-background px-2 py-1 text-xs tabular-nums disabled:opacity-60"
+        aria-label={`${t('columnProgressWeight')} ${column.name}`}
+      />
+      <span className="text-xs tabular-nums text-muted-foreground" data-column-weight-effective={column.id}>{effective}%</span>
+      {isAdmin && override !== null && (
+        <button
+          type="button"
+          onClick={() => { setDraft(''); void onUpdate(column.id, null) }}
+          title={t('columnProgressWeightReset')}
+          aria-label={`${t('columnProgressWeightReset')} ${column.name}`}
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+        </button>
+      )}
+    </span>
+  )
+}
 
 export function OrganizationSettingsSections(props: Props) {
   const { t } = useTranslation(['settings', 'common'])
@@ -30,10 +90,14 @@ export function OrganizationSettingsSections(props: Props) {
   const [ccCode, setCcCode] = useState(''); const [ccDescription, setCcDescription] = useState(''); const [editingCc, setEditingCc] = useState<CostCenter | null>(null)
   const section = (id: string) => ({ isOpen: props.openSections.has(id), onToggle: props.onToggleSection })
   const submit = (callback: () => Promise<void>) => (event: FormEvent) => { event.preventDefault(); void callback() }
+  // Pesos derivados (sem override) servem de sugestão e de destino da ação de restaurar.
+  const derivedWeights = useMemo(() => resolveColumnProgressWeights(props.columns.map(column => ({
+    id: column.id, baseStatus: column.baseStatus, position: column.position, progressWeight: null,
+  }))), [props.columns])
 
   return <>
     <AccordionSection id="columns" title={t('settings:columns')} {...section('columns')}>
-      <div className="space-y-2">{props.columns.map(column => <div key={column.id} className="flex items-center justify-between bg-card border border-border rounded-lg px-4 py-3">{editingColumn?.id === column.id ? <div className="flex gap-2 flex-1 mr-2"><input autoFocus value={editingColumn.name} onChange={e => setEditingColumn({ ...editingColumn, name: e.target.value })} className="flex-1 text-sm px-2 py-1 border border-border rounded-lg bg-background" /><button onClick={() => { void props.onRenameColumn(column.id, editingColumn.name); setEditingColumn(null) }}><Check className="w-4 h-4" /></button><button onClick={() => setEditingColumn(null)}><X className="w-4 h-4" /></button></div> : <span className="font-medium text-foreground text-sm">{column.name}</span>}<div className="flex items-center gap-2"><span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">{t(`common:status.${column.baseStatus}`)}</span>{props.isAdmin && editingColumn?.id !== column.id && <><button onClick={() => setEditingColumn(column)}><Pencil className="w-3.5 h-3.5" /></button><button onClick={() => { setDeleteColumn(column); setMoveTo(props.columns.find(item => item.id !== column.id)?.id ?? '') }}><Trash2 className="w-3.5 h-3.5 text-destructive" /></button></>}</div></div>)}</div>
+      <div className="space-y-2">{props.columns.map(column => <div key={column.id} className="flex items-center justify-between bg-card border border-border rounded-lg px-4 py-3">{editingColumn?.id === column.id ? <div className="flex gap-2 flex-1 mr-2"><input autoFocus value={editingColumn.name} onChange={e => setEditingColumn({ ...editingColumn, name: e.target.value })} className="flex-1 text-sm px-2 py-1 border border-border rounded-lg bg-background" /><button onClick={() => { void props.onRenameColumn(column.id, editingColumn.name); setEditingColumn(null) }}><Check className="w-4 h-4" /></button><button onClick={() => setEditingColumn(null)}><X className="w-4 h-4" /></button></div> : <span className="font-medium text-foreground text-sm">{column.name}</span>}<div className="flex items-center gap-2"><ColumnWeightControl column={column} derivedWeight={derivedWeights.get(column.id) ?? 0} isAdmin={props.isAdmin} onUpdate={props.onUpdateColumnWeight} /><span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">{t(`common:status.${column.baseStatus}`)}</span>{props.isAdmin && editingColumn?.id !== column.id && <><button onClick={() => setEditingColumn(column)}><Pencil className="w-3.5 h-3.5" /></button><button onClick={() => { setDeleteColumn(column); setMoveTo(props.columns.find(item => item.id !== column.id)?.id ?? '') }}><Trash2 className="w-3.5 h-3.5 text-destructive" /></button></>}</div></div>)}</div>
       {props.isAdmin && <form onSubmit={submit(async () => { await props.onCreateColumn(columnName, columnStatus); setColumnName('') })} className="mt-4 flex gap-3"><input required placeholder={t('settings:columnName')} value={columnName} onChange={e => setColumnName(e.target.value)} className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm" /><select value={columnStatus} onChange={e => setColumnStatus(e.target.value as ColumnBaseStatus)} className="rounded-lg border border-input bg-background px-3 py-2 text-sm">{statuses.map(status => <option key={status} value={status}>{t(`common:status.${status}`)}</option>)}</select><button className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">{t('settings:newColumn')}</button></form>}
     </AccordionSection>
 

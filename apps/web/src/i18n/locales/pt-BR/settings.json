@@ -7,6 +7,8 @@
   "members": "Membros",
   "newColumn": "Nova coluna",
   "columnName": "Nome da coluna",
+  "columnProgressWeight": "Peso",
+  "columnProgressWeightReset": "Restaurar peso derivado",
   "statusBase": "Status base",
   "newModule": "Novo módulo",
   "newTag": "Nova tag",

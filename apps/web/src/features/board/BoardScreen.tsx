@@ -43,7 +43,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import { AppShell } from '../../components/AppShell'
 import { BoardCommandBar } from '../../components/BoardCommandBar'
 import { BoardContextHeader, BoardStatusRail } from '../../components/BoardContext'
-import type { ItemType } from '@azy-board/domain'
+import { itemsAdvance, type ItemType } from '@azy-board/domain'
 import { useBoardPreferences } from './hooks/useBoardPreferences'
 import { useBoardData } from './hooks/useBoardData'
 import { BoardLanes } from './components/BoardLanes'
@@ -394,6 +394,11 @@ export default function BoardPage() {
     ? allItems.filter(item => item.itemSprints?.some(link => link.sprintId === activeSprint.id))
     : allDisplayed
   const sprintCompleted = sprintItems.filter(item => item.status === 'DONE').length
+  // Avanço no fluxo do recorte exibido (mesma população do cabeçalho), separado da conclusão.
+  const sprintAdvance = itemsAdvance(
+    columns.map(column => ({ id: column.id, baseStatus: column.baseStatus, position: column.position, progressWeight: column.progressWeightOverride ?? null })),
+    sprintItems.map(item => ({ columnId: item.columnId, checklist: item.checklistProgress ?? null })),
+  )
 
   function openCreation(type: ItemType | 'MODULE', context: TreeActionContext = {}) {
     if (type === 'MODULE') {
@@ -529,6 +534,7 @@ export default function BoardPage() {
             sprintName={activeSprint?.name}
             completed={sprintCompleted}
             total={sprintItems.length}
+            advance={sprintAdvance}
           />
         )}
         <div className={`board-canvas min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-border/80 bg-canvas ${density === 'compact' ? 'density-compact' : ''}`}>

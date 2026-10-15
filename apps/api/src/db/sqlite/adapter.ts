@@ -152,7 +152,7 @@ function mapProject(row: typeof projects.$inferSelect): ProjectRecord {
 }
 
 function mapColumn(row: typeof columns.$inferSelect): ColumnRecord {
-  return { id: row.id, tenantId: row.tenantId, projectId: row.projectId, name: row.name, baseStatus: row.baseStatus, position: row.position }
+  return { id: row.id, tenantId: row.tenantId, projectId: row.projectId, name: row.name, baseStatus: row.baseStatus, progressWeight: row.progressWeight ?? null, position: row.position }
 }
 
 function mapModule(row: typeof modules.$inferSelect): ModuleRecord {
@@ -820,8 +820,8 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
             'SELECT count(*) AS count FROM columns WHERE tenant_id = ? AND project_id = ?',
           ).get(context.tenantId, projectId)?.count ?? 0
           const id = generateId()
-          sqlite.query('INSERT INTO columns (id, tenant_id, project_id, name, base_status, position) VALUES (?, ?, ?, ?, ?, ?)')
-            .run(id, context.tenantId, projectId, input.name, input.baseStatus, position)
+          sqlite.query('INSERT INTO columns (id, tenant_id, project_id, name, base_status, progress_weight, position) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            .run(id, context.tenantId, projectId, input.name, input.baseStatus, input.progressWeight ?? null, position)
           emitMetadataEvent(sqlite, context.tenantId, projectId, 'columns')
           return id
         })
@@ -830,21 +830,33 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return mapColumn(row)
       },
       async updateColumn(context, projectId, columnId, patch: ColumnPatch) {
-        return runSqliteAtomic(sqlite, () => {
+        const found = runSqliteAtomic(sqlite, () => {
           const row = sqlite.query<{ id: string }, [string, string, string]>(
             'SELECT id FROM columns WHERE tenant_id = ? AND project_id = ? AND id = ?',
           ).get(context.tenantId, projectId, columnId)
-          if (!row) return null
-          if (patch.name !== undefined || patch.baseStatus !== undefined) {
-            sqlite.query('UPDATE columns SET name = COALESCE(?, name), base_status = COALESCE(?, base_status) WHERE tenant_id = ? AND project_id = ? AND id = ?')
-              .run(patch.name ?? null, patch.baseStatus ?? null, context.tenantId, projectId, columnId)
+          if (!row) return false
+          if (patch.name !== undefined) {
+            sqlite.query('UPDATE columns SET name = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
+              .run(patch.name, context.tenantId, projectId, columnId)
+          }
+          if (patch.baseStatus !== undefined) {
+            sqlite.query('UPDATE columns SET base_status = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
+              .run(patch.baseStatus, context.tenantId, projectId, columnId)
+          }
+          // `null` limpa o peso explícito (volta ao derivado); ausente não altera.
+          if (patch.progressWeight !== undefined) {
+            sqlite.query('UPDATE columns SET progress_weight = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
+              .run(patch.progressWeight, context.tenantId, projectId, columnId)
           }
           emitMetadataEvent(sqlite, context.tenantId, projectId, 'columns')
-          const updated = sqlite.query<Record<string, unknown>, [string, string, string]>(
-            'SELECT * FROM columns WHERE tenant_id = ? AND project_id = ? AND id = ?',
-          ).get(context.tenantId, projectId, columnId)
-          return updated ? mapColumn(updated as never) : null
+          return true
         })
+        if (!found) return null
+        // Releitura pelo drizzle: o SELECT cru devolve snake_case, incompatível com o mapeamento.
+        const updated = await database.query.columns.findFirst({ where: and(
+          eq(columns.tenantId, context.tenantId), eq(columns.projectId, projectId), eq(columns.id, columnId),
+        ) })
+        return updated ? mapColumn(updated) : null
       },
       async reorderColumns(context, projectId, columnIds) {
         runSqliteAtomic(sqlite, () => {
@@ -1641,6 +1653,19 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           .where(and(eq(checklists.itemId, itemId), eq(checklists.tenantId, context.tenantId)))
         return { checked: Number(rows[0]?.checked ?? 0), total: Number(rows[0]?.total ?? 0) }
       },
+      // [TENANT] Filtra por tenant e pelo projeto do item, em uma única consulta agregada.
+      async listChecklistProgressByProject(context, projectId): Promise<Map<string, ChecklistProgressRecord>> {
+        const rows = await database.select({
+          itemId: checklists.itemId,
+          total: sql<number>`count(${checklistItems.id})`,
+          checked: sql<number>`sum(case when ${checklistItems.checked} = 1 then 1 else 0 end)`,
+        }).from(checklists)
+          .leftJoin(checklistItems, eq(checklistItems.checklistId, checklists.id))
+          .innerJoin(items, and(eq(items.id, checklists.itemId), eq(items.tenantId, checklists.tenantId)))
+          .where(and(eq(checklists.tenantId, context.tenantId), eq(items.projectId, projectId)))
+          .groupBy(checklists.itemId)
+        return new Map(rows.map(row => [row.itemId, { checked: Number(row.checked ?? 0), total: Number(row.total ?? 0) }]))
+      },
     },
     workLogs: {
       async listItemLogs(context, projectId, itemId, options) {
@@ -2239,6 +2264,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         const rows = await database.select({
           status: items.status,
           assigneeId: items.assigneeId,
+          columnId: items.columnId,
           count: sql<number>`COUNT(*)`,
           estimatedCount: sql<number>`COUNT(${items.points})`,
           points: sql<number>`COALESCE(SUM(${items.points}), 0)`,
@@ -2246,9 +2272,9 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           overdueCount: sql<number>`COALESCE(SUM(CASE WHEN ${items.dueDate} IS NOT NULL AND ${items.dueDate} < ${today} AND ${items.status} NOT IN ('DONE', 'CANCELLED') THEN 1 ELSE 0 END), 0)`,
           overduePoints: sql<number>`COALESCE(SUM(CASE WHEN ${items.dueDate} IS NOT NULL AND ${items.dueDate} < ${today} AND ${items.status} NOT IN ('DONE', 'CANCELLED') THEN ${items.points} ELSE 0 END), 0)`,
         }).from(items).where(and(...dashboardLeafConditions(context, projectId, filter)))
-          .groupBy(items.status, items.assigneeId)
+          .groupBy(items.status, items.assigneeId, items.columnId)
         return rows.map(row => ({
-          status: row.status, assigneeId: row.assigneeId,
+          status: row.status, assigneeId: row.assigneeId, columnId: row.columnId,
           count: Number(row.count), estimatedCount: Number(row.estimatedCount),
           points: Number(row.points), donePoints: Number(row.donePoints), overdueCount: Number(row.overdueCount), overduePoints: Number(row.overduePoints),
         }))

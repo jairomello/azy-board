@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { resolveColumnProgressWeights } from '@azy-board/domain'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
@@ -89,6 +90,15 @@ dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
   const total = sum(aggregates, 'count'); const done = sum(aggregates.filter(row => row.status === 'DONE'), 'count')
   const totalPoints = sum(aggregates, 'points'); const donePoints = sum(aggregates, 'donePoints'); const estimatedCount = sum(aggregates, 'estimatedCount')
   const activeAggregates = aggregates.filter(row => activeStatuses.has(row.status))
+  // Avanço no fluxo: média ponderada das folhas pelo peso da coluna (indicador distinto da
+  // conclusão, que continua sendo `done / total`). A coluna desconhecida vale 0.
+  const projectColumns = await persistence.projects.listColumns(projectContext, projectId)
+  const columnWeights = resolveColumnProgressWeights(projectColumns.map(column => ({
+    id: column.id, baseStatus: column.baseStatus, position: column.position, progressWeight: column.progressWeight,
+  })))
+  const advance = total > 0
+    ? Math.round(aggregates.reduce((sum, row) => sum + row.count * (row.columnId ? columnWeights.get(row.columnId) ?? 0 : 0), 0) / total)
+    : 0
   const blockedTotal = sum(aggregates.filter(row => row.status === 'BLOCKED'), 'count')
   const wipTotal = sum(activeAggregates, 'count')
   const overdueTotal = sum(aggregates, 'overdueCount')
@@ -104,7 +114,7 @@ dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
     overdue: { limit, total: overdueTotal, hasMore: overdueHasMore, truncated: overdueHasMore, nextCursor: overdueHasMore && overdueLast ? createDashboardCursor(scope('snapshot-overdue', 'id:asc'), { id: overdueLast.id }) : null },
     remaining: { limit, total: total - overdueTotal, hasMore: remainingHasMore, truncated: remainingHasMore, nextCursor: remainingHasMore && remainingLast ? createDashboardCursor(scope('snapshot-remaining', 'id:asc'), { id: remainingLast.id }) : null },
   }
-  const detail = (row: typeof overdueRows[number]) => ({ id: row.id, title: row.title, type: row.type, status: row.status, points: row.points, assigneeId: row.assigneeId, dueDate: row.dueDate })
+  const detail = (row: typeof overdueRows[number]) => ({ id: row.id, sequenceCode: row.sequenceCode, title: row.title, type: row.type, status: row.status, points: row.points, assigneeId: row.assigneeId, dueDate: row.dueDate })
   const memberRows = await persistence.dashboard.listMembersWithSquads(projectContext, projectId)
   // WIP inclui bloqueados; blockedSubset é informativo e não aditivo.
   const forAssignee = (assigneeId: string | null) => activeAggregates.filter(row => row.assigneeId === assigneeId)
@@ -119,17 +129,17 @@ dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
   const coverage = await persistence.dashboard.getCoverage(projectContext, projectId)
   const now = Date.now()
   const wip = wipRows.map(row => ({
-    id: row.id, title: row.title, type: row.type, status: row.status, points: row.points,
+    id: row.id, sequenceCode: row.sequenceCode, title: row.title, type: row.type, status: row.status, points: row.points,
     assigneeId: row.assigneeId, dueDate: row.dueDate, startedAt: row.startedAt,
     ageHours: Math.max(0, (now - Date.parse(row.startedAt)) / 3600000), minimumKnown: row.minimumKnown,
   }))
   const blockedDetails = blockedRows.map(row => ({
-    id: row.id, title: row.title, type: row.type, status: row.status, blockedReason: row.blockedReason,
+    id: row.id, sequenceCode: row.sequenceCode, title: row.title, type: row.type, status: row.status, blockedReason: row.blockedReason,
     assigneeId: row.assigneeId, dueDate: row.dueDate,
     blockedAgeDays: Math.max(0, (now - Date.parse(row.startedAt)) / 86400000), minimumKnown: row.minimumKnown,
   }))
   return c.json({ coverage: coverage ? { startedAt: coverage.coverageStartedAt, partial: true } : { startedAt: null, partial: true }, filters: { applied: ['moduleId', 'sprintId', 'versionId', 'squadId', 'assigneeId', 'type'], inapplicable: ['from', 'to'] }, boxes: {
-      progressScope: { total, done, completionPercent: completionPercent(done, total), points: totalPoints, donePoints, estimationCoverage: completionPercent(estimatedCount, total) },
+      progressScope: { total, done, completionPercent: completionPercent(done, total), advance, points: totalPoints, donePoints, estimationCoverage: completionPercent(estimatedCount, total) },
       wip: { total: wipTotal, byStatus, byStatusPoints, pointsCoverage: completionPercent(estimatedCount, total), items: wip, pagination: detailsPagination.wip },
       blocked: { total: blockedTotal, items: blockedDetails, pagination: detailsPagination.blocked },
       overdue: { total: overdueTotal, points: overduePoints, items: overdueRows.map(detail), remainingItems: remainingRows.map(detail), pagination: detailsPagination.overdue, remainingPagination: detailsPagination.remaining },
@@ -269,7 +279,7 @@ dashboardRouter.get('/aging', requireRole('VIEWER'), async (c) => {
   const rows = hasMore ? rowsExtra.slice(0, limit) : rowsExtra
   const now = Date.now()
   const items = rows.map(row => ({
-    id: row.id, title: row.title, type: row.type, status: row.status, blockedReason: row.blockedReason,
+    id: row.id, sequenceCode: row.sequenceCode, title: row.title, type: row.type, status: row.status, blockedReason: row.blockedReason,
     assigneeId: row.assigneeId, startedAt: row.startedAt,
     ageHours: Math.max(0, (now - Date.parse(row.startedAt)) / 3600000), minimumKnown: row.minimumKnown,
   }))

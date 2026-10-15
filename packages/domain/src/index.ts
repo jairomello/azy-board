@@ -27,6 +27,10 @@ export interface Column {
   name: string
   baseStatus: ColumnBaseStatus
   position: number
+  /** Peso de avanço efetivo (explícito ou derivado do status base e da posição). */
+  progressWeight?: number
+  /** Valor explícito do peso; nulo quando o peso é derivado. */
+  progressWeightOverride?: number | null
 }
 export type NodeType = 'module' | 'EPIC' | 'STORY' | 'TASK' | 'BUG'
 // Visibilidade do projeto na listagem
@@ -87,3 +91,7 @@ export function updatedWithinStart(window: Exclude<UpdatedWithin, 'current-sprin
   const offset = timeZoneOffsetMs(reference, timeZone)
   return new Date(localMidnightAsUtc - offset).toISOString()
 }
+
+// Progresso por coluna (change progresso-por-coluna-e-ajustes-dashboard): peso de avanço
+// por coluna e cálculo do avanço de um card. Reexportado para API, web e MCP.
+export * from './progress'

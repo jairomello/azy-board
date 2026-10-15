@@ -1124,6 +1124,18 @@
               "IN_PROGRESS",
               "DONE"
             ]
+          },
+          "progressWeight": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [

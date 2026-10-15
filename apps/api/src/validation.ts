@@ -170,8 +170,10 @@ const advancedChecklistItemFields = {
 }
 export const checklistItemSchema = z.object({ text: z.string().trim().min(1).max(2_000), ...advancedChecklistItemFields }).strict()
 export const updateChecklistItemSchema = z.object({ text: z.string().trim().min(1).max(2_000).optional(), checked: z.boolean().optional(), position: z.number().int().min(0).optional(), ...advancedChecklistItemFields }).strict()
-export const columnSchema = z.object({ name: z.string().trim().min(1).max(200), baseStatus: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'DONE']) }).strict()
-export const updateColumnSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), baseStatus: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'DONE']).optional() }).strict()
+// Peso de avanço por coluna: nulo limpa o valor explícito e volta ao derivado.
+const progressWeightSchema = z.number().int().min(0).max(100).nullable().optional()
+export const columnSchema = z.object({ name: z.string().trim().min(1).max(200), baseStatus: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'DONE']), progressWeight: progressWeightSchema }).strict()
+export const updateColumnSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), baseStatus: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'DONE']).optional(), progressWeight: progressWeightSchema }).strict()
 export const reorderSchema = z.object({ order: z.array(z.string().min(1)).max(500) }).strict()
 export const deleteColumnSchema = z.object({ moveToColumnId: z.string().min(1).nullable() }).strict()
 export const sprintSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), startDate: z.string().min(1).optional(), endDate: z.string().min(1).optional() }).strict()

@@ -8,11 +8,12 @@ interface BoardContextHeaderProps {
   sprintName?: string
   completed: number
   total: number
+  /** Avanço no fluxo (peso da coluna + checklist), distinto da conclusão. */
+  advance: number
 }
 
-export function BoardContextHeader({ sprintName, completed, total }: BoardContextHeaderProps) {
+export function BoardContextHeader({ sprintName, completed, total, advance }: BoardContextHeaderProps) {
   const { t } = useTranslation('board')
-  const percentage = total > 0 ? Math.round((completed / total) * 100) : 0
   return (
     <section className="board-context-header rounded-xl border border-border bg-surface px-4 py-3 flex items-center gap-4">
       <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
@@ -21,14 +22,16 @@ export function BoardContextHeader({ sprintName, completed, total }: BoardContex
       <div className="min-w-0">
         <p className="text-sm font-semibold text-foreground truncate">{sprintName ?? t('generalProgress')}</p>
         <p className="text-xs text-muted-foreground">
-          {total > 0 ? `${completed} de ${total} itens concluídos` : 'Nenhum item no recorte atual'}
+          {total > 0
+            ? `${t('itemsCompletedOf', { completed, total })} · ${t('advancePercent', { percent: advance })}`
+            : t('noItemsInScope')}
         </p>
       </div>
       <div className="ml-auto hidden min-[480px]:flex items-center gap-3 min-w-[120px] max-w-xs w-1/3">
-        <div className="h-1.5 rounded-full bg-muted overflow-hidden flex-1">
-          <div className="h-full rounded-full bg-status-done transition-all" style={{ width: `${percentage}%` }} />
+        <div className="h-1.5 rounded-full bg-muted overflow-hidden flex-1" title={t('progressAdvance')}>
+          <div className="h-full rounded-full bg-status-progress transition-all" style={{ width: `${advance}%` }} />
         </div>
-        <span className="text-xs font-semibold tabular-nums text-foreground">{percentage}%</span>
+        <span className="text-xs font-semibold tabular-nums text-foreground" title={t('progressAdvance')}>{advance}%</span>
       </div>
     </section>
   )

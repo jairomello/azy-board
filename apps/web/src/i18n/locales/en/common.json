@@ -213,7 +213,7 @@
   "tree": {
     "collapseNode": "Collapse {{label}}",
     "expandNode": "Expand {{label}}",
-    "progressLabel": "Progress: {{progress}}%",
+    "progressLabel": "Flow progress: {{progress}}%",
     "addChild": "Add {{type}} to {{label}}",
     "add": "Add {{type}}",
     "edit": "Edit {{label}}",
@@ -236,7 +236,8 @@
       "story": "Story",
       "task": "Task",
       "bug": "Bug"
-    }
+    },
+    "advanceColumn": "Flow progress"
   },
   "loadMore": "Load more",
   "buildVersion": "Version {{version}}",

@@ -46,13 +46,15 @@ describe('contrato de consultas hierárquicas em lote', () => {
     }
   })
 
-  test('snapshot/team-load agregam por status e responsável nos dois adapters', () => {
+  test('snapshot/team-load agregam por status, responsável e coluna nos dois adapters', () => {
     const sqlite = source('db/sqlite/adapter.ts')
     const postgres = source('db/postgres/adapter.ts')
     const sqliteAggregate = sqlite.slice(sqlite.indexOf('async aggregateLeafItems'), sqlite.indexOf('async listSprintItemIds', sqlite.indexOf('async aggregateLeafItems')))
     const postgresAggregate = postgres.slice(postgres.indexOf('async aggregateLeafItems'), postgres.indexOf('async listSprintItemIds', postgres.indexOf('async aggregateLeafItems')))
-    expect(sqliteAggregate).toContain('groupBy(items.status, items.assigneeId)')
-    expect(postgresAggregate).toContain('GROUP BY i.status, i.assignee_id')
+    // A coluna entra no agrupamento porque o avanço no dashboard é a média ponderada
+    // pelo peso da coluna (change progresso-por-coluna-e-ajustes-dashboard).
+    expect(sqliteAggregate).toContain('groupBy(items.status, items.assigneeId, items.columnId)')
+    expect(postgresAggregate).toContain('GROUP BY i.status, i.assignee_id, i.column_id')
     expect(sqliteAggregate).toContain('COUNT(')
     expect(postgresAggregate).toContain('overdue_count')
   })

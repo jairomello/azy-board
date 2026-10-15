@@ -389,6 +389,8 @@ export interface DashboardCoverage {
 
 export interface DashboardItemDetail {
   id: string
+  /** Código sequencial do card (ex.: T42); nulo quando o item não tem código. */
+  sequenceCode?: string | null
   title: string
   type?: ItemType
   status?: TaskStatus
@@ -407,7 +409,7 @@ export interface DashboardSnapshot {
   coverage: DashboardCoverage
   filters: DashboardFilterInfo
   boxes: {
-    progressScope: { total: number; done: number; completionPercent: number | null; points: number; donePoints: number; estimationCoverage: number | null }
+    progressScope: { total: number; done: number; completionPercent: number | null; /** Avanço no fluxo (peso da coluna), distinto da conclusão. */ advance: number; points: number; donePoints: number; estimationCoverage: number | null }
     wip: { total: number; byStatus: Record<string, number>; byStatusPoints: Record<string, number>; pointsCoverage: number | null; items: DashboardItemDetail[]; pagination?: DashboardPagination }
     blocked: { total: number; items: DashboardItemDetail[]; pagination?: DashboardPagination }
     overdue: { total: number; points?: number; items: DashboardItemDetail[]; remainingItems: DashboardItemDetail[]; pagination?: DashboardPagination; remainingPagination?: DashboardPagination }

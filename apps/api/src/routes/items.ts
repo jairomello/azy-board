@@ -1,7 +1,7 @@
 import { Hono, type Context } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
-import { addTreeProgress, type TreeProgressNode } from '../services/treeProgress'
+import { addTreeProgress, type TreeProgressContext, type TreeProgressNode } from '../services/treeProgress'
 import type { RequestContext } from '@azy-board/api-contracts'
 import type { ActivityActorType, ActivitySource, ItemType } from '@azy-board/domain'
 import { UPDATED_WITHIN_VALUES, isUpdatedWithin, updatedWithinStart, type UpdatedWithin } from '@azy-board/domain'
@@ -128,10 +128,16 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
 
   // [TENANT] Filtra por tenantId + projectId; exclui itens arquivados por padrão
   const projectContext = userPersistenceContext(ctx)
-  const [allModules, allItems] = await Promise.all([
+  const [allModules, allItems, projectColumns, checklistProgressByItem] = await Promise.all([
     persistence.projects.listModules(projectContext, projectId),
     persistence.items.listItemsWithRelations(projectContext, projectId),
+    persistence.projects.listColumns(projectContext, projectId),
+    persistence.checklists.listChecklistProgressByProject(projectContext, projectId),
   ])
+  const treeProgressContext: TreeProgressContext = {
+    columns: projectColumns.map(column => ({ id: column.id, baseStatus: column.baseStatus, position: column.position, progressWeight: column.progressWeight })),
+    progressByItem: checklistProgressByItem,
+  }
   const activeItems = allItems.filter(item => item.status !== 'ARCHIVED')
 
   const assigneeIds = [...new Set(activeItems.map(item => item.assigneeId).filter((id): id is string => id !== null))]
@@ -202,7 +208,7 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
       ancestryPath: [],
       isLeaf: false,
       children: buildChildren(fixedStory.id, 0),
-    }]))
+    }], treeProgressContext))
   }
 
   const epicNodes = epics.map(epic => ({
@@ -232,7 +238,7 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
     tree = moduleNodes
   }
 
-  return c.json(addTreeProgress(tree))
+  return c.json(addTreeProgress(tree, treeProgressContext))
 })
 
 // GET /projects/:projectId/items

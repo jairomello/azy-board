@@ -81,8 +81,9 @@ export type { ItemLinkPatch, NewItemLinkRecord } from './models'
 
 export type NewUserRecord = Pick<UserCredentialRecord, 'email' | 'passwordHash' | 'name' | 'globalGroup'>
 export type NewTenantRecord = Pick<TenantRecord, 'name' | 'slug'>
-export type NewColumnRecord = Pick<ColumnRecord, 'name' | 'baseStatus'>
-export type ColumnPatch = Partial<NewColumnRecord>
+export type NewColumnRecord = Pick<ColumnRecord, 'name' | 'baseStatus'> & { progressWeight?: number | null }
+// `progressWeight: null` limpa o valor explícito e volta ao derivado; ausente não altera.
+export type ColumnPatch = Partial<Pick<ColumnRecord, 'name' | 'baseStatus'>> & { progressWeight?: number | null }
 export type NewModuleRecord = Pick<ModuleRecord, 'name'> & Partial<Pick<ModuleRecord, 'description' | 'position'>>
 export type ModulePatch = Partial<Pick<ModuleRecord, 'name' | 'description' | 'position'>> & {
   // Card T25 — pré-condição de concorrência: nome anterior aprovado.
@@ -279,6 +280,8 @@ export interface ChecklistPort {
   updateChecklistItem(context: PersistenceContext, projectId: string, itemId: string, checklistId: string, checklistItemId: string, patch: ChecklistItemPatch): Promise<ChecklistItemRecord | null>
   deleteChecklistItem(context: PersistenceContext, projectId: string, itemId: string, checklistId: string, checklistItemId: string): Promise<boolean>
   getChecklistProgress(context: PersistenceContext, itemId: string): Promise<ChecklistProgressRecord>
+  /** Progresso de checklist de todos os itens do projeto em uma consulta (evita N+1 na árvore). */
+  listChecklistProgressByProject(context: PersistenceContext, projectId: string): Promise<Map<string, ChecklistProgressRecord>>
 }
 
 export interface WorkLogPort {
