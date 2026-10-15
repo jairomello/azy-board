@@ -38,6 +38,15 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 - `list_tasks` agora retorna payload leve paginado por padrão (`limit=50`, sem descrições completas) e aceita projeção declarativa com `fields`.
 - Respostas de atualização separam identidade, mudanças aplicadas e resumo agregado.
 
+### Fixed
+
+- **Azy Agent: `get_screen_overview` com `scope=SCREEN` não falha mais o run
+  inteiro.** Em board sem filtro de população (`scope.mode = ALL`) o snapshot não
+  carrega IDs, e a ferramenta lançava `SCREEN_CONTEXT_REQUIRED`, tratado como erro
+  terminal pelo harness. Agora `scope=SCREEN` sem snapshot reflete o estado atual
+  do banco (conforme a spec `agent-screen-overview`) e o harness devolve o erro ao
+  modelo como recuperável, para ele repetir com `scope=PROJECT`.
+
 ### Added
 
 - Dashboard gerencial por projeto com dez blocos, filtros independentes, histórico parcial de burnup/aging, ciclos de sprint e horas registradas.

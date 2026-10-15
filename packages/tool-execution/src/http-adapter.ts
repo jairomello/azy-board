@@ -174,15 +174,19 @@ function overviewFromBoard(board: DiscoveryBoard, options: { contextId: string |
   }
 }
 
+// Spec `agent-screen-overview`: com snapshot do run, o digest deriva do recorte
+// revalidado (IDs são dados, nunca permissões); sem snapshot — board sem filtro
+// de população não viaja IDs — `scope=SCREEN` reflete o estado atual do banco em
+// vez de falhar a run inteira. O erro `SCREEN_CONTEXT_REQUIRED` deixa de existir
+// como falha terminal: o recorte ausente degrada para o estado atual.
 export async function toolGetScreenOverview(api: ApiCall, args: { projectId: string; scope?: 'SCREEN' | 'PROJECT' }, context?: { screenSnapshot?: { contextId: string; capturedAt: string; results?: { displayedItemIds?: string[] } | null; projectId?: string | null } }): Promise<unknown> {
-  if (args.scope === 'SCREEN') {
-    const snapshot = context?.screenSnapshot
-    if (!snapshot?.results?.displayedItemIds) throw new Error('SCREEN_CONTEXT_REQUIRED: não há snapshot do recorte de tela deste run; use scope=PROJECT')
-    const board = await api(`/projects/${args.projectId}/board`) as DiscoveryBoard
-    return overviewFromBoard(board, { contextId: snapshot.contextId, capturedAt: snapshot.capturedAt, target: 'SCREEN', displayedItemIds: snapshot.results.displayedItemIds })
-  }
   const board = await api(`/projects/${args.projectId}/board`) as DiscoveryBoard
-  return overviewFromBoard(board, { contextId: null, capturedAt: null, target: 'PROJECT' })
+  const snapshot = context?.screenSnapshot
+  const displayedItemIds = args.scope === 'SCREEN' ? snapshot?.results?.displayedItemIds : undefined
+  if (snapshot && displayedItemIds) {
+    return overviewFromBoard(board, { contextId: snapshot.contextId, capturedAt: snapshot.capturedAt, target: 'SCREEN', displayedItemIds })
+  }
+  return overviewFromBoard(board, { contextId: null, capturedAt: null, target: args.scope === 'SCREEN' ? 'SCREEN' : 'PROJECT' })
 }
 
 // Card T20 — leitura das métricas oficiais do Dashboard. O adaptador reproduz a

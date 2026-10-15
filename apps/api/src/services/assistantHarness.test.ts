@@ -93,6 +93,25 @@ describe('Azy Agent harness', () => {
     expect(provider.calls).toBe(2)
   })
 
+  test('trata ausência de recorte de tela como erro recuperável', async () => {
+    class ScreenContextProvider extends MockProvider {
+      async createRun(): Promise<ModelResponse> {
+        this.calls++
+        if (this.calls === 1) return { id: 'screen-1', output: [{ type: 'function_call', name: 'get_screen_overview', callId: 'screen-call', arguments: JSON.stringify({ projectId: 'p1', scope: 'SCREEN' }) }] }
+        return { id: 'screen-2', output: [{ type: 'message', text: 'Refiz a leitura no estado atual do board.' }] }
+      }
+    }
+    const provider = new ScreenContextProvider()
+    const harness = new AssistantHarness({ provider, executeTool: async () => { throw new Error('SCREEN_CONTEXT_REQUIRED: não há snapshot do recorte de tela deste run; use scope=PROJECT') }, authorize: async () => {} })
+    const result = await harness.run({ source: 'azy-agent', userId, tenantId, globalGroup: 'TEAM_MEMBER', conversationId }, 'gpt-4o-mini', 'quantos cards temos na tela', `screen-${id()}`)
+    expect(result.status).toBe('COMPLETED')
+    expect(result.text).toBe('Refiz a leitura no estado atual do board.')
+    expect(provider.calls).toBe(2)
+    const rows = await db.select().from(assistantToolCalls).where(eq(assistantToolCalls.runId, result.runId))
+    expect(rows[0]?.status).toBe('FAILED')
+    expect(rows[0]?.resultSummary).toContain('SCREEN_CONTEXT_REQUIRED')
+  })
+
   test('bloqueia mutações até aprovação e detecta operações repetidas', async () => {
     expect(riskForTool('delete_item')).toBe('DESTRUCTIVE')
     expect(riskForTool('list_projects')).toBe('READ')

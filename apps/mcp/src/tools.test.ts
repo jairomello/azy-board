@@ -549,8 +549,19 @@ describe('descoberta otimizada (get_screen_overview e modo summary)', () => {
     expect(backlog).toMatchObject({ total: 2, TASK: 1, BUG: 1 })
   })
 
-  test('get_screen_overview SCREEN sem snapshot falha com código acionável', async () => {
-    await expect(toolGetScreenOverview(boardApi([]), { projectId: 'p1', scope: 'SCREEN' })).rejects.toThrow('SCREEN_CONTEXT_REQUIRED')
+  test('get_screen_overview SCREEN sem snapshot degrada para o estado atual do banco', async () => {
+    const items = [makeItem('i1'), makeItem('i2', { columnId: 'col-done', status: 'DONE' })]
+    const overview = await toolGetScreenOverview(boardApi(items), { projectId: 'p1', scope: 'SCREEN' }) as { target: string; scopeMode: string; contextId: null; displayedCount: number; columns: Array<{ id: string; total: number }> }
+    expect(overview).toMatchObject({ target: 'SCREEN', scopeMode: 'ALL', contextId: null, displayedCount: 2 })
+    expect(overview.columns.find(column => column.id === 'col-backlog')).toMatchObject({ total: 1 })
+  })
+
+  test('get_screen_overview SCREEN com recorte vazio respeita o zero do snapshot', async () => {
+    const items = [makeItem('i1')]
+    const snapshot = { contextId: 'ctx-0', capturedAt: '2026-10-04T14:00:00.000Z', projectId: 'p1', results: { displayedItemIds: [] } }
+    const overview = await toolGetScreenOverview(boardApi(items), { projectId: 'p1', scope: 'SCREEN' }, { screenSnapshot: snapshot as never }) as { target: string; scopeMode: string; displayedCount: number; columns: Array<{ id: string; total: number }> }
+    expect(overview).toMatchObject({ target: 'SCREEN', scopeMode: 'FILTERED', displayedCount: 0 })
+    expect(overview.columns.find(column => column.id === 'col-backlog')).toMatchObject({ total: 0 })
   })
 
   test('amostra de referências por coluna respeita o teto de 20', async () => {

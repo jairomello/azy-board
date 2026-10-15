@@ -165,7 +165,7 @@ const terminalToolErrors = /^(?:USER_CONTEXT_REQUIRED|AUTHORIZATION_REVALIDATION
 
 function recoverableToolError(error: unknown): { code: string; message: string } | null {
   const raw = error instanceof Error ? error.message : String(error)
-  const code = raw.match(/\b(?:VALIDATION_ERROR|RELATION_OUT_OF_SCOPE|HIERARCHY_REQUIRED|CONFLICT|NOT_FOUND|HTTP \d{3})\b/)?.[0]
+  const code = raw.match(/\b(?:VALIDATION_ERROR|RELATION_OUT_OF_SCOPE|HIERARCHY_REQUIRED|CONFLICT|NOT_FOUND|SCREEN_CONTEXT_REQUIRED|HTTP \d{3})\b/)?.[0]
     ?? (/Campo obrigatório|inválid|deve ser/i.test(raw) ? 'VALIDATION_ERROR' : 'TOOL_FAILED')
   if (terminalToolErrors.test(raw) || /^HTTP (?:401|403)\b/.test(raw)) return null
   if (code === 'TOOL_FAILED' && !/^HTTP (?:400|404|409|422)\b/.test(raw)) return null
@@ -178,6 +178,9 @@ function recoverableToolError(error: unknown): { code: string; message: string }
     HIERARCHY_REQUIRED: 'A hierarquia do item é inválida. Consulte os pais disponíveis e tente novamente.',
     CONFLICT: 'O estado mudou ou já existe um recurso equivalente. Consulte o estado atual e tente novamente.',
     NOT_FOUND: 'O recurso não foi encontrado. Atualize a busca e tente novamente.',
+    // Run sem recorte de tela (board sem filtro não viaja IDs): erro acionável,
+    // devolvido ao modelo para repetir a leitura com scope=PROJECT.
+    SCREEN_CONTEXT_REQUIRED: 'Não há recorte de tela nesta run. Repita a ferramenta com scope=PROJECT para consultar o estado atual do board.',
     'HTTP 400': 'A operação precisa de argumentos diferentes. Revise os campos e tente novamente.',
     'HTTP 404': 'O recurso não foi encontrado. Atualize a busca e tente novamente.',
     'HTTP 409': 'O estado mudou ou já existe um recurso equivalente. Consulte o estado atual e tente novamente.',
