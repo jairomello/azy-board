@@ -37,6 +37,20 @@ export function burnupData(data: DashboardBurnup, mode: 'items' | 'points'): Cha
   return data.series.map(point => ({ date: point.date, scope: mode === 'items' ? point.total : point.points, done: mode === 'items' ? point.done : point.donePoints }))
 }
 
+/**
+ * Houve evolução no período? Conclusão em algum dia ou variação de escopo.
+ *
+ * Um burnup sem conclusão e com escopo constante é uma faixa reta: o quadro explica isso
+ * em vez de desenhar um gráfico que parece vazio.
+ */
+export function burnupHasEvolution(data: DashboardBurnup, mode: 'items' | 'points'): boolean {
+  const pontos = data.series.map(ponto => mode === 'items'
+    ? { scope: ponto.total, done: ponto.done }
+    : { scope: ponto.points, done: ponto.donePoints })
+  if (pontos.some(ponto => ponto.done > 0)) return true
+  return new Set(pontos.map(ponto => ponto.scope)).size > 1
+}
+
 export function agingSummary(data: DashboardAging) {
   const ages = data.items.map(item => item.ageHours ?? 0).sort((a, b) => a - b)
   if (!ages.length) return null

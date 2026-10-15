@@ -45,6 +45,23 @@ describe('contratos do dashboard do projeto', () => {
     expect(page.includes("{wipPointsCovered && <div>")).toBe(true)
   })
 
+  test('burnup sem evolução explica a ausência e não oferece pontos sem estimativa (T78)', async () => {
+    const page = await source('./pages/ProjectDashboardPage.tsx')
+    contains(page, 'burnupHasEvolution')
+    contains(page, "t('burnupNoEvolution')")
+    // O recorte de pontos depende da cobertura de estimativa, como nos demais quadros.
+    contains(page, "{pointsEstimated(snapshot!) && <div className=\"mb-2 flex gap-2\"")
+    contains(page, "{burnupMode === 'points' && !pointsEstimated(snapshot!) ? <ChartEmptyState>{t('noEstimatesHint')}</ChartEmptyState>")
+  })
+
+  test('eixos formatam data civil sem deslocamento de fuso (B12)', async () => {
+    const charts = await source('./components/dashboard/DashboardCharts.tsx')
+    const formatters = await source('./lib/formatters.ts')
+    contains(charts, "formatDateValue(String(value ?? '')")
+    contains(formatters, 'export function parseDateOnly')
+    contains(formatters, 'return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))')
+  })
+
   test('estados vazios compactos, legenda única e unidade não repetida (T72)', async () => {
     const visuals = await source('./components/dashboard/DashboardVisuals.tsx')
     // Estado vazio sem área de gráfico reservada e cartão mais baixo.

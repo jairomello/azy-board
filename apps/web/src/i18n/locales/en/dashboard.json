@@ -37,6 +37,7 @@
   "clear": "Clear filters",
   "coverage": "Coverage since {{date}}",
   "coverageNote": "Series and tooltip limited to observed coverage.",
+  "burnupNoEvolution": "No completions in the period and no scope change.",
   "coverageStartsAt": "Series starts on {{date}}.",
   "minimumKnownNote": "Items with minimum known age: the episode started before coverage began.",
   "projectionFallback": "Filtered history is using the compatibility path while its projection is prepared.",

@@ -1,15 +1,14 @@
 import type { KeyboardEvent } from 'react'
 import { Cell, Bar, BarChart, Area, AreaChart, CartesianGrid, Legend, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { ChartDatum } from '../../dashboardAdapters'
-import { formatDate, formatNumber } from '../../lib/formatters'
+import { formatDateValue, formatNumber } from '../../lib/formatters'
 
 export const COLORS = ['var(--dashboard-series-scope)', 'var(--dashboard-series-done)', 'var(--dashboard-series-warning)', 'var(--dashboard-series-danger)', 'var(--dashboard-series-neutral)']
 
 // Eixos por locale: datas curtas (DD/MM) e números com o separador decimal do idioma.
 function shortDateTick(value: unknown): string {
-  const text = String(value ?? '')
-  const parsed = new Date(text)
-  return Number.isNaN(parsed.getTime()) ? text : formatDate(parsed, { day: '2-digit', month: '2-digit' })
+  // Datas do eixo são data civil (`YYYY-MM-DD`): formatar sem deslocamento de fuso.
+  return formatDateValue(String(value ?? ''), { day: '2-digit', month: '2-digit' })
 }
 
 function numberTick(value: unknown): string {

@@ -37,6 +37,7 @@
   "clear": "Limpiar filtros",
   "coverage": "Cobertura desde {{date}}",
   "coverageNote": "Serie y tooltip limitados a la cobertura observada.",
+  "burnupNoEvolution": "Sin elementos completados en el período y sin variación de alcance.",
   "coverageStartsAt": "Serie desde {{date}}.",
   "minimumKnownNote": "Elementos con edad mínima conocida: el episodio comenzó antes del inicio de la cobertura.",
   "projectionFallback": "El historial filtrado usa la ruta de compatibilidad mientras se prepara su proyección.",

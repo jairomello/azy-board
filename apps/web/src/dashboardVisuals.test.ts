@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { burnupData, hoursByAuthorData, progressData, rankingData, statusData, teamLoadData } from './dashboardAdapters'
+import { burnupData, burnupHasEvolution, hoursByAuthorData, progressData, rankingData, statusData, teamLoadData } from './dashboardAdapters'
 import type { DashboardAging, DashboardBurnup, DashboardHours, DashboardSnapshot } from '@azy-board/ui-contracts'
 import ptBRDescriptions from './i18n/locales/pt-BR/dashboardDescriptions.json'
 import enDescriptions from './i18n/locales/en/dashboardDescriptions.json'
@@ -74,6 +74,45 @@ describe('rótulos do dashboard vêm da tradução (B11)', () => {
     // Horas sem autor usam a chave traduzida, não um literal em inglês.
     const hours: DashboardHours = { semantics: '', totalMinutes: 0, rows: [{ id: 'l', authorId: 'u', authorName: null, squadName: null, itemId: 'i', versionId: null, moduleId: null, durationMin: 30, createdAt: '2026-01-02T10:00:00Z' }] }
     expect(hoursByAuthorData(hours, marked)[0]?.name).toBe('<unknownAuthor>')
+  })
+})
+
+describe('burnup sem evolução (T78)', () => {
+  const serie = (pontos: Array<{ date: string; total: number; done: number; points: number; donePoints: number }>): DashboardBurnup =>
+    ({ partial: true, coverageStartedAt: '2026-10-13T19:02:58.589Z', projection: { status: 'ROLLUP' }, series: pontos })
+
+  test('sem conclusão e com escopo constante não há evolução', () => {
+    const dados = serie([
+      { date: '2026-10-13', total: 33, done: 0, points: 0, donePoints: 0 },
+      { date: '2026-10-14', total: 33, done: 0, points: 0, donePoints: 0 },
+      { date: '2026-10-15', total: 33, done: 0, points: 0, donePoints: 0 },
+    ])
+    expect(burnupHasEvolution(dados, 'items')).toBe(false)
+  })
+
+  test('conclusão em qualquer dia é evolução', () => {
+    const dados = serie([
+      { date: '2026-10-13', total: 33, done: 0, points: 0, donePoints: 0 },
+      { date: '2026-10-14', total: 33, done: 2, points: 0, donePoints: 0 },
+    ])
+    expect(burnupHasEvolution(dados, 'items')).toBe(true)
+  })
+
+  test('variação de escopo sem conclusão é evolução', () => {
+    const dados = serie([
+      { date: '2026-10-13', total: 30, done: 0, points: 0, donePoints: 0 },
+      { date: '2026-10-14', total: 33, done: 0, points: 0, donePoints: 0 },
+    ])
+    expect(burnupHasEvolution(dados, 'items')).toBe(true)
+  })
+
+  test('o recorte de pontos avalia pontos, não itens', () => {
+    const dados = serie([
+      { date: '2026-10-13', total: 33, done: 0, points: 5, donePoints: 0 },
+      { date: '2026-10-14', total: 33, done: 0, points: 8, donePoints: 0 },
+    ])
+    expect(burnupHasEvolution(dados, 'items')).toBe(false)
+    expect(burnupHasEvolution(dados, 'points')).toBe(true)
   })
 })
 
