@@ -192,7 +192,7 @@ export async function toolGetScreenOverview(api: ApiCall, args: { projectId: str
 // Card T20 — leitura das métricas oficiais do Dashboard. O adaptador reproduz a
 // consulta da tela (mesmas rotas /dashboard/*) para garantir paridade de regra e
 // número; a normalização expõe critérios, cobertura e populações sobrepostas.
-export type DashboardMetric = 'snapshot' | 'burnup' | 'aging' | 'hours' | 'sprint'
+export type DashboardMetric = 'snapshot' | 'burnup' | 'aging' | 'hours' | 'sprint' | 'tokens'
 
 export interface DashboardMetricsArgs {
   projectId: string
@@ -265,6 +265,11 @@ function dashboardCriteria(metric: DashboardMetric): string[] {
     'Somente logs manuais com durationMin > 0; a data de registro é o createdAt.',
     'Agrupamento pelo autor do log e pelo squad atual do autor; não inferir horas pelo responsável do item.',
   ]
+  if (metric === 'tokens') return [
+    'Recortes de estado atual por status/tipo/módulo/sprint/versão/responsável/squad sobre folhas TASK/BUG não arquivadas.',
+    'Série diária de tokens registrados e de tokens em itens DONE; sem histórico capturado, a leitura semeia os valores atuais na data de início da cobertura.',
+    'O total é derivado da soma de tokensInput e tokensOutput e nunca é persistido.',
+  ]
   return [
     'Compromisso = folhas do início do ciclo; escopo atual no corte min(agora, endedAt).',
     'Ciclo MIGRATION é parcial; carry-over só é exibido quando a associação posterior é observada.',
@@ -336,6 +341,19 @@ function dashboardEnvelope(metric: DashboardMetric, payload: unknown, filters: R
     }
     items = includeItems ? sample.rows : []
     truncated = sample.truncated || Boolean(pagination && (pagination as Record<string, unknown>).hasMore)
+  } else if (metric === 'tokens') {
+    const pagination = record.pagination && typeof record.pagination === 'object' && !Array.isArray(record.pagination) ? record.pagination as Record<string, unknown> : null
+    const sample = sampleRows(record.items, typeof pagination?.total === 'number' ? pagination.total : undefined, Boolean(pagination?.hasMore))
+    const tokenBoxes = (record.boxes && typeof record.boxes === 'object' && !Array.isArray(record.boxes) ? record.boxes : {}) as Record<string, unknown>
+    data = {
+      coverageStartedAt: record.coverageStartedAt ?? null, tokensStartedAt: record.tokensStartedAt ?? null,
+      partial: record.partial ?? null, hasTokens: record.hasTokens ?? null,
+      projection: record.projection ?? null, warnings: Array.isArray(record.warnings) ? record.warnings : [],
+      boxes: tokenBoxes, seriesFilters: record.seriesFilters ?? null, series: Array.isArray(record.series) ? record.series : [],
+      pagination, total: sample.total, items: includeItems ? sample.rows : [],
+    }
+    items = includeItems ? sample.rows : []
+    truncated = sample.truncated || Boolean(pagination?.hasMore)
   } else {
     data = record
   }
@@ -348,7 +366,9 @@ function dashboardEnvelope(metric: DashboardMetric, payload: unknown, filters: R
     ? (record.coverage ?? null)
     : metric === 'hours'
       ? { semantics: record.semantics ?? null }
-      : { partial: record.partial ?? null, coverageStartedAt: record.coverageStartedAt ?? null }
+      : metric === 'tokens'
+        ? { coverageStartedAt: record.coverageStartedAt ?? null, tokensStartedAt: record.tokensStartedAt ?? null, partial: record.partial ?? null, hasTokens: record.hasTokens ?? null }
+        : { partial: record.partial ?? null, coverageStartedAt: record.coverageStartedAt ?? null }
 
   return {
     metric,
@@ -367,7 +387,7 @@ export async function toolGetDashboardMetrics(api: ApiCall, args: DashboardMetri
   const projectId = nonEmptyString(args.projectId)
   if (!projectId) throw new Error('projectId é obrigatório')
   const metric = args.metric
-  if (!['snapshot', 'burnup', 'aging', 'hours', 'sprint'].includes(metric)) throw new Error(`metric inválido: ${String(metric)}`)
+  if (!['snapshot', 'burnup', 'aging', 'hours', 'sprint', 'tokens'].includes(metric)) throw new Error(`metric inválido: ${String(metric)}`)
   if (metric === 'snapshot' && args.cursor && !args.detail) throw new Error('detail é obrigatório ao continuar um cursor de snapshot')
   if (args.detail && metric !== 'snapshot') throw new Error('detail só se aplica à métrica snapshot')
   const filters = Object.fromEntries(
@@ -390,6 +410,7 @@ export async function toolGetDashboardMetrics(api: ApiCall, args: DashboardMetri
   if (args.limit != null) params.set('limit', String(args.limit))
   if (args.cursor) {
     if (metric === 'snapshot' && args.detail) params.set(`${args.detail}Cursor`, args.cursor)
+    else if (metric === 'tokens') params.set('detailCursor', args.cursor)
     else if (metric !== 'snapshot') params.set('cursor', args.cursor)
   }
   const query = params.toString() ? `?${params.toString()}` : ''

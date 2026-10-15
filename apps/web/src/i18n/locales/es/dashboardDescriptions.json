@@ -8,5 +8,6 @@
   "descriptionBurnup": "Muestra cómo evolucionaron el alcance y los elementos completados.",
   "descriptionAging": "Lista los elementos WIP más antiguos desde el inicio de su episodio actual.",
   "descriptionTeamLoad": "Muestra la cantidad de trabajo en progreso por responsable.",
-  "descriptionHours": "Suma las horas de registros manuales, agrupadas por autor."
+  "descriptionHours": "Suma las horas de registros manuales, agrupadas por autor.",
+  "descriptionTokens": "Consumo de tokens de IA registrado en el proyecto por estado, tipo y dimensiones, además de la evolución diaria; la serie comienza en la fecha de inicio de cobertura de tokens."
 }

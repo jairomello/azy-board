@@ -43,6 +43,8 @@ import type {
   DashboardMemberRow,
   DashboardPopulationFilter,
   DashboardSnapshotAggregateRow,
+  DashboardTokenGroupBy,
+  DashboardTokenGroupRow,
   DashboardTransitionRecord,
   ItemEventRecord,
   ItemWithRelationsRecord,
@@ -93,6 +95,7 @@ import { IdempotencyConflictError, IdempotentReplaySignal } from '../../persiste
 import { buildBatchUpdateResponse } from '../../persistence/commandResponses'
 import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
 import { applyDimensionProjectionBackfill, applyDimensionProjectionBaselineBackfill, readItemSnapshot, readItemSnapshots, recordDeletedItemEventsBatch, recordItemEvent, type PgItemSnapshot } from './itemAnalytics'
+import { DASHBOARD_DIMENSION_PROJECTION_VERSION } from '../../services/dashboardDimensionProjection'
 import { fingerprintSource, validateDuplicationDestination, StructureDuplicationError, type SourceChecklistFact, type SourceFacts, type SourceLinkFact } from '../../services/structureDuplication'
 import { fingerprintTransition } from '../../services/sprintTransition'
 import { buildPlanningGapSnapshot, planningGapPage, type PlanningGapCandidate } from '../../services/planningGaps'
@@ -990,6 +993,10 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           if (operation.changedFields?.includes(field)) {
             await recordItemEvent(client, context, { projectId, itemId: operation.itemId, eventType, before, after })
           }
+        }
+        // T80 — lote registra um evento de tokens por item quando os valores mudam.
+        if (operation.changedFields?.includes('tokensInput') || operation.changedFields?.includes('tokensOutput')) {
+          await recordItemEvent(client, context, { projectId, itemId: operation.itemId, eventType: 'TOKENS_CHANGED', before, after })
         }
       }
       if (operation.responseChanges) {
@@ -2590,12 +2597,14 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       },
       async readProjectRollup(context: PersistenceContext, projectId: string, from: string, to: string) {
         const rows = await q(
-          'SELECT metric_date, total, done, points, done_points FROM project_metrics_daily WHERE tenant_id = $1 AND project_id = $2 AND metric_date >= $3 AND metric_date <= $4 ORDER BY metric_date',
+          'SELECT metric_date, total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output FROM project_metrics_daily WHERE tenant_id = $1 AND project_id = $2 AND metric_date >= $3 AND metric_date <= $4 ORDER BY metric_date',
           [context.tenantId, projectId, from, to],
         )
         return rows.map(r => ({
           date: r.metric_date as string, total: r.total as number,
           done: r.done as number, points: r.points as number, donePoints: r.done_points as number,
+          tokensInput: r.tokens_input as number, tokensOutput: r.tokens_output as number,
+          doneTokensInput: r.done_tokens_input as number, doneTokensOutput: r.done_tokens_output as number,
         }))
       },
       async assertCutoverReady(): Promise<void> {
@@ -2617,26 +2626,26 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           const tenantId = project.tenant_id as string
           const projectId = project.project_id as string
           let meta = await q1('SELECT projection_version, status, last_sequence FROM project_analytics_dimension_meta WHERE tenant_id = $1 AND project_id = $2', [tenantId, projectId])
-          if (meta?.status === 'READY' && Number(meta.projection_version) === 1) continue
+          if (meta?.status === 'READY' && Number(meta.projection_version) === DASHBOARD_DIMENSION_PROJECTION_VERSION) continue
           if (!meta) {
             await tx(async client => {
               await client.query(`INSERT INTO project_analytics_dimension_meta
                 (project_id, tenant_id, projection_version, status, last_sequence, target_sequence, updated_at)
-                VALUES ($1, $2, 1, 'BUILDING', -1, NULL, $3) ON CONFLICT (project_id) DO NOTHING`,
-              [projectId, tenantId, new Date().toISOString()])
+                VALUES ($1, $2, $3, 'BUILDING', -1, NULL, $4) ON CONFLICT (project_id) DO NOTHING`,
+              [projectId, tenantId, DASHBOARD_DIMENSION_PROJECTION_VERSION, new Date().toISOString()])
             })
             meta = await q1('SELECT projection_version, status, last_sequence FROM project_analytics_dimension_meta WHERE tenant_id = $1 AND project_id = $2', [tenantId, projectId])
           }
           if (!meta) continue
-          if (Number(meta.projection_version) !== 1) {
+          if (Number(meta.projection_version) !== DASHBOARD_DIMENSION_PROJECTION_VERSION) {
             await tx(async client => {
               await client.query('DELETE FROM project_analytics_dimension_state WHERE tenant_id = $1 AND project_id = $2', [tenantId, projectId])
               await client.query('DELETE FROM project_analytics_dimension_snapshots WHERE tenant_id = $1 AND project_id = $2', [tenantId, projectId])
               await client.query('DELETE FROM project_analytics_dimension_items WHERE tenant_id = $1 AND project_id = $2', [tenantId, projectId])
-              await client.query(`UPDATE project_analytics_dimension_meta SET projection_version = 1, status = 'BUILDING', last_sequence = -1,
-                target_sequence = NULL, updated_at = $1 WHERE tenant_id = $2 AND project_id = $3`, [new Date().toISOString(), tenantId, projectId])
+              await client.query(`UPDATE project_analytics_dimension_meta SET projection_version = $1, status = 'BUILDING', last_sequence = -1,
+                target_sequence = NULL, updated_at = $2 WHERE tenant_id = $3 AND project_id = $4`, [DASHBOARD_DIMENSION_PROJECTION_VERSION, new Date().toISOString(), tenantId, projectId])
             })
-            meta = { ...meta, projection_version: 1, status: 'BUILDING', last_sequence: -1 }
+            meta = { ...meta, projection_version: DASHBOARD_DIMENSION_PROJECTION_VERSION, status: 'BUILDING', last_sequence: -1 }
           } else {
             await q(`UPDATE project_analytics_dimension_meta SET status = 'BUILDING', updated_at = $1 WHERE tenant_id = $2 AND project_id = $3`, [new Date().toISOString(), tenantId, projectId])
           }
@@ -2833,10 +2842,10 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
              ) AS row_num
              FROM filtered WHERE metric_date < $${params.length - 2}
            )
-           SELECT metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points
+           SELECT metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output
            FROM ranked WHERE row_num = 1
            UNION ALL
-           SELECT metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points
+           SELECT metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output
            FROM filtered WHERE metric_date >= $${params.length - 1} AND metric_date <= $${params.length}
            ORDER BY metric_date, module_key, version_key, sprint_set_hash, type`,
           params,
@@ -2845,6 +2854,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           metricDate: row.metric_date as string, moduleKey: row.module_key as string, versionKey: row.version_key as string,
           sprintSetHash: row.sprint_set_hash as string, sprintIdsJson: row.sprint_ids_json as string, type: row.type as string,
           total: row.total as number, done: row.done as number, points: row.points as number, donePoints: row.done_points as number,
+          tokensInput: row.tokens_input as number, tokensOutput: row.tokens_output as number,
+          doneTokensInput: row.done_tokens_input as number, doneTokensOutput: row.done_tokens_output as number,
         } satisfies DashboardDimensionSnapshotRecord))
       },
       // [DB-SWAP] Usa os mesmos agregados sem hidratar população completa na aplicação.
@@ -2868,6 +2879,51 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           count: row.count as number, estimatedCount: row.estimated_count as number,
           points: row.points as number, donePoints: row.done_points as number, overdueCount: row.overdue_count as number, overduePoints: row.overdue_points as number,
         }))
+      },
+      // T80 — recortes de tokens por dimensão, sempre por agregação SQL da população filtrada.
+      async groupLeafTokens(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, groupBy: DashboardTokenGroupBy): Promise<DashboardTokenGroupRow[]> {
+        const query = dashboardLeafWhere(context, projectId, filter)
+        const sums = `COALESCE(SUM(i.tokens_input), 0)::int AS tokens_input,
+                 COALESCE(SUM(i.tokens_output), 0)::int AS tokens_output,
+                 COALESCE(SUM(CASE WHEN i.status = 'DONE' THEN i.tokens_input ELSE 0 END), 0)::int AS done_tokens_input,
+                 COALESCE(SUM(CASE WHEN i.status = 'DONE' THEN i.tokens_output ELSE 0 END), 0)::int AS done_tokens_output,
+                 COUNT(*)::int AS count`
+        const toRows = (rows: Array<Record<string, unknown>>) => rows.map(row => ({
+          key: (row.key as string | null) ?? null,
+          tokensInput: row.tokens_input as number, tokensOutput: row.tokens_output as number,
+          doneTokensInput: row.done_tokens_input as number, doneTokensOutput: row.done_tokens_output as number,
+          count: row.count as number,
+        } satisfies DashboardTokenGroupRow))
+        if (groupBy === 'sprintId') {
+          const rows = await q(
+            `SELECT s.sprint_id AS key, ${sums}
+             FROM items i INNER JOIN item_sprints s ON s.tenant_id = i.tenant_id AND s.item_id = i.id
+             WHERE ${query.where}
+             GROUP BY s.sprint_id`,
+            query.params,
+          )
+          return toRows(rows)
+        }
+        if (groupBy === 'squadId') {
+          const rows = await q(
+            `SELECT m.squad_id AS key, ${sums}
+             FROM items i LEFT JOIN memberships m ON m.tenant_id = i.tenant_id AND m.project_id = i.project_id AND m.user_id = i.assignee_id
+             WHERE ${query.where}
+             GROUP BY m.squad_id`,
+            query.params,
+          )
+          return toRows(rows)
+        }
+        const column = groupBy === 'status' ? 'i.status'
+          : groupBy === 'type' ? 'i.type'
+            : groupBy === 'moduleId' ? 'i.module_id'
+              : groupBy === 'versionId' ? 'i.version_id'
+                : 'i.assignee_id'
+        const rows = await q(
+          `SELECT ${column} AS key, ${sums} FROM items i WHERE ${query.where} GROUP BY ${column}`,
+          query.params,
+        )
+        return toRows(rows)
       },
       async listSprintItemIds(context: PersistenceContext, projectId: string, sprintIds: string[]): Promise<string[]> {
         if (!sprintIds.length) return []
@@ -3772,8 +3828,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             [projectId, context.tenantId, now, now],
           )
           await client.query(
-            "INSERT INTO project_analytics_dimension_meta (project_id, tenant_id, projection_version, status, last_sequence, target_sequence, updated_at) VALUES ($1, $2, 1, 'READY', -1, NULL, $3)",
-            [projectId, context.tenantId, now],
+            "INSERT INTO project_analytics_dimension_meta (project_id, tenant_id, projection_version, status, last_sequence, target_sequence, updated_at) VALUES ($1, $2, $3, 'READY', -1, NULL, $4)",
+            [projectId, context.tenantId, DASHBOARD_DIMENSION_PROJECTION_VERSION, now],
           )
           const row = await client.query('SELECT * FROM projects WHERE tenant_id = $1 AND id = $2', [context.tenantId, projectId])
           return mapProject(row.rows[0] as PgRow)
@@ -3962,6 +4018,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             persona: 'persona', goal: 'goal', benefit: 'benefit', acceptanceCriteria: 'acceptance_criteria',
             notes: 'notes', status: 'status', statusBeforeArchive: 'status_before_archive',
             costCenterId: 'cost_center_id', priority: 'priority', points: 'points',
+            tokensInput: 'tokens_input', tokensOutput: 'tokens_output',
             assigneeId: 'assignee_id', assigneeApiKeyId: 'assignee_api_key_id', blockedReason: 'blocked_reason',
             position: 'position', startDate: 'start_date', dueDate: 'due_date', versionId: 'version_id',
             icon: 'icon', color: 'color',
@@ -4003,7 +4060,11 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           }
           const after = await readItemSnapshot(client, context.tenantId, projectId, itemId)
           if (before && after && JSON.stringify(before) !== JSON.stringify(after)) {
-            await recordItemEvent(client, context, { projectId, itemId, eventType: parentChanged ? 'ITEM_REPARENTED' : 'STATUS_CHANGED', before, after })
+            // T80 — mudança só de tokens recebe o evento próprio; caso contrário mantém o evento de estado.
+            const statusChanged = before.status !== after.status
+            const tokensChanged = before.tokensInput !== after.tokensInput || before.tokensOutput !== after.tokensOutput
+            const eventType = parentChanged ? 'ITEM_REPARENTED' : (!statusChanged && tokensChanged) ? 'TOKENS_CHANGED' : 'STATUS_CHANGED'
+            await recordItemEvent(client, context, { projectId, itemId, eventType, before, after })
           }
           if (oldParentBefore && oldParentId) {
             await recordItemEvent(client, context, {

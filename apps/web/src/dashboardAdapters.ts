@@ -1,4 +1,4 @@
-import type { DashboardAging, DashboardBurnup, DashboardHours, DashboardSnapshot } from '@azy-board/ui-contracts'
+import type { DashboardAging, DashboardBurnup, DashboardHours, DashboardSnapshot, DashboardTokenBucket, DashboardTokens } from '@azy-board/ui-contracts'
 import { displayPersonName } from './lib/personName'
 
 // Adaptadores dos gráficos do dashboard. Todo rótulo exibido vem dos recursos de
@@ -102,4 +102,27 @@ export function hoursByAuthorData(data: DashboardHours, t: DashboardTranslator):
     groups.set(key, (groups.get(key) ?? 0) + (row.durationMin ?? 0))
   }
   return [...groups.entries()].map(([name, minutes]) => ({ name, value: minutes, minutes }))
+}
+
+// T80 — tokens de IA: recortes e série diária do quadro de tokens.
+export function tokenSeriesData(data: DashboardTokens): ChartDatum[] {
+  return data.series.map(point => ({ date: point.date, registered: point.tokens, done: point.doneTokens }))
+}
+
+/** Houve algum token registrado na série exibida? */
+export function tokensHaveSeries(data: DashboardTokens): boolean {
+  return data.series.some(point => point.tokens > 0)
+}
+
+export function tokenStatusData(data: DashboardTokens, t: DashboardTranslator): ChartDatum[] {
+  return data.boxes.byStatus.map(bucket => ({ status: bucket.key ?? '', label: statusLabel(bucket.key ?? '', t), value: bucket.tokens }))
+}
+
+/** Ranking dos recortes com mais tokens; rótulo resolvido pelo catálogo (nunca o identificador). */
+export function tokenRecorteData(buckets: DashboardTokenBucket[], label: (key: string | null) => string): ChartDatum[] {
+  return [...buckets]
+    .filter(bucket => bucket.tokens > 0)
+    .sort((a, b) => b.tokens - a.tokens)
+    .slice(0, 10)
+    .map(bucket => ({ name: label(bucket.key), value: bucket.tokens, count: bucket.count }))
 }

@@ -397,7 +397,7 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     if (input.releaseDate != null) assertIsoDay(input.releaseDate, 'releaseDate')
   }
   if (name === 'get_dashboard_metrics') {
-    assertEnum(input.metric, 'metric', ['snapshot', 'burnup', 'aging', 'hours', 'sprint'])
+    assertEnum(input.metric, 'metric', ['snapshot', 'burnup', 'aging', 'hours', 'sprint', 'tokens'])
     if (input.type != null) assertEnum(input.type, 'type', ['TASK', 'BUG'])
     if (input.from != null) assertIsoDate(input.from, 'from')
     if (input.to != null) assertIsoDate(input.to, 'to')

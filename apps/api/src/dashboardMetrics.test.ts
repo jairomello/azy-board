@@ -364,7 +364,7 @@ describe('oráculo histórico pequeno e matriz de filtros do burnup', () => {
     const { persistence } = await import('./persistence/runtime')
     await persistence.analytics.backfillDimensionProjections()
     const projectionMeta = await persistence.dashboard.getDimensionProjectionMeta({ tenantId, actorUserId: adminId, actorKind: 'USER' }, projectId)
-    expect(projectionMeta).toMatchObject({ projectionVersion: 1, status: 'READY' })
+    expect(projectionMeta).toMatchObject({ projectionVersion: 2, status: 'READY' })
     const projectedBefore = await db.select().from(projectAnalyticsDimensionSnapshots).where(eq(projectAnalyticsDimensionSnapshots.projectId, projectId))
     const baselineEvent = (await db.select().from(itemEvents).where(and(eq(itemEvents.tenantId, tenantId), eq(itemEvents.projectId, projectId), eq(itemEvents.eventType, 'ANALYTICS_BASELINE'))))[0]!
     await db.delete(projectAnalyticsDimensionSnapshots).where(eq(projectAnalyticsDimensionSnapshots.projectId, projectId))
@@ -400,7 +400,7 @@ describe('oráculo histórico pequeno e matriz de filtros do burnup', () => {
     expect(totalAt(baseline, '2026-02-04')).toMatchObject({ total: 2, done: 0, points: 8, donePoints: 0 })
 
     const byModule = await read(`moduleId=${moduleA}`)
-    expect(byModule.projection).toEqual({ status: 'READY', version: 1 })
+    expect(byModule.projection).toEqual({ status: 'READY', version: 2 })
     expect(byModule.series.map(row => row.total)).toEqual([2, 1, 1, 0])
     const listEvents = persistence.dashboard.listEvents
     persistence.dashboard.listEvents = async () => { throw new Error('Burnup com projeção pronta não deve fazer replay dos eventos') }

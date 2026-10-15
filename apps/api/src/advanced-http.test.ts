@@ -189,7 +189,7 @@ describe.skipIf(!runPostgres)('ADVANCED HTTP ponta a ponta (PostgreSQL real)', (
     const projectedBurnup = await app.request(`/api/projects/${projectId}/dashboard/burnup?moduleId=${modules[0]!.id}&from=${from}&to=${to}`, { headers: { Cookie: a.cookie } })
     expect(projectedBurnup.status).toBe(200)
     const projectedBody = await projectedBurnup.json() as { projection?: { status: string; version: number }; warnings?: string[]; series: Array<{ total: number; points: number }> }
-    expect(projectedBody.projection).toEqual({ status: 'READY', version: 1 })
+    expect(projectedBody.projection).toEqual({ status: 'READY', version: 2 })
     expect(projectedBody.warnings).toEqual([])
     expect(projectedBody.series[0]).toMatchObject({ total: 1, points: 3 })
     expect(projectedTask.id).toBeTruthy()

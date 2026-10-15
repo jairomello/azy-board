@@ -8,6 +8,7 @@ import { appendDomainEventSync } from './domainEventOutbox'
 import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
 import { deleteSqliteItemsInsideTransaction } from './itemUnitOfWork'
 import { readItemSnapshot, recordItemEvent } from './itemAnalytics'
+import { DASHBOARD_DIMENSION_PROJECTION_VERSION } from '../../services/dashboardDimensionProjection'
 
 interface ProjectRow {
   id: string
@@ -147,8 +148,8 @@ export function createSqliteProjectUnitOfWork(database: Database) {
           .run(projectId, context.tenantId, now, now)
         database.query(`INSERT INTO project_analytics_dimension_meta
           (project_id, tenant_id, projection_version, status, last_sequence, target_sequence, updated_at)
-          VALUES (?, ?, 1, 'READY', -1, NULL, ?)`)
-          .run(projectId, context.tenantId, now)
+          VALUES (?, ?, ?, 'READY', -1, NULL, ?)`)
+          .run(projectId, context.tenantId, DASHBOARD_DIMENSION_PROJECTION_VERSION, now)
 
         return project
       })

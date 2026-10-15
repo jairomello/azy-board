@@ -2,13 +2,15 @@
 
 ## Purpose
 TBD - created by archiving change enhance-project-dashboard-visuals. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Dashboard por projeto
-O sistema SHALL oferecer uma página `/projects/:projectId/dashboard` com os oito quadros Progresso e Escopo, WIP, Bloqueados, Atrasados, Burnup, Aging WIP, Carga da Equipe e Horas Registradas. Sprint e Versões não são renderizados. Além dos dados e listas objetivos existentes, a página SHALL apresentar gráficos adequados, estados visuais completos, tooltips, legendas, tabelas equivalentes e drill-down, mantendo filtros, cobertura parcial, Leaf Rule, RBAC e isolamento por tenant.
+O sistema SHALL oferecer uma página `/projects/:projectId/dashboard` com os nove quadros Progresso e Escopo, WIP, Bloqueados, Atrasados, Burnup, Aging WIP, Carga da Equipe, Horas Registradas e Tokens de IA. Sprint e Versões não são renderizados. Além dos dados e listas objetivos existentes, a página SHALL apresentar gráficos adequados, estados visuais completos, tooltips, legendas, tabelas equivalentes e drill-down, mantendo filtros, cobertura parcial, Leaf Rule, RBAC e isolamento por tenant.
 
 #### Scenario: Acesso autorizado
 - **WHEN** usuário com papel VIEWER, MEMBER ou ADMIN acessa o Dashboard de projeto ao qual pertence
-- **THEN** sistema exibe os oito quadros com dados atuais ou estados explícitos de loading, vazio, erro, parcial ou filtro inaplicável
+- **THEN** sistema exibe os nove quadros com dados atuais ou estados explícitos de loading, vazio, erro, parcial ou filtro inaplicável
 
 #### Scenario: Acesso não autorizado
 - **WHEN** usuário tenta acessar o Dashboard de projeto sem membership ou de outro tenant
@@ -29,6 +31,10 @@ O sistema SHALL oferecer uma página `/projects/:projectId/dashboard` com os oit
 #### Scenario: Escopo excluído
 - **WHEN** usuário consulta qualquer estado do Dashboard
 - **THEN** interface não exibe finanças, recomendações de IA, capacidade configurável, WIP limit, P85, CFD, throughput, lead/cycle time ou ranking de produtividade
+
+#### Scenario: Quadro de tokens no padrão dos demais
+- **WHEN** o projeto possui folhas com tokens registrados
+- **THEN** o quadro de Tokens de IA exibe seus recortes e sua série com o mesmo tratamento de estados, filtros, cobertura parcial e acessibilidade dos demais quadros
 
 ### Requirement: Dashboard por projeto na navegação
 O sistema SHALL disponibilizar `/projects/:projectId/dashboard` e o item "Dashboard" para usuários com leitura do projeto, mantendo o Board como destino padrão ao abrir um projeto.

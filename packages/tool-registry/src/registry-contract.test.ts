@@ -304,7 +304,7 @@ describe('contrato de fonte única do catálogo MCP', () => {
     expect(definition.policy).toEqual({ globalGroup: 'TEAM_MEMBER', localRole: 'VIEWER' })
     expect(definition.routing).toMatchObject({ domain: 'board', scope: 'project', operation: 'read' })
     expect(definition.namespace).toBe('discovery')
-    expect(definition.inputSchema.properties.metric).toMatchObject({ type: 'string', enum: ['snapshot', 'burnup', 'aging', 'hours', 'sprint'] })
+    expect(definition.inputSchema.properties.metric).toMatchObject({ type: 'string', enum: ['snapshot', 'burnup', 'aging', 'hours', 'sprint', 'tokens'] })
     expect(new Set(requiredFieldsFor('get_dashboard_metrics'))).toEqual(new Set(['metric']))
     expect(() => validateToolArguments('get_dashboard_metrics', { metric: 'snapshot' })).not.toThrow()
     expect(() => validateToolArguments('get_dashboard_metrics', { metric: 'hours', limit: 100, cursor: 'opaque' })).not.toThrow()

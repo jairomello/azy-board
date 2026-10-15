@@ -381,6 +381,22 @@ Com histórico grande, o endpoint pode degradar rapidamente.
 - Processamento incremental pelo outbox.
 - Política de retenção/compactação para eventos.
 
+#### Pipeline de analytics de tokens de IA (T80)
+
+Os tokens de IA por card entram no mesmo acervo diário do Dashboard, sem métrica
+paralela: o snapshot de analytics do item (`SqliteItemSnapshot`/`PgItemSnapshot` e
+`DashboardDimensionSnapshot`) passou a carregar `tokensInput`/`tokensOutput`; a
+alteração de tokens emite o evento `TOKENS_CHANGED` na mesma transação da mutação;
+`project_metrics_daily` guarda `tokens_input`, `tokens_output`, `done_tokens_input`
+e `done_tokens_output`; e a projeção por dimensão (`projection_version` 2) carrega os
+mesmos contadores para a série filtrada. O endpoint `GET
+/projects/:projectId/dashboard/tokens` combina recortes de estado atual (por status,
+tipo, módulo, sprint, versão, responsável e squad, via agregação SQL) com a série
+diária. Como os tokens só passaram a ser capturados nesta versão, a série começa em
+`tokensStartedAt` (data de início da cobertura) e a leitura semeia os valores atuais
+em vez de fabricar consumo anterior; o retrato de estado atual vem sempre dos itens,
+preservando o isolamento por tenant/projeto e a Leaf Rule.
+
 ### 14. Há N+1 em operações hierárquicas — RESOLVIDO
 
 > **Resolvido pela change `optimize-hierarchical-operations` (card Item 14).**

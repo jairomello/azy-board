@@ -767,6 +767,10 @@ export const projectAnalyticsDimensionState = sqliteTable('project_analytics_dim
   done: integer('done').notNull().default(0),
   points: integer('points').notNull().default(0),
   donePoints: integer('done_points').notNull().default(0),
+  tokensInput: integer('tokens_input').notNull().default(0),
+  tokensOutput: integer('tokens_output').notNull().default(0),
+  doneTokensInput: integer('done_tokens_input').notNull().default(0),
+  doneTokensOutput: integer('done_tokens_output').notNull().default(0),
 }, (table) => ({
   pk: primaryKey({ columns: [table.tenantId, table.projectId, table.moduleKey, table.versionKey, table.sprintSetHash, table.sprintIdsJson, table.type] }),
   tenantProject: index('dimension_state_tenant_project_idx').on(table.tenantId, table.projectId),
@@ -785,6 +789,10 @@ export const projectAnalyticsDimensionSnapshots = sqliteTable('project_analytics
   done: integer('done').notNull().default(0),
   points: integer('points').notNull().default(0),
   donePoints: integer('done_points').notNull().default(0),
+  tokensInput: integer('tokens_input').notNull().default(0),
+  tokensOutput: integer('tokens_output').notNull().default(0),
+  doneTokensInput: integer('done_tokens_input').notNull().default(0),
+  doneTokensOutput: integer('done_tokens_output').notNull().default(0),
 }, (table) => ({
   pk: primaryKey({ columns: [table.tenantId, table.projectId, table.metricDate, table.moduleKey, table.versionKey, table.sprintSetHash, table.sprintIdsJson, table.type] }),
   tenantProjectDate: index('dimension_snapshots_tenant_project_date_idx').on(table.tenantId, table.projectId, table.metricDate),
@@ -814,7 +822,7 @@ export const itemEvents = sqliteTable('item_events', {
   tenantId: text('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
   projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
   itemId: text('item_id'), // intencionalmente sem FK: exclusão do item preserva o histórico
-  eventType: text('event_type', { enum: ['ANALYTICS_BASELINE', 'ITEM_CREATED', 'STATUS_CHANGED', 'POINTS_CHANGED', 'TYPE_CHANGED', 'SPRINT_CHANGED', 'VERSION_CHANGED', 'ITEM_REPARENTED', 'MODULE_CHANGED', 'LEAF_CHANGED', 'ITEM_ARCHIVED', 'ITEM_UNARCHIVED', 'ITEM_DELETED'] }).notNull(),
+  eventType: text('event_type', { enum: ['ANALYTICS_BASELINE', 'ITEM_CREATED', 'STATUS_CHANGED', 'POINTS_CHANGED', 'TYPE_CHANGED', 'SPRINT_CHANGED', 'VERSION_CHANGED', 'ITEM_REPARENTED', 'MODULE_CHANGED', 'LEAF_CHANGED', 'ITEM_ARCHIVED', 'ITEM_UNARCHIVED', 'ITEM_DELETED', 'TOKENS_CHANGED'] }).notNull(),
   occurredAt: text('occurred_at').notNull(),
   sequence: integer('sequence').notNull(),
   actorId: text('actor_id').notNull(),
@@ -1044,6 +1052,11 @@ export const projectMetricsDaily = sqliteTable('project_metrics_daily', {
   done: integer('done').notNull().default(0),
   points: integer('points').notNull().default(0),
   donePoints: integer('done_points').notNull().default(0),
+  // T80 — tokens de IA (entrada/saída) do escopo e dos itens concluídos.
+  tokensInput: integer('tokens_input').notNull().default(0),
+  tokensOutput: integer('tokens_output').notNull().default(0),
+  doneTokensInput: integer('done_tokens_input').notNull().default(0),
+  doneTokensOutput: integer('done_tokens_output').notNull().default(0),
 }, (table) => ({
   pk: primaryKey({ columns: [table.tenantId, table.projectId, table.metricDate] }),
   tenantProjectUnique: uniqueIndex('project_metrics_daily_tenant_project_date_unique').on(table.tenantId, table.projectId, table.metricDate),

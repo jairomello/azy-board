@@ -439,5 +439,71 @@ export interface DashboardHours {
   rows: Array<{ id?: string; authorId: string | null; authorName: string | null; squadName: string | null; itemId: string; versionId: string | null; moduleId: string | null; durationMin: number | null; createdAt?: string }>
 }
 
+// T80 — recortes e série de tokens de IA por projeto.
+export interface DashboardTokenBucket {
+  key: string | null
+  tokensInput: number
+  tokensOutput: number
+  tokens: number
+  doneTokensInput: number
+  doneTokensOutput: number
+  count: number
+}
+
+export interface DashboardTokenScope {
+  tokensInput: number
+  tokensOutput: number
+  tokens: number
+  doneTokensInput: number
+  doneTokensOutput: number
+  doneTokens: number
+  count: number
+}
+
+export interface DashboardTokenPoint {
+  date: string
+  tokensInput: number
+  tokensOutput: number
+  tokens: number
+  doneTokensInput: number
+  doneTokensOutput: number
+  doneTokens: number
+}
+
+export interface DashboardTokenItem {
+  id: string
+  sequenceCode: string | null
+  title: string
+  type?: ItemType
+  status?: TaskStatus
+  tokensInput: number | null
+  tokensOutput: number | null
+  tokens: number
+}
+
+export interface DashboardTokens {
+  coverageStartedAt: string | null
+  tokensStartedAt: string | null
+  partial: boolean
+  hasTokens: boolean
+  projection?: { status: 'ROLLUP' | 'READY' | 'FALLBACK'; version?: number | null; sourceStatus?: string }
+  warnings?: string[]
+  filters: DashboardFilterInfo
+  seriesFilters?: DashboardFilterInfo
+  boxes: {
+    scope: DashboardTokenScope
+    byStatus: DashboardTokenBucket[]
+    byType: DashboardTokenBucket[]
+    byModule: DashboardTokenBucket[]
+    bySprint: DashboardTokenBucket[]
+    byVersion: DashboardTokenBucket[]
+    byAssignee: DashboardTokenBucket[]
+    bySquad: DashboardTokenBucket[]
+  }
+  items?: DashboardTokenItem[]
+  pagination?: DashboardPagination
+  series: DashboardTokenPoint[]
+}
+
 // Card T18 — avaliador compartilhado de visibilidade (interface + agente).
 export * from './visibility'

@@ -17,6 +17,7 @@ import { cpus, totalmem } from 'node:os'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import type { PersistencePorts } from '../persistence/ports'
+import { DASHBOARD_DIMENSION_PROJECTION_VERSION } from '../services/dashboardDimensionProjection'
 import type { ItemWithRelationsRecord, MutationContext, PersistenceContext } from '../persistence/models'
 import { generateId } from '../utils/id'
 
@@ -331,8 +332,8 @@ async function replaceHistory(profileName: Profile, seedValue: string, database:
       ? `DELETE FROM ${table} WHERE tenant_id=? AND project_id=?`
       : `DELETE FROM ${table} WHERE tenant_id=$1 AND project_id=$2`
     const clearDimensionMeta = profileName === 'SIMPLE'
-      ? `UPDATE project_analytics_dimension_meta SET status='BUILDING', projection_version=1, last_sequence=-1, target_sequence=NULL, updated_at=? WHERE tenant_id=? AND project_id=?`
-      : `UPDATE project_analytics_dimension_meta SET status='BUILDING', projection_version=1, last_sequence=-1, target_sequence=NULL, updated_at=$1 WHERE tenant_id=$2 AND project_id=$3`
+      ? `UPDATE project_analytics_dimension_meta SET status='BUILDING', projection_version=${DASHBOARD_DIMENSION_PROJECTION_VERSION}, last_sequence=-1, target_sequence=NULL, updated_at=? WHERE tenant_id=? AND project_id=?`
+      : `UPDATE project_analytics_dimension_meta SET status='BUILDING', projection_version=${DASHBOARD_DIMENSION_PROJECTION_VERSION}, last_sequence=-1, target_sequence=NULL, updated_at=$1 WHERE tenant_id=$2 AND project_id=$3`
     if (profileName === 'SIMPLE') {
       database.sqlite!.query(clearEvents).run(tenant.id, project.id)
       database.sqlite!.query(clearDaily).run(tenant.id, project.id)

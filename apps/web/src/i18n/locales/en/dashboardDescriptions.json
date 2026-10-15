@@ -8,5 +8,6 @@
   "descriptionBurnup": "Shows how scope and completed items changed over time.",
   "descriptionAging": "Lists the oldest WIP items since their current episode began.",
   "descriptionTeamLoad": "Shows the amount of work in progress for each assignee.",
-  "descriptionHours": "Sums hours entered in manual logs, grouped by author."
+  "descriptionHours": "Sums hours entered in manual logs, grouped by author.",
+  "descriptionTokens": "AI token usage recorded in the project by status, type and dimensions, plus the daily evolution; the series starts at the token coverage start date."
 }

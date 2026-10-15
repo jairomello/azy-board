@@ -700,6 +700,14 @@ export function createSqliteItemUnitOfWork(database: Database) {
                   eventState = eventAfter
                 }
               }
+              // T80 — um único evento de tokens por mutação, mesmo quando entrada e saída mudam juntas.
+              const tokensChanged = (patch.tokensInput !== undefined && patch.tokensInput !== current.tokens_input)
+                || (patch.tokensOutput !== undefined && patch.tokensOutput !== current.tokens_output)
+              if (tokensChanged) {
+                const eventAfter = { ...eventState, tokensInput: after.tokensInput, tokensOutput: after.tokensOutput }
+                recordItemEvent(database, context, { projectId, itemId, eventType: 'TOKENS_CHANGED', before: eventState, after: eventAfter })
+                eventState = eventAfter
+              }
               if (relations.sprintIds !== undefined && JSON.stringify(eventState.sprintIds) !== JSON.stringify(after.sprintIds)) {
                 const eventAfter = { ...eventState, sprintIds: after.sprintIds }
                 recordItemEvent(database, context, { projectId, itemId, eventType: 'SPRINT_CHANGED', before: eventState, after: eventAfter })
@@ -1001,6 +1009,10 @@ export function createSqliteItemUnitOfWork(database: Database) {
               if (operation.changedFields?.includes(field)) {
                 recordItemEvent(database, context, { projectId, itemId: operation.itemId, eventType, before, after })
               }
+            }
+            // T80 — lote registra um evento de tokens por item quando os valores mudam.
+            if (operation.changedFields?.includes('tokensInput') || operation.changedFields?.includes('tokensOutput')) {
+              recordItemEvent(database, context, { projectId, itemId: operation.itemId, eventType: 'TOKENS_CHANGED', before, after })
             }
           }
           if (operation.responseChanges) output.push({ id: operation.itemId, identity: operation.responseIdentity ?? { id: operation.itemId }, changes: operation.responseChanges })

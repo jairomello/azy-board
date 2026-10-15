@@ -2,10 +2,12 @@
 
 ## Purpose
 TBD - created by archiving change agent-dashboard-metrics. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: Ferramenta de leitura das métricas oficiais
 
-O catálogo compartilhado SHALL expor a ferramenta de leitura `get_dashboard_metrics` com o seletor obrigatório `metric` (`snapshot`, `burnup`, `aging`, `hours`, `sprint`), disponível tanto no MCP quanto no Azy Agent. A ferramenta SHALL ser somente-leitura, sem aprovação, e revalidar server-side a permissão de leitura do projeto (VIEWER+) e o isolamento por tenant/membership antes de devolver qualquer dado. O resultado SHALL ser um digest com métrica, `capturedAt`, filtros aplicados, critérios, avisos de cobertura e amostra limitada de itens de origem.
+O catálogo compartilhado SHALL expor a ferramenta de leitura `get_dashboard_metrics` com o seletor obrigatório `metric` (`snapshot`, `burnup`, `aging`, `hours`, `sprint`, `tokens`), disponível tanto no MCP quanto no Azy Agent. A ferramenta SHALL ser somente-leitura, sem aprovação, e revalidar server-side a permissão de leitura do projeto (VIEWER+) e o isolamento por tenant/membership antes de devolver qualquer dado. O resultado SHALL ser um digest com métrica, `capturedAt`, filtros aplicados, critérios, avisos de cobertura e amostra limitada de itens de origem.
 
 #### Scenario: Pergunta sobre WIP no dashboard
 
@@ -22,9 +24,14 @@ O catálogo compartilhado SHALL expor a ferramenta de leitura `get_dashboard_met
 - **WHEN** o pedido exige WIP e horas registradas
 - **THEN** o harness permite emitir as duas leituras independentes no mesmo passo, cada uma com seu `metric`
 
+#### Scenario: Recortes e série de tokens
+
+- **WHEN** o usuário pergunta quanto de IA o projeto, a sprint ou um módulo consumiu
+- **THEN** o agente chama `get_dashboard_metrics` com `metric: tokens` e recebe os recortes e a série oficiais, com os filtros e a aplicabilidade declarados
+
 ### Requirement: Paridade de números e regras com o Dashboard
 
-`get_dashboard_metrics` SHALL derivar seus valores das mesmas rotas/regras do Dashboard (Leaf Rule contando apenas `TASK`/`BUG` folha não arquivada, determinada antes dos filtros; estado atual para WIP/Bloqueados/Atrasados/Carga; histórico por evento para Burnup/Aging; logs manuais para Horas). O sistema MUST NOT recalcular métricas com regra própria que possa divergir da tela.
+`get_dashboard_metrics` SHALL derivar seus valores das mesmas rotas/regras do Dashboard (Leaf Rule contando apenas `TASK`/`BUG` folha não arquivada, determinada antes dos filtros; estado atual para WIP/Bloqueados/Atrasados/Carga/Tokens; histórico por evento para Burnup/Aging/Tokens; logs manuais para Horas). O sistema MUST NOT recalcular métricas com regra própria que possa divergir da tela.
 
 #### Scenario: Mesmo recorte, mesmo valor
 
@@ -35,6 +42,11 @@ O catálogo compartilhado SHALL expor a ferramenta de leitura `get_dashboard_met
 
 - **WHEN** um filtro oculta os filhos de uma `TASK` pai
 - **THEN** a pai não passa a ser contabilizada como folha, mantendo a paridade com o Dashboard
+
+#### Scenario: Tokens com o mesmo valor
+
+- **WHEN** agente e Dashboard consultam tokens do mesmo projeto com os mesmos filtros
+- **THEN** recortes e série retornados pela ferramenta são iguais aos exibidos no quadro de tokens
 
 ### Requirement: Filtros e período equivalentes ao Dashboard
 
@@ -101,4 +113,3 @@ A ferramenta SHALL classificar-se como operação de leitura (`risk: READ`), sem
 
 - **WHEN** a ferramenta é executada a partir de uma pergunta
 - **THEN** filtros e visualização do usuário permanecem inalterados
-

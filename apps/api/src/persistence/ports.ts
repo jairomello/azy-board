@@ -36,6 +36,8 @@ import type {
   DashboardMemberRow,
   DashboardPopulationFilter,
   DashboardSnapshotAggregateRow,
+  DashboardTokenGroupBy,
+  DashboardTokenGroupRow,
   DashboardTransitionRecord,
   PlanningGapQueryRequest,
   PlanningGapSnapshotRecord,
@@ -348,7 +350,7 @@ export interface StorageCleanupPort {
 
 export interface AnalyticsPort {
   ensureProjectCoverage(context: PersistenceContext, projectId: string, coverageStartedAt: string, baselineEventId?: string | null): Promise<void>
-  readProjectRollup(context: PersistenceContext, projectId: string, from: string, to: string): Promise<Array<{ date: string; total: number; done: number; points: number; donePoints: number }>>
+  readProjectRollup(context: PersistenceContext, projectId: string, from: string, to: string): Promise<Array<{ date: string; total: number; done: number; points: number; donePoints: number; tokensInput: number; tokensOutput: number; doneTokensInput: number; doneTokensOutput: number }>>
   /** Falha se algum projeto não tiver cobertura de analytics registrada. */
   assertCutoverReady(): Promise<void>
   /** Backfill idempotente do rollup diário para projetos com cobertura e sem linhas. */
@@ -366,6 +368,8 @@ export interface DashboardReadPort {
   listDimensionSnapshots(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, from: string, to: string): Promise<DashboardDimensionSnapshotRecord[]>
   /** Agregados de status/points/atrasos e carga por responsável sem hidratar itens. */
   aggregateLeafItems(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, today: string): Promise<DashboardSnapshotAggregateRow[]>
+  /** T80 — agregado de tokens por uma dimensão (status/tipo/módulo/versão/sprint/responsável/squad). */
+  groupLeafTokens(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, groupBy: DashboardTokenGroupBy): Promise<DashboardTokenGroupRow[]>
   listSprintItemIds(context: PersistenceContext, projectId: string, sprintIds: string[]): Promise<string[]>
   listSquadUserIds(context: PersistenceContext, projectId: string, squadIds: string[]): Promise<string[]>
   listMembersWithSquads(context: PersistenceContext, projectId: string): Promise<DashboardMemberRow[]>

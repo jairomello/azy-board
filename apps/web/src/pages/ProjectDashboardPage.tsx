@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Activity, AlertCircle, BarChart3, Clock3, Cloud, CloudOff, Filter, ListTodo, RefreshCw, Users } from 'lucide-react'
-import type { DashboardAging, DashboardBurnup, DashboardFilters, DashboardHours, DashboardItemDetail, DashboardSnapshot, DashboardState } from '@azy-board/ui-contracts'
+import { Activity, AlertCircle, BarChart3, Clock3, Cloud, CloudOff, Filter, ListTodo, RefreshCw, Sparkles, Users } from 'lucide-react'
+import type { DashboardAging, DashboardBurnup, DashboardFilters, DashboardHours, DashboardItemDetail, DashboardSnapshot, DashboardState, DashboardTokens } from '@azy-board/ui-contracts'
 import { AppShell } from '../components/AppShell'
 import { formatDate } from '../lib/formatters'
 import { api } from '../lib/api'
@@ -12,7 +12,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { queryKeys } from '../lib/queryKeys'
 import { buildDashboardHandlers } from '../lib/realtimeEvents'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { burnupData, burnupHasEvolution, hoursByAuthorData, progressData, rankingData, statusData, teamLoadData } from '../dashboardAdapters'
+import { burnupData, burnupHasEvolution, hoursByAuthorData, progressData, rankingData, statusData, teamLoadData, tokenRecorteData, tokenSeriesData, tokensHaveSeries } from '../dashboardAdapters'
 import { ChartEmptyState, ChartLegend, DashboardCard, Donut, DonutComparison, Gauge, HorizontalRankingBar, MetricValue, SimpleBars, TimeArea } from '../components/dashboard/DashboardVisuals'
 
 type Option = { id: string; name: string }
@@ -66,6 +66,7 @@ export default function ProjectDashboardPage() {
         api.get<DashboardBurnup>(`/projects/${pid}/dashboard/burnup${suffix}`, { signal }),
         api.get<DashboardAging>(`/projects/${pid}/dashboard/aging${suffix}`, { signal }),
         api.get<DashboardHours>(`/projects/${pid}/dashboard/hours${suffix}`, { signal }),
+        api.get<DashboardTokens>(`/projects/${pid}/dashboard/tokens${suffix}`, { signal }),
         api.get<{ name: string }>(`/projects/${pid}`, { signal }),
         api.get<Option[]>(`/projects/${pid}/modules`, { signal }),
         api.get<Option[]>(`/projects/${pid}/sprints`, { signal }),
@@ -80,15 +81,16 @@ export default function ProjectDashboardPage() {
         burnup: pick<DashboardBurnup>(1, 'burnup'),
         aging: pick<DashboardAging>(2, 'aging'),
         hours: pick<DashboardHours>(3, 'hours'),
-        projectName: results[4]?.status === 'fulfilled' ? (results[4].value as { name: string }).name : '',
-        projectIcon: results[4]?.status === 'fulfilled' ? ((results[4].value as { icon?: string | null }).icon ?? null) : null,
-        projectColor: results[4]?.status === 'fulfilled' ? ((results[4].value as { color?: string | null }).color ?? null) : null,
+        tokens: pick<DashboardTokens>(4, 'tokens'),
+        projectName: results[5]?.status === 'fulfilled' ? (results[5].value as { name: string }).name : '',
+        projectIcon: results[5]?.status === 'fulfilled' ? ((results[5].value as { icon?: string | null }).icon ?? null) : null,
+        projectColor: results[5]?.status === 'fulfilled' ? ((results[5].value as { color?: string | null }).color ?? null) : null,
         catalogs: {
-          modules: results[5]?.status === 'fulfilled' ? results[5].value as Option[] : [],
-          sprints: results[6]?.status === 'fulfilled' ? results[6].value as Option[] : [],
-          versions: results[7]?.status === 'fulfilled' ? results[7].value as Option[] : [],
-          squads: results[8]?.status === 'fulfilled' ? results[8].value as Option[] : [],
-          members: results[9]?.status === 'fulfilled' ? results[9].value as Option[] : [],
+          modules: results[6]?.status === 'fulfilled' ? results[6].value as Option[] : [],
+          sprints: results[7]?.status === 'fulfilled' ? results[7].value as Option[] : [],
+          versions: results[8]?.status === 'fulfilled' ? results[8].value as Option[] : [],
+          squads: results[9]?.status === 'fulfilled' ? results[9].value as Option[] : [],
+          members: results[10]?.status === 'fulfilled' ? results[10].value as Option[] : [],
         },
         states,
       }
@@ -117,11 +119,12 @@ export default function ProjectDashboardPage() {
   const burnup = query.data?.burnup ?? null
   const aging = query.data?.aging ?? null
   const hours = query.data?.hours ?? null
+  const tokens = query.data?.tokens ?? null
   const projectName = query.data?.projectName ?? ''
   const projectIcon = query.data?.projectIcon ?? null
   const projectColor = query.data?.projectColor ?? null
   const catalogs = query.data?.catalogs ?? { modules: [], sprints: [], versions: [], squads: [], members: [] }
-  const states = query.data?.states ?? { snapshot: query.isPending ? 'loading' : 'error', burnup: query.isPending ? 'loading' : 'error', aging: query.isPending ? 'loading' : 'error', hours: query.isPending ? 'loading' : 'error' }
+  const states = query.data?.states ?? { snapshot: query.isPending ? 'loading' : 'error', burnup: query.isPending ? 'loading' : 'error', aging: query.isPending ? 'loading' : 'error', hours: query.isPending ? 'loading' : 'error', tokens: query.isPending ? 'loading' : 'error' }
   useEffect(() => { try { localStorage.setItem(`dashboard-filters:${projectId}`, JSON.stringify(filters)) } catch {} }, [filters, projectId])
   // Card T20 — publica os filtros/período vigentes para o Azy Agent consultar as
   // mesmas métricas oficiais. O bloco vive fora do escopo de mutação do board.
@@ -150,6 +153,12 @@ export default function ProjectDashboardPage() {
   const wipPointsCovered = (snapshot?.boxes.wip.pointsCoverage ?? 0) > 0
   const teamLoad = snapshot ? teamLoadData(snapshot, teamLoadMode, t) : []
   const teamLoadHasWip = teamLoad.some(item => Number(item.value) > 0)
+  // T80 — rótulo legível das dimensões de tokens (nunca o identificador técnico).
+  const tokenLookup = (key: string | null) => {
+    if (!key) return t('unassigned')
+    const options = [...catalogs.modules, ...catalogs.sprints, ...catalogs.versions, ...catalogs.squads, ...catalogs.members]
+    return options.find(option => option.id === key)?.name ?? key
+  }
     return <AppShell projectId={projectId} projectName={projectName} projectIcon={projectIcon} projectColor={projectColor} sectionLabel={t('title')} contextLabel={projectName || t('title')} contentClassName="overflow-y-auto" assistantScreen="project-dashboard" assistantScreenSnapshot={assistantSnapshot}><div className="mx-auto max-w-[1600px] px-3 py-5 sm:px-6 sm:py-7"><header className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">{projectName}</p><h1 className="mt-1 text-3xl font-bold tracking-tight">{t('title')}</h1><p className="mt-2 text-xs text-muted-foreground">{coverage?.startedAt ? t('coverage', { date: formatDate(coverage.startedAt) }) : t('unknownCoverage')}</p></div><div className="flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-2 text-xs text-muted-foreground" aria-live="polite">{sync === 'synced' ? <Cloud className="h-4 w-4 text-status-done" /> : <CloudOff className="h-4 w-4 text-status-blocked" />}{sync === 'synced' ? t('synced') : sync === 'syncing' ? t('syncing') : sync === 'connecting' ? t('connecting') : t('offline')}</div></header>
     <form className="mb-6 rounded-2xl border border-border bg-surface p-4" aria-label={t("filtersMenu")} onSubmit={event => event.preventDefault()}><div className="mb-3 flex items-center gap-2 text-xs font-semibold"><Filter className="h-4 w-4 text-primary" />{t('filtersMenu', { defaultValue: 'Filters' })}<button type="button" className="ml-auto text-primary underline" onClick={() => setFilters(initialFilters)}>{t('clear')}</button></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">{filterFields.map(([key, label]) => <label key={key} className="text-xs text-muted-foreground">{t(label)}{key === 'from' || key === 'to' ? <input type="date" value={filters[key]} onChange={event => update(key, event.target.value)} className="mt-1 block w-full rounded-lg border border-input bg-background px-2 py-2 text-sm text-foreground" /> : <select value={filters[key]} onChange={event => update(key, event.target.value)} className="mt-1 block w-full rounded-lg border border-input bg-background px-2 py-2 text-sm text-foreground"><option value="">{t('all')}</option>{key === 'type' ? <><option value="TASK">{t('task')}</option><option value="BUG">{t('bug')}</option></> : (catalogs[key === 'moduleId' ? 'modules' : key === 'sprintId' ? 'sprints' : key === 'versionId' ? 'versions' : key === 'squadId' ? 'squads' : 'members']).map(option => <option key={option.id} value={option.id}>{option.name}</option>)}</select>}</label>)}</div><p className="mt-3 text-[11px] text-muted-foreground">{t('inapplicablePeriod')} · {t('inapplicablePeople')}</p></form>
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -160,6 +169,9 @@ export default function ProjectDashboardPage() {
         <Box title={t('burnup')} icon={Activity} description={t('descriptionBurnup')} state={state('burnup')} partial={burnup?.partial} t={t}>{burnup && <>{pointsEstimated(snapshot!) && <div className="mb-2 flex gap-2" role="group" aria-label={t('burnup')}><button type="button" aria-pressed={burnupMode === 'items'} className={`rounded-md px-2 py-1 text-xs ${burnupMode === 'items' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} onClick={() => setBurnupMode('items')}>{t('items')}</button><button type="button" aria-pressed={burnupMode === 'points'} className={`rounded-md px-2 py-1 text-xs ${burnupMode === 'points' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} onClick={() => setBurnupMode('points')}>{t('points')}</button></div>}{burnupMode === 'points' && !pointsEstimated(snapshot!) ? <ChartEmptyState>{t('noEstimatesHint')}</ChartEmptyState> : burnupHasEvolution(burnup, burnupMode) ? <div role="img" aria-label={t('chartDescription')}><TimeArea data={burnupData(burnup, burnupMode)} reference={burnup.coverageStartedAt ?? undefined} /></div> : <ChartEmptyState>{t('burnupNoEvolution')}</ChartEmptyState>}<p className="text-xs text-muted-foreground">{t('coverageNote')}</p>{burnup.partial && burnup.coverageStartedAt && <p className="mt-1 text-xs text-muted-foreground">{t('coverageStartsAt', { date: formatDate(burnup.coverageStartedAt) })}</p>}{burnup.projection?.status === 'FALLBACK' && <p role="status" className="text-xs text-muted-foreground">{t('projectionFallback')}</p>}</>}</Box>
         <Box title={t('aging')} icon={Clock3} description={t('descriptionAging')} state={state('aging')} partial={Boolean(aging?.coverageStartedAt)} t={t}>{aging && <>{aging.items.length ? <HorizontalRankingBar data={rankingData(aging.items, 'aging')} unit={t('days')} onSelect={id => setSelectedItem(aging.items.find(item => item.id === id) ?? null)} /> : <ChartEmptyState>{t('noData')}</ChartEmptyState>}<p className="text-xs text-muted-foreground">{t('topTenOldest')}</p>{aging.coverageStartedAt && <p className="mt-1 text-xs text-muted-foreground">{t('coverageStartsAt', { date: formatDate(aging.coverageStartedAt) })}</p>}{aging.items.some(item => item.minimumKnown) && <p className="mt-1 text-xs text-muted-foreground">{t('minimumKnownNote')}</p>}</>}</Box>
         <Box title={t('teamLoad')} icon={Users} description={t('descriptionTeamLoad')} state={state('snapshot')} t={t}>{snapshot && <>{teamLoadHasWip ? <><div className="mb-2 flex gap-2" role="group" aria-label={t('teamLoad')}><button type="button" aria-pressed={teamLoadMode === 'items'} className={`rounded-md px-2 py-1 text-xs ${teamLoadMode === 'items' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} onClick={() => setTeamLoadMode('items')}>{t('items')}</button><button type="button" aria-pressed={teamLoadMode === 'points'} className={`rounded-md px-2 py-1 text-xs ${teamLoadMode === 'points' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`} onClick={() => setTeamLoadMode('points')}>{t('points')}</button></div><SimpleBars data={teamLoad} /><p className="text-xs text-muted-foreground">{teamLoadMode === 'points' ? `${t('pointsCoverage')}: ${snapshot.boxes.teamLoad.pointsCoverage == null ? '—' : `${Math.round(snapshot.boxes.teamLoad.pointsCoverage)}%`}` : t('items')}</p></> : <ChartEmptyState>{t('noData')}</ChartEmptyState>}</>}</Box>
+        <Box title={t('tokens')} icon={Sparkles} description={t('descriptionTokens')} state={state('tokens')} partial={tokens?.partial} t={t}>{tokens && (tokens.hasTokens
+          ? <><MetricValue label={t('tokensRegistered')} value={tokens.boxes.scope.tokens} /><div role="img" aria-label={t('tokensChartDescription')}>{tokensHaveSeries(tokens) ? <TimeArea data={tokenSeriesData(tokens)} reference={tokens.tokensStartedAt ?? undefined} /> : <ChartEmptyState>{t('tokensNoSeries')}</ChartEmptyState>}</div><ChartLegend items={[t('tokensRegistered'), t('tokensDone')]} /><p className="text-xs text-muted-foreground">{t('tokensUnit')} · {t('tokensCoverage')}</p>{tokens.tokensStartedAt && <p className="mt-1 text-xs text-muted-foreground">{t('tokensStart', { date: formatDate(tokens.tokensStartedAt) })}</p>}<div className="mt-3"><p className="mb-1 text-xs font-semibold text-foreground">{t('tokensByModule')}</p>{tokenRecorteData(tokens.boxes.byModule, tokenLookup).length ? <SimpleBars data={tokenRecorteData(tokens.boxes.byModule, tokenLookup)} /> : <ChartEmptyState>{t('noData')}</ChartEmptyState>}</div></>
+          : <ChartEmptyState>{t('noTokensHint')}</ChartEmptyState>)}</Box>
         <Box title={t('hours')} icon={BarChart3} description={t('descriptionHours')} state={state('hours')} t={t}>{hours && <><MetricValue label={t('total')} value={`${Math.round(hours.totalMinutes / 60 * 10) / 10}${t('hoursUnit')}`} />{hoursByAuthorData(hours, t).length ? <Donut data={hoursByAuthorData(hours, t).map(item => ({ ...item, unit: t('hoursUnit'), value: Math.round(Number(item.value) / 60 * 100) / 100 }))} /> : <ChartEmptyState>{t('noData')}</ChartEmptyState>}<p className="text-xs text-muted-foreground">{t('manualHours')}</p></>}</Box>
       </div><div className="mt-5 flex justify-end"><button type="button" onClick={invalidateDashboard} className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-semibold hover:bg-muted"><RefreshCw className="h-4 w-4" />{t('refresh')}</button></div></div><ItemModal item={selectedItem} projectId={projectId} t={t} onClose={() => setSelectedItem(null)} /><OverdueModal selection={overdueModal} projectId={projectId} t={t} onClose={() => setOverdueModal(null)} /></AppShell>
 }

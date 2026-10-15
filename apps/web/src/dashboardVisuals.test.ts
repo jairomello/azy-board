@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { burnupData, burnupHasEvolution, hoursByAuthorData, progressData, rankingData, statusData, teamLoadData } from './dashboardAdapters'
-import type { DashboardAging, DashboardBurnup, DashboardHours, DashboardSnapshot } from '@azy-board/ui-contracts'
+import { burnupData, burnupHasEvolution, hoursByAuthorData, progressData, rankingData, statusData, teamLoadData, tokenRecorteData, tokenSeriesData, tokenStatusData, tokensHaveSeries } from './dashboardAdapters'
+import type { DashboardAging, DashboardBurnup, DashboardHours, DashboardSnapshot, DashboardTokens } from '@azy-board/ui-contracts'
 import ptBRDescriptions from './i18n/locales/pt-BR/dashboardDescriptions.json'
 import enDescriptions from './i18n/locales/en/dashboardDescriptions.json'
 import esDescriptions from './i18n/locales/es/dashboardDescriptions.json'
@@ -21,6 +21,38 @@ describe('dashboard chart adapters', () => {
     expect(progressData(empty, t).donut[1].value).toBe(6); expect(JSON.stringify(hoursByAuthorData(hours, t))).toBe('[]'); expect(statusData(empty, 'items', t).length).toBe(4)
     const unestimated = teamLoadData(snapshot({ teamLoad: { members: [{ userId: 'u', userName: 'Sem pontos', squadId: null, squadName: null, wipTotal: 1, wipPoints: null, pointsCoverage: 0 }], unassignedWip: 0, unassignedWipPoints: null, pointsCoverage: 0 } }), 'points', t)[0]; expect(unestimated.name).toBe('Sem pontos'); expect(unestimated.value).toBe(0); expect(unestimated.pointsAvailable).toBe(false)
     const blockedSubset = teamLoadData(snapshot({ teamLoad: { members: [{ userId: 'u', userName: 'Bloqueada', squadId: null, squadName: null, wipTotal: 2, blockedSubset: 1, wipPoints: 5, blockedPoints: 2, pointsCoverage: 100 }], unassignedWip: 0, unassignedWipPoints: null, pointsCoverage: 100 } }), 'items', t)[0]; expect(blockedSubset.value).toBe(1)
+  })
+})
+
+describe('adapter de tokens de IA (T80)', () => {
+  const tokens = (overrides: Partial<DashboardTokens> = {}): DashboardTokens => ({
+    coverageStartedAt: '2026-04-01', tokensStartedAt: '2026-04-01', partial: true, hasTokens: true,
+    filters: { applied: [], inapplicable: ['from', 'to'] },
+    boxes: {
+      scope: { tokensInput: 1400, tokensOutput: 350, tokens: 1750, doneTokensInput: 1000, doneTokensOutput: 200, doneTokens: 1200, count: 3 },
+      byStatus: [{ key: 'DONE', tokensInput: 1000, tokensOutput: 200, tokens: 1200, doneTokensInput: 1000, doneTokensOutput: 200, count: 1 }, { key: 'NOT_STARTED', tokensInput: 0, tokensOutput: 50, tokens: 50, doneTokensInput: 0, doneTokensOutput: 0, count: 1 }],
+      byType: [], byModule: [{ key: 'm1', tokensInput: 1000, tokensOutput: 200, tokens: 1200, doneTokensInput: 0, doneTokensOutput: 0, count: 1 }, { key: null, tokensInput: 10, tokensOutput: 0, tokens: 10, doneTokensInput: 0, doneTokensOutput: 0, count: 1 }], bySprint: [], byVersion: [], byAssignee: [], bySquad: [],
+    },
+    series: [{ date: '2026-04-01', tokensInput: 1400, tokensOutput: 350, tokens: 1750, doneTokensInput: 1000, doneTokensOutput: 200, doneTokens: 1200 }, { date: '2026-04-02', tokensInput: 1500, tokensOutput: 400, tokens: 1900, doneTokensInput: 1500, doneTokensOutput: 400, doneTokens: 1900 }],
+    ...overrides,
+  })
+
+  test('série, recortes por status e ranking por módulo', () => {
+    const data = tokens()
+    expect(tokenSeriesData(data).map(point => point.registered)).toEqual([1750, 1900])
+    expect(tokenSeriesData(data).map(point => point.done)).toEqual([1200, 1900])
+    expect(tokensHaveSeries(data)).toBe(true)
+    expect(tokenStatusData(data, t).find(row => row.status === 'DONE')?.label).toBe('done')
+    const ranking = tokenRecorteData(data.boxes.byModule, key => key ?? 'Sem módulo')
+    expect(ranking.map(row => row.name)).toEqual(['m1', 'Sem módulo'])
+    expect(ranking[0]?.value).toBe(1200)
+  })
+
+  test('projeto sem tokens não apresenta série como resultado', () => {
+    const empty = tokens({ hasTokens: false, boxes: { ...tokens().boxes, scope: { tokensInput: 0, tokensOutput: 0, tokens: 0, doneTokensInput: 0, doneTokensOutput: 0, doneTokens: 0, count: 1 }, byModule: [], byStatus: [] }, series: [] })
+    expect(tokensHaveSeries(empty)).toBe(false)
+    expect(tokenSeriesData(empty)).toEqual([])
+    expect(tokenRecorteData(empty.boxes.byModule, key => key ?? 'Sem módulo')).toEqual([])
   })
 })
 

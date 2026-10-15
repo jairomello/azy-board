@@ -57,6 +57,7 @@ import type {
   SprintRecord,
   StorageCleanupJobRecord,
   StoredAvatarRecord,
+  DashboardTokenGroupRow,
   TagRecord,
   TenantAttachmentSettingsRecord,
   UserCredentialRecord,
@@ -77,6 +78,7 @@ import { createSqliteProjectUnitOfWork } from './projectUnitOfWork'
 import { createSqliteDomainEventPort, appendDomainEventSync } from './domainEventOutbox'
 import { DOMAIN_EVENT_TYPES } from '../../persistence/domainEvents'
 import { applyDimensionProjectionBackfill, applyDimensionProjectionBaselineBackfill, readItemSnapshot as readAnalyticsSnapshot, recordItemEvent as recordAnalyticsEvent, type SqliteItemSnapshot } from './itemAnalytics'
+import { DASHBOARD_DIMENSION_PROJECTION_VERSION } from '../../services/dashboardDimensionProjection'
 import { fingerprintTransition } from '../../services/sprintTransition'
 import { buildPlanningGapSnapshot, planningGapPage, type PlanningGapCandidate } from '../../services/planningGaps'
 import { touchItemMarkerSqlite } from '../itemTouch'
@@ -2020,7 +2022,11 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           eq(projectMetricsDaily.tenantId, context.tenantId), eq(projectMetricsDaily.projectId, projectId),
           sql`${projectMetricsDaily.metricDate} >= ${from}`, sql`${projectMetricsDaily.metricDate} <= ${to}`,
         )).orderBy(projectMetricsDaily.metricDate)
-        return rows.map(row => ({ date: row.metricDate, total: row.total, done: row.done, points: row.points, donePoints: row.donePoints }))
+        return rows.map(row => ({
+          date: row.metricDate, total: row.total, done: row.done, points: row.points, donePoints: row.donePoints,
+          tokensInput: row.tokensInput, tokensOutput: row.tokensOutput,
+          doneTokensInput: row.doneTokensInput, doneTokensOutput: row.doneTokensOutput,
+        }))
       },
       async assertCutoverReady() {
         const projectRows = await database.select({ id: projects.id }).from(projects)
@@ -2052,22 +2058,22 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           let meta = sqlite.query<{ projection_version: number; status: string; last_sequence: number }, [string, string]>(
             'SELECT projection_version, status, last_sequence FROM project_analytics_dimension_meta WHERE tenant_id = ? AND project_id = ?',
           ).get(project.tenant_id, project.project_id)
-          if (meta?.projection_version === 1 && meta.status === 'READY') continue
+          if (meta?.projection_version === DASHBOARD_DIMENSION_PROJECTION_VERSION && meta.status === 'READY') continue
           if (!meta) {
             const now = new Date().toISOString()
             sqlite.query(`INSERT INTO project_analytics_dimension_meta
               (project_id, tenant_id, projection_version, status, last_sequence, target_sequence, updated_at)
-              VALUES (?, ?, 1, 'BUILDING', -1, NULL, ?)`).run(project.project_id, project.tenant_id, now)
-            meta = { projection_version: 1, status: 'BUILDING', last_sequence: -1 }
-          } else if (meta.projection_version !== 1) {
+              VALUES (?, ?, ?, 'BUILDING', -1, NULL, ?)`).run(project.project_id, project.tenant_id, DASHBOARD_DIMENSION_PROJECTION_VERSION, now)
+            meta = { projection_version: DASHBOARD_DIMENSION_PROJECTION_VERSION, status: 'BUILDING', last_sequence: -1 }
+          } else if (meta.projection_version !== DASHBOARD_DIMENSION_PROJECTION_VERSION) {
             runSqliteAtomic(sqlite, () => {
               for (const table of ['project_analytics_dimension_state', 'project_analytics_dimension_snapshots', 'project_analytics_dimension_items']) {
                 sqlite.query(`DELETE FROM ${table} WHERE tenant_id = ? AND project_id = ?`).run(project.tenant_id, project.project_id)
               }
-              sqlite.query(`UPDATE project_analytics_dimension_meta SET projection_version = 1, status = 'BUILDING', last_sequence = -1,
-                target_sequence = NULL, updated_at = ? WHERE tenant_id = ? AND project_id = ?`).run(new Date().toISOString(), project.tenant_id, project.project_id)
+              sqlite.query(`UPDATE project_analytics_dimension_meta SET projection_version = ?, status = 'BUILDING', last_sequence = -1,
+                target_sequence = NULL, updated_at = ? WHERE tenant_id = ? AND project_id = ?`).run(DASHBOARD_DIMENSION_PROJECTION_VERSION, new Date().toISOString(), project.tenant_id, project.project_id)
             })
-            meta = { projection_version: 1, status: 'BUILDING', last_sequence: -1 }
+            meta = { projection_version: DASHBOARD_DIMENSION_PROJECTION_VERSION, status: 'BUILDING', last_sequence: -1 }
           } else {
             sqlite.query("UPDATE project_analytics_dimension_meta SET status = 'BUILDING', updated_at = ? WHERE tenant_id = ? AND project_id = ?")
               .run(new Date().toISOString(), project.tenant_id, project.project_id)
@@ -2247,10 +2253,10 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
              ) AS row_num
              FROM filtered WHERE metric_date < ?
            )
-           SELECT metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points
+           SELECT metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output
            FROM ranked WHERE row_num = 1
            UNION ALL
-           SELECT metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points
+           SELECT metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output
            FROM filtered WHERE metric_date >= ? AND metric_date <= ?
            ORDER BY metric_date, module_key, version_key, sprint_set_hash, type`,
         ).all(...params, from, from, to) as Array<Record<string, unknown>>
@@ -2258,6 +2264,8 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           metricDate: String(row.metric_date), moduleKey: String(row.module_key), versionKey: String(row.version_key),
           sprintSetHash: String(row.sprint_set_hash), sprintIdsJson: String(row.sprint_ids_json), type: String(row.type),
           total: Number(row.total), done: Number(row.done), points: Number(row.points), donePoints: Number(row.done_points),
+          tokensInput: Number(row.tokens_input), tokensOutput: Number(row.tokens_output),
+          doneTokensInput: Number(row.done_tokens_input), doneTokensOutput: Number(row.done_tokens_output),
         } satisfies DashboardDimensionSnapshotRecord))
       },
       // [DB-SWAP] Contagens/status/points/team são agregados SQL, equivalentes ao port PostgreSQL.
@@ -2279,6 +2287,42 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           count: Number(row.count), estimatedCount: Number(row.estimatedCount),
           points: Number(row.points), donePoints: Number(row.donePoints), overdueCount: Number(row.overdueCount), overduePoints: Number(row.overduePoints),
         }))
+      },
+      // T80 — recortes de tokens por dimensão, sempre por agregação SQL da população filtrada.
+      async groupLeafTokens(context, projectId, filter, groupBy): Promise<DashboardTokenGroupRow[]> {
+        const tokenSums = {
+          tokensInput: sql<number>`COALESCE(SUM(${items.tokensInput}), 0)`,
+          tokensOutput: sql<number>`COALESCE(SUM(${items.tokensOutput}), 0)`,
+          doneTokensInput: sql<number>`COALESCE(SUM(CASE WHEN ${items.status} = 'DONE' THEN ${items.tokensInput} ELSE 0 END), 0)`,
+          doneTokensOutput: sql<number>`COALESCE(SUM(CASE WHEN ${items.status} = 'DONE' THEN ${items.tokensOutput} ELSE 0 END), 0)`,
+          count: sql<number>`COUNT(*)`,
+        }
+        const conditions = dashboardLeafConditions(context, projectId, filter)
+        const normalize = (rows: Array<{ key: string | null } & Record<string, unknown>>) => rows.map(row => ({
+          key: row.key ?? null,
+          tokensInput: Number(row.tokensInput), tokensOutput: Number(row.tokensOutput),
+          doneTokensInput: Number(row.doneTokensInput), doneTokensOutput: Number(row.doneTokensOutput),
+          count: Number(row.count),
+        } satisfies DashboardTokenGroupRow))
+        if (groupBy === 'sprintId') {
+          const rows = await database.select({ key: itemSprints.sprintId, ...tokenSums }).from(items)
+            .innerJoin(itemSprints, and(eq(itemSprints.itemId, items.id), eq(itemSprints.tenantId, items.tenantId)))
+            .where(and(...conditions)).groupBy(itemSprints.sprintId)
+          return normalize(rows as Array<{ key: string | null } & Record<string, unknown>>)
+        }
+        if (groupBy === 'squadId') {
+          const rows = await database.select({ key: memberships.squadId, ...tokenSums }).from(items)
+            .leftJoin(memberships, and(eq(memberships.userId, items.assigneeId), eq(memberships.tenantId, items.tenantId), eq(memberships.projectId, items.projectId)))
+            .where(and(...conditions)).groupBy(memberships.squadId)
+          return normalize(rows as Array<{ key: string | null } & Record<string, unknown>>)
+        }
+        const column = groupBy === 'status' ? items.status
+          : groupBy === 'type' ? items.type
+            : groupBy === 'moduleId' ? items.moduleId
+              : groupBy === 'versionId' ? items.versionId
+                : items.assigneeId
+        const rows = await database.select({ key: column, ...tokenSums }).from(items).where(and(...conditions)).groupBy(column)
+        return normalize(rows as Array<{ key: string | null } & Record<string, unknown>>)
       },
       async listSprintItemIds(context, projectId, sprintIds) {
         if (sprintIds.length === 0) return []

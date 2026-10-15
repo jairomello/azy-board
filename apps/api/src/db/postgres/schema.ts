@@ -436,6 +436,10 @@ export const projectAnalyticsDimensionState = pgTable('project_analytics_dimensi
   done: integer('done').notNull().default(0),
   points: integer('points').notNull().default(0),
   donePoints: integer('done_points').notNull().default(0),
+  tokensInput: integer('tokens_input').notNull().default(0),
+  tokensOutput: integer('tokens_output').notNull().default(0),
+  doneTokensInput: integer('done_tokens_input').notNull().default(0),
+  doneTokensOutput: integer('done_tokens_output').notNull().default(0),
 }, (table) => ({
   pk: primaryKey({ columns: [table.tenantId, table.projectId, table.moduleKey, table.versionKey, table.sprintSetHash, table.sprintIdsJson, table.type] }),
   tenantProject: index('dimension_state_tenant_project_idx').on(table.tenantId, table.projectId),
@@ -454,6 +458,10 @@ export const projectAnalyticsDimensionSnapshots = pgTable('project_analytics_dim
   done: integer('done').notNull().default(0),
   points: integer('points').notNull().default(0),
   donePoints: integer('done_points').notNull().default(0),
+  tokensInput: integer('tokens_input').notNull().default(0),
+  tokensOutput: integer('tokens_output').notNull().default(0),
+  doneTokensInput: integer('done_tokens_input').notNull().default(0),
+  doneTokensOutput: integer('done_tokens_output').notNull().default(0),
 }, (table) => ({
   pk: primaryKey({ columns: [table.tenantId, table.projectId, table.metricDate, table.moduleKey, table.versionKey, table.sprintSetHash, table.sprintIdsJson, table.type] }),
   tenantProjectDate: index('dimension_snapshots_tenant_project_date_idx').on(table.tenantId, table.projectId, table.metricDate),
@@ -501,7 +509,7 @@ export const itemEvents = pgTable('item_events', {
   itemOccurrence: index('item_events_item_occurrence_idx').on(table.tenantId, table.projectId, table.itemId),
   typeDate: index('item_events_type_date_idx').on(table.tenantId, table.projectId, table.eventType, table.occurredAt),
   correlationUnique: uniqueIndex('item_events_correlation_unique').on(table.tenantId, table.projectId, table.correlationId, table.eventType, table.itemId),
-  eventTypeCheck: check('item_events_event_type_check', sql`${table.eventType} IN ('ANALYTICS_BASELINE','ITEM_CREATED','STATUS_CHANGED','POINTS_CHANGED','TYPE_CHANGED','SPRINT_CHANGED','VERSION_CHANGED','ITEM_REPARENTED','MODULE_CHANGED','LEAF_CHANGED','ITEM_ARCHIVED','ITEM_UNARCHIVED','ITEM_DELETED')`),
+  eventTypeCheck: check('item_events_event_type_check', sql`${table.eventType} IN ('ANALYTICS_BASELINE','ITEM_CREATED','STATUS_CHANGED','POINTS_CHANGED','TYPE_CHANGED','SPRINT_CHANGED','VERSION_CHANGED','ITEM_REPARENTED','MODULE_CHANGED','LEAF_CHANGED','ITEM_ARCHIVED','ITEM_UNARCHIVED','ITEM_DELETED','TOKENS_CHANGED')`),
 }))
 
 export const sprintCycles = pgTable('sprint_cycles', {
@@ -661,6 +669,10 @@ export const projectMetricsDaily = pgTable('project_metrics_daily', {
   done: integer('done').notNull().default(0),
   points: integer('points').notNull().default(0),
   donePoints: integer('done_points').notNull().default(0),
+  tokensInput: integer('tokens_input').notNull().default(0),
+  tokensOutput: integer('tokens_output').notNull().default(0),
+  doneTokensInput: integer('done_tokens_input').notNull().default(0),
+  doneTokensOutput: integer('done_tokens_output').notNull().default(0),
 }, (table) => ({
   pk: primaryKey({ columns: [table.tenantId, table.projectId, table.metricDate] }),
   tenantProjectUnique: uniqueIndex('project_metrics_daily_tenant_project_date_unique').on(table.tenantId, table.projectId, table.metricDate),

@@ -21,7 +21,7 @@ function setup() {
   sqlite.query('INSERT INTO projects (id, tenant_id, name, board_mode, created_at) VALUES (?, ?, ?, ?, ?)').run('project-a', 'tenant-a', 'Projeto A', 'HIERARCHICAL', now)
   sqlite.query('INSERT INTO projects (id, tenant_id, name, board_mode, created_at) VALUES (?, ?, ?, ?, ?)').run('project-b', 'tenant-a', 'Projeto B', 'HIERARCHICAL', now)
   sqlite.query('INSERT INTO project_analytics_coverage (project_id, tenant_id, coverage_started_at, baseline_event_id, created_at) VALUES (?, ?, ?, NULL, ?)').run('project-a', 'tenant-a', now, now)
-  sqlite.query("INSERT INTO project_analytics_dimension_meta (project_id, tenant_id, projection_version, status, last_sequence, target_sequence, updated_at) VALUES (?, ?, 1, 'READY', -1, NULL, ?)").run('project-a', 'tenant-a', now)
+  sqlite.query("INSERT INTO project_analytics_dimension_meta (project_id, tenant_id, projection_version, status, last_sequence, target_sequence, updated_at) VALUES (?, ?, 2, 'READY', -1, NULL, ?)").run('project-a', 'tenant-a', now)
 
   const insertItem = sqlite.query('INSERT INTO items (id, tenant_id, project_id, type, parent_id, ancestry_path, title, status, priority, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
   insertItem.run('epic', 'tenant-a', 'project-a', 'EPIC', null, '[]', 'Épico', 'NOT_STARTED', 'MEDIUM', 0, now, OLD)

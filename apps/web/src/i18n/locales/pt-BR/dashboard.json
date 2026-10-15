@@ -87,5 +87,15 @@
   "loadingChart": "Carregando gráfico",
   "partialCoverage": "Cobertura parcial",
   "filterNotApplicable": "Este filtro não se aplica a esta visão.",
-  "loadViewError": "Não foi possível carregar esta visão."
+  "loadViewError": "Não foi possível carregar esta visão.",
+  "tokens": "Tokens de IA",
+  "tokensRegistered": "Tokens registrados",
+  "tokensDone": "Em itens concluídos",
+  "tokensUnit": "tokens",
+  "tokensByModule": "Por módulo",
+  "tokensCoverage": "entrada + saída, total derivado",
+  "tokensStart": "Cobertura de tokens a partir de {{date}}.",
+  "tokensNoSeries": "Sem evolução de tokens no período.",
+  "tokensChartDescription": "Série diária de tokens registrados e de tokens em itens concluídos.",
+  "noTokensHint": "Nenhum consumo de tokens registrado. Registre tokens nos cards para acompanhar aqui."
 }

@@ -1,6 +1,6 @@
 import type { PoolClient } from 'pg'
 import type { MutationContext } from '../../persistence/models'
-import { dashboardDimensionDeltas, dashboardDimensionMetrics, dashboardDimensionTuple, type DashboardDimensionDelta, type DashboardDimensionSnapshot, type DashboardDimensionTuple } from '../../services/dashboardDimensionProjection'
+import { dashboardDimensionDeltas, dashboardDimensionMetrics, dashboardDimensionTuple, DASHBOARD_DIMENSION_PROJECTION_VERSION, type DashboardDimensionDelta, type DashboardDimensionSnapshot, type DashboardDimensionTuple } from '../../services/dashboardDimensionProjection'
 import { generateId } from '../../utils/id'
 
 export interface PgItemSnapshot {
@@ -9,32 +9,53 @@ export interface PgItemSnapshot {
   isLeaf: boolean
   status: string
   points: number | null
+  tokensInput?: number | null
+  tokensOutput?: number | null
   sprintIds: string[]
   versionId: string | null
   moduleId: string | null
 }
 
-interface MetricsRow { total: number; done: number; points: number; done_points: number }
+interface MetricsRow {
+  total: number; done: number; points: number; done_points: number
+  tokens_input: number; tokens_output: number; done_tokens_input: number; done_tokens_output: number
+}
+
+const EMPTY_METRICS: MetricsRow = { total: 0, done: 0, points: 0, done_points: 0, tokens_input: 0, tokens_output: 0, done_tokens_input: 0, done_tokens_output: 0 }
 
 function snapshotCounters(snapshot: PgItemSnapshot | null): MetricsRow {
   if (!snapshot || !snapshot.isLeaf || !['TASK', 'BUG', 'EXTERNAL'].includes(snapshot.type) || snapshot.status === 'ARCHIVED') {
-    return { total: 0, done: 0, points: 0, done_points: 0 }
+    return { ...EMPTY_METRICS }
   }
   const points = snapshot.points ?? 0
   const done = snapshot.status === 'DONE'
-  return { total: 1, done: done ? 1 : 0, points, done_points: done ? points : 0 }
+  const tokensInput = snapshot.tokensInput ?? 0
+  const tokensOutput = snapshot.tokensOutput ?? 0
+  return {
+    total: 1, done: done ? 1 : 0, points, done_points: done ? points : 0,
+    tokens_input: tokensInput, tokens_output: tokensOutput,
+    done_tokens_input: done ? tokensInput : 0, done_tokens_output: done ? tokensOutput : 0,
+  }
 }
 
 function add(left: MetricsRow, right: MetricsRow): MetricsRow {
-  return { total: left.total + right.total, done: left.done + right.done, points: left.points + right.points, done_points: left.done_points + right.done_points }
+  return {
+    total: left.total + right.total, done: left.done + right.done, points: left.points + right.points, done_points: left.done_points + right.done_points,
+    tokens_input: left.tokens_input + right.tokens_input, tokens_output: left.tokens_output + right.tokens_output,
+    done_tokens_input: left.done_tokens_input + right.done_tokens_input, done_tokens_output: left.done_tokens_output + right.done_tokens_output,
+  }
 }
 
 function negate(value: MetricsRow): MetricsRow {
-  return { total: -value.total, done: -value.done, points: -value.points, done_points: -value.done_points }
+  return {
+    total: -value.total, done: -value.done, points: -value.points, done_points: -value.done_points,
+    tokens_input: -value.tokens_input, tokens_output: -value.tokens_output,
+    done_tokens_input: -value.done_tokens_input, done_tokens_output: -value.done_tokens_output,
+  }
 }
 
 export async function readItemSnapshot(client: PoolClient, tenantId: string, projectId: string, itemId: string): Promise<PgItemSnapshot | null> {
-  const row = await client.query('SELECT parent_id, type, status, points, version_id, module_id FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+  const row = await client.query('SELECT parent_id, type, status, points, tokens_input, tokens_output, version_id, module_id FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
     [tenantId, projectId, itemId])
   if (!row.rows[0]) return null
   const r = row.rows[0] as Record<string, unknown>
@@ -48,6 +69,8 @@ export async function readItemSnapshot(client: PoolClient, tenantId: string, pro
     isLeaf: hasChildren.rows.length === 0,
     status: r.status as string,
     points: r.points as number | null,
+    tokensInput: r.tokens_input as number | null,
+    tokensOutput: r.tokens_output as number | null,
     sprintIds: sprintRows.rows.map(s => (s as Record<string, unknown>).sprint_id as string),
     versionId: r.version_id as string | null,
     moduleId: r.module_id as string | null,
@@ -63,7 +86,7 @@ export async function readItemSnapshots(client: PoolClient, tenantId: string, pr
     const batch = ids.slice(offset, offset + batchSize)
     if (!batch.length) continue
     const items = await client.query(
-      'SELECT id, parent_id, type, status, points, version_id, module_id FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = ANY($3::text[])',
+      'SELECT id, parent_id, type, status, points, tokens_input, tokens_output, version_id, module_id FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = ANY($3::text[])',
       [tenantId, projectId, batch],
     )
     const children = await client.query(
@@ -92,6 +115,8 @@ export async function readItemSnapshots(client: PoolClient, tenantId: string, pr
         isLeaf: !hasChildren.has(id),
         status: String(raw.status),
         points: raw.points as number | null,
+        tokensInput: raw.tokens_input as number | null,
+        tokensOutput: raw.tokens_output as number | null,
         sprintIds: sprintIdsByItem.get(id) ?? [],
         versionId: raw.version_id as string | null,
         moduleId: raw.module_id as string | null,
@@ -119,22 +144,30 @@ async function applyDailyDeltaValue(client: PoolClient, tenantId: string, projec
   let value = delta
   if (exists.rows.length === 0) {
     const carry = await client.query(
-      'SELECT total, done, points, done_points FROM project_metrics_daily WHERE tenant_id = $1 AND project_id = $2 AND metric_date < $3 ORDER BY metric_date DESC LIMIT 1',
+      'SELECT total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output FROM project_metrics_daily WHERE tenant_id = $1 AND project_id = $2 AND metric_date < $3 ORDER BY metric_date DESC LIMIT 1',
       [tenantId, projectId, day],
     )
     const c = carry.rows[0] as Record<string, unknown> | undefined
-    value = add(c ? { total: c.total as number, done: c.done as number, points: c.points as number, done_points: c.done_points as number } : { total: 0, done: 0, points: 0, done_points: 0 }, delta)
+    value = add(c ? {
+      total: c.total as number, done: c.done as number, points: c.points as number, done_points: c.done_points as number,
+      tokens_input: c.tokens_input as number, tokens_output: c.tokens_output as number,
+      done_tokens_input: c.done_tokens_input as number, done_tokens_output: c.done_tokens_output as number,
+    } : EMPTY_METRICS, delta)
   }
 
   await client.query(
-    `INSERT INTO project_metrics_daily (tenant_id, project_id, metric_date, total, done, points, done_points)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO project_metrics_daily (tenant_id, project_id, metric_date, total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (tenant_id, project_id, metric_date) DO UPDATE SET
        total = ${exists.rows.length > 0 ? 'project_metrics_daily.total + $4' : '$4'},
        done = ${exists.rows.length > 0 ? 'project_metrics_daily.done + $5' : '$5'},
        points = ${exists.rows.length > 0 ? 'project_metrics_daily.points + $6' : '$6'},
-       done_points = ${exists.rows.length > 0 ? 'project_metrics_daily.done_points + $7' : '$7'}`,
-    [tenantId, projectId, day, value.total, value.done, value.points, value.done_points],
+       done_points = ${exists.rows.length > 0 ? 'project_metrics_daily.done_points + $7' : '$7'},
+       tokens_input = ${exists.rows.length > 0 ? 'project_metrics_daily.tokens_input + $8' : '$8'},
+       tokens_output = ${exists.rows.length > 0 ? 'project_metrics_daily.tokens_output + $9' : '$9'},
+       done_tokens_input = ${exists.rows.length > 0 ? 'project_metrics_daily.done_tokens_input + $10' : '$10'},
+       done_tokens_output = ${exists.rows.length > 0 ? 'project_metrics_daily.done_tokens_output + $11' : '$11'}`,
+    [tenantId, projectId, day, value.total, value.done, value.points, value.done_points, value.tokens_input, value.tokens_output, value.done_tokens_input, value.done_tokens_output],
   )
 }
 
@@ -146,17 +179,21 @@ async function applyDimensionProjectionDeltas(client: PoolClient, tenantId: stri
       'SELECT status, projection_version FROM project_analytics_dimension_meta WHERE tenant_id = $1 AND project_id = $2 FOR UPDATE',
       [tenantId, projectId],
     )
-    if (!meta.rows[0] || Number(meta.rows[0].projection_version) !== 1 || (!options.allowBuilding && meta.rows[0].status !== 'READY')) return
+    if (!meta.rows[0] || Number(meta.rows[0].projection_version) !== DASHBOARD_DIMENSION_PROJECTION_VERSION || (!options.allowBuilding && meta.rows[0].status !== 'READY')) return
   }
 
-  const grouped = new Map<string, { tuple: DashboardDimensionTuple; total: number; done: number; points: number; donePoints: number }>()
+  const grouped = new Map<string, { tuple: DashboardDimensionTuple; total: number; done: number; points: number; donePoints: number; tokensInput: number; tokensOutput: number; doneTokensInput: number; doneTokensOutput: number }>()
   for (const delta of deltas) {
     const key = JSON.stringify(delta.tuple)
-    const current = grouped.get(key) ?? { tuple: delta.tuple, total: 0, done: 0, points: 0, donePoints: 0 }
+    const current = grouped.get(key) ?? { tuple: delta.tuple, total: 0, done: 0, points: 0, donePoints: 0, tokensInput: 0, tokensOutput: 0, doneTokensInput: 0, doneTokensOutput: 0 }
     current.total += delta.metrics.total
     current.done += delta.metrics.done
     current.points += delta.metrics.points
     current.donePoints += delta.metrics.donePoints
+    current.tokensInput += delta.metrics.tokensInput
+    current.tokensOutput += delta.metrics.tokensOutput
+    current.doneTokensInput += delta.metrics.doneTokensInput
+    current.doneTokensOutput += delta.metrics.doneTokensOutput
     grouped.set(key, current)
   }
 
@@ -165,24 +202,30 @@ async function applyDimensionProjectionDeltas(client: PoolClient, tenantId: stri
     const tuple = delta.tuple
     const state = await client.query(
       `INSERT INTO project_analytics_dimension_state
-        (tenant_id, project_id, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        (tenant_id, project_id, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        ON CONFLICT (tenant_id, project_id, module_key, version_key, sprint_set_hash, sprint_ids_json, type) DO UPDATE SET
          total = project_analytics_dimension_state.total + EXCLUDED.total,
          done = project_analytics_dimension_state.done + EXCLUDED.done,
          points = project_analytics_dimension_state.points + EXCLUDED.points,
-         done_points = project_analytics_dimension_state.done_points + EXCLUDED.done_points
-       RETURNING total, done, points, done_points`,
-      [tenantId, projectId, tuple.moduleKey, tuple.versionKey, tuple.sprintSetHash, tuple.sprintIdsJson, tuple.type, delta.total, delta.done, delta.points, delta.donePoints],
+         done_points = project_analytics_dimension_state.done_points + EXCLUDED.done_points,
+         tokens_input = project_analytics_dimension_state.tokens_input + EXCLUDED.tokens_input,
+         tokens_output = project_analytics_dimension_state.tokens_output + EXCLUDED.tokens_output,
+         done_tokens_input = project_analytics_dimension_state.done_tokens_input + EXCLUDED.done_tokens_input,
+         done_tokens_output = project_analytics_dimension_state.done_tokens_output + EXCLUDED.done_tokens_output
+       RETURNING total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output`,
+      [tenantId, projectId, tuple.moduleKey, tuple.versionKey, tuple.sprintSetHash, tuple.sprintIdsJson, tuple.type, delta.total, delta.done, delta.points, delta.donePoints, delta.tokensInput, delta.tokensOutput, delta.doneTokensInput, delta.doneTokensOutput],
     )
-    const totals = state.rows[0] as { total: number; done: number; points: number; done_points: number }
+    const totals = state.rows[0] as { total: number; done: number; points: number; done_points: number; tokens_input: number; tokens_output: number; done_tokens_input: number; done_tokens_output: number }
     await client.query(
       `INSERT INTO project_analytics_dimension_snapshots
-        (tenant_id, project_id, metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        (tenant_id, project_id, metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        ON CONFLICT (tenant_id, project_id, metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type) DO UPDATE SET
-         total = EXCLUDED.total, done = EXCLUDED.done, points = EXCLUDED.points, done_points = EXCLUDED.done_points`,
-      [tenantId, projectId, day, tuple.moduleKey, tuple.versionKey, tuple.sprintSetHash, tuple.sprintIdsJson, tuple.type, totals.total, totals.done, totals.points, totals.done_points],
+         total = EXCLUDED.total, done = EXCLUDED.done, points = EXCLUDED.points, done_points = EXCLUDED.done_points,
+         tokens_input = EXCLUDED.tokens_input, tokens_output = EXCLUDED.tokens_output,
+         done_tokens_input = EXCLUDED.done_tokens_input, done_tokens_output = EXCLUDED.done_tokens_output`,
+      [tenantId, projectId, day, tuple.moduleKey, tuple.versionKey, tuple.sprintSetHash, tuple.sprintIdsJson, tuple.type, totals.total, totals.done, totals.points, totals.done_points, totals.tokens_input, totals.tokens_output, totals.done_tokens_input, totals.done_tokens_output],
     )
   }
   if (options.writeSequence !== false) {
@@ -199,7 +242,7 @@ async function applyDimensionProjection(client: PoolClient, tenantId: string, pr
       'SELECT status, projection_version FROM project_analytics_dimension_meta WHERE tenant_id = $1 AND project_id = $2 FOR UPDATE',
       [tenantId, projectId],
     )
-    if (!ready.rows[0] || Number(ready.rows[0].projection_version) !== 1 || (!options.allowBuilding && ready.rows[0].status !== 'READY')) return
+    if (!ready.rows[0] || Number(ready.rows[0].projection_version) !== DASHBOARD_DIMENSION_PROJECTION_VERSION || (!options.allowBuilding && ready.rows[0].status !== 'READY')) return
   }
   const stored = await client.query(
     'SELECT snapshot_json FROM project_analytics_dimension_items WHERE tenant_id = $1 AND project_id = $2 AND item_id = $3',
@@ -222,17 +265,22 @@ export async function applyDimensionProjectionBackfill(client: PoolClient, tenan
 
 export async function applyDimensionProjectionBaselineBackfill(client: PoolClient, tenantId: string, projectId: string, occurredAt: string, sequence: number, rows: Array<{ itemId: string } & DashboardDimensionSnapshot>) {
   const day = occurredAt.slice(0, 10)
-  const totalsByTuple = new Map<string, { tuple: DashboardDimensionTuple; total: number; done: number; points: number; donePoints: number }>()
+  const totalsByTuple = new Map<string, { tuple: DashboardDimensionTuple; total: number; done: number; points: number; donePoints: number; tokensInput: number; tokensOutput: number; doneTokensInput: number; doneTokensOutput: number }>()
   for (const row of rows) {
     const tuple = dashboardDimensionTuple(row)
     const contribution = dashboardDimensionMetrics(row)
-    if (contribution.total === 0 && contribution.done === 0 && contribution.points === 0 && contribution.donePoints === 0) continue
+    if (contribution.total === 0 && contribution.done === 0 && contribution.points === 0 && contribution.donePoints === 0
+      && contribution.tokensInput === 0 && contribution.tokensOutput === 0 && contribution.doneTokensInput === 0 && contribution.doneTokensOutput === 0) continue
     const key = JSON.stringify(tuple)
-    const totals = totalsByTuple.get(key) ?? { tuple, total: 0, done: 0, points: 0, donePoints: 0 }
+    const totals = totalsByTuple.get(key) ?? { tuple, total: 0, done: 0, points: 0, donePoints: 0, tokensInput: 0, tokensOutput: 0, doneTokensInput: 0, doneTokensOutput: 0 }
     totals.total += contribution.total
     totals.done += contribution.done
     totals.points += contribution.points
     totals.donePoints += contribution.donePoints
+    totals.tokensInput += contribution.tokensInput
+    totals.tokensOutput += contribution.tokensOutput
+    totals.doneTokensInput += contribution.doneTokensInput
+    totals.doneTokensOutput += contribution.doneTokensOutput
     totalsByTuple.set(key, totals)
   }
 
@@ -258,25 +306,29 @@ export async function applyDimensionProjectionBaselineBackfill(client: PoolClien
     const params: unknown[] = []
     batch.forEach(row => {
       const base = params.length
-      values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11})`)
-      params.push(tenantId, projectId, row.tuple.moduleKey, row.tuple.versionKey, row.tuple.sprintSetHash, row.tuple.sprintIdsJson, row.tuple.type, row.total, row.done, row.points, row.donePoints)
+      values.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15})`)
+      params.push(tenantId, projectId, row.tuple.moduleKey, row.tuple.versionKey, row.tuple.sprintSetHash, row.tuple.sprintIdsJson, row.tuple.type, row.total, row.done, row.points, row.donePoints, row.tokensInput, row.tokensOutput, row.doneTokensInput, row.doneTokensOutput)
     })
     await client.query(`INSERT INTO project_analytics_dimension_state
-      (tenant_id,project_id,module_key,version_key,sprint_set_hash,sprint_ids_json,type,total,done,points,done_points)
+      (tenant_id,project_id,module_key,version_key,sprint_set_hash,sprint_ids_json,type,total,done,points,done_points,tokens_input,tokens_output,done_tokens_input,done_tokens_output)
       VALUES ${values.join(',')} ON CONFLICT (tenant_id,project_id,module_key,version_key,sprint_set_hash,sprint_ids_json,type) DO UPDATE SET
-      total=EXCLUDED.total,done=EXCLUDED.done,points=EXCLUDED.points,done_points=EXCLUDED.done_points`, params)
+      total=EXCLUDED.total,done=EXCLUDED.done,points=EXCLUDED.points,done_points=EXCLUDED.done_points,
+      tokens_input=EXCLUDED.tokens_input,tokens_output=EXCLUDED.tokens_output,
+      done_tokens_input=EXCLUDED.done_tokens_input,done_tokens_output=EXCLUDED.done_tokens_output`, params)
 
     const snapshotValues: string[] = []
     const snapshotParams: unknown[] = []
     batch.forEach(row => {
       const base = snapshotParams.length
-      snapshotValues.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12})`)
-      snapshotParams.push(tenantId, projectId, day, row.tuple.moduleKey, row.tuple.versionKey, row.tuple.sprintSetHash, row.tuple.sprintIdsJson, row.tuple.type, row.total, row.done, row.points, row.donePoints)
+      snapshotValues.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},$${base + 10},$${base + 11},$${base + 12},$${base + 13},$${base + 14},$${base + 15},$${base + 16})`)
+      snapshotParams.push(tenantId, projectId, day, row.tuple.moduleKey, row.tuple.versionKey, row.tuple.sprintSetHash, row.tuple.sprintIdsJson, row.tuple.type, row.total, row.done, row.points, row.donePoints, row.tokensInput, row.tokensOutput, row.doneTokensInput, row.doneTokensOutput)
     })
     await client.query(`INSERT INTO project_analytics_dimension_snapshots
-      (tenant_id,project_id,metric_date,module_key,version_key,sprint_set_hash,sprint_ids_json,type,total,done,points,done_points)
+      (tenant_id,project_id,metric_date,module_key,version_key,sprint_set_hash,sprint_ids_json,type,total,done,points,done_points,tokens_input,tokens_output,done_tokens_input,done_tokens_output)
       VALUES ${snapshotValues.join(',')} ON CONFLICT (tenant_id,project_id,metric_date,module_key,version_key,sprint_set_hash,sprint_ids_json,type) DO UPDATE SET
-      total=EXCLUDED.total,done=EXCLUDED.done,points=EXCLUDED.points,done_points=EXCLUDED.done_points`, snapshotParams)
+      total=EXCLUDED.total,done=EXCLUDED.done,points=EXCLUDED.points,done_points=EXCLUDED.done_points,
+      tokens_input=EXCLUDED.tokens_input,tokens_output=EXCLUDED.tokens_output,
+      done_tokens_input=EXCLUDED.done_tokens_input,done_tokens_output=EXCLUDED.done_tokens_output`, snapshotParams)
   }
   await client.query('UPDATE project_analytics_dimension_meta SET last_sequence = GREATEST(last_sequence,$1), updated_at=$2 WHERE tenant_id=$3 AND project_id=$4', [sequence, occurredAt, tenantId, projectId])
 }
@@ -308,10 +360,10 @@ export async function recordDeletedItemEventsBatch(client: PoolClient, context: 
       params,
     )
   }
-  const totals = entries.reduce((sum, [, snapshot]) => add(sum, snapshotCounters(snapshot)), { total: 0, done: 0, points: 0, done_points: 0 })
+  const totals = entries.reduce((sum, [, snapshot]) => add(sum, snapshotCounters(snapshot)), { ...EMPTY_METRICS })
   await applyDailyDeltaValue(client, context.tenantId, projectId, occurredAt.slice(0, 10), negate(totals))
   const ready = await client.query('SELECT status, projection_version FROM project_analytics_dimension_meta WHERE tenant_id = $1 AND project_id = $2 FOR UPDATE', [context.tenantId, projectId])
-  if (ready.rows[0]?.status === 'READY' && Number(ready.rows[0].projection_version) === 1) {
+  if (ready.rows[0]?.status === 'READY' && Number(ready.rows[0].projection_version) === DASHBOARD_DIMENSION_PROJECTION_VERSION) {
     const itemIds = entries.map(([id]) => id)
     const storedSnapshots = new Map<string, PgItemSnapshot>()
     const batchSize = 500

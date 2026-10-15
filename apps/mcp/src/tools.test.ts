@@ -629,6 +629,26 @@ describe('get_dashboard_metrics (Card T20)', () => {
   test('metric inválido falha com mensagem acionável', async () => {
     await expect(toolGetDashboardMetrics(dashApi({}), { projectId: 'p1', metric: 'nope' as never })).rejects.toThrow('metric inválido')
   })
+
+  test('tokens consulta a rota oficial com filtros e usa detailCursor na paginação', async () => {
+    calls.length = 0
+    const tokensPayload = {
+      coverageStartedAt: '2026-10-01T00:00:00.000Z', tokensStartedAt: '2026-10-01', partial: true, hasTokens: true,
+      filters: { applied: ['moduleId', 'sprintId', 'versionId', 'squadId', 'assigneeId', 'type'], inapplicable: ['from', 'to'] },
+      seriesFilters: { applied: ['from', 'to'], inapplicable: ['squadId', 'assigneeId'] },
+      projection: { status: 'ROLLUP' }, boxes: { scope: { tokens: 1750 }, byStatus: [] }, series: [{ date: '2026-10-01', tokens: 1750 }],
+      items: [{ id: 'i1', tokens: 1200 }], pagination: { limit: 50, total: 1, hasMore: false, truncated: false, nextCursor: null },
+    }
+    const result = await toolGetDashboardMetrics(dashApi(tokensPayload), { projectId: 'p1', metric: 'tokens', moduleId: 'm1', from: '2026-10-01', to: '2026-10-05', cursor: 'opaque' }) as {
+      metric: string; coverage: Record<string, unknown>; data: { hasTokens: boolean; boxes: { scope: { tokens: number } }; series: unknown[] }; items: unknown[]
+    }
+    expect(calls[0]).toBe('/projects/p1/dashboard/tokens?moduleId=m1&from=2026-10-01&to=2026-10-05&detailCursor=opaque')
+    expect(result.metric).toBe('tokens')
+    expect(result.coverage).toMatchObject({ tokensStartedAt: '2026-10-01', hasTokens: true })
+    expect(result.data.boxes.scope.tokens).toBe(1750)
+    expect(result.data.series).toHaveLength(1)
+    expect(result.items).toHaveLength(1)
+  })
 })
 
 describe('ferramentas de link do item (T22)', () => {

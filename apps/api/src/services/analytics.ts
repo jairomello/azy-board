@@ -5,13 +5,16 @@ import { generateId } from '../utils/id'
 import { applyEventToDailyRollup } from './dashboardMetrics'
 
 export type AnalyticsDb = DrizzleDb | Parameters<Parameters<DrizzleDb['transaction']>[0]>[0]
-export type AnalyticsEventType = 'ANALYTICS_BASELINE' | 'ITEM_CREATED' | 'STATUS_CHANGED' | 'POINTS_CHANGED' | 'TYPE_CHANGED' | 'SPRINT_CHANGED' | 'VERSION_CHANGED' | 'ITEM_REPARENTED' | 'MODULE_CHANGED' | 'LEAF_CHANGED' | 'ITEM_ARCHIVED' | 'ITEM_UNARCHIVED' | 'ITEM_DELETED'
+export type AnalyticsEventType = 'ANALYTICS_BASELINE' | 'ITEM_CREATED' | 'STATUS_CHANGED' | 'POINTS_CHANGED' | 'TYPE_CHANGED' | 'SPRINT_CHANGED' | 'VERSION_CHANGED' | 'ITEM_REPARENTED' | 'MODULE_CHANGED' | 'LEAF_CHANGED' | 'ITEM_ARCHIVED' | 'ITEM_UNARCHIVED' | 'ITEM_DELETED' | 'TOKENS_CHANGED'
 export type ItemAnalyticsSnapshot = {
   parentId: string | null
   type: string
   isLeaf: boolean
   status: string
   points: number | null
+  // T80 — tokens capturados no snapshot para alimentar recortes/série no Dashboard.
+  tokensInput?: number | null
+  tokensOutput?: number | null
   sprintIds: string[]
   versionId: string | null
   moduleId: string | null
@@ -64,7 +67,7 @@ export async function appendAnalyticsEvent(tx: AnalyticsDb, input: {
 export async function snapshotItem(tx: AnalyticsDb, tenantId: string, projectId: string, itemId: string): Promise<ItemAnalyticsSnapshot | null> {
   const item = await tx.query.items.findFirst({
     where: (i) => and(eq(i.id, itemId), eq(i.tenantId, tenantId), eq(i.projectId, projectId)),
-    columns: { parentId: true, type: true, status: true, points: true, versionId: true, moduleId: true },
+    columns: { parentId: true, type: true, status: true, points: true, tokensInput: true, tokensOutput: true, versionId: true, moduleId: true },
   })
   if (!item) return null
   const children = await tx.select({ id: items.id }).from(items).where(and(eq(items.parentId, itemId), eq(items.tenantId, tenantId), eq(items.projectId, projectId))).limit(1)

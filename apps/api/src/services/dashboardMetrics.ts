@@ -13,11 +13,15 @@ export interface RollupCounters {
   done: number
   points: number
   donePoints: number
+  tokensInput: number
+  tokensOutput: number
+  doneTokensInput: number
+  doneTokensOutput: number
 }
 
-const ZERO: RollupCounters = { total: 0, done: 0, points: 0, donePoints: 0 }
+const ZERO: RollupCounters = { total: 0, done: 0, points: 0, donePoints: 0, tokensInput: 0, tokensOutput: 0, doneTokensInput: 0, doneTokensOutput: 0 }
 
-export type RollupState = { status: string; type: string; isLeaf: boolean; points: number | null }
+export type RollupState = { status: string; type: string; isLeaf: boolean; points: number | null; tokensInput?: number | null; tokensOutput?: number | null }
 
 // Itens folha elegíveis (mesma regra de isEligibleLeaf do Dashboard)
 export function isRollupEligible(state: RollupState | null | undefined): boolean {
@@ -30,10 +34,15 @@ function isDoneEligible(state: RollupState): boolean {
 }
 
 function snapshotCounters(state: RollupState | null | undefined): RollupCounters {
-  if (!state || !isRollupEligible(state)) return ZERO
+  if (!state || !isRollupEligible(state)) return { ...ZERO }
   const points = state.points ?? 0
   const isDone = isDoneEligible(state)
-  return { total: 1, done: isDone ? 1 : 0, points, donePoints: isDone ? points : 0 }
+  const tokensInput = state.tokensInput ?? 0
+  const tokensOutput = state.tokensOutput ?? 0
+  return {
+    total: 1, done: isDone ? 1 : 0, points, donePoints: isDone ? points : 0,
+    tokensInput, tokensOutput, doneTokensInput: isDone ? tokensInput : 0, doneTokensOutput: isDone ? tokensOutput : 0,
+  }
 }
 
 // Delta de um evento: saída do estado anterior, entrada do estado novo.
@@ -43,11 +52,19 @@ function stateDelta(before: RollupState | null, after: RollupState | null): { le
 }
 
 function addCountersTo(carry: RollupCounters, delta: RollupCounters): RollupCounters {
-  return { total: carry.total + delta.total, done: carry.done + delta.done, points: carry.points + delta.points, donePoints: carry.donePoints + delta.donePoints }
+  return {
+    total: carry.total + delta.total, done: carry.done + delta.done, points: carry.points + delta.points, donePoints: carry.donePoints + delta.donePoints,
+    tokensInput: carry.tokensInput + delta.tokensInput, tokensOutput: carry.tokensOutput + delta.tokensOutput,
+    doneTokensInput: carry.doneTokensInput + delta.doneTokensInput, doneTokensOutput: carry.doneTokensOutput + delta.doneTokensOutput,
+  }
 }
 
 function negate(delta: RollupCounters): RollupCounters {
-  return { total: -delta.total, done: -delta.done, points: -delta.points, donePoints: -delta.donePoints }
+  return {
+    total: -delta.total, done: -delta.done, points: -delta.points, donePoints: -delta.donePoints,
+    tokensInput: -delta.tokensInput, tokensOutput: -delta.tokensOutput,
+    doneTokensInput: -delta.doneTokensInput, doneTokensOutput: -delta.doneTokensOutput,
+  }
 }
 
 function parseSnapshot(raw: string | null): RollupState | null {
@@ -55,7 +72,11 @@ function parseSnapshot(raw: string | null): RollupState | null {
   try {
     const parsed = JSON.parse(raw) as Partial<RollupState> | null
     if (!parsed || typeof parsed !== 'object' || !('status' in parsed)) return null
-    return { status: String(parsed.status ?? ''), type: String(parsed.type ?? ''), isLeaf: Boolean(parsed.isLeaf), points: typeof parsed.points === 'number' ? parsed.points : null }
+    return {
+      status: String(parsed.status ?? ''), type: String(parsed.type ?? ''), isLeaf: Boolean(parsed.isLeaf), points: typeof parsed.points === 'number' ? parsed.points : null,
+      tokensInput: typeof parsed.tokensInput === 'number' ? parsed.tokensInput : null,
+      tokensOutput: typeof parsed.tokensOutput === 'number' ? parsed.tokensOutput : null,
+    }
   } catch {
     return null
   }
@@ -74,7 +95,11 @@ async function loadCarry(exec: RollupExec, tenantId: string, projectId: string, 
     .limit(1)
   const row = rows[0]
   if (!row) return ZERO
-  return { total: row.total, done: row.done, points: row.points, donePoints: row.donePoints }
+  return {
+    total: row.total, done: row.done, points: row.points, donePoints: row.donePoints,
+    tokensInput: row.tokensInput, tokensOutput: row.tokensOutput,
+    doneTokensInput: row.doneTokensInput, doneTokensOutput: row.doneTokensOutput,
+  }
 }
 
 // Atualização incremental do rollup do dia, na MESMA transação do evento.
@@ -100,7 +125,11 @@ export async function applyEventToDailyRollup(
     await exec.insert(projectMetricsDaily).values({ tenantId, projectId, metricDate, ...sums })
       .onConflictDoUpdate({
         target: [projectMetricsDaily.tenantId, projectMetricsDaily.projectId, projectMetricsDaily.metricDate],
-        set: { total: sums.total, done: sums.done, points: sums.points, donePoints: sums.donePoints },
+        set: {
+          total: sums.total, done: sums.done, points: sums.points, donePoints: sums.donePoints,
+          tokensInput: sums.tokensInput, tokensOutput: sums.tokensOutput,
+          doneTokensInput: sums.doneTokensInput, doneTokensOutput: sums.doneTokensOutput,
+        },
       })
     return
   }
@@ -127,6 +156,10 @@ export async function applyEventToDailyRollup(
         done: sql`${projectMetricsDaily.done} + ${net.done}`,
         points: sql`${projectMetricsDaily.points} + ${net.points}`,
         donePoints: sql`${projectMetricsDaily.donePoints} + ${net.donePoints}`,
+        tokensInput: sql`${projectMetricsDaily.tokensInput} + ${net.tokensInput}`,
+        tokensOutput: sql`${projectMetricsDaily.tokensOutput} + ${net.tokensOutput}`,
+        doneTokensInput: sql`${projectMetricsDaily.doneTokensInput} + ${net.doneTokensInput}`,
+        doneTokensOutput: sql`${projectMetricsDaily.doneTokensOutput} + ${net.doneTokensOutput}`,
       },
     })
 }
@@ -216,7 +249,11 @@ export async function readDailyRollupSeries(exec: RollupExec, tenantId: string, 
     ))
     .orderBy(asc(projectMetricsDaily.metricDate))
   const byDay = new Map<string, RollupCounters>()
-  for (const row of rows) byDay.set(row.metricDate, { total: row.total, done: row.done, points: row.points, donePoints: row.donePoints })
+  for (const row of rows) byDay.set(row.metricDate, {
+    total: row.total, done: row.done, points: row.points, donePoints: row.donePoints,
+    tokensInput: row.tokensInput, tokensOutput: row.tokensOutput,
+    doneTokensInput: row.doneTokensInput, doneTokensOutput: row.doneTokensOutput,
+  })
   return byDay
 }
 
@@ -256,7 +293,9 @@ export async function rollupMatchesReplay(tenantId: string, projectId: string, f
   for (const row of rollup) {
     const expected = replay.get(row.metricDate) ?? lastCarriedBefore(replay, row.metricDate)
     if (!expected) return false
-    if (expected.total !== row.total || expected.done !== row.done || expected.points !== row.points || expected.donePoints !== row.donePoints) return false
+    if (expected.total !== row.total || expected.done !== row.done || expected.points !== row.points || expected.donePoints !== row.donePoints
+      || expected.tokensInput !== row.tokensInput || expected.tokensOutput !== row.tokensOutput
+      || expected.doneTokensInput !== row.doneTokensInput || expected.doneTokensOutput !== row.doneTokensOutput) return false
   }
   return true
 }
@@ -272,10 +311,16 @@ function lastCarriedBefore(replay: Map<string, RollupCounters>, metricDate: stri
 
 function sumState(state: Map<string, RollupState>): RollupCounters {
   const eligible = [...state.values()].filter(row => isRollupEligible(row))
+  const done = eligible.filter(row => isDoneEligible(row))
+  const tokensOf = (rows: RollupState[], key: 'tokensInput' | 'tokensOutput') => rows.reduce((sum, row) => sum + (row[key] ?? 0), 0)
   return {
     total: eligible.length,
-    done: eligible.filter(row => isDoneEligible(row)).length,
+    done: done.length,
     points: eligible.reduce((sum, row) => sum + (row.points ?? 0), 0),
-    donePoints: eligible.filter(row => isDoneEligible(row)).reduce((sum, row) => sum + (row.points ?? 0), 0),
+    donePoints: done.reduce((sum, row) => sum + (row.points ?? 0), 0),
+    tokensInput: tokensOf(eligible, 'tokensInput'),
+    tokensOutput: tokensOf(eligible, 'tokensOutput'),
+    doneTokensInput: tokensOf(done, 'tokensInput'),
+    doneTokensOutput: tokensOf(done, 'tokensOutput'),
   }
 }

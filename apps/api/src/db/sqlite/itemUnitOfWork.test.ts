@@ -17,7 +17,7 @@ function setup() {
   sqlite.query('INSERT INTO tenants (id, name, slug, created_at) VALUES (?, ?, ?, ?)').run('tenant-a', 'Tenant A', 'tenant-a', now)
   sqlite.query('INSERT INTO projects (id, tenant_id, name, board_mode, created_at) VALUES (?, ?, ?, ?, ?)').run('project-a', 'tenant-a', 'Projeto A', 'HIERARCHICAL', now)
   sqlite.query('INSERT INTO project_analytics_coverage (project_id, tenant_id, coverage_started_at, baseline_event_id, created_at) VALUES (?, ?, ?, NULL, ?)').run('project-a', 'tenant-a', now, now)
-  sqlite.query("INSERT INTO project_analytics_dimension_meta (project_id, tenant_id, projection_version, status, last_sequence, target_sequence, updated_at) VALUES (?, ?, 1, 'READY', -1, NULL, ?)").run('project-a', 'tenant-a', now)
+  sqlite.query("INSERT INTO project_analytics_dimension_meta (project_id, tenant_id, projection_version, status, last_sequence, target_sequence, updated_at) VALUES (?, ?, 2, 'READY', -1, NULL, ?)").run('project-a', 'tenant-a', now)
   const context: MutationContext = {
     tenantId: 'tenant-a', actorUserId: null, actorKind: 'SYSTEM',
     mutation: { origin: 'TEST', actorType: 'SYSTEM', actorSource: 'SYSTEM', actorLabel: null },

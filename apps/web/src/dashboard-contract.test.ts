@@ -23,6 +23,24 @@ describe('contratos do dashboard do projeto', () => {
     }
   })
 
+  test('quadro de tokens de IA consome a rota oficial com acessibilidade e vazio compacto (T80)', async () => {
+    const page = await source('./pages/ProjectDashboardPage.tsx')
+    contains(page, 'dashboard/tokens')
+    contains(page, 'tokenSeriesData')
+    contains(page, 'tokenRecorteData')
+    contains(page, "t('tokens')")
+    contains(page, "t('descriptionTokens')")
+    contains(page, "t('tokensChartDescription')")
+    contains(page, 'role="img"')
+    contains(page, "t('noTokensHint')")
+    contains(page, 'ChartEmptyState')
+    contains(page, "t('tokensStart'")
+    contains(page, 'tokenLookup')
+    const adapters = await source('./dashboardAdapters.ts')
+    contains(adapters, 'tokenSeriesData')
+    contains(adapters, 'tokensHaveSeries')
+  })
+
   test('eixos por locale e cobertura parcial explicada (T71)', async () => {
     const charts = await source('./components/dashboard/DashboardCharts.tsx')
     contains(charts, "from '../../lib/formatters'")
@@ -90,7 +108,7 @@ describe('contratos do dashboard do projeto', () => {
     const board = await source('./features/board/BoardScreen.tsx')
     contains(app, '/projects/:projectId/dashboard')
     contains(shell, 'navDashboard')
-    expect(page.match(/<Box title=/g)?.length).toBe(8)
+    expect(page.match(/<Box title=/g)?.length).toBe(9)
     expect(page.includes("t('sprintBox')")).toBe(false)
     expect(page.includes("t('versions')")).toBe(false)
     for (const endpoint of ['/snapshot', '/burnup', '/aging', '/hours']) contains(page, endpoint)

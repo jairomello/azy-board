@@ -738,6 +738,22 @@ export interface DashboardDimensionSnapshotRecord {
   done: number
   points: number
   donePoints: number
+  tokensInput: number
+  tokensOutput: number
+  doneTokensInput: number
+  doneTokensOutput: number
+}
+
+// T80 — dimensões suportadas nos recortes de tokens do Dashboard.
+export type DashboardTokenGroupBy = 'status' | 'type' | 'moduleId' | 'versionId' | 'sprintId' | 'assigneeId' | 'squadId'
+
+export interface DashboardTokenGroupRow {
+  key: string | null
+  tokensInput: number
+  tokensOutput: number
+  doneTokensInput: number
+  doneTokensOutput: number
+  count: number
 }
 
 export interface DashboardDimensionProjectionMeta {

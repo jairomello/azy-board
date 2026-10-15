@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import type { MutationContext } from '../../persistence/models'
-import { dashboardDimensionDeltas, dashboardDimensionMetrics, dashboardDimensionTuple, type DashboardDimensionDelta, type DashboardDimensionSnapshot, type DashboardDimensionTuple } from '../../services/dashboardDimensionProjection'
+import { dashboardDimensionDeltas, dashboardDimensionMetrics, dashboardDimensionTuple, DASHBOARD_DIMENSION_PROJECTION_VERSION, type DashboardDimensionDelta, type DashboardDimensionSnapshot, type DashboardDimensionTuple } from '../../services/dashboardDimensionProjection'
 import { generateId } from '../../utils/id'
 
 export interface SqliteItemSnapshot {
@@ -9,6 +9,8 @@ export interface SqliteItemSnapshot {
   isLeaf: boolean
   status: string
   points: number | null
+  tokensInput?: number | null
+  tokensOutput?: number | null
   sprintIds: string[]
   versionId: string | null
   moduleId: string | null
@@ -19,19 +21,32 @@ interface SnapshotRow {
   type: string
   status: string
   points: number | null
+  tokens_input: number | null
+  tokens_output: number | null
   version_id: string | null
   module_id: string | null
 }
 
-interface MetricsRow { total: number; done: number; points: number; done_points: number }
+interface MetricsRow {
+  total: number; done: number; points: number; done_points: number
+  tokens_input: number; tokens_output: number; done_tokens_input: number; done_tokens_output: number
+}
+
+const EMPTY_METRICS: MetricsRow = { total: 0, done: 0, points: 0, done_points: 0, tokens_input: 0, tokens_output: 0, done_tokens_input: 0, done_tokens_output: 0 }
 
 function snapshotCounters(snapshot: SqliteItemSnapshot | null): MetricsRow {
   if (!snapshot || !snapshot.isLeaf || !['TASK', 'BUG', 'EXTERNAL'].includes(snapshot.type) || snapshot.status === 'ARCHIVED') {
-    return { total: 0, done: 0, points: 0, done_points: 0 }
+    return { ...EMPTY_METRICS }
   }
   const points = snapshot.points ?? 0
   const done = snapshot.status === 'DONE'
-  return { total: 1, done: done ? 1 : 0, points, done_points: done ? points : 0 }
+  const tokensInput = snapshot.tokensInput ?? 0
+  const tokensOutput = snapshot.tokensOutput ?? 0
+  return {
+    total: 1, done: done ? 1 : 0, points, done_points: done ? points : 0,
+    tokens_input: tokensInput, tokens_output: tokensOutput,
+    done_tokens_input: done ? tokensInput : 0, done_tokens_output: done ? tokensOutput : 0,
+  }
 }
 
 function add(left: MetricsRow, right: MetricsRow): MetricsRow {
@@ -40,16 +55,24 @@ function add(left: MetricsRow, right: MetricsRow): MetricsRow {
     done: left.done + right.done,
     points: left.points + right.points,
     done_points: left.done_points + right.done_points,
+    tokens_input: left.tokens_input + right.tokens_input,
+    tokens_output: left.tokens_output + right.tokens_output,
+    done_tokens_input: left.done_tokens_input + right.done_tokens_input,
+    done_tokens_output: left.done_tokens_output + right.done_tokens_output,
   }
 }
 
 function negate(value: MetricsRow): MetricsRow {
-  return { total: -value.total, done: -value.done, points: -value.points, done_points: -value.done_points }
+  return {
+    total: -value.total, done: -value.done, points: -value.points, done_points: -value.done_points,
+    tokens_input: -value.tokens_input, tokens_output: -value.tokens_output,
+    done_tokens_input: -value.done_tokens_input, done_tokens_output: -value.done_tokens_output,
+  }
 }
 
 export function readItemSnapshot(database: Database, tenantId: string, projectId: string, itemId: string): SqliteItemSnapshot | null {
   const row = database.query<SnapshotRow, [string, string, string]>(
-    'SELECT parent_id, type, status, points, version_id, module_id FROM items WHERE tenant_id = ? AND project_id = ? AND id = ?',
+    'SELECT parent_id, type, status, points, tokens_input, tokens_output, version_id, module_id FROM items WHERE tenant_id = ? AND project_id = ? AND id = ?',
   ).get(tenantId, projectId, itemId)
   if (!row) return null
   const hasChildren = database.query<{ id: string }, [string, string, string]>(
@@ -64,6 +87,8 @@ export function readItemSnapshot(database: Database, tenantId: string, projectId
     isLeaf: !hasChildren,
     status: row.status,
     points: row.points,
+    tokensInput: row.tokens_input,
+    tokensOutput: row.tokens_output,
     sprintIds,
     versionId: row.version_id,
     moduleId: row.module_id,
@@ -81,7 +106,7 @@ export function readItemSnapshots(database: Database, tenantId: string, projectI
     const placeholders = ids.map(() => '?').join(', ')
     const params = [tenantId, projectId, ...ids]
     const rows = database.query<SnapshotRow & { id: string }, string[]>(
-      `SELECT id, parent_id, type, status, points, version_id, module_id
+      `SELECT id, parent_id, type, status, points, tokens_input, tokens_output, version_id, module_id
        FROM items WHERE tenant_id = ? AND project_id = ? AND id IN (${placeholders})`,
     ).all(...params)
     const childRows = database.query<{ parent_id: string }, string[]>(
@@ -107,6 +132,8 @@ export function readItemSnapshots(database: Database, tenantId: string, projectI
         isLeaf: !hasChildren.has(row.id),
         status: row.status,
         points: row.points,
+        tokensInput: row.tokens_input,
+        tokensOutput: row.tokens_output,
         sprintIds: sprintIdsByItem.get(row.id) ?? [],
         versionId: row.version_id,
         moduleId: row.module_id,
@@ -139,19 +166,23 @@ function applyDailyDeltaValue(database: Database, tenantId: string, projectId: s
   let value = delta
   if (!exists) {
     const carry = database.query<MetricsRow, [string, string, string]>(
-      'SELECT total, done, points, done_points FROM project_metrics_daily WHERE tenant_id = ? AND project_id = ? AND metric_date < ? ORDER BY metric_date DESC LIMIT 1',
+      'SELECT total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output FROM project_metrics_daily WHERE tenant_id = ? AND project_id = ? AND metric_date < ? ORDER BY metric_date DESC LIMIT 1',
     ).get(tenantId, projectId, day)
-    value = add(carry ?? { total: 0, done: 0, points: 0, done_points: 0 }, delta)
+    value = add(carry ?? EMPTY_METRICS, delta)
   }
 
-  database.query(`INSERT INTO project_metrics_daily (tenant_id, project_id, metric_date, total, done, points, done_points)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+  database.query(`INSERT INTO project_metrics_daily (tenant_id, project_id, metric_date, total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (tenant_id, project_id, metric_date) DO UPDATE SET
       total = ${exists ? 'project_metrics_daily.total + excluded.total' : 'excluded.total'},
       done = ${exists ? 'project_metrics_daily.done + excluded.done' : 'excluded.done'},
       points = ${exists ? 'project_metrics_daily.points + excluded.points' : 'excluded.points'},
-      done_points = ${exists ? 'project_metrics_daily.done_points + excluded.done_points' : 'excluded.done_points'}`)
-     .run(tenantId, projectId, day, value.total, value.done, value.points, value.done_points)
+      done_points = ${exists ? 'project_metrics_daily.done_points + excluded.done_points' : 'excluded.done_points'},
+      tokens_input = ${exists ? 'project_metrics_daily.tokens_input + excluded.tokens_input' : 'excluded.tokens_input'},
+      tokens_output = ${exists ? 'project_metrics_daily.tokens_output + excluded.tokens_output' : 'excluded.tokens_output'},
+      done_tokens_input = ${exists ? 'project_metrics_daily.done_tokens_input + excluded.done_tokens_input' : 'excluded.done_tokens_input'},
+      done_tokens_output = ${exists ? 'project_metrics_daily.done_tokens_output + excluded.done_tokens_output' : 'excluded.done_tokens_output'}`)
+     .run(tenantId, projectId, day, value.total, value.done, value.points, value.done_points, value.tokens_input, value.tokens_output, value.done_tokens_input, value.done_tokens_output)
 }
 
 type DimensionProjectionOptions = { allowBuilding?: boolean; metaLocked?: boolean; writeSequence?: boolean }
@@ -161,17 +192,21 @@ function applyDimensionProjectionDeltas(database: Database, tenantId: string, pr
     const meta = database.query<{ status: string; projection_version: number }, [string, string]>(
       'SELECT status, projection_version FROM project_analytics_dimension_meta WHERE tenant_id = ? AND project_id = ?',
     ).get(tenantId, projectId)
-    if (!meta || meta.projection_version !== 1 || (!options.allowBuilding && meta.status !== 'READY')) return
+    if (!meta || meta.projection_version !== DASHBOARD_DIMENSION_PROJECTION_VERSION || (!options.allowBuilding && meta.status !== 'READY')) return
   }
 
-  const grouped = new Map<string, { tuple: DashboardDimensionTuple; total: number; done: number; points: number; donePoints: number }>()
+  const grouped = new Map<string, { tuple: DashboardDimensionTuple; total: number; done: number; points: number; donePoints: number; tokensInput: number; tokensOutput: number; doneTokensInput: number; doneTokensOutput: number }>()
   for (const delta of deltas) {
     const key = JSON.stringify(delta.tuple)
-    const current = grouped.get(key) ?? { tuple: delta.tuple, total: 0, done: 0, points: 0, donePoints: 0 }
+    const current = grouped.get(key) ?? { tuple: delta.tuple, total: 0, done: 0, points: 0, donePoints: 0, tokensInput: 0, tokensOutput: 0, doneTokensInput: 0, doneTokensOutput: 0 }
     current.total += delta.metrics.total
     current.done += delta.metrics.done
     current.points += delta.metrics.points
     current.donePoints += delta.metrics.donePoints
+    current.tokensInput += delta.metrics.tokensInput
+    current.tokensOutput += delta.metrics.tokensOutput
+    current.doneTokensInput += delta.metrics.doneTokensInput
+    current.doneTokensOutput += delta.metrics.doneTokensOutput
     grouped.set(key, current)
   }
 
@@ -179,24 +214,30 @@ function applyDimensionProjectionDeltas(database: Database, tenantId: string, pr
   for (const delta of grouped.values()) {
     const tuple = delta.tuple
     database.query(`INSERT INTO project_analytics_dimension_state
-      (tenant_id, project_id, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (tenant_id, project_id, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (tenant_id, project_id, module_key, version_key, sprint_set_hash, sprint_ids_json, type) DO UPDATE SET
         total = project_analytics_dimension_state.total + excluded.total,
         done = project_analytics_dimension_state.done + excluded.done,
         points = project_analytics_dimension_state.points + excluded.points,
-        done_points = project_analytics_dimension_state.done_points + excluded.done_points`)
-      .run(tenantId, projectId, tuple.moduleKey, tuple.versionKey, tuple.sprintSetHash, tuple.sprintIdsJson, tuple.type, delta.total, delta.done, delta.points, delta.donePoints)
-    const state = database.query<{ total: number; done: number; points: number; done_points: number }, [string, string, string, string, string, string, string]>(
-      `SELECT total, done, points, done_points FROM project_analytics_dimension_state
+        done_points = project_analytics_dimension_state.done_points + excluded.done_points,
+        tokens_input = project_analytics_dimension_state.tokens_input + excluded.tokens_input,
+        tokens_output = project_analytics_dimension_state.tokens_output + excluded.tokens_output,
+        done_tokens_input = project_analytics_dimension_state.done_tokens_input + excluded.done_tokens_input,
+        done_tokens_output = project_analytics_dimension_state.done_tokens_output + excluded.done_tokens_output`)
+      .run(tenantId, projectId, tuple.moduleKey, tuple.versionKey, tuple.sprintSetHash, tuple.sprintIdsJson, tuple.type, delta.total, delta.done, delta.points, delta.donePoints, delta.tokensInput, delta.tokensOutput, delta.doneTokensInput, delta.doneTokensOutput)
+    const state = database.query<{ total: number; done: number; points: number; done_points: number; tokens_input: number; tokens_output: number; done_tokens_input: number; done_tokens_output: number }, [string, string, string, string, string, string, string]>(
+      `SELECT total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output FROM project_analytics_dimension_state
        WHERE tenant_id = ? AND project_id = ? AND module_key = ? AND version_key = ? AND sprint_set_hash = ? AND sprint_ids_json = ? AND type = ?`,
     ).get(tenantId, projectId, tuple.moduleKey, tuple.versionKey, tuple.sprintSetHash, tuple.sprintIdsJson, tuple.type)!
     database.query(`INSERT INTO project_analytics_dimension_snapshots
-      (tenant_id, project_id, metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (tenant_id, project_id, metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (tenant_id, project_id, metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type) DO UPDATE SET
-        total = excluded.total, done = excluded.done, points = excluded.points, done_points = excluded.done_points`)
-      .run(tenantId, projectId, day, tuple.moduleKey, tuple.versionKey, tuple.sprintSetHash, tuple.sprintIdsJson, tuple.type, state.total, state.done, state.points, state.done_points)
+        total = excluded.total, done = excluded.done, points = excluded.points, done_points = excluded.done_points,
+        tokens_input = excluded.tokens_input, tokens_output = excluded.tokens_output,
+        done_tokens_input = excluded.done_tokens_input, done_tokens_output = excluded.done_tokens_output`)
+      .run(tenantId, projectId, day, tuple.moduleKey, tuple.versionKey, tuple.sprintSetHash, tuple.sprintIdsJson, tuple.type, state.total, state.done, state.points, state.done_points, state.tokens_input, state.tokens_output, state.done_tokens_input, state.done_tokens_output)
   }
   if (options.writeSequence !== false) {
     database.query(`UPDATE project_analytics_dimension_meta
@@ -210,7 +251,7 @@ function applyDimensionProjection(database: Database, tenantId: string, projectI
     const ready = database.query<{ status: string; projection_version: number }, [string, string]>(
       'SELECT status, projection_version FROM project_analytics_dimension_meta WHERE tenant_id = ? AND project_id = ?',
     ).get(tenantId, projectId)
-    if (!ready || ready.projection_version !== 1 || (!options.allowBuilding && ready.status !== 'READY')) return
+    if (!ready || ready.projection_version !== DASHBOARD_DIMENSION_PROJECTION_VERSION || (!options.allowBuilding && ready.status !== 'READY')) return
   }
   const stored = database.query<{ snapshot_json: string }, [string, string, string]>(
     'SELECT snapshot_json FROM project_analytics_dimension_items WHERE tenant_id = ? AND project_id = ? AND item_id = ?',
@@ -233,23 +274,28 @@ export function applyDimensionProjectionBackfill(database: Database, tenantId: s
 
 export function applyDimensionProjectionBaselineBackfill(database: Database, tenantId: string, projectId: string, occurredAt: string, sequence: number, rows: Array<{ itemId: string } & DashboardDimensionSnapshot>) {
   const day = occurredAt.slice(0, 10)
-  const totalsByTuple = new Map<string, { tuple: DashboardDimensionTuple; total: number; done: number; points: number; donePoints: number }>()
+  const totalsByTuple = new Map<string, { tuple: DashboardDimensionTuple; total: number; done: number; points: number; donePoints: number; tokensInput: number; tokensOutput: number; doneTokensInput: number; doneTokensOutput: number }>()
   for (const row of rows) {
     const tuple = dashboardDimensionTuple(row)
     const contribution = dashboardDimensionMetrics(row)
-    if (contribution.total === 0 && contribution.done === 0 && contribution.points === 0 && contribution.donePoints === 0) continue
+    if (contribution.total === 0 && contribution.done === 0 && contribution.points === 0 && contribution.donePoints === 0
+      && contribution.tokensInput === 0 && contribution.tokensOutput === 0 && contribution.doneTokensInput === 0 && contribution.doneTokensOutput === 0) continue
     const key = JSON.stringify(tuple)
-    const totals = totalsByTuple.get(key) ?? { tuple, total: 0, done: 0, points: 0, donePoints: 0 }
+    const totals = totalsByTuple.get(key) ?? { tuple, total: 0, done: 0, points: 0, donePoints: 0, tokensInput: 0, tokensOutput: 0, doneTokensInput: 0, doneTokensOutput: 0 }
     totals.total += contribution.total
     totals.done += contribution.done
     totals.points += contribution.points
     totals.donePoints += contribution.donePoints
+    totals.tokensInput += contribution.tokensInput
+    totals.tokensOutput += contribution.tokensOutput
+    totals.doneTokensInput += contribution.doneTokensInput
+    totals.doneTokensOutput += contribution.doneTokensOutput
     totalsByTuple.set(key, totals)
   }
   const meta = database.query<{ projection_version: number; status: string }, [string, string]>(
     'SELECT projection_version, status FROM project_analytics_dimension_meta WHERE tenant_id = ? AND project_id = ?',
   ).get(tenantId, projectId)
-  if (!meta || meta.projection_version !== 1 || meta.status === 'READY') return
+  if (!meta || meta.projection_version !== DASHBOARD_DIMENSION_PROJECTION_VERSION || meta.status === 'READY') return
 
   const itemBatchSize = 150
   for (let offset = 0; offset < rows.length; offset += itemBatchSize) {
@@ -264,19 +310,23 @@ export function applyDimensionProjectionBaselineBackfill(database: Database, ten
   const dimensionBatchSize = 60
   for (let offset = 0; offset < dimensionRows.length; offset += dimensionBatchSize) {
     const batch = dimensionRows.slice(offset, offset + dimensionBatchSize)
-    const placeholders = batch.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')
-    const params = batch.flatMap(row => [tenantId, projectId, row.tuple.moduleKey, row.tuple.versionKey, row.tuple.sprintSetHash, row.tuple.sprintIdsJson, row.tuple.type, row.total, row.done, row.points, row.donePoints])
+    const placeholders = batch.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')
+    const params = batch.flatMap(row => [tenantId, projectId, row.tuple.moduleKey, row.tuple.versionKey, row.tuple.sprintSetHash, row.tuple.sprintIdsJson, row.tuple.type, row.total, row.done, row.points, row.donePoints, row.tokensInput, row.tokensOutput, row.doneTokensInput, row.doneTokensOutput])
     database.query(`INSERT INTO project_analytics_dimension_state
-      (tenant_id, project_id, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points)
+      (tenant_id, project_id, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output)
       VALUES ${placeholders} ON CONFLICT (tenant_id, project_id, module_key, version_key, sprint_set_hash, sprint_ids_json, type) DO UPDATE SET
-        total = excluded.total, done = excluded.done, points = excluded.points, done_points = excluded.done_points`).run(...params)
+        total = excluded.total, done = excluded.done, points = excluded.points, done_points = excluded.done_points,
+        tokens_input = excluded.tokens_input, tokens_output = excluded.tokens_output,
+        done_tokens_input = excluded.done_tokens_input, done_tokens_output = excluded.done_tokens_output`).run(...params)
 
-    const snapshotPlaceholders = batch.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')
-    const snapshotParams = batch.flatMap(row => [tenantId, projectId, day, row.tuple.moduleKey, row.tuple.versionKey, row.tuple.sprintSetHash, row.tuple.sprintIdsJson, row.tuple.type, row.total, row.done, row.points, row.donePoints])
+    const snapshotPlaceholders = batch.map(() => '(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').join(', ')
+    const snapshotParams = batch.flatMap(row => [tenantId, projectId, day, row.tuple.moduleKey, row.tuple.versionKey, row.tuple.sprintSetHash, row.tuple.sprintIdsJson, row.tuple.type, row.total, row.done, row.points, row.donePoints, row.tokensInput, row.tokensOutput, row.doneTokensInput, row.doneTokensOutput])
     database.query(`INSERT INTO project_analytics_dimension_snapshots
-      (tenant_id, project_id, metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points)
+      (tenant_id, project_id, metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type, total, done, points, done_points, tokens_input, tokens_output, done_tokens_input, done_tokens_output)
       VALUES ${snapshotPlaceholders} ON CONFLICT (tenant_id, project_id, metric_date, module_key, version_key, sprint_set_hash, sprint_ids_json, type) DO UPDATE SET
-        total = excluded.total, done = excluded.done, points = excluded.points, done_points = excluded.done_points`).run(...snapshotParams)
+        total = excluded.total, done = excluded.done, points = excluded.points, done_points = excluded.done_points,
+        tokens_input = excluded.tokens_input, tokens_output = excluded.tokens_output,
+        done_tokens_input = excluded.done_tokens_input, done_tokens_output = excluded.done_tokens_output`).run(...snapshotParams)
   }
   database.query(`UPDATE project_analytics_dimension_meta SET last_sequence = MAX(last_sequence, ?), updated_at = ?
     WHERE tenant_id = ? AND project_id = ?`).run(sequence, occurredAt, tenantId, projectId)
@@ -305,12 +355,12 @@ export function recordDeletedItemEventsBatch(database: Database, context: Mutati
       (id, tenant_id, project_id, item_id, event_type, occurred_at, sequence, actor_id, origin, correlation_id, before_snapshot, after_snapshot)
       VALUES ${placeholders} ON CONFLICT DO NOTHING`).run(...params)
   }
-  const totals = entries.reduce((sum, [, snapshot]) => add(sum, snapshotCounters(snapshot)), { total: 0, done: 0, points: 0, done_points: 0 })
+  const totals = entries.reduce((sum, [, snapshot]) => add(sum, snapshotCounters(snapshot)), { ...EMPTY_METRICS })
   applyDailyDeltaValue(database, context.tenantId, projectId, day, negate(totals))
   const ready = database.query<{ status: string; projection_version: number }, [string, string]>(
     'SELECT status, projection_version FROM project_analytics_dimension_meta WHERE tenant_id = ? AND project_id = ?',
   ).get(context.tenantId, projectId)
-  if (ready?.status === 'READY' && ready.projection_version === 1) {
+  if (ready?.status === 'READY' && ready.projection_version === DASHBOARD_DIMENSION_PROJECTION_VERSION) {
     const storedSnapshots = new Map<string, SqliteItemSnapshot>()
     const itemIds = entries.map(([id]) => id)
     for (let offset = 0; offset < itemIds.length; offset += 300) {

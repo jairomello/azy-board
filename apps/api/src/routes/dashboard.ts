@@ -7,6 +7,7 @@ import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
 import type { DashboardHoursFilter, DashboardPopulationFilter, } from '../persistence/models'
 import { createDashboardCursor, parseDashboardPageSize, readDashboardCursor } from '../services/dashboardCursor'
+import { DASHBOARD_DIMENSION_PROJECTION_VERSION } from '../services/dashboardDimensionProjection'
 
 export const dashboardRouter = new Hono<HonoEnv>()
 dashboardRouter.use('*', authMiddleware)
@@ -192,7 +193,7 @@ dashboardRouter.get('/burnup', requireRole('VIEWER'), async (c) => {
      return c.json({ partial: true, coverageStartedAt: coverage.coverageStartedAt, projection: { status: 'ROLLUP' }, warnings: [], filters: { applied: ['from', 'to', 'moduleId', 'sprintId', 'versionId', 'type'], inapplicable: ['squadId', 'assigneeId'] }, series })
   }
   const projection = await persistence.dashboard.getDimensionProjectionMeta(projectContext, projectId)
-  if (projection?.status === 'READY' && projection.projectionVersion === 1) {
+  if (projection?.status === 'READY' && projection.projectionVersion === DASHBOARD_DIMENSION_PROJECTION_VERSION) {
     const projectedRows = await persistence.dashboard.listDimensionSnapshots(projectContext, projectId, { moduleIds: modules, versionIds: versions, assigneeIds: [], types, sprintIds, squadIds: [] }, requestedStart, requestedEnd)
     const state = new Map<string, { total: number; done: number; points: number; donePoints: number }>()
     const current = { total: 0, done: 0, points: 0, donePoints: 0 }
@@ -252,6 +253,159 @@ dashboardRouter.get('/burnup', requireRole('VIEWER'), async (c) => {
   }
   const series = fillDailySeries(byDay, requestedStart, requestedEnd, { total: 0, done: 0, points: 0, donePoints: 0 })
   return c.json({ partial: true, coverageStartedAt: coverage.coverageStartedAt, projection: { status: 'FALLBACK', version: projection?.projectionVersion ?? null, sourceStatus: projection?.status ?? 'MISSING' }, warnings: ['DASHBOARD_DIMENSION_PROJECTION_FALLBACK'], filters: { applied: ['from', 'to', 'moduleId', 'sprintId', 'versionId', 'type'], inapplicable: ['squadId', 'assigneeId'] }, series })
+})
+
+// T80 — recortes e série de tokens de IA. Os recortes usam o estado atual por
+// agregação SQL; a série vem do acervo diário (sem filtros de dimensão) ou da
+// projeção por dimensão (com filtros), com o mesmo fallback declarado do burnup.
+const TOKEN_RECORTE_DIMENSIONS = ['status', 'type', 'moduleId', 'sprintId', 'versionId', 'assigneeId', 'squadId'] as const
+
+dashboardRouter.get('/tokens', requireRole('VIEWER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext; const projectId = c.req.param('projectId')!
+  const projectContext = userPersistenceContext(ctx)
+  const from = c.req.query('from'); const to = c.req.query('to')
+  const periodError = period(from, to); if (periodError) return c.json({ error: periodError }, 422)
+  const limit = parseDashboardPageSize(c.req.query('limit'))
+  if (limit === null) return c.json({ error: 'limit deve ser um inteiro entre 1 e 100' }, 422)
+  const filter = populationFilter(name => c.req.query(name))
+  const coverage = await persistence.dashboard.getCoverage(projectContext, projectId)
+  const tokensStartedAt = coverage?.coverageStartedAt.slice(0, 10) ?? null
+  const requestedEnd = to ?? new Date().toISOString().slice(0, 10)
+  const requestedStart = tokensStartedAt
+    ? (from && from > tokensStartedAt ? from : tokensStartedAt)
+    : (from ?? requestedEnd)
+
+  const grouped = new Map<string, Array<{ key: string | null; tokensInput: number; tokensOutput: number; doneTokensInput: number; doneTokensOutput: number; count: number }>>()
+  for (const dimension of TOKEN_RECORTE_DIMENSIONS) {
+    grouped.set(dimension, await persistence.dashboard.groupLeafTokens(projectContext, projectId, filter, dimension))
+  }
+  const recorte = (dimension: typeof TOKEN_RECORTE_DIMENSIONS[number]) => (grouped.get(dimension) ?? []).map(row => ({
+    key: row.key, tokensInput: row.tokensInput, tokensOutput: row.tokensOutput, tokens: row.tokensInput + row.tokensOutput,
+    doneTokensInput: row.doneTokensInput, doneTokensOutput: row.doneTokensOutput, count: row.count,
+  }))
+  const statusRows = grouped.get('status') ?? []
+  const scope = statusRows.reduce((total, row) => ({
+    tokensInput: total.tokensInput + row.tokensInput, tokensOutput: total.tokensOutput + row.tokensOutput, count: total.count + row.count,
+    doneTokensInput: total.doneTokensInput + row.doneTokensInput, doneTokensOutput: total.doneTokensOutput + row.doneTokensOutput,
+  }), { tokensInput: 0, tokensOutput: 0, count: 0, doneTokensInput: 0, doneTokensOutput: 0 })
+  const hasTokens = scope.tokensInput + scope.tokensOutput > 0
+
+  const detailCursor = c.req.query('detailCursor')
+  const scopeCursor = { tenantId: ctx.tenantId, projectId, collection: 'tokens-detail', filters: filter, order: 'id:asc' }
+  const position = detailCursor === undefined ? null : readDashboardCursor(scopeCursor, detailCursor)
+  if (detailCursor !== undefined && (!position || typeof position !== 'object' || Array.isArray(position) || typeof (position as Record<string, unknown>).id !== 'string')) {
+    return c.json({ error: 'Cursor inválido ou pertencente a outro escopo/filtro' }, 422)
+  }
+  const detailRowsExtra = await persistence.dashboard.listLeafItems(projectContext, projectId, filter, {
+    limit: limit + 1, ...(position ? { afterId: (position as { id: string }).id } : {}),
+  })
+  const detailHasMore = detailRowsExtra.length > limit
+  const detailRows = detailHasMore ? detailRowsExtra.slice(0, limit) : detailRowsExtra
+  const detailLast = detailRows.at(-1)
+  const detail = detailRows.map(row => ({
+    id: row.id, sequenceCode: row.sequenceCode, title: row.title, type: row.type, status: row.status,
+    tokensInput: row.tokensInput, tokensOutput: row.tokensOutput,
+    tokens: (row.tokensInput ?? 0) + (row.tokensOutput ?? 0),
+  }))
+
+  const modules = csv(c.req.query('moduleId')); const versions = csv(c.req.query('versionId'))
+  const types = csv(c.req.query('type')); const sprintIds = csv(c.req.query('sprintId'))
+  type TokenSeries = { tokensInput: number; tokensOutput: number; doneTokensInput: number; doneTokensOutput: number }
+  let series: Array<TokenSeries & { date: string }>
+  let projection: { status: string; version?: number | null; sourceStatus?: string }
+  const warnings: string[] = []
+  if (!modules.length && !versions.length && !types.length && !sprintIds.length) {
+    const rows = await persistence.analytics.readProjectRollup(projectContext, projectId, requestedStart, requestedEnd)
+    const byDay = new Map(rows.map(row => [row.date, { tokensInput: row.tokensInput, tokensOutput: row.tokensOutput, doneTokensInput: row.doneTokensInput, doneTokensOutput: row.doneTokensOutput }]))
+    // Sem histórico de tokens capturado, a semente vem do estado atual na data de início da cobertura.
+    const anyToken = rows.some(row => row.tokensInput > 0 || row.tokensOutput > 0)
+    if (!anyToken && hasTokens) {
+      const seed = { tokensInput: scope.tokensInput, tokensOutput: scope.tokensOutput, doneTokensInput: scope.doneTokensInput, doneTokensOutput: scope.doneTokensOutput }
+      const cursor = new Date(`${requestedStart}T00:00:00.000Z`); const end = new Date(`${requestedEnd}T00:00:00.000Z`)
+      while (cursor <= end) { byDay.set(cursor.toISOString().slice(0, 10), seed); cursor.setUTCDate(cursor.getUTCDate() + 1) }
+    }
+    series = fillDailySeries(byDay, requestedStart, requestedEnd, { tokensInput: 0, tokensOutput: 0, doneTokensInput: 0, doneTokensOutput: 0 })
+    projection = { status: 'ROLLUP' }
+  } else {
+    const projectionMeta = await persistence.dashboard.getDimensionProjectionMeta(projectContext, projectId)
+    if (projectionMeta?.status === 'READY' && projectionMeta.projectionVersion === DASHBOARD_DIMENSION_PROJECTION_VERSION) {
+      const projectedRows = await persistence.dashboard.listDimensionSnapshots(projectContext, projectId, { moduleIds: modules, versionIds: versions, assigneeIds: [], types, sprintIds, squadIds: [] }, requestedStart, requestedEnd)
+      const state = new Map<string, TokenSeries>()
+      const current: TokenSeries = { tokensInput: 0, tokensOutput: 0, doneTokensInput: 0, doneTokensOutput: 0 }
+      const byDay = new Map<string, TokenSeries>()
+      for (const row of projectedRows) {
+        const key = JSON.stringify([row.moduleKey, row.versionKey, row.sprintSetHash, row.sprintIdsJson, row.type])
+        const before = state.get(key) ?? { tokensInput: 0, tokensOutput: 0, doneTokensInput: 0, doneTokensOutput: 0 }
+        current.tokensInput += row.tokensInput - before.tokensInput
+        current.tokensOutput += row.tokensOutput - before.tokensOutput
+        current.doneTokensInput += row.doneTokensInput - before.doneTokensInput
+        current.doneTokensOutput += row.doneTokensOutput - before.doneTokensOutput
+        state.set(key, { tokensInput: row.tokensInput, tokensOutput: row.tokensOutput, doneTokensInput: row.doneTokensInput, doneTokensOutput: row.doneTokensOutput })
+        if (row.metricDate >= requestedStart) byDay.set(row.metricDate, { ...current })
+      }
+      series = fillDailySeries(byDay, requestedStart, requestedEnd, { tokensInput: 0, tokensOutput: 0, doneTokensInput: 0, doneTokensOutput: 0 })
+      projection = { status: 'READY', version: projectionMeta.projectionVersion }
+    } else {
+      const events = await persistence.dashboard.listEvents(projectContext, projectId, coverage?.coverageStartedAt ?? `${requestedStart}T00:00:00.000Z`, `${requestedEnd}T23:59:59.999Z`)
+      type BurnState = { status: string; type: string; isLeaf: boolean; tokensInput?: number | null; tokensOutput?: number | null; moduleId?: string | null; versionId?: string | null; sprintIds?: string[] }
+      const state = new Map<string, BurnState>()
+      const baseline = events.find(event => event.eventType === 'ANALYTICS_BASELINE')
+      if (baseline?.afterSnapshot) for (const row of JSON.parse(baseline.afterSnapshot) as Array<{ itemId: string } & BurnState>) state.set(row.itemId, row)
+      const matches = (row: BurnState) => (!modules.length || modules.includes(row.moduleId ?? '')) && (!versions.length || versions.includes(row.versionId ?? '')) && (!types.length || types.includes(row.type)) && (!sprintIds.length || sprintIds.some(id => row.sprintIds?.includes(id)))
+      const countersOf = (row: BurnState | null): TokenSeries => {
+        if (!row || !isEligibleLeaf(row, row.isLeaf) || !matches(row)) return { tokensInput: 0, tokensOutput: 0, doneTokensInput: 0, doneTokensOutput: 0 }
+        const done = row.status === 'DONE'
+        return {
+          tokensInput: row.tokensInput ?? 0, tokensOutput: row.tokensOutput ?? 0,
+          doneTokensInput: done ? (row.tokensInput ?? 0) : 0, doneTokensOutput: done ? (row.tokensOutput ?? 0) : 0,
+        }
+      }
+      const cur: TokenSeries = { tokensInput: 0, tokensOutput: 0, doneTokensInput: 0, doneTokensOutput: 0 }
+      let initialized = false
+      const byDay = new Map<string, TokenSeries>()
+      for (const event of events) {
+        const key = event.occurredAt.slice(0, 10)
+        const previous = event.itemId ? (state.get(event.itemId) ?? null) : null
+        if (event.itemId && (event.eventType === 'ITEM_DELETED' || event.eventType === 'ITEM_ARCHIVED')) state.delete(event.itemId)
+        else if (event.itemId && event.afterSnapshot) state.set(event.itemId, JSON.parse(event.afterSnapshot) as BurnState)
+        if (!(key >= requestedStart)) continue
+        if (!initialized) {
+          initialized = true
+          for (const row of state.values()) { const c2 = countersOf(row); cur.tokensInput += c2.tokensInput; cur.tokensOutput += c2.tokensOutput; cur.doneTokensInput += c2.doneTokensInput; cur.doneTokensOutput += c2.doneTokensOutput }
+        } else {
+          const after = countersOf(event.itemId ? (state.get(event.itemId) ?? null) : null)
+          const before = event.eventType === 'ITEM_DELETED' ? countersOf(previous) : countersOf(null)
+          cur.tokensInput += after.tokensInput - before.tokensInput
+          cur.tokensOutput += after.tokensOutput - before.tokensOutput
+          cur.doneTokensInput += after.doneTokensInput - before.doneTokensInput
+          cur.doneTokensOutput += after.doneTokensOutput - before.doneTokensOutput
+        }
+        byDay.set(key, { ...cur })
+      }
+      series = fillDailySeries(byDay, requestedStart, requestedEnd, { tokensInput: 0, tokensOutput: 0, doneTokensInput: 0, doneTokensOutput: 0 })
+      projection = { status: 'FALLBACK', version: projectionMeta?.projectionVersion ?? null, sourceStatus: projectionMeta?.status ?? 'MISSING' }
+      warnings.push('DASHBOARD_DIMENSION_PROJECTION_FALLBACK')
+    }
+  }
+  const detailLastCursor = detailHasMore && detailLast ? createDashboardCursor(scopeCursor, { id: detailLast.id }) : null
+  return c.json({
+    coverageStartedAt: coverage?.coverageStartedAt ?? null,
+    tokensStartedAt,
+    partial: true,
+    hasTokens,
+    projection,
+    warnings,
+    filters: { applied: ['moduleId', 'sprintId', 'versionId', 'squadId', 'assigneeId', 'type'], inapplicable: ['from', 'to'] },
+    seriesFilters: { applied: ['from', 'to', 'moduleId', 'sprintId', 'versionId', 'type'], inapplicable: ['squadId', 'assigneeId'] },
+    boxes: {
+      scope: { ...scope, tokens: scope.tokensInput + scope.tokensOutput, doneTokens: scope.doneTokensInput + scope.doneTokensOutput },
+      byStatus: recorte('status'), byType: recorte('type'), byModule: recorte('moduleId'), bySprint: recorte('sprintId'),
+      byVersion: recorte('versionId'), byAssignee: recorte('assigneeId'), bySquad: recorte('squadId'),
+    },
+    items: detail,
+    pagination: { limit, total: scope.count, hasMore: detailHasMore, truncated: detailHasMore, nextCursor: detailLastCursor },
+    series: series.map(row => ({ ...row, tokens: row.tokensInput + row.tokensOutput, doneTokens: row.doneTokensInput + row.doneTokensOutput })),
+  })
 })
 
 dashboardRouter.get('/aging', requireRole('VIEWER'), async (c) => {

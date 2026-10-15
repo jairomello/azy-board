@@ -87,5 +87,15 @@
   "loadingChart": "Loading chart",
   "partialCoverage": "Partial coverage",
   "filterNotApplicable": "This filter does not apply to this view.",
-  "loadViewError": "Unable to load this view."
+  "loadViewError": "Unable to load this view.",
+  "tokens": "AI Tokens",
+  "tokensRegistered": "Registered tokens",
+  "tokensDone": "In completed items",
+  "tokensUnit": "tokens",
+  "tokensByModule": "By module",
+  "tokensCoverage": "input + output, derived total",
+  "tokensStart": "Token coverage from {{date}}.",
+  "tokensNoSeries": "No token evolution in the period.",
+  "tokensChartDescription": "Daily series of registered tokens and tokens in completed items.",
+  "noTokensHint": "No token usage recorded. Register tokens on cards to track them here."
 }
