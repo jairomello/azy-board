@@ -87,6 +87,27 @@ describe('oauth helpers (T45)', () => {
     expect(claims.sub).toBe('sub-1')
   })
 
+  test('verifyIdToken aceita id_token do Entra sem email_verified (tenant único)', async () => {
+    const { publicKey, privateKey } = await crypto.subtle.generateKey(
+      { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+      true, ['sign', 'verify'],
+    )
+    const jwk = await crypto.subtle.exportKey('jwk', publicKey)
+    const kid = 'mock-kid'
+    const header = Buffer.from(JSON.stringify({ alg: 'RS256', kid })).toString('base64url')
+    // O Entra ID não emite `email_verified`; o claim `email` vem como opcional.
+    const payload = Buffer.from(JSON.stringify({
+      iss: 'https://login.microsoftonline.com/tenant-x/v2.0', aud: 'aud-1', sub: 'sub-1',
+      email: 'user@example.com', exp: Math.floor(Date.now() / 1000) + 600,
+    })).toString('base64url')
+    const signature = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', privateKey, new TextEncoder().encode(`${header}.${payload}`)))
+    const idToken = `${header}.${payload}.${Buffer.from(signature).toString('base64url')}`
+    const fetchImpl = (async () => new Response(JSON.stringify({ keys: [{ kid, kty: 'RSA', use: 'sig', n: jwk.n, e: jwk.e }] }), { status: 200 })) as unknown as typeof fetch
+
+    const claims = await verifyIdToken(msConfig, idToken, fetchImpl)
+    expect(claims.email).toBe('user@example.com')
+  })
+
   test('verifyIdToken rejeita assinatura adulterada', async () => {
     const { publicKey, privateKey } = await crypto.subtle.generateKey(
       { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
