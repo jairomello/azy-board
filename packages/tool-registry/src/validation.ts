@@ -396,6 +396,9 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     if (input.status != null) assertEnum(input.status, 'status', VERSION_STATUSES)
     if (input.releaseDate != null) assertIsoDay(input.releaseDate, 'releaseDate')
   }
+  if (name === 'create_task' && input.status != null) {
+    assertEnum(input.status, 'status', ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'])
+  }
   if (name === 'get_dashboard_metrics') {
     assertEnum(input.metric, 'metric', ['snapshot', 'burnup', 'aging', 'hours', 'sprint', 'tokens'])
     if (input.type != null) assertEnum(input.type, 'type', ['TASK', 'BUG'])

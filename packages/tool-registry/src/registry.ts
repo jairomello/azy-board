@@ -405,6 +405,7 @@ function schemaFor(field: string, isRequired: boolean, toolName?: string): Recor
   if (field === 'limit' && toolName === 'query_planning_gaps') return { ...nullable({ type: 'integer', minimum: 1, maximum: PLANNING_GAP_LIMITS.maxPageSize }), description: `Tamanho da página (padrão ${PLANNING_GAP_LIMITS.defaultPageSize}, máximo ${PLANNING_GAP_LIMITS.maxPageSize}).` }
   if (field === 'limit' || field === 'points' || field === 'offset') return nullable({ type: 'number' })
   if (field === 'tokensInput' || field === 'tokensOutput') return { ...nullable({ type: 'number' }), description: 'Tokens de IA consumidos (inteiro não negativo); o total é derivado da soma.' }
+  if (field === 'status' && toolName === 'create_task') return { type: ['string', 'null'], enum: ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED', null], description: 'Status inicial do item; use o enum de status (não o nome da coluna). Omitir usa o padrão da coluna.' }
   if (field === 'durationMin') return { ...nullable({ type: 'number' }), description: 'Duração em minutos (inteiro não negativo); alternativa a duration.' }
   if (field === 'filters') return itemFiltersSchema
   if (toolName === 'query_planning_gaps' && field === 'scope') return planningGapScopeSchema
