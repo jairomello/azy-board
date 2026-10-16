@@ -150,7 +150,17 @@ export async function login(page: Page, credentials: { email: string; password: 
 
 export async function logout(page: Page) {
   await page.context().clearCookies()
-  await page.goto(`${webUrl}/login`)
+  // Limpar cookies com a tela ainda aberta zera a sessão no meio de chamadas em
+  // voo: a 401 dispara o redirectToLogin() do app, que navega para
+  // /login?redirect=<rota atual> e aborta um goto explícito (corrida que
+  // derrubava a jornada do Azy Agent na CI). Tanto a navegação do app quanto a
+  // nossa terminam em /login, então o erro do goto é esperado e a garantia é a
+  // URL final; a segunda tentativa cobre o caso de a página não ter saído da
+  // rota protegida.
+  for (let attempt = 0; attempt < 2 && !new URL(page.url()).pathname.endsWith('/login'); attempt++) {
+    await page.goto(`${webUrl}/login`).catch(() => undefined)
+  }
+  await page.waitForURL(url => url.pathname.endsWith('/login'), { timeout: 15_000 })
 }
 
 export async function createProject(page: Page, name: string, boardMode?: 'HIERARCHICAL' | 'SIMPLE') {
