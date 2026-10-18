@@ -9,6 +9,14 @@
   <img src="docs/screenshots/board-hierarchy.png" alt="Azy Board hierarchical Kanban board" width="720" />
 </p>
 
+<p align="center">
+  <a href="https://youtu.be/YWtHdu5-O2U">
+    <img src="docs/screenshots/video-cover.jpg" alt="Watch: Azy Board — AI by Design (45-second tour)" width="720" />
+  </a>
+  <br />
+  <sub>▶ <a href="https://youtu.be/YWtHdu5-O2U">Watch the 45-second tour on YouTube</a></sub>
+</p>
+
 Azy Board is a Kanban project management hub purpose-built for mixed Human-AI
 teams. It treats AI agents as first-class collaborators — not integrations
 bolted on top of a human-centric tool — and provides dedicated protocols for
