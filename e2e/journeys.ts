@@ -227,6 +227,48 @@ export const journeys: Journey[] = [
     },
   },
   {
+    name: 'busca, arquiva e restaura projeto pela listagem',
+    run: async page => {
+      // Retry da jornada: um projeto pode ter ficado arquivado numa tentativa anterior.
+      const archivedResponse = await page.request.get(`${apiUrl}/api/projects?includeArchived=true`)
+      if (archivedResponse.ok()) {
+        const archived = (await archivedResponse.json()) as Array<{ id: string; name: string; isArchived: boolean }>
+        for (const project of archived.filter(entry => entry.isArchived && entry.name === 'Projeto Arquivável E2E')) {
+          await page.request.post(`${apiUrl}/api/projects/${project.id}/unarchive`)
+        }
+      }
+
+      await page.goto(`${webUrl}/projects`)
+      await createProject(page, 'Projeto Arquivável E2E', 'SIMPLE')
+
+      const archivedHeading = page.getByRole('heading', { name: 'Projeto Arquivável E2E', level: 3, exact: true })
+      const activeHeading = page.getByRole('heading', { name: 'Projeto E2E', level: 3, exact: true })
+
+      // Busca local filtra os cards pelo nome, sem recarregar a página.
+      const busca = page.getByLabel('Buscar projetos')
+      await busca.fill('Arquivável')
+      await archivedHeading.waitFor({ timeout: 15_000 })
+      assert((await activeHeading.count()) === 0, 'busca não removeu os projetos sem correspondência')
+      await busca.fill('')
+      await activeHeading.waitFor({ timeout: 15_000 })
+
+      // Arquivar pela listagem remove o card e o mantém em "Ver arquivados".
+      // O card do projeto também é `role="button"`; `exact` isola o botão interno.
+      await page.getByRole('button', { name: 'Arquivar projeto Projeto Arquivável E2E', exact: true }).click()
+      await page.getByRole('button', { name: 'Arquivar', exact: true }).click()
+      await archivedHeading.waitFor({ state: 'detached', timeout: 15_000 })
+
+      await page.getByRole('button', { name: 'Ver arquivados', exact: true }).click()
+      await archivedHeading.waitFor({ timeout: 15_000 })
+      assert((await activeHeading.count()) === 0, 'visualização de arquivados misturou projetos ativos')
+
+      // Restaurar devolve o projeto à listagem padrão.
+      await page.getByRole('button', { name: 'Restaurar projeto Projeto Arquivável E2E', exact: true }).click()
+      await page.getByRole('button', { name: 'Ver ativos', exact: true }).click()
+      await archivedHeading.waitFor({ timeout: 15_000 })
+    },
+  },
+  {
     name: 'membro sem permissão é bloqueado pela API de administração',
     run: async page => {
       await logout(page)

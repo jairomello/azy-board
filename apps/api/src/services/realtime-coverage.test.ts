@@ -51,6 +51,9 @@ const EXEMPT = [
   "projectsRouter.delete('/:id/members/:userId',",
   "projectsRouter.delete('/:id',",
   "projectsRouter.patch('/:id',",
+  // [T81] Arquivar/restaurar alteram só metadados do projeto; evento no adapter.
+  "projectsRouter.post('/:id/archive',",
+  "projectsRouter.post('/:id/unarchive',",
   "sprintsRouter.post('/',",
   "sprintsRouter.patch('/:sprintId',",
   "attachmentsRouter.post('/',",

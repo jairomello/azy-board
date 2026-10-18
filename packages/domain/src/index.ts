@@ -39,6 +39,7 @@ export type NodeType = 'module' | 'EPIC' | 'STORY' | 'TASK' | 'BUG'
 export interface ProjectVisibility {
   isRestricted: boolean
   isHidden: boolean
+  isArchived: boolean
 }
 export type ActivityActorType = 'HUMAN' | 'AGENT' | 'SYSTEM' | 'UNKNOWN'
 export type ActivitySource = 'REST' | 'MCP' | 'SYSTEM' | 'UNKNOWN'

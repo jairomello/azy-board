@@ -67,7 +67,7 @@ projectsRouter.post('/', async (c) => {
   const isHidden = body.isHidden ?? false
 
   // [TENANT] Impede nomes duplicados somente dentro do tenant autenticado.
-  const duplicate = (await persistence.projects.listProjects(userPersistenceContext(ctx), { includeHidden: true }))
+  const duplicate = (await persistence.projects.listProjects(userPersistenceContext(ctx), { includeHidden: true, includeArchived: true }))
     .some(project => project.name === normalizedName)
   if (duplicate) return c.json({ error: 'Já existe um projeto com esse nome' }, 409)
 
@@ -109,9 +109,11 @@ projectsRouter.get('/', async (c) => {
 
   // Projetos ocultos só são retornados com includeHidden=true — qualquer outro valor é ignorado.
   const includeHidden = c.req.query('includeHidden') === 'true'
+  // Arquivados são um recorte independente: por padrão ficam fora da listagem.
+  const includeArchived = c.req.query('includeArchived') === 'true'
 
   const persistenceContext = userPersistenceContext(ctx)
-  const tenantProjects = await persistence.projects.listProjects(persistenceContext, { includeHidden })
+  const tenantProjects = await persistence.projects.listProjects(persistenceContext, { includeHidden, includeArchived })
   const candidates = await Promise.all(tenantProjects.map(async project => ({
     project,
     membership: await persistence.projects.getMembership(persistenceContext, project.id, ctx.userId),
@@ -200,6 +202,36 @@ projectsRouter.delete('/:id', requireRole('ADMIN'), async (c) => {
   return c.json({ ok: true })
 })
 
+// POST /projects/:id/archive — arquivar projeto sem excluir dados (apenas ADMIN)
+projectsRouter.post('/:id/archive', requireRole('ADMIN'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const id = c.req.param('id')!
+
+  // [TENANT] Só arquiva projeto visível no tenant/membership do chamador.
+  const persistenceContext = userPersistenceContext(ctx)
+  const project = await persistence.projects.getProject(persistenceContext, id)
+  if (!project) return c.json({ error: 'Projeto não encontrado' }, 404)
+
+  const updated = await persistence.projects.updateProject(persistenceContext, id, { isArchived: true })
+  if (!updated) return c.json({ error: 'Projeto não encontrado' }, 404)
+  return c.json({ ...updated, role: c.get('memberRole') })
+})
+
+// POST /projects/:id/unarchive — restaurar projeto arquivado (apenas ADMIN)
+projectsRouter.post('/:id/unarchive', requireRole('ADMIN'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const id = c.req.param('id')!
+
+  // [TENANT] Só restaura projeto visível no tenant/membership do chamador.
+  const persistenceContext = userPersistenceContext(ctx)
+  const project = await persistence.projects.getProject(persistenceContext, id)
+  if (!project) return c.json({ error: 'Projeto não encontrado' }, 404)
+
+  const updated = await persistence.projects.updateProject(persistenceContext, id, { isArchived: false })
+  if (!updated) return c.json({ error: 'Projeto não encontrado' }, 404)
+  return c.json({ ...updated, role: c.get('memberRole') })
+})
+
 // GET /projects/:id — detalhe do projeto com gerente
 projectsRouter.get('/:id', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
@@ -253,7 +285,7 @@ projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
     if (!normalizedName) return c.json({ error: 'O nome do projeto é obrigatório' }, 400)
 
     // [TENANT] Verifica duplicidade somente entre projetos do tenant atual.
-    const duplicate = (await persistence.projects.listProjects(projectContext, { includeHidden: true }))
+    const duplicate = (await persistence.projects.listProjects(projectContext, { includeHidden: true, includeArchived: true }))
       .find(project => project.name === normalizedName)
     if (duplicate && duplicate.id !== id) {
       return c.json({ error: 'Já existe um projeto com esse nome' }, 409)

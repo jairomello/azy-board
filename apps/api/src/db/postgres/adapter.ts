@@ -156,6 +156,7 @@ function mapProject(row: PgRow): ProjectRecord {
     managerUserId: row.manager_user_id as string | null,
     isRestricted: row.is_restricted as boolean,
     isHidden: row.is_hidden as boolean,
+    isArchived: row.is_archived as boolean,
     advancedChecklists: row.advanced_checklists as boolean,
     startDate: row.start_date as string | null,
     plannedEndDate: row.planned_end_date as string | null,
@@ -1343,23 +1344,24 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         const row = await q1('SELECT * FROM projects WHERE tenant_id = $1 AND id = $2', [context.tenantId, projectId])
         return row ? mapProject(row) : null
       },
-      async listProjects(context: PersistenceContext, options: { includeHidden: boolean }): Promise<ProjectRecord[]> {
-        const sql = options.includeHidden
-          ? 'SELECT * FROM projects WHERE tenant_id = $1'
-          : 'SELECT * FROM projects WHERE tenant_id = $1 AND is_hidden = false'
-        const rows = await q(sql, [context.tenantId])
+      async listProjects(context: PersistenceContext, options: { includeHidden: boolean; includeArchived?: boolean }): Promise<ProjectRecord[]> {
+        // [TENANT] Recorte de arquivados é exclusivo (visão ativos x visão arquivados);
+        // ocultos são um filtro independente, sempre no tenant do chamador.
+        const conditions = ['tenant_id = $1', `is_archived = ${options.includeArchived === true ? 'true' : 'false'}`]
+        if (!options.includeHidden) conditions.push('is_hidden = false')
+        const rows = await q(`SELECT * FROM projects WHERE ${conditions.join(' AND ')}`, [context.tenantId])
         return rows.map(mapProject)
       },
       async createProject(context: PersistenceContext, input: NewProjectRecord): Promise<ProjectRecord> {
         const id = generateId()
         const row = await q1(
-          `INSERT INTO projects (id, tenant_id, name, description, board_mode, simple_story_id, hide_modules, hide_epics, manager_user_id, is_restricted, is_hidden, advanced_checklists, start_date, planned_end_date, planned_points, planned_hours, scope, icon, color, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, now())
+          `INSERT INTO projects (id, tenant_id, name, description, board_mode, simple_story_id, hide_modules, hide_epics, manager_user_id, is_restricted, is_hidden, is_archived, advanced_checklists, start_date, planned_end_date, planned_points, planned_hours, scope, icon, color, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, now())
            RETURNING *`,
           [id, context.tenantId, input.name, input.description ?? null, input.boardMode,
            input.simpleStoryId ?? null, input.hideModules ?? false, input.hideEpics ?? false,
            input.managerUserId ?? context.actorUserId,
-           input.isRestricted ?? false, input.isHidden ?? false, input.advancedChecklists ?? false,
+           input.isRestricted ?? false, input.isHidden ?? false, input.isArchived ?? false, input.advancedChecklists ?? false,
            input.startDate ?? null, input.plannedEndDate ?? null, input.plannedPoints ?? null,
            input.plannedHours ?? null, input.scope ?? null, input.icon ?? null, input.color ?? null],
         )
@@ -1374,7 +1376,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           name: 'name', description: 'description', boardMode: 'board_mode',
           simpleStoryId: 'simple_story_id', managerUserId: 'manager_user_id',
           hideModules: 'hide_modules', hideEpics: 'hide_epics',
-          isRestricted: 'is_restricted', isHidden: 'is_hidden',
+          isRestricted: 'is_restricted', isHidden: 'is_hidden', isArchived: 'is_archived',
           advancedChecklists: 'advanced_checklists', startDate: 'start_date',
           plannedEndDate: 'planned_end_date', plannedPoints: 'planned_points',
           plannedHours: 'planned_hours', scope: 'scope',
@@ -3795,12 +3797,12 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           const projectInput = input.project
           const simpleStoryId = projectInput.boardMode === 'SIMPLE' ? generateId() : null
           await client.query(
-            `INSERT INTO projects (id, tenant_id, name, description, board_mode, simple_story_id, hide_modules, hide_epics, manager_user_id, is_restricted, is_hidden, advanced_checklists, start_date, planned_end_date, planned_points, planned_hours, scope, created_at)
-             VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+            `INSERT INTO projects (id, tenant_id, name, description, board_mode, simple_story_id, hide_modules, hide_epics, manager_user_id, is_restricted, is_hidden, is_archived, advanced_checklists, start_date, planned_end_date, planned_points, planned_hours, scope, created_at)
+             VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
             [projectId, context.tenantId, projectInput.name, projectInput.description ?? null, projectInput.boardMode,
              projectInput.hideModules ?? false, projectInput.hideEpics ?? false,
              projectInput.managerUserId ?? context.actorUserId, projectInput.isRestricted ?? false, projectInput.isHidden ?? false,
-             projectInput.advancedChecklists ?? false, projectInput.startDate ?? null, projectInput.plannedEndDate ?? null,
+             projectInput.isArchived ?? false, projectInput.advancedChecklists ?? false, projectInput.startDate ?? null, projectInput.plannedEndDate ?? null,
              projectInput.plannedPoints ?? null, projectInput.plannedHours ?? null, projectInput.scope ?? null, now],
           )
           await client.query(

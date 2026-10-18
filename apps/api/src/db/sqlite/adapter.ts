@@ -147,7 +147,7 @@ function mapProject(row: typeof projects.$inferSelect): ProjectRecord {
     id: row.id, tenantId: row.tenantId, name: row.name, description: row.description,
     boardMode: row.boardMode, simpleStoryId: row.simpleStoryId, managerUserId: row.managerUserId,
     hideModules: Boolean(row.hideModules), hideEpics: Boolean(row.hideEpics),
-    isRestricted: row.isRestricted, isHidden: row.isHidden, advancedChecklists: row.advancedChecklists,
+    isRestricted: row.isRestricted, isHidden: row.isHidden, isArchived: row.isArchived, advancedChecklists: row.advancedChecklists,
     startDate: row.startDate, plannedEndDate: row.plannedEndDate, plannedPoints: row.plannedPoints,
     plannedHours: row.plannedHours, scope: row.scope, icon: row.icon, color: row.color, createdAt: row.createdAt,
   }
@@ -755,17 +755,18 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return row ? mapProject(row) : null
       },
       async listProjects(context, options) {
-        const where = options.includeHidden
-          ? eq(projects.tenantId, context.tenantId)
-          : and(eq(projects.tenantId, context.tenantId), eq(projects.isHidden, false))
-        return (await database.select().from(projects).where(where)).map(mapProject)
+        // [TENANT] Recorte de arquivados é exclusivo (visão ativos x visão arquivados);
+        // ocultos são um filtro independente, sempre no tenant do chamador.
+        const filters = [eq(projects.tenantId, context.tenantId), eq(projects.isArchived, options.includeArchived === true)]
+        if (!options.includeHidden) filters.push(eq(projects.isHidden, false))
+        return (await database.select().from(projects).where(and(...filters))).map(mapProject)
       },
       async createProject(context, input) {
         const [row] = await database.insert(projects).values({
           id: generateId(), tenantId: context.tenantId, ...input,
           simpleStoryId: input.simpleStoryId ?? null, managerUserId: input.managerUserId ?? context.actorUserId,
           hideModules: input.hideModules ?? false, hideEpics: input.hideEpics ?? false,
-          isRestricted: input.isRestricted ?? false, isHidden: input.isHidden ?? false,
+          isRestricted: input.isRestricted ?? false, isHidden: input.isHidden ?? false, isArchived: input.isArchived ?? false,
           advancedChecklists: input.advancedChecklists ?? false, startDate: input.startDate ?? null,
           plannedEndDate: input.plannedEndDate ?? null, plannedPoints: input.plannedPoints ?? null,
           plannedHours: input.plannedHours ?? null, scope: input.scope ?? null,
@@ -780,7 +781,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
             ['name', 'name'], ['description', 'description'], ['boardMode', 'board_mode'],
             ['simpleStoryId', 'simple_story_id'], ['managerUserId', 'manager_user_id'],
             ['hideModules', 'hide_modules'], ['hideEpics', 'hide_epics'],
-            ['isRestricted', 'is_restricted'], ['isHidden', 'is_hidden'], ['advancedChecklists', 'advanced_checklists'],
+            ['isRestricted', 'is_restricted'], ['isHidden', 'is_hidden'], ['isArchived', 'is_archived'], ['advancedChecklists', 'advanced_checklists'],
             ['startDate', 'start_date'], ['plannedEndDate', 'planned_end_date'], ['plannedPoints', 'planned_points'],
             ['plannedHours', 'planned_hours'], ['scope', 'scope'], ['icon', 'icon'], ['color', 'color'],
           ]
@@ -792,12 +793,12 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           }
           if (!sets.length) return null
           const row = sqlite.query<never, Array<string | number | boolean | null>>(
-            `UPDATE projects SET ${sets.join(', ')} WHERE tenant_id = ? AND id = ? RETURNING id, tenant_id AS tenantId, name, description, board_mode AS boardMode, simple_story_id AS simpleStoryId, hide_modules AS hideModules, hide_epics AS hideEpics, manager_user_id AS managerUserId, is_restricted AS isRestricted, is_hidden AS isHidden, advanced_checklists AS advancedChecklists, start_date AS startDate, planned_end_date AS plannedEndDate, planned_points AS plannedPoints, planned_hours AS plannedHours, scope, icon, color, created_at AS createdAt`,
+            `UPDATE projects SET ${sets.join(', ')} WHERE tenant_id = ? AND id = ? RETURNING id, tenant_id AS tenantId, name, description, board_mode AS boardMode, simple_story_id AS simpleStoryId, hide_modules AS hideModules, hide_epics AS hideEpics, manager_user_id AS managerUserId, is_restricted AS isRestricted, is_hidden AS isHidden, is_archived AS isArchived, advanced_checklists AS advancedChecklists, start_date AS startDate, planned_end_date AS plannedEndDate, planned_points AS plannedPoints, planned_hours AS plannedHours, scope, icon, color, created_at AS createdAt`,
           ).get(...params, context.tenantId, projectId)
           if (!row) return null
           emitMetadataEvent(sqlite, context.tenantId, projectId, 'project')
           const mapped = mapProject(row)
-          return { ...mapped, isRestricted: Boolean(mapped.isRestricted), isHidden: Boolean(mapped.isHidden), advancedChecklists: Boolean(mapped.advancedChecklists) }
+          return { ...mapped, isRestricted: Boolean(mapped.isRestricted), isHidden: Boolean(mapped.isHidden), isArchived: Boolean(mapped.isArchived), advancedChecklists: Boolean(mapped.advancedChecklists) }
         })
       },
       async getMembership(context, projectId, userId) {

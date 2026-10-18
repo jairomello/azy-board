@@ -379,6 +379,13 @@
       "when": 1792224000000,
       "tag": "0053_dashboard_token_metrics",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1792300800000,
+      "tag": "0054_project-archive",
+      "breakpoints": true
     }
   ]
 }

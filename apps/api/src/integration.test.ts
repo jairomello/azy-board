@@ -1409,6 +1409,141 @@ describe('visibilidade de projetos', () => {
   })
 })
 
+describe('arquivamento de projetos (card T81)', () => {
+  let tenantId: string
+  let admin: { id: string; email: string }
+  let viewer: { id: string; email: string }
+
+  async function criarProjeto(
+    nome: string,
+    opcoes: { isHidden?: boolean } = {},
+  ) {
+    const id = generateId()
+    await db.insert(projects).values({
+      id,
+      // [TENANT] Projeto sempre preso ao tenant do teste.
+      tenantId,
+      name: nome,
+      description: null,
+      boardMode: 'HIERARCHICAL',
+      simpleStoryId: null,
+      managerUserId: null,
+      isRestricted: false,
+      isHidden: opcoes.isHidden ?? false,
+      createdAt: new Date().toISOString(),
+    })
+    return id
+  }
+
+  async function vincular(userId: string, projectId: string, role: 'ADMIN' | 'MEMBER' | 'VIEWER' = 'ADMIN') {
+    await db.insert(memberships).values({
+      id: generateId(),
+      // [TENANT] Membership presa ao tenant do teste.
+      tenantId,
+      userId,
+      projectId,
+      role,
+      createdAt: new Date().toISOString(),
+    })
+  }
+
+  async function listar(user: { id: string; email: string }, query = '') {
+    const response = await request(`/projects${query}`, await token(user.id, tenantId, user.email))
+    expect(response.status).toBe(200)
+    return response.json() as Promise<Array<{ id: string; name: string; isArchived: boolean; isHidden: boolean }>>
+  }
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Arquivamento', slug: `arch-${tenantId}`, createdAt: new Date().toISOString() })
+    admin = await createUser(tenantId, 'arch-admin@test.local', 'Admin Arch', 'ADMIN')
+    viewer = await createUser(tenantId, 'arch-viewer@test.local', 'Viewer Arch', 'TEAM_MEMBER')
+  })
+
+  test('arquivar remove da listagem padrão e restaurar devolve', async () => {
+    const projectId = await criarProjeto('Projeto arquivável')
+    await vincular(admin.id, projectId, 'ADMIN')
+
+    const arquivar = await request(`/projects/${projectId}/archive`, await token(admin.id, tenantId, admin.email), { method: 'POST' })
+    expect(arquivar.status).toBe(200)
+    expect(await arquivar.json() as { isArchived: boolean }).toMatchObject({ isArchived: true })
+
+    expect((await listar(admin)).some(p => p.id === projectId)).toBe(false)
+    const arquivados = await listar(admin, '?includeArchived=true')
+    expect(arquivados.find(p => p.id === projectId)?.isArchived).toBe(true)
+    // A visualização de arquivados não mistura projetos ativos.
+    expect(arquivados.every(p => p.isArchived)).toBe(true)
+
+    // O projeto continua acessível por URL: arquivar não exclui dados.
+    const detalhe = await request(`/projects/${projectId}`, await token(admin.id, tenantId, admin.email))
+    expect(detalhe.status).toBe(200)
+
+    const restaurar = await request(`/projects/${projectId}/unarchive`, await token(admin.id, tenantId, admin.email), { method: 'POST' })
+    expect(restaurar.status).toBe(200)
+    expect(await restaurar.json() as { isArchived: boolean }).toMatchObject({ isArchived: false })
+    expect((await listar(admin)).some(p => p.id === projectId)).toBe(true)
+  })
+
+  test('arquivado e oculto é independente de includeHidden', async () => {
+    const projectId = await criarProjeto('Arquivado e oculto', { isHidden: true })
+    await vincular(admin.id, projectId, 'ADMIN')
+    await request(`/projects/${projectId}/archive`, await token(admin.id, tenantId, admin.email), { method: 'POST' })
+
+    // Ocultação e arquivamento são filtros independentes: cada parâmetro libera só o seu recorte.
+    expect((await listar(admin, '?includeHidden=true')).some(p => p.id === projectId)).toBe(false)
+    expect((await listar(admin, '?includeArchived=true')).some(p => p.id === projectId)).toBe(false)
+    const arquivados = await listar(admin, '?includeArchived=true')
+    expect(arquivados.every(p => p.isArchived)).toBe(true)
+    expect((await listar(admin, '?includeHidden=true&includeArchived=true')).some(p => p.id === projectId)).toBe(true)
+    // O recorte de arquivados nunca mistura projetos ativos.
+    const ativos = await listar(admin)
+    expect(ativos.every(p => !p.isArchived)).toBe(true)
+    expect(ativos.some(p => p.id === projectId)).toBe(false)
+  })
+
+  test('valores inválidos de includeArchived são tratados como false', async () => {
+    const projectId = await criarProjeto('Arquivado inválido')
+    await vincular(admin.id, projectId, 'ADMIN')
+    await request(`/projects/${projectId}/archive`, await token(admin.id, tenantId, admin.email), { method: 'POST' })
+
+    for (const query of ['?includeArchived=1', '?includeArchived=', '?includeArchived=TRUE', '?includeArchived=false', '?includeArchived=yes']) {
+      expect((await listar(admin, query)).some(p => p.id === projectId)).toBe(false)
+    }
+  })
+
+  test('VIEWER não pode arquivar nem restaurar', async () => {
+    const projectId = await criarProjeto('Arquivar sem permissão')
+    await vincular(viewer.id, projectId, 'VIEWER')
+
+    const arquivar = await request(`/projects/${projectId}/archive`, await token(viewer.id, tenantId, viewer.email), { method: 'POST' })
+    expect(arquivar.status).toBe(403)
+    expect((await listar(viewer)).some(p => p.id === projectId)).toBe(true)
+  })
+
+  test('projeto de outro tenant não é revelado', async () => {
+    const outroTenant = generateId()
+    await db.insert(tenants).values({ id: outroTenant, name: 'Outro arch', slug: `arch-other-${outroTenant}`, createdAt: new Date().toISOString() })
+    const outroProjetoId = generateId()
+    await db.insert(projects).values({
+      id: outroProjetoId,
+      tenantId: outroTenant,
+      name: 'Projeto de outro tenant (arch)',
+      description: null,
+      boardMode: 'HIERARCHICAL',
+      simpleStoryId: null,
+      managerUserId: null,
+      isRestricted: false,
+      isHidden: false,
+      createdAt: new Date().toISOString(),
+    })
+
+    const resposta = await request(`/projects/${outroProjetoId}/archive`, await token(admin.id, tenantId, admin.email), { method: 'POST' })
+    expect(resposta.status).toBe(404)
+    const persistido = await db.query.projects.findFirst({ where: eq(projects.id, outroProjetoId) })
+    expect(persistido?.isArchived).toBe(false)
+  })
+})
+
 describe('campos de planejamento do projeto', () => {
   let tenantId: string
   let _adminId: string

@@ -396,6 +396,8 @@ export const projects = sqliteTable('projects', {
   // [TENANT] Oculto: o projeto sai das listagens por padrão e só volta com includeHidden=true,
   // também resolvido dentro do tenant do chamador.
   isHidden: integer('is_hidden', { mode: 'boolean' }).notNull().default(false),
+  // [TENANT] Estado compartilhado de arquivamento, sempre consultado no tenant do projeto.
+  isArchived: integer('is_archived', { mode: 'boolean' }).notNull().default(false),
   // [TENANT] Habilita data, responsável e descrição nos itens de checklist do projeto.
   // Padrão false (checklist simples); desligar preserva os valores já gravados.
   advancedChecklists: integer('advanced_checklists', { mode: 'boolean' }).notNull().default(false),

@@ -22,6 +22,7 @@ interface ProjectRow {
   manager_user_id: string | null
   is_restricted: boolean
   is_hidden: boolean
+  is_archived: boolean
   advanced_checklists: boolean
   start_date: string | null
   planned_end_date: string | null
@@ -38,7 +39,7 @@ function mapProject(row: ProjectRow): ProjectRecord {
     id: row.id, tenantId: row.tenant_id, name: row.name, description: row.description,
     boardMode: row.board_mode, simpleStoryId: row.simple_story_id, managerUserId: row.manager_user_id,
     hideModules: Boolean(row.hide_modules), hideEpics: Boolean(row.hide_epics),
-    isRestricted: row.is_restricted, isHidden: row.is_hidden, advancedChecklists: row.advanced_checklists,
+    isRestricted: row.is_restricted, isHidden: row.is_hidden, isArchived: row.is_archived, advancedChecklists: row.advanced_checklists,
     startDate: row.start_date, plannedEndDate: row.planned_end_date, plannedPoints: row.planned_points,
     plannedHours: row.planned_hours, scope: row.scope, icon: row.icon, color: row.color, createdAt: row.created_at,
   }
@@ -63,7 +64,7 @@ function findOrCreateStory(database: Database, tenantId: string, projectId: stri
 const projectPatchColumns = {
   name: 'name', description: 'description', managerUserId: 'manager_user_id',
   hideModules: 'hide_modules', hideEpics: 'hide_epics',
-  isRestricted: 'is_restricted', isHidden: 'is_hidden', advancedChecklists: 'advanced_checklists',
+  isRestricted: 'is_restricted', isHidden: 'is_hidden', isArchived: 'is_archived', advancedChecklists: 'advanced_checklists',
   startDate: 'start_date', plannedEndDate: 'planned_end_date', plannedPoints: 'planned_points',
   plannedHours: 'planned_hours', scope: 'scope', icon: 'icon', color: 'color',
 } as const
@@ -99,6 +100,7 @@ export function createSqliteProjectUnitOfWork(database: Database) {
         managerUserId: projectInput.managerUserId ?? context.actorUserId,
         isRestricted: projectInput.isRestricted ?? false,
         isHidden: projectInput.isHidden ?? false,
+        isArchived: false,
         advancedChecklists: projectInput.advancedChecklists ?? false,
         startDate: projectInput.startDate ?? null,
         plannedEndDate: projectInput.plannedEndDate ?? null,

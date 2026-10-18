@@ -125,6 +125,7 @@ export interface ProjectRecord {
   managerUserId: string | null
   isRestricted: boolean
   isHidden: boolean
+  isArchived: boolean
   advancedChecklists: boolean
   startDate: string | null
   plannedEndDate: string | null

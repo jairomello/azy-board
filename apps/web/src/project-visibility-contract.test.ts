@@ -40,7 +40,7 @@ describe('contrato de UI da visibilidade de projetos', () => {
 
   test('listagem pede includeHidden somente quando a preferência está ligada', async () => {
     const text = await source('./pages/ProjectsPage.tsx')
-    contains(text, "showHiddenProjects ? '/projects?includeHidden=true' : '/projects'")
+    contains(text, "if (showHiddenProjects) listParams.set('includeHidden', 'true')")
     contains(text, 'const { user, showHiddenProjects } = useAuth()')
     contains(text, "showHiddenProjects ? 'withHidden' : 'default'")
   })

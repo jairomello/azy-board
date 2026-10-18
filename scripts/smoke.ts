@@ -171,6 +171,25 @@ const reverseCrossTenant = await call(webUrl, `/api/projects/${projectId}`, { co
 equal(reverseCrossTenant.status, 404, 'segundo tenant leu projeto de outro tenant')
 console.log('OK isolamento entre tenants nos dois sentidos')
 
+// change archive-projects: arquivamento reversível de projetos pela listagem.
+const archivedProjectId = await createProject(adminCookie, `Smoke arquivável ${crypto.randomUUID()}`)
+await expectStatus(webUrl, `/api/projects/${archivedProjectId}/members`, 201, {
+  method: 'POST', cookie: adminCookie, body: { email: viewerEmail, role: 'VIEWER' },
+})
+const viewerArchive = await call(webUrl, `/api/projects/${archivedProjectId}/archive`, { method: 'POST', cookie: viewerCookie })
+equal(viewerArchive.status, 403, 'VIEWER conseguiu arquivar projeto')
+
+await expectStatus(webUrl, `/api/projects/${archivedProjectId}/archive`, 200, { method: 'POST', cookie: adminCookie })
+const activeProjects = await json<Array<{ id: string }>>(await expectStatus(webUrl, '/api/projects', 200, { cookie: adminCookie }))
+assert(!activeProjects.some(project => project.id === archivedProjectId), 'projeto arquivado continuou na listagem padrão')
+const archivedProjects = await json<Array<{ id: string; isArchived: boolean }>>(await expectStatus(webUrl, '/api/projects?includeArchived=true', 200, { cookie: adminCookie }))
+assert(archivedProjects.some(project => project.id === archivedProjectId && project.isArchived), 'projeto arquivado não apareceu em includeArchived=true')
+
+await expectStatus(webUrl, `/api/projects/${archivedProjectId}/unarchive`, 200, { method: 'POST', cookie: adminCookie })
+const restoredProjects = await json<Array<{ id: string }>>(await expectStatus(webUrl, '/api/projects', 200, { cookie: adminCookie }))
+assert(restoredProjects.some(project => project.id === archivedProjectId), 'projeto restaurado não voltou à listagem padrão')
+console.log('OK arquivamento/restauração de projeto, filtro includeArchived e VIEWER sem permissão')
+
 await smokeAgent(adminCookie, projectId)
 console.log('OK jornada do Azy Agent com provider determinístico e worker do perfil')
 console.log(`Smoke de negócio concluído: perfil=${Bun.env.AZYBOARD_INSTALL_PROFILE ?? 'desconhecido'} web=${webUrl} api=${apiUrl}`)

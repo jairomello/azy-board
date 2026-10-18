@@ -204,7 +204,8 @@ export interface PlanningGapSnapshotPort {
 
 export interface ProjectTeamPort {
   getProject(context: PersistenceContext, projectId: string): Promise<ProjectRecord | null>
-  listProjects(context: PersistenceContext, options: { includeHidden: boolean }): Promise<ProjectRecord[]>
+  /** `includeArchived` é opcional e, quando ausente, exclui projetos arquivados. */
+  listProjects(context: PersistenceContext, options: { includeHidden: boolean; includeArchived?: boolean }): Promise<ProjectRecord[]>
   createProject(context: PersistenceContext, input: NewProjectRecord): Promise<ProjectRecord>
   updateProject(context: PersistenceContext, projectId: string, patch: ProjectPatch): Promise<ProjectRecord | null>
   getMembership(context: PersistenceContext, projectId: string, userId: string): Promise<MembershipRecord | null>

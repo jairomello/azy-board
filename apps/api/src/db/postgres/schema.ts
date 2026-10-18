@@ -162,6 +162,8 @@ export const projects = pgTable('projects', {
   managerUserId: text('manager_user_id'),
   isRestricted: boolean('is_restricted').notNull().default(false),
   isHidden: boolean('is_hidden').notNull().default(false),
+  // [TENANT] Estado compartilhado de arquivamento, sempre consultado no tenant do projeto.
+  isArchived: boolean('is_archived').notNull().default(false),
   advancedChecklists: boolean('advanced_checklists').notNull().default(false),
   startDate: text('start_date'),
   plannedEndDate: text('planned_end_date'),
