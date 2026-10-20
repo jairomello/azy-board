@@ -179,6 +179,36 @@ export interface ProjectMemberDetails {
   avatarUrl: string | null
 }
 
+/**
+ * change member-batch-add-grid — candidato a membro do projeto: usuário do tenant
+ * cruzado com a membership do projeto. `isMember` continua exposto para quem pede a
+ * listagem completa (sem `eligibleOnly`).
+ */
+export interface MemberCandidateRecord {
+  id: string
+  name: string
+  email: string
+  avatarUrl: string | null
+  globalGroup: GlobalGroup
+  isMember: boolean
+}
+
+/**
+ * Filtro e paginação da listagem de candidatos. A busca (`q`) e o recorte de elegíveis
+ * (`eligibleOnly`) são resolvidos na consulta, nunca cruzando listas inteiras em memória.
+ */
+export interface MemberCandidateQuery {
+  q?: string | null
+  eligibleOnly?: boolean
+  limit: number
+  offset: number
+}
+
+export interface MemberCandidatePage {
+  items: MemberCandidateRecord[]
+  total: number
+}
+
 export interface CostCenterRecord {
   id: string
   tenantId: string

@@ -7,10 +7,10 @@ import { hasGlobalGroup } from '../services/auth'
 import { hasKeyPermission } from '../services/authorization'
 import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
 import { confirmationSchema, createProjectSchema, parseJson, parseOptionalJson, updateProjectSchema } from '../validation'
-import { addProjectMemberSchema, costCenterSchema, deleteModuleSchema, moduleSchema, projectMemberSchema, squadMemberSchema, squadSchema, updateCostCenterSchema, updateModuleSchema, updateSquadSchema } from '../validation'
+import { addProjectMemberSchema, addProjectMembersBatchSchema, costCenterSchema, deleteModuleSchema, moduleSchema, projectMemberSchema, squadMemberSchema, squadSchema, updateCostCenterSchema, updateModuleSchema, updateSquadSchema } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
-import type { ProjectPatch } from '../persistence/ports'
+import type { NewProjectMembership, ProjectPatch } from '../persistence/ports'
 import { COMMAND_NAMESPACES } from '../persistence/idempotency'
 import { runMetadataMutation } from '../services/metadataIdempotency'
 import { logger } from '../services/logger'
@@ -575,25 +575,42 @@ projectsRouter.get('/:id/members', requireRole('VIEWER'), async (c) => {
 })
 
 // GET /projects/:id/member-candidates — usuários do tenant como candidatos a membro.
-// Serve ao seletor das configurações: a lista de membros é um recorte desta lista.
+// Serve à grade das configurações: página + busca no servidor + recorte de elegíveis.
+// `eligibleOnly` omite quem já tem membership (a grade pede assim); sem ele, o item
+// continua trazendo `isMember` para chamadores que querem a listagem completa.
 projectsRouter.get('/:id/member-candidates', requireRole('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('id')!
 
+  const page = Math.max(1, Number.parseInt(c.req.query('page') ?? '1', 10) || 1)
+  const limit = Math.min(100, Math.max(1, Number.parseInt(c.req.query('limit') ?? '50', 10) || 50))
+  const q = c.req.query('q') ?? ''
+  const eligibleOnly = c.req.query('eligibleOnly') === 'true'
+  let offset = (page - 1) * limit
+  const cursor = c.req.query('cursor')
+  if (cursor) {
+    try {
+      const decoded = Buffer.from(cursor, 'base64url').toString()
+      if (!/^\d+$/.test(decoded)) throw new Error('cursor inválido')
+      offset = Number.parseInt(decoded, 10)
+    } catch {
+      return c.json({ error: 'Cursor inválido', code: 'INVALID_CURSOR', retryable: false }, 400)
+    }
+  }
+
   // [TENANT] Usuários e memberships são lidos com tenant_id do contexto autenticado;
   // nenhum usuário de outro tenant é exposto nem considerado como membro.
-  const [users, members] = await Promise.all([
-    persistence.identity.listUsers(userPersistenceContext(ctx)),
-    persistence.projects.listProjectMembers(userPersistenceContext(ctx), projectId),
-  ])
-  const memberIds = new Set(members.map(member => member.userId))
+  const result = await persistence.projects.listMemberCandidates(userPersistenceContext(ctx), projectId, {
+    q, eligibleOnly, limit, offset,
+  })
 
-  return c.json(users
-    .map(user => ({
-      id: user.id, name: user.name, email: user.email, avatarUrl: user.avatarUrl,
-      globalGroup: user.globalGroup, isMember: memberIds.has(user.id),
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')))
+  const end = offset + result.items.length
+  const hasMore = end < result.total
+  return c.json({
+    data: result.items,
+    page, limit, total: result.total, hasMore,
+    nextCursor: hasMore ? Buffer.from(String(end)).toString('base64url') : null,
+  })
 })
 
 // GET /projects/:id/squads — listar squads com contagem de membros
@@ -706,6 +723,54 @@ projectsRouter.post('/:id/members', requireRole('ADMIN'), async (c) => {
   })
 
   return c.json({ ok: true, user }, 201)
+})
+
+// POST /projects/:id/members/batch — adiciona vários membros de uma vez.
+// A grade de membros confirma a seleção inteira em uma única chamada: o resultado volta
+// por item (criados / já membros / inválidos) para a UI explicar o que aconteceu sem
+// abortar o lote por causa de uma pessoa. Os vínculos válidos entram em uma transação.
+projectsRouter.post('/:id/members/batch', requireRole('ADMIN'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const projectId = c.req.param('id')!
+  const parsed = await parseJson(c, addProjectMembersBatchSchema)
+  if (!parsed.ok) return parsed.response
+  const projectContext = userPersistenceContext(ctx)
+
+  // [TENANT] Só usuários do tenant ativo podem virar membros: ids de outro tenant são
+  // reportados como inválidos e nunca criam vínculo.
+  const [tenantUsers, squads, currentMembers] = await Promise.all([
+    persistence.identity.listUsers(projectContext),
+    persistence.projects.listSquads(projectContext, projectId),
+    persistence.projects.listProjectMembers(projectContext, projectId),
+  ])
+  const knownUserIds = new Set(tenantUsers.map(user => user.id))
+  const knownSquadIds = new Set(squads.map(squad => squad.id))
+  const memberIds = new Set(currentMembers.map(member => member.userId))
+
+  const invalid: Array<{ userId: string; reason: 'USER_NOT_IN_TENANT' | 'SQUAD_NOT_IN_PROJECT' }> = []
+  const skipped: Array<{ userId: string; reason: 'ALREADY_MEMBER' }> = []
+  const pending: NewProjectMembership[] = []
+  for (const entry of parsed.data.members) {
+    if (!knownUserIds.has(entry.userId)) {
+      invalid.push({ userId: entry.userId, reason: 'USER_NOT_IN_TENANT' })
+      continue
+    }
+    if (entry.squadId && !knownSquadIds.has(entry.squadId)) {
+      invalid.push({ userId: entry.userId, reason: 'SQUAD_NOT_IN_PROJECT' })
+      continue
+    }
+    // Duplicata na própria requisição e membership já existente contam como já membro.
+    if (memberIds.has(entry.userId)) {
+      skipped.push({ userId: entry.userId, reason: 'ALREADY_MEMBER' })
+      continue
+    }
+    memberIds.add(entry.userId)
+    pending.push({ userId: entry.userId, role: entry.role, squadId: entry.squadId ?? null })
+  }
+
+  const created = await persistence.projects.addProjectMembers(projectContext, projectId, pending)
+
+  return c.json({ ok: true, created, skipped, invalid })
 })
 
 // DELETE /projects/:id/members/:userId — remover membro do projeto

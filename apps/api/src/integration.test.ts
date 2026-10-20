@@ -3491,9 +3491,16 @@ describe('candidatos a membro do projeto', () => {
   let otherTenantProjectId: string
 
   interface Candidate { id: string; name: string; email: string; avatarUrl: string | null; globalGroup: string; isMember: boolean }
+  interface CandidatePage { data: Candidate[]; page: number; limit: number; total: number; hasMore: boolean; nextCursor: string | null }
 
-  async function candidates(session: string, id = projectId) {
-    return request(`/projects/${id}/member-candidates`, session)
+  async function candidates(session: string, id = projectId, query = '') {
+    return request(`/projects/${id}/member-candidates${query}`, session)
+  }
+
+  async function candidatesPage(session: string, query = '') {
+    const response = await candidates(session, projectId, query)
+    expect(response.status).toBe(200)
+    return await response.json() as CandidatePage
   }
 
   beforeAll(async () => {
@@ -3527,25 +3534,76 @@ describe('candidatos a membro do projeto', () => {
   })
 
   test('administrador do projeto recebe os usuários do tenant com isMember', async () => {
-    const response = await candidates(adminToken)
-    expect(response.status).toBe(200)
-    const body = await response.json() as Candidate[]
+    const page = await candidatesPage(adminToken)
+
+    expect(page.page).toBe(1)
+    expect(page.limit).toBe(50)
+    expect(page.total).toBe(3)
+    expect(page.hasMore).toBe(false)
+    expect(page.nextCursor).toBeNull()
 
     // O membro adicionado no setup vem sinalizado; quem não tem membership, não.
-    expect(body.find(item => item.id === member.id)).toMatchObject({ isMember: true, email: member.email, globalGroup: 'TEAM_MEMBER' })
-    expect(body.find(item => item.id === manager.id)).toMatchObject({ isMember: false, globalGroup: 'MANAGER' })
+    expect(page.data.find(item => item.id === member.id)).toMatchObject({ isMember: true, email: member.email, globalGroup: 'TEAM_MEMBER' })
+    expect(page.data.find(item => item.id === manager.id)).toMatchObject({ isMember: false, globalGroup: 'MANAGER' })
     // O criador do projeto entra como membro, então também vem sinalizado.
-    expect(body.find(item => item.id === admin.id)).toMatchObject({ isMember: true, globalGroup: 'ADMIN' })
+    expect(page.data.find(item => item.id === admin.id)).toMatchObject({ isMember: true, globalGroup: 'ADMIN' })
 
-    // O seletor depende de ordem estável por nome.
-    expect(body.map(item => item.name)).toEqual([...body.map(item => item.name)].sort((a, b) => a.localeCompare(b, 'pt-BR')))
-    for (const item of body) expect(item).toHaveProperty('avatarUrl')
+    // O seletor depende de ordem estável por nome (pt-BR) entre as páginas.
+    expect(page.data.map(item => item.name)).toEqual([...page.data.map(item => item.name)].sort((a, b) => a.localeCompare(b, 'pt-BR')))
+    for (const item of page.data) expect(item).toHaveProperty('avatarUrl')
+  })
+
+  test('pagina por cursor mantendo a ordem entre as páginas', async () => {
+    const first = await candidatesPage(adminToken, '?limit=1')
+    expect(first.data).toHaveLength(1)
+    expect(first.total).toBe(3)
+    expect(first.hasMore).toBe(true)
+    expect(first.nextCursor).not.toBeNull()
+
+    const second = await candidatesPage(adminToken, `?limit=1&cursor=${encodeURIComponent(first.nextCursor!)}`)
+    expect(second.data).toHaveLength(1)
+    expect(second.page).toBe(1)
+    expect(second.total).toBe(3)
+    expect(second.hasMore).toBe(true)
+
+    const third = await candidatesPage(adminToken, `?limit=1&cursor=${encodeURIComponent(second.nextCursor!)}`)
+    expect(third.data).toHaveLength(1)
+    expect(third.hasMore).toBe(false)
+    expect(third.nextCursor).toBeNull()
+
+    const all = await candidatesPage(adminToken)
+    expect([...first.data, ...second.data, ...third.data]).toEqual(all.data)
+  })
+
+  test('cursor inválido é rejeitado', async () => {
+    const response = await candidates(adminToken, projectId, '?cursor=nao-e-offset')
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: 'INVALID_CURSOR' } })
+  })
+
+  test('busca por nome ou e-mail filtra no servidor', async () => {
+    const byEmail = await candidatesPage(adminToken, '?q=cand-manager')
+    expect(byEmail.data.map(item => item.id)).toEqual([manager.id])
+    expect(byEmail.total).toBe(1)
+
+    const byName = await candidatesPage(adminToken, '?q=Gerente')
+    expect(byName.data.map(item => item.id)).toEqual([manager.id])
+
+    const withoutMatch = await candidatesPage(adminToken, '?q=ninguem-com-esse-nome')
+    expect(withoutMatch.data).toEqual([])
+    expect(withoutMatch.total).toBe(0)
+  })
+
+  test('eligibleOnly omite quem já é membro', async () => {
+    const page = await candidatesPage(adminToken, '?eligibleOnly=true')
+    expect(page.data.map(item => item.id)).toEqual([manager.id])
+    expect(page.total).toBe(1)
   })
 
   test('não expõe usuários de outro tenant', async () => {
-    const body = await (await candidates(adminToken)).json() as Candidate[]
-    expect(body.some(item => item.email === otherTenantUser.email)).toBe(false)
-    expect(body.some(item => item.id === otherTenantUser.id)).toBe(false)
+    const body = await candidatesPage(adminToken)
+    expect(body.data.some(item => item.email === otherTenantUser.email)).toBe(false)
+    expect(body.data.some(item => item.id === otherTenantUser.id)).toBe(false)
   })
 
   test('membro de equipe não lista candidatos', async () => {
@@ -3636,6 +3694,143 @@ describe('adição de membro por identificador', () => {
   test('e-mail de outro tenant não é encontrado', async () => {
     const response = await addMember({ email: otherTenantUser.email, role: 'MEMBER' })
     expect(response.status).toBe(404)
+  })
+})
+
+describe('adição de membros em lote', () => {
+  let tenantId: string
+  let otherTenantId: string
+  let admin: { id: string; email: string }
+  let member: { id: string; email: string }
+  let first: { id: string; email: string }
+  let second: { id: string; email: string }
+  let otherTenantUser: { id: string; email: string }
+  let adminToken: string
+  let memberToken: string
+  let projectId: string
+  let squadId: string
+
+  interface BatchResult {
+    ok: boolean
+    created: string[]
+    skipped: Array<{ userId: string; reason: string }>
+    invalid: Array<{ userId: string; reason: string }>
+  }
+
+  async function addMembers(body: Record<string, unknown>, session = adminToken) {
+    return request(`/projects/${projectId}/members/batch`, session, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    })
+  }
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    otherTenantId = generateId()
+    await db.insert(tenants).values([
+      { id: tenantId, name: 'LoteMembros', slug: `lote-${tenantId}`, createdAt: new Date().toISOString() },
+      { id: otherTenantId, name: 'LoteMembros Outro', slug: `lote-out-${otherTenantId}`, createdAt: new Date().toISOString() },
+    ])
+    admin = await createUser(tenantId, 'lote-admin@test.local', 'Admin Lote', 'ADMIN')
+    member = await createUser(tenantId, 'lote-member@test.local', 'Membro Lote', 'TEAM_MEMBER')
+    first = await createUser(tenantId, 'lote-first@test.local', 'Primeiro Lote', 'TEAM_MEMBER')
+    second = await createUser(tenantId, 'lote-second@test.local', 'Segundo Lote', 'TEAM_MEMBER')
+    otherTenantUser = await createUser(otherTenantId, 'lote-outro@test.local', 'Outro Tenant', 'TEAM_MEMBER')
+    adminToken = await token(admin.id, tenantId, admin.email)
+    memberToken = await token(member.id, tenantId, member.email)
+
+    const created = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Projeto Lote', boardMode: 'HIERARCHICAL' }),
+    })
+    projectId = (await created.json() as { id: string }).id
+    const squad = await request(`/projects/${projectId}/squads`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Squad Lote' }),
+    })
+    squadId = (await squad.json() as { id: string }).id
+  })
+
+  test('cria vários usuários válidos na mesma requisição', async () => {
+    const response = await addMembers({ members: [
+      { userId: first.id, role: 'MEMBER', squadId },
+      { userId: second.id, role: 'VIEWER' },
+    ] })
+    expect(response.status).toBe(200)
+    const body = await response.json() as BatchResult
+    expect(body).toMatchObject({ ok: true, created: [first.id, second.id], skipped: [], invalid: [] })
+
+    const members = await (await request(`/projects/${projectId}/members`, adminToken)).json() as Array<{ userId: string; role: string; squadId: string | null }>
+    expect(members.find(item => item.userId === first.id)).toMatchObject({ role: 'MEMBER', squadId })
+    expect(members.find(item => item.userId === second.id)).toMatchObject({ role: 'VIEWER', squadId: null })
+  })
+
+  test('usuário já membro entra em skipped sem duplicar vínculo', async () => {
+    await request(`/projects/${projectId}/members`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: member.id, role: 'VIEWER' }),
+    })
+    const before = (await (await request(`/projects/${projectId}/members`, adminToken)).json() as unknown[]).length
+
+    const response = await addMembers({ members: [
+      { userId: member.id, role: 'ADMIN' },
+      { userId: member.id, role: 'ADMIN' },
+    ] })
+    expect(response.status).toBe(200)
+    const body = await response.json() as BatchResult
+    expect(body.created).toEqual([])
+    // Resultado por entrada: a repetição na própria requisição também volta como já membro.
+    expect(body.skipped).toEqual([
+      { userId: member.id, reason: 'ALREADY_MEMBER' },
+      { userId: member.id, reason: 'ALREADY_MEMBER' },
+    ])
+    expect(body.invalid).toEqual([])
+
+    const members = await (await request(`/projects/${projectId}/members`, adminToken)).json() as Array<{ userId: string; role: string }>
+    expect(members).toHaveLength(before)
+    expect(members.find(item => item.userId === member.id)?.role).toBe('VIEWER')
+  })
+
+  test('usuário de outro tenant é inválido e não cria membership', async () => {
+    const response = await addMembers({ members: [{ userId: otherTenantUser.id, role: 'MEMBER' }] })
+    expect(response.status).toBe(200)
+    const body = await response.json() as BatchResult
+    expect(body.created).toEqual([])
+    expect(body.invalid).toEqual([{ userId: otherTenantUser.id, reason: 'USER_NOT_IN_TENANT' }])
+
+    const members = await (await request(`/projects/${projectId}/members`, adminToken)).json() as Array<{ userId: string }>
+    expect(members.some(item => item.userId === otherTenantUser.id)).toBe(false)
+  })
+
+  test('squad de outro projeto é inválido e não cria membership', async () => {
+    const otherProject = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Projeto Squad Alheio', boardMode: 'HIERARCHICAL' }),
+    })
+    const otherProjectId = (await otherProject.json() as { id: string }).id
+    const foreignSquad = await request(`/projects/${otherProjectId}/squads`, adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Squad Externo' }),
+    })
+    const foreignSquadId = (await foreignSquad.json() as { id: string }).id
+
+    const outsider = await createUser(tenantId, 'lote-squad@test.local', 'Alvo Squad Alheio', 'TEAM_MEMBER')
+    const response = await addMembers({ members: [{ userId: outsider.id, role: 'MEMBER', squadId: foreignSquadId }] })
+    expect(response.status).toBe(200)
+    const body = await response.json() as BatchResult
+    expect(body.created).toEqual([])
+    expect(body.invalid).toEqual([{ userId: outsider.id, reason: 'SQUAD_NOT_IN_PROJECT' }])
+
+    const members = await (await request(`/projects/${projectId}/members`, adminToken)).json() as Array<{ userId: string }>
+    expect(members.some(item => item.userId === outsider.id)).toBe(false)
+  })
+
+  test('rejeita lista vazia e papel inválido', async () => {
+    const empty = await addMembers({ members: [] })
+    expect(empty.status).toBe(400)
+
+    const invalidRole = await addMembers({ members: [{ userId: first.id, role: 'OWNER' }] })
+    expect(invalidRole.status).toBe(400)
+  })
+
+  test('quem não administra o projeto não adiciona em lote', async () => {
+    const response = await addMembers({ members: [{ userId: otherTenantUser.id, role: 'MEMBER' }] }, memberToken)
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ error: { code: 'FORBIDDEN' } })
   })
 })
 

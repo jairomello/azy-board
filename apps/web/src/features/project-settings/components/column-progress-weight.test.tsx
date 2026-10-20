@@ -21,12 +21,11 @@ function baseProps(overrides: Record<string, unknown> = {}) {
     columns: baseColumns(),
     members: [], squads: [], costCenters: [], manager: null,
     isAdmin: true,
-    memberCandidates: [], memberCandidatesLoading: false, memberCandidatesError: null,
     openSections: new Set(['columns']), onToggleSection: () => {},
     onCreateColumn: async () => {}, onRenameColumn: async () => {}, onDeleteColumn: async () => {},
     onUpdateColumnWeight: async () => {},
     onCreateSquad: async () => {}, onRenameSquad: async () => {}, onDeleteSquad: async () => {},
-    onAddMember: async () => {}, onEditMember: async () => {}, onRemoveMember: async () => {},
+    onAddMembers: async () => ({ ok: true, created: [], skipped: [], invalid: [] }), onEditMember: async () => {}, onRemoveMember: async () => {},
     onCreateCostCenter: async () => {}, onEditCostCenter: async () => {}, onDeleteCostCenter: async () => {},
     ...overrides,
   }

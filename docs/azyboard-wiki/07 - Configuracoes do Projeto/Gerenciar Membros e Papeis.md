@@ -24,13 +24,18 @@ O papel vale para aquele projeto. Uma pessoa pode ser administradora em um proje
 
 ## Adicionar um membro
 
-1. Selecione **Adicionar membro**.
-2. Busque a pessoa pelo nome ou pelo e-mail e escolha-a na lista de usuários.
-3. Escolha o papel inicial.
-4. Se desejar, escolha um squad.
-5. Confirme em **Confirmar**.
+1. Selecione **Adicionar membro**. Abre uma grade com as pessoas que ainda não participam do projeto, com as colunas **Nome**, **E-mail**, **Squad** e **Papel**.
+2. Digite parte do nome ou do e-mail no campo de busca para reduzir a lista. A filtragem é rápida e consulta o ambiente organizacional inteiro, mesmo em empresas com milhares de pessoas.
+3. Marque o **checkbox** à esquerda de cada pessoa que deseja incluir. É possível marcar várias de uma vez.
+4. Ajuste **papel** e **squad** na própria linha, se necessário: cada pessoa pode entrar com valores diferentes.
+5. Se a lista for longa, use **Carregar mais** (ou role a grade até o fim) para ver as próximas pessoas.
+6. Confirme em **Confirmar** — todas as pessoas marcadas entram de uma só vez.
 
-A lista apresenta os usuários do mesmo ambiente organizacional. Quem já participa do projeto aparece marcado como **Já é membro** e não pode ser escolhido; se ninguém estiver disponível, o sistema informa e mantém a confirmação desabilitada.
+Os valores iniciais já vêm preenchidos: o papel é **Membro** para todas as pessoas e o squad é o único squad do projeto quando existe apenas um. Se o projeto não tiver squad, a pessoa entra sem squad; se tiver mais de um, o squad fica em branco para você escolher.
+
+Quem já participa do projeto não aparece na grade. Ao confirmar, o sistema informa quantas pessoas entraram, quantas já eram membros e quantas não puderam ser incluídas (por exemplo, um squad removido nesse meio-tempo); nesse caso a grade permanece aberta para você revisar.
+
+As pessoas marcadas continuam selecionadas mesmo se você mudar a busca ou carregar mais resultados — o contador acima dos botões mostra quantas estão selecionadas.
 
 ## Editar papel ou squad
 
@@ -84,7 +89,7 @@ Os membros disponíveis alimentam o campo **Responsável** dos itens. Ao adicion
 
 O acesso é representado por uma associação entre usuário, projeto e tenant. Ela armazena o papel e uma referência opcional ao squad.
 
-A lista de candidatos devolve os usuários do tenant ativo com a indicação de quem já possui associação ao projeto. Ao adicionar alguém, a associação é criada pelo identificador do usuário, sempre dentro do mesmo tenant, e a duplicidade é rejeitada. O envio por e-mail continua aceito para agentes e clientes existentes. Alterações e remoções são filtradas por tenant e projeto. O middleware compara o papel mínimo de cada rota segundo a ordem `VIEWER < MEMBER < ADMIN`.
+A lista de candidatos devolve os usuários do tenant ativo de forma paginada, com busca por nome ou e-mail resolvida no servidor; o recorte usado pela grade omite quem já possui associação ao projeto. A inclusão é feita em lote pelo identificador do usuário, sempre dentro do mesmo tenant, e devolve o resultado por entrada (criados, já membros e inválidos) — a duplicidade é descartada. O envio por e-mail continua aceito para agentes e clientes existentes. Alterações e remoções são filtradas por tenant e projeto. O middleware compara o papel mínimo de cada rota segundo a ordem `VIEWER < MEMBER < ADMIN`.
 
 </details>
 

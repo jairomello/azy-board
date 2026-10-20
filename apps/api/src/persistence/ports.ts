@@ -57,6 +57,8 @@ import type {
   ItemRecord,
   ItemWithRelationsRecord,
   MembershipRecord,
+  MemberCandidatePage,
+  MemberCandidateQuery,
   ModuleRecord,
   MutationContext,
   LoginAttemptCounts,
@@ -226,11 +228,18 @@ export interface ProjectTeamPort {
   updateSquad(context: PersistenceContext, projectId: string, squadId: string, name: string, expectedName?: string | null): Promise<boolean>
   deleteSquad(context: PersistenceContext, projectId: string, squadId: string): Promise<boolean>
   addProjectMember(context: PersistenceContext, projectId: string, input: NewProjectMembership): Promise<MembershipRecord>
+  // change member-batch-add-grid — adição em lote em uma única transação: cria todas as
+  // entradas válidas e devolve os `userId` efetivamente criados, na ordem recebida.
+  // Entradas repetidas já existentes são ignoradas pelo chamador antes da chamada.
+  addProjectMembers(context: PersistenceContext, projectId: string, inputs: NewProjectMembership[]): Promise<string[]>
   updateProjectMember(context: PersistenceContext, projectId: string, userId: string, patch: ProjectMembershipPatch): Promise<boolean>
   removeProjectMember(context: PersistenceContext, projectId: string, userId: string): Promise<boolean>
   addSquadMember(context: PersistenceContext, projectId: string, squadId: string, input: NewProjectMembership): Promise<MembershipRecord>
   removeSquadMember(context: PersistenceContext, projectId: string, squadId: string, userId: string): Promise<boolean>
   listProjectMembers(context: PersistenceContext, projectId: string): Promise<ProjectMemberDetails[]>
+  // change member-batch-add-grid — candidatos a membro paginados e filtráveis no banco,
+  // escopados por (tenant_id, project_id). `eligibleOnly` omite quem já tem membership.
+  listMemberCandidates(context: PersistenceContext, projectId: string, query: MemberCandidateQuery): Promise<MemberCandidatePage>
 }
 
 export interface WorkItemPort {

@@ -1,6 +1,19 @@
 import { describe, expect, test } from 'bun:test'
-import { canAccessProjectSettings, filterMemberCandidates, memberCandidateState, runDeleteMutation, runSettingsMutation, updateSettingsField } from './model/behavior'
-import type { MemberCandidate, ProjectSettingsData } from './model/types'
+import {
+  batchSummaryMessage,
+  canAccessProjectSettings,
+  defaultSquadId,
+  memberGridState,
+  runDeleteMutation,
+  runSettingsMutation,
+  selectedMemberCount,
+  selectionFromRow,
+  selectionPayload,
+  toggleSelection,
+  updateRowSelection,
+  updateSettingsField,
+} from './model/behavior'
+import type { MemberBatchResult, MemberSelectionMap, ProjectSettingsData, Squad } from './model/types'
 
 const data: ProjectSettingsData = {
   projectName: 'Projeto', manager: null, managerUserId: '', boardMode: 'HIERARCHICAL',
@@ -65,40 +78,76 @@ describe('comportamentos observáveis das seções de Settings', () => {
   })
 })
 
-describe('seletor de membros a partir dos usuários do tenant', () => {
-  const candidates: MemberCandidate[] = [
-    { id: 'u1', name: 'Ana Souza', email: 'ana@empresa.com', avatarUrl: null, globalGroup: 'TEAM_MEMBER', isMember: false },
-    { id: 'u2', name: 'Bruno Lima', email: 'bruno@empresa.com', avatarUrl: null, globalGroup: 'MANAGER', isMember: true },
-    { id: 'u3', name: 'Carla Dias', email: 'carla@outro.com', avatarUrl: null, globalGroup: 'ADMIN', isMember: false },
-  ]
+describe('grade de adição de membros em lote', () => {
+  const squads: Squad[] = [{ id: 's1', name: 'Squad Alfa', memberCount: 0 }]
+  const manySquads: Squad[] = [...squads, { id: 's2', name: 'Squad Beta', memberCount: 0 }]
 
-  test('filtra por nome sem diferenciar maiúsculas', () => {
-    expect(filterMemberCandidates(candidates, 'ana').map(item => item.id)).toEqual(['u1'])
-    expect(filterMemberCandidates(candidates, 'BRUNO').map(item => item.id)).toEqual(['u2'])
+  test('squad pré-definido depende da quantidade de squads do projeto', () => {
+    expect(defaultSquadId([])).toBe('')
+    expect(defaultSquadId(squads)).toBe('s1')
+    expect(defaultSquadId(manySquads)).toBe('')
   })
 
-  test('filtra por e-mail', () => {
-    expect(filterMemberCandidates(candidates, 'outro.com').map(item => item.id)).toEqual(['u3'])
-    expect(filterMemberCandidates(candidates, 'empresa.com').map(item => item.id)).toEqual(['u1', 'u2'])
+  test('linha nova começa como MEMBER e sem marcação', () => {
+    expect(selectionFromRow('s1')).toEqual({ selected: false, role: 'MEMBER', squadId: 's1' })
   })
 
-  test('termo vazio mantém a lista completa e sem correspondência fica vazia', () => {
-    expect(filterMemberCandidates(candidates, '   ').map(item => item.id)).toEqual(['u1', 'u2', 'u3'])
-    expect(filterMemberCandidates(candidates, 'inexistente')).toEqual([])
+  test('alterna a marcação preservando as demais linhas', () => {
+    let selection: MemberSelectionMap = {}
+    selection = toggleSelection(selection, 'u1', 's1')
+    selection = toggleSelection(selection, 'u2', 's1')
+    expect(selectedMemberCount(selection)).toBe(2)
+
+    selection = toggleSelection(selection, 'u1', 's1')
+    expect(selectedMemberCount(selection)).toBe(1)
+    expect(selection.u1).toMatchObject({ selected: false, role: 'MEMBER', squadId: 's1' })
+    expect(selection.u2).toMatchObject({ selected: true })
   })
 
-  test('sinaliza quem já é membro sem removê-lo da lista', () => {
-    const visible = filterMemberCandidates(candidates, '')
-    expect(visible.find(item => item.id === 'u2')).toMatchObject({ isMember: true })
-    expect(visible.find(item => item.id === 'u1')).toMatchObject({ isMember: false })
+  test('papel e squad são por linha e não afetam as outras', () => {
+    let selection: MemberSelectionMap = {}
+    selection = toggleSelection(selection, 'u1', '')
+    selection = toggleSelection(selection, 'u2', '')
+    selection = updateRowSelection(selection, 'u1', { role: 'VIEWER', squadId: 's2' }, '')
+
+    expect(selectionPayload(selection)).toEqual([
+      { userId: 'u1', role: 'VIEWER', squadId: 's2' },
+      { userId: 'u2', role: 'MEMBER', squadId: null },
+    ])
   })
 
-  test('estado do seletor prioriza erro e distingue vazio de pronto', () => {
-    expect(memberCandidateState({ loading: false, hasError: true, visible: candidates })).toBe('error')
-    expect(memberCandidateState({ loading: true, hasError: false, visible: candidates })).toBe('loading')
-    expect(memberCandidateState({ loading: false, hasError: false, visible: candidates })).toBe('ready')
-    // Todos já são membros: nada selecionável.
-    expect(memberCandidateState({ loading: false, hasError: false, visible: candidates.filter(item => item.isMember) })).toBe('empty')
-    expect(memberCandidateState({ loading: false, hasError: false, visible: [] })).toBe('empty')
+  test('envia apenas as linhas marcadas, com squad vazio virando null', () => {
+    let selection: MemberSelectionMap = {}
+    selection = toggleSelection(selection, 'u1', '')
+    selection = toggleSelection(selection, 'u2', 's1')
+    selection = toggleSelection(selection, 'u2', 's1')
+
+    expect(selectedMemberCount(selection)).toBe(1)
+    expect(selectionPayload(selection)).toEqual([{ userId: 'u1', role: 'MEMBER', squadId: null }])
+    expect(selectionPayload({})).toEqual([])
+  })
+
+  test('estado da grade prioriza erro e distingue vazio de pronto', () => {
+    expect(memberGridState({ loading: false, hasError: true, hasRows: true })).toBe('error')
+    expect(memberGridState({ loading: true, hasError: false, hasRows: false })).toBe('loading')
+    expect(memberGridState({ loading: false, hasError: false, hasRows: true })).toBe('ready')
+    expect(memberGridState({ loading: false, hasError: false, hasRows: false })).toBe('empty')
+  })
+
+  test('resumo do lote omite as partes zeradas', () => {
+    const t = (key: string, options?: { count: number }) => `${key}:${options?.count ?? 0}`
+    const created: MemberBatchResult = { ok: true, created: ['u1', 'u2'], skipped: [], invalid: [] }
+    expect(batchSummaryMessage(created, t)).toBe('settings:memberBatchCreated:2')
+
+    const mixed: MemberBatchResult = {
+      ok: true, created: ['u1'],
+      skipped: [{ userId: 'u2', reason: 'ALREADY_MEMBER' }],
+      invalid: [{ userId: 'u3', reason: 'SQUAD_NOT_IN_PROJECT' }],
+    }
+    expect(batchSummaryMessage(mixed, t))
+      .toBe('settings:memberBatchCreated:1 settings:memberBatchSkipped:1 settings:memberBatchInvalid:1')
+
+    const empty: MemberBatchResult = { ok: true, created: [], skipped: [], invalid: [] }
+    expect(batchSummaryMessage(empty, t)).toBe('settings:memberBatchNothing:0')
   })
 })

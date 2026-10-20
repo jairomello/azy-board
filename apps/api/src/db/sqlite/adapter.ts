@@ -1,7 +1,8 @@
-import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
+import { and, asc, count, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts'
 import type { ItemDependencyType, ItemType } from '@azy-board/domain'
 import type { Database } from 'bun:sqlite'
+import { foldNameForSearch, likeContainsPattern, nameSortKeySql } from '../nameNormalization'
 import type {
   AttachmentRecord,
   ChecklistItemRecord,
@@ -18,6 +19,8 @@ import type {
   ItemRecord,
   ItemWithRelationsRecord,
   MembershipRecord,
+  MemberCandidatePage,
+  MemberCandidateQuery,
   DashboardHoursFilter,
   DashboardHoursAuthorRow,
   DashboardHoursRow,
@@ -1090,6 +1093,86 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           .leftJoin(squads, and(eq(squads.tenantId, memberships.tenantId), eq(squads.projectId, projectId), eq(squads.id, memberships.squadId)))
           .where(and(eq(memberships.tenantId, context.tenantId), eq(memberships.projectId, projectId)))
           .then(rows => rows satisfies ProjectMemberDetails[])
+      },
+      // change member-batch-add-grid — candidatos a membro paginados e filtráveis.
+      // [TENANT] Toda a leitura é escopada por (tenant_id, project_id) do contexto
+      // autenticado: nenhum usuário de outro tenant entra na contagem nem na página.
+      async listMemberCandidates(context, projectId, query: MemberCandidateQuery): Promise<MemberCandidatePage> {
+        const term = query.q?.trim() ?? ''
+        const conditions = [eq(users.tenantId, context.tenantId)]
+        if (term) {
+          // Busca por nome ou e-mail, dobrando acentos dos dois lados (ver
+          // db/nameNormalization): o LIKE do SQLite não é case-insensitive fora do ASCII,
+          // então `lower()` sozinho perderia "Álvaro" ao procurar por "alvaro".
+          const pattern = likeContainsPattern(foldNameForSearch(term))
+          conditions.push(or(
+            sql`${sql.raw(nameSortKeySql('users.name'))} LIKE ${pattern} ESCAPE '\\'`,
+            sql`lower(users.email) LIKE ${pattern} ESCAPE '\\'`,
+          )!)
+        }
+        if (query.eligibleOnly) conditions.push(isNull(memberships.id))
+        const where = and(...conditions)
+
+        const rows = await database.select({
+          id: users.id, name: users.name, email: users.email, avatarUrl: users.avatarUrl,
+          globalGroup: users.globalGroup, membershipId: memberships.id,
+        }).from(users)
+          .leftJoin(memberships, and(
+            eq(memberships.tenantId, users.tenantId),
+            eq(memberships.projectId, projectId),
+            eq(memberships.userId, users.id),
+          ))
+          .where(where)
+          .orderBy(sql.raw(nameSortKeySql('users.name')), asc(users.id))
+          .limit(query.limit)
+          .offset(query.offset)
+
+        const [totals] = await database.select({ total: count() }).from(users)
+          .leftJoin(memberships, and(
+            eq(memberships.tenantId, users.tenantId),
+            eq(memberships.projectId, projectId),
+            eq(memberships.userId, users.id),
+          ))
+          .where(where)
+
+        return {
+          items: rows.map(row => ({
+            id: row.id, name: row.name, email: row.email, avatarUrl: row.avatarUrl,
+            globalGroup: row.globalGroup, isMember: row.membershipId !== null,
+          })),
+          total: totals?.total ?? 0,
+        }
+      },
+      // change member-batch-add-grid — adição em lote em UMA transação: ou todas as
+      // entradas válidas entram, ou nenhuma. Os eventos de metadados saem uma única vez.
+      // [TENANT] Squad e membership são validados/gravados sempre com o tenant do contexto.
+      async addProjectMembers(context, projectId, inputs: NewProjectMembership[]): Promise<string[]> {
+        if (inputs.length === 0) return []
+        return runSqliteAtomic(sqlite, () => {
+          const now = new Date().toISOString()
+          const created: string[] = []
+          for (const input of inputs) {
+            const squadId = input.squadId ?? null
+            if (squadId) {
+              const squad = sqlite.query<{ id: string }, [string, string, string]>(
+                'SELECT id FROM squads WHERE tenant_id = ? AND project_id = ? AND id = ?',
+              ).get(context.tenantId, projectId, squadId)
+              if (!squad) throw new Error('SQUAD_NOT_IN_PROJECT')
+            }
+            const alreadyMember = sqlite.query<{ id: string }, [string, string, string]>(
+              'SELECT id FROM memberships WHERE tenant_id = ? AND project_id = ? AND user_id = ?',
+            ).get(context.tenantId, projectId, input.userId)
+            if (alreadyMember) continue
+            sqlite.query('INSERT INTO memberships (id, tenant_id, user_id, project_id, squad_id, role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+              .run(generateId(), context.tenantId, input.userId, projectId, squadId, input.role, now)
+            created.push(input.userId)
+          }
+          if (created.length > 0) {
+            emitMetadataEvent(sqlite, context.tenantId, projectId, 'members')
+            emitMetadataEvent(sqlite, context.tenantId, projectId, 'squads')
+          }
+          return created
+        })
       },
     },
     items: {

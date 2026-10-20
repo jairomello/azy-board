@@ -9,7 +9,6 @@ import type {
   CostCenter,
   Manager,
   Member,
-  MemberCandidate,
   Module,
   ProjectSettingsData,
   ProjectVersion,
@@ -23,8 +22,9 @@ import { canAccessProjectSettings, updateSettingsField } from '../model/behavior
 export type SettingsSectionName =
   | 'columns' | 'members' | 'squads' | 'modules' | 'versions' | 'costCenters' | 'sprints' | 'project'
 
-// Seções do cache de Settings. `memberCandidates` é derivada (usuários do tenant
-// cruzados com as memberships) e não chega por evento do servidor.
+// Seções do cache de Settings. `memberCandidates` não é carregada aqui: a grade de
+// adição de membros busca sob demanda no dialog (`useMemberCandidates`), mas a chave
+// continua neste namespace para que invalidar `members` alcance as páginas carregadas.
 export type SettingsQuerySection = SettingsSectionName | 'memberCandidates'
 
 const EMPTY_PROJECT: ProjectSettingsData = {
@@ -53,15 +53,9 @@ export function useProjectSettingsData(projectId: string | undefined) {
   const sprintsQuery = useQuery({ queryKey: key('sprints'), enabled: Boolean(projectId), queryFn: ({ signal }) => api.get<Sprint[]>(`/projects/${projectId}/sprints`, { signal }).catch(() => [] as Sprint[]) })
   const projectQuery = useQuery({ queryKey: key('project'), enabled: Boolean(projectId), queryFn: ({ signal }) => api.get<SettingsProject>(`/projects/${projectId}`, { signal }) })
 
-  // Quem administra o projeto é quem pode ver o seletor; a consulta de candidatos
-  // só é disparada nesse caso (a rota exige papel de administração no projeto).
+  // Quem administra o projeto é quem pode ver a grade de adição de membros.
   const currentMember = (membersQuery.data ?? []).find(member => member.userId === user?.id)
   const isAdmin = canAccessProjectSettings(user?.globalGroup) && (currentMember?.role === 'ADMIN' || ['MANAGER', 'ADMIN', 'ROOT'].includes(user?.globalGroup ?? ''))
-  const memberCandidatesQuery = useQuery({
-    queryKey: key('memberCandidates'),
-    enabled: Boolean(projectId) && isAdmin,
-    queryFn: ({ signal }) => api.get<MemberCandidate[]>(`/projects/${projectId}/member-candidates`, { signal }),
-  })
 
   const columns = columnsQuery.data ?? []
   const members = membersQuery.data ?? []
@@ -101,8 +95,8 @@ export function useProjectSettingsData(projectId: string | undefined) {
 
   // Padrão reconciliado: mutações pedem a invalidação da(s) seção(ões) afetada(s)
   // após o sucesso; o cache nunca é editado antes da resposta.
-  // Candidatos derivam de usuários + memberships, então invalidar `members`
-  // invalida `memberCandidates` junto.
+  // A grade de candidatos do dialog é um recorte dos usuários do tenant cruzado com as
+  // memberships, então invalidar `members` invalida também as páginas já carregadas.
   const invalidate = useCallback((...sections: SettingsSectionName[]) => {
     const targets = new Set<SettingsQuerySection>(sections.flatMap(section => section === 'members' ? [section, 'memberCandidates'] : [section]))
     const list = Array.from(targets)
@@ -139,9 +133,6 @@ export function useProjectSettingsData(projectId: string | undefined) {
      setIcon: (value: string | null) => setData(previous => updateSettingsField(previous, 'icon', value)),
      setColor: (value: string | null) => setData(previous => updateSettingsField(previous, 'color', value)),
     columns, members, squads, modules, versions, costCenters, sprints,
-    memberCandidates: memberCandidatesQuery.data ?? [],
-    memberCandidatesLoading: memberCandidatesQuery.isLoading,
-    memberCandidatesError: memberCandidatesQuery.error,
     invalidate, invalidateAll, applyProject,
     currentMember, isAdmin,
   }

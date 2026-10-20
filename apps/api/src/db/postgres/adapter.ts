@@ -10,6 +10,9 @@ import type {
   ItemDependencyWithTarget,
   ItemRecord,
   MembershipRecord,
+  MemberCandidatePage,
+  MemberCandidateQuery,
+  MemberCandidateRecord,
   PlanningGapQueryRequest,
   PlanningGapSnapshotRecord,
   StructureDuplicationResult,
@@ -100,6 +103,7 @@ import { fingerprintSource, validateDuplicationDestination, StructureDuplication
 import { fingerprintTransition } from '../../services/sprintTransition'
 import { buildPlanningGapSnapshot, planningGapPage, type PlanningGapCandidate } from '../../services/planningGaps'
 import { parseAncestorIds, touchedItemIds } from '../itemTouch'
+import { foldNameForSearch, likeContainsPattern, nameSortKeySql } from '../nameNormalization'
 
 // ---------------------------------------------------------------------------
 // Mapeamento de linhas SQL para records de domínio
@@ -1653,6 +1657,33 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           return true
         })
       },
+      async addProjectMembers(context: PersistenceContext, projectId: string, inputs: NewProjectMembership[]): Promise<string[]> {
+        if (inputs.length === 0) return []
+        return tx(async (client) => {
+          const created: string[] = []
+          for (const input of inputs) {
+            const squadId = input.squadId ?? null
+            if (squadId) {
+              const squad = await client.query('SELECT id FROM squads WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+                [context.tenantId, projectId, squadId])
+              if (!squad.rows[0]) throw new Error('SQUAD_NOT_IN_PROJECT')
+            }
+            const existing = await client.query('SELECT id FROM memberships WHERE tenant_id = $1 AND project_id = $2 AND user_id = $3',
+              [context.tenantId, projectId, input.userId])
+            if (existing.rows[0]) continue
+            await client.query(
+              'INSERT INTO memberships (id, tenant_id, user_id, project_id, squad_id, role, created_at) VALUES ($1, $2, $3, $4, $5, $6, now())',
+              [generateId(), context.tenantId, input.userId, projectId, squadId, input.role],
+            )
+            created.push(input.userId)
+          }
+          if (created.length > 0) {
+            await emitMetadataEventPg(client, context.tenantId, projectId, 'members')
+            await emitMetadataEventPg(client, context.tenantId, projectId, 'squads')
+          }
+          return created
+        })
+      },
       async listProjectMembers(context: PersistenceContext, projectId: string): Promise<ProjectMemberDetails[]> {
         const rows = await q(
           `SELECT m.user_id, m.role, m.squad_id, sq.name AS squad_name, u.name, u.email, u.avatar_url
@@ -1668,6 +1699,48 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           name: r.name as string, email: r.email as string,
           avatarUrl: r.avatar_url as string | null,
         }))
+      },
+      // change member-batch-add-grid — candidatos a membro paginados e filtráveis.
+      // [TENANT] Leitura escopada por (tenant_id, project_id): nenhum usuário de outro
+      // tenant entra na contagem nem na página.
+      async listMemberCandidates(context: PersistenceContext, projectId: string, query: MemberCandidateQuery): Promise<MemberCandidatePage> {
+        // O escopo do projeto fica só na condição do JOIN: em `WHERE`, `m.project_id = $2`
+        // descartaria quem não tem membership (NULL = $2 nunca é verdadeiro).
+        const conditions = ['u.tenant_id = $1']
+        const params: unknown[] = [context.tenantId, projectId]
+        let idx = 3
+        const term = query.q?.trim() ?? ''
+        if (term) {
+          // Mesma dobra de acentos do adapter SQLite (ver db/nameNormalization): mantém a
+          // busca idêntica nos dois drivers e preserva "Álvaro" ao procurar por "alvaro".
+          const pattern = likeContainsPattern(foldNameForSearch(term))
+          conditions.push(`(${nameSortKeySql('u.name')} LIKE $${idx} ESCAPE '\\' OR lower(u.email) LIKE $${idx} ESCAPE '\\')`)
+          params.push(pattern)
+          idx += 1
+        }
+        if (query.eligibleOnly) conditions.push('m.id IS NULL')
+        const where = conditions.join(' AND ')
+        const join = `FROM users u
+           LEFT JOIN memberships m ON m.tenant_id = u.tenant_id AND m.project_id = $2 AND m.user_id = u.id`
+
+        const rows = await q(
+          `SELECT u.id, u.name, u.email, u.avatar_url, u.global_group, m.id AS membership_id
+           ${join}
+           WHERE ${where}
+           ORDER BY ${nameSortKeySql('u.name')}, u.id
+           LIMIT $${idx} OFFSET $${idx + 1}`,
+          [...params, query.limit, query.offset],
+        )
+        const totals = await q1(`SELECT count(*)::int AS total ${join} WHERE ${where}`, params)
+
+        return {
+          items: rows.map(r => ({
+            id: r.id as string, name: r.name as string, email: r.email as string,
+            avatarUrl: r.avatar_url as string | null, globalGroup: r.global_group as MemberCandidateRecord['globalGroup'],
+            isMember: r.membership_id !== null,
+          })),
+          total: (totals?.total as number | undefined) ?? 0,
+        }
       },
     },
 

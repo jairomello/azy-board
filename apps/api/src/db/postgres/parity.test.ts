@@ -758,6 +758,118 @@ async function collapseFacts(ports: PersistencePorts, scope: PersistenceContext,
   }
 }
 
+// change member-batch-add-grid — semeia pessoas com acento e um membro já ativo para
+// comparar candidatos (busca/ordenação/paginação) e adição em lote entre os adapters.
+async function seedMemberCandidates(ports: PersistencePorts) {
+  const tenant = await ports.tenants.createTenant({ name: 'Membros', slug: `membros-${crypto.randomUUID()}` })
+  const ctx: PersistenceContext = { tenantId: tenant.id, actorUserId: null, actorKind: 'SYSTEM', globalGroup: 'ADMIN' }
+  const project = await ports.projects.createProject(ctx, { name: 'Membros', boardMode: 'SIMPLE' })
+  const squad = await ports.projects.createSquad(ctx, project.id, { name: 'Squad Alfa' })
+  const names = ['Zeca Prado', 'Álvaro Nunes', 'Bruno Lima', 'Érica Sá', 'Ana Souza']
+  const users = []
+  for (const name of names) {
+    users.push(await ports.identity.createUser(ctx, {
+      email: `${name.normalize('NFD').replace(/[^a-zA-Z]+/g, '.').toLowerCase()}@empresa.com`,
+      passwordHash: 'h', name, globalGroup: 'TEAM_MEMBER',
+    }))
+  }
+  await ports.projects.addProjectMember(ctx, project.id, { userId: users[0]!.id, role: 'MEMBER' })
+  return { ctx, project, squad, users, ana: users[4]!, bruno: users[2]! }
+}
+
+describe.skipIf(!runPostgres)('Paridade de candidatos a membro e adição em lote', () => {
+  test('busca, ordenação pt-BR e paginação são equivalentes entre adapters', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const sqliteSeed = await seedMemberCandidates(sqlite.ports)
+      const pgSeed = await seedMemberCandidates(pg.ports)
+
+      const page = (ports: PersistencePorts, seed: typeof sqliteSeed, query: { q?: string; eligibleOnly?: boolean; limit: number; offset: number }) =>
+        ports.projects.listMemberCandidates(seed.ctx, seed.project.id, query)
+
+      const [sqliteAll, pgAll] = await Promise.all([
+        page(sqlite.ports, sqliteSeed, { limit: 50, offset: 0 }),
+        page(pg.ports, pgSeed, { limit: 50, offset: 0 }),
+      ])
+      expect(sqliteAll.total).toBe(5)
+      expect(pgAll.total).toBe(5)
+      expect(sqliteAll.items.map(item => item.name)).toEqual(pgAll.items.map(item => item.name))
+      expect(sqliteAll.items.map(item => item.name))
+        .toEqual(['Álvaro Nunes', 'Ana Souza', 'Bruno Lima', 'Érica Sá', 'Zeca Prado'])
+
+      const [sqliteEligible, pgEligible] = await Promise.all([
+        page(sqlite.ports, sqliteSeed, { limit: 50, offset: 0, eligibleOnly: true }),
+        page(pg.ports, pgSeed, { limit: 50, offset: 0, eligibleOnly: true }),
+      ])
+      expect(sqliteEligible.total).toBe(4)
+      expect(pgEligible.total).toBe(4)
+      expect(sqliteEligible.items.some(item => item.isMember)).toBe(false)
+      expect(pgEligible.items.map(item => [item.name, item.isMember]))
+        .toEqual(sqliteEligible.items.map(item => [item.name, item.isMember]))
+
+      const [sqliteSearch, pgSearch] = await Promise.all([
+        page(sqlite.ports, sqliteSeed, { q: 'alvaro', limit: 50, offset: 0 }),
+        page(pg.ports, pgSeed, { q: 'alvaro', limit: 50, offset: 0 }),
+      ])
+      expect(sqliteSearch.items.map(item => item.name)).toEqual(['Álvaro Nunes'])
+      expect(pgSearch.items.map(item => item.name)).toEqual(['Álvaro Nunes'])
+
+      const [sqliteSecond, pgSecond] = await Promise.all([
+        page(sqlite.ports, sqliteSeed, { limit: 2, offset: 2 }),
+        page(pg.ports, pgSeed, { limit: 2, offset: 2 }),
+      ])
+      expect(sqliteSecond.items.map(item => item.name)).toEqual(pgSecond.items.map(item => item.name))
+      expect(sqliteSecond.total).toBe(5)
+      expect(pgSecond.total).toBe(5)
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+
+  test('adição em lote cria os mesmos vínculos e ignora quem já é membro nos dois adapters', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const sqliteSeed = await seedMemberCandidates(sqlite.ports)
+      const pgSeed = await seedMemberCandidates(pg.ports)
+
+      const run = (ports: PersistencePorts, seed: typeof sqliteSeed) => ports.projects.addProjectMembers(seed.ctx, seed.project.id, [
+        { userId: seed.users[0]!.id, role: 'ADMIN' },
+        { userId: seed.ana.id, role: 'MEMBER', squadId: seed.squad.id },
+        { userId: seed.bruno.id, role: 'VIEWER' },
+      ])
+
+      const [sqliteCreated, pgCreated] = await Promise.all([
+        run(sqlite.ports, sqliteSeed),
+        run(pg.ports, pgSeed),
+      ])
+      // O primeiro usuário já era membro (VIEWER do seed) e não é recriado.
+      expect(sqliteCreated).toEqual([sqliteSeed.ana.id, sqliteSeed.bruno.id])
+      expect(pgCreated).toEqual([pgSeed.ana.id, pgSeed.bruno.id])
+
+      const members = async (ports: PersistencePorts, seed: typeof sqliteSeed) =>
+        (await ports.projects.listProjectMembers(seed.ctx, seed.project.id))
+          .map(member => [member.name, member.role, member.squadName]).sort()
+
+      expect(await members(sqlite.ports, sqliteSeed)).toEqual(await members(pg.ports, pgSeed))
+
+      // Squad de outro projeto aborta o lote inteiro sem vínculo parcial.
+      const other = await pg.ports.projects.createProject(pgSeed.ctx, { name: 'Outro', boardMode: 'SIMPLE' })
+      const foreignSquad = await pg.ports.projects.createSquad(pgSeed.ctx, other.id, { name: 'Squad externo' })
+      await expect(pg.ports.projects.addProjectMembers(pgSeed.ctx, pgSeed.project.id, [
+        { userId: pgSeed.users[3]!.id, role: 'MEMBER' },
+        { userId: pgSeed.users[4]!.id, role: 'MEMBER', squadId: foreignSquad.id },
+      ])).rejects.toThrow('SQUAD_NOT_IN_PROJECT')
+      expect((await pg.ports.projects.listProjectMembers(pgSeed.ctx, pgSeed.project.id)).some(member => member.userId === pgSeed.users[3]!.id)).toBe(false)
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+})
+
 describe.skipIf(!runPostgres)('Paridade do recolhimento de níveis (T61)', () => {
   test('hideEpics recolhe a um épico por módulo de forma equivalente entre adapters', async () => {
     const sqlite = await setupSqlite()

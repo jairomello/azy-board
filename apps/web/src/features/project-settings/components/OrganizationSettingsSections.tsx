@@ -2,7 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import { Check, Network, Pencil, RotateCcw, Trash2, UserPlus, Users, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccordionSection } from '../../../components/AccordionSection'
-import type { Column, CostCenter, Manager, Member, MemberCandidate, Squad } from '../model/types'
+import type { Column, CostCenter, Manager, Member, MemberBatchEntry, MemberBatchResult, Squad } from '../model/types'
 import { resolveColumnProgressWeights, type ColumnBaseStatus } from '@azy-board/domain'
 import { MemberDialog } from './MemberDialog'
 
@@ -10,13 +10,12 @@ interface Props {
   projectId?: string
   columns: Column[]; members: Member[]; squads: Squad[]; costCenters: CostCenter[]; manager: Manager | null
   isAdmin: boolean; currentUserId?: string
-  memberCandidates: MemberCandidate[]; memberCandidatesLoading: boolean; memberCandidatesError: unknown
   openSections: Set<string>; onToggleSection: (id: string) => void
   onCreateColumn: (name: string, status: ColumnBaseStatus) => Promise<void>; onRenameColumn: (id: string, name: string) => Promise<void>
   onDeleteColumn: (column: Column, moveToColumnId: string) => Promise<void>
   onUpdateColumnWeight: (id: string, weight: number | null) => Promise<void>
   onCreateSquad: (name: string) => Promise<void>; onRenameSquad: (id: string, name: string) => Promise<void>; onDeleteSquad: (squad: Squad) => Promise<void>
-  onAddMember: (data: { userId: string; role: string; squadId: string }) => Promise<void>; onEditMember: (member: Member, role: string, squadId: string) => Promise<void>; onRemoveMember: (member: Member) => Promise<void>
+  onAddMembers: (members: MemberBatchEntry[]) => Promise<MemberBatchResult>; onEditMember: (member: Member, role: string, squadId: string) => Promise<void>; onRemoveMember: (member: Member) => Promise<void>
   onCreateCostCenter: (code: string, description: string) => Promise<void>; onEditCostCenter: (id: string, code: string, description: string) => Promise<void>; onDeleteCostCenter: (id: string) => Promise<void>
 }
 
@@ -115,7 +114,7 @@ export function OrganizationSettingsSections(props: Props) {
     {deleteColumn && <Confirm title={t('settings:deleteColumnTitle', { name: deleteColumn.name })} onCancel={() => setDeleteColumn(null)} onConfirm={() => { void props.onDeleteColumn(deleteColumn, moveTo); setDeleteColumn(null) }}>{props.columns.length > 1 && <select value={moveTo} onChange={e => setMoveTo(e.target.value)}>{props.columns.filter(item => item.id !== deleteColumn.id).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>}</Confirm>}
     {deleteSquad && <Confirm title={t('settings:deleteSquadTitle', { name: deleteSquad.name })} onCancel={() => setDeleteSquad(null)} onConfirm={() => { void props.onDeleteSquad(deleteSquad); setDeleteSquad(null) }}>{deleteSquad.memberCount > 0 && <p className="text-sm text-muted-foreground mb-4">{t('settings:squadMembersRemoved', { count: deleteSquad.memberCount })}</p>}</Confirm>}
     {removeMember && <Confirm title={t('settings:removeMemberTitle')} onCancel={() => setRemoveMember(null)} onConfirm={() => { void props.onRemoveMember(removeMember); setRemoveMember(null) }}><p className="text-sm text-muted-foreground mb-4">{t('settings:removeMemberDescription', { name: removeMember.name })}</p></Confirm>}
-    {memberDialog && <MemberDialog mode={memberDialog} member={member} squads={props.squads} candidates={props.memberCandidates} candidatesLoading={props.memberCandidatesLoading} candidatesError={props.memberCandidatesError} onCancel={() => setMemberDialog(null)} onAdd={props.onAddMember} onEdit={props.onEditMember} />}
+    {memberDialog && <MemberDialog mode={memberDialog} member={member} projectId={props.projectId} squads={props.squads} onCancel={() => setMemberDialog(null)} onAddMembers={props.onAddMembers} onEdit={props.onEditMember} />}
     {structure && <div className="fixed inset-0 z-50 flex items-center justify-center p-4"><div className="absolute inset-0 bg-black/50" onClick={() => setStructure(false)} /><div className="relative bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg p-6"><div className="flex justify-between mb-5"><h3 className="font-semibold"><Network className="inline w-4 h-4 mr-2" />{t('settings:projectStructure')}</h3><button onClick={() => setStructure(false)}><X className="w-4 h-4" /></button></div><p className="text-sm font-semibold mb-3">{props.manager?.name ?? t('settings:noManagerDefined')}</p>{props.squads.map(squad => <div key={squad.id} className="mb-3 pl-4 border-l-2"><p className="text-sm font-semibold">{squad.name}</p>{props.members.filter(item => item.squadId === squad.id).map(item => <p key={item.userId} className="text-xs py-1">{item.name} <span className="text-muted-foreground">({roleLabel(item.role, t)})</span></p>)}</div>)}</div></div>}
   </>
 }

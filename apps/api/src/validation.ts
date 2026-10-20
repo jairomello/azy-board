@@ -393,6 +393,16 @@ export const addProjectMemberSchema = z.object({
 }).strict().refine(body => Boolean(body.userId) !== Boolean(body.email), {
   message: 'Informe exatamente um entre userId e email',
 })
+// change member-batch-add-grid — adição em lote da grade de membros: uma lista de
+// entradas com papel e squad por pessoa, com teto por requisição para manter a
+// transação curta. Lista vazia é rejeitada (nada a fazer).
+export const addProjectMembersBatchSchema = z.object({
+  members: z.array(z.object({
+    userId: z.string().trim().min(1),
+    role: z.enum(['ADMIN', 'MEMBER', 'VIEWER']),
+    squadId: z.string().min(1).nullable().optional(),
+  }).strict()).min(1).max(200),
+}).strict()
 export const costCenterSchema = z.object({ code: z.string().trim().min(1).max(100), description: optionalText(2_000).nullable().optional() }).strict()
 export const updateCostCenterSchema = costCenterSchema.partial().extend({ expectedCode: z.string().trim().min(1).max(100).optional() }).strict()
 

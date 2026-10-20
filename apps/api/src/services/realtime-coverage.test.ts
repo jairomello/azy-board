@@ -48,6 +48,9 @@ const EXEMPT = [
   "projectsRouter.patch('/:id/squads/:squadId',",
   "projectsRouter.delete('/:id/squads/:squadId',",
   "projectsRouter.post('/:id/members',",
+  // change member-batch-add-grid — o lote grava memberships e emite `members`/`squads`
+  // dentro da mesma transação do adapter (outbox), como a adição individual.
+  "projectsRouter.post('/:id/members/batch',",
   "projectsRouter.delete('/:id/members/:userId',",
   "projectsRouter.delete('/:id',",
   "projectsRouter.patch('/:id',",
