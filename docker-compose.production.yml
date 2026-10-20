@@ -192,7 +192,7 @@ services:
 
   cloudflared:
     # Tag fixa: o compose de produção não usa tag flutuante (ver check:deploy-versions).
-    image: cloudflare/cloudflared:2026.10.0
+    image: cloudflare/cloudflared:2026.10.2
     restart: unless-stopped
     logging: *bounded-logging
     mem_limit: 48m
@@ -202,6 +202,12 @@ services:
       - run
       - --token
       - ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN obrigatório}
+      # O padrão é QUIC (UDP). Nesta VPS o caminho UDP até a borda da Cloudflare
+      # derruba sessões ("timeout: no recent network activity"), deixando conexões
+      # registradas mas degradadas: a borda passa a devolver 522/525 e a travar
+      # requisições de qualquer região. HTTP/2 sobre TCP/443 evita esse caminho.
+      - --protocol
+      - http2
     networks:
       - edge
     depends_on:

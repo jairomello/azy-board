@@ -85,6 +85,17 @@ prontidão: o proxy só sobe com o web saudável, e o túnel só sobe com o prox
 saudável. A imagem do `cloudflared` é fixada em versão concreta — tags flutuantes
 no compose de produção são reprovadas por `bun run check:deploy-versions`.
 
+O conector roda com `--protocol http2` (TCP/443) em vez do padrão QUIC (UDP).
+Nesta VPS o caminho UDP até a borda da Cloudflare derruba sessões de tempos em
+tempos (`accept stream listener error: timeout: no recent network activity`): as
+conexões continuam registradas, mas degradadas, e a borda passa a responder
+`522`/`525` ou a travar requisições de qualquer região — sem erro no log do
+conector e sem a sonda do deploy detectar, porque a falha é intermitente. A troca
+para HTTP/2 elimina esse caminho sem exigir mudança no painel da Cloudflare: o
+protocolo do trecho conector↔borda é decisão do próprio `cloudflared`. Para
+confirmar o protocolo em uso, o log traz `Registered tunnel connection … protocol=`
+e as métricas ficam em `http://cloudflared:20241/metrics`.
+
 ## Backup
 
 `/opt/azyboard/backups` é apenas staging local, não é backup contra perda da
