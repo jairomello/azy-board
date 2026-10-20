@@ -98,6 +98,34 @@ describe('BoardModals (DOM por papel/rótulo)', () => {
     expect(restaurados).toEqual(['arch-1'])
   })
 
+  test('criação de história abre a modal mesmo sem item de origem', async () => {
+    // Regressão: o toolbar envia a intenção de criação sem objeto (`story`
+    // indefinido) e a modal não abria por deduzir a abertura da presença dele.
+    render(<BoardModals {...baseProps} storyOpen />)
+
+    expect(await screen.findByPlaceholderText(t('storyTitle'))).toBeInTheDocument()
+  })
+
+  test('criação de épico abre a modal mesmo sem item de origem', async () => {
+    render(<BoardModals {...baseProps} epicOpen />)
+
+    expect(await screen.findByPlaceholderText(t('epicTitle'))).toBeInTheDocument()
+  })
+
+  test('sem sinal de abertura, as modais de história e épico não são renderizadas', () => {
+    render(<BoardModals {...baseProps} />)
+
+    expect(screen.queryByPlaceholderText(t('storyTitle'))).toBeNull()
+    expect(screen.queryByPlaceholderText(t('epicTitle'))).toBeNull()
+  })
+
+  test('sem sinal de abertura, as modais de história e épico não são renderizadas', () => {
+    render(<BoardModals {...baseProps} />)
+
+    expect(screen.queryByPlaceholderText(t('storyTitle'))).toBeNull()
+    expect(screen.queryByPlaceholderText(t('epicTitle'))).toBeNull()
+  })
+
   test('diálogo expõe role/aria e fecha com Escape', async () => {
     const user = userEvent.setup()
     let cancelamentos = 0

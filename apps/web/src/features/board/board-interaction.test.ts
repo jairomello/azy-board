@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { buildBoardItemCreatePayload, getPersistableColumnOrder, resolveBoardModalTarget, sortBoardItemsByPosition } from './model/interaction'
+import { buildBoardItemCreatePayload, getPersistableColumnOrder, resolveBoardModalTarget, resolveCreationIntent, sortBoardItemsByPosition } from './model/interaction'
 import { createBoardInteractionHandler } from './hooks/useBoardInteraction'
 import type { Column, ItemData } from './model/types'
 
@@ -19,6 +19,38 @@ describe('comportamentos observáveis da interação do Board', () => {
     expect(JSON.stringify(buildBoardItemCreatePayload('Nova task', 'todo', 'TASK', 'story-1'))).toBe(JSON.stringify({
       title: 'Nova task', columnId: 'todo', priority: 'MEDIUM', type: 'TASK', parentId: 'story-1',
     }))
+  })
+
+  test('criar épico/história pela toolbar resolve a intenção de abertura sem item', () => {
+    // Regressão: a modal só abria quando havia objeto; a criação chega sem item.
+    const epic = resolveCreationIntent('EPIC', {}, { columnId: 'todo', costCenterId: 'cc-1' })
+    expect(epic.kind).toBe('epic')
+    expect(epic.kind === 'epic' && epic.epic).toBeUndefined()
+
+    const story = resolveCreationIntent('STORY', {}, {})
+    expect(story.kind).toBe('story')
+    expect(story.kind === 'story' && story.story).toBeUndefined()
+
+    const scopedEpic = resolveCreationIntent('EPIC', { moduleId: 'mod-1' }, {})
+    expect(scopedEpic.kind === 'epic' ? scopedEpic.epic : null).toEqual({ title: '', moduleId: 'mod-1' })
+
+    const scopedStory = resolveCreationIntent('STORY', { parentId: 'epic-1' }, {})
+    expect(scopedStory.kind === 'story' ? scopedStory.story : null).toEqual({ title: '', epicId: 'epic-1' })
+  })
+
+  test('criar task/bug/dependência externa herda coluna, centro de custo e pai do contexto', () => {
+    const task = resolveCreationIntent('TASK', { parentId: 'story-1' }, { columnId: 'todo', costCenterId: 'cc-1' })
+    expect(task.kind).toBe('item')
+    expect(task.kind === 'item' ? task.item : null).toEqual({
+      type: 'TASK', columnId: 'todo', costCenterId: 'cc-1', parentId: 'story-1', title: 'Nova Task',
+    })
+
+    const bug = resolveCreationIntent('BUG', {}, { columnId: 'todo' })
+    expect(bug.kind === 'item' ? bug.item : null).toEqual({
+      type: 'BUG', columnId: 'todo', costCenterId: null, parentId: undefined, title: 'Novo Bug',
+    })
+
+    expect(resolveCreationIntent('MODULE', {}, {})).toEqual({ kind: 'module' })
   })
 
   test('monta a ordem completa da coluna sem incluir cards virtuais', () => {

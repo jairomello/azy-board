@@ -17,7 +17,7 @@ import { WorkLogPanel } from './WorkLogPanel'
 import { RichTextEditor } from './RichTextEditor'
 import { AttachmentsArea } from './AttachmentsArea'
 import { itemTypeMeta } from '../lib/itemTypeMeta'
-import { api } from '../lib/api'
+import { ApiError, api } from '../lib/api'
 import { resolveAppUrl } from '../lib/appUrl'
 import { formatTokens } from '../lib/formatters'
 import { useItemDescriptionDraft } from '../hooks/useItemDescriptionDraft'
@@ -143,6 +143,11 @@ interface Props {
   projectSprints?: ProjectSprint[]
   projectCostCenters?: CostCenter[]
   advancedChecklists?: boolean
+  /**
+   * Projeto hierárquico (EPIC → STORY → TASK): TASK/BUG/EXTERNAL exigem uma
+   * história pai. Sem isso o servidor rejeita a criação com HIERARCHY_REQUIRED.
+   */
+  hierarchical?: boolean
   onClose: () => void
   onSave: (itemId: string, changes: Partial<FullItemData>, tagIds: string[]) => Promise<void>
   onAddSubtask: (parentId: string, title: string, type: ItemType) => Promise<void>
@@ -167,6 +172,7 @@ export function ItemModal({
   projectSprints = [],
   projectCostCenters = [],
   advancedChecklists = false,
+  hierarchical = false,
   onClose,
   onSave,
   onAddSubtask,
@@ -245,6 +251,14 @@ export function ItemModal({
 
   // Resolução do papel do usuário atual no projeto
   const currentUserRole = members.find(m => m.userId === currentUserId)?.role ?? 'MEMBER'
+
+  // Em projeto hierárquico (EPIC → STORY → TASK) TASK/BUG/EXTERNAL só existem
+  // sob uma STORY; sem esse vínculo o servidor recusa a criação
+  // (HIERARCHY_REQUIRED). Bloquear o envio aqui evita o erro genérico que não
+  // dizia o que faltava para concluir a criação.
+  const isWorkCardType = type === 'TASK' || type === 'BUG' || type === 'EXTERNAL'
+  const requiresParentStory = hierarchical && isWorkCardType
+  const missingParentStory = requiresParentStory && item.id === '__new__' && !parentId
 
   // Carrega checklists ao abrir modal de item existente
   useEffect(() => {
@@ -367,6 +381,10 @@ export function ItemModal({
 
   async function handleSave() {
     if (saving) return
+    if (missingParentStory) {
+      setError(t('parentStoryRequired'))
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -392,8 +410,10 @@ export function ItemModal({
       }, selectedTags.map(t => t.id))
       commitDraft()
       onClose()
-    } catch {
-      setError(t('errorSave'))
+    } catch (error) {
+      // Mensagens de domínio da API (hierarquia, sprint fechada, código
+      // duplicado) são acionáveis; o texto genérico é apenas o último recurso.
+      setError(error instanceof ApiError && error.message ? error.message : t('errorSave'))
     } finally {
       setSaving(false)
     }
@@ -461,10 +481,11 @@ export function ItemModal({
               <main id={`item-area-${activeArea}`} role="tabpanel" aria-labelledby={`item-tab-${activeArea}`} className="min-w-0 space-y-4">
                 {activeArea === 'details' && <>
                   {!item.isLeaf && <div className="flex gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300"><Info className="mt-0.5 h-4 w-4 shrink-0" /><p className="text-xs leading-relaxed">{t('moveBlocked')}</p></div>}
+                  {missingParentStory && <div className="flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300"><Info className="mt-0.5 h-4 w-4 shrink-0" /><p className="text-xs leading-relaxed">{t('parentStoryRequired')}</p></div>}
                   <div className="rounded-lg border border-border bg-card p-4"><h3 className="mb-3 text-sm font-semibold">{t('descriptionLabel')}</h3>{draftRecovered && <div role="status" className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300"><p className="text-xs leading-relaxed">{t('drafts.descriptionRecovered')}</p><button type="button" onClick={discardDraft} className="shrink-0 rounded px-2 py-1 text-xs font-medium underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-primary">{t('drafts.discard')}</button></div>}<RichTextEditor key={item.id} content={description} onChange={setDescription} placeholder={t('richText.itemPlaceholder')} fieldLabel={t('richText.itemField')} minHeight="120px" /></div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     {property(t('itemTypeLabel'), <select value={type} onChange={e => setType(e.target.value as 'TASK' | 'BUG' | 'EXTERNAL')} className={fieldClass}>{TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}
-                    {epics.length > 0 && property(t('parentStory'), <StorySelector epics={epics} stories={stories} value={parentId} onChange={setParentId} onCreateStory={onCreateStory} />)}
+                    {(epics.length > 0 || requiresParentStory) && property(t('parentStory'), <StorySelector epics={epics} stories={stories} value={parentId} onChange={setParentId} onCreateStory={onCreateStory} />)}
                     {property(t('tagsLabel'), <TagSelector allTags={projectTags} selected={selectedTags} onSelect={setSelectedTags} onCreate={onCreateTag} onEdit={onEditTag} />)}
                     {projectCostCenters.length > 0 && property(t('costCenterLabel'), <select value={costCenterId} onChange={e => setCostCenterId(e.target.value)} className={fieldClass}><option value="">{t('none')}</option>{projectCostCenters.map(cc => <option key={cc.id} value={cc.id}>{cc.code}{cc.description ? ` — ${cc.description}` : ''}</option>)}</select>)}
                   </div>
@@ -486,7 +507,7 @@ export function ItemModal({
             </div>
           </div>
 
-          <footer className="flex shrink-0 flex-col-reverse gap-2 border-t border-border bg-card px-4 py-3 sm:flex-row sm:justify-end sm:px-6"><button type="button" onClick={_onBack ?? onClose} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-muted px-4 py-2 text-sm text-muted-foreground hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-primary"><X className="h-4 w-4" />{_onBack ? t('back') : t('cancel')}</button><button type="button" onClick={handleSave} disabled={saving || !title.trim()} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary"><Check className="h-4 w-4" />{saving ? t('saving') : t('saveChanges')}</button></footer>
+          <footer className="flex shrink-0 flex-col-reverse gap-2 border-t border-border bg-card px-4 py-3 sm:flex-row sm:justify-end sm:px-6"><button type="button" onClick={_onBack ?? onClose} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-muted px-4 py-2 text-sm text-muted-foreground hover:bg-muted/80 focus-visible:ring-2 focus-visible:ring-primary"><X className="h-4 w-4" />{_onBack ? t('back') : t('cancel')}</button><button type="button" onClick={handleSave} disabled={saving || !title.trim() || missingParentStory} className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-primary"><Check className="h-4 w-4" />{saving ? t('saving') : t('saveChanges')}</button></footer>
         </section>
       </div>
 

@@ -30,6 +30,7 @@ import {
   useSensors,
 } from '@dnd-kit/core'
 import { useQueryClient } from '@tanstack/react-query'
+import { Layers } from 'lucide-react'
 import { invalidateTree } from '../../lib/queryKeys'
 import { KanbanCard } from '../../components/KanbanCard'
 import type { EpicData } from '../../components/EpicModal'
@@ -56,7 +57,7 @@ import { useBoardItemEditing } from './hooks/useBoardItemEditing'
 import { useBoardItemModal } from './hooks/useBoardItemModal'
 import { useBoardAgentSession } from './hooks/useBoardAgentSession'
 import { useBoardFilterValidation } from './hooks/useBoardFilterValidation'
-import { resolveBoardModalTarget } from './model/interaction'
+import { resolveBoardModalTarget, resolveCreationIntent, type NewItemCreation } from './model/interaction'
 import { buildEpicGroups, groupEpicsByModule, selectBoardCards, selectOrphanCards, selectStoryVirtualCards } from './model/boardView'
 import type { ItemData } from './model/types'
 import { applyViewCommand, readPinnedResult, subscribeViewSession } from '../../lib/assistantViewStore'
@@ -117,7 +118,7 @@ export default function BoardPage() {
   const [storyModalData, setStoryModalData] = useState<{ story?: StoryData } | null>(null)
   const [epicModalData, setEpicModalData] = useState<{ epic?: EpicData } | null>(null)
   const [columnAddForms, setColumnAddForms] = useState<Record<string, boolean>>({})
-  const [newItemCreation, setNewItemCreation] = useState<{ type: 'TASK' | 'BUG' | 'EXTERNAL'; columnId?: string; costCenterId?: string | null; title?: string; parentId?: string } | null>(null)
+  const [newItemCreation, setNewItemCreation] = useState<NewItemCreation | null>(null)
   // Card T48/T49 — cronograma: recálculo explícito e destaque do caminho crítico.
   const [showCriticalPath, setShowCriticalPath] = useState(false)
   const [criticalIds, setCriticalIds] = useState<ReadonlySet<string>>(new Set())
@@ -404,26 +405,25 @@ export default function BoardPage() {
   )
 
   function openCreation(type: ItemType | 'MODULE', context: TreeActionContext = {}) {
-    if (type === 'MODULE') {
-      setModuleModalOpen(true)
-    } else if (type === 'EPIC') {
-      setEpicModalData({ epic: context.moduleId ? { title: '', moduleId: context.moduleId } : undefined })
-    } else if (type === 'STORY') {
-      setStoryModalData({ story: context.parentId ? { title: '', epicId: context.parentId } : undefined })
-    } else {
-      setNewItemCreation({
-        type,
-        columnId: columns[0]?.id,
-        costCenterId: projectCostCenters[0]?.id ?? null,
-        parentId: context.parentId,
-        title: type === 'TASK' ? 'Nova Task' : type === 'EXTERNAL' ? 'Nova Dep. Externa' : 'Novo Bug',
-      })
-    }
+    const intent = resolveCreationIntent(type, context, {
+      columnId: columns[0]?.id,
+      costCenterId: projectCostCenters[0]?.id ?? null,
+    })
+    if (intent.kind === 'module') setModuleModalOpen(true)
+    else if (intent.kind === 'epic') setEpicModalData({ epic: intent.epic })
+    else if (intent.kind === 'story') setStoryModalData({ story: intent.story })
+    else setNewItemCreation(intent.item)
   }
 
   const visibleModuleGroups = filters.moduleViewMode === 'tabs' && !hideModules
     ? moduleGroups.filter(group => group.module.id === activeModuleId)
     : moduleGroups
+
+  // Board sem nenhum item: projeto recém-criado, ainda sem épico/história/card.
+  // Sem isso o canvas fica em branco e o usuário não descobre por onde começar.
+  // Depende dos itens existentes, não dos filtros: um recorte vazio já tem o
+  // aviso próprio no cabeçalho de contexto.
+  const hasNoLanes = scopedAllItems.length === 0
 
   const activeFilterLabels = {
     filterLabel: tBoard('activeFilters'), module: tBoard('filterModule'), sprint: tBoard('filterSprint'), version: tBoard('filterVersion'),
@@ -588,6 +588,24 @@ export default function BoardPage() {
                 </div>
               )}
 
+                {hasNoLanes && (
+                  <div className="rounded-xl border border-dashed border-border bg-surface/60 px-6 py-10 text-center">
+                    <p className="text-sm font-semibold text-foreground">{tBoard('emptyBoardTitle')}</p>
+                    <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">{tBoard('emptyBoardHint')}</p>
+                    {!isSimpleBoard && (
+                      <div className="mt-4 flex flex-wrap justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openCreation('EPIC')}
+                          className="inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary"
+                        >
+                          <Layers className="h-3.5 w-3.5" />{tBoard('emptyBoardCreateEpic')}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <BoardLanes
                   simpleBoard={isSimpleBoard}
                   simpleStory={simpleStory}
@@ -651,7 +669,9 @@ export default function BoardPage() {
         item={itemForModal}
         newItem={newItemCreation}
         story={storyModalData?.story}
+        storyOpen={storyModalData !== null}
         epic={epicModalData?.epic}
+        epicOpen={epicModalData !== null}
         moduleOpen={moduleModalOpen}
         moduleName={newModuleName}
         moduleDescription={newModuleDescription}
@@ -668,6 +688,7 @@ export default function BoardPage() {
         sprints={sprints}
         costCenters={projectCostCenters}
         advancedChecklists={advancedChecklists}
+        hierarchical={!isSimpleBoard}
         onCloseItem={() => { setItemModalId(null); setNewItemCreation(null) }}
         onCloseStory={() => setStoryModalData(null)}
         onCloseEpic={() => setEpicModalData(null)}

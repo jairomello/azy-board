@@ -10,17 +10,11 @@ import type { FullItemData } from '../../../components/ItemModal'
 import type { StoryData } from '../../../components/StoryModal'
 import type { EpicData } from '../../../components/EpicModal'
 import type { Tag } from '../../../components/TagSelector'
-import { buildBoardItemCreatePayload } from '../model/interaction'
+import { buildBoardItemCreatePayload, type NewItemCreation } from '../model/interaction'
 import { runOptimisticMutation } from '../model/mutation'
 import { computeIsLeaf, upsertItem, type Column, type ItemData, type Module } from '../model/types'
 
-export interface NewItemCreation {
-  type: 'TASK' | 'BUG' | 'EXTERNAL'
-  columnId?: string
-  costCenterId?: string | null
-  title?: string
-  parentId?: string
-}
+export type { NewItemCreation }
 
 export interface BoardItemEditingOptions {
   projectId?: string

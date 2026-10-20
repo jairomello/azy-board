@@ -21,7 +21,11 @@ interface BoardModalsProps {
   item?: ItemData | FullItemData | null
   newItem?: { type: 'TASK' | 'BUG' | 'EXTERNAL'; columnId?: string; costCenterId?: string | null; parentId?: string; title?: string } | null
   story?: StoryData
+  /** Sinal explícito de abertura da StoryModal em criação (sem `story`). */
+  storyOpen?: boolean
   epic?: EpicData
+  /** Sinal explícito de abertura da EpicModal em criação (sem `epic`). */
+  epicOpen?: boolean
   moduleOpen: boolean
   moduleName: string
   moduleDescription: string
@@ -38,6 +42,8 @@ interface BoardModalsProps {
   sprints: Sprint[]
   costCenters: CostCenter[]
   advancedChecklists: boolean
+  /** Projeto hierárquico (EPIC → STORY → TASK): exige história pai em TASK/BUG. */
+  hierarchical?: boolean
   onCloseItem: () => void
   onCloseStory: () => void
   onCloseEpic: () => void
@@ -68,11 +74,17 @@ export function BoardModals(props: BoardModalsProps) {
     assigneeId: null, assignee: null, itemTags: [], taskTags: [], isLeaf: true, ancestryPath: '[]', itemSprints: [],
     columnId: props.newItem.columnId ?? null, costCenterId: props.newItem.costCenterId ?? null,
   })
+  // O sinal de abertura das modais de Épico/História é explícito: `story`/`epic`
+  // indefinido significa CRIAÇÃO (sem item pré-existente). Deduzir a abertura da
+  // presença do objeto impedia o botão "Criar → História/Épico" de abrir qualquer
+  // modal, pois a criação chega justamente sem objeto.
+  const storyOpen = props.storyOpen ?? props.story !== undefined
+  const epicOpen = props.epicOpen ?? props.epic !== undefined
   return <>
     <Suspense fallback={null}>
-      {item && <ItemModal item={item as FullItemData} projectId={props.projectId} epics={props.epics} stories={props.stories} projectTags={props.tags} members={props.members} currentUserId={props.userId} projectVersions={props.versions} projectSprints={props.sprints} projectCostCenters={props.costCenters} advancedChecklists={props.advancedChecklists} onClose={props.onCloseItem} onSave={props.newItem ? props.onCreate : props.onSaveItem} onAddSubtask={props.onAddSubtask} onCreateTag={props.onCreateTag} onEditTag={props.onEditTag} onCreateStory={props.onCreateStory} />}
-      {props.epic && <EpicModal projectId={props.projectId} modules={props.modules} epic={props.epic} projectVersions={props.versions} onOpenChild={props.onOpenChild} onSave={props.onSaveEpic} onClose={props.onCloseEpic} />}
-      {props.story !== undefined && <StoryModal projectId={props.projectId} epics={props.epics} story={props.story} projectVersions={props.versions} onOpenChild={props.onOpenChild} onSave={props.onSaveStory} onClose={props.onCloseStory} />}
+      {item && <ItemModal item={item as FullItemData} projectId={props.projectId} epics={props.epics} stories={props.stories} projectTags={props.tags} members={props.members} currentUserId={props.userId} projectVersions={props.versions} projectSprints={props.sprints} projectCostCenters={props.costCenters} advancedChecklists={props.advancedChecklists} hierarchical={props.hierarchical} onClose={props.onCloseItem} onSave={props.newItem ? props.onCreate : props.onSaveItem} onAddSubtask={props.onAddSubtask} onCreateTag={props.onCreateTag} onEditTag={props.onEditTag} onCreateStory={props.onCreateStory} />}
+      {epicOpen && <EpicModal projectId={props.projectId} modules={props.modules} epic={props.epic} projectVersions={props.versions} onOpenChild={props.onOpenChild} onSave={props.onSaveEpic} onClose={props.onCloseEpic} />}
+      {storyOpen && <StoryModal projectId={props.projectId} epics={props.epics} story={props.story} projectVersions={props.versions} onOpenChild={props.onOpenChild} onSave={props.onSaveStory} onClose={props.onCloseStory} />}
     </Suspense>
     {props.moduleOpen && <Dialog title={props.t('newModule')} closeLabel={props.t('close')} onClose={props.onCloseModule}><label className="text-xs font-medium text-muted-foreground" htmlFor="module-name">{props.t('moduleLabel')}</label><input id="module-name" autoFocus value={props.moduleName} onChange={event => props.onModuleNameChange(event.target.value)} className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg" placeholder={props.t('moduleNamePlaceholder')} /><label className="text-xs font-medium text-muted-foreground" htmlFor="module-description">{props.t('descriptionLabel')}</label><textarea id="module-description" value={props.moduleDescription} onChange={event => props.onModuleDescriptionChange(event.target.value)} rows={3} className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg" placeholder={props.t('moduleDescriptionPlaceholder')} /><div className="flex gap-2"><button onClick={props.onModuleCreate} disabled={!props.moduleName.trim()} className="flex-1 py-2 text-sm bg-primary text-primary-foreground rounded-lg disabled:opacity-50">{props.t('create')}</button><button onClick={props.onCloseModule} className="flex-1 py-2 text-sm border border-border rounded-lg">{props.t('cancel')}</button></div></Dialog>}
     {props.archiveConfirm && <Dialog title={props.t('archiveItem')} closeLabel={props.t('close')} onClose={props.onCloseArchive}><p className="text-sm text-muted-foreground">{props.t('archiveCascadeConfirmation', { count: props.archiveConfirm.childrenCount })}</p><div className="flex gap-2 justify-end"><button onClick={props.onCloseArchive} className="px-3 py-1.5 text-sm bg-muted rounded-lg">{props.t('cancel')}</button><button onClick={props.onArchive} className="px-4 py-1.5 text-sm bg-amber-600 text-white rounded-lg">{props.t('archiveItem')}</button></div></Dialog>}
