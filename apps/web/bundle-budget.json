@@ -1,9 +1,9 @@
 {
-  "description": "Orçamento de bundle do web (limites em bytes gzip). Ver scripts/check-bundle.ts. O limite do `index` foi elevado de 90000 para 92000 quando o teto anterior ficou a 10 bytes: o chunk carrega os recursos de tradução dos três idiomas, então cada mensagem nova de produto cresce aqui.",
+  "description": "Orçamento de bundle do web (limites em bytes gzip). Ver scripts/check-bundle.ts. O limite do `index` foi elevado de 90000 para 92000 quando o teto anterior ficou a 10 bytes: o chunk carrega os recursos de tradução dos três idiomas, então cada mensagem nova de produto cresce aqui. Subiu para 93000 pelo mesmo motivo: orientação do board hierárquico vazio e aviso de história pai obrigatória somam 4 chaves em pt/en/es (+185 bytes gzip no chunk).",
   "chunks": [
     {
       "name": "index",
-      "maxGzipBytes": 92000
+      "maxGzipBytes": 93000
     },
     {
       "name": "vendor-react",
