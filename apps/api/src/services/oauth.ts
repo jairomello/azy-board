@@ -3,7 +3,10 @@
 // Fluxo: authorization code + PKCE (S256). O estado (anti-CSRF) e o verificador
 // do PKCE viajam em cookie curto assinado (ver rota). O `id_token` é verificado
 // por assinatura RS256 contra a JWKS do provedor (WebCrypto), com checagens de
-// issuer, audience e `email_verified`. Nunca confiamos em claims não verificadas.
+// issuer, audience e `email_verified` (Google). No Entra ID o app é de tenant
+// único: o issuer fixo no GUID do tenant garante que a conta pertence à
+// organização, e o Entra não emite `email_verified`. Nunca confiamos em claims
+// não verificadas.
 import { createHash, randomBytes } from 'node:crypto'
 import type { ResolvedAuthConfig } from './authConfig'
 import type { AuthProvider } from '@azy-board/api-contracts'
@@ -129,9 +132,7 @@ export async function exchangeAuthorizationCode(
   if (!response.ok) throw new Error(`OAuth: falha ao trocar o código (HTTP ${response.status})`)
   const data = (await response.json()) as { id_token?: string; error?: string }
   if (!data.id_token) throw new Error('OAuth: resposta sem id_token')
-  const claims = await verifyIdToken(config, data.id_token, fetchImpl)
-  if (!claims.email || claims.email_verified !== true) throw new Error('OAuth: e-mail não verificado pelo provedor')
-  return claims
+  return verifyIdToken(config, data.id_token, fetchImpl)
 }
 
 /** Verifica a assinatura RS256 (JWKS) e as claims esperadas do `id_token`. */
@@ -165,6 +166,6 @@ export async function verifyIdToken(
   if (!audiences.includes(config.clientId)) throw new Error('OAuth: audience do id_token não corresponde ao cliente')
   if (typeof payload.exp !== 'number' || payload.exp <= now) throw new Error('OAuth: id_token expirado')
   if (typeof payload.email !== 'string' || payload.email.trim() === '') throw new Error('OAuth: id_token sem e-mail')
-  if (payload.email_verified !== true) throw new Error('OAuth: e-mail não verificado pelo provedor')
+  if (config.provider === 'GOOGLE' && payload.email_verified !== true) throw new Error('OAuth: e-mail não verificado pelo provedor')
   return payload
 }
