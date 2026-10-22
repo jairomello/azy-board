@@ -258,6 +258,7 @@
   "dependenciesTypeSF": "Start → Finish",
   "dependenciesTypeFF": "Finish → Finish",
   "dependenciesCardLabel": "{{count}} dependenc(ies)",
+  "attachmentsCardLabel": "{{count}} attachment(s)",
   "dependenciesLagDays": "Lag {{days}}d",
   "itemLinksHint": "External references related to this item.",
   "itemLinksAdd": "Add link",

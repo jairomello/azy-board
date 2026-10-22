@@ -360,6 +360,20 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
   const extraTargets = await resolveCrossProjectDependencyTargets(userPersistenceContext(ctx), dependencyEdges, projectId)
   const dependencyIndex = dependencyIndexByItem(allItems, dependencyEdges, extraTargets)
 
+  // [TENANT] Habilitador de anexos do tenant: quando desabilitado a contagem não é
+  // exposta, e o card não mostra indicador — o cliente não precisa consultar o toggle.
+  const attachmentSettings = await persistence.attachmentSettings.get(ctx.tenantId)
+  const attachmentsEnabled = attachmentSettings?.enabled ?? false
+  // Contagem de anexos por item — agregado único do projeto, sem consulta por card.
+  const attachmentCountMap = new Map<string, number>()
+  if (attachmentsEnabled) {
+    // [TENANT] Leitura agregada escopada pelo contexto do tenant + projeto.
+    const attachmentRows = await persistence.files.listAttachmentsByProject(userPersistenceContext(ctx), projectId)
+    for (const row of attachmentRows) {
+      attachmentCountMap.set(row.itemId, (attachmentCountMap.get(row.itemId) ?? 0) + 1)
+    }
+  }
+
   const projected = withProgress.map(item => {
     const dependency = dependencyIndex.get(item.id)
     const flat = {
@@ -371,6 +385,8 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
       tagNames: item.itemTags.map(link => link.tag.name),
       dependencies: dependency?.dependencies ?? [],
       dependencyCount: dependency?.dependencyCount ?? 0,
+      // Anexos: campo omitido por completo quando a capacidade está desabilitada no tenant.
+      ...(attachmentsEnabled ? { attachmentCount: attachmentCountMap.get(item.id) ?? 0 } : {}),
     } as Record<string, unknown>
     // itemSprints é preservado na resposta: o Board filtra cards por sprint client-side
     // via i.itemSprints?.some(...) (BoardScreen.tsx). Remover este campo esvaziava o board.

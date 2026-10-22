@@ -258,6 +258,7 @@
   "dependenciesTypeSF": "Inicio → Fin",
   "dependenciesTypeFF": "Fin → Fin",
   "dependenciesCardLabel": "{{count}} dependencia(s)",
+  "attachmentsCardLabel": "{{count}} anexo(s)",
   "dependenciesLagDays": "Retardo {{days}}d",
   "itemLinksHint": "Referencias externas relacionadas con este elemento.",
   "itemLinksAdd": "Agregar enlace",

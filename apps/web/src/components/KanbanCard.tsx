@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Trash2, GitBranch, Archive, Copy, Check, Workflow } from 'lucide-react'
+import { Trash2, GitBranch, Archive, Copy, Check, Workflow, Paperclip } from 'lucide-react'
 import { UserAvatar } from './UserAvatar'
 import { InlineEdit } from './InlineEdit'
 import { useToast } from './Toast'
@@ -61,6 +61,8 @@ export interface CardData {
   childrenCount?: number
   // Card T46 — quantidade de itens dos quais este card depende diretamente.
   dependencyCount?: number
+  // Card T84 — quantidade de anexos do card; ausente/zero omite o indicador.
+  attachmentCount?: number | null
   checklistProgress?: ChecklistProgress | null
   icon?: string | null
   color?: string | null
@@ -386,6 +388,17 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
             >
               <Workflow className="w-3 h-3" />
               <span className="font-medium leading-none">{card.dependencyCount}</span>
+            </span>
+          )}
+          {/* Indicador de anexos (Card T84): somente leitura, omitido quando zero ou ausente */}
+          {(card.attachmentCount ?? 0) > 0 && (
+            <span
+              className="attachments-count flex items-center gap-0.5 text-xs text-muted-foreground"
+              aria-label={t('attachmentsCardLabel', { count: card.attachmentCount ?? 0 })}
+              title={t('attachmentsCardLabel', { count: card.attachmentCount ?? 0 })}
+            >
+              <Paperclip className="w-3 h-3" />
+              <span className="font-medium leading-none">{card.attachmentCount ?? 0}</span>
             </span>
           )}
           {card.assignee && (

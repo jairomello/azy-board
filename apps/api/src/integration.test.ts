@@ -4365,3 +4365,81 @@ describe('T77 — tokens de IA por card', () => {
     expect(item).toMatchObject({ tokensInput: null, tokensOutput: null, tokensTotal: null })
   })
 })
+
+describe('indicador de anexos no card do board (T84)', () => {
+  let tenantId: string
+  let member: { id: string; email: string }
+  let projectId: string
+  let session: string
+  let comAnexos: string
+  let semAnexos: string
+  const now = new Date().toISOString()
+
+  beforeAll(async () => {
+    tenantId = generateId()
+    await db.insert(tenants).values({ id: tenantId, name: 'Anexos no board', slug: `att-${tenantId}`, createdAt: now })
+    member = await createUser(tenantId, `att-${tenantId}@test.local`, 'Membro Anexos', 'TEAM_MEMBER')
+    session = await token(member.id, tenantId, member.email)
+    projectId = generateId()
+    await db.insert(projects).values({
+      id: projectId, tenantId, name: 'Projeto de anexos', description: null,
+      boardMode: 'SIMPLE', simpleStoryId: null, managerUserId: null,
+      isRestricted: true, isHidden: false, createdAt: now,
+    })
+    await db.insert(memberships).values({ id: generateId(), tenantId, userId: member.id, projectId, role: 'MEMBER', createdAt: now })
+    const base = { tenantId, projectId, type: 'TASK' as const, parentId: null, moduleId: null, columnId: null, ancestryPath: '[]', status: 'NOT_STARTED' as const, priority: 'MEDIUM' as const, authorId: member.id, createdAt: now, updatedAt: now }
+    comAnexos = generateId()
+    semAnexos = generateId()
+    await db.insert(items).values([
+      { ...base, id: comAnexos, title: 'Card com anexos', position: 0 },
+      { ...base, id: semAnexos, title: 'Card sem anexos', position: 1 },
+    ])
+    await db.insert(attachments).values([
+      { id: generateId(), tenantId, itemId: comAnexos, filename: 'a.txt', originalName: 'a.txt', mimeType: 'text/plain', size: 1, storagePath: `${tenantId}/${comAnexos}/a.txt`, createdAt: now },
+      { id: generateId(), tenantId, itemId: comAnexos, filename: 'b.txt', originalName: 'b.txt', mimeType: 'text/plain', size: 1, storagePath: `${tenantId}/${comAnexos}/b.txt`, createdAt: now },
+    ])
+  })
+
+  // [TENANT] O habilitador é do tenant, então cada cenário fixa o estado antes de medir.
+  async function setAttachmentsEnabled(enabled: boolean) {
+    const existing = await db.select().from(tenantAttachmentSettings).where(eq(tenantAttachmentSettings.tenantId, tenantId))
+    if (existing.length === 0) await db.insert(tenantAttachmentSettings).values({ tenantId, enabled, provider: 'local', updatedAt: now })
+    else await db.update(tenantAttachmentSettings).set({ enabled }).where(eq(tenantAttachmentSettings.tenantId, tenantId))
+  }
+
+  async function boardItems(): Promise<Array<Record<string, unknown>>> {
+    const response = await request(`/projects/${projectId}/items`, session)
+    expect(response.status).toBe(200)
+    return ((await response.json()) as { data: Array<Record<string, unknown>> }).data
+  }
+
+  test('não expõe a contagem quando a capacidade está desabilitada no tenant', async () => {
+    await setAttachmentsEnabled(false)
+    const data = await boardItems()
+    expect(data.length).toBeGreaterThan(0)
+    expect(data.every(item => !('attachmentCount' in item))).toBe(true)
+  })
+
+  test('expõe attachmentCount por card quando a capacidade está habilitada', async () => {
+    await setAttachmentsEnabled(true)
+    const data = await boardItems()
+    expect(data.find(item => item.id === comAnexos)).toMatchObject({ attachmentCount: 2 })
+    expect(data.find(item => item.id === semAnexos)).toMatchObject({ attachmentCount: 0 })
+  })
+
+  test('conta anexos com uma leitura agregada por request, sem consulta por card', async () => {
+    await setAttachmentsEnabled(true)
+    const { persistence } = await import('./persistence/runtime')
+    const files = persistence.files
+    const original = files.listAttachmentsByProject
+    let calls = 0
+    files.listAttachmentsByProject = (async (context, pid) => { calls += 1; return original(context, pid) }) as typeof original
+    try {
+      const data = await boardItems()
+      expect(data.filter(item => Number(item.attachmentCount ?? 0) > 0)).toHaveLength(1)
+      expect(calls).toBe(1)
+    } finally {
+      files.listAttachmentsByProject = original
+    }
+  })
+})

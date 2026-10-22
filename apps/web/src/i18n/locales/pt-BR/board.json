@@ -258,6 +258,7 @@
   "dependenciesTypeSF": "Início → Término",
   "dependenciesTypeFF": "Término → Término",
   "dependenciesCardLabel": "{{count}} dependência(s)",
+  "attachmentsCardLabel": "{{count}} anexo(s)",
   "dependenciesLagDays": "Lag {{days}}d",
   "itemLinksHint": "Referências externas relacionadas a este item.",
   "itemLinksAdd": "Adicionar link",
