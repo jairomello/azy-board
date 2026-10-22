@@ -568,6 +568,33 @@ describe('Azy Agent harness', () => {
     await expect(harness.executeApproved({ source: 'azy-agent', userId, tenantId, globalGroup: 'TEAM_MEMBER', conversationId, runId: result.runId })).rejects.toThrow('APPROVAL_OPERATION_CHANGED')
   })
 
+  test('recusa recuperável da ferramenta aprovada não deixa a tool call presa em RUNNING', async () => {
+    class MutationProvider implements ModelProvider {
+      name = 'mock'; capabilities = { tools: true, streaming: false, cancellation: false } as const
+      async createRun(): Promise<ModelResponse> { return { id: 'mutation', output: [{ type: 'function_call', name: 'create_task', callId: 'm1', arguments: JSON.stringify({ projectId: 'p1', title: 'Com subtarefas' }) }] } }
+      async *streamRun() {}
+    }
+    const harness = new AssistantHarness({
+      provider: new MutationProvider(),
+      authorize: async () => {},
+      executeTool: async () => { throw new Error('HTTP 422: Este item possui tarefas filhas — mova as tarefas individualmente') },
+    })
+    const result = await harness.run({ source: 'azy-agent', userId, tenantId, globalGroup: 'TEAM_MEMBER', conversationId }, 'gpt-4o-mini', 'mova o card', `rejected-${id()}`)
+    expect(result.status).toBe('WAITING_APPROVAL')
+    const approval = (await db.select().from(assistantApprovals).where(eq(assistantApprovals.runId, result.runId)))[0]!
+    await harness.approve(result.runId, tenantId, userId, approval.operationHash)
+
+    const outcome = await harness.executeApproved({ source: 'azy-agent', userId, tenantId, globalGroup: 'TEAM_MEMBER', conversationId, runId: result.runId })
+    // A mensagem do domínio é preservada para o modelo explicar o motivo real.
+    expect(outcome).toEqual({ status: 'REJECTED', code: 'HTTP 422', message: 'Este item possui tarefas filhas — mova as tarefas individualmente' })
+
+    const call = (await db.select().from(assistantToolCalls).where(eq(assistantToolCalls.runId, result.runId)))[0]!
+    expect(call.status).toBe('FAILED')
+    expect(call.resultSummary).toContain('tarefas filhas')
+    // A run segue viva para continuar o turno; nunca fica RUNNING órfã até WORKER_LOST.
+    expect((await db.select().from(assistantRuns).where(eq(assistantRuns.id, result.runId)))[0]?.status).toBe('RUNNING')
+  })
+
   test('cancela uma run em andamento sem executar tool posterior', async () => {
     let release!: (response: ModelResponse) => void
     const pending = new Promise<ModelResponse>(resolve => { release = resolve })

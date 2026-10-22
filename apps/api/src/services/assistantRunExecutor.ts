@@ -191,16 +191,27 @@ export async function executeAssistantRun(
       const callId = pendingCallId(transcript, call.toolName)
       if (!callId) return fail('APPROVAL_CONTEXT_MISSING')
       const args = canonicalArguments(call.toolName, parseStoredArguments(call.argumentsJson), context)
-      const result = await harness.executeApproved({ ...context, runId })
-      transcript.push({ type: 'function_call_output', call_id: callId, output: JSON.stringify(result) })
-      executionState.transcript = transcript
-      const signature = `${call.toolName}:${operationHash(call.toolName, args)}`
-      const signatures = Array.isArray(executionState.completedMutationSignatures)
-        ? executionState.completedMutationSignatures.filter((value): value is string => typeof value === 'string')
-        : []
-      executionState.completedMutationSignatures = [...new Set([...signatures, signature])]
-      await persistence.agent.updateRun(runId, tenantId, { executionContextJson: JSON.stringify(executionState) })
-      completedTools.push({ name: call.toolName, args, result })
+      const outcome = await harness.executeApproved({ ...context, runId })
+      if (outcome.status === 'REJECTED') {
+        // Recusa recuperável do domínio: a mutação não aconteceu. Devolve o motivo
+        // ao modelo (mesmo contrato do caminho normal) e deixa a run continuar.
+        // A operação não entra em completedMutationSignatures: numa retomada ela
+        // não pode ser tratada como já executada.
+        transcript.push({ type: 'function_call_output', call_id: callId, output: JSON.stringify({ ok: false, recoverable: true, code: outcome.code, error: outcome.message }) })
+        executionState.transcript = transcript
+        await persistence.agent.updateRun(runId, tenantId, { executionContextJson: JSON.stringify(executionState) })
+      } else {
+        const result = outcome.result
+        transcript.push({ type: 'function_call_output', call_id: callId, output: JSON.stringify(result) })
+        executionState.transcript = transcript
+        const signature = `${call.toolName}:${operationHash(call.toolName, args)}`
+        const signatures = Array.isArray(executionState.completedMutationSignatures)
+          ? executionState.completedMutationSignatures.filter((value): value is string => typeof value === 'string')
+          : []
+        executionState.completedMutationSignatures = [...new Set([...signatures, signature])]
+        await persistence.agent.updateRun(runId, tenantId, { executionContextJson: JSON.stringify(executionState) })
+        completedTools.push({ name: call.toolName, args, result })
+      }
     }
   }
 

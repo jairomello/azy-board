@@ -182,6 +182,43 @@ describe('Agent job queue', () => {
     expect(run!.errorCode).toBe('WORKER_LOST')
   })
 
+  test('[T37] erro determinístico da run não vira WORKER_LOST: finaliza com o código real', async () => {
+    const runId = await createRun()
+    const worker = new AgentWorker({ tenantId, executeRun: async () => { throw new Error('APPROVAL_OPERATION_CHANGED') } })
+    worker.start()
+    try {
+      for (let i = 0; i < 100; i++) {
+        const run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
+        if (run?.status === 'FAILED') break
+        await new Promise(resolve => setTimeout(resolve, 5))
+      }
+    } finally { await worker.stop() }
+
+    const run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
+    expect(run!.status).toBe('FAILED')
+    expect(run!.errorCode).toBe('APPROVAL_OPERATION_CHANGED')
+    expect(run!.claimedBy).toBeNull()
+    // Sem retry cego: nenhum budget de recuperação é consumido.
+    expect(run!.recoveryAttempts).toBe(1)
+  })
+
+  test('[T37] erro transitório do worker continua elegível a recuperação', async () => {
+    const runId = await createRun()
+    const worker = new AgentWorker({ tenantId, executeRun: async () => { throw new Error('database is locked') } })
+    worker.start()
+    try {
+      for (let i = 0; i < 100; i++) {
+        const run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
+        if (run?.status === 'QUEUED' && run.nextAttemptAt) break
+        await new Promise(resolve => setTimeout(resolve, 5))
+      }
+    } finally { await worker.stop() }
+
+    const run = await db.query.assistantRuns.findFirst({ where: eq(assistantRuns.id, runId) })
+    expect(run!.status).toBe('QUEUED')
+    expect(run!.nextAttemptAt).not.toBeNull()
+  })
+
   test('[T37] checkpoint confirmado reinicia o budget de recuperação', async () => {
     const worker = 'worker-checkpoint-reset'
     const runId = await createRun()

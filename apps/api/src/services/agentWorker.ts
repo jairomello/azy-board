@@ -44,6 +44,18 @@ async function initWorkerMetrics() {
 // Polling interval: how often the worker checks for new runs
 const POLL_INTERVAL_MS = 5_000
 
+// [T37] Erros determinísticos da própria run (contrato de aprovação inválido ou
+// expirado, payload acima do limite, limites de execução). Repetir com backoff
+// não tem efeito: só consome o budget de recuperação e termina em
+// FAILED/WORKER_LOST, escondendo o motivo real. Perda de posse (LEASE_LOST) e
+// falhas de infraestrutura continuam elegíveis para recuperação.
+const DETERMINISTIC_EXECUTION_ERROR = /^(?:PAYLOAD_LIMIT|APPROVAL_(?:EXPIRED|INVALID|OPERATION_CHANGED|CONTEXT_MISSING)|VALIDATION_ERROR|TOOL_NOT_REGISTERED|TOOL_NOT_ALLOWED_FOR_RUN|REPEATED_TOOL_CALL|PROJECT_CONTEXT_MISMATCH|USER_CONTEXT_REQUIRED|AUTHORIZATION_REVALIDATION_REQUIRED|ACTION_LIMIT|STEP_LIMIT|TOKEN_LIMIT|COST_LIMIT|TOOL_CALL_LIMIT)$/
+
+function deterministicErrorCode(error: unknown): string | null {
+  const message = error instanceof Error ? error.message : String(error)
+  return DETERMINISTIC_EXECUTION_ERROR.exec(message)?.[0] ?? null
+}
+
 // [T37] Contexto interno de posse entregue ao executor da run.
 export interface RunExecutionContext {
   generation: number
@@ -187,16 +199,35 @@ export class AgentWorker {
           if (!finished) fenceRejectedCounter?.add(1)
           logger.info('agent-worker: run cancelled', { runId: claimed.runId, workerId: this.workerId, generation: claimed.generation, finished })
         } else {
-          // Release with retry backoff (fenced por geração).
-          const result = await releaseRun(claimed.runId, claimed.tenantId, this.workerId, claimed.generation, true)
-          if (result === 'lost') fenceRejectedCounter?.add(1)
-          logger.warn('agent-worker: run execution failed', {
-            runId: claimed.runId,
-            workerId: this.workerId,
-            generation: claimed.generation,
-            error: error instanceof Error ? error.message : String(error),
-            result,
-          })
+          // Erro determinístico da run: finaliza com o código real em vez de
+          // retry cego (que terminaria em FAILED/WORKER_LOST).
+          const errorCode = deterministicErrorCode(error)
+          if (errorCode) {
+            const finished = await persistence.agent.finishRunFenced(
+              claimed.runId, claimed.tenantId, this.workerId, claimed.generation,
+              { status: 'FAILED', errorCode, finishedAt: new Date().toISOString() },
+              { requireCancelRequested: false },
+            )
+            if (!finished) fenceRejectedCounter?.add(1)
+            logger.error('agent-worker: run falhou por erro determinístico', {
+              runId: claimed.runId,
+              workerId: this.workerId,
+              generation: claimed.generation,
+              errorCode,
+              finished,
+            })
+          } else {
+            // Release with retry backoff (fenced por geração).
+            const result = await releaseRun(claimed.runId, claimed.tenantId, this.workerId, claimed.generation, true)
+            if (result === 'lost') fenceRejectedCounter?.add(1)
+            logger.warn('agent-worker: run execution failed', {
+              runId: claimed.runId,
+              workerId: this.workerId,
+              generation: claimed.generation,
+              error: error instanceof Error ? error.message : String(error),
+              result,
+            })
+          }
         }
       } finally {
         // [T37] Cleanup só da própria aquisição; não remove posse de geração nova.

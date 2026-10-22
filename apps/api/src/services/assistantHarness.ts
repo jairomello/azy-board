@@ -172,6 +172,11 @@ function recoverableToolError(error: unknown): { code: string; message: string }
   // Erro de validação local: repassa a mensagem específica (em PT, sem detalhes
   // internos) para o modelo corrigir os campos em vez de só "tente novamente".
   if (code === 'VALIDATION_ERROR' && !/^HTTP /.test(raw)) return { code, message: raw }
+  // Recusa 4xx do domínio: a própria API responde em pt-BR e sem detalhe interno
+  // ("Este item possui tarefas filhas…"). Preservar essa mensagem é o que permite
+  // ao modelo explicar o motivo real ao usuário em vez de um genérico.
+  const apiMessage = raw.match(/^HTTP (?:400|404|409|422):\s*(.+)$/s)?.[1]?.trim()
+  if (apiMessage) return { code, message: apiMessage.slice(0, 500) }
   const messages: Record<string, string> = {
     VALIDATION_ERROR: 'A operação precisa de argumentos diferentes. Revise os campos e tente novamente.',
     RELATION_OUT_OF_SCOPE: 'Uma relação ou recurso não foi encontrado neste projeto. Consulte os catálogos e tente novamente.',
@@ -188,6 +193,16 @@ function recoverableToolError(error: unknown): { code: string; message: string }
   }
   return { code, message: messages[code] ?? 'A operação não pôde ser concluída automaticamente. Tente uma abordagem diferente.' }
 }
+
+/**
+ * Resultado da execução de uma operação já aprovada.
+ * `EXECUTED` devolve o efeito confirmado; `REJECTED` representa recusa
+ * recuperável do domínio (4xx): a mutação não aconteceu, o motivo volta ao
+ * modelo e a run continua — nunca vira perda de worker nem `WORKER_LOST`.
+ */
+export type ApprovedExecutionOutcome =
+  | { status: 'EXECUTED'; result: unknown }
+  | { status: 'REJECTED'; code: string; message: string }
 
 function toolsForModel(context: HarnessContext, allowlist?: readonly string[]): ModelTool[] {
   const names = allowlist ? new Set(allowlist) : undefined
@@ -548,22 +563,35 @@ export class AssistantHarness {
     await this.writeRun(runId, tenantId, { status: 'EXPIRED', finishedAt: new Date().toISOString(), errorCode: 'RUN_EXPIRED' })
   }
 
-  async executeApproved(context: HarnessContext): Promise<unknown> {
+  async executeApproved(context: HarnessContext): Promise<ApprovedExecutionOutcome> {
     const scope = this.scope(context.tenantId, context.userId)
     const approval = await this.agent.getApprovalByStatus(scope, context.runId, 'APPROVED')
     if (!approval || approval.expiresAt <= new Date().toISOString()) throw new Error('APPROVAL_EXPIRED')
     const call = approval.toolCallId ? await this.agent.getToolCall(scope, context.runId, approval.toolCallId) : null
-    if (!call || call.operationHash !== approval.operationHash || call.status === 'COMPLETED') return call?.resultSummary ?? null
+    if (!call || call.operationHash !== approval.operationHash || call.status === 'COMPLETED') return { status: 'EXECUTED', result: call?.resultSummary ?? null }
     const args = parseArguments(call.argumentsJson)
     if (operationHash(call.toolName, args) !== approval.operationHash) throw new Error('APPROVAL_OPERATION_CHANGED')
     await this.options.assertAvailable?.(context)
     await this.options.authorize?.(context, call.toolName, args)
     await this.agent.updateToolCall(call.id, context.tenantId, { status: 'RUNNING', startedAt: new Date().toISOString() })
-    const result = sanitizeToolOutput(await this.options.executeTool(call.toolName, args, context))
+    let result: unknown
+    try {
+      result = sanitizeToolOutput(await this.options.executeTool(call.toolName, args, context))
+    } catch (error) {
+      // A ferramenta aprovada recusou a operação. Sem este tratamento a tool call
+      // ficava presa em RUNNING e a exceção era interpretada como perda de worker
+      // (retry cego → FAILED/WORKER_LOST), escondendo o motivo real do usuário.
+      const recoverable = recoverableToolError(error)
+      const resultSummary = recoverable ? { ok: false, code: recoverable.code, error: recoverable.message } : { ok: false, error: safeError(error) }
+      await this.agent.updateToolCallInStatuses(call.id, context.tenantId, ['RUNNING'], { status: 'FAILED', resultSummary: JSON.stringify(resultSummary), finishedAt: new Date().toISOString() })
+      if (!recoverable) throw error
+      await this.writeRun(context.runId, context.tenantId, { status: 'RUNNING' })
+      return { status: 'REJECTED', code: recoverable.code, message: recoverable.message }
+    }
     await this.agent.updateToolCallInStatuses(call.id, context.tenantId, ['RUNNING'], { status: 'COMPLETED', resultSummary: JSON.stringify(summary(result)), finishedAt: new Date().toISOString() })
     await this.agent.updateApproval(approval.id, { status: 'APPROVED' })
     await this.writeRun(context.runId, context.tenantId, { status: 'RUNNING' })
-    return result
+    return { status: 'EXECUTED', result }
   }
 
   cancel(runId: string): void { this.cancelled.add(runId) }

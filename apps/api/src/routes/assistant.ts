@@ -942,9 +942,9 @@ assistantRouter.post('/runs/:runId/approval', async (c) => {
   if (body.approved) {
     // Job queue: re-enqueue the run instead of executing inline.
     // The worker will claim the run, verify the approval, and continue execution.
+    // O evento APPROVAL_DECIDED é emitido uma única vez por harness.approve.
     const now = new Date().toISOString()
     await persistence.agent.updateRun(run.id, ctx.tenantId, { status: 'QUEUED', nextAttemptAt: now, claimedBy: null, claimExpiresAt: null })
-    await persistence.agent.insertEvent(scopeOf(ctx.tenantId, ctx.userId), run.id, 'APPROVAL_DECIDED', JSON.stringify({ approved: true }), now)
     return c.json({ runId: run.id, status: 'QUEUED' }, 202)
   }
   return c.json({ runId: run.id, status: 'COMPLETED' })

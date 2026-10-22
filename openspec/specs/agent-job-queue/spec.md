@@ -1,7 +1,8 @@
 # agent-job-queue Specification
 
 ## Purpose
-TBD - created by archiving change add-agent-job-queue. Update Purpose after archive.
+Enfileirar cada run do Azy Agent e consumi-la por worker com claim atômico, lease/heartbeat e fencing por proprietário e geração. Cobre budget de recuperação, retry apenas para falha transitória, expiração de órfãos, cancelamento entre processos e retomada idempotente por checkpoints.
+
 ## Requirements
 ### Requirement: Fila persistente de jobs do agente
 O sistema SHALL enfileirar cada run do Azy Agent em uma fila persistente (tabela `assistant_runs` com colunas de lease/claim), garantindo que runs sobrevivam a restart do processo e sejam consumidos por um worker.
@@ -71,6 +72,21 @@ Sistema SHALL reenfileirar falha transitória elegível com backoff exponencial,
 - **WHEN** ferramenta confirmou domínio e journal T38 mas worker caiu antes de salvar checkpoint
 - **THEN** novo worker recupera resultado original pela identidade estável e não repete mutação, auditoria, analytics ou evento
 
+### Requirement: Erro determinístico da run não é recuperável
+O sistema SHALL classificar como não recuperável o erro determinístico da run (recusa de contrato de aprovação, payload acima do limite, limites de execução). NÃO SHALL reenfileirá-lo com backoff nem consumi-lo como budget de recuperação; SHALL finalizar a run como `FAILED` com o código real do erro, mantendo o commit condicional por proprietário e geração.
+
+#### Scenario: Erro determinístico finaliza com o código real
+- **WHEN** a execução da run falha com erro determinístico sob lease vigente
+- **THEN** a run é finalizada `FAILED` com o código real do erro, sem nova aquisição e sem `WORKER_LOST`
+
+#### Scenario: Budget de recuperação não é consumido
+- **WHEN** o erro determinístico é finalizado na aquisição corrente
+- **THEN** nenhum release com backoff é aplicado e o budget de recuperação não é gasto por repetição inútil
+
+#### Scenario: Falha transitória continua recuperável
+- **WHEN** a falha da execução não é determinística
+- **THEN** a run volta a `QUEUED` com `nextAttemptAt`, preservando o comportamento de retry com backoff
+
 ### Requirement: Expiração de runs órfãos
 O sistema SHALL expirar runs `QUEUED` sem claim ativo e runs `RUNNING` com lease expirado.
 
@@ -115,4 +131,8 @@ Aprovação/reenfileiramento SHALL ser um comando CAS transacional por run/tool/
 #### Scenario: Mensagem terminal após crash
 - **WHEN** run completou e mensagem foi persistida antes de crash, mas continuação é retomada
 - **THEN** consulta/checkpoint preserva uma mensagem terminal e um conjunto de eventos/resultados sem duplicatas
+
+#### Scenario: Evento de decisão único
+- **WHEN** uma aprovação é decidida por qualquer caminho de escrita (rota HTTP ou harness)
+- **THEN** exatamente um evento `APPROVAL_DECIDED` é persistido para aquela decisão
 
