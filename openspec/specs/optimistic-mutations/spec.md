@@ -1,7 +1,8 @@
 # optimistic-mutations Specification
 
 ## Purpose
-TBD - created by archiving change unify-optimistic-mutations. Update Purpose after archive.
+Aplicar política única de mutação no board, com atualização otimista, rollback que restaura o estado anterior exato, coordenação entre item e suas relações, reconciliação de conflito de edição e comunicação de toda falha.
+
 ## Requirements
 ### Requirement: Política única de mutação no board
 Toda mutação do board SHALL seguir exatamente um de dois padrões declarados: **otimista** — aplica o estado local a partir de um snapshot capturado antes da operação e restaura esse snapshot em falha; ou **reconciliada** — aplica o estado somente após a resposta de sucesso, ou invalida/refaz a consulta. Nenhuma mutação SHALL deixar o cache divergente do servidor.

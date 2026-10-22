@@ -1,7 +1,8 @@
 # agent-worker-process Specification
 
 ## Purpose
-TBD - created by archiving change add-agent-job-queue. Update Purpose after archive.
+Executar os runs do agente em processo de worker dedicado, com coordenação entre workers, rate limiting distribuído, observabilidade, retomada após aprovação ou pergunta e abort/shutdown que preservam a posse e a fronteira de efeitos externos.
+
 ## Requirements
 ### Requirement: Worker de execução do agente
 O sistema SHALL ter worker que consome a fila persistente e executa runs separado do request HTTP. SIMPLE SHALL iniciar worker in-process por modo explícito `IN_PROCESS`; ADVANCED SHALL usar entrada/processo `SEPARATE`, sem listener HTTP, e a API SHALL NOT consumir runs. Configuração cruzada SHALL ser recusada. O callback SHALL reconstruir usuário, tenant, conversa, disponibilidade, governança e modelos do banco, sem confiar em identidade/permissões/segredos enviados no job, e SHALL revalidar autorização antes de cada tool. O callback SHALL receber contexto interno de posse vigente com geração e AbortSignal.

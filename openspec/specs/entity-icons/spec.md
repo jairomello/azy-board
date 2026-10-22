@@ -1,7 +1,8 @@
 # entity-icons Specification
 
 ## Purpose
-TBD - created by archiving change add-project-and-item-icons. Update Purpose after archive.
+Oferecer catálogo de ícones open-source, com ícone e cor default e catálogo temático por categorias, aplicáveis a projetos e itens de forma consistente na interface, na API e no MCP, com validação uniforme em todas as vias de escrita.
+
 ## Requirements
 ### Requirement: Catálogo de ícones open-source
 O sistema SHALL disponibilizar um catálogo curado de ícones a partir de uma biblioteca open-source de licença permissiva (lucide-react, ISC), identificado por nomes estáveis em kebab-case e consumível por web, API e MCP. O catálogo SHALL ser a única fonte de nomes válidos de ícone para projetos e itens, e o sistema SHALL rejeitar nomes fora do catálogo.

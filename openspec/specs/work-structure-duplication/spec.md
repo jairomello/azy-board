@@ -1,7 +1,8 @@
 # work-structure-duplication Specification
 
 ## Purpose
-TBD - created by archiving change duplicar-estruturas-trabalho. Update Purpose after archive.
+Duplicar estruturas de trabalho a partir de plano completo, respeitando o modo do projeto, com política explícita de cópia e defaults, checklists reiniciadas, ausência de histórico replicado, links opcionais, anexos excluídos, atomicidade e replay sem cópias adicionais.
+
 ## Requirements
 ### Requirement: Plano de duplicação completo
 O sistema SHALL permitir MEMBER autorizado preparar plano somente-leitura de STORY ou subárvore TASK/BUG do mesmo projeto, incluindo descendentes, descrições e checklists. SHALL mostrar origem/destino, hierarquia, contagens, campos copiados e exclusões, com políticas explícitas de responsáveis, sprint, versão, links e anexos. Até 50 itens e 1.000 passos SHALL ser admitidos; excesso ou payload acima dos limites compartilhados SHALL ser rejeitado sem truncamento. Aplicação pela conversa SHALL exigir aprovação do plano/hash.

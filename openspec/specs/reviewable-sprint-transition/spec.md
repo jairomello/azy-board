@@ -1,7 +1,8 @@
 # reviewable-sprint-transition Specification
 
 ## Purpose
-TBD - created by archiving change preparar-transicao-sprint. Update Purpose after archive.
+Tornar a transição de sprint revisável por plano explícito, com elegibilidade e preservação de concluídos, associação adicional que mantém o histórico, execução atômica e retomada idempotente com efeitos duráveis.
+
 ## Requirements
 ### Requirement: Plano revisável da transição
 O sistema SHALL permitir ADMIN preparar plano somente-leitura de origem OPEN com ciclo ativo para destino distinto PROPOSED/OPEN no mesmo tenant/projeto. O plano SHALL fixar IDs/revisões, estados, vínculos, ciclo e população relevante, até 500 folhas; excedente SHALL ser rejeitado sem truncamento. SHALL exibir candidatos, exclusões, quantidade, pontos conhecidos/desconhecidos, efeito de fechar a origem e estado final do destino. Aplicação pela conversa SHALL exigir aprovação do hash do plano.

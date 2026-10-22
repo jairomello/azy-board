@@ -1,7 +1,8 @@
 # schema-integrity Specification
 
 ## Purpose
-TBD - created by archiving change enforce-schema-integrity. Update Purpose after archive.
+Impor no banco a integridade referencial escopada por tenant, unicidade de identidade e associação, integridade de hierarquia, constraints de domínio numérico e temporal, saneamento determinístico prévio e conversão de falha de constraint em erro de domínio.
+
 ## Requirements
 ### Requirement: Integridade referencial escopada por tenant
 O banco SHALL impedir que qualquer tabela filha referencie uma entidade de outro tenant. Toda relação entre entidades SHALL ser expressa por chave estrangeira composta que inclui `tenant_id`, e a tabela pai SHALL possuir `UNIQUE (tenant_id, id)` para sustentar o vínculo.

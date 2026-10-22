@@ -1,7 +1,8 @@
 # web-api-client Specification
 
 ## Purpose
-TBD - created by archiving change unify-http-client-calls. Update Purpose after archive.
+Concentrar as chamadas HTTP do web em um cliente único, com suporte a corpo em DELETE, normalização e propagação de erro, timeout por requisição, retry governado por retryable, cancelamento preservado em todos os métodos e falha de mutação nunca mascarada.
+
 ## Requirements
 ### Requirement: Cliente HTTP único
 Todo acesso HTTP de runtime no web SHALL passar pelo cliente em `apps/web/src/lib/api.ts`. Código de runtime (fora de testes) SHALL NOT chamar `fetch` diretamente nem usar `XMLHttpRequest`. Canais que não são HTTP (WebSocket e EventSource) são exceções explícitas.

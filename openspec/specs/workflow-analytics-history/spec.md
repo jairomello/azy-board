@@ -1,7 +1,8 @@
 # workflow-analytics-history Specification
 
 ## Purpose
-TBD - created by archiving change add-project-management-dashboard. Update Purpose after archive.
+Registrar eventos mínimos append-only com conteúdo e isolamento definidos, marco de cobertura e baseline, histórico para burnup e aging WIP, índices e retenção, e corte consistente de ativação.
+
 ## Requirements
 ### Requirement: Eventos mínimos append-only
 O sistema SHALL persistir eventos `ANALYTICS_BASELINE`, `ITEM_CREATED`, `STATUS_CHANGED`, `POINTS_CHANGED`, `TYPE_CHANGED`, `SPRINT_CHANGED`, `VERSION_CHANGED`, `ITEM_REPARENTED`, `MODULE_CHANGED`, `LEAF_CHANGED`, `ITEM_ARCHIVED`, `ITEM_UNARCHIVED` e `ITEM_DELETED` na mesma transação da mutação correspondente.

@@ -1,7 +1,8 @@
 # transactional-mutation-journal Specification
 
 ## Purpose
-TBD - created by archiving change garantir-mutacoes-idempotentes-transacionais. Update Purpose after archive.
+Executar mutação e journal na mesma transação física, com unicidade de chave e conflito de payload, replay autorizado, consulta de estado, retenção compatível e invariantes concorrentes verificados pelos comandos consumidores.
+
 ## Requirements
 ### Requirement: Mutação e journal compartilham uma transação física
 Comando mutante SHALL reservar chave, revalidar invariantes necessárias, aplicar domínio/relações, registrar resposta/status, auditoria, analytics aplicável e eventos de outbox no mesmo commit SQLite/PostgreSQL. Unidade de trabalho SHALL usar comandos tipados sem await externo na transação SQLite. Nenhuma etapa SHALL confirmar isoladamente. Pedido sem chave SHALL manter atomicidade dos efeitos, sem promessa de deduplicar intenções distintas.

@@ -1,7 +1,8 @@
 # domain-event-outbox Specification
 
 ## Purpose
-TBD - created by archiving change garantir-mutacoes-idempotentes-transacionais. Update Purpose after archive.
+Garantir que todo evento confirmado tenha identidade e sequência duráveis, com despacho pós-commit recuperável e idempotente, replay confirmado e retenção separados do ack, e integridade operacional verificável.
+
 ## Requirements
 ### Requirement: Evento confirmado possui identidade e sequência duráveis
 Toda mutação que afeta dados exibidos SHALL incluir envelope de evento ou invalidação suficiente na mesma transação do domínio. Envelope SHALL conter eventId, operationId/correlationId, tenantId/projectId, schemaVersion, tipo/payload e sequence monotônica por tenant/projeto, alocada sob lock/tx e única no banco. Rota SHALL NOT gerar sequência local ou publicar evento antes do commit. Rollback SHALL NOT deixar evento fantasma; outbox de limpeza de storage SHALL continuar com responsabilidade própria.

@@ -1,7 +1,7 @@
 # project-dashboard Specification
 
 ## Purpose
-TBD - created by archiving change enhance-project-dashboard-visuals. Update Purpose after archive.
+Apresentar o Dashboard do projeto com dez boxes priorizados, filtros de aplicabilidade explícita, populações sem dupla contagem, burnup, aging WIP e carga da equipe com cobertura declarada, acessível e com estados vazios sem ambiguidade.
 
 ## Requirements
 

@@ -1,7 +1,8 @@
 # timestamp-integrity Specification
 
 ## Purpose
-TBD - created by archiving change fix-timestamp-defaults. Update Purpose after archive.
+Garantir que os defaults temporais sejam avaliados por inserção e mantenham o formato do sistema, preservando a integridade do schema na migration e mantendo explícitas as colunas sem default.
+
 ## Requirements
 ### Requirement: Defaults temporais são avaliados por inserção
 

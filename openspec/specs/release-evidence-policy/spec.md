@@ -1,7 +1,8 @@
 # release-evidence-policy Specification
 
 ## Purpose
-TBD - created by archiving change fortalecer-gates-release-documentacao. Update Purpose after archive.
+Exigir evidência local para releases do produto, com restore comprovado nos dois perfis de instalação.
+
 ## Requirements
 ### Requirement: Política de release com evidência local
 O repositório SHALL manter manifesto versionado dos contextos de checks do workflow e evidência por SHA/data sem segredos. O estado de branch protection/rulesets pode ser registrado como `NOT_PROVEN`, mas esta change SHALL NOT exigir configuração de regras externas, permissões administrativas ou prova de bloqueio de merge para concluir suas tarefas locais.

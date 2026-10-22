@@ -1,7 +1,8 @@
 # advanced-api-bootstrap Specification
 
 ## Purpose
-TBD - created by archiving change corrigir-inicializacao-advanced. Update Purpose after archive.
+Compor e validar a instalação do perfil ADVANCED (PostgreSQL + Valkey/Redis) antes de aceitar tráfego, com readiness efetiva de todos os serviços, jornada de negócio exercitada no CI e recuperação publicada por perfil.
+
 ## Requirements
 ### Requirement: Composição da API por perfil antes de aceitar tráfego
 O composition root SHALL validar configuração e marcadores, selecionar somente adapters compatíveis e construir a API por ports tipados antes de aceitar tráfego. ADVANCED SHALL usar PostgreSQL real e coordenação Valkey/Redis, sem abrir SQLite, executar PRAGMA ou recorrer a fallback. SIMPLE SHALL continuar usando SQLite sem inicializar PostgreSQL/Valkey. Importar uma factory de aplicação SHALL NOT iniciar listener ou worker automaticamente.

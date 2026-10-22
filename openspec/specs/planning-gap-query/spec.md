@@ -1,7 +1,8 @@
 # planning-gap-query Specification
 
 ## Purpose
-TBD - created by archiving change consultar-lacunas-planejamento. Update Purpose after archive.
+Permitir consultar lacunas de planejamento por consulta combinável, paginada e contável, com ausência semanticamente correta, abertura fiel do resultado no board, correção delimitada sem inventar planejamento e segurança da consulta.
+
 ## Requirements
 ### Requirement: Consulta combinável de lacunas
 O sistema SHALL oferecer consulta somente-leitura com grupos ALL/ANY, operadores tipados IS_EMPTY/IS_NOT_EMPTY, igualdade e comparações de datas compatíveis. SHALL cobrir prazo, pontos, sprint, versão e responsável, combinados com escopo de projeto, tipo, status, módulo e ator. Padrão SHALL ser TASK/BUG folhas ativos não arquivados nos estados NOT_STARTED/IN_PROGRESS/BLOCKED, com possibilidade de alteração explícita do escopo. Omitir um filtro ou null no envelope SHALL significar não filtrar, nunca ausência de valor.

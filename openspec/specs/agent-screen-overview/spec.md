@@ -1,7 +1,8 @@
 # agent-screen-overview Specification
 
 ## Purpose
-TBD - created by archiving change optimize-agent-discovery-payload. Update Purpose after archive.
+Oferecer descoberta agregada do recorte da tela ao Azy Agent por digest no contexto confiável e pela tool get_screen_overview, com payload reduzido em modo summary e leituras agrupadas em um único passo.
+
 ## Requirements
 ### Requirement: Digest do recorte da tela injetado no contexto confiável
 Quando o run chega com `screenSnapshot.scope.mode = FILTERED` e `results.displayedItemIds` preenchido, o servidor SHALL computar um digest compacto (`screenOverview`) e SHALL incluí-lo na mensagem de sistema do modelo, contendo pelo menos: `displayedCount`, `totalMatchingCount`, contagens por coluna (total, TASK, BUG), `scope` e um resumo dos filtros ativos. O digest SHALL conter `contextId` e `capturedAt` do snapshot e o aviso de que os números refletem a captura no momento da pergunta. O digest NÃO SHALL incluir os títulos completos nem descrições dos itens.

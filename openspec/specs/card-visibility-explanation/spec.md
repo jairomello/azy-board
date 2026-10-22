@@ -1,7 +1,8 @@
 # card-visibility-explanation Specification
 
 ## Purpose
-TBD - created by archiving change explain-card-visibility. Update Purpose after archive.
+Explicar por que um card não aparece no board a partir de um avaliador compartilhado de visibilidade, com taxonomia determinística, guarda de acesso, oferta de exibição que preserva a visão anterior e degradação segura sem estado de apresentação.
+
 ## Requirements
 ### Requirement: Avaliador compartilhado de visibilidade
 

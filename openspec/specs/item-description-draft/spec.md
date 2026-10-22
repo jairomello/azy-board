@@ -1,7 +1,8 @@
 # item-description-draft Specification
 
 ## Purpose
-TBD - created by archiving change autosave-card-description. Update Purpose after archive.
+Preservar automaticamente o rascunho da descrição do item entre reaberturas, restaurando-o ou descartando-o conforme a decisão do usuário, limpando após salvar e mantendo-o em caso de falha, com armazenamento resiliente e privado.
+
 ## Requirements
 ### Requirement: Gravação automática do rascunho da descrição
 

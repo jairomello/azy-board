@@ -1,7 +1,8 @@
 # web-bundle-budget Specification
 
 ## Purpose
-TBD - created by archiving change reduce-web-bundle. Update Purpose after archive.
+Manter o bundle do web sob orçamento verificável, com carregamento sob demanda das dependências pesadas, medição reproduzível e gate no CI.
+
 ## Requirements
 ### Requirement: Carregamento sob demanda de dependências pesadas do web
 

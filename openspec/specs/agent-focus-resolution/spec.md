@@ -1,7 +1,8 @@
 # agent-focus-resolution Specification
 
 ## Purpose
-TBD - created by archiving change resolve-focus-context. Update Purpose after archive.
+Publicar o foco da tela (modais e controles internos) como contexto autoritativo do modelo, resolvendo item em primeiro plano, aba e objeto interno, com validação de acesso e pergunta de ambiguidade internacionalizada.
+
 ## Requirements
 ### Requirement: Publicação do foco pelas modais e controles internos
 

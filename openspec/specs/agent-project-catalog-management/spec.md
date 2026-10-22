@@ -1,7 +1,8 @@
 # agent-project-catalog-management Specification
 
 ## Purpose
-TBD - created by archiving change gerenciar-squads-cadastros-agente. Update Purpose after archive.
+Permitir que o Azy Agent edite cadastros do projeto pelo mesmo fluxo de aprovação das demais mutações, com resolução inequívoca de alvo, isolamento por tenant e projeto e resultado repetível.
+
 ## Requirements
 ### Requirement: Associação singular de squad sem alteração de papel
 O catálogo compartilhado SHALL permitir definir, trocar ou limpar o squad de um membro existente do projeto, preservando seu papel e membership. A operação SHALL exigir ADMIN e SHALL NOT adicionar pessoas implicitamente ao projeto. A prévia SHALL identificar membro, squad anterior e destino; remoção SHALL limpar apenas squad.

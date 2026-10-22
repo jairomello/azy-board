@@ -1,7 +1,8 @@
 # agent-screen-context Specification
 
 ## Purpose
-TBD - created by archiving change add-agent-screen-context. Update Purpose after archive.
+Fixar no run uma fotografia do contexto da tela e usá-la como escopo travado para prévias, contagens e mutações em lote, tornando conflito concorrente visível e impedindo que resultado vazio amplie o escopo.
+
 ## Requirements
 ### Requirement: Fotografia do contexto da tela
 

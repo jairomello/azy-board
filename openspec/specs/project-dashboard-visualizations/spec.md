@@ -1,7 +1,8 @@
 # project-dashboard-visualizations Specification
 
 ## Purpose
-TBD - created by archiving change enhance-project-dashboard-visuals. Update Purpose after archive.
+Representar os dez quadros do Dashboard em cards gráficos, com visualização específica por quadro, estados visuais de cobertura, interação com drill-down e biblioteca visual consistente.
+
 ## Requirements
 ### Requirement: Cards gráficos dos dez quadros
 O Dashboard SHALL apresentar os oito quadros do recorte atual com uma visualização gráfica apropriada, uma métrica principal e um detalhe textual correspondente. Sprint e Versões não devem ser renderizados como cards.

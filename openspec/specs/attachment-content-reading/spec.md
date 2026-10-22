@@ -1,7 +1,8 @@
 # attachment-content-reading Specification
 
 ## Purpose
-TBD - created by archiving change ler-anexos-propor-trabalho. Update Purpose after archive.
+Permitir ao agente ler o conteúdo de anexos de itens de forma autorizada, extraindo texto por formato suportado dentro de limites declarados e tratando o conteúdo como dado não confiável.
+
 ## Requirements
 ### Requirement: Leitura autorizada de conteúdo de anexo
 

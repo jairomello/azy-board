@@ -1,7 +1,8 @@
 # project-checklist-settings Specification
 
 ## Purpose
-TBD - created by archiving change checklist-item-advanced-fields. Update Purpose after archive.
+Dar ao projeto a opção por checklists detalhados, com gate dos campos avançados conforme o modo do projeto e seção própria nas configurações do projeto.
+
 ## Requirements
 ### Requirement: Opção por projeto para checklists detalhados
 

@@ -1,7 +1,8 @@
 # frontend-error-boundary Specification
 
 ## Purpose
-TBD - created by archiving change harden-error-boundary. Update Purpose after archive.
+Conter falhas de renderização do web com mensagem genérica em produção e identificador de referência por ocorrência, mantendo o stack restrito à observabilidade, além de acessibilidade, recuperação e textos traduzidos.
+
 ## Requirements
 ### Requirement: Mensagem genérica em produção
 

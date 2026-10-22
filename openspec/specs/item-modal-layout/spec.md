@@ -1,7 +1,8 @@
 # item-modal-layout Specification
 
 ## Purpose
-TBD - created by archiving change fix-item-modal-height. Update Purpose after archive.
+Manter altura fixa e previsível nas modais de item, com cabeçalho, navegação e ações persistentes, escopo e unidades claros e comportamento responsivo.
+
 ## Requirements
 ### Requirement: Altura fixa das modais de item
 As modais de item de Task, Bug, Subtask, Épico e História SHALL abrir com altura fixa de 80% da altura disponível na viewport e SHALL manter essa altura durante toda a interação, independentemente do conteúdo da aba ativa ou da quantidade de dados.

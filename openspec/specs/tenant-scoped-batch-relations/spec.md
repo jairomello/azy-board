@@ -1,7 +1,8 @@
 # tenant-scoped-batch-relations Specification
 
 ## Purpose
-TBD - created by archiving change tenant-scoped-batch-relations. Update Purpose after archive.
+Limitar as relações de batch ao tenant e ao projeto autorizados, preservando a semântica pública do batch com isolamento verificável e consulta limitada.
+
 ## Requirements
 ### Requirement: Relações de batch limitadas ao tenant e projeto
 

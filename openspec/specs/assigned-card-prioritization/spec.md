@@ -1,7 +1,8 @@
 # assigned-card-prioritization Specification
 
 ## Purpose
-TBD - created by archiving change priorizar-cards-atribuidos. Update Purpose after archive.
+Priorizar, na escolha do próximo card pelo agente, os cards atribuídos ao usuário autenticado, sempre dentro do projeto e do tenant autorizados.
+
 ## Requirements
 ### Requirement: Priorizar cards atribuídos ao usuário atual
 O fluxo do agente que seleciona um próximo card MUST verificar primeiro os cards atribuídos ao usuário atual dentro do projeto e tenant correntes. Um card elegível MUST ser folha, estar em uma coluna iniciável (`NOT_STARTED`) e não estar concluído, arquivado ou bloqueado. Havendo candidatos próprios, o agente MUST selecionar entre eles antes de considerar cards sem atribuição. A atribuição existente MUST ser preservada.

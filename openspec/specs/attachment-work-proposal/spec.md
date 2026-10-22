@@ -1,7 +1,8 @@
 # attachment-work-proposal Specification
 
 ## Purpose
-TBD - created by archiving change ler-anexos-propor-trabalho. Update Purpose after archive.
+Fundamentar propostas de trabalho — critérios de aceite, descrição e checklist — no conteúdo efetivamente lido do anexo, sem fabricar interpretação que o texto não sustente.
+
 ## Requirements
 ### Requirement: Proposta de trabalho fundamentada no conteúdo lido
 

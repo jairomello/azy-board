@@ -1,7 +1,8 @@
 # dashboard-performance-budget Specification
 
 ## Purpose
-TBD - created by archiving change escalar-metricas-dashboard. Update Purpose after archive.
+Fixar metas de desempenho por perfil de instalação em benchmark reproduzível, garantindo custo limitado e equivalência verificável dos números do Dashboard.
+
 ## Requirements
 ### Requirement: Benchmark reproduzível com metas por perfil
 O projeto SHALL manter benchmark autenticado determinístico dos endpoints snapshot, aging, hours, sprint e burnup, sem usar banco de desenvolvimento. A referência versionada v2 é Linux no host local Intel i5-13420H, 12 vCPU, ~16 GiB de RAM reportada, SSD NVMe, PostgreSQL/Valkey co-localizados; comparação só vale quando o runner confirmar estes recursos e `DASHBOARD_BENCHMARK_REFERENCE_HARDWARE=1` estiver declarado. Para a versão atual, as metas aceitas SHALL ser por recorte: SIMPLE com 10 mil folhas, 2 mil agregadores, 100 mil eventos e concorrência 5 — p95 de até 1.000 ms snapshot, 600 ms aging, 500 ms hours/sprint e 1.000 ms burnup; ADVANCED com 100 mil folhas, 20 mil agregadores, 1 milhão de eventos e concorrência 20 — snapshot/all 2.000 ms, snapshot/filtered 900 ms, aging/all 1.300 ms, aging/filtered 350 ms, hours/all 700 ms, hours/filtered 850 ms, sprints/cycles 25 ms, sprint/cycle 500 ms e burnup 1.500 ms. Os limites ADVANCED v3 foram aceitos pelo usuário com base nas três rodadas integrais medidas nesta versão, arredondados com margem sobre os p95 observados; otimizações adicionais ficam no backlog de versões futuras. O incremento de RSS do processo medido SHALL permanecer até 256 MiB SIMPLE e 512 MiB ADVANCED. Comparação de aceite exige todas as rodadas completas da versão e nenhum erro.

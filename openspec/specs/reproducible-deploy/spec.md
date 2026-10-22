@@ -1,7 +1,8 @@
 # reproducible-deploy Specification
 
 ## Purpose
-TBD - created by archiving change add-reproducible-deploy. Update Purpose after archive.
+Manter o deploy reproduzível com infraestrutura de containers versionada, versão de runtime fixada e coerente, migration como job separado antes do rollout, backup com restore testado, ordem de subida por prontidão e rollback documentado.
+
 ## Requirements
 ### Requirement: Infraestrutura de containers versionada no repositório
 

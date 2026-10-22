@@ -1,7 +1,7 @@
 # agent-dashboard-metrics Specification
 
 ## Purpose
-TBD - created by archiving change agent-dashboard-metrics. Update Purpose after archive.
+Expor ao Azy Agent a leitura das métricas oficiais do Dashboard, com paridade de números, filtros e período em relação à interface, critérios de origem explícitos, cobertura parcial declarada e sem qualquer mutação.
 
 ## Requirements
 

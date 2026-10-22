@@ -1,7 +1,8 @@
 # continuous-integration Specification
 
 ## Purpose
-TBD - created by archiving change add-ci-pipeline. Update Purpose after archive.
+Manter o CI obrigatório em branches e pull requests com gate de check completo, matriz de perfis, lint reprovativo, smoke do fluxo web/API e gates de contrato, bundle, frontend, documentação e imagens de deploy, além da versão de build propagada.
+
 ## Requirements
 ### Requirement: CI obrigatorio em branches e pull requests
 

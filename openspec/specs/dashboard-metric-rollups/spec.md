@@ -1,7 +1,7 @@
 # dashboard-metric-rollups Specification
 
 ## Purpose
-TBD - created by archiving change scalable-dashboard-metrics. Update Purpose after archive.
+Sustentar as métricas e os tokens do Dashboard por rollup diário transacional e consultas agregadas com limite de resposta, preservando os contratos de resposta e o código sequencial no detalhe de itens.
 
 ## Requirements
 

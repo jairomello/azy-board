@@ -1,7 +1,8 @@
 # item-sequence-code Specification
 
 ## Purpose
-TBD - created by archiving change item-sequence-code. Update Purpose after archive.
+Identificar visualmente cada item por código sequencial único por tipo e projeto, sustentado por índice único no banco e numeração automática na criação — inclusive em lote — e na correção via MCP.
+
 ## Requirements
 ### Requirement: Identificador visual sequencial por tipo e projeto
 O sistema SHALL manter um campo `sequence_code` em cada item, composto por prefixo de tipo (E, S, T, B) e número sequencial por projeto (ex: E1, S1, T1, B3). O código SHALL ser único dentro do projeto (tenant_id + project_id + sequence_code).

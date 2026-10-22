@@ -1,7 +1,8 @@
 # distributed-event-delivery Specification
 
 ## Purpose
-TBD - created by archiving change sincronizar-eventos-entre-instancias. Update Purpose after archive.
+Entregar eventos entre instâncias consumindo apenas a outbox confirmada, com consumo deduplicado, ordenado e isolado, detecção de lag mesmo sem evento novo e prova reproduzível da operação multi-instância.
+
 ## Requirements
 ### Requirement: Entrega distribuída consome somente outbox confirmada
 ADVANCED SHALL publicar eventos confirmados T38 por CoordinationPort/Valkey e cada API SHALL entregar às suas salas autorizadas sem gerar outro eventId/sequence. Pub/Sub SHALL ser aceleração transitória, não replay ou fila persistente. SIMPLE SHALL usar transporte local sem exigir Valkey. Envelope/canal SHALL ser versionado e escopado por instalação/tenant/projeto.
