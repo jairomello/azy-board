@@ -1,3 +1,14 @@
+/**
+ * [CONTRATO-ESTRUTURAL] Este arquivo lê `styles/globals.css` de propósito: os
+ * estados visuais da alça (oculta no repouso, revelada pelo ponteiro sobre o
+ * card, destaque forte na alça e no foco por teclado) são regras de cascata com
+ * `:hover`, `:focus-visible` e `@media (hover: none)`, que o happy-dom não
+ * aplica — não há teste de comportamento possível para elas aqui. O
+ * comportamento real foi verificado no navegador (computed styles e medição de
+ * pixel contra o board em execução) e pelas jornadas de e2e, que arrastam pela
+ * alça usando `[title="Arrastar card"] svg`. As demais asserções deste arquivo
+ * são de componente: estrutura, símbolo de quatro pontas e nome acessível.
+ */
 import { screen } from '../test/setup'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { render } from '@testing-library/react'
