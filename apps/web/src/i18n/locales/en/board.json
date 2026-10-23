@@ -351,5 +351,8 @@
   "allAttachmentsEmpty": "No attachments in this project.",
   "allLinksLoadError": "Could not load the project links.",
   "allAttachmentsLoadError": "Could not load the project attachments.",
-  "linkOrigin": "Origin"
+  "linkOrigin": "Origin",
+  "dragDropHere": "Drop here",
+  "dragDropCanceled": "Move canceled: drop the card on a column.",
+  "dragMoveRefused": "Move refused: the previous order and column were kept."
 }

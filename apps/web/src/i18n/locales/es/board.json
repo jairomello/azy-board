@@ -351,5 +351,8 @@
   "allAttachmentsEmpty": "No hay archivos adjuntos en este proyecto.",
   "allLinksLoadError": "No se pudieron cargar los enlaces del proyecto.",
   "allAttachmentsLoadError": "No se pudieron cargar los archivos adjuntos del proyecto.",
-  "linkOrigin": "Origen"
+  "linkOrigin": "Origen",
+  "dragDropHere": "Soltar aquí",
+  "dragDropCanceled": "Movimiento cancelado: suelta la tarjeta sobre una columna.",
+  "dragMoveRefused": "Movimiento rechazado: se mantuvieron el orden y la columna anteriores."
 }

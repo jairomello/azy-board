@@ -8,9 +8,12 @@ export interface OptimisticMutationOptions<S> {
   restore: (snapshot: S) => void
   request: () => Promise<unknown>
   onError: (error: unknown) => void
+  /** Chamado antes de aplicar o estado otimista: cancela leituras do quadro em voo. */
+  beforeApply?: () => void
 }
 
 export async function runOptimisticMutation<S>(options: OptimisticMutationOptions<S>): Promise<boolean> {
+  options.beforeApply?.()
   const snapshot = options.capture()
   options.apply()
   try {

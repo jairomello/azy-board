@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
 import { Trash2, GitBranch, Archive, Copy, Check, Workflow, Paperclip, Move } from 'lucide-react'
 import { UserAvatar } from './UserAvatar'
 import { InlineEdit } from './InlineEdit'
@@ -78,9 +77,12 @@ interface Props {
   critical?: boolean
   // T75 — avanço do card (peso da coluna refinado pelo checklist), calculado pelo board.
   advance?: number
+  // T89 — o quadro indica qual card saiu do fluxo durante o arraste; sem a prop vale
+  // o `isDragging` do dnd-kit.
+  dragging?: boolean
 }
 
-export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchive, critical = false, advance }: Props) {
+export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchive, critical = false, advance, dragging }: Props) {
   const { t } = useTranslation('board')
   const { toast } = useToast()
   const [breadcrumbOpen, setBreadcrumbOpen] = useState(false)
@@ -143,13 +145,14 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
     listeners,
     setNodeRef,
     setActivatorNodeRef,
-    transform,
-    transition,
     isDragging,
   } = useSortable({
     id: card.id,
     disabled: !canDrag,
   })
+
+  /** Card fora do fluxo: quem desenha a vaga é o quadro. */
+  const outOfFlow = dragging ?? isDragging
 
   const ancestry: AncestorNode[] = JSON.parse(card.ancestryPath || '[]')
   const breadcrumbText = ancestry.map(a => a.title).join(' › ')
@@ -157,17 +160,23 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
   const tags = (card.itemTags ?? card.taskTags) ?? []
   const hasActionArea = Boolean(onArchive || onDelete)
 
+  // Card T89 — durante o arraste o card sai do fluxo: quem desenha a vaga de
+  // destino é o próprio quadro (`CardDropPlaceholder`), na coluna e no índice que a
+  // prévia resolve. A raiz continua no DOM porque o dnd-kit mede o nó ativo na
+  // soltura, mas fica invisível e sem ocupar espaço, para o resto da lista fechar o
+  // buraco e o deslizamento acontecer.
   return (
     // Div raiz: apenas setNodeRef + style (SEM attributes/listeners → sem role="button")
     <div
       ref={setNodeRef}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.4 : 1,
-      }}
-      className={`kanban-card relative group flex border-l-[3px] ${STATUS_INDICATOR[card.status]} ${!card.isLeaf ? 'opacity-70' : ''} ${critical ? 'ring-2 ring-amber-400/80' : ''}`}
+      data-card-id={card.id}
+      className={outOfFlow
+        ? 'kanban-card--dragging'
+        : `kanban-card relative group flex border-l-[3px] ${STATUS_INDICATOR[card.status]} ${!card.isLeaf ? 'opacity-70' : ''} ${critical ? 'ring-2 ring-amber-400/80' : ''}`}
     >
+      {outOfFlow ? null : (
+        <>
+
       {/* ── Alça de arraste (Card T85): faixa de ~30 px, único lugar com
            listeners + setActivatorNodeRef. A largura, a transição e os estados
            (oculta em repouso, visível no ponteiro sobre o card, forte no
@@ -425,6 +434,8 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
           )}
         </div>
       </div>
+        </>
+      )}
     </div>
   )
 }

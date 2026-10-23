@@ -20,11 +20,12 @@ import {
   DndContext,
   DragOverlay,
   pointerWithin,
-  rectIntersection,
   type CollisionDetection,
   type DragStartEvent,
   type DragEndEvent,
+  type DragMoveEvent,
   type DragOverEvent,
+  type DropAnimationFunction,
   PointerSensor,
   useSensor,
   useSensors,
@@ -57,11 +58,35 @@ import { useBoardItemEditing } from './hooks/useBoardItemEditing'
 import { useBoardItemModal } from './hooks/useBoardItemModal'
 import { useBoardAgentSession } from './hooks/useBoardAgentSession'
 import { useBoardFilterValidation } from './hooks/useBoardFilterValidation'
+import { BoardDragAnimationProvider, useBoardDragAnimation } from './hooks/useBoardDragAnimation'
+import {
+  CARD_REORDER_TRANSITION,
+  DRAG_OVERLAY_SETTLING_CLASS,
+  DRAG_OVERLAY_DURATION_VAR,
+  dropDuration,
+  toTranslateKeyframe,
+  type DragTargetRect,
+} from './model/dragAnimation'
+import { dropAnchor, type PreviewColumn } from './model/dragPreview'
+
 import { resolveBoardModalTarget, resolveCreationIntent, type NewItemCreation } from './model/interaction'
 import { buildEpicGroups, groupEpicsByModule, selectBoardCards, selectOrphanCards, selectStoryVirtualCards } from './model/boardView'
 import type { ItemData } from './model/types'
 import { applyViewCommand, readPinnedResult, subscribeViewSession } from '../../lib/assistantViewStore'
 import { VIEW_COMMAND_SCHEMA_VERSION, type AssistantPlanningResult } from '@azy-board/assistant-contracts'
+
+/** Retângulo de viewport de um elemento, para a prévia e para o assentamento. */
+function measureRect(element: Element | null): DragTargetRect | null {
+  if (!element) return null
+  const { left, right, top, bottom } = element.getBoundingClientRect()
+  return { left, right, top, bottom }
+}
+
+/** Nó do card pelo id; o overlay também tem `data-card-id`, então o primeiro serve. */
+function cardNode(activeId: string): Element | null {
+  return Array.from(document.querySelectorAll('[data-card-id]'))
+    .find(node => (node as HTMLElement).dataset.cardId === activeId) ?? null
+}
 
 export default function BoardPage() {
   const { projectId } = useParams<{ projectId: string }>()
@@ -92,6 +117,7 @@ export default function BoardPage() {
     loading,
     syncState,
     invalidateBoard,
+    cancelBoardReads,
   } = useBoardData(projectId)
   const [activeId, setActiveId] = useState<string | null>(null)
   const {
@@ -174,20 +200,91 @@ export default function BoardPage() {
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
-  // Prioriza elementos menores (cards) sobre elementos maiores (colunas) na detecção de colisão
+  // Prioriza elementos menores (cards) sobre elementos maiores (colunas) na detecção de colisão.
+  //
+  // Card T89 — só há destino quando o **ponteiro** está sobre uma coluna. O
+  // `rectIntersection` de fallback devolvia um alvo a partir do retângulo do card
+  // (que se estende além do ponteiro), o que fazia a prévia avançar para uma
+  // posição que a soltura fora das colunas depois recusava. Sem colisão, o
+  // dnd-kit mantém o card na origem e a reversão assenta exatamente onde ele estava.
   const collisionDetection: CollisionDetection = useCallback((args) => {
     // O ponteiro permanece capturado pelo grip do card arrastado; ignorar o
     // próprio item evita que ele seja escolhido como destino do reorder.
     const hits = pointerWithin(args).filter(hit => hit.id !== args.active.id)
-    if (hits.length > 0) {
-      const itemIds = new Set(allItems.map(item => item.id))
-      return [...hits].sort((left, right) => {
-        const score = (id: string) => itemIds.has(id) ? 0 : id.includes(':drop:') ? 1 : id.includes(':col:') ? 2 : 3
-        return score(left.id.toString()) - score(right.id.toString())
+    if (hits.length === 0) return []
+    const itemIds = new Set(allItems.map(item => item.id))
+    return [...hits].sort((left, right) => {
+      const score = (id: string) => itemIds.has(id) ? 0 : id.includes(':drop:') ? 1 : id.includes(':col:') ? 2 : 3
+      return score(left.id.toString()) - score(right.id.toString())
+    })
+  }, [allItems])
+
+  // Card T89 — medição do quadro no início do arraste: cada coluna com seus cards
+  // (posições e altura) e o espaço entre eles, mais o card arrastado. A prévia é
+  // resolvida sobre esta geometria, sem depender das transforms do sortable.
+  const measureDragAnimation = useCallback((activeId: string) => {
+    const columns: PreviewColumn[] = []
+    for (const element of Array.from(document.querySelectorAll<HTMLElement>('[data-drop-id]'))) {
+      const id = element.dataset.dropId ?? ''
+      const columnId = id.split(':col:')[1]
+      if (!columnId) continue
+      const caixa = element.getBoundingClientRect()
+      const cards = Array.from(element.querySelectorAll<HTMLElement>('.board-column-cards > .kanban-card')).map(card => {
+        const retangulo = card.getBoundingClientRect()
+        return { id: card.dataset.cardId ?? '', top: retangulo.top, bottom: retangulo.bottom, height: retangulo.height }
+      }).filter(card => card.id !== '')
+      columns.push({
+        id,
+        columnId,
+        rect: { left: caixa.left, right: caixa.right, top: caixa.top, bottom: caixa.bottom },
+        cards,
+        gap: cards.length > 1 ? Math.max(0, cards[1]!.top - cards[0]!.bottom) : 8,
       })
     }
-    return rectIntersection(args).filter(hit => hit.id !== args.active.id)
-  }, [allItems])
+    const node = cardNode(activeId)
+    const retangulo = node?.getBoundingClientRect()
+    const origem = node?.closest<HTMLElement>('[data-drop-id]')?.dataset.dropId?.split(':col:')[1]
+    return {
+      columns,
+      source: retangulo && origem ? { id: activeId, columnId: origem, height: retangulo.height } : null,
+    }
+  }, [])
+
+  const dragAnimation = useBoardDragAnimation(measureDragAnimation)
+  // Retângulo para onde o overlay assenta (a vaga, ou a origem na recusa) e a
+  // validade do destino, lidos na soltura.
+  const settleRef = useRef<DragTargetRect | null>(null)
+  const originRectRef = useRef<DragTargetRect | null>(null)
+  const settleValidRef = useRef(false)
+
+  // Card T89 — assentamento: o overlay anima do ponteiro até o retângulo da vaga
+  // (aceite curto) ou até a origem (reversão mais longa), e o wrapper do card volta a
+  // ficar reto e no tamanho natural no mesmo intervalo. Sem depender do retângulo do
+  // nó ativo — que fica fora do fluxo durante o arraste.
+  const dropAnimation = useCallback<DropAnimationFunction>(({ dragOverlay, transform }) => {
+    const alvo = settleRef.current
+    const valid = settleValidRef.current
+    settleRef.current = null
+    originRectRef.current = null
+    if (!alvo) return
+    const duration = dropDuration(valid, dragAnimation.reducedMotion)
+    if (duration === 0) return
+    const node = dragOverlay.node
+    node.style.setProperty(DRAG_OVERLAY_DURATION_VAR, `${duration}ms`)
+    node.classList.add(DRAG_OVERLAY_SETTLING_CLASS)
+    const quadros = [
+      toTranslateKeyframe(transform),
+      toTranslateKeyframe({ x: transform.x + (alvo.left - dragOverlay.rect.left), y: transform.y + (alvo.top - dragOverlay.rect.top) }),
+    ] as Keyframe[]
+    const animation = node.animate(quadros, { duration, easing: CARD_REORDER_TRANSITION.easing, fill: 'forwards' })
+    return new Promise<void>(resolve => {
+      animation.onfinish = () => {
+        node.classList.remove(DRAG_OVERLAY_SETTLING_CLASS)
+        node.style.removeProperty(DRAG_OVERLAY_DURATION_VAR)
+        resolve()
+      }
+    })
+  }, [dragAnimation.reducedMotion])
 
   // Mapa squadId → Set<userId> para filtro de squad O(1)
   const squadMembersMap = useMemo(() => {
@@ -275,6 +372,11 @@ export default function BoardPage() {
     setColumns,
     setItems: setAllItems,
     onError: toast,
+    // Card T89 — a recusa do servidor restaura ordem e coluna; o quadro diz isso.
+    mutationRefusedMessage: tBoard('dragMoveRefused'),
+    // B16 — cancela leitura do quadro em voo: uma resposta pedida antes da soltura
+    // chegava depois e devolvia o card para a coluna antiga.
+    cancelPendingReads: cancelBoardReads,
   })
 
   const archiving = useBoardArchiving({ projectId, allItems, setAllItems, invalidateBoard, toast, tBoard })
@@ -558,17 +660,51 @@ export default function BoardPage() {
 
         {view === 'kanban' && (
           <div className="p-3 sm:p-4">
+            <BoardDragAnimationProvider value={dragAnimation}>
             <DndContext
               sensors={sensors}
               collisionDetection={collisionDetection}
-              onDragStart={(e: DragStartEvent) => setActiveId(e.active.id as string)}
+              onDragStart={(e: DragStartEvent) => {
+                setActiveId(e.active.id as string)
+                originRectRef.current = measureRect(cardNode(e.active.id.toString()))
+                dragAnimation.onDragStart(e)
+              }}
+              onDragMove={(e: DragMoveEvent) => dragAnimation.onDragMove(e)}
               onDragOver={(e: DragOverEvent) => { if (e.over) lastOverRef.current = e.over.id.toString() }}
               onDragEnd={(e: DragEndEvent) => {
-                const effectiveOver = e.over?.id?.toString() ?? lastOverRef.current ?? undefined
+                const isColumnDrag = e.active.id.toString().includes(':col:')
+                // A âncora da soltura vem da prévia: o card que fica depois da vaga;
+                // quando a vaga é a última (ou a coluna está vazia), o marcador da
+                // própria coluna manda inserir no fim. O arraste de coluna segue o `over`.
+                const preview = dragAnimation.previewRef.current
+                const effectiveOver = isColumnDrag
+                  ? (e.over?.id?.toString() ?? lastOverRef.current ?? undefined)
+                  : (dropAnchor(preview) ?? preview.targetId?.replace(':col:', ':drop:'))
+                // Card B14 — a vaga da lane de destino, não a primeira do documento
+                // (que poderia ser a de outra lane).
+                const vagaDoDestino = preview.targetId
+                  ? document.querySelector(`[data-drop-id="${preview.targetId}"] .kanban-card-placeholder`)
+                  : null
+                settleRef.current = measureRect(vagaDoDestino) ?? originRectRef.current
+                settleValidRef.current = dragAnimation.validRef.current
+                dragAnimation.onDragEnd(e)
                 lastOverRef.current = null
+                // Card T89 — arraste de card sem destino sob o ponteiro: a prévia
+                // ficou na origem, então só resta liberar o overlay e avisar.
+                if (!isColumnDrag && !settleValidRef.current) {
+                  setActiveId(null)
+                  toast(tBoard('dragDropCanceled'))
+                  return
+                }
                  handleDragEnd(e, effectiveOver)
               }}
-              onDragCancel={() => { lastOverRef.current = null; setActiveId(null) }}
+              onDragCancel={() => {
+                lastOverRef.current = null
+                setActiveId(null)
+                settleRef.current = originRectRef.current
+                settleValidRef.current = false
+                dragAnimation.onDragCancel()
+              }}
             >
                 {!isSimpleBoard && !hideModules && filters.moduleViewMode === 'tabs' && moduleGroups.length > 0 && (
                 <div role="tablist" aria-label={tBoard('moduleViewTabs')} className="mb-3 flex gap-1.5 overflow-x-auto rounded-xl border border-border/80 bg-surface p-1">
@@ -639,9 +775,9 @@ export default function BoardPage() {
                   noModuleLabel={tBoard('noModule')}
                 />
 
-              <DragOverlay>
+              <DragOverlay dropAnimation={dropAnimation}>
                 {activeCard && (
-                  <div className="rotate-2 scale-105">
+                  <div className={`board-drag-overlay__card${dragAnimation.reducedMotion ? ' board-drag-overlay__card--still' : ''}`}>
                     <KanbanCard card={activeCard} advance={cardAdvance(advanceBands, activeCard)} />
                   </div>
                 )}
@@ -654,6 +790,7 @@ export default function BoardPage() {
                 )}
               </DragOverlay>
             </DndContext>
+            </BoardDragAnimationProvider>
           </div>
         )}
         </div>

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { buildBoardItemCreatePayload, getPersistableColumnOrder, resolveBoardModalTarget, resolveCreationIntent, sortBoardItemsByPosition } from './model/interaction'
+import { buildBoardItemCreatePayload, destinationOrderWithInserted, resolveBoardModalTarget, resolveCreationIntent, sortBoardItemsByPosition } from './model/interaction'
 import { createBoardInteractionHandler } from './hooks/useBoardInteraction'
 import type { Column, ItemData } from './model/types'
 
@@ -53,14 +53,17 @@ describe('comportamentos observáveis da interação do Board', () => {
     expect(resolveCreationIntent('MODULE', {}, {})).toEqual({ kind: 'module' })
   })
 
-  test('monta a ordem completa da coluna sem incluir cards virtuais', () => {
+  test('monta a ordem completa da coluna sem incluir cards virtuais nem o card movido', () => {
     const cards = [
       { ...item, id: 'task-1', position: 0 },
       { ...item, id: 'task-2', position: 1 },
       { ...item, id: 'story-virtual-story-1', position: 2, isLeaf: false },
       { ...item, id: 'task-3', position: 3 },
     ] as ItemData[]
-    expect(JSON.stringify(getPersistableColumnOrder(cards, 'todo', 'task-1', 'task-3'))).toBe(JSON.stringify(['task-2', 'task-3', 'task-1']))
+    // Âncora `task-3`: o card entra imediatamente antes dela.
+    expect(JSON.stringify(destinationOrderWithInserted(cards, 'todo', 'task-1', 'task-3'))).toBe(JSON.stringify(['task-2', 'task-1', 'task-3']))
+    // Marcador da coluna: o card entra no fim.
+    expect(JSON.stringify(destinationOrderWithInserted(cards, 'todo', 'task-1', 'lane:drop:todo'))).toBe(JSON.stringify(['task-2', 'task-3', 'task-1']))
   })
 
   test('renderiza cards na ordem persistida por position sem mutar a lista original', () => {
@@ -87,9 +90,15 @@ describe('comportamentos observáveis da interação do Board', () => {
       onError: () => undefined,
     }, async <T>(path: string, body: unknown) => { patches.push([path, body]); return undefined as T })
 
+    // Card B14 — `task-3` é a âncora: o card movido entra imediatamente antes dela.
     await handler({ active: { id: 'task-1' }, over: { id: 'task-3' } } as never)
-    expect(JSON.stringify(state.map(card => `${card.id}:${card.position}`))).toBe(JSON.stringify(['task-1:2', 'task-2:0', 'task-3:1']))
-    expect(JSON.stringify(patches)).toBe(JSON.stringify([['/projects/project-1/items/reorder', { columnId: 'todo', order: ['task-2', 'task-3', 'task-1'] }]]))
+    expect(state.find(card => card.id === 'task-1')?.position).toBe(1)
+    expect(JSON.stringify(state.map(card => `${card.id}:${card.position}`))).toBe(JSON.stringify(['task-1:1', 'task-2:0', 'task-3:2']))
+    expect(JSON.stringify(patches)).toBe(JSON.stringify([['/projects/project-1/items/reorder', { columnId: 'todo', order: ['task-2', 'task-1', 'task-3'] }]]))
+
+    // Marcador da coluna: o card vai para o fim, e não para antes do último.
+    await handler({ active: { id: 'task-1' }, over: { id: 'project-1:drop:todo' } } as never)
+    expect(state.find(card => card.id === 'task-1')?.position).toBe(2)
   })
 
   test('faz rollback da ordem vertical quando o reorder falha', async () => {
@@ -123,7 +132,48 @@ describe('comportamentos observáveis da interação do Board', () => {
 
     await handler({ active: { id: item.id }, over: { id: 'doing' } } as never)
     expect(`${updates[0]?.id}:${updates[0]?.columnId}:${updates[0]?.status}`).toBe('task-1:doing:IN_PROGRESS')
-    expect(JSON.stringify(patches)).toBe(JSON.stringify([['/projects/project-1/items/task-1/move', { columnId: 'doing' }]]))
+    // Card T89 — o move aplica a coluna e o reorder fixa a posição escolhida na vaga.
+    expect(JSON.stringify(patches)).toBe(JSON.stringify([
+      ['/projects/project-1/items/task-1/move', { columnId: 'doing' }],
+      ['/projects/project-1/items/reorder', { columnId: 'doing', order: ['task-1'] }],
+    ]))
+  })
+
+  test('o move entre colunas fixa a posição da vaga na coluna de destino', async () => {
+    const destino = [
+      { ...item, id: 'task-9', columnId: 'doing', position: 0 },
+      { ...item, id: 'task-8', columnId: 'doing', position: 1 },
+    ] as ItemData[]
+    const todos = [item, ...destino]
+    let estado = todos.map(candidato => ({ ...candidato }))
+    const patches: unknown[] = []
+    const handler = createBoardInteractionHandler({
+      projectId: 'project-1', columns, items: todos, displayedItems: todos,
+      setColumns: () => undefined,
+      setItems: update => { estado = typeof update === 'function' ? update(estado) : update },
+      onError: () => undefined,
+    }, async <T>(path: string, body: unknown) => { patches.push([path, body]); return undefined as T })
+
+    // Âncora `task-8`: a vaga entrou entre `task-9` e `task-8`.
+    await handler({ active: { id: item.id }, over: { id: 'task-8' } } as never)
+
+    expect(JSON.stringify(patches[1])).toBe(JSON.stringify(['/projects/project-1/items/reorder', { columnId: 'doing', order: ['task-9', 'task-1', 'task-8'] }]))
+    const movido = estado.find(candidato => candidato.id === 'task-1')
+    expect(`${movido?.columnId}:${movido?.position}`).toBe('doing:1')
+    expect(estado.find(candidato => candidato.id === 'task-8')?.position).toBe(2)
+  })
+
+  test('a ordem do destino insere o card na âncora e no fim com marcador', () => {
+    const itens = [
+      { ...item, id: 'task-1', columnId: 'todo', position: 0 },
+      { ...item, id: 'task-9', columnId: 'doing', position: 0 },
+      { ...item, id: 'task-8', columnId: 'doing', position: 1 },
+      { ...item, id: 'story-virtual-s1', columnId: 'doing', position: 2, isLeaf: false },
+    ] as ItemData[]
+    expect(destinationOrderWithInserted(itens, 'doing', 'task-1', 'task-8')).toEqual(['task-9', 'task-1', 'task-8'])
+    expect(destinationOrderWithInserted(itens, 'doing', 'task-1', 'lane:drop:doing')).toEqual(['task-9', 'task-8', 'task-1'])
+    expect(destinationOrderWithInserted(itens, 'doing', 'task-1')).toEqual(['task-9', 'task-8', 'task-1'])
+    expect(destinationOrderWithInserted(itens, 'vazia', 'task-1')).toEqual(['task-1'])
   })
 
   test('faz rollback e comunica erro quando a mutação falha', async () => {

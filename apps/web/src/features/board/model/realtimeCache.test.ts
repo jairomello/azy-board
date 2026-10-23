@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { WsEvent } from '@azy-board/realtime-contracts'
-import { applyBoardEvent, type BoardData } from '../hooks/useBoardData'
+import { applyBoardEvent, needsBoardRefetch, type BoardData } from '../hooks/useBoardData'
 import type { ItemData } from '../model/types'
 
 function item(id: string, extra: Partial<ItemData> = {}): ItemData {
@@ -24,6 +24,24 @@ describe('reducer de eventos do board no cache', () => {
     const next = applyBoardEvent(board([item('a'), item('b')]), event('CARD_MOVED', { itemId: 'a', columnId: 'col-2', status: 'IN_PROGRESS' }))
     expect(next.allItems.find(i => i.id === 'a')).toMatchObject({ columnId: 'col-2', status: 'IN_PROGRESS' })
     expect(next.allItems.find(i => i.id === 'b')).toMatchObject({ columnId: 'col-1' })
+  })
+
+  test('CARD_UPDATED com reordenação aplica a posição de cada card do payload', () => {
+    const next = applyBoardEvent(
+      board([item('a', { position: 0 }), item('b', { position: 1 }), item('c', { position: 2 })]),
+      event('CARD_UPDATED', { reordered: true, columnId: 'col-1', itemIds: ['b', 'c', 'a'] }),
+    )
+    expect(next.allItems.map(i => `${i.id}:${i.position}`).join(',')).toBe('a:2,b:0,c:1')
+    // Nada de `reordered`/`itemIds` vazando para o item.
+    expect(next.allItems.every(i => !('reordered' in i) && !('itemIds' in i))).toBe(true)
+  })
+
+  test('reordenação com a lista no payload não exige refetch; os demais casos exigem', () => {
+    expect(needsBoardRefetch(event('CARD_UPDATED', { reordered: true, columnId: 'col-1', itemIds: ['a'] }))).toBe(false)
+    expect(needsBoardRefetch(event('CARD_UPDATED', { reordered: true }))).toBe(true)
+    expect(needsBoardRefetch(event('ITEM_UPDATED', { unarchived: true, itemIds: ['a'] }))).toBe(true)
+    expect(needsBoardRefetch(event('ITEM_UPDATED', { itemIds: ['a'] }))).toBe(true)
+    expect(needsBoardRefetch(event('ITEM_UPDATED', { itemId: 'a', title: 'x' }))).toBe(false)
   })
 
   test('ITEM_CREATED faz upsert e deduplica por id', () => {

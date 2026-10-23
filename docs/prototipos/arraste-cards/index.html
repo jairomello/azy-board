@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Azy Board · Protótipo de movimentação de cards</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./prototype.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Navegação">
+      <div class="brand"><span class="brand-mark">a</span><span>Azy<span class="brand-light">board</span></span></div>
+      <p class="nav-caption">ESPAÇO DE TRABALHO</p>
+      <nav class="side-nav" aria-label="Navegação principal">
+        <span>▦ <b>Projetos</b></span><span class="active">▤ <b>Quadro</b></span><span>◷ <b>Configurações</b></span><span>▥ <b>Dashboard</b></span>
+      </nav>
+      <div class="sidebar-bottom"><span class="avatar avatar-user">JC</span><span><strong>Jairo Costa</strong><small>Owner</small></span></div>
+    </aside>
+    <main class="workspace">
+      <header class="topbar"><span>Plataforma Azy <span class="slash">›</span> Quadro</span><span class="sync">● Sincronizado</span><span class="header-avatar">JC</span></header>
+      <section class="board-page">
+        <div class="board-heading"><div><div class="eyebrow">PROJETO / ENTREGA DO PRODUTO</div><h1>Plataforma Azy</h1><p>Organize o trabalho do time em um só lugar.</p></div><span class="new-card">＋ Novo card</span></div>
+        <div class="command-bar"><span class="view-selected">Quadro</span><span>Árvore</span><span class="command-separator"></span><span>☷ Filtros</span><span>☷ Opções</span><span class="command-spacer"></span><span class="search">⌕ &nbsp; Buscar no quadro...</span></div>
+        <div class="prototype-bar">
+          <div><strong>Arraste pela alça ↗</strong><span> Mova dentro da coluna ou entre colunas. O espaço de destino aparece antes de soltar.</span></div>
+          <div class="prototype-actions"><button id="lock-toggle" type="button" aria-pressed="false">Bloquear Revisão: desligado</button><button id="theme-toggle" type="button" aria-pressed="false">Tema escuro</button><button id="reset" type="button">Reiniciar</button></div>
+        </div>
+        <div class="board-canvas">
+          <div class="board-columns" id="board-columns">
+            <section class="board-column" data-column="todo" aria-label="A Fazer"><header class="board-column-header"><div><span class="column-grip">⠿</span><i class="status-dot todo"></i><strong>A Fazer</strong></div><span class="board-column-count">0</span></header><div class="board-column-dropzone"><div class="board-column-add"><span class="board-add-card">＋ Adicionar card</span></div><div class="board-column-cards"></div></div></section>
+            <section class="board-column" data-column="doing" aria-label="Fazendo"><header class="board-column-header"><div><span class="column-grip">⠿</span><i class="status-dot doing"></i><strong>Fazendo</strong></div><span class="board-column-count">0</span></header><div class="board-column-dropzone"><div class="board-column-add"><span class="board-add-card">＋ Adicionar card</span></div><div class="board-column-cards"></div></div></section>
+            <section class="board-column" data-column="review" aria-label="Revisão"><header class="board-column-header"><div><span class="column-grip">⠿</span><i class="status-dot review"></i><strong>Revisão</strong><span class="lock-label">Destino impedido</span></div><span class="board-column-count">0</span></header><div class="board-column-dropzone"><div class="board-column-add"><span class="board-add-card">＋ Adicionar card</span></div><div class="board-column-cards"></div></div></section>
+            <section class="board-column" data-column="done" aria-label="Concluídas"><header class="board-column-header"><div><span class="column-grip">⠿</span><i class="status-dot done"></i><strong>Concluídas</strong></div><span class="board-column-count">0</span></header><div class="board-column-dropzone"><div class="board-column-add"><span class="board-add-card">＋ Adicionar card</span></div><div class="board-column-cards"></div></div></section>
+          </div>
+        </div>
+        <div class="board-footer"><span id="status" role="status" aria-live="polite">Arraste um card pela alça à esquerda.</span><span id="order"></span></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

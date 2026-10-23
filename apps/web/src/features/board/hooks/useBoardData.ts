@@ -101,9 +101,14 @@ function resolveValue<T>(previous: T, value: SetStateAction<T>): T {
 
 // Eventos cujo payload não mapeia 1:1 para o cache do board são reconciliados
 // por refetch em vez de patch (honestidade de mecanismo por evento).
-function needsBoardRefetch(event: WsEvent): boolean {
+export function needsBoardRefetch(event: WsEvent): boolean {
   const payload = (event.payload ?? {}) as { reordered?: boolean; unarchived?: boolean; itemIds?: string[]; itemId?: string; archived?: boolean }
-  if (payload.reordered) return true                                  // ordem não mapeia para o cache
+  // A reordenação traz a ordem completa em `itemIds`: aplicar direto mantém o
+  // movimento otimista na tela. Refazer a leitura aqui era o que fazia a interface
+  // depender do banco — e a leitura podia chegar antes do commit do reorder,
+  // devolvendo a ordem antiga até um refresh manual.
+  if (payload.reordered && Array.isArray(payload.itemIds)) return false
+  if (payload.reordered) return true                                  // ordem sem lista para aplicar
   if (payload.unarchived) return true                                 // restauração exige os itens completos
   if (payload.itemIds && !payload.itemId && !payload.archived) return true // "touch" sem estado para aplicar
   return false
@@ -137,7 +142,16 @@ export function applyBoardEvent(previous: BoardData, event: WsEvent): BoardData 
       return { ...previous, allItems: computeIsLeaf(previous.allItems.filter(item => item.id !== itemId)) }
     }
     case 'CARD_UPDATED': {
-      const { taskId, itemId, ...updates } = event.payload as { taskId?: string; itemId?: string; [key: string]: unknown }
+      const { taskId, itemId, reordered, itemIds, ...updates } = event.payload as { taskId?: string; itemId?: string; reordered?: boolean; itemIds?: string[]; [key: string]: unknown }
+      // Reordenação: a ordem completa vem no payload, então a posição de cada card
+      // é aplicada no cliente sem reler o banco.
+      if (reordered && Array.isArray(itemIds)) {
+        const positions = new Map(itemIds.map((id, position) => [id, position]))
+        return {
+          ...previous,
+          allItems: previous.allItems.map(item => positions.has(item.id) ? { ...item, position: positions.get(item.id)! } : item),
+        }
+      }
       const id = itemId ?? taskId
       return id ? { ...previous, allItems: previous.allItems.map(item => item.id === id ? { ...item, ...updates } : item) } : previous
     }
@@ -214,8 +228,18 @@ export function useBoardData(projectId: string | undefined) {
     queryClient.setQueryData<BoardData>(key, (previous) => previous ? updater(previous) : previous)
   }, [queryClient, key])
 
-  const invalidateBoard = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: key })
+  // A promise é devolvida de propósito: a barreira de refetch do RealtimeSession
+  // aguarda esta chamada (`await deps.refetch()`), e com `void` a barreira abria
+  // antes da releitura terminar — a resposta atrasada sobrescrevia o estado aplicado.
+  const invalidateBoard = useCallback(() => (
+    queryClient.invalidateQueries({ queryKey: key })
+  ), [queryClient, key])
+
+  // Cancela leituras do quadro já em voo: sem isso, uma resposta pedida antes da
+  // mutação (foco da janela, ressincronização, barreira anterior) chega depois e
+  // devolve o card para a posição antiga.
+  const cancelBoardReads = useCallback(() => {
+    void queryClient.cancelQueries({ queryKey: key })
   }, [queryClient, key])
 
   const setColumns = useCallback((value: SetStateAction<Column[]>) => patch(prev => ({ ...prev, columns: resolveValue(prev.columns, value) })), [patch])
@@ -287,5 +311,6 @@ export function useBoardData(projectId: string | undefined) {
     loading: query.isPending, setLoading,
     syncState,
     invalidateBoard,
+    cancelBoardReads,
   }
 }

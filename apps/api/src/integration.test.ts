@@ -185,6 +185,40 @@ describe('modos de board de projetos', () => {
     expect(archivedReorder.status).toBe(400)
   })
 
+  test('reorder aceita a ordem dos cards móveis quando a coluna tem card com filhos (B17)', async () => {
+    const projectResponse = await request('/projects', adminToken, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Reorder com pai', boardMode: 'SIMPLE' }),
+    })
+    const projeto = await projectResponse.json() as { id: string; simpleStoryId: string }
+    const destino = generateId()
+    const colunaPai = generateId()
+    const agora = new Date().toISOString()
+    await db.insert(columns).values([
+      { id: colunaPai, tenantId, projectId: projeto.id, name: 'Origem', baseStatus: 'NOT_STARTED', position: 0 },
+      { id: destino, tenantId, projectId: projeto.id, name: 'Destino', baseStatus: 'NOT_STARTED', position: 1 },
+    ])
+    const movelA = generateId()
+    const movelB = generateId()
+    const pai = generateId()
+    await db.insert(items).values([
+      { id: movelA, tenantId, projectId: projeto.id, type: 'TASK', parentId: projeto.simpleStoryId, columnId: destino, moduleId: null, title: 'Móvel A', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, authorId: adminId, createdAt: agora, updatedAt: agora },
+      { id: movelB, tenantId, projectId: projeto.id, type: 'TASK', parentId: projeto.simpleStoryId, columnId: destino, moduleId: null, title: 'Móvel B', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 1, authorId: adminId, createdAt: agora, updatedAt: agora },
+      // Pai com filho: o GET /items não o entrega ao board (só folhas), mas ele tem
+      // columnId e antes entrava na validação do reorder.
+      { id: pai, tenantId, projectId: projeto.id, type: 'TASK', parentId: projeto.simpleStoryId, columnId: destino, moduleId: null, title: 'Pai', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 2, authorId: adminId, createdAt: agora, updatedAt: agora },
+      { id: generateId(), tenantId, projectId: projeto.id, type: 'TASK', parentId: pai, columnId: colunaPai, moduleId: null, title: 'Filho', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 0, authorId: adminId, createdAt: agora, updatedAt: agora },
+    ])
+
+    const reorder = await request(`/projects/${projeto.id}/items/reorder`, adminToken, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ columnId: destino, order: [movelB, movelA] }),
+    })
+    expect(reorder.status).toBe(200)
+    const posicoes = await db.select().from(items).where(eq(items.columnId, destino))
+    expect(posicoes.find(item => item.id === movelB)?.position).toBe(0)
+    expect(posicoes.find(item => item.id === movelA)?.position).toBe(1)
+  })
+
   test('rejeita IDs cruzados entre card, checklist e passo', async () => {
     const projectResponse = await request('/projects', adminToken, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Checklist ownership', boardMode: 'SIMPLE' }),

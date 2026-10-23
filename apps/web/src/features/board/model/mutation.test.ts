@@ -32,6 +32,21 @@ describe('política única de mutação otimista', () => {
     expect(errors).toEqual(['falha'])
   })
 
+  test('cancela leituras em voo antes de aplicar o estado otimista (B16)', async () => {
+    const ordem: string[] = []
+    await runOptimisticMutation({
+      beforeApply: () => ordem.push('cancelar'),
+      capture: () => ordem.push('capturar'),
+      apply: () => ordem.push('aplicar'),
+      restore: () => ordem.push('restaurar'),
+      request: async () => { ordem.push('requisitar') },
+      onError: () => {},
+    })
+    // Sem o cancelamento antes do apply, uma resposta pedida antes da mutação chega
+    // depois e sobrescreve o movimento aplicado.
+    expect(ordem).toEqual(['cancelar', 'capturar', 'aplicar', 'requisitar'])
+  })
+
   test('rollback direcionado restaura apenas o alvo', async () => {
     let items = [{ id: 'a', title: 'A' }, { id: 'b', title: 'B' }]
     await runOptimisticMutation({

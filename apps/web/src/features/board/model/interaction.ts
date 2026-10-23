@@ -1,7 +1,6 @@
 import type { DragEndEvent } from '@dnd-kit/core'
 import type { ItemData, Column } from './types'
 import type { ItemType } from '@azy-board/domain'
-import { arrayMove } from '@dnd-kit/sortable'
 
 export type BoardModalTarget =
   | { kind: 'story'; item: ItemData }
@@ -103,14 +102,22 @@ export function getDropColumnId(
   return items.find(item => item.id === over)?.columnId ?? undefined
 }
 
-export function getPersistableColumnOrder(items: ItemData[], columnId: string, activeId: string, overId: string): string[] | undefined {
-  const columnItems = items
-    .filter(item => item.columnId === columnId && item.isLeaf && !item.id.startsWith('story-virtual-'))
+/**
+ * Ordem persistível da coluna de destino já com o card movido na posição da vaga.
+ *
+ * `overId` é o card que fica **depois** da vaga; quando ele não pertence à coluna
+ * (marcador `:drop:`/`:col:` ou ausente), o card entra no fim. Sem esta inserção o
+ * `PATCH /items/:id/move` sozinho só troca a coluna e o card cairia no topo,
+ * longe de onde o usuário soltou.
+ */
+export function destinationOrderWithInserted(items: ItemData[], columnId: string, activeId: string, overId?: string): string[] {
+  const destino = items
+    .filter(item => item.columnId === columnId && item.id !== activeId && item.isLeaf && !item.id.startsWith('story-virtual-'))
     .sort((left, right) => (left.position ?? 0) - (right.position ?? 0))
-  const fromIndex = columnItems.findIndex(item => item.id === activeId)
-  const toIndex = columnItems.findIndex(item => item.id === overId)
-  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return undefined
-  return arrayMove(columnItems, fromIndex, toIndex).map(item => item.id)
+    .map(item => item.id)
+  const ancora = overId ? destino.indexOf(overId) : -1
+  const indice = ancora >= 0 ? ancora : destino.length
+  return [...destino.slice(0, indice), activeId, ...destino.slice(indice)]
 }
 
 export function sortBoardItemsByPosition(items: ItemData[]): ItemData[] {

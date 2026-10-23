@@ -106,8 +106,16 @@ itemsRouter.patch('/reorder', requireRole('MEMBER'), async (c) => {
   const uniqueOrder = [...new Set(body.order)]
   if (uniqueOrder.length !== body.order.length) return c.json({ error: 'A ordem contém cards duplicados' }, 400)
   // Arquivar preserva columnId, mas o board não exibe nem envia cards arquivados.
-  const orderedItems = (await persistence.items.listItems(userPersistenceContext(ctx), projectId, { columnId: body.columnId }))
-    .filter(item => item.status !== 'ARCHIVED')
+  //
+  // Card B17 — a ordem é sobre os cards MÓVEIS da coluna: o GET /items entrega ao
+  // cliente apenas as folhas, então exigir aqui um card com filhos (ou história/épico)
+  // rejeitava toda reordenação de coluna que tivesse um pai — 400 sempre, e o
+  // movimento era desfeito na tela até um refresh.
+  const itensDoProjeto = await persistence.items.listItems(userPersistenceContext(ctx), projectId)
+  const comFilhos = new Set(itensDoProjeto.map(item => item.parentId).filter(Boolean) as string[])
+  const orderedItems = itensDoProjeto.filter(item => (
+    item.columnId === body.columnId && item.status !== 'ARCHIVED' && !comFilhos.has(item.id)
+  ))
   if (orderedItems.length !== uniqueOrder.length) return c.json({ error: 'A ordem contém cards que não pertencem à coluna' }, 400)
   const orderSet = new Set(uniqueOrder)
   if (orderedItems.some(item => !orderSet.has(item.id))) return c.json({ error: 'A ordem contém cards que não pertencem à coluna' }, 400)

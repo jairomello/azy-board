@@ -51,6 +51,7 @@ sabiamente incorreta. Rode `bun run generate:docs` para atualizar os artefatos.
 - [`docs/error-contract.md`](error-contract.md) — envelope de erro da API.
 - [`docs/db-integrity.md`](db-integrity.md) — integridade e cascatas do banco.
 - [`docs/dashboard-performance.md`](dashboard-performance.md) — benchmark, metas e operação das projeções do Dashboard.
+- [`docs/board-drag-animation.md`](board-drag-animation.md) — contrato do movimento do arraste de cards (vaga de destino, deslizamento, assentamento e reversão).
 - [`docs/ci.md`](ci.md) — integração contínua.
 - [`docs/release-evidence.md`](release-evidence.md) — garantias, evidências e limites por perfil e release.
 - [`docs/ANALISE-SISTEMA.md`](ANALISE-SISTEMA.md) — auditoria técnica (documento de análise, cita divergências de propósito).
