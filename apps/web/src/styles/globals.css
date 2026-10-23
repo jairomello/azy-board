@@ -466,9 +466,47 @@
     box-shadow: var(--board-shadow-hover), 0 0 0 1px color-mix(in srgb, var(--board-card-glow-a) 18%, transparent);
   }
 
+  /* Card T85 — alça de arraste (17 px → 30 px, com a seta de quatro pontas no
+     lugar dos pontos). A seta existe só enquanto o ponteiro está no card: em
+     repouso a alça fica invisível e não pesa no visual do quadro. O nível
+     forte (cor primária + faixa) é o do ponteiro sobre a alça e vale também
+     para o foco por teclado. O forte é declarado DEPOIS do nível do card
+     porque os dois empatam em especificidade (0-3-0) e a cascata decide. */
   .kanban-card-grip {
-    width: 17px;
+    width: 30px;
     justify-content: center;
+    transition: color .15s ease, background-color .15s ease, opacity .15s ease;
+  }
+
+  .kanban-card-grip--draggable {
+    opacity: 0;
+    color: color-mix(in srgb, hsl(var(--muted-foreground)) 88%, transparent);
+  }
+
+  /* Alça de card não arrastável (EPIC e TASK/BUG com filhos): permanece visível
+     e legível, mas sem estados de destaque nem convite ao arraste. */
+  .kanban-card-grip--static {
+    color: color-mix(in srgb, hsl(var(--muted-foreground)) 32%, transparent);
+  }
+
+  .kanban-card:hover .kanban-card-grip--draggable,
+  .kanban-card:focus-within .kanban-card-grip--draggable {
+    opacity: 1;
+  }
+
+  .kanban-card .kanban-card-grip--draggable:hover,
+  .kanban-card .kanban-card-grip--draggable:focus-visible {
+    opacity: 1;
+    color: hsl(var(--primary));
+    background-color: color-mix(in srgb, hsl(var(--primary)) 14%, transparent);
+  }
+
+  /* Sem hover (toque), o estado "ponteiro no card" nunca acontece e a seta
+     ficaria invisível: nesses dispositivos ela permanece visível e discreta. */
+  @media (hover: none) {
+    .kanban-card-grip--draggable {
+      opacity: 1;
+    }
   }
 
   .kanban-card-topo {

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Trash2, GitBranch, Archive, Copy, Check, Workflow, Paperclip } from 'lucide-react'
+import { Trash2, GitBranch, Archive, Copy, Check, Workflow, Paperclip, Move } from 'lucide-react'
 import { UserAvatar } from './UserAvatar'
 import { InlineEdit } from './InlineEdit'
 import { useToast } from './Toast'
@@ -133,6 +133,11 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
     openTimerRef.current = setTimeout(openDetail, 160)
   }
 
+  // Card T85 — EPIC nunca é arrastável; STORY folha (sem filhos) pode ser
+  // arrastada como task. TASK/BUG com filhos também não: o status do pai é
+  // derivado dos filhos. A mesma condição governa o arraste e a alça visível.
+  const canDrag = card.isLeaf && card.type !== 'EPIC'
+
   const {
     attributes,
     listeners,
@@ -143,9 +148,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
     isDragging,
   } = useSortable({
     id: card.id,
-    // EPIC e STORY não são cards móveis; TASK/BUG pai (não folha) também não
-    // EPIC nunca é arrastável; STORY folha (sem filhos) pode ser arrastada como task
-    disabled: !card.isLeaf || card.type === 'EPIC',
+    disabled: !canDrag,
   })
 
   const ancestry: AncestorNode[] = JSON.parse(card.ancestryPath || '[]')
@@ -165,27 +168,37 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
       }}
       className={`kanban-card relative group flex border-l-[3px] ${STATUS_INDICATOR[card.status]} ${!card.isLeaf ? 'opacity-70' : ''} ${critical ? 'ring-2 ring-amber-400/80' : ''}`}
     >
-      {/* ── Grip: único lugar com listeners + setActivatorNodeRef ── */}
+      {/* ── Alça de arraste (Card T85): faixa de ~30 px, único lugar com
+           listeners + setActivatorNodeRef. A largura, a transição e os estados
+           (oculta em repouso, visível no ponteiro sobre o card, forte no
+           ponteiro sobre a alça) vivem em `styles/globals.css`. ── */}
       <div
         ref={setActivatorNodeRef}
         {...attributes}
-        {...(card.isLeaf ? listeners : {})}
+        {...(canDrag ? listeners : {})}
         className={[
-          'kanban-card-grip flex items-center px-1.5 flex-shrink-0 select-none transition-colors',
-          card.isLeaf
-            ? 'cursor-grab active:cursor-grabbing text-muted-foreground/25 hover:text-muted-foreground/60'
-            : 'cursor-not-allowed text-muted-foreground/20',
+          'kanban-card-grip flex items-center px-1.5 flex-shrink-0 select-none',
+          canDrag
+            ? 'kanban-card-grip--draggable cursor-grab active:cursor-grabbing'
+            : 'kanban-card-grip--static cursor-not-allowed',
         ].join(' ')}
-        title={card.isLeaf ? t('dragCard') : undefined}
+        title={canDrag ? t('dragCard') : undefined}
+        aria-label={canDrag ? t('dragCard') : undefined}
       >
-        <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" aria-hidden>
-          <circle cx="2.5" cy="2.5"  r="1.5" />
-          <circle cx="7.5" cy="2.5"  r="1.5" />
-          <circle cx="2.5" cy="8"    r="1.5" />
-          <circle cx="7.5" cy="8"    r="1.5" />
-          <circle cx="2.5" cy="13.5" r="1.5" />
-          <circle cx="7.5" cy="13.5" r="1.5" />
-        </svg>
+        {canDrag ? (
+          <Move className="h-4 w-4" aria-hidden />
+        ) : (
+          /* Card pai ou EPIC: a alça permanece visível com um símbolo estático,
+             sem a seta de mover — não há convite ao arraste. */
+          <svg width="10" height="16" viewBox="0 0 10 16" fill="currentColor" aria-hidden>
+            <circle cx="2.5" cy="2.5"  r="1.5" />
+            <circle cx="7.5" cy="2.5"  r="1.5" />
+            <circle cx="2.5" cy="8"    r="1.5" />
+            <circle cx="7.5" cy="8"    r="1.5" />
+            <circle cx="2.5" cy="13.5" r="1.5" />
+            <circle cx="7.5" cy="13.5" r="1.5" />
+          </svg>
+        )}
       </div>
 
       {/* ── Conteúdo: clique abre modal (exceto na área do título) ── */}
