@@ -13,8 +13,11 @@ function contains(text: string, expected: string) {
 describe('contratos de metadados de anexos (card T10)', () => {
   test('AttachmentsArea exibe e edita label, data de referência e descrição', async () => {
     const area = await source('./components/AttachmentsArea.tsx')
-    // Exibição com fallback label → originalName → filename
-    contains(area, 'attachment.label ?? attachment.originalName ?? attachment.filename')
+    const lib = await source('./lib/itemAttachments.ts')
+    // Exibição com fallback label → originalName → filename. Card T87: o fallback
+    // foi extraído para o módulo comum, compartilhado com a figura da descrição.
+    contains(lib, 'attachment.label ?? attachment.originalName ?? attachment.filename')
+    contains(area, 'attachmentDisplayName(attachment)')
     contains(area, 'formatReferenceDate(attachment.referenceDate)')
     contains(area, '<MarkdownText content={attachment.description} />')
     // Formulário de edição gated por canEdit

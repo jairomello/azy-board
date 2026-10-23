@@ -94,7 +94,17 @@
     "itemPlaceholder": "Añadir descripción...",
     "loading": "Cargando editor...",
     "loadError": "No se pudo cargar el editor.",
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "figureInsert": "Insertar figura",
+    "figureFromComputer": "Desde tu computadora",
+    "figureChooseFile": "Elegir archivo",
+    "figureFromCard": "De los adjuntos de la tarjeta",
+    "figureFromCardEmpty": "No hay imágenes en los adjuntos de esta tarjeta.",
+    "figureNoPermission": "No tienes permiso para enviar adjuntos en esta tarjeta.",
+    "figurePickExisting": "Usar la imagen {{name}}",
+    "figureOpenImage": "Ampliar imagen {{name}}",
+    "figureNotInline": "{{name}} — formato sin visualización en el texto",
+    "figureUnavailable": "Imagen no disponible: {{name}}"
   },
   "drafts": {
     "descriptionRecovered": "Recuperamos un borrador sin guardar de esta descripción.",

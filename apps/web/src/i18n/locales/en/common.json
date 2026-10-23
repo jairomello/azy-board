@@ -94,7 +94,17 @@
     "itemPlaceholder": "Add a description...",
     "loading": "Loading editor...",
     "loadError": "Could not load the editor.",
-    "retry": "Try again"
+    "retry": "Try again",
+    "figureInsert": "Insert figure",
+    "figureFromComputer": "From your computer",
+    "figureChooseFile": "Choose file",
+    "figureFromCard": "From the card's attachments",
+    "figureFromCardEmpty": "No images in this card's attachments.",
+    "figureNoPermission": "You do not have permission to upload attachments to this card.",
+    "figurePickExisting": "Use image {{name}}",
+    "figureOpenImage": "Enlarge image {{name}}",
+    "figureNotInline": "{{name}} — format not shown inline",
+    "figureUnavailable": "Image unavailable: {{name}}"
   },
   "drafts": {
     "descriptionRecovered": "We recovered an unsaved draft of this description.",

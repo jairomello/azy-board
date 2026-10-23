@@ -27,6 +27,23 @@ const turndown = new TurndownService({
 })
 turndown.use(gfm)
 
+// Card T87 — figura em bloco. O turndown trata `img` como elemento inline e cola
+// figuras vizinhas (`![a](x)![b](y)`), mas no editor cada figura é um bloco
+// próprio: a volta para Markdown precisa manter a separação de parágrafos, senão
+// o texto reabre com as figuras amontoadas.
+turndown.addRule('figureBlock', {
+  // O turndown embrulha o conteúdo em `<x-turndown>`: figura filha do embrulho é
+  // bloco próprio; figura dentro de `<p>` é inline e segue a regra padrão.
+  filter: node => node.nodeName === 'IMG' && node.parentNode?.nodeName === 'X-TURNDOWN',
+  replacement: (_content, node) => {
+    const src = node.getAttribute('src') ?? ''
+    if (!src) return ''
+    const alt = (node.getAttribute('alt') ?? '').replace(/[[\]]/g, '\\$&')
+    const title = node.getAttribute('title')
+    return `\n\n![${alt}](${src}${title ? ` "${title}"` : ''})\n\n`
+  },
+})
+
 const HTML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
   '<': '&lt;',
@@ -110,4 +127,31 @@ export function toEditorHtml(content: string): string {
 // documento atual do editor sem disparar reescritas durante a digitação.
 export function toCanonicalMarkdown(content: string): string {
   return htmlToMarkdown(markdownToHtml(toMarkdown(content)))
+}
+
+// Card T87 — figuras citadas na descrição.
+//
+// A figura do texto é o próprio anexo do card, então a URL guardada no Markdown
+// é a rota autenticada do anexo (`/api/projects/:p/items/:i/attachments/:id/download`)
+// e o id do anexo é extraível do próprio texto — é por ele que a interface
+// resolve o mime, sabe se a imagem ainda existe e encontra o anexo na lista.
+const ATTACHMENT_ID_IN_URL_RE = /\/attachments\/([0-9a-fA-F-]{36})\//i
+const MARKDOWN_IMAGE_RE = /!\[[^\]]*\]\(\s*([^)\s]+)[^)]*\)/g
+
+export function attachmentIdFromUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  return ATTACHMENT_ID_IN_URL_RE.exec(url)?.[1] ?? null
+}
+
+export function citedAttachmentIds(markdown: string): string[] {
+  const ids = new Set<string>()
+  for (const match of markdown.matchAll(MARKDOWN_IMAGE_RE)) {
+    const id = attachmentIdFromUrl(match[1])
+    if (id) ids.add(id)
+  }
+  return Array.from(ids)
+}
+
+export function hasFigureCitation(markdown: string): boolean {
+  return citedAttachmentIds(markdown).length > 0
 }

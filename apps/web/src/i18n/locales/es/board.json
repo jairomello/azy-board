@@ -284,6 +284,7 @@
   "attachmentDownload": "Descargar adjunto",
   "attachmentRemove": "Eliminar adjunto",
   "attachmentRemoveConfirm": "¿Eliminar el adjunto \"{{name}}\"?",
+  "attachmentRemoveCitedConfirm": "Esta imagen está citada en la descripción de la tarjeta. ¿Eliminar el adjunto \"{{name}}\" de todas formas?",
   "attachmentRemoveError": "No se pudo eliminar el adjunto.",
   "attachmentOpenImage": "Abrir imagen {{name}}",
   "attachmentImageAlt": "Adjunto de imagen {{name}}",

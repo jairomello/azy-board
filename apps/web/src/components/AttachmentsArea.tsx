@@ -8,15 +8,19 @@ import { api } from '../lib/api'
 import { resolveAppUrl } from '../lib/appUrl'
 import { isInlineImage } from '../lib/attachmentImage'
 import { formatDate } from '../lib/formatters'
+import { attachmentDisplayName, itemAttachmentsUrl, listItemAttachments, uploadItemAttachment } from '../lib/itemAttachments'
 import { AttachmentThumbnail } from './AttachmentThumbnail'
 import { MarkdownText } from './MarkdownText'
 import { RichTextEditor } from './RichTextEditor'
 import { useToast } from './Toast'
+import { useLightboxEscapeGuard } from '../hooks/useLightboxEscapeGuard'
 
 interface Props {
   itemId: string
   projectId: string
   canEdit: boolean
+  /** Ids de anexos citados como figura na descrição do card (Card T87). */
+  citedAttachmentIds?: string[]
 }
 
 interface MetadataDraft {
@@ -39,11 +43,7 @@ function formatReferenceDate(value: string): string {
   return formatDate(new Date(year, month - 1, day))
 }
 
-function displayName(attachment: Attachment): string {
-  return attachment.label ?? attachment.originalName ?? attachment.filename
-}
-
-export function AttachmentsArea({ itemId, projectId, canEdit }: Props) {
+export function AttachmentsArea({ itemId, projectId, canEdit, citedAttachmentIds = [] }: Props) {
   const { t } = useTranslation('board')
   const { toast } = useToast()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -56,24 +56,26 @@ export function AttachmentsArea({ itemId, projectId, canEdit }: Props) {
   const [draft, setDraft] = useState<MetadataDraft>({ label: '', referenceDate: '', description: '' })
   const [saving, setSaving] = useState(false)
 
-  const baseUrl = `/projects/${projectId}/items/${itemId}/attachments`
+  const baseUrl = itemAttachmentsUrl(projectId, itemId)
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     try {
-      setAttachments(await api.get<Attachment[]>(baseUrl, { signal }))
+      setAttachments(await listItemAttachments(projectId, itemId, signal))
     } catch (error) {
       if ((error as { name?: string }).name !== 'AbortError') toast(t('attachmentListError'), 'error')
     } finally {
       setLoading(false)
     }
-  }, [baseUrl, t, toast])
+  }, [projectId, itemId, t, toast])
 
   useEffect(() => {
     const controller = new AbortController()
     void load(controller.signal)
     return () => controller.abort()
   }, [load])
+
+  useLightboxEscapeGuard(lightboxIndex >= 0, () => setLightboxIndex(-1))
 
   const imageAttachments = attachments.filter(attachment => isInlineImage(attachment.mimeType))
 
@@ -82,9 +84,7 @@ export function AttachmentsArea({ itemId, projectId, canEdit }: Props) {
     setUploading(true)
     try {
       for (const file of Array.from(files)) {
-        const form = new FormData()
-        form.append('file', file)
-        await api.postForm<Attachment>(baseUrl, form)
+        await uploadItemAttachment(projectId, itemId, file)
       }
       await load()
       toast(t('attachmentUploadSuccess'))
@@ -97,7 +97,14 @@ export function AttachmentsArea({ itemId, projectId, canEdit }: Props) {
   }
 
   async function handleRemove(attachment: Attachment) {
-    if (!confirm(t('attachmentRemoveConfirm', { name: displayName(attachment) }))) return
+    // Card T87 — excluir um anexo citado como figura na descrição apaga a imagem
+    // do texto: o usuário é avisado antes, e a citação passa a mostrar o estado
+    // de imagem removida.
+    const nome = attachmentDisplayName(attachment)
+    const pergunta = citedAttachmentIds.includes(attachment.id)
+      ? t('attachmentRemoveCitedConfirm', { name: nome })
+      : t('attachmentRemoveConfirm', { name: nome })
+    if (!confirm(pergunta)) return
     setRemovingId(attachment.id)
     try {
       await api.delete(`${baseUrl}/${attachment.id}`)
@@ -180,7 +187,7 @@ export function AttachmentsArea({ itemId, projectId, canEdit }: Props) {
             const inline = isInlineImage(attachment.mimeType)
             const imageIndex = imageAttachments.findIndex(image => image.id === attachment.id)
             const editing = editingId === attachment.id
-            const name = displayName(attachment)
+            const name = attachmentDisplayName(attachment)
             return (
               <li key={attachment.id} className="rounded-lg border border-border p-2">
                 <div className="flex items-center gap-3">
@@ -301,7 +308,7 @@ export function AttachmentsArea({ itemId, projectId, canEdit }: Props) {
         open={lightboxIndex >= 0}
         index={lightboxIndex}
         close={() => setLightboxIndex(-1)}
-        slides={imageAttachments.map(attachment => ({ src: resolveAppUrl(attachment.url) ?? '', alt: displayName(attachment) }))}
+        slides={imageAttachments.map(attachment => ({ src: resolveAppUrl(attachment.url) ?? '', alt: attachmentDisplayName(attachment) }))}
       />
     </div>
   )

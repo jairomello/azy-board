@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Info, Plus, Check, X, ChevronLeft, ChevronRight, CheckSquare, ListChecks, History, CalendarDays, UserRound, Paperclip, Link2, Workflow } from 'lucide-react'
 import type { ItemType, Priority, TaskStatus } from '@azy-board/domain'
@@ -14,6 +14,7 @@ import { ChecklistSection } from './ChecklistSection'
 import { CardChildrenSection } from './CardChildrenSection'
 import { ActivityLogPanel } from './ActivityLogPanel'
 import { WorkLogPanel } from './WorkLogPanel'
+import { citedAttachmentIds } from '../lib/richText'
 import { RichTextEditor } from './RichTextEditor'
 import { AttachmentsArea } from './AttachmentsArea'
 import { itemTypeMeta } from '../lib/itemTypeMeta'
@@ -222,6 +223,9 @@ export function ItemModal({
     setDueDate(next.dueDate)
   }
   const { description, setDescription, draftRecovered, discardDraft, commitDraft } = useItemDescriptionDraft(projectId, item.id, item.description ?? null)
+  // Card T87 — anexos citados como figura na descrição: a aba Anexos avisa antes
+  // de excluir um deles e a descrição recebe o contexto de anexos do card.
+  const citedIds = useMemo(() => citedAttachmentIds(description), [description])
   const [sequenceCode, setSequenceCode] = useState(item.sequenceCode ?? '')
   const [icon, setIcon] = useState<string | null>(item.icon ?? null)
   const [color, setColor] = useState<string | null>(item.color ?? null)
@@ -251,6 +255,9 @@ export function ItemModal({
 
   // Resolução do papel do usuário atual no projeto
   const currentUserRole = members.find(m => m.userId === currentUserId)?.role ?? 'MEMBER'
+  // Card T87 — contexto de anexos da descrição: habilita inserir figura e o
+  // lightbox das imagens do card. Item novo ainda não tem anexos.
+  const figureContext = item.id === '__new__' ? undefined : { projectId, itemId: item.id, canEdit: currentUserRole !== 'VIEWER' }
 
   // Em projeto hierárquico (EPIC → STORY → TASK) TASK/BUG/EXTERNAL só existem
   // sob uma STORY; sem esse vínculo o servidor recusa a criação
@@ -482,7 +489,7 @@ export function ItemModal({
                 {activeArea === 'details' && <>
                   {!item.isLeaf && <div className="flex gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-300"><Info className="mt-0.5 h-4 w-4 shrink-0" /><p className="text-xs leading-relaxed">{t('moveBlocked')}</p></div>}
                   {missingParentStory && <div className="flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300"><Info className="mt-0.5 h-4 w-4 shrink-0" /><p className="text-xs leading-relaxed">{t('parentStoryRequired')}</p></div>}
-                  <div className="rounded-lg border border-border bg-card p-4"><h3 className="mb-3 text-sm font-semibold">{t('descriptionLabel')}</h3>{draftRecovered && <div role="status" className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300"><p className="text-xs leading-relaxed">{t('drafts.descriptionRecovered')}</p><button type="button" onClick={discardDraft} className="shrink-0 rounded px-2 py-1 text-xs font-medium underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-primary">{t('drafts.discard')}</button></div>}<RichTextEditor key={item.id} content={description} onChange={setDescription} placeholder={t('richText.itemPlaceholder')} fieldLabel={t('richText.itemField')} minHeight="120px" /></div>
+                  <div className="rounded-lg border border-border bg-card p-4"><h3 className="mb-3 text-sm font-semibold">{t('descriptionLabel')}</h3>{draftRecovered && <div role="status" className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300"><p className="text-xs leading-relaxed">{t('drafts.descriptionRecovered')}</p><button type="button" onClick={discardDraft} className="shrink-0 rounded px-2 py-1 text-xs font-medium underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-primary">{t('drafts.discard')}</button></div>}<RichTextEditor key={item.id} content={description} onChange={setDescription} placeholder={t('richText.itemPlaceholder')} fieldLabel={t('richText.itemField')} minHeight="120px" attachmentContext={figureContext} /></div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     {property(t('itemTypeLabel'), <select value={type} onChange={e => setType(e.target.value as 'TASK' | 'BUG' | 'EXTERNAL')} className={fieldClass}>{TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}
                     {(epics.length > 0 || requiresParentStory) && property(t('parentStory'), <StorySelector epics={epics} stories={stories} value={parentId} onChange={setParentId} onCreateStory={onCreateStory} />)}
@@ -494,7 +501,7 @@ export function ItemModal({
                 {activeArea === 'checklists' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' ? <ChecklistSection itemId={item.id} projectId={projectId} initialChecklists={checklists} onChange={setChecklists} advancedChecklists={advancedChecklists} members={members} /> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {activeArea === 'links' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' && <Suspense fallback={<p className="text-sm text-muted-foreground">{t('itemLinksLoading')}</p>}><ItemLinksArea itemId={item.id} projectId={projectId} canEdit={currentUserRole !== 'VIEWER'} onEntityFocus={setActiveEntity} /></Suspense>}</div>}
                 {activeArea === 'dependencies' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' && <Suspense fallback={<p className="text-sm text-muted-foreground">{t('dependenciesLoading')}</p>}><ItemDependenciesArea itemId={item.id} projectId={projectId} canEdit={currentUserRole !== 'VIEWER'} /></Suspense>}</div>}
-                {activeArea === 'attachments' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' ? <AttachmentsArea itemId={item.id} projectId={projectId} canEdit={currentUserRole !== 'VIEWER'} /> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
+                {activeArea === 'attachments' && <div className="rounded-lg border border-border p-4">{item.id !== '__new__' ? <AttachmentsArea itemId={item.id} projectId={projectId} canEdit={currentUserRole !== 'VIEWER'} citedAttachmentIds={citedIds} /> : <p className="text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {activeArea === 'activity' && <div id="item-area-activity" className="grid min-h-[360px] min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">{item.id !== '__new__' ? <><ActivityLogPanel itemId={item.id} projectId={projectId} onCountChange={setActivityCount} /><WorkLogPanel itemId={item.id} projectId={projectId} currentUserId={currentUserId ?? ''} currentUserRole={currentUserRole} onCountChange={setWorkLogCount} onTotalChange={setTotalMinutes} onEntityFocus={setActiveEntity} /></> : <p className="col-span-full rounded-lg border border-border p-6 text-sm text-muted-foreground">{t('accordion.noAdditionalContent')}</p>}</div>}
                 {error && <p className="text-sm text-red-500" role="alert">{error}</p>}
               </main>
