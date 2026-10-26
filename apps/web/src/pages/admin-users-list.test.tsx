@@ -77,6 +77,17 @@ beforeEach(async () => {
 afterEach(() => { globalThis.fetch = fetchOriginal })
 
 describe('AdminUsersPage — listagem paginada e filtros', () => {
+  test('formulário de cadastro desativa o autofill de credenciais do navegador', async () => {
+    renderPage()
+    await screen.findByText('Pessoa 01')
+    const form = screen.getByLabelText('Nome').closest('form')
+    expect(form).toHaveAttribute('autocomplete', 'off')
+    expect(screen.getByLabelText('Nome')).toHaveAttribute('autocomplete', 'off')
+    expect(screen.getByLabelText('E-mail')).toHaveAttribute('autocomplete', 'off')
+    expect(screen.getByLabelText('Senha')).toHaveAttribute('autocomplete', 'new-password')
+    expect(screen.getByLabelText('E-mail')).toHaveAttribute('name', 'new-user-email')
+  })
+
   test('mostra a primeira página e avança para a próxima', async () => {
     const user = userEvent.setup()
     renderPage()
