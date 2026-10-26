@@ -1066,7 +1066,7 @@ describe('permissoes globais e administracao', () => {
     expect((await request('/projects', memberToken, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'blocked' }) })).status).toBe(403)
     const usersResponse = await request('/users', adminToken)
     expect(usersResponse.status).toBe(200)
-    expect((await usersResponse.json()).some((u: { email: string }) => u.email === member.email)).toBe(true)
+    expect((await usersResponse.json() as { data: Array<{ email: string }> }).data.some(u => u.email === member.email)).toBe(true)
     const elevate = await request(`/users/${member.id}/group`, adminToken, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ globalGroup: 'ROOT' }) })
     expect(elevate.status).toBe(403)
     const selfElevate = await request(`/users/${admin.id}/group`, adminToken, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ globalGroup: 'ROOT' }) })

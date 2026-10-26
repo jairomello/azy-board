@@ -65,7 +65,7 @@ import type {
   TenantAttachmentSettingsRecord,
   UserCredentialRecord,
 } from '../../persistence/models'
-import type { ChecklistItemPatch, ColumnPatch, CostCenterPatch, ItemLinkPatch, ItemLogPatch, ModulePatch, NewApiKeyRecord, NewChecklistItemRecord, NewColumnRecord, NewCostCenterRecord, NewItemLinkRecord, NewItemLogRecord, NewModuleRecord, NewProjectMembership, NewSquadRecord, NewTenantRecord, NewVersionRecord, PersistencePorts, ProjectMembershipPatch, ProjectPatch, UserPreferencesPatch, VersionPatch } from '../../persistence/ports'
+import type { ChecklistItemPatch, ColumnPatch, CostCenterPatch, ItemLinkPatch, ItemLogPatch, ModulePatch, NewApiKeyRecord, NewChecklistItemRecord, NewColumnRecord, NewCostCenterRecord, NewItemLinkRecord, NewItemLogRecord, NewModuleRecord, NewProjectMembership, NewSquadRecord, NewTenantRecord, NewVersionRecord, PersistencePorts, ProjectMembershipPatch, ProjectPatch, UserListPage, UserListQuery, UserPreferencesPatch, VersionPatch } from '../../persistence/ports'
 import type { DrizzleDb } from '../index'
 import {
   apiKeys, assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantRuns, assistantSettings, assistantToolCalls,
@@ -593,6 +593,27 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
       },
       async listUsers(context) {
         return (await database.select().from(users).where(eq(users.tenantId, context.tenantId))).map(mapPublicUser)
+      },
+      async listUsersPage(context, query: UserListQuery): Promise<UserListPage> {
+        const term = query.q?.trim() ?? ''
+        const conditions = [eq(users.tenantId, context.tenantId)]
+        if (term) {
+          // Mesma dobra de acentos da grade de membros: "alvaro" encontra "Álvaro".
+          const pattern = likeContainsPattern(foldNameForSearch(term))
+          conditions.push(or(
+            sql`${sql.raw(nameSortKeySql('users.name'))} LIKE ${pattern} ESCAPE '\\'`,
+            sql`lower(users.email) LIKE ${pattern} ESCAPE '\\'`,
+          )!)
+        }
+        if (query.globalGroup) conditions.push(eq(users.globalGroup, query.globalGroup))
+        const where = and(...conditions)
+        const rows = await database.select().from(users)
+          .where(where)
+          .orderBy(sql.raw(nameSortKeySql('users.name')), asc(users.id))
+          .limit(query.limit)
+          .offset(query.offset)
+        const [totals] = await database.select({ total: count() }).from(users).where(where)
+        return { items: rows.map(mapPublicUser), total: totals?.total ?? 0 }
       },
       async createUser(context, input) {
         const [row] = await database.insert(users).values({

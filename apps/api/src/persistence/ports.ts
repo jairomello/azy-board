@@ -129,11 +129,26 @@ export type ChecklistItemPatch = Partial<Pick<ChecklistItemRecord, 'text' | 'che
 export type NewItemLogRecord = Pick<ItemLogRecord, 'type' | 'activity'> & Partial<Pick<ItemLogRecord, 'durationMin'>>
 export type ItemLogPatch = Partial<Pick<ItemLogRecord, 'activity' | 'durationMin'>>
 
+// Listagem administrativa de usuários: busca e filtro no banco, com paginação.
+export interface UserListQuery {
+  q?: string
+  globalGroup?: GlobalGroup
+  limit: number
+  offset: number
+}
+
+export interface UserListPage {
+  items: PublicUserRecord[]
+  total: number
+}
+
 export interface IdentityPort {
   /** Resolução global de login: o tenant vem da identidade encontrada. */
   findUserByCanonicalEmail(email: string): Promise<UserCredentialRecord | null>
   findUser(context: PersistenceContext, userId: string): Promise<UserCredentialRecord | null>
   listUsers(context: PersistenceContext): Promise<PublicUserRecord[]>
+  /** Página ordenada por nome (dobra de acentos), com busca e recorte por grupo. */
+  listUsersPage(context: PersistenceContext, query: UserListQuery): Promise<UserListPage>
   createUser(context: PersistenceContext, input: NewUserRecord): Promise<UserCredentialRecord>
   updateUserGroup(context: PersistenceContext, userId: string, group: GlobalGroup): Promise<void>
   updateUserPreferences(context: PersistenceContext, userId: string, patch: UserPreferencesPatch): Promise<PublicUserRecord | null>

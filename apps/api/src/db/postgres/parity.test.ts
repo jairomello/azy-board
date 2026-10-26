@@ -715,6 +715,49 @@ describe.skipIf(!runPostgres)('Paridade SIMPLE ↔ ADVANCED', () => {
     }
   })
 
+  test('listagem administrativa de usuários ordena, filtra e pagina igual nos dois adapters', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const ctx = makeContext('tenant-1')
+      const tenantSqlite = await sqlite.ports.tenants.createTenant({ name: 'T', slug: `users-sqlite-${crypto.randomUUID()}` })
+      const tenantPg = await pg.ports.tenants.createTenant({ name: 'T', slug: `users-pg-${crypto.randomUUID()}` })
+      const entrada = [
+        { name: 'Álvaro Silva', email: 'alvaro@test.local', globalGroup: 'TEAM_MEMBER' as const },
+        { name: 'ana Souza', email: 'ana@test.local', globalGroup: 'MANAGER' as const },
+        { name: 'Bruno Lima', email: 'bruno@test.local', globalGroup: 'MANAGER' as const },
+        { name: 'Zélia Prado', email: 'zelia@test.local', globalGroup: 'TEAM_MEMBER' as const },
+      ]
+      for (const user of entrada) {
+        await sqlite.ports.identity.createUser({ ...ctx, tenantId: tenantSqlite.id }, { ...user, passwordHash: 'hash' })
+        await pg.ports.identity.createUser({ ...ctx, tenantId: tenantPg.id }, { ...user, passwordHash: 'hash' })
+      }
+
+      const consultar = (ports: PersistencePorts, tenantId: string, query: { q?: string; globalGroup?: 'MANAGER'; limit: number; offset: number }) =>
+        ports.identity.listUsersPage({ ...ctx, tenantId }, query)
+      const resumo = async (ports: PersistencePorts, tenantId: string, query: { q?: string; globalGroup?: 'MANAGER'; limit: number; offset: number }) => {
+        const page = await consultar(ports, tenantId, query)
+        return { nomes: page.items.map(user => user.name), total: page.total }
+      }
+      const queries = [
+        { limit: 4, offset: 0 },
+        { limit: 2, offset: 2 },
+        { q: 'alvaro', limit: 10, offset: 0 },
+        { q: 'ana', limit: 10, offset: 0 },
+        { globalGroup: 'MANAGER' as const, limit: 10, offset: 0 },
+      ]
+      for (const query of queries) {
+        expect(await resumo(sqlite.ports, tenantSqlite.id, query))
+          .toEqual(await resumo(pg.ports, tenantPg.id, query))
+      }
+      expect(await resumo(pg.ports, tenantPg.id, { limit: 4, offset: 0 }))
+        .toEqual({ nomes: ['Álvaro Silva', 'ana Souza', 'Bruno Lima', 'Zélia Prado'], total: 4 })
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+
   test('PostgreSQL carrega subárvore profunda em número constante de leituras', async () => {
     const pg = await setupPostgres()
     try {

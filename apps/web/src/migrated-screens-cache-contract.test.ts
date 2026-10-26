@@ -80,7 +80,7 @@ describe('contrato de cache das telas migradas', () => {
   test('AdminUsers consulta a camada de cache e elimina load() imperativo', async () => {
     const page = await source('./pages/AdminUsersPage.tsx')
     contains(page, 'queryKeys.adminUsers(user?.id)')
-    contains(page, 'queryFn: ({ signal }) => api.get<ManagedUser[]>(')
+    contains(page, 'queryFn: ({ signal }) => api.get<ManagedUsersPage>(')
     contains(page, 'queryClient.invalidateQueries({ queryKey: key })')
     notContains(page, 'function load()')
     notContains(page, 'void load()')

@@ -42,7 +42,9 @@ function installFetchStub() {
     const url = String(input)
     const method = (init?.method ?? 'GET').toUpperCase()
     const path = url.replace(/^\/api/, '').split('?')[0]
-    if (method === 'GET' && path === '/users') return jsonResponse(managedUsers)
+    if (method === 'GET' && path === '/users') {
+      return jsonResponse({ data: managedUsers, page: 1, limit: 25, total: managedUsers.length, hasMore: false })
+    }
     if (method === 'POST' && path === '/users/user-2/reset-password') {
       state.resetCalls.push(path)
       if (state.resetStatus !== 200) return jsonResponse({ error: 'Permissão insuficiente' }, state.resetStatus)

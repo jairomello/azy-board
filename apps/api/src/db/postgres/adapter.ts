@@ -89,6 +89,8 @@ import type {
   ProjectPatch,
   TagPatch,
   UserPreferencesPatch,
+  UserListPage,
+  UserListQuery,
   AssistantModelConfigPatch,
   NewAssistantModelConfig,
 } from '../../persistence/ports'
@@ -1279,6 +1281,30 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       async listUsers(context: PersistenceContext): Promise<PublicUserRecord[]> {
         const rows = await q('SELECT * FROM users WHERE tenant_id = $1', [context.tenantId])
         return rows.map(mapPublicUser)
+      },
+      async listUsersPage(context: PersistenceContext, query: UserListQuery): Promise<UserListPage> {
+        const conditions = ['tenant_id = $1']
+        const params: unknown[] = [context.tenantId]
+        let idx = 2
+        const term = query.q?.trim() ?? ''
+        if (term) {
+          // Mesma dobra de acentos usada na grade de membros.
+          conditions.push(`(${nameSortKeySql('name')} LIKE $${idx} ESCAPE '\\' OR lower(email) LIKE $${idx} ESCAPE '\\')`)
+          params.push(likeContainsPattern(foldNameForSearch(term)))
+          idx += 1
+        }
+        if (query.globalGroup) {
+          conditions.push(`global_group = $${idx}`)
+          params.push(query.globalGroup)
+          idx += 1
+        }
+        const where = conditions.join(' AND ')
+        const rows = await q(
+          `SELECT * FROM users WHERE ${where} ORDER BY ${nameSortKeySql('name')}, id LIMIT $${idx} OFFSET $${idx + 1}`,
+          [...params, query.limit, query.offset],
+        )
+        const totals = await q1(`SELECT count(*)::int AS total FROM users WHERE ${where}`, params)
+        return { items: rows.map(mapPublicUser), total: (totals?.total as number | undefined) ?? 0 }
       },
       async createUser(context: PersistenceContext, input: NewUserRecord): Promise<UserCredentialRecord> {
         const id = generateId()

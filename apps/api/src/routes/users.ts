@@ -33,10 +33,24 @@ function loadSelfUser(tenantId: string, userId: string) {
 
 usersRouter.get('/', requireGlobalGroup('ADMIN'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  const result = (await persistence.identity.listUsers(userPersistenceContext(ctx))).map(user => ({
-    id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, globalGroup: user.globalGroup,
-  }))
-  return c.json(result)
+  const page = Math.max(1, Number.parseInt(c.req.query('page') ?? '1', 10) || 1)
+  const limit = Math.min(100, Math.max(1, Number.parseInt(c.req.query('limit') ?? '25', 10) || 25))
+  const q = (c.req.query('q') ?? '').trim().slice(0, 200)
+  const groupParam = c.req.query('globalGroup')
+  if (groupParam !== undefined && groupParam !== '' && !isGlobalGroup(groupParam)) {
+    return c.json({ error: 'Grupo inválido' }, 400)
+  }
+  const globalGroup = groupParam && isGlobalGroup(groupParam) ? groupParam : undefined
+  const offset = (page - 1) * limit
+  // [TENANT] Lista paginada no banco e ordenada por nome (com dobra de acentos).
+  const result = await persistence.identity.listUsersPage(userPersistenceContext(ctx), { q, globalGroup, limit, offset })
+  const end = offset + result.items.length
+  return c.json({
+    data: result.items.map(user => ({
+      id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, globalGroup: user.globalGroup,
+    })),
+    page, limit, total: result.total, hasMore: end < result.total,
+  })
 })
 
 usersRouter.post('/', requireGlobalGroup('ADMIN'), async (c) => {

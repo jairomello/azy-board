@@ -26,6 +26,10 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Added
 
+- **Listagem de usuários com busca, filtro e paginação.** A administração de
+  usuários ordena por nome (com dobra de acentos), busca por nome/e-mail e filtra
+  por grupo no servidor, com páginas de 25/50/100. `GET /users` passa a devolver
+  o envelope `{ data, page, limit, total, hasMore }` em vez da lista inteira.
 - **Redefinição de senha pelo ROOT na administração de usuários.** A tela de
   usuários ganhou a ação "Redefinir senha" (visível apenas para ROOT), que gera
   uma senha temporária no servidor e a exibe uma única vez para entrega ao
