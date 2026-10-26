@@ -1,9 +1,9 @@
 {
-  "description": "Orçamento de bundle do web (limites em bytes gzip). Ver scripts/check-bundle.ts. O limite do `index` foi elevado de 90000 para 92000 quando o teto anterior ficou a 10 bytes: o chunk carrega os recursos de tradução dos três idiomas, então cada mensagem nova de produto cresce aqui. Subiu para 93000 pelo mesmo motivo: orientação do board hierárquico vazio e aviso de história pai obrigatória somam 4 chaves em pt/en/es (+185 bytes gzip no chunk). Subiu para 94000 no card T87, pelo mesmo motivo: a figura na descrição do card soma 11 mensagens em pt/en/es (+0,64 KB gzip no chunk, com o teto anterior a 0,17 KB de folga). O conserto estrutural — carregar os locales sob demanda e tirar o texto de tradução do entry chunk — está no card T88.",
+  "description": "Orçamento de bundle do web (limites em bytes gzip). Ver scripts/check-bundle.ts. O limite do `index` foi elevado de 90000 para 92000 quando o teto anterior ficou a 10 bytes: o chunk carrega os recursos de tradução dos três idiomas, então cada mensagem nova de produto cresce aqui. Subiu para 93000 pelo mesmo motivo: orientação do board hierárquico vazio e aviso de história pai obrigatória somam 4 chaves em pt/en/es (+185 bytes gzip no chunk). Subiu para 94000 no card T87, pelo mesmo motivo: a figura na descrição do card soma 11 mensagens em pt/en/es (+0,64 KB gzip no chunk, com o teto anterior a 0,17 KB de folga). Subiu para 95000 na redefinição de senha pelo ROOT: 14 mensagens em pt/en/es somam +0,47 KB gzip, exatamente o que faltava para o teto anterior. O conserto estrutural — carregar os locales sob demanda e tirar o texto de tradução do entry chunk — está no card T88.",
   "chunks": [
     {
       "name": "index",
-      "maxGzipBytes": 94000
+      "maxGzipBytes": 95000
     },
     {
       "name": "vendor-react",
