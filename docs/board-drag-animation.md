@@ -94,6 +94,11 @@ folhas), que é a população que o board recebe do `GET /items` — colunas com
 têm filhos entram nessa regra sem quebrar o movimento (defeito B17: o servidor exigia
 também os pais, que o cliente não tem, e respondia 400 desfazendo o arraste).
 
+A gravação das posições vale para os dois perfis de instalação: SIMPLE (SQLite) e
+ADVANCED (PostgreSQL) usam a mesma semântica — índice na ordem enviada, apenas cards
+não arquivados da coluna, tudo em uma transação. Um stub `NOT_IMPLEMENTED` no adapter
+PostgreSQL fazia o endpoint responder 500 em ADVANCED e desfazer todo arraste vertical.
+
 A posição escolhida na coluna de destino também é gravada. Na mesma coluna, o
 `arrayMove` sobre a ordem persistida resolve. Entre colunas, o `PATCH /items/:id/move`
 troca a coluna e, em seguida, `PATCH /items/reorder` fixa a ordem da coluna de destino

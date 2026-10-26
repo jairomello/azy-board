@@ -104,6 +104,10 @@ import { fingerprintTransition } from '../../services/sprintTransition'
 import { buildPlanningGapSnapshot, planningGapPage, type PlanningGapCandidate } from '../../services/planningGaps'
 import { parseAncestorIds, touchedItemIds } from '../itemTouch'
 import { foldNameForSearch, likeContainsPattern, nameSortKeySql } from '../nameNormalization'
+import type { BoardMode } from '@azy-board/domain'
+
+/** Mesmo limite de profundidade hierárquica usado pelos comandos SQLite. */
+const MAX_HIERARCHY_DEPTH = 50
 
 // ---------------------------------------------------------------------------
 // Mapeamento de linhas SQL para records de domínio
@@ -1011,6 +1015,163 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
     return output
   }
 
+  /** IDs de uma subárvore de itens, com o mesmo limite de profundidade do SQLite. */
+  async function collectItemSubtreeIdsPg(client: PoolClient, tenantId: string, projectId: string, rootId: string): Promise<string[]> {
+    const result = await client.query(
+      `WITH RECURSIVE subtree(id, depth) AS (
+         SELECT id, 0 FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3
+         UNION ALL
+         SELECT child.id, subtree.depth + 1
+         FROM items AS child
+         INNER JOIN subtree ON child.parent_id = subtree.id
+         WHERE child.tenant_id = $1 AND child.project_id = $2 AND subtree.depth <= $4
+       )
+       SELECT id, depth FROM subtree ORDER BY depth, id`,
+      [tenantId, projectId, rootId, MAX_HIERARCHY_DEPTH],
+    )
+    const rows = result.rows as Array<{ id: string; depth: number }>
+    if (rows.some(row => row.depth > MAX_HIERARCHY_DEPTH)) throw new Error('MAX_ANCESTRY_DEPTH')
+    return rows.map(row => String(row.id))
+  }
+
+  /**
+   * Remoção em bloco de itens e das relações dependentes, na transação corrente.
+   * Paridade com `deleteItemsInsideTransaction` do adapter SQLite: anexos viram
+   * jobs de limpeza, analytics são registrados antes do delete e os pais
+   * externos recebem `LEAF_CHANGED`.
+   */
+  async function deleteItemsInsideTx(
+    client: PoolClient,
+    context: MutationContext,
+    projectId: string,
+    itemIds: string[],
+    options: { recordAnalyticsEvents?: boolean; touchAncestors?: Array<string | null | undefined> } = {},
+  ): Promise<void> {
+    if (!itemIds.length) return
+    const recordAnalytics = options.recordAnalyticsEvents ?? true
+    const itemIdSet = new Set(itemIds)
+    const snapshots = await readItemSnapshots(client, context.tenantId, projectId, itemIds)
+    const parentIds = [...new Set([...snapshots.values()].flatMap(snapshot => snapshot.parentId ? [snapshot.parentId] : []))]
+      .filter(parentId => !itemIdSet.has(parentId))
+    const parentSnapshots = await readItemSnapshots(client, context.tenantId, projectId, parentIds)
+    const attachmentRows = await client.query(
+      'SELECT storage_path FROM attachments WHERE tenant_id = $1 AND item_id = ANY($2::text[])',
+      [context.tenantId, itemIds],
+    )
+    const storagePaths = (attachmentRows.rows as Array<{ storage_path: string }>).map(row => row.storage_path)
+    if (storagePaths.length) {
+      const now = new Date().toISOString()
+      for (let offset = 0; offset < storagePaths.length; offset += 500) {
+        const batch = storagePaths.slice(offset, offset + 500)
+        const values: string[] = []
+        const params: unknown[] = []
+        for (const storagePath of batch) {
+          const base = params.length
+          values.push(`($${base + 1}, $${base + 2}, $${base + 3}, 'ATTACHMENT', 'PENDING', 0, $${base + 4}, $${base + 5}, $${base + 6})`)
+          params.push(generateId(), context.tenantId, storagePath, now, now, now)
+        }
+        await client.query(
+          `INSERT INTO storage_cleanup_jobs (id, tenant_id, storage_path, resource_type, status, attempts, available_at, created_at, updated_at)
+           VALUES ${values.join(', ')} ON CONFLICT (tenant_id, storage_path) WHERE status = 'PENDING' DO NOTHING`,
+          params,
+        )
+      }
+    }
+
+    if (recordAnalytics) await recordDeletedItemEventsBatch(client, context, projectId, snapshots)
+
+    const checklistRows = await client.query(
+      'SELECT id FROM checklists WHERE tenant_id = $1 AND item_id = ANY($2::text[])',
+      [context.tenantId, itemIds],
+    )
+    const checklistIds = (checklistRows.rows as Array<{ id: string }>).map(row => row.id)
+    if (checklistIds.length) {
+      await client.query('DELETE FROM checklist_items WHERE tenant_id = $1 AND checklist_id = ANY($2::text[])', [context.tenantId, checklistIds])
+    }
+    await client.query('DELETE FROM checklists WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
+    await client.query('DELETE FROM item_tags WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
+    await client.query('DELETE FROM item_sprints WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
+    await client.query('DELETE FROM attachments WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
+    await client.query('DELETE FROM item_links WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
+    // [TENANT] Dependências em que os itens excluídos figuram como origem OU alvo
+    await client.query('DELETE FROM item_dependencies WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
+    await client.query('DELETE FROM item_dependencies WHERE tenant_id = $1 AND depends_on_item_id = ANY($2::text[])', [context.tenantId, itemIds])
+    await client.query('DELETE FROM item_logs WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
+    await client.query('DELETE FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = ANY($3::text[])', [context.tenantId, projectId, itemIds])
+
+    for (const ancestryPath of options.touchAncestors ?? []) {
+      await touchAncestorsOnlyPg(client, context.tenantId, projectId, ancestryPath)
+    }
+
+    if (recordAnalytics && parentIds.length) {
+      const remainingChildRows = await client.query(
+        'SELECT DISTINCT parent_id FROM items WHERE tenant_id = $1 AND project_id = $2 AND parent_id = ANY($3::text[])',
+        [context.tenantId, projectId, parentIds],
+      )
+      const parentsWithRemainingChildren = new Set((remainingChildRows.rows as Array<{ parent_id: string }>).map(row => row.parent_id))
+      for (const [parentId, before] of parentSnapshots) {
+        const after = { ...before, isLeaf: !parentsWithRemainingChildren.has(parentId) }
+        await recordItemEvent(client, context, { projectId, itemId: parentId, eventType: 'LEAF_CHANGED', before, after })
+      }
+    }
+  }
+
+  /** STORY fixa do modo SIMPLE: reusa a existente ou cria "Fluxo contínuo". */
+  async function findOrCreateStoryPg(
+    client: PoolClient,
+    context: MutationContext,
+    projectId: string,
+    storyId: string | null,
+  ): Promise<{ id: string; title: string; type: string }> {
+    if (storyId) {
+      const existing = await client.query(
+        "SELECT id, title, type FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3 AND type = 'STORY'",
+        [context.tenantId, projectId, storyId],
+      )
+      const row = existing.rows[0] as { id: string; title: string; type: string } | undefined
+      if (row) return row
+    }
+    const id = generateId()
+    const now = new Date().toISOString()
+    await client.query(
+      `INSERT INTO items (id, tenant_id, project_id, type, parent_id, module_id, ancestry_path, title, status, priority, position, created_at, updated_at)
+       VALUES ($1, $2, $3, 'STORY', NULL, NULL, '[]', 'Fluxo contínuo', 'NOT_STARTED', 'MEDIUM', 0, $4, $5)`,
+      [id, context.tenantId, projectId, now, now],
+    )
+    return { id, title: 'Fluxo contínuo', type: 'STORY' }
+  }
+
+  const projectPatchColumns: Record<string, string> = {
+    name: 'name', description: 'description', managerUserId: 'manager_user_id',
+    hideModules: 'hide_modules', hideEpics: 'hide_epics',
+    isRestricted: 'is_restricted', isHidden: 'is_hidden', isArchived: 'is_archived',
+    advancedChecklists: 'advanced_checklists', startDate: 'start_date',
+    plannedEndDate: 'planned_end_date', plannedPoints: 'planned_points',
+    plannedHours: 'planned_hours', scope: 'scope', icon: 'icon', color: 'color',
+  }
+
+  async function updateProjectRowTx(
+    client: PoolClient,
+    context: MutationContext,
+    projectId: string,
+    boardMode: BoardMode,
+    simpleStoryId: string | null,
+    patch: ProjectPatch,
+  ): Promise<void> {
+    const values: Record<string, unknown> = { board_mode: boardMode, simple_story_id: simpleStoryId }
+    for (const [property, column] of Object.entries(projectPatchColumns)) {
+      const value = (patch as Record<string, unknown>)[property]
+      if (value !== undefined) values[column] = value
+    }
+    const columns = Object.keys(values)
+    const params = [...columns.map(column => values[column]), context.tenantId, projectId]
+    await client.query(
+      `UPDATE projects SET ${columns.map((column, index) => `${column} = $${index + 1}`).join(', ')}
+       WHERE tenant_id = $${columns.length + 1} AND id = $${columns.length + 2}`,
+      params,
+    )
+  }
+
   return {
     // -----------------------------------------------------------------------
     // HealthPort
@@ -1866,8 +2027,27 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       async moveItem(_context: PersistenceContext, _projectId: string, _itemId: string, _columnId: string): Promise<ItemRecord | null> {
         throw new Error('NOT_IMPLEMENTED: moveItem completo em 4.6')
       },
-      async reorderItems(_context: PersistenceContext, _projectId: string, _columnId: string, _itemIds: string[]): Promise<void> {
-        throw new Error('NOT_IMPLEMENTED: reorderItems completo em 4.6')
+      // Reordenação vertical do board (ADVANCED). Mesma semântica do adapter SQLite:
+      // só os cards móveis da coluna entram na lista, a posição é o índice na ordem
+      // e qualquer item fora da coluna (ou arquivado) invalida a operação inteira.
+      async reorderItems(context: PersistenceContext, projectId: string, columnId: string, itemIds: string[]): Promise<void> {
+        const uniqueIds = [...new Set(itemIds)]
+        if (uniqueIds.length !== itemIds.length) throw new Error('DUPLICATE_ITEM_IN_ORDER')
+        await tx(async (client) => {
+          const column = await client.query(
+            'SELECT id FROM columns WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+            [context.tenantId, projectId, columnId],
+          )
+          if (!column.rows[0]) throw new Error('COLUMN_NOT_FOUND')
+          for (const [position, itemId] of uniqueIds.entries()) {
+            const result = await client.query(
+              `UPDATE items SET position = $1, updated_at = now()
+               WHERE tenant_id = $2 AND project_id = $3 AND column_id = $4 AND id = $5 AND status <> 'ARCHIVED'`,
+              [position, context.tenantId, projectId, columnId, itemId],
+            )
+            if (result.rowCount !== 1) throw new Error('ITEM_NOT_IN_COLUMN')
+          }
+        })
       },
     },
 
@@ -3910,8 +4090,111 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           return mapProject(row.rows[0] as PgRow)
         })
       },
-      async convertProjectBoardMode(_context, _projectId, _targetBoardMode, _patch = {}) {
-        throw new Error('NOT_IMPLEMENTED: convertProjectBoardMode')
+      async convertProjectBoardMode(context, projectId, targetBoardMode, patch = {}) {
+        return tx(async (client) => {
+          const projectRes = await client.query('SELECT * FROM projects WHERE tenant_id = $1 AND id = $2', [context.tenantId, projectId])
+          const project = projectRes.rows[0] as PgRow | undefined
+          if (!project) return null
+          const currentMode = project.board_mode as BoardMode
+          let simpleStoryId = (project.simple_story_id as string | null) ?? null
+
+          if (currentMode !== targetBoardMode && targetBoardMode === 'SIMPLE') {
+            // HIERARCHICAL → SIMPLE: tudo pendura na STORY fixa; módulos e a
+            // hierarquia antiga (épicos/outras histórias) são removidos.
+            const story = await findOrCreateStoryPg(client, context, projectId, simpleStoryId)
+            simpleStoryId = story.id
+            const storyBefore = await readItemSnapshot(client, context.tenantId, projectId, story.id)
+            const storyPath = JSON.stringify([{ id: story.id, title: story.title, type: story.type }])
+            const rows = (await client.query('SELECT id, type FROM items WHERE tenant_id = $1 AND project_id = $2',
+              [context.tenantId, projectId])).rows as Array<{ id: string; type: string }>
+            for (const task of rows.filter(row => row.type === 'TASK' || row.type === 'BUG')) {
+              const before = await readItemSnapshot(client, context.tenantId, projectId, task.id)
+              await client.query(
+                'UPDATE items SET parent_id = $1, module_id = NULL, ancestry_path = $2, updated_at = now() WHERE tenant_id = $3 AND project_id = $4 AND id = $5',
+                [story.id, storyPath, context.tenantId, projectId, task.id],
+              )
+              const after = await readItemSnapshot(client, context.tenantId, projectId, task.id)
+              if (before && after) await recordItemEvent(client, context, { projectId, itemId: task.id, eventType: 'ITEM_REPARENTED', before, after })
+            }
+
+            const removedHierarchyIds = rows
+              .filter(row => (row.type === 'STORY' || row.type === 'EPIC') && row.id !== story.id)
+              .sort((left, right) => (left.type === 'EPIC' ? 0 : 1) - (right.type === 'EPIC' ? 0 : 1))
+              .map(row => row.id)
+            await deleteItemsInsideTx(client, context, projectId, removedHierarchyIds, { recordAnalyticsEvents: true })
+            await client.query('DELETE FROM modules WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
+            await client.query(
+              "UPDATE items SET parent_id = NULL, module_id = NULL, ancestry_path = '[]', updated_at = now() WHERE tenant_id = $1 AND project_id = $2 AND id = $3",
+              [context.tenantId, projectId, story.id],
+            )
+            const storyAfter = await readItemSnapshot(client, context.tenantId, projectId, story.id)
+            if (storyBefore && storyAfter && JSON.stringify(storyBefore) !== JSON.stringify(storyAfter)) {
+              await recordItemEvent(client, context, { projectId, itemId: story.id, eventType: 'LEAF_CHANGED', before: storyBefore, after: storyAfter })
+            }
+          } else if (currentMode !== targetBoardMode && targetBoardMode === 'HIERARCHICAL') {
+            // SIMPLE → HIERARCHICAL: cria/reusa módulo e épico de fluxo e pendura
+            // a STORY fixa no épico; as folhas continuam na STORY.
+            const story = await findOrCreateStoryPg(client, context, projectId, simpleStoryId)
+            simpleStoryId = story.id
+            let module = (await client.query(
+              'SELECT id FROM modules WHERE tenant_id = $1 AND project_id = $2 ORDER BY position LIMIT 1',
+              [context.tenantId, projectId],
+            )).rows[0] as { id: string } | undefined
+            if (!module) {
+              const moduleId = generateId()
+              await client.query('INSERT INTO modules (id, tenant_id, project_id, name, description, position) VALUES ($1, $2, $3, $4, NULL, 0)',
+                [moduleId, context.tenantId, projectId, 'Geral'])
+              module = { id: moduleId }
+            }
+            let epic = (await client.query(
+              "SELECT id, title FROM items WHERE tenant_id = $1 AND project_id = $2 AND type = 'EPIC' AND module_id = $3 ORDER BY position LIMIT 1",
+              [context.tenantId, projectId, module.id],
+            )).rows[0] as { id: string; title: string } | undefined
+            if (!epic) {
+              const epicId = generateId()
+              await client.query(
+                `INSERT INTO items (id, tenant_id, project_id, type, parent_id, module_id, ancestry_path, title, status, priority, position, created_at, updated_at)
+                 VALUES ($1, $2, $3, 'EPIC', NULL, $4, '[]', 'Fluxo contínuo', 'NOT_STARTED', 'MEDIUM', 0, now(), now())`,
+                [epicId, context.tenantId, projectId, module.id],
+              )
+              epic = { id: epicId, title: 'Fluxo contínuo' }
+            }
+            const storyBefore = await readItemSnapshot(client, context.tenantId, projectId, story.id)
+            const storyPath = JSON.stringify([{ id: epic.id, title: epic.title, type: 'EPIC' }])
+            await client.query(
+              'UPDATE items SET parent_id = $1, module_id = NULL, ancestry_path = $2, updated_at = now() WHERE tenant_id = $3 AND project_id = $4 AND id = $5',
+              [epic.id, storyPath, context.tenantId, projectId, story.id],
+            )
+
+            const tasks = (await client.query(
+              "SELECT id FROM items WHERE tenant_id = $1 AND project_id = $2 AND type IN ('TASK', 'BUG', 'EXTERNAL')",
+              [context.tenantId, projectId],
+            )).rows as Array<{ id: string }>
+            const taskPath = JSON.stringify([
+              { id: epic.id, title: epic.title, type: 'EPIC' },
+              { id: story.id, title: story.title, type: 'STORY' },
+            ])
+            for (const task of tasks) {
+              const before = await readItemSnapshot(client, context.tenantId, projectId, task.id)
+              await client.query(
+                'UPDATE items SET parent_id = $1, module_id = NULL, ancestry_path = $2, updated_at = now() WHERE tenant_id = $3 AND project_id = $4 AND id = $5',
+                [story.id, taskPath, context.tenantId, projectId, task.id],
+              )
+              const after = await readItemSnapshot(client, context.tenantId, projectId, task.id)
+              if (before && after) await recordItemEvent(client, context, { projectId, itemId: task.id, eventType: 'ITEM_REPARENTED', before, after })
+            }
+            const storyAfter = await readItemSnapshot(client, context.tenantId, projectId, story.id)
+            if (storyBefore && storyAfter && JSON.stringify(storyBefore) !== JSON.stringify(storyAfter)) {
+              await recordItemEvent(client, context, { projectId, itemId: story.id, eventType: 'LEAF_CHANGED', before: storyBefore, after: storyAfter })
+            }
+          }
+
+          await updateProjectRowTx(client, context, projectId, targetBoardMode, simpleStoryId, patch)
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'project')
+          const updated = (await client.query('SELECT * FROM projects WHERE tenant_id = $1 AND id = $2',
+            [context.tenantId, projectId])).rows[0] as PgRow | undefined
+          return updated ? mapProject(updated) : null
+        })
       },
       // T61 — recolhe módulos/épicos a um item único (paridade com o adapter SQLite).
       async collapseProjectHierarchy(context: MutationContext, projectId: string, options: { hideModules: boolean; hideEpics: boolean }) {
@@ -4311,108 +4594,176 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       },
       async deleteItemSubtree(context, projectId, itemId, options) {
         return tx(async (client) => {
-          const result = await client.query(
-            `WITH RECURSIVE subtree(id, depth) AS (
-               SELECT id, 0 FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3
-               UNION ALL
-               SELECT child.id, subtree.depth + 1
-               FROM items AS child
-               INNER JOIN subtree ON child.parent_id = subtree.id
-               WHERE child.tenant_id = $1 AND child.project_id = $2 AND subtree.depth <= $4
-             )
-             SELECT id, depth FROM subtree ORDER BY depth, id`,
-            [context.tenantId, projectId, itemId, 50],
-          )
-          const subtreeRows = result.rows as Array<{ id: string; depth: number }>
-          if (subtreeRows.some(row => row.depth > 50)) throw new Error('MAX_ANCESTRY_DEPTH')
-          const itemIds = subtreeRows.map(row => String(row.id))
+          const itemIds = await collectItemSubtreeIdsPg(client, context.tenantId, projectId, itemId)
           if (!itemIds.length) throw new Error('ITEM_NOT_FOUND')
-
-          const snapshots = await readItemSnapshots(client, context.tenantId, projectId, itemIds)
-          // [T57] Ancestrais do item removido, lidos antes do delete.
+          // [T57] Ancestrais do item removido são lidos antes do delete.
           const rootAncestryRow = await client.query('SELECT ancestry_path FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
             [context.tenantId, projectId, itemId])
           const rootAncestry = (rootAncestryRow.rows[0] as { ancestry_path: string } | undefined)?.ancestry_path
-          const parentIds = [...new Set([...snapshots.values()].flatMap(snapshot => snapshot.parentId ? [snapshot.parentId] : []))]
-          const parentSnapshots = await readItemSnapshots(client, context.tenantId, projectId, parentIds)
-          const attachmentRows = await client.query(
-            'SELECT storage_path FROM attachments WHERE tenant_id = $1 AND item_id = ANY($2::text[])',
-            [context.tenantId, itemIds],
+          await deleteItemsInsideTx(client, context, projectId, itemIds, {
+            recordAnalyticsEvents: options?.recordAnalyticsEvents,
+            touchAncestors: [rootAncestry],
+          })
+          return itemIds
+        })
+      },
+      async deleteProjectAggregate(context, projectId, _options = {}) {
+        await tx(async (client) => {
+          const project = await client.query('SELECT id FROM projects WHERE tenant_id = $1 AND id = $2', [context.tenantId, projectId])
+          if (!project.rows[0]) return
+          const itemRows = await client.query('SELECT id FROM items WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
+          const itemIds = (itemRows.rows as Array<{ id: string }>).map(row => row.id)
+          await client.query('UPDATE projects SET simple_story_id = NULL WHERE tenant_id = $1 AND id = $2', [context.tenantId, projectId])
+          await deleteItemsInsideTx(client, context, projectId, itemIds, { recordAnalyticsEvents: false })
+
+          await client.query('DELETE FROM memberships WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
+          await client.query('DELETE FROM tags WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
+          await client.query('DELETE FROM sprints WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
+          await client.query('DELETE FROM project_versions WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
+          await client.query('DELETE FROM project_cost_centers WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
+          await client.query('DELETE FROM modules WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
+          await client.query('DELETE FROM columns WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
+          await client.query('DELETE FROM squads WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
+          await client.query('DELETE FROM assistant_conversations WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId])
+          await client.query('DELETE FROM projects WHERE tenant_id = $1 AND id = $2', [context.tenantId, projectId])
+          await emitMetadataEventPg(client, context.tenantId, projectId, 'project')
+        })
+      },
+      async deleteModuleAggregate(context, projectId, moduleId, options = {}) {
+        return tx(async (client) => {
+          const module = await client.query('SELECT id FROM modules WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+            [context.tenantId, projectId, moduleId])
+          if (!module.rows[0]) return { deleted: false, epicCount: 0, deletedItemCount: 0 }
+
+          const epicRows = await client.query(
+            "SELECT id FROM items WHERE tenant_id = $1 AND project_id = $2 AND module_id = $3 AND type = 'EPIC'",
+            [context.tenantId, projectId, moduleId],
           )
-          const storagePaths = (attachmentRows.rows as Array<{ storage_path: string }>).map(row => row.storage_path)
-          if (storagePaths.length) {
-            const now = new Date().toISOString()
-            for (let offset = 0; offset < storagePaths.length; offset += 500) {
-              const batch = storagePaths.slice(offset, offset + 500)
-              const values: string[] = []
-              const params: unknown[] = []
-              for (const storagePath of batch) {
-                const base = params.length
-                values.push(`($${base + 1}, $${base + 2}, $${base + 3}, 'ATTACHMENT', 'PENDING', 0, $${base + 4}, $${base + 5}, $${base + 6})`)
-                params.push(generateId(), context.tenantId, storagePath, now, now, now)
-              }
-              await client.query(
-                `INSERT INTO storage_cleanup_jobs (id, tenant_id, storage_path, resource_type, status, attempts, available_at, created_at, updated_at)
-                 VALUES ${values.join(', ')} ON CONFLICT (tenant_id, storage_path) WHERE status = 'PENDING' DO NOTHING`,
-                params,
-              )
-            }
-          }
-
-          if (options?.recordAnalyticsEvents ?? true) {
-            await recordDeletedItemEventsBatch(client, context, projectId, snapshots)
-          }
-
-          const checklistRows = await client.query(
-            'SELECT id FROM checklists WHERE tenant_id = $1 AND item_id = ANY($2::text[])',
-            [context.tenantId, itemIds],
-          )
-          const checklistIds = (checklistRows.rows as Array<{ id: string }>).map(row => row.id)
-          if (checklistIds.length) {
-            await client.query('DELETE FROM checklist_items WHERE tenant_id = $1 AND checklist_id = ANY($2::text[])', [context.tenantId, checklistIds])
-          }
-          await client.query('DELETE FROM checklists WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
-          await client.query('DELETE FROM item_tags WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
-          await client.query('DELETE FROM item_sprints WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
-          await client.query('DELETE FROM attachments WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
-          await client.query('DELETE FROM item_links WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
-          // [TENANT] Dependências em que os itens excluídos figuram como origem OU alvo
-          await client.query('DELETE FROM item_dependencies WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
-          await client.query('DELETE FROM item_dependencies WHERE tenant_id = $1 AND depends_on_item_id = ANY($2::text[])', [context.tenantId, itemIds])
-          await client.query('DELETE FROM item_logs WHERE tenant_id = $1 AND item_id = ANY($2::text[])', [context.tenantId, itemIds])
-          await client.query('DELETE FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = ANY($3::text[])', [context.tenantId, projectId, itemIds])
-
-          // [T57] Ancestrais do item removido são marcados como alterados.
-          await touchAncestorsOnlyPg(client, context.tenantId, projectId, rootAncestry)
-
-          const externalParentIds = parentIds.filter(parentId => !itemIds.includes(parentId))
-          const remainingChildRows = externalParentIds.length
-            ? await client.query(
-              'SELECT DISTINCT parent_id FROM items WHERE tenant_id = $1 AND project_id = $2 AND parent_id = ANY($3::text[])',
-              [context.tenantId, projectId, externalParentIds],
+          const epics = epicRows.rows as Array<{ id: string }>
+          let deletedItemCount = 0
+          if (epics.length && options.targetModuleId) {
+            const target = await client.query('SELECT id FROM modules WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+              [context.tenantId, projectId, options.targetModuleId])
+            if (!target.rows[0] || options.targetModuleId === moduleId) throw new Error('INVALID_MODULE_DESTINATION')
+            await client.query("UPDATE items SET module_id = $1 WHERE tenant_id = $2 AND project_id = $3 AND module_id = $4 AND type = 'EPIC'",
+              [options.targetModuleId, context.tenantId, projectId, moduleId])
+          } else if (epics.length && options.cascade) {
+            const subtreeRows = await client.query(
+              `WITH RECURSIVE subtree(id, depth) AS (
+                 SELECT id, 0 FROM items WHERE tenant_id = $1 AND project_id = $2 AND module_id = $3 AND type = 'EPIC'
+                 UNION ALL
+                 SELECT child.id, subtree.depth + 1
+                 FROM items AS child
+                 INNER JOIN subtree ON child.parent_id = subtree.id
+                 WHERE child.tenant_id = $1 AND child.project_id = $2 AND subtree.depth <= $4
+               )
+               SELECT id, depth FROM subtree ORDER BY depth, id`,
+              [context.tenantId, projectId, moduleId, MAX_HIERARCHY_DEPTH],
             )
-            : { rows: [] }
-          const parentsWithRemainingChildren = new Set((remainingChildRows.rows as Array<{ parent_id: string }>).map(row => row.parent_id))
-          if (options?.recordAnalyticsEvents ?? true) {
-            for (const [parentId, before] of parentSnapshots) {
-              const after = { ...before, isLeaf: itemIds.includes(parentId) || !parentsWithRemainingChildren.has(parentId) }
-              await recordItemEvent(client, context, { projectId, itemId: parentId, eventType: 'LEAF_CHANGED', before, after })
+            const rows = subtreeRows.rows as Array<{ id: string; depth: number }>
+            if (rows.some(row => row.depth > MAX_HIERARCHY_DEPTH)) throw new Error('MAX_ANCESTRY_DEPTH')
+            const subtreeIds = rows.map(row => String(row.id))
+            deletedItemCount = subtreeIds.length
+            await deleteItemsInsideTx(client, context, projectId, subtreeIds, { recordAnalyticsEvents: true })
+          } else if (epics.length) {
+            throw new Error('MODULE_HAS_EPICS')
+          }
+
+          const deleted = (await client.query('DELETE FROM modules WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+            [context.tenantId, projectId, moduleId])).rowCount === 1
+          if (deleted) await emitMetadataEventPg(client, context.tenantId, projectId, 'modules')
+          return { deleted, epicCount: epics.length, deletedItemCount }
+        })
+      },
+      async archiveItemSubtree(context, projectId, itemId) {
+        return tx(async (client) => {
+          const itemIds = await collectItemSubtreeIdsPg(client, context.tenantId, projectId, itemId)
+          if (!itemIds.length) throw new Error('ITEM_NOT_FOUND')
+          const rows = (await client.query(
+            'SELECT id, status FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = ANY($3::text[]) ORDER BY id',
+            [context.tenantId, projectId, itemIds],
+          )).rows as Array<{ id: string; status: string }>
+          for (const row of rows) {
+            if (row.status === 'ARCHIVED') continue
+            const before = await readItemSnapshot(client, context.tenantId, projectId, row.id)
+            const now = new Date().toISOString()
+            await client.query(
+              "UPDATE items SET status = 'ARCHIVED', status_before_archive = $1, updated_at = $2 WHERE tenant_id = $3 AND project_id = $4 AND id = $5",
+              [row.status, now, context.tenantId, projectId, row.id],
+            )
+            await insertItemActivityPg(client, context, row.id, context.mutation.activity ?? 'Card arquivado', now)
+            if (before) {
+              await recordItemEvent(client, context, {
+                projectId, itemId: row.id, eventType: 'ITEM_ARCHIVED', before,
+                after: { ...before, status: 'ARCHIVED' },
+              })
             }
           }
           return itemIds
         })
       },
-      async deleteProjectAggregate(_context, _projectId, _options) {
-        throw new Error('NOT_IMPLEMENTED: deleteProjectAggregate')
-      },
-      async deleteModuleAggregate(_context, _projectId, _moduleId, _options) {
-        throw new Error('NOT_IMPLEMENTED: deleteModuleAggregate')
-      },
-      async archiveItemSubtree(_context, _projectId, _itemId) {
-        throw new Error('NOT_IMPLEMENTED: archiveItemSubtree')
-      },
-      async unarchiveItemSubtree(_context, _projectId, _itemId) {
-        throw new Error('NOT_IMPLEMENTED: unarchiveItemSubtree')
+      async unarchiveItemSubtree(context, projectId, itemId) {
+        return tx(async (client) => {
+          const rootRes = await client.query(
+            'SELECT id, status, ancestry_path FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+            [context.tenantId, projectId, itemId],
+          )
+          const root = rootRes.rows[0] as { id: string; status: string; ancestry_path: string } | undefined
+          if (!root) throw new Error('ITEM_NOT_FOUND')
+          if (root.status !== 'ARCHIVED') throw new Error('ITEM_NOT_ARCHIVED')
+
+          const allIds = [itemId]
+          const queue = [itemId]
+          const visited = new Set<string>()
+          while (queue.length > 0) {
+            const parentId = queue.shift()!
+            if (visited.has(parentId)) continue
+            visited.add(parentId)
+            const children = await client.query(
+              "SELECT id FROM items WHERE tenant_id = $1 AND project_id = $2 AND parent_id = $3 AND status = 'ARCHIVED' ORDER BY id",
+              [context.tenantId, projectId, parentId],
+            )
+            for (const child of children.rows as Array<{ id: string }>) {
+              allIds.push(child.id)
+              queue.push(child.id)
+            }
+          }
+
+          const ancestorPath = JSON.parse(root.ancestry_path || '[]') as Array<{ id: string }>
+          for (const ancestor of ancestorPath) {
+            const row = (await client.query(
+              'SELECT id, status, status_before_archive FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+              [context.tenantId, projectId, ancestor.id],
+            )).rows[0] as { id: string; status: string; status_before_archive: string | null } | undefined
+            if (!row || row.status !== 'ARCHIVED') continue
+            await client.query(
+              'UPDATE items SET status = $1, status_before_archive = NULL, updated_at = now() WHERE tenant_id = $2 AND project_id = $3 AND id = $4',
+              [row.status_before_archive ?? 'NOT_STARTED', context.tenantId, projectId, ancestor.id],
+            )
+          }
+
+          for (const currentId of allIds) {
+            const current = (await client.query(
+              'SELECT id, status, status_before_archive FROM items WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+              [context.tenantId, projectId, currentId],
+            )).rows[0] as { id: string; status: string; status_before_archive: string | null } | undefined
+            if (!current) continue
+            const before = await readItemSnapshot(client, context.tenantId, projectId, currentId)
+            const now = new Date().toISOString()
+            await client.query(
+              'UPDATE items SET status = $1, status_before_archive = NULL, updated_at = $2 WHERE tenant_id = $3 AND project_id = $4 AND id = $5',
+              [current.status_before_archive ?? 'NOT_STARTED', now, context.tenantId, projectId, currentId],
+            )
+            await insertItemActivityPg(client, context, currentId, context.mutation.activity ?? 'Card restaurado', now)
+            if (before) {
+              await recordItemEvent(client, context, {
+                projectId, itemId: currentId, eventType: 'ITEM_UNARCHIVED', before,
+                after: await readItemSnapshot(client, context.tenantId, projectId, currentId),
+              })
+            }
+          }
+          return allIds
+        })
       },
       async applyItemBatch(context, projectId, updates) {
         return tx(async (client) => {

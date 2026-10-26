@@ -449,6 +449,272 @@ describe.skipIf(!runPostgres)('Paridade SIMPLE ↔ ADVANCED', () => {
     }
   })
 
+  // Reordenação vertical: o endpoint PATCH /items/reorder usa o port `items`
+  // (não o unitOfWork), então o ADVANCED precisa da mesma implementação do SIMPLE.
+  test('reordenação de itens persiste a mesma ordem nos dois adapters', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const ctx = makeContext('tenant-1')
+      const mutCtx = makeMutationContext('tenant-1')
+
+      const tenantSqlite = await sqlite.ports.tenants.createTenant({ name: 'T', slug: `reorder-sqlite-${crypto.randomUUID()}` })
+      const tenantPg = await pg.ports.tenants.createTenant({ name: 'T', slug: `reorder-pg-${crypto.randomUUID()}` })
+      const userSqlite = await sqlite.ports.identity.createUser({ ...ctx, tenantId: tenantSqlite.id }, { email: 'r@a.com', passwordHash: 'h', name: 'R', globalGroup: 'ADMIN' })
+      const userPg = await pg.ports.identity.createUser({ ...ctx, tenantId: tenantPg.id }, { email: 'r@a.com', passwordHash: 'h', name: 'R', globalGroup: 'ADMIN' })
+      const projectSqlite = await sqlite.ports.unitOfWork.createProjectAggregate(
+        { ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id },
+        { project: { name: 'P', boardMode: 'SIMPLE' }, defaultColumns: [{ name: 'To Do', baseStatus: 'NOT_STARTED' }], defaultModuleName: 'G', simpleStoryTitle: 'S' },
+      )
+      const projectPg = await pg.ports.unitOfWork.createProjectAggregate(
+        { ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id },
+        { project: { name: 'P', boardMode: 'SIMPLE' }, defaultColumns: [{ name: 'To Do', baseStatus: 'NOT_STARTED' }], defaultModuleName: 'G', simpleStoryTitle: 'S' },
+      )
+      const columnSqlite = (await sqlite.ports.projects.listColumns({ ...ctx, tenantId: tenantSqlite.id }, projectSqlite.id))[0]!
+      const columnPg = (await pg.ports.projects.listColumns({ ...ctx, tenantId: tenantPg.id }, projectPg.id))[0]!
+
+      const criar = async (ports: PersistencePorts, tenantId: string, userId: string, projectId: string, columnId: string, title: string) =>
+        ports.unitOfWork.createItemWithRelations(
+          { ...mutCtx, tenantId, actorUserId: userId },
+          { projectId, type: 'TASK', title, columnId },
+          { activity: 'Criado' },
+        )
+      const itemASqlite = await criar(sqlite.ports, tenantSqlite.id, userSqlite.id, projectSqlite.id, columnSqlite.id, 'A')
+      const itemBSqlite = await criar(sqlite.ports, tenantSqlite.id, userSqlite.id, projectSqlite.id, columnSqlite.id, 'B')
+      const itemCSqlite = await criar(sqlite.ports, tenantSqlite.id, userSqlite.id, projectSqlite.id, columnSqlite.id, 'C')
+      const itemAPg = await criar(pg.ports, tenantPg.id, userPg.id, projectPg.id, columnPg.id, 'A')
+      const itemBPg = await criar(pg.ports, tenantPg.id, userPg.id, projectPg.id, columnPg.id, 'B')
+      const itemCPg = await criar(pg.ports, tenantPg.id, userPg.id, projectPg.id, columnPg.id, 'C')
+
+      await Promise.all([
+        sqlite.ports.items.reorderItems({ ...ctx, tenantId: tenantSqlite.id }, projectSqlite.id, columnSqlite.id, [itemCSqlite.id, itemASqlite.id, itemBSqlite.id]),
+        pg.ports.items.reorderItems({ ...ctx, tenantId: tenantPg.id }, projectPg.id, columnPg.id, [itemCPg.id, itemAPg.id, itemBPg.id]),
+      ])
+
+      const ordem = async (ports: PersistencePorts, tenantId: string, projectId: string, columnId: string) =>
+        (await ports.items.listItems({ ...ctx, tenantId }, projectId))
+          .filter(item => item.columnId === columnId)
+          .sort((left, right) => left.position - right.position)
+          .map(item => [item.title, item.position])
+      expect(await ordem(sqlite.ports, tenantSqlite.id, projectSqlite.id, columnSqlite.id))
+        .toEqual(await ordem(pg.ports, tenantPg.id, projectPg.id, columnPg.id))
+      expect((await ordem(pg.ports, tenantPg.id, projectPg.id, columnPg.id)).map(([title]) => title))
+        .toEqual(['C', 'A', 'B'])
+
+      // Card fora da coluna invalida a operação inteira, sem reescrever posições.
+      await expect(pg.ports.items.reorderItems({ ...ctx, tenantId: tenantPg.id }, projectPg.id, columnPg.id, [itemAPg.id, projectPg.simpleStoryId!]))
+        .rejects.toThrow('ITEM_NOT_IN_COLUMN')
+      expect((await ordem(pg.ports, tenantPg.id, projectPg.id, columnPg.id)).map(([title]) => title))
+        .toEqual(['C', 'A', 'B'])
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+
+  // Os agregados de mutação (exclusão de projeto/módulo, arquivamento e conversão
+  // de modo) eram stubs `NOT_IMPLEMENTED` no ADVANCED. Estes testes fixam a paridade
+  // de comportamento com o adapter SQLite.
+  test('arquivar e restaurar subárvore preservam status e relações nos dois adapters', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const ctx = makeContext('tenant-1')
+      const mutCtx = makeMutationContext('tenant-1')
+      const tenantSqlite = await sqlite.ports.tenants.createTenant({ name: 'T', slug: `archive-sqlite-${crypto.randomUUID()}` })
+      const tenantPg = await pg.ports.tenants.createTenant({ name: 'T', slug: `archive-pg-${crypto.randomUUID()}` })
+      const userSqlite = await sqlite.ports.identity.createUser({ ...ctx, tenantId: tenantSqlite.id }, { email: 'a@a.com', passwordHash: 'h', name: 'A', globalGroup: 'ADMIN' })
+      const userPg = await pg.ports.identity.createUser({ ...ctx, tenantId: tenantPg.id }, { email: 'a@a.com', passwordHash: 'h', name: 'A', globalGroup: 'ADMIN' })
+      const projectSqlite = await sqlite.ports.unitOfWork.createProjectAggregate(
+        { ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id },
+        { project: { name: 'P', boardMode: 'SIMPLE' }, defaultColumns: [{ name: 'To Do', baseStatus: 'NOT_STARTED' }], defaultModuleName: 'G', simpleStoryTitle: 'S' },
+      )
+      const projectPg = await pg.ports.unitOfWork.createProjectAggregate(
+        { ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id },
+        { project: { name: 'P', boardMode: 'SIMPLE' }, defaultColumns: [{ name: 'To Do', baseStatus: 'NOT_STARTED' }], defaultModuleName: 'G', simpleStoryTitle: 'S' },
+      )
+
+      const criar = async (ports: PersistencePorts, tenantId: string, userId: string, projectId: string, input: { title: string; parentId?: string }) =>
+        ports.unitOfWork.createItemWithRelations(
+          { ...mutCtx, tenantId, actorUserId: userId },
+          { projectId, type: 'TASK', title: input.title, parentId: input.parentId },
+          { activity: 'Criado' },
+        )
+      const paiSqlite = await criar(sqlite.ports, tenantSqlite.id, userSqlite.id, projectSqlite.id, { title: 'Pai' })
+      await criar(sqlite.ports, tenantSqlite.id, userSqlite.id, projectSqlite.id, { title: 'Filho', parentId: paiSqlite.id })
+      const paiPg = await criar(pg.ports, tenantPg.id, userPg.id, projectPg.id, { title: 'Pai' })
+      await criar(pg.ports, tenantPg.id, userPg.id, projectPg.id, { title: 'Filho', parentId: paiPg.id })
+
+      const statusPorTitulo = async (ports: PersistencePorts, tenantId: string, projectId: string) =>
+        Object.fromEntries((await ports.items.listItems({ ...ctx, tenantId }, projectId))
+          .map(item => [item.title, item.status]))
+      expect(await sqlite.ports.unitOfWork.archiveItemSubtree({ ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id }, projectSqlite.id, paiSqlite.id))
+        .toEqual([paiSqlite.id, expect.any(String)])
+      expect(await pg.ports.unitOfWork.archiveItemSubtree({ ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id }, projectPg.id, paiPg.id))
+        .toEqual([paiPg.id, expect.any(String)])
+      expect(await statusPorTitulo(sqlite.ports, tenantSqlite.id, projectSqlite.id))
+        .toEqual(await statusPorTitulo(pg.ports, tenantPg.id, projectPg.id))
+      expect(await statusPorTitulo(pg.ports, tenantPg.id, projectPg.id)).toEqual({ S: 'NOT_STARTED', Pai: 'ARCHIVED', Filho: 'ARCHIVED' })
+
+      await sqlite.ports.unitOfWork.unarchiveItemSubtree({ ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id }, projectSqlite.id, paiSqlite.id)
+      await pg.ports.unitOfWork.unarchiveItemSubtree({ ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id }, projectPg.id, paiPg.id)
+      expect(await statusPorTitulo(sqlite.ports, tenantSqlite.id, projectSqlite.id))
+        .toEqual(await statusPorTitulo(pg.ports, tenantPg.id, projectPg.id))
+      expect(await statusPorTitulo(pg.ports, tenantPg.id, projectPg.id)).toEqual({ S: 'NOT_STARTED', Pai: 'NOT_STARTED', Filho: 'NOT_STARTED' })
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+
+  test('excluir módulo em cascata remove épicos e descendentes nos dois adapters', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const ctx = makeContext('tenant-1')
+      const mutCtx = makeMutationContext('tenant-1')
+      const tenantSqlite = await sqlite.ports.tenants.createTenant({ name: 'T', slug: `module-sqlite-${crypto.randomUUID()}` })
+      const tenantPg = await pg.ports.tenants.createTenant({ name: 'T', slug: `module-pg-${crypto.randomUUID()}` })
+      const userSqlite = await sqlite.ports.identity.createUser({ ...ctx, tenantId: tenantSqlite.id }, { email: 'a@a.com', passwordHash: 'h', name: 'A', globalGroup: 'ADMIN' })
+      const userPg = await pg.ports.identity.createUser({ ...ctx, tenantId: tenantPg.id }, { email: 'a@a.com', passwordHash: 'h', name: 'A', globalGroup: 'ADMIN' })
+      const projetoHierarquico = { project: { name: 'P', boardMode: 'HIERARCHICAL' as const }, defaultColumns: [], defaultModuleName: 'Geral', simpleStoryTitle: 'S' }
+      const projectSqlite = await sqlite.ports.unitOfWork.createProjectAggregate({ ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id }, projetoHierarquico)
+      const projectPg = await pg.ports.unitOfWork.createProjectAggregate({ ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id }, projetoHierarquico)
+      const moduleSqlite = (await sqlite.ports.projects.listModules({ ...ctx, tenantId: tenantSqlite.id }, projectSqlite.id))[0]!
+      const modulePg = (await pg.ports.projects.listModules({ ...ctx, tenantId: tenantPg.id }, projectPg.id))[0]!
+
+      const criar = async (ports: PersistencePorts, tenantId: string, userId: string, projectId: string, input: { type: 'EPIC' | 'STORY' | 'TASK'; title: string; parentId?: string; moduleId?: string }) =>
+        ports.unitOfWork.createItemWithRelations(
+          { ...mutCtx, tenantId, actorUserId: userId },
+          { projectId, type: input.type, title: input.title, parentId: input.parentId, moduleId: input.moduleId },
+          { activity: 'Criado' },
+        )
+      for (const [ports, tenantId, userId, projectId, moduleId] of [
+        [sqlite.ports, tenantSqlite.id, userSqlite.id, projectSqlite.id, moduleSqlite.id] as const,
+        [pg.ports, tenantPg.id, userPg.id, projectPg.id, modulePg.id] as const,
+      ]) {
+        const epic = await criar(ports, tenantId, userId, projectId, { type: 'EPIC', title: 'Épico', moduleId })
+        const story = await criar(ports, tenantId, userId, projectId, { type: 'STORY', title: 'História', parentId: epic.id })
+        await criar(ports, tenantId, userId, projectId, { type: 'TASK', title: 'Tarefa', parentId: story.id })
+      }
+
+      const remover = async (ports: PersistencePorts, tenantId: string, userId: string, projectId: string, moduleId: string) =>
+        ports.unitOfWork.deleteModuleAggregate({ ...mutCtx, tenantId, actorUserId: userId }, projectId, moduleId, { cascade: true })
+      expect(await remover(sqlite.ports, tenantSqlite.id, userSqlite.id, projectSqlite.id, moduleSqlite.id))
+        .toEqual(await remover(pg.ports, tenantPg.id, userPg.id, projectPg.id, modulePg.id))
+      expect(await pg.ports.items.listItems({ ...ctx, tenantId: tenantPg.id }, projectPg.id)).toEqual([])
+      expect(await pg.ports.projects.listModules({ ...ctx, tenantId: tenantPg.id }, projectPg.id)).toEqual([])
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+
+  test('excluir projeto remove itens, módulos e o próprio projeto nos dois adapters', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const ctx = makeContext('tenant-1')
+      const mutCtx = makeMutationContext('tenant-1')
+      const tenantSqlite = await sqlite.ports.tenants.createTenant({ name: 'T', slug: `project-del-sqlite-${crypto.randomUUID()}` })
+      const tenantPg = await pg.ports.tenants.createTenant({ name: 'T', slug: `project-del-pg-${crypto.randomUUID()}` })
+      const userSqlite = await sqlite.ports.identity.createUser({ ...ctx, tenantId: tenantSqlite.id }, { email: 'a@a.com', passwordHash: 'h', name: 'A', globalGroup: 'ADMIN' })
+      const userPg = await pg.ports.identity.createUser({ ...ctx, tenantId: tenantPg.id }, { email: 'a@a.com', passwordHash: 'h', name: 'A', globalGroup: 'ADMIN' })
+      const entrada = { project: { name: 'P', boardMode: 'HIERARCHICAL' as const }, defaultColumns: [{ name: 'To Do', baseStatus: 'NOT_STARTED' as const }], defaultModuleName: 'Geral', simpleStoryTitle: 'S' }
+      const projectSqlite = await sqlite.ports.unitOfWork.createProjectAggregate({ ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id }, entrada)
+      const projectPg = await pg.ports.unitOfWork.createProjectAggregate({ ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id }, entrada)
+      for (const [ports, tenantId, userId, projectId] of [
+        [sqlite.ports, tenantSqlite.id, userSqlite.id, projectSqlite.id] as const,
+        [pg.ports, tenantPg.id, userPg.id, projectPg.id] as const,
+      ]) {
+        await ports.unitOfWork.createItemWithRelations({ ...mutCtx, tenantId, actorUserId: userId }, { projectId, type: 'TASK', title: 'Card' }, { activity: 'Criado' })
+      }
+
+      await sqlite.ports.unitOfWork.deleteProjectAggregate({ ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id }, projectSqlite.id)
+      await pg.ports.unitOfWork.deleteProjectAggregate({ ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id }, projectPg.id)
+      expect(await sqlite.ports.projects.getProject({ ...ctx, tenantId: tenantSqlite.id }, projectSqlite.id)).toBeNull()
+      expect(await pg.ports.projects.getProject({ ...ctx, tenantId: tenantPg.id }, projectPg.id)).toBeNull()
+      expect(await pg.ports.items.listItems({ ...ctx, tenantId: tenantPg.id }, projectPg.id)).toEqual([])
+      expect(await pg.ports.projects.listModules({ ...ctx, tenantId: tenantPg.id }, projectPg.id)).toEqual([])
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+
+  test('conversão de modo do board reorganiza hierarquia nos dois adapters', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const ctx = makeContext('tenant-1')
+      const mutCtx = makeMutationContext('tenant-1')
+      const tenantSqlite = await sqlite.ports.tenants.createTenant({ name: 'T', slug: `convert-sqlite-${crypto.randomUUID()}` })
+      const tenantPg = await pg.ports.tenants.createTenant({ name: 'T', slug: `convert-pg-${crypto.randomUUID()}` })
+      const userSqlite = await sqlite.ports.identity.createUser({ ...ctx, tenantId: tenantSqlite.id }, { email: 'a@a.com', passwordHash: 'h', name: 'A', globalGroup: 'ADMIN' })
+      const userPg = await pg.ports.identity.createUser({ ...ctx, tenantId: tenantPg.id }, { email: 'a@a.com', passwordHash: 'h', name: 'A', globalGroup: 'ADMIN' })
+
+      const resumo = async (ports: PersistencePorts, tenantId: string, projectId: string) => {
+        const itens = await ports.items.listItems({ ...ctx, tenantId }, projectId)
+        const porId = new Map(itens.map(item => [item.id, item]))
+        return {
+          modo: (await ports.projects.getProject({ ...ctx, tenantId }, projectId))?.boardMode,
+          tipos: itens.map(item => `${item.type}:${item.title}`).sort(),
+          pais: itens.map(item => `${item.title}<-${item.parentId ? porId.get(item.parentId)?.title ?? '?' : 'null'}`).sort(),
+          modulos: (await ports.projects.listModules({ ...ctx, tenantId }, projectId)).length,
+        }
+      }
+      const criar = async (ports: PersistencePorts, tenantId: string, userId: string, projectId: string, input: { type: 'EPIC' | 'STORY' | 'TASK'; title: string; parentId?: string; moduleId?: string }) =>
+        ports.unitOfWork.createItemWithRelations(
+          { ...mutCtx, tenantId, actorUserId: userId },
+          { projectId, type: input.type, title: input.title, parentId: input.parentId, moduleId: input.moduleId },
+          { activity: 'Criado' },
+        )
+
+      // HIERARCHICAL → SIMPLE
+      const entradaHierarquica = { project: { name: 'P', boardMode: 'HIERARCHICAL' as const }, defaultColumns: [], defaultModuleName: 'Geral', simpleStoryTitle: 'S' }
+      const hierSqlite = await sqlite.ports.unitOfWork.createProjectAggregate({ ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id }, entradaHierarquica)
+      const hierPg = await pg.ports.unitOfWork.createProjectAggregate({ ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id }, entradaHierarquica)
+      for (const [ports, tenantId, userId, projectId] of [
+        [sqlite.ports, tenantSqlite.id, userSqlite.id, hierSqlite.id] as const,
+        [pg.ports, tenantPg.id, userPg.id, hierPg.id] as const,
+      ]) {
+        const moduleId = (await ports.projects.listModules({ ...ctx, tenantId }, projectId))[0]!.id
+        const epic = await criar(ports, tenantId, userId, projectId, { type: 'EPIC', title: 'Épico', moduleId })
+        const story = await criar(ports, tenantId, userId, projectId, { type: 'STORY', title: 'História', parentId: epic.id })
+        await criar(ports, tenantId, userId, projectId, { type: 'TASK', title: 'Tarefa', parentId: story.id })
+      }
+      await sqlite.ports.unitOfWork.convertProjectBoardMode({ ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id }, hierSqlite.id, 'SIMPLE')
+      await pg.ports.unitOfWork.convertProjectBoardMode({ ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id }, hierPg.id, 'SIMPLE')
+      expect(await resumo(sqlite.ports, tenantSqlite.id, hierSqlite.id))
+        .toEqual(await resumo(pg.ports, tenantPg.id, hierPg.id))
+      expect(await resumo(pg.ports, tenantPg.id, hierPg.id)).toMatchObject({
+        modo: 'SIMPLE',
+        modulos: 0,
+        tipos: ['STORY:Fluxo contínuo', 'TASK:Tarefa'],
+        pais: ['Fluxo contínuo<-null', 'Tarefa<-Fluxo contínuo'],
+      })
+
+      // SIMPLE → HIERARCHICAL
+      const entradaSimples = { project: { name: 'P2', boardMode: 'SIMPLE' as const }, defaultColumns: [], defaultModuleName: 'Geral', simpleStoryTitle: 'Fluxo' }
+      const simplesSqlite = await sqlite.ports.unitOfWork.createProjectAggregate({ ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id }, entradaSimples)
+      const simplesPg = await pg.ports.unitOfWork.createProjectAggregate({ ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id }, entradaSimples)
+      await criar(sqlite.ports, tenantSqlite.id, userSqlite.id, simplesSqlite.id, { type: 'TASK', title: 'Tarefa' })
+      await criar(pg.ports, tenantPg.id, userPg.id, simplesPg.id, { type: 'TASK', title: 'Tarefa' })
+      await sqlite.ports.unitOfWork.convertProjectBoardMode({ ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id }, simplesSqlite.id, 'HIERARCHICAL')
+      await pg.ports.unitOfWork.convertProjectBoardMode({ ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id }, simplesPg.id, 'HIERARCHICAL')
+      expect(await resumo(sqlite.ports, tenantSqlite.id, simplesSqlite.id))
+        .toEqual(await resumo(pg.ports, tenantPg.id, simplesPg.id))
+      const hierarquico = await resumo(pg.ports, tenantPg.id, simplesPg.id)
+      expect(hierarquico.modo).toBe('HIERARCHICAL')
+      expect(hierarquico.modulos).toBe(1)
+      expect(hierarquico.tipos).toEqual(['EPIC:Fluxo contínuo', 'STORY:Fluxo', 'TASK:Tarefa'])
+      expect(hierarquico.pais).toEqual(['Fluxo contínuo<-null', 'Fluxo<-Fluxo contínuo', 'Tarefa<-Fluxo'])
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+
   test('PostgreSQL carrega subárvore profunda em número constante de leituras', async () => {
     const pg = await setupPostgres()
     try {

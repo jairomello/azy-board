@@ -9,6 +9,21 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Reordenar cards na mesma coluna não falha mais no perfil ADVANCED.** O
+  `PATCH /projects/:id/items/reorder` chamava `items.reorderItems`, que no
+  adapter PostgreSQL ainda era um stub `NOT_IMPLEMENTED` e respondia 500 — a tela
+  desfazia o arraste e exibia "Movimento recusado: a ordem e a coluna anteriores
+  foram mantidas". A operação agora grava as posições na mesma transação nos dois
+  dialectos, com paridade coberta por teste.
+- **Agregados de mutação deixam de responder 500 no perfil ADVANCED.** O adapter
+  PostgreSQL ainda tinha stubs `NOT_IMPLEMENTED` para arquivar/desarquivar card,
+  excluir projeto, excluir módulo e converter o modo do board. As cinco operações
+  foram implementadas com a mesma semântica do SQLite (eventos de analytics,
+  limpeza de anexos em outbox, `LEAF_CHANGED` de pais externos e paridade de
+  hierarquia), cobertas por testes de paridade.
+
 ### Added
 
 - Novo tipo de item **dependência externa** (`EXTERNAL`), card folha com código
