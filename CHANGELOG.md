@@ -26,6 +26,12 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Added
 
+- **Redefinição de senha pelo ROOT na administração de usuários.** A tela de
+  usuários ganhou a ação "Redefinir senha" (visível apenas para ROOT), que gera
+  uma senha temporária no servidor e a exibe uma única vez para entrega ao
+  usuário. A rota `POST /users/:userId/reset-password` é restrita a ROOT,
+  escopada ao tenant e indisponível quando o login é delegado ao provedor
+  integrado.
 - Novo tipo de item **dependência externa** (`EXTERNAL`), card folha com código
   de sequência `X` e rótulos PT-BR "Dep. Externa" / EN "Ext. Dependence",
   usado para registrar trabalho de terceiros que destrava o projeto.

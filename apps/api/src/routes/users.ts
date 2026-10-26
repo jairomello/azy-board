@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { Hono } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
@@ -11,6 +12,7 @@ import { AvatarValidationError, MAX_AVATAR_SIZE, normalizeAvatar } from '../serv
 import { resolveAuthConfig } from '../services/authConfig'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
+import { logger } from '../services/logger'
 
 const THEMES = new Set<Theme>(['light', 'dark'])
 const LANGUAGES = new Set<Language>(['pt-BR', 'en', 'es'])
@@ -75,6 +77,46 @@ usersRouter.patch('/:userId/group', requireGlobalGroup('ADMIN'), async (c) => {
   if (!target) return c.json({ error: 'Usuário não encontrado' }, 404)
   await persistence.identity.updateUserGroup(userPersistenceContext(ctx), userId, body.globalGroup)
   return c.json({ ok: true, globalGroup: body.globalGroup })
+})
+
+/**
+ * Senha temporária gerada no servidor: prefixo fixo + segredo uniforme em
+ * base64url (≥ 8 caracteres e longe da lista de senhas comuns da política).
+ */
+export function generateTemporaryPassword(): string {
+  return `Azy!${randomBytes(12).toString('base64url')}`
+}
+
+// POST /users/:userId/reset-password — ROOT redefine a senha de quem esqueceu.
+// A senha atual nunca é exigida (é justamente o que se perdeu); o servidor gera
+// uma senha temporária, devolve-a uma única vez na resposta e não a registra em log.
+usersRouter.post('/:userId/reset-password', requireGlobalGroup('ROOT'), async (c) => {
+  if (resolveAuthConfig().provider !== 'LOCAL') {
+    return c.json({
+      error: 'Redefinição de senha indisponível — a autenticação é gerenciada pelo provedor integrado.',
+      code: 'PASSWORD_CHANGE_DISABLED',
+      retryable: false,
+    }, 403)
+  }
+
+  const ctx = c.get('ctx') as RequestContext
+  const userId = c.req.param('userId')
+  if (!userId) return c.json({ error: 'Usuário não especificado' }, 400)
+
+  // [TENANT] Alvo restrito ao tenant da sessão (anti-IDOR).
+  const target = await persistence.identity.findUser(userPersistenceContext(ctx), userId)
+  if (!target) return c.json({ error: 'Usuário não encontrado' }, 404)
+
+  const temporaryPassword = generateTemporaryPassword()
+  const updated = await persistence.identity.updateUserPassword(
+    userPersistenceContext(ctx),
+    userId,
+    await hashPassword(temporaryPassword),
+  )
+  if (!updated) return c.json({ error: 'Usuário não encontrado' }, 404)
+
+  logger.info('senha redefinida por ROOT', { targetUserId: userId, actorUserId: ctx.userId })
+  return c.json({ ok: true, userId, temporaryPassword })
 })
 
 usersRouter.patch('/me', async (c) => {
