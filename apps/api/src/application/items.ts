@@ -221,7 +221,7 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
 
   if (safeBody.parentId !== undefined || safeBody.moduleId !== undefined || safeBody.columnId !== undefined || safeBody.versionId !== undefined || safeBody.costCenterId !== undefined || safeBody.assigneeId !== undefined || safeBody.type !== undefined) {
     const nextType = (safeBody.type as ItemType | undefined) ?? prevItem.type
-    if (safeBody.parentId !== undefined || safeBody.type !== undefined) {
+    if (safeBody.parentId !== undefined || safeBody.moduleId !== undefined || safeBody.type !== undefined) {
       const effectiveParentId = updates.parentId !== undefined ? updates.parentId as string | null : prevItem.parentId
       const effectiveModuleId = updates.moduleId !== undefined ? updates.moduleId as string | null : prevItem.moduleId
       const hierarchyError = await validateHierarchy(context.tenantId, projectId, nextType, effectiveParentId, project.boardMode === 'SIMPLE' ? null : effectiveModuleId)

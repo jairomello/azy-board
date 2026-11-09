@@ -550,6 +550,40 @@ describe('modos de board de projetos', () => {
       expect(await bulkClear.json()).toMatchObject({ error: { code: 'HIERARCHY_REQUIRED' } })
   })
 
+  test('move EPIC para outro módulo e valida hierarquia no PATCH', async () => {
+    const projectResponse = await request('/projects', adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Mover épico entre módulos' }),
+    })
+    const project = await projectResponse.json() as { id: string }
+    const { epicId, moduleId } = await seedHierarchyFixture(tenantId, project.id, adminId, 'move')
+
+    const otherModuleResponse = await request(`/projects/${project.id}/modules`, adminToken, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Outro módulo' }),
+    })
+    expect(otherModuleResponse.status).toBe(201)
+    const otherModule = await otherModuleResponse.json() as { id: string }
+
+    const moved = await request(`/projects/${project.id}/items/${epicId}`, adminToken, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ moduleId: otherModule.id }),
+    })
+    expect(moved.status).toBe(200)
+    expect((await moved.json() as { item: { moduleId: string } }).item.moduleId).toBe(otherModule.id)
+
+    const missing = await request(`/projects/${project.id}/items/${epicId}`, adminToken, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ moduleId: 'modulo-inexistente' }),
+    })
+    expect(missing.status).toBe(400)
+    expect(moduleId).toBeString()
+  })
+
   test('aplica escopo e revogação de API Key', async () => {
     const projectResponse = await request('/projects', adminToken, {
       method: 'POST',
