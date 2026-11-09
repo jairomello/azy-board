@@ -26,6 +26,14 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Added
 
+- **Metadados de rastreio do tracker.** O item passa a ter chave externa
+  informativa (`externalSource`/`externalRef`), responsável externo
+  (`assigneeLabel`) e datas realizadas (`actualStartDate`, `actualDueDate`).
+  A chave externa não é única e não há upsert nem filtro por ela nesta versão.
+  A criação continua forçando `NOT_STARTED` e não aceita `blockedReason`; a
+  carga faz uma segunda passada de `PATCH` para aplicar status, bloqueio e
+  demais metadados. Os campos são expostos em REST, MCP (`update_item`,
+  `update_items`, `list_tasks`) e na modal/card.
 - **Listagem de usuários com busca, filtro e paginação.** A administração de
   usuários ordena por nome (com dobra de acentos), busca por nome/e-mail e filtra
   por grupo no servidor, com páginas de 25/50/100. `GET /users` passa a devolver

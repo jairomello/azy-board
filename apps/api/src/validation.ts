@@ -12,6 +12,15 @@ export const itemTypeSchema = z.enum(['EPIC', 'STORY', 'TASK', 'BUG', 'EXTERNAL'
 const optionalText = (max = 20_000) => z.string().max(max)
 const optionalId = z.string().min(1).nullable().optional()
 const optionalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
+// Metadados de rastreio do tracker: chave externa (planilha/Jira) e responsável
+// sem conta. O par source/ref é validado em conjunto na aplicação.
+const trackerBlankToNull = <T extends z.ZodTypeAny>(schema: T) => z.preprocess(
+  value => (typeof value === 'string' && value.trim() === '' ? null : value),
+  schema,
+)
+const optionalExternalSource = trackerBlankToNull(z.string().trim().min(1).max(100).nullable().optional())
+const optionalExternalRef = trackerBlankToNull(z.string().trim().min(1).max(200).nullable().optional())
+const optionalAssigneeLabel = trackerBlankToNull(z.string().trim().max(200).nullable().optional())
 // Aparência (Card T14): `icon` precisa pertencer ao ICON_CATALOG e `color` à ICON_COLORS.
 const optionalIcon = z.string().refine(isIconName, 'Ícone não pertence ao catálogo').nullable().optional()
 const optionalIconColor = z.string().refine(isIconColor, 'Cor não pertence à paleta de ícones').nullable().optional()
@@ -73,8 +82,13 @@ export const createItemSchema = z.object({
   tokensOutput: z.number().int().min(0).nullable().optional(),
   ...itemTextFields,
   assigneeId: optionalId,
+  assigneeLabel: optionalAssigneeLabel,
   startDate: optionalDate,
   dueDate: optionalDate,
+  actualStartDate: optionalDate,
+  actualDueDate: optionalDate,
+  externalSource: optionalExternalSource,
+  externalRef: optionalExternalRef,
   versionId: optionalId,
   costCenterId: optionalId,
   icon: optionalIcon,
@@ -94,6 +108,7 @@ export const updateItemSchema = z.object({
   tokensInput: z.number().int().min(0).nullable().optional(),
   tokensOutput: z.number().int().min(0).nullable().optional(),
   assigneeId: optionalId,
+  assigneeLabel: optionalAssigneeLabel,
   columnId: optionalId,
   parentId: optionalId,
   moduleId: optionalId,
@@ -101,6 +116,10 @@ export const updateItemSchema = z.object({
   startDate: optionalDate,
   dueDate: optionalDate,
   blockedReason: optionalText(2_000).nullable().optional(),
+  actualStartDate: optionalDate,
+  actualDueDate: optionalDate,
+  externalSource: optionalExternalSource,
+  externalRef: optionalExternalRef,
   versionId: optionalId,
   costCenterId: optionalId,
   icon: optionalIcon,

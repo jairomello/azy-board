@@ -42,6 +42,11 @@ interface ItemRow {
   position: number
   start_date: string | null
   due_date: string | null
+  external_source: string | null
+  external_ref: string | null
+  assignee_label: string | null
+  actual_start_date: string | null
+  actual_due_date: string | null
   author_id: string | null
   version_id: string | null
   icon: string | null
@@ -95,6 +100,11 @@ const itemColumns = {
   position: 'position',
   startDate: 'start_date',
   dueDate: 'due_date',
+  externalSource: 'external_source',
+  externalRef: 'external_ref',
+  assigneeLabel: 'assignee_label',
+  actualStartDate: 'actual_start_date',
+  actualDueDate: 'actual_due_date',
   authorId: 'author_id',
   versionId: 'version_id',
   icon: 'icon',
@@ -132,6 +142,11 @@ function toItem(row: ItemRow): ItemRecord {
     position: row.position,
     startDate: row.start_date,
     dueDate: row.due_date,
+    externalSource: row.external_source,
+    externalRef: row.external_ref,
+    assigneeLabel: row.assignee_label,
+    actualStartDate: row.actual_start_date,
+    actualDueDate: row.actual_due_date,
     authorId: row.author_id,
     versionId: row.version_id,
     icon: row.icon,

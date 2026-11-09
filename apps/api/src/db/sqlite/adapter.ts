@@ -182,6 +182,8 @@ function mapItem(row: typeof items.$inferSelect): ItemRecord {
     points: row.points, tokensInput: row.tokensInput, tokensOutput: row.tokensOutput,
     assigneeId: row.assigneeId, assigneeApiKeyId: row.assigneeApiKeyId,
     blockedReason: row.blockedReason, position: row.position, startDate: row.startDate, dueDate: row.dueDate,
+    externalSource: row.externalSource, externalRef: row.externalRef, assigneeLabel: row.assigneeLabel,
+    actualStartDate: row.actualStartDate, actualDueDate: row.actualDueDate,
     authorId: row.authorId, versionId: row.versionId, icon: row.icon, color: row.color,
     createdAt: row.createdAt, updatedAt: row.updatedAt,
   }

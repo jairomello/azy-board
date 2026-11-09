@@ -28,6 +28,21 @@ async function authorize(input: ApplicationAuthorization): Promise<ApplicationDe
   return result.ok ? null : { ok: false, status: result.status, body: result.body }
 }
 
+type TrackerMetadataBody = {
+  actualStartDate?: string | null
+  actualDueDate?: string | null
+}
+
+/** Valida o par de datas realizadas; a chave externa é apenas informativa. */
+function validateTrackerMetadata(body: TrackerMetadataBody, current: TrackerMetadataBody | null): ApplicationDenial | null {
+  const actualStart = body.actualStartDate !== undefined ? body.actualStartDate : current?.actualStartDate ?? null
+  const actualDue = body.actualDueDate !== undefined ? body.actualDueDate : current?.actualDueDate ?? null
+  if (actualStart && actualDue && actualDue < actualStart) {
+    return { ok: false, status: 422, body: { error: 'actualDueDate não pode ser anterior a actualStartDate', code: 'INVALID_ACTUAL_DATES', retryable: false } }
+  }
+  return null
+}
+
 /** Caso de uso de criação. Contexto confiável e relações vêm do servidor; o adapter confirma tudo em uma unidade. */
 export async function createItemApplication(input: ApplicationAuthorization & {
   mutationContext: MutationContext
@@ -70,6 +85,9 @@ export async function createItemApplication(input: ApplicationAuthorization & {
   if (body.versionId && !version) return { ok: false, status: 400, body: { error: 'Versão não encontrada neste projeto' } }
   if (body.costCenterId && !costCenter) return { ok: false, status: 400, body: { error: 'Centro de custo não encontrado neste projeto' } }
   if (body.assigneeId && !assignee) return { ok: false, status: 400, body: { error: 'Responsável não é membro deste projeto' } }
+
+  const trackerError = validateTrackerMetadata(body, null)
+  if (trackerError) return trackerError
 
   const workCard = isWorkCard(type)
   let effectiveSprintId: string | null = body.sprintId ?? null
@@ -127,11 +145,16 @@ export async function createItemApplication(input: ApplicationAuthorization & {
     tokensInput: body.tokensInput ?? null,
     tokensOutput: body.tokensOutput ?? null,
     assigneeId: body.assigneeId ?? null,
+    assigneeLabel: body.assigneeLabel ?? null,
     authorId: context.userId,
     versionId: effectiveVersionId,
     costCenterId,
     startDate: body.startDate === undefined ? (effectiveSprint?.startDate ?? null) : body.startDate,
     dueDate: body.dueDate === undefined ? (effectiveSprint?.endDate ?? null) : body.dueDate,
+    actualStartDate: body.actualStartDate ?? null,
+    actualDueDate: body.actualDueDate ?? null,
+    externalSource: body.externalSource ?? null,
+    externalRef: body.externalRef ?? null,
     icon: effectiveIcon,
     color: body.color ?? null,
     position: 0,
@@ -160,7 +183,9 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
 
   const writableFields = new Set([
     'title', 'description', 'priority', 'type', 'status', 'points', 'tokensInput', 'tokensOutput', 'assigneeId',
-    'columnId', 'parentId', 'moduleId', 'startDate', 'dueDate', 'blockedReason',
+    'assigneeLabel', 'columnId', 'parentId', 'moduleId', 'startDate', 'dueDate', 'blockedReason',
+    'actualStartDate', 'actualDueDate',
+    'externalSource', 'externalRef',
     'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'versionId', 'costCenterId', 'sprintId', 'sequenceCode',
     'icon', 'color',
   ])
@@ -170,9 +195,16 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
   const project = await persistence.projects.getProject(projectContext, projectId)
   if (!project) return { ok: false, status: 404, body: { error: 'Projeto não encontrado' } }
 
-  const loggableFields = ['title', 'description', 'priority', 'assigneeId', 'points', 'tokensInput', 'tokensOutput', 'startDate', 'dueDate', 'status'] as const
+  const loggableFields = [
+    'title', 'description', 'priority', 'assigneeId', 'assigneeLabel', 'points', 'tokensInput', 'tokensOutput',
+    'startDate', 'dueDate', 'actualStartDate', 'actualDueDate',
+    'externalSource', 'externalRef', 'status',
+  ] as const
   const prevItem = await persistence.items.getItem(projectContext, projectId, itemId)
   if (!prevItem) return { ok: false, status: 404, body: { error: 'Item não encontrado' } }
+
+  const trackerError = validateTrackerMetadata(body, prevItem)
+  if (trackerError) return trackerError
 
   if (updates.sequenceCode !== undefined && updates.sequenceCode !== null && updates.sequenceCode !== prevItem.sequenceCode) {
     const projectItems = await persistence.items.listItems(projectContext, projectId)
@@ -238,7 +270,10 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
   }
 
   const labels: Record<typeof loggableFields[number], string> = {
-    title: 'Título', description: 'Descrição', priority: 'Prioridade', assigneeId: 'Responsável', points: 'Pontos', tokensInput: 'Tokens de entrada', tokensOutput: 'Tokens de saída', startDate: 'Início', dueDate: 'Fim', status: 'Status',
+    title: 'Título', description: 'Descrição', priority: 'Prioridade', assigneeId: 'Responsável',
+    assigneeLabel: 'Responsável externo', points: 'Pontos', tokensInput: 'Tokens de entrada', tokensOutput: 'Tokens de saída',
+    startDate: 'Início', dueDate: 'Fim', actualStartDate: 'Início realizado', actualDueDate: 'Fim realizado',
+    externalSource: 'Origem externa', externalRef: 'Chave externa', status: 'Status',
   }
   const changes = loggableFields
     .filter(field => field in safeBody && String(safeBody[field]) !== String(prevItem[field]))

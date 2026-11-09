@@ -384,6 +384,29 @@ describe.skipIf(!runPostgres)('Paridade SIMPLE ↔ ADVANCED', () => {
       expect(itemSqlite.points).toBe(itemPg.points)
       expect(itemSqlite.status).toBe(itemPg.status)
 
+      // Metadados do tracker: mesmas colunas e mesmos valores nos dois adapters.
+      const trackerInput = {
+        type: 'TASK' as const,
+        title: 'Tracker',
+        status: 'IN_PROGRESS' as const,
+        assigneeLabel: 'Infra Vivo',
+        actualStartDate: '2026-01-10',
+        actualDueDate: '2026-01-20',
+        externalSource: 'planilha',
+        externalRef: 'parity-1',
+      }
+      const trackerSqlite = await sqlite.ports.unitOfWork.createItemWithRelations(
+        { ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id },
+        { projectId: projectSqlite.id, ...trackerInput },
+      )
+      const trackerPg = await pg.ports.unitOfWork.createItemWithRelations(
+        { ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id },
+        { projectId: projectPg.id, ...trackerInput },
+      )
+      for (const field of ['assigneeLabel', 'actualStartDate', 'actualDueDate', 'externalSource', 'externalRef', 'status'] as const) {
+        expect(trackerSqlite[field]).toBe(trackerPg[field])
+      }
+
       const childSqlite = await sqlite.ports.unitOfWork.createItemWithRelations(
         { ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id },
         { projectId: projectSqlite.id, type: 'BUG', parentId: itemSqlite.id, title: 'Filho' },

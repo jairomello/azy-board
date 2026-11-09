@@ -611,6 +611,14 @@ export const items = sqliteTable('items', {
   position: integer('position').notNull().default(0),
   startDate: text('start_date'),
   dueDate: text('due_date'),
+  // [TENANT] Metadados de rastreio do tracker: chave externa informativa
+  // (planilha/Jira) e responsável externo sem conta.
+  externalSource: text('external_source'),
+  externalRef: text('external_ref'),
+  assigneeLabel: text('assignee_label'),
+  // Datas realizadas, separadas das datas previstas acima.
+  actualStartDate: text('actual_start_date'),
+  actualDueDate: text('actual_due_date'),
   // Autor original (quem criou) — distinto do assignee (quem executa)
   authorId: text('author_id'),
   // Versão de entrega prevista — opcional

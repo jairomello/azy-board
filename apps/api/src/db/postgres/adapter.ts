@@ -235,6 +235,11 @@ function mapItem(row: PgRow): ItemRecord {
     position: row.position as number,
     startDate: row.start_date as string | null,
     dueDate: row.due_date as string | null,
+    externalSource: row.external_source as string | null,
+    externalRef: row.external_ref as string | null,
+    assigneeLabel: row.assignee_label as string | null,
+    actualStartDate: row.actual_start_date as string | null,
+    actualDueDate: row.actual_due_date as string | null,
     authorId: row.author_id as string | null,
     versionId: row.version_id as string | null,
     icon: row.icon as string | null,
@@ -693,7 +698,10 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
     costCenterId: 'cost_center_id', priority: 'priority', points: 'points',
     tokensInput: 'tokens_input', tokensOutput: 'tokens_output',
     assigneeId: 'assignee_id', assigneeApiKeyId: 'assignee_api_key_id', blockedReason: 'blocked_reason',
-    position: 'position', startDate: 'start_date', dueDate: 'due_date', versionId: 'version_id',
+    position: 'position', startDate: 'start_date', dueDate: 'due_date',
+    externalSource: 'external_source', externalRef: 'external_ref', assigneeLabel: 'assignee_label',
+    actualStartDate: 'actual_start_date', actualDueDate: 'actual_due_date',
+    versionId: 'version_id',
     icon: 'icon', color: 'color',
   }
 
@@ -4322,8 +4330,22 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             }
           }
           await client.query(
-            `INSERT INTO items (id, tenant_id, project_id, type, sequence_code, parent_id, module_id, column_id, ancestry_path, title, description, persona, goal, benefit, acceptance_criteria, notes, status, status_before_archive, cost_center_id, priority, points, tokens_input, tokens_output, assignee_id, assignee_api_key_id, blocked_reason, position, start_date, due_date, author_id, version_id, icon, color, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35)`,
+            `INSERT INTO items (
+               id, tenant_id, project_id, type, sequence_code, parent_id, module_id, column_id,
+               ancestry_path, title, description, persona, goal, benefit, acceptance_criteria, notes,
+               status, status_before_archive, cost_center_id, priority, points, tokens_input, tokens_output,
+               assignee_id, assignee_api_key_id, blocked_reason, position, start_date, due_date,
+               external_source, external_ref, assignee_label, actual_start_date, actual_due_date,
+               author_id, version_id, icon, color, created_at, updated_at
+             )
+             VALUES (
+               $1, $2, $3, $4, $5, $6, $7, $8,
+               $9, $10, $11, $12, $13, $14, $15, $16,
+               $17, $18, $19, $20, $21, $22, $23,
+               $24, $25, $26, $27, $28, $29,
+               $30, $31, $32, $33, $34,
+               $35, $36, $37, $38, $39, $40
+             )`,
             [id, context.tenantId, input.projectId, input.type ?? 'TASK', input.sequenceCode ?? null,
              input.parentId ?? null, input.moduleId ?? null, input.columnId ?? null, ancestryPath,
              input.title, input.description ?? null, input.persona ?? null, input.goal ?? null, input.benefit ?? null,
@@ -4332,6 +4354,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
              input.tokensInput ?? null, input.tokensOutput ?? null,
              input.assigneeId ?? null, input.assigneeApiKeyId ?? null, input.blockedReason ?? null,
              input.position ?? 0, input.startDate ?? null, input.dueDate ?? null,
+             input.externalSource ?? null, input.externalRef ?? null, input.assigneeLabel ?? null,
+             input.actualStartDate ?? null, input.actualDueDate ?? null,
              context.actorUserId ?? null, input.versionId ?? null, input.icon ?? null, input.color ?? null, now, now],
           )
           // [T57] Criar subtask marca o item e seus ancestrais como alterados.

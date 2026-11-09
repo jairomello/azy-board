@@ -32,9 +32,12 @@ Os grupos de campos ficam em seções recolhíveis. A primeira seção começa a
 | Status | Informar o estado geral. |
 | Prioridade | Definir urgência e impacto. |
 | Responsável | Atribuir uma pessoa ou deixar sem responsável. |
+| Responsável externo | Registrar um time ou pessoa sem conta no projeto. |
 | Autor | Mostrar quem criou o item; somente leitura. |
 | Pontos | Registrar estimativa. |
 | Início e fim | Definir datas planejadas. |
+| Datas realizadas | Registrar quando o trabalho começou e terminou de fato. |
+| Chave externa | Identificar o item na planilha ou no Jira; somente leitura na modal. |
 | História pai | Posicionar o item na hierarquia. |
 | Versão | Relacionar o item a uma entrega. |
 | Centro de custo | Classificar financeiramente o trabalho. |
@@ -105,6 +108,12 @@ Uma task ou bug pode ficar sem pai e aparecer em **Sem épico**.
 - Fim: data planejada de conclusão.
 
 As datas são informativas e não movem o card automaticamente.
+
+## Datas de acompanhamento e responsável externo
+
+- **Início e fim realizados:** quando o trabalho começou e terminou de fato.
+- **Responsável externo:** texto livre para times e pessoas sem conta; não substitui o responsável membro.
+- **Chave externa:** identifica o item na origem (planilha ou Jira) apenas para rastreabilidade; aparece somente leitura na modal. Não é usada como chave de upsert.
 
 ## Versão e centro de custo
 

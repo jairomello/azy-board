@@ -78,6 +78,11 @@ export interface FullItemData {
   description?: string | null
   startDate?: string | null
   dueDate?: string | null
+  assigneeLabel?: string | null
+  actualStartDate?: string | null
+  actualDueDate?: string | null
+  externalSource?: string | null
+  externalRef?: string | null
   parentId?: string | null
   columnId?: string | null
   assigneeId?: string | null
@@ -203,6 +208,9 @@ export function ItemModal({
   const [tokensOutput, setTokensOutput] = useState(item.tokensOutput?.toString() ?? '')
   const [startDate, setStartDate] = useState(item.startDate ?? '')
   const [dueDate, setDueDate] = useState(item.dueDate ?? '')
+  const [assigneeLabel, setAssigneeLabel] = useState(item.assigneeLabel ?? '')
+  const [actualStartDate, setActualStartDate] = useState(item.actualStartDate ?? '')
+  const [actualDueDate, setActualDueDate] = useState(item.actualDueDate ?? '')
   // T77 — total de tokens derivado do que está sendo digitado (nulo se vazio).
   const tokensTotalPreview = tokensInput.trim() === '' && tokensOutput.trim() === ''
     ? null
@@ -335,6 +343,9 @@ export function ItemModal({
     setTokensOutput(item.tokensOutput?.toString() ?? '')
     setStartDate(item.startDate ?? '')
     setDueDate(item.dueDate ?? '')
+    setAssigneeLabel(item.assigneeLabel ?? '')
+    setActualStartDate(item.actualStartDate ?? '')
+    setActualDueDate(item.actualDueDate ?? '')
     setSequenceCode(item.sequenceCode ?? '')
     setActivityCount(0)
     setWorkLogCount(0)
@@ -410,6 +421,9 @@ export function ItemModal({
         costCenterId: costCenterId || null,
         startDate: startDate || null,
         dueDate: dueDate || null,
+        assigneeLabel: assigneeLabel.trim() || null,
+        actualStartDate: actualStartDate || null,
+        actualDueDate: actualDueDate || null,
         description: description || null,
         sequenceCode: sequenceCode || null,
         icon: icon || null,
@@ -508,7 +522,7 @@ export function ItemModal({
 
               <aside className="min-w-0 space-y-5 rounded-lg border border-border bg-muted/20 p-4">
                 <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><CheckSquare className="h-4 w-4 text-primary" />{t('properties')}</h3><div className="space-y-3">{property(t('statusLabel'), <select value={status} onChange={e => setStatus(e.target.value as TaskStatus)} className={fieldClass}>{STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}{property(t('filterAssignee'), <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)} className={fieldClass}><option value="">{t('unassigned')}</option>{members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}</select>)}{property(t('priorityLabel'), <select value={priority} onChange={e => setPriority(e.target.value as Priority)} className={fieldClass}>{PRIORITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select>)}</div></div>
-                <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><CalendarDays className="h-4 w-4 text-primary" />{t('planning')}</h3><div className="space-y-3">{property(t('filterSprint'), <select value={sprintId} onChange={e => handleSprintChange(e.target.value)} className={fieldClass}><option value="">{t('noSprint')}</option>{projectSprints.length === 0 && <option disabled>{t('noSprints')}</option>}{projectSprints.filter(sprint => sprint.status !== 'CLOSED').map(sprint => <option key={sprint.id} value={sprint.id}>{sprint.name}</option>)}</select>)}{property(t('filterVersion'), <select value={versionId} onChange={e => setVersionId(e.target.value)} className={fieldClass}><option value="">{t('noVersion')}</option>{projectVersions.length === 0 && <option disabled>{t('noVersions')}</option>}{projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select>)}{property(t('pointsLabel'), <input type="number" min="0" value={points} onChange={e => setPoints(e.target.value)} className={fieldClass} placeholder="0" />)}{property(t('tokensInputLabel'), <input type="number" min="0" value={tokensInput} onChange={e => setTokensInput(e.target.value)} className={fieldClass} placeholder="0" disabled={currentUserRole === 'VIEWER'} />)}{property(t('tokensOutputLabel'), <input type="number" min="0" value={tokensOutput} onChange={e => setTokensOutput(e.target.value)} className={fieldClass} placeholder="0" disabled={currentUserRole === 'VIEWER'} />)}{tokensTotalPreview != null && <p className="text-xs text-muted-foreground" data-testid="tokens-total">{t('tokensLabel')}: {formatTokens(tokensTotalPreview)}</p>}<div className="grid grid-cols-2 gap-2">{property(t('startDate'), <input type="date" value={startDate} onChange={e => { datesTouchedRef.current = true; setStartDate(e.target.value) }} className={fieldClass} />)}{property(t('dueDate'), <input type="date" value={dueDate} onChange={e => { datesTouchedRef.current = true; setDueDate(e.target.value) }} className={fieldClass} />)}</div></div></div>
+                <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><CalendarDays className="h-4 w-4 text-primary" />{t('planning')}</h3><div className="space-y-3">{property(t('filterSprint'), <select value={sprintId} onChange={e => handleSprintChange(e.target.value)} className={fieldClass}><option value="">{t('noSprint')}</option>{projectSprints.length === 0 && <option disabled>{t('noSprints')}</option>}{projectSprints.filter(sprint => sprint.status !== 'CLOSED').map(sprint => <option key={sprint.id} value={sprint.id}>{sprint.name}</option>)}</select>)}{property(t('filterVersion'), <select value={versionId} onChange={e => setVersionId(e.target.value)} className={fieldClass}><option value="">{t('noVersion')}</option>{projectVersions.length === 0 && <option disabled>{t('noVersions')}</option>}{projectVersions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select>)}{property(t('pointsLabel'), <input type="number" min="0" value={points} onChange={e => setPoints(e.target.value)} className={fieldClass} placeholder="0" />)}{property(t('tokensInputLabel'), <input type="number" min="0" value={tokensInput} onChange={e => setTokensInput(e.target.value)} className={fieldClass} placeholder="0" disabled={currentUserRole === 'VIEWER'} />)}{property(t('tokensOutputLabel'), <input type="number" min="0" value={tokensOutput} onChange={e => setTokensOutput(e.target.value)} className={fieldClass} placeholder="0" disabled={currentUserRole === 'VIEWER'} />)}{tokensTotalPreview != null && <p className="text-xs text-muted-foreground" data-testid="tokens-total">{t('tokensLabel')}: {formatTokens(tokensTotalPreview)}</p>}<div className="grid grid-cols-2 gap-2">{property(t('startDate'), <input type="date" value={startDate} onChange={e => { datesTouchedRef.current = true; setStartDate(e.target.value) }} className={fieldClass} />)}{property(t('dueDate'), <input type="date" value={dueDate} onChange={e => { datesTouchedRef.current = true; setDueDate(e.target.value) }} className={fieldClass} />)}</div><div className="grid grid-cols-2 gap-2">{property(t('actualStartDate'), <input type="date" value={actualStartDate} onChange={e => setActualStartDate(e.target.value)} className={fieldClass} />)}{property(t('actualDueDate'), <input type="date" value={actualDueDate} onChange={e => setActualDueDate(e.target.value)} className={fieldClass} />)}</div>{property(t('assigneeLabel'), <input value={assigneeLabel} onChange={e => setAssigneeLabel(e.target.value)} className={fieldClass} placeholder={t('assigneeLabelPlaceholder')} />)}{item.externalRef ? property(t('externalRef'), <div className={`${fieldClass} text-muted-foreground`}>{item.externalSource ? `${item.externalSource}:` : ''}{item.externalRef}</div>) : null}</div></div>
                 <div><h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><UserRound className="h-4 w-4 text-primary" />{t('information')}</h3><div className="space-y-3">{property(t('codeLabel'), <input value={sequenceCode} onChange={e => setSequenceCode(e.target.value)} placeholder={t('autoGenerated')} className={fieldClass} />)}{property(t('authorLabel'), <div className={`${fieldClass} flex items-center gap-2 text-muted-foreground`}>{item.author?.avatarUrl ? <img src={resolveAppUrl(item.author.avatarUrl)} alt={item.author.name} className="h-5 w-5 rounded-full" /> : <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary">{item.author?.name?.charAt(0).toUpperCase() ?? '?'}</span>}<span className="truncate">{item.author?.name ?? '—'}</span></div>)}</div></div>
               </aside>
             </div>

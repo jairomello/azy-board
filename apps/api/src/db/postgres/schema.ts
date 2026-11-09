@@ -331,6 +331,14 @@ export const items = pgTable('items', {
   position: integer('position').notNull().default(0),
   startDate: text('start_date'),
   dueDate: text('due_date'),
+  // [TENANT] Metadados de rastreio do tracker: chave externa estável (planilha/Jira)
+  // e responsável externo sem conta. O par source/ref é único por projeto.
+  externalSource: text('external_source'),
+  externalRef: text('external_ref'),
+  assigneeLabel: text('assignee_label'),
+  // Datas realizadas, separadas das datas previstas acima.
+  actualStartDate: text('actual_start_date'),
+  actualDueDate: text('actual_due_date'),
   authorId: text('author_id'),
   versionId: text('version_id'),
   // [DB-SWAP] Aparência do item: colunas text nativas, iguais em SQLite e PG.
@@ -342,6 +350,7 @@ export const items = pgTable('items', {
 }, (table) => ({
   tenantIdUnique: uniqueIndex('items_tenant_id_id_unique').on(table.tenantId, table.id),
   hierarchyLookup: index('items_tenant_project_parent_idx').on(table.tenantId, table.projectId, table.parentId),
+  actualDatesCheck: check('items_actual_dates_check', sql`${table.actualStartDate} IS NULL OR ${table.actualDueDate} IS NULL OR ${table.actualDueDate} >= ${table.actualStartDate}`),
   pointsCheck: check('items_points_check', sql`${table.points} IS NULL OR ${table.points} >= 0`),
   tokensInputCheck: check('items_tokens_input_check', sql`${table.tokensInput} IS NULL OR ${table.tokensInput} >= 0`),
   tokensOutputCheck: check('items_tokens_output_check', sql`${table.tokensOutput} IS NULL OR ${table.tokensOutput} >= 0`),

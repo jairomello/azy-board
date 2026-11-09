@@ -61,7 +61,9 @@ describe('contrato estrutural do layout do KanbanCard (T32 — proposta 01 Essen
     expect(rodape.includes('{card.tokensTotal != null && (')).toBe(true)
     expect(rodape.includes('formatTokens(card.tokensTotal)')).toBe(true)
     expect(rodape.includes('(card.childrenCount ?? 0) > 0 && (')).toBe(true)
-    expect(rodape.includes('{card.assignee && (')).toBe(true)
+    expect(rodape.includes('{card.assignee ? (')).toBe(true)
+    // Responsável externo sem conta assume o rodapé quando não há usuário.
+    expect(rodape.includes('card.assigneeLabel')).toBe(true)
     expect(rodape.includes('ml-auto')).toBe(true)
   })
 
