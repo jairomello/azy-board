@@ -23,8 +23,8 @@ async function call(session: string, method: string, path: string, body?: unknow
     body: body === undefined ? undefined : JSON.stringify(body),
   }))
   const text = await response.text()
-  let data: JsonRecord | null = null
-  try { data = text ? JSON.parse(text) as JsonRecord : null } catch { data = null }
+  let data: JsonRecord = {}
+  try { data = text ? JSON.parse(text) as JsonRecord : {} } catch { data = {} }
   return { status: response.status, data }
 }
 
