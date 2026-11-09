@@ -18,7 +18,7 @@ function item(patch: Partial<ItemRecord> & Pick<ItemRecord, 'id' | 'type'>): Ite
     acceptanceCriteria: null, notes: null, status: 'NOT_STARTED', statusBeforeArchive: null, costCenterId: null,
     priority: 'MEDIUM', points: null, tokensInput: null, tokensOutput: null, assigneeId: null, assigneeApiKeyId: null, blockedReason: null, position: 0,
     startDate: null, dueDate: null,
-    externalSource: null, externalRef: null, assigneeLabel: null, actualStartDate: null, actualDueDate: null, baselineStartDate: null, baselineDueDate: null,
+    externalSource: null, externalRef: null, assigneeLabel: null, actualStartDate: null, actualDueDate: null,
     authorId: null, versionId: null, icon: null, color: null, createdAt: now, updatedAt: now,
     ...patch,
   }

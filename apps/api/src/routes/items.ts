@@ -11,12 +11,12 @@ import { IDEMPOTENCY_RETENTION_MS, payloadHash } from '../services/idempotency'
 import { COMMAND_NAMESPACES, isIdempotencyConflict, isIdempotentReplay, isPendingBody, parseEnvelope } from '../persistence/idempotency'
 import { claimItem, releaseItem } from '../services/itemMutations'
 import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
-import { confirmationSchema, createItemSchema, itemLogSchema, itemSprintSchema, itemTagsSchema, moveItemSchema, parseJson, parseOptionalJson, reorderItemsSchema, setItemTokensSchema, updateItemLogSchema, updateItemSchema, updateWorkLogSchema, upsertItemSchema, workLogSchema } from '../validation'
+import { confirmationSchema, createItemSchema, itemLogSchema, itemSprintSchema, itemTagsSchema, moveItemSchema, parseJson, parseOptionalJson, reorderItemsSchema, setItemTokensSchema, updateItemLogSchema, updateItemSchema, updateWorkLogSchema, workLogSchema } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
 import type { ItemLogRecord, ItemRecord, ItemDependencyRecord, ItemDependencyTargetSummary, ItemDependencyWithTarget } from '../persistence/models'
 import { emitDomainEvent, findOperationId } from '../services/domainEventOutbox'
-import { createItemApplication, moveItemApplication, updateItemApplication, upsertItemApplication } from '../application/items'
+import { createItemApplication, moveItemApplication, updateItemApplication } from '../application/items'
 import { loadItemWithRelations } from '../application/itemRules'
 import { resolveActiveSprint } from '../services/creationDefaults'
 import { tokensTotal, withTokensTotal } from '../utils/tokens'
@@ -262,8 +262,6 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
   const sprintIdFilter = c.req.query('sprintId')
   const assigneeIdFilter = c.req.query('assigneeId')
   const statusFilter = c.req.query('status')
-  const externalSourceFilter = c.req.query('externalSource')
-  const externalRefFilter = c.req.query('externalRef')
   const tagIdsFilter = c.req.query('tagIds')?.split(',').filter(Boolean) ?? []
   const updatedWithin = parseUpdatedWithin(c.req.query('updatedWithin'))
   if (updatedWithin === 'invalid') {
@@ -319,8 +317,6 @@ itemsRouter.get('/', requireRole('VIEWER'), async (c) => {
     const statuses = statusFilter.split(',')
     allItems = allItems.filter(i => statuses.includes(i.status))
   }
-  if (externalSourceFilter) allItems = allItems.filter(i => i.externalSource === externalSourceFilter)
-  if (externalRefFilter) allItems = allItems.filter(i => i.externalRef === externalRefFilter)
   if (tagIdsFilter.length > 0) {
     allItems = allItems.filter(i => i.itemTags?.some(link => tagIdsFilter.includes(link.tag.id)))
   }
@@ -603,48 +599,6 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   }
   // [T38] O evento de criação é gravado pelo adapter no mesmo commit (item.created).
   return c.json(payload, 201)
-})
-
-// PUT /projects/:projectId/items/by-external-ref — upsert idempotente por chave externa.
-// Base da carga da planilha e do delta: cria quando a chave não existe, atualiza
-// quando existe. A chave externa é a identidade; o corpo não troca a chave.
-itemsRouter.put('/by-external-ref', requireRole('MEMBER'), async (c) => {
-  const ctx = c.get('ctx') as RequestContext
-  const projectId = c.req.param('projectId')!
-  const parsed = await parseJson(c, upsertItemSchema)
-  if (!parsed.ok) return parsed.response
-  const body = parsed.data
-  const audit = auditContext(c)
-  const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
-  mutationContext.mutation.actorType = audit.actorType
-  mutationContext.mutation.actorSource = audit.source
-  mutationContext.mutation.actorLabel = audit.actorLabel
-
-  try {
-    const result = await upsertItemApplication({
-      context: ctx,
-      permissionScope: c.get('apiKeyPermissionScope'),
-      projectId,
-      minimumRole: 'MEMBER',
-      mutationContext,
-      body,
-      actor: audit,
-    })
-    if (!result.ok) return c.json(result.body, result.status)
-    const item = await loadItemWithRelations(ctx.tenantId, projectId, result.record.id)
-    void emitDomainEvent({
-      tenantId: ctx.tenantId,
-      projectId,
-      type: result.created ? 'ITEM_CREATED' : 'ITEM_UPDATED',
-      payload: { itemId: result.record.id },
-    })
-    return c.json({ created: result.created, item }, result.created ? 201 : 200)
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('PERSISTENCE_CONFLICT')) {
-      return c.json({ error: 'O item foi alterado por outra pessoa desde que você o abriu. Recarregue e tente novamente.', code: 'CONFLICT', retryable: false }, 409)
-    }
-    throw error
-  }
 })
 
 // POST /projects/:projectId/items/tokens — registro massivo de tokens de IA (T77).

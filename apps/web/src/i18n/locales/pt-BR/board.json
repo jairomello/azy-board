@@ -192,8 +192,6 @@
   "dueDate": "Fim",
   "actualStartDate": "Início realizado",
   "actualDueDate": "Fim realizado",
-  "baselineStartDate": "Início original",
-  "baselineDueDate": "Fim original",
   "assigneeLabel": "Responsável externo",
   "assigneeLabelPlaceholder": "Time ou pessoa sem conta",
   "externalRef": "Chave externa",

@@ -611,17 +611,14 @@ export const items = sqliteTable('items', {
   position: integer('position').notNull().default(0),
   startDate: text('start_date'),
   dueDate: text('due_date'),
-  // [TENANT] Metadados de rastreio do tracker: chave externa estável (planilha/Jira)
-  // e responsável externo sem conta. O par source/ref é único por projeto.
+  // [TENANT] Metadados de rastreio do tracker: chave externa informativa
+  // (planilha/Jira) e responsável externo sem conta.
   externalSource: text('external_source'),
   externalRef: text('external_ref'),
   assigneeLabel: text('assignee_label'),
-  // Datas de acompanhamento: realizadas e baseline (plano original), separadas
-  // das datas previstas acima.
+  // Datas realizadas, separadas das datas previstas acima.
   actualStartDate: text('actual_start_date'),
   actualDueDate: text('actual_due_date'),
-  baselineStartDate: text('baseline_start_date'),
-  baselineDueDate: text('baseline_due_date'),
   // Autor original (quem criou) — distinto do assignee (quem executa)
   authorId: text('author_id'),
   // Versão de entrega prevista — opcional
@@ -639,11 +636,6 @@ export const items = sqliteTable('items', {
   hierarchyLookup: index('items_tenant_project_parent_idx').on(table.tenantId, table.projectId, table.parentId),
   // [T57] Janelas de última alteração filtram por (tenant, projeto, updated_at)
   updatedLookup: index('items_tenant_project_updated_idx').on(table.tenantId, table.projectId, table.updatedAt),
-  // [TENANT] Chave externa única por projeto; itens sem chave ficam fora do índice.
-  externalRefUnique: uniqueIndex('items_external_ref_unique')
-    .on(table.tenantId, table.projectId, table.externalSource, table.externalRef)
-    .where(sql`external_ref IS NOT NULL`),
-  externalRefLookup: index('items_external_ref_idx').on(table.tenantId, table.projectId, table.externalSource, table.externalRef),
   projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
   moduleFk: foreignKey(() => ({ columns: [table.tenantId, table.moduleId], foreignColumns: [modules.tenantId, modules.id] })),
   columnFk: foreignKey(() => ({ columns: [table.tenantId, table.columnId], foreignColumns: [columns.tenantId, columns.id] })),

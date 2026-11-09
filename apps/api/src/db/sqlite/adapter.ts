@@ -184,7 +184,6 @@ function mapItem(row: typeof items.$inferSelect): ItemRecord {
     blockedReason: row.blockedReason, position: row.position, startDate: row.startDate, dueDate: row.dueDate,
     externalSource: row.externalSource, externalRef: row.externalRef, assigneeLabel: row.assigneeLabel,
     actualStartDate: row.actualStartDate, actualDueDate: row.actualDueDate,
-    baselineStartDate: row.baselineStartDate, baselineDueDate: row.baselineDueDate,
     authorId: row.authorId, versionId: row.versionId, icon: row.icon, color: row.color,
     createdAt: row.createdAt, updatedAt: row.updatedAt,
   }
@@ -1203,14 +1202,6 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
       async getItem(context, projectId, itemId) {
         const row = await database.query.items.findFirst({ where: and(
           eq(items.tenantId, context.tenantId), eq(items.projectId, projectId), eq(items.id, itemId),
-        ) })
-        return row ? mapItem(row) : null
-      },
-      async findByExternalRef(context, projectId, source, ref) {
-        // [TENANT] A chave externa é escopada por tenant e projeto; nunca cruza os dois.
-        const row = await database.query.items.findFirst({ where: and(
-          eq(items.tenantId, context.tenantId), eq(items.projectId, projectId),
-          eq(items.externalSource, source), eq(items.externalRef, ref),
         ) })
         return row ? mapItem(row) : null
       },

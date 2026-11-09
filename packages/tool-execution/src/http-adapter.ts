@@ -845,8 +845,6 @@ export async function toolCreateTask(
     blockedReason?: string
     actualStartDate?: string
     actualDueDate?: string
-    baselineStartDate?: string
-    baselineDueDate?: string
     externalSource?: string
     externalRef?: string
   }

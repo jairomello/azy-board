@@ -192,8 +192,6 @@
   "dueDate": "End",
   "actualStartDate": "Actual start",
   "actualDueDate": "Actual end",
-  "baselineStartDate": "Baseline start",
-  "baselineDueDate": "Baseline end",
   "assigneeLabel": "External assignee",
   "assigneeLabelPlaceholder": "Team or person without an account",
   "externalRef": "External reference",

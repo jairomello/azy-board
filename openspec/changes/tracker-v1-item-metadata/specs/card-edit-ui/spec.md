@@ -4,7 +4,7 @@
 
 ### Requirement: Modal de edição de card organizada em accordions
 
-O sistema SHALL apresentar campos do card, descrição, subtasks, checklists e Histórico em áreas independentes, preservando edição, criação, abertura de filhos e salvamento. A área Histórico SHALL exibir dois painéis independentes: Auditoria de alterações (eventos automáticos) e Diário de trabalho (registros manuais, com total de duração e formulário inline). A modal SHALL manter título, descrição rich text (Tiptap), prioridade, responsável, **responsável externo**, story pai, tags, pontos, datas de início e fim, **datas realizadas e baseline** e a **chave externa em modo somente leitura quando existir**. A descrição SHALL ter um rascunho local persistido automaticamente e preservado quando a modal é fechada sem salvar, sendo removido após salvamento confirmado.
+O sistema SHALL apresentar campos do card, descrição, subtasks, checklists e Histórico em áreas independentes, preservando edição, criação, abertura de filhos e salvamento. A área Histórico SHALL exibir dois painéis independentes: Auditoria de alterações (eventos automáticos) e Diário de trabalho (registros manuais, com total de duração e formulário inline). A modal SHALL manter título, descrição rich text (Tiptap), prioridade, responsável, **responsável externo**, story pai, tags, pontos, datas de início e fim, **datas realizadas** e a **chave externa em modo somente leitura quando existir**. A descrição SHALL ter um rascunho local persistido automaticamente e preservado quando a modal é fechada sem salvar, sendo removido após salvamento confirmado.
 
 #### Scenario: Seções independentes
 - **WHEN** usuário abre a área Histórico de uma Task, Bug ou Subtask
@@ -22,9 +22,9 @@ O sistema SHALL apresentar campos do card, descrição, subtasks, checklists e H
 - **WHEN** usuário altera campos e clica em Salvar
 - **THEN** todas as alterações são enviadas via API e o card no board atualiza em tempo real
 
-#### Scenario: Datas de acompanhamento na modal
-- **WHEN** usuário abre as propriedades de planejamento de um card que tem datas realizadas e baseline
-- **THEN** as datas previstas, realizadas e baseline aparecem em campos separados e podem ser editadas e salvas
+#### Scenario: Datas realizadas na modal
+- **WHEN** usuário abre as propriedades de planejamento de um card que tem datas realizadas
+- **THEN** as datas previstas e realizadas aparecem em campos separados e podem ser editadas e salvas
 
 #### Scenario: Responsável externo na modal
 - **WHEN** usuário digita um responsável externo e salva

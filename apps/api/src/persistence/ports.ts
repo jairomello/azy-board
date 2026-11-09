@@ -259,8 +259,6 @@ export interface ProjectTeamPort {
 
 export interface WorkItemPort {
   getItem(context: PersistenceContext, projectId: string, itemId: string): Promise<ItemRecord | null>
-  /** Busca a chave externa do tracker; usada pelo upsert e pela carga idempotente. */
-  findByExternalRef(context: PersistenceContext, projectId: string, source: string, ref: string): Promise<ItemRecord | null>
   listItems(context: PersistenceContext, projectId: string, filter?: { types?: ItemType[]; status?: TaskStatus[]; moduleId?: string | null; columnId?: string | null; costCenterId?: string | null; versionId?: string | null }): Promise<ItemRecord[]>
   /** Carrega uma subárvore em uma leitura recursiva, ordenada por nível e id. */
   listSubtree(context: PersistenceContext, projectId: string, rootItemId: string, maxDepth?: number): Promise<ItemRecord[]>

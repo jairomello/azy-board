@@ -47,8 +47,6 @@ interface ItemRow {
   assignee_label: string | null
   actual_start_date: string | null
   actual_due_date: string | null
-  baseline_start_date: string | null
-  baseline_due_date: string | null
   author_id: string | null
   version_id: string | null
   icon: string | null
@@ -107,8 +105,6 @@ const itemColumns = {
   assigneeLabel: 'assignee_label',
   actualStartDate: 'actual_start_date',
   actualDueDate: 'actual_due_date',
-  baselineStartDate: 'baseline_start_date',
-  baselineDueDate: 'baseline_due_date',
   authorId: 'author_id',
   versionId: 'version_id',
   icon: 'icon',
@@ -151,8 +147,6 @@ function toItem(row: ItemRow): ItemRecord {
     assigneeLabel: row.assignee_label,
     actualStartDate: row.actual_start_date,
     actualDueDate: row.actual_due_date,
-    baselineStartDate: row.baseline_start_date,
-    baselineDueDate: row.baseline_due_date,
     authorId: row.author_id,
     versionId: row.version_id,
     icon: row.icon,

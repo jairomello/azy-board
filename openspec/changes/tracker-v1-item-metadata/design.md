@@ -2,7 +2,9 @@
 
 ## Contexto
 
-A planilha do IAjuda Campo tem mais informação por atividade do que o card atual consegue guardar: quatro datas (previstas, realizadas e baseline) e um responsável que frequentemente é um time ou uma pessoa sem conta. A carga precisa ser repetível para acompanhar as edições da planilha até o cutover. O adaptador do Jira, depois, precisa guardar a chave do item criado. Nenhuma dessas necessidades exige mudar a hierarquia ou o Leaf Rule; são metadados do item e uma operação de upsert.
+A planilha do IAjuda Campo tem três conjuntos de datas por atividade (original, previsto e realizado) e um responsável que frequentemente é um time ou uma pessoa sem conta. O card já tem as datas previstas (`start_date`/`due_date`); faltam as realizadas e o responsável externo. A chave externa da linha é útil para rastreabilidade, mas nesta versão é **apenas informativa**: não precisa de unicidade, upsert ou filtro.
+
+Nenhuma dessas necessidades exige mudar a hierarquia, o Leaf Rule, o comportamento de criação ou o status.
 
 ## Modelo de dados
 
@@ -10,94 +12,62 @@ Campos novos em `items`, todos opcionais:
 
 | Campo | Tipo | Regra |
 |---|---|---|
-| `external_source` | texto (100) | `planilha`, `jira`, `teams`; obrigatório junto de `external_ref` |
-| `external_ref` | texto (200) | chave estável no projeto; único por `(tenant, project, source, ref)` |
+| `external_source` | texto (100) | `planilha`, `jira`, `teams`; informativo |
+| `external_ref` | texto (200) | referência da linha; informativo, sem unicidade |
 | `assignee_label` | texto (200) | responsável sem conta; não substitui `assignee_id` |
 | `actual_start_date` | data | início realizado |
 | `actual_due_date` | data | fim realizado; `>= actual_start_date` quando ambos existirem |
-| `baseline_start_date` | data | início original |
-| `baseline_due_date` | data | fim original; `>= baseline_start_date` quando ambos existirem |
 
-O par `external_source`/`external_ref` é tudo-ou-nada. O índice único é **parcial** (`WHERE external_ref IS NOT NULL`), então itens sem chave externa continuam livres. O índice de busca usa as mesmas colunas.
-
-As datas continuam independentes: `start_date`/`due_date` são o plano atual; as novas são realizado e baseline. Não há cálculo automático de atraso nesta change.
+As datas continuam independentes: `start_date`/`due_date` são o plano atual (colunas E/F); as novas são o realizado (colunas G/H). **Não há baseline nesta change**; as colunas C/D da planilha são ignoradas.
 
 ## Criação e status
 
-Hoje `createItemApplication` grava sempre `NOT_STARTED` (`application/items.ts:124`). A regra nova:
+A criação **não muda**: `createItemApplication` continua gravando `NOT_STARTED` e o schema de criação não aceita `blockedReason`. A carga cria todos os itens primeiro e, em uma segunda passada, aplica `status`, `blockedReason` e os demais metadados via `PATCH`. Isso preserva o comportamento core da ferramenta e evita uma regra nova de status na criação.
 
-1. Se o corpo informar `status`, ele é usado.
-2. Se não informar e houver `columnId`, herda o `baseStatus` da coluna.
-3. Se não houver nenhum dos dois, `NOT_STARTED`.
+## Chave externa informativa
 
-`blockedReason` passa a ser aceito também na criação, para a carga de itens bloqueados. A validação de coerência entre status e coluna fica documentada, mas não bloqueia o upsert: a planilha pode ter um cartão em “Fazendo” com status `BLOCKED`.
+`externalSource`/`externalRef` são gravados no item e devolvidos na API, no MCP e na UI, mas:
 
-## Upsert por chave externa
+- não têm índice único;
+- não têm validação de par obrigatório;
+- não têm upsert;
+- não têm filtro na listagem.
 
-Rota proposta: `PUT /api/projects/:projectId/items/by-external-ref`.
-
-Corpo mínimo:
-
-```json
-{
-  "externalSource": "planilha",
-  "externalRef": "3f2c...",
-  "title": "Atividade",
-  "type": "TASK",
-  "parentId": "...",
-  "columnId": "...",
-  "status": "IN_PROGRESS",
-  "startDate": "2026-01-10",
-  "dueDate": "2026-01-20",
-  "actualStartDate": "2026-01-12",
-  "assigneeLabel": "Infra Vivo"
-}
-```
-
-Comportamento:
-
-- Procura por `(tenant, project, source, ref)`.
-- Se não existe: exige `title`, aplica as regras de criação (hierarquia, pai, coluna) e devolve `201 { created: true, item }`.
-- Se existe: atualiza apenas os campos presentes no corpo, revalida hierarquia quando `parentId`/`type` mudam e devolve `200 { created: false, item }`.
-- A chave nunca muda no update; se `externalRef` vier diferente do item encontrado, é conflito.
-- Corrida entre dois upserts iguais: o índice único garante um vencedor; o perdedor relê e atualiza. O importador é sequencial, então a corrida é um caso de robustez, não o caminho comum.
-- Autorização: `MEMBER` no projeto, tenant do contexto, mesmas regras de API Key. A chave externa é a identidade idempotente; não é necessário um `Idempotency-Key` adicional.
-
-A rota evita que o importador faça `GET` + `POST/PATCH` em duas chamadas e concentra a semântica em um caso de uso testável. O upsert não altera `sequenceCode` automaticamente.
+A carga usa a chave apenas como mapa local para reconhecer itens em uma reexecução; a identidade no banco continua sendo o `id`.
 
 ## Contratos
 
-- REST: os campos entram em `createItemSchema`, `updateItemSchema`, `itemFiltersSchema` e na projeção de `GET /items`.
+- REST: os campos entram em `createItemSchema`, `updateItemSchema` e na projeção de `GET /items`. `blockedReason` continua apenas no update.
 - MCP: `create_task`, `update_item`/`update_items` e `list_tasks` (projeção). O catálogo é a fonte única (`packages/tool-registry/src/fields.ts`).
-- Web: a modal mostra as datas realizadas/baseline e o responsável externo; o card mostra o label quando não há usuário.
+- Web: a modal mostra as datas realizadas e o responsável externo; o card mostra o label quando não há usuário.
 - Shadow Markdown: o nome do responsável cai para `assigneeLabel` quando não há usuário, mantendo o formato estável.
 
 ## Migrations
 
-- SQLite `0055_item_tracker_metadata.sql`: `ALTER TABLE items ADD COLUMN` para os sete campos, `CREATE UNIQUE INDEX ... WHERE external_ref IS NOT NULL` e índice de busca. A validação de par e de datas fica na API (SQLite não permite adicionar CHECK por `ALTER TABLE`).
-- PostgreSQL `0028_item_tracker_metadata.sql`: mesmos campos, índice único parcial e CHECKs de par e de datas.
-- Atualizar os schemas Drizzle dos dois dialetos para refletir as colunas e o índice.
+- SQLite `0055_item_tracker_metadata.sql`: `ALTER TABLE items ADD COLUMN` para os cinco campos. Sem índice.
+- PostgreSQL `0028_item_tracker_metadata.sql`: mesmos campos e CHECK do par de datas realizadas. Sem índice único.
+- Atualizar os schemas Drizzle dos dois dialetos para refletir as colunas.
 - Nenhum backfill: os campos nascem nulos. Itens existentes não são tocados.
 
 ## Riscos e mitigação
 
 | Risco | Mitigação |
 |---|---|
-| Upsert criar duplicata em corrida | Índice único parcial + releitura e update no conflito |
-| Status divergir da coluna | Regra explícita de herança quando o status não é informado; teste de criação com coluna DONE |
-| Datas incoerentes | Validação na API para os dois pares; teste de erro 422 |
+| Chave externa repetida | É informativa por decisão; a carga usa o mapa local e o `id` como identidade |
+| Status divergir da coluna | A criação mantém `NOT_STARTED`; a segunda passada aplica o status desejado |
+| Datas incoerentes | Validação na API para o par realizado; teste de erro 422 |
 | Mudança de contrato quebrar agentes | Campos opcionais; projeção e schema estendidos; testes de catálogo e contrato |
 | Migração PostgreSQL divergir da SQLite | Teste de paridade e de migrations nos dois dialetos |
 
 ## Plano de teste
 
-- **Unidade/aplicação:** criação com status explícito, com herança da coluna e sem nenhum; validação de datas; par source/ref.
-- **Integração REST:** upsert cria, repete sem duplicar, atualiza campos, devolve 409 em chave diferente, isola tenants e respeita permissões.
-- **Persistência:** `findByExternalRef` nos dois adapters; índice único; paridade SQLite/PostgreSQL.
+- **Unidade/aplicação:** criação força `NOT_STARTED` mesmo com `status`/coluna DONE; `blockedReason` é rejeitado na criação; validação do par de datas realizadas.
+- **Integração REST:** criação e atualização dos campos; chave externa repetida é aceita; endpoint de upsert não existe; filtro por chave não existe.
+- **Persistência:** paridade SQLite/PostgreSQL dos campos novos.
 - **MCP:** catálogo, campos aceitos, projeção de `list_tasks`, permissão negada.
-- **Web:** modal salva os campos; card mostra o label; i18n.
-- **Smoke:** criar um card com os campos novos no fluxo autenticado.
+- **Web:** modal salva as datas realizadas e o responsável externo; card mostra o label; i18n.
+- **Smoke:** criar um card e aplicar os metadados em uma segunda chamada.
 
 ## Rollback
 
-A change é aditiva. Reverter o código deixa as colunas e o índice no banco (migração só avança); um rollback completo exige restaurar o backup pré-migração. Nenhum dado existente é reescrito.
+A change é aditiva. Reverter o código deixa as colunas no banco (migração só avança); um rollback completo exige restaurar o backup pré-migração. Nenhum dado existente é reescrito.

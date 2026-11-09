@@ -3473,20 +3473,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "baseline_start_date": {
-          "name": "baseline_start_date",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "baseline_due_date": {
-          "name": "baseline_due_date",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "author_id": {
           "name": "author_id",
           "type": "text",
@@ -3556,27 +3542,6 @@
             "tenant_id",
             "project_id",
             "updated_at"
-          ],
-          "isUnique": false
-        },
-        "items_external_ref_unique": {
-          "name": "items_external_ref_unique",
-          "columns": [
-            "tenant_id",
-            "project_id",
-            "external_source",
-            "external_ref"
-          ],
-          "isUnique": true,
-          "where": "external_ref IS NOT NULL"
-        },
-        "items_external_ref_idx": {
-          "name": "items_external_ref_idx",
-          "columns": [
-            "tenant_id",
-            "project_id",
-            "external_source",
-            "external_ref"
           ],
           "isUnique": false
         }

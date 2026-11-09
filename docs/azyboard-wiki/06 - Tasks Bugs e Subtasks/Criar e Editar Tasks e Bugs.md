@@ -37,7 +37,6 @@ Os grupos de campos ficam em seções recolhíveis. A primeira seção começa a
 | Pontos | Registrar estimativa. |
 | Início e fim | Definir datas planejadas. |
 | Datas realizadas | Registrar quando o trabalho começou e terminou de fato. |
-| Datas baseline | Preservar o plano original. |
 | Chave externa | Identificar o item na planilha ou no Jira; somente leitura na modal. |
 | História pai | Posicionar o item na hierarquia. |
 | Versão | Relacionar o item a uma entrega. |
@@ -113,9 +112,8 @@ As datas são informativas e não movem o card automaticamente.
 ## Datas de acompanhamento e responsável externo
 
 - **Início e fim realizados:** quando o trabalho começou e terminou de fato.
-- **Início e fim original (baseline):** o plano que existia antes de replanejar.
 - **Responsável externo:** texto livre para times e pessoas sem conta; não substitui o responsável membro.
-- **Chave externa:** identifica o item na origem (planilha ou Jira) e é usada pela carga; aparece somente leitura na modal.
+- **Chave externa:** identifica o item na origem (planilha ou Jira) apenas para rastreabilidade; aparece somente leitura na modal. Não é usada como chave de upsert.
 
 ## Versão e centro de custo
 

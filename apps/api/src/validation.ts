@@ -85,11 +85,8 @@ export const createItemSchema = z.object({
   assigneeLabel: optionalAssigneeLabel,
   startDate: optionalDate,
   dueDate: optionalDate,
-  blockedReason: optionalText(2_000).nullable().optional(),
   actualStartDate: optionalDate,
   actualDueDate: optionalDate,
-  baselineStartDate: optionalDate,
-  baselineDueDate: optionalDate,
   externalSource: optionalExternalSource,
   externalRef: optionalExternalRef,
   versionId: optionalId,
@@ -99,14 +96,6 @@ export const createItemSchema = z.object({
   sprintId: optionalId,
   tagIds: z.array(z.string().min(1)).max(500).optional(),
   idempotencyKey: z.string().min(1).max(200).optional(),
-}).strict()
-
-// Upsert por chave externa: título é opcional no corpo porque, quando o item
-// já existe, a operação atua como PATCH; na criação a aplicação exige o título.
-export const upsertItemSchema = createItemSchema.extend({
-  title: z.string().trim().min(1).max(500).optional(),
-  externalSource: z.string().trim().min(1).max(100),
-  externalRef: z.string().trim().min(1).max(200),
 }).strict()
 
 export const updateItemSchema = z.object({
@@ -129,8 +118,6 @@ export const updateItemSchema = z.object({
   blockedReason: optionalText(2_000).nullable().optional(),
   actualStartDate: optionalDate,
   actualDueDate: optionalDate,
-  baselineStartDate: optionalDate,
-  baselineDueDate: optionalDate,
   externalSource: optionalExternalSource,
   externalRef: optionalExternalRef,
   versionId: optionalId,
@@ -174,8 +161,6 @@ const itemFiltersSchema = z.object({
   column: z.string().min(1).nullable().optional(),
   tag: z.string().min(1).nullable().optional(),
   titleContains: z.string().max(500).nullable().optional(),
-  externalSource: z.string().trim().min(1).max(100).nullable().optional(),
-  externalRef: z.string().trim().min(1).max(200).nullable().optional(),
   onlyLeaves: z.boolean().nullable().optional(),
   matchAll: z.boolean().optional(),
 }).strict()
@@ -470,7 +455,6 @@ const openApiSchemaMap = {
   CreateProjectRequest: createProjectSchema,
   UpdateProjectRequest: updateProjectSchema,
   CreateItemRequest: createItemSchema,
-  UpsertItemRequest: upsertItemSchema,
   UpdateItemRequest: updateItemSchema,
   BatchUpdateRequest: batchUpdateSchema,
   BatchRequest: batchSchema,

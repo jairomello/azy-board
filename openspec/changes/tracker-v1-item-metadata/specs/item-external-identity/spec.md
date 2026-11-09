@@ -2,54 +2,22 @@
 
 ## ADDED Requirements
 
-### Requirement: Chave externa estável e única por projeto
+### Requirement: Referência externa informativa
 
-O sistema SHALL permitir que um item guarde uma chave externa composta por `external_source` e `external_ref`, ambos opcionais, mas obrigatórios em conjunto. A combinação `(tenant_id, project_id, external_source, external_ref)` SHALL ser única entre itens não nulos do mesmo projeto. A chave SHALL ser tratada como dado do projeto, nunca como segredo.
+O sistema SHALL permitir que um item guarde uma referência externa composta por `externalSource` e `externalRef`, ambos opcionais e independentes. A referência SHALL ser tratada como informação de rastreabilidade, não como identidade: não há unicidade por projeto, upsert nem filtro por ela nesta versão.
 
-#### Scenario: Criar item com chave externa
+#### Scenario: Criar item com referência externa
 - **WHEN** um membro cria um item informando `externalSource` e `externalRef`
-- **THEN** o item é criado com a chave e a listagem consegue encontrá-lo pelo filtro correspondente
+- **THEN** o item é criado com a referência e a devolve na leitura
 
-#### Scenario: Chave duplicada no mesmo projeto
-- **WHEN** um membro tenta criar ou atualizar um item com uma chave já usada por outro item do mesmo projeto
-- **THEN** o sistema recusa com conflito e não cria nem altera o item
+#### Scenario: Referência repetida
+- **WHEN** dois itens do mesmo projeto usam a mesma `externalSource` e `externalRef`
+- **THEN** os dois itens existem independentemente, sem conflito
 
-#### Scenario: Par incompleto
-- **WHEN** um membro informa apenas `externalSource` ou apenas `externalRef`
-- **THEN** o sistema recusa com erro de validação e explica que os dois campos andam juntos
+#### Scenario: Atualizar a referência
+- **WHEN** um membro atualiza `externalSource` ou `externalRef` de um item
+- **THEN** o novo valor é persistido e devolvido na leitura
 
-#### Scenario: Mesma chave em projetos diferentes
-- **WHEN** dois projetos do mesmo tenant usam a mesma `externalSource` e `externalRef`
-- **THEN** os dois itens existem independentemente, sem conflito entre projetos
-
-#### Scenario: Isolamento entre tenants
-- **WHEN** um usuário de outro tenant tenta ler ou atualizar um item pela chave externa
-- **THEN** o sistema responde como recurso inexistente e não expõe dados do tenant original
-
-### Requirement: Upsert idempotente por chave externa
-
-O sistema SHALL oferecer uma operação de upsert por chave externa que cria o item quando a chave não existe e atualiza o item existente quando a chave já existe. A operação SHALL devolver `created` para distinguir os dois casos e SHALL aceitar apenas os campos informados no corpo. A operação SHALL respeitar a hierarquia, as permissões do projeto e o isolamento por tenant.
-
-#### Scenario: Primeira carga cria
-- **WHEN** o upsert recebe uma chave inexistente e os campos obrigatórios de criação
-- **THEN** o item é criado e a resposta informa `created: true`
-
-#### Scenario: Repetir a carga não duplica
-- **WHEN** o mesmo upsert é executado novamente com a mesma chave
-- **THEN** o item existente é atualizado e a resposta informa `created: false`, sem criar duplicata
-
-#### Scenario: Atualização parcial
-- **WHEN** o upsert recebe uma chave existente com apenas alguns campos alterados
-- **THEN** somente esses campos são atualizados e os demais permanecem como estavam
-
-#### Scenario: Chave trocada no corpo
-- **WHEN** o upsert encontra um item pela chave e o corpo tenta informar outra chave
-- **THEN** o sistema recusa com conflito e não altera a chave do item
-
-#### Scenario: Falta de campos obrigatórios na criação
-- **WHEN** o upsert recebe uma chave inexistente sem `title` ou sem o pai exigido pela hierarquia
-- **THEN** o sistema recusa com erro de validação e não cria item incompleto
-
-#### Scenario: Corrida entre dois upserts iguais
-- **WHEN** duas requisições simultâneas tentam criar a mesma chave
-- **THEN** apenas uma cria o item; a outra relê o item criado e o resultado final é um único registro
+#### Scenario: Sem upsert e sem filtro
+- **WHEN** um cliente tenta usar `PUT /items/by-external-ref` ou filtrar a listagem por `externalSource`/`externalRef`
+- **THEN** o endpoint não existe e o filtro não é aplicado

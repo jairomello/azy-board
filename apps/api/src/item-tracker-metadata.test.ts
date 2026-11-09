@@ -23,7 +23,9 @@ async function call(session: string, method: string, path: string, body?: unknow
     body: body === undefined ? undefined : JSON.stringify(body),
   }))
   const text = await response.text()
-  return { status: response.status, data: (text ? JSON.parse(text) : null) as JsonRecord }
+  let data: JsonRecord | null = null
+  try { data = text ? JSON.parse(text) as JsonRecord : null } catch { data = null }
+  return { status: response.status, data }
 }
 
 async function token(userId: string, tenantId: string, email: string, globalGroup: 'TEAM_MEMBER' | 'ADMIN' = 'ADMIN') {
@@ -70,51 +72,47 @@ describe('metadados do tracker no item', () => {
     doneColumnId = (columns.data as unknown as Array<{ id: string; baseStatus: string }>).find(column => column.baseStatus === 'DONE')!.id
   })
 
-  test('cria item com status, responsável externo, datas e chave externa', async () => {
+  test('cria item com responsável externo, datas realizadas e chave informativa', async () => {
     const created = await call(session, 'POST', `/projects/${projectId}/items`, {
       title: 'Atividade com metadados',
       type: 'TASK',
       parentId: storyId,
-      status: 'IN_PROGRESS',
       assigneeLabel: 'Infra Vivo',
       actualStartDate: '2026-01-10',
       actualDueDate: '2026-01-20',
-      baselineStartDate: '2026-01-01',
-      baselineDueDate: '2026-01-15',
       externalSource: 'planilha',
       externalRef: 'ref-001',
     })
     expect(created.status).toBe(201)
-    expect(created.data.status).toBe('IN_PROGRESS')
+    expect(created.data.status).toBe('NOT_STARTED')
     expect(created.data.assigneeLabel).toBe('Infra Vivo')
     expect(created.data.actualStartDate).toBe('2026-01-10')
     expect(created.data.actualDueDate).toBe('2026-01-20')
-    expect(created.data.baselineStartDate).toBe('2026-01-01')
-    expect(created.data.baselineDueDate).toBe('2026-01-15')
     expect(created.data.externalSource).toBe('planilha')
     expect(created.data.externalRef).toBe('ref-001')
   })
 
-  test('sem status, herda o status-base da coluna', async () => {
+  test('a criação força NOT_STARTED mesmo com status ou coluna concluída', async () => {
     const created = await call(session, 'POST', `/projects/${projectId}/items`, {
-      title: 'Atividade concluída por coluna',
+      title: 'Status ignorado na criação',
       type: 'TASK',
       parentId: storyId,
       columnId: doneColumnId,
+      status: 'DONE',
     })
     expect(created.status).toBe(201)
-    expect(created.data.status).toBe('DONE')
+    expect(created.data.status).toBe('NOT_STARTED')
   })
 
-  test('rejeita par de chave externa incompleto', async () => {
+  test('a criação não aceita blockedReason (permanece comportamento anterior)', async () => {
     const created = await call(session, 'POST', `/projects/${projectId}/items`, {
-      title: 'Chave incompleta',
+      title: 'Bloqueio na criação',
       type: 'TASK',
       parentId: storyId,
-      externalSource: 'planilha',
+      blockedReason: 'Aguardando fornecedor',
     })
-    expect(created.status).toBe(422)
-    expect(created.data.error.code).toBe('INVALID_EXTERNAL_REF')
+    expect(created.status).toBe(400)
+    expect(created.data.error.code).toBe('INVALID_REQUEST')
   })
 
   test('rejeita datas realizadas incoerentes', async () => {
@@ -129,92 +127,65 @@ describe('metadados do tracker no item', () => {
     expect(created.data.error.code).toBe('INVALID_ACTUAL_DATES')
   })
 
-  test('rejeita chave externa duplicada no mesmo projeto', async () => {
+  test('a chave externa é informativa e pode se repetir', async () => {
     const created = await call(session, 'POST', `/projects/${projectId}/items`, {
-      title: 'Chave duplicada',
+      title: 'Chave repetida',
       type: 'TASK',
       parentId: storyId,
-      externalSource: 'planilha',
-      externalRef: 'ref-001',
-    })
-    expect(created.status).toBe(409)
-    expect(created.data.error.code).toBe('EXTERNAL_REF_DUPLICATED')
-  })
-
-  test('upsert cria, repete sem duplicar e atualiza', async () => {
-    const first = await call(session, 'PUT', `/projects/${projectId}/items/by-external-ref`, {
-      title: 'Atividade via upsert',
-      type: 'TASK',
-      parentId: storyId,
-      externalSource: 'planilha',
-      externalRef: 'ref-upsert',
-      assigneeLabel: 'Squad Técnica NT',
-    })
-    expect(first.status).toBe(201)
-    expect(first.data.created).toBe(true)
-    const itemId = first.data.item.id
-
-    const second = await call(session, 'PUT', `/projects/${projectId}/items/by-external-ref`, {
-      title: 'Atividade via upsert (atualizada)',
-      type: 'TASK',
-      parentId: storyId,
-      externalSource: 'planilha',
-      externalRef: 'ref-upsert',
-      status: 'DONE',
-      actualStartDate: '2026-03-01',
-      actualDueDate: '2026-03-02',
-    })
-    expect(second.status).toBe(200)
-    expect(second.data.created).toBe(false)
-    expect(second.data.item.id).toBe(itemId)
-    expect(second.data.item.title).toBe('Atividade via upsert (atualizada)')
-    expect(second.data.item.status).toBe('DONE')
-
-    const listed = await call(session, 'GET', `/projects/${projectId}/items?externalSource=planilha&externalRef=ref-upsert`)
-    expect(listed.status).toBe(200)
-    expect((listed.data as unknown as { data: Array<{ id: string }> }).data).toHaveLength(1)
-  })
-
-  test('upsert exige título na criação', async () => {
-    const created = await call(session, 'PUT', `/projects/${projectId}/items/by-external-ref`, {
-      type: 'TASK',
-      parentId: storyId,
-      externalSource: 'planilha',
-      externalRef: 'ref-sem-titulo',
-    })
-    expect(created.status).toBe(422)
-    expect(created.data.error.code).toBe('TITLE_REQUIRED')
-  })
-
-  test('viewer não pode fazer upsert', async () => {
-    const created = await call(viewerSession, 'PUT', `/projects/${projectId}/items/by-external-ref`, {
-      title: 'Sem permissão',
-      type: 'TASK',
-      parentId: storyId,
-      externalSource: 'planilha',
-      externalRef: 'ref-viewer',
-    })
-    expect(created.status).toBe(403)
-  })
-
-  test('a mesma chave em outro tenant não colide', async () => {
-    const tenantId = generateId()
-    await db.insert(tenants).values({ id: tenantId, name: 'Outro Tenant', slug: `outro-${tenantId}`, createdAt: new Date().toISOString() })
-    const other = await createUser(tenantId, 'outro-admin@test.local', 'ADMIN')
-    const project = await call(other.session, 'POST', '/projects', { name: 'Outro Projeto', boardMode: 'HIERARCHICAL' })
-    const otherProjectId = project.data.id
-    const module = await call(other.session, 'POST', `/projects/${otherProjectId}/modules`, { name: 'Módulo' })
-    const epic = await call(other.session, 'POST', `/projects/${otherProjectId}/items`, { title: 'Épico', type: 'EPIC', moduleId: module.data.id })
-    const story = await call(other.session, 'POST', `/projects/${otherProjectId}/items`, { title: 'História', type: 'STORY', parentId: epic.data.id })
-
-    const created = await call(other.session, 'PUT', `/projects/${otherProjectId}/items/by-external-ref`, {
-      title: 'Mesma chave em outro tenant',
-      type: 'TASK',
-      parentId: story.data.id,
       externalSource: 'planilha',
       externalRef: 'ref-001',
     })
     expect(created.status).toBe(201)
-    expect(created.data.item.externalRef).toBe('ref-001')
+    expect(created.data.externalRef).toBe('ref-001')
+  })
+
+  test('atualiza status, blockedReason, datas realizadas e responsável externo', async () => {
+    const created = await call(session, 'POST', `/projects/${projectId}/items`, {
+      title: 'Atividade a atualizar',
+      type: 'TASK',
+      parentId: storyId,
+    })
+    expect(created.status).toBe(201)
+    const itemId = created.data.id
+
+    const updated = await call(session, 'PATCH', `/projects/${projectId}/items/${itemId}`, {
+      status: 'BLOCKED',
+      blockedReason: 'Aguardando fornecedor',
+      assigneeLabel: 'Squad Técnica NT',
+      actualStartDate: '2026-03-01',
+      actualDueDate: '2026-03-02',
+      externalSource: 'planilha',
+      externalRef: 'ref-update',
+    })
+    expect(updated.status).toBe(200)
+    expect(updated.data.item.status).toBe('BLOCKED')
+    expect(updated.data.item.blockedReason).toBe('Aguardando fornecedor')
+    expect(updated.data.item.assigneeLabel).toBe('Squad Técnica NT')
+    expect(updated.data.item.actualStartDate).toBe('2026-03-01')
+    expect(updated.data.item.actualDueDate).toBe('2026-03-02')
+    expect(updated.data.item.externalRef).toBe('ref-update')
+  })
+
+  test('o endpoint de upsert não existe', async () => {
+    const created = await call(session, 'PUT', `/projects/${projectId}/items/by-external-ref`, {
+      title: 'Sem upsert',
+      type: 'TASK',
+      parentId: storyId,
+      externalSource: 'planilha',
+      externalRef: 'ref-upsert',
+    })
+    expect(created.status).toBe(404)
+  })
+
+  test('viewer não pode atualizar metadados', async () => {
+    const created = await call(session, 'POST', `/projects/${projectId}/items`, {
+      title: 'Item do viewer',
+      type: 'TASK',
+      parentId: storyId,
+    })
+    const updated = await call(viewerSession, 'PATCH', `/projects/${projectId}/items/${created.data.id}`, {
+      actualStartDate: '2026-04-01',
+    })
+    expect(updated.status).toBe(403)
   })
 })

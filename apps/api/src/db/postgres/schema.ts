@@ -336,12 +336,9 @@ export const items = pgTable('items', {
   externalSource: text('external_source'),
   externalRef: text('external_ref'),
   assigneeLabel: text('assignee_label'),
-  // Datas de acompanhamento: realizadas e baseline (plano original), separadas
-  // das datas previstas acima.
+  // Datas realizadas, separadas das datas previstas acima.
   actualStartDate: text('actual_start_date'),
   actualDueDate: text('actual_due_date'),
-  baselineStartDate: text('baseline_start_date'),
-  baselineDueDate: text('baseline_due_date'),
   authorId: text('author_id'),
   versionId: text('version_id'),
   // [DB-SWAP] Aparência do item: colunas text nativas, iguais em SQLite e PG.
@@ -353,14 +350,7 @@ export const items = pgTable('items', {
 }, (table) => ({
   tenantIdUnique: uniqueIndex('items_tenant_id_id_unique').on(table.tenantId, table.id),
   hierarchyLookup: index('items_tenant_project_parent_idx').on(table.tenantId, table.projectId, table.parentId),
-  // [TENANT] Chave externa única por projeto; itens sem chave ficam fora do índice.
-  externalRefUnique: uniqueIndex('items_external_ref_unique')
-    .on(table.tenantId, table.projectId, table.externalSource, table.externalRef)
-    .where(sql`external_ref IS NOT NULL`),
-  externalRefLookup: index('items_external_ref_idx').on(table.tenantId, table.projectId, table.externalSource, table.externalRef),
-  externalPairCheck: check('items_external_pair_check', sql`(${table.externalSource} IS NULL AND ${table.externalRef} IS NULL) OR (${table.externalSource} IS NOT NULL AND ${table.externalRef} IS NOT NULL)`),
   actualDatesCheck: check('items_actual_dates_check', sql`${table.actualStartDate} IS NULL OR ${table.actualDueDate} IS NULL OR ${table.actualDueDate} >= ${table.actualStartDate}`),
-  baselineDatesCheck: check('items_baseline_dates_check', sql`${table.baselineStartDate} IS NULL OR ${table.baselineDueDate} IS NULL OR ${table.baselineDueDate} >= ${table.baselineStartDate}`),
   pointsCheck: check('items_points_check', sql`${table.points} IS NULL OR ${table.points} >= 0`),
   tokensInputCheck: check('items_tokens_input_check', sql`${table.tokensInput} IS NULL OR ${table.tokensInput} >= 0`),
   tokensOutputCheck: check('items_tokens_output_check', sql`${table.tokensOutput} IS NULL OR ${table.tokensOutput} >= 0`),

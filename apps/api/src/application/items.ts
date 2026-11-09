@@ -8,7 +8,7 @@ import { persistence } from '../persistence/runtime'
 import { authorizeProjectRole } from '../services/projectAuthorization'
 import { isWorkCard, resolveActiveSprint, resolveActiveVersion } from '../services/creationDefaults'
 import { buildAncestryPath, detectReparentCycle, isLeaf, nextSequenceCode, normalizeAuditText, resolveProjectTagIds, validateHierarchy } from './itemRules'
-import type { createItemSchema, updateItemSchema, upsertItemSchema } from '../validation'
+import type { createItemSchema, updateItemSchema } from '../validation'
 import type { z } from 'zod'
 
 type ApplicationAuthorization = {
@@ -29,50 +29,16 @@ async function authorize(input: ApplicationAuthorization): Promise<ApplicationDe
 }
 
 type TrackerMetadataBody = {
-  externalSource?: string | null
-  externalRef?: string | null
   actualStartDate?: string | null
   actualDueDate?: string | null
-  baselineStartDate?: string | null
-  baselineDueDate?: string | null
 }
 
-/**
- * Valida os metadados do tracker. Na criação, `current` é nulo e o par
- * source/ref precisa vir completo. Na edição, o campo ausente é herdado do
- * item atual, então uma atualização só de uma das datas continua válida.
- */
+/** Valida o par de datas realizadas; a chave externa é apenas informativa. */
 function validateTrackerMetadata(body: TrackerMetadataBody, current: TrackerMetadataBody | null): ApplicationDenial | null {
-  const source = body.externalSource !== undefined ? body.externalSource : current?.externalSource ?? null
-  const ref = body.externalRef !== undefined ? body.externalRef : current?.externalRef ?? null
-  if ((source === null) !== (ref === null)) {
-    return { ok: false, status: 422, body: { error: 'externalSource e externalRef devem ser informados juntos', code: 'INVALID_EXTERNAL_REF', retryable: false } }
-  }
   const actualStart = body.actualStartDate !== undefined ? body.actualStartDate : current?.actualStartDate ?? null
   const actualDue = body.actualDueDate !== undefined ? body.actualDueDate : current?.actualDueDate ?? null
   if (actualStart && actualDue && actualDue < actualStart) {
     return { ok: false, status: 422, body: { error: 'actualDueDate não pode ser anterior a actualStartDate', code: 'INVALID_ACTUAL_DATES', retryable: false } }
-  }
-  const baselineStart = body.baselineStartDate !== undefined ? body.baselineStartDate : current?.baselineStartDate ?? null
-  const baselineDue = body.baselineDueDate !== undefined ? body.baselineDueDate : current?.baselineDueDate ?? null
-  if (baselineStart && baselineDue && baselineDue < baselineStart) {
-    return { ok: false, status: 422, body: { error: 'baselineDueDate não pode ser anterior a baselineStartDate', code: 'INVALID_BASELINE_DATES', retryable: false } }
-  }
-  return null
-}
-
-async function validateExternalRefAvailability(
-  context: RequestContext,
-  projectId: string,
-  source: string | null,
-  ref: string | null,
-  ignoreItemId?: string,
-): Promise<ApplicationDenial | null> {
-  if (!source || !ref) return null
-  // [TENANT] A checagem usa o contexto autenticado; a chave nunca vaza entre tenants.
-  const existing = await persistence.items.findByExternalRef(userPersistenceContext(context), projectId, source, ref)
-  if (existing && existing.id !== ignoreItemId) {
-    return { ok: false, status: 409, body: { error: `A chave externa "${source}:${ref}" já existe neste projeto`, code: 'EXTERNAL_REF_DUPLICATED', retryable: false } }
   }
   return null
 }
@@ -122,8 +88,6 @@ export async function createItemApplication(input: ApplicationAuthorization & {
 
   const trackerError = validateTrackerMetadata(body, null)
   if (trackerError) return trackerError
-  const externalRefError = await validateExternalRefAvailability(context, projectId, body.externalSource ?? null, body.externalRef ?? null)
-  if (externalRefError) return externalRefError
 
   const workCard = isWorkCard(type)
   let effectiveSprintId: string | null = body.sprintId ?? null
@@ -145,10 +109,6 @@ export async function createItemApplication(input: ApplicationAuthorization & {
   if (!columnId && isWorkCard(type)) {
     columnId = (await persistence.projects.listColumns(projectContext, projectId))[0]?.id ?? null
   }
-  // A coluna explícita já foi validada; quando a coluna é a padrão, ela também
-  // define o status-base inicial. O status explícito sempre prevalece.
-  const effectiveColumn = column ?? (columnId ? await persistence.projects.getColumn(projectContext, projectId, columnId) : null)
-  const nextStatus = body.status ?? effectiveColumn?.baseStatus ?? 'NOT_STARTED'
   const ancestryPath = effectiveParentId ? await buildAncestryPath(context.tenantId, projectId, effectiveParentId) : []
 
   let costCenterId = body.costCenterId ?? null
@@ -179,14 +139,13 @@ export async function createItemApplication(input: ApplicationAuthorization & {
     acceptanceCriteria: body.acceptanceCriteria ?? null,
     notes: body.notes ?? null,
     ancestryPath: JSON.stringify(ancestryPath),
-    status: nextStatus,
+    status: 'NOT_STARTED',
     priority: body.priority ?? 'MEDIUM',
     points: body.points ?? null,
     tokensInput: body.tokensInput ?? null,
     tokensOutput: body.tokensOutput ?? null,
     assigneeId: body.assigneeId ?? null,
     assigneeLabel: body.assigneeLabel ?? null,
-    blockedReason: body.blockedReason ?? null,
     authorId: context.userId,
     versionId: effectiveVersionId,
     costCenterId,
@@ -194,8 +153,6 @@ export async function createItemApplication(input: ApplicationAuthorization & {
     dueDate: body.dueDate === undefined ? (effectiveSprint?.endDate ?? null) : body.dueDate,
     actualStartDate: body.actualStartDate ?? null,
     actualDueDate: body.actualDueDate ?? null,
-    baselineStartDate: body.baselineStartDate ?? null,
-    baselineDueDate: body.baselineDueDate ?? null,
     externalSource: body.externalSource ?? null,
     externalRef: body.externalRef ?? null,
     icon: effectiveIcon,
@@ -207,72 +164,6 @@ export async function createItemApplication(input: ApplicationAuthorization & {
     activity: `Card criado: ${normalizeAuditText(body.title)}`,
   })
   return { ok: true, record }
-}
-
-/**
- * Upsert por chave externa: cria quando a chave não existe e atualiza quando
- * existe. A operação é a base da carga idempotente da planilha e do delta.
- * A chave é imutável no update; um corpo com outra chave é conflito.
- */
-export async function upsertItemApplication(input: ApplicationAuthorization & {
-  mutationContext: MutationContext
-  body: z.infer<typeof upsertItemSchema>
-  actor: MutationActor
-}): Promise<{ ok: true; created: boolean; record: ItemRecord } | ApplicationDenial> {
-  const denial = await authorize(input)
-  if (denial) return denial
-
-  const { context, projectId, body } = input
-  const projectContext = userPersistenceContext(context)
-  const existing = await persistence.items.findByExternalRef(projectContext, projectId, body.externalSource, body.externalRef)
-
-  if (existing) {
-    const updateBody: UpdateItemBody = { ...body } as UpdateItemBody
-    delete (updateBody as { idempotencyKey?: string }).idempotencyKey
-    const result = await updateItemApplication({
-      ...input,
-      itemId: existing.id,
-      body: updateBody,
-      actor: input.actor,
-    })
-    if (!result.ok) return result
-    if (!result.record) return { ok: false, status: 404, body: { error: 'Item não encontrado' } }
-    return { ok: true, created: false, record: result.record }
-  }
-
-  if (!body.title) {
-    return { ok: false, status: 422, body: { error: 'title é obrigatório para criar um item por chave externa', code: 'TITLE_REQUIRED', retryable: false } }
-  }
-
-  try {
-    const createResult = await createItemApplication({ ...input, body: body as CreateItemBody })
-    if (!createResult.ok) return createResult
-    return { ok: true, created: true, record: createResult.record }
-  } catch (error) {
-    // Corrida entre dois upserts da mesma chave: o índice único barra o segundo
-    // INSERT. Relê o vencedor e aplica o update, em vez de devolver erro.
-    if (!isExternalRefUniqueViolation(error)) throw error
-    const raced = await persistence.items.findByExternalRef(projectContext, projectId, body.externalSource, body.externalRef)
-    if (!raced) throw error
-    const updateBody: UpdateItemBody = { ...body } as UpdateItemBody
-    delete (updateBody as { idempotencyKey?: string }).idempotencyKey
-    const result = await updateItemApplication({
-      ...input,
-      itemId: raced.id,
-      body: updateBody,
-      actor: input.actor,
-    })
-    if (!result.ok) return result
-    if (!result.record) return { ok: false, status: 404, body: { error: 'Item não encontrado' } }
-    return { ok: true, created: false, record: result.record }
-  }
-}
-
-function isExternalRefUniqueViolation(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error)
-  return message.includes('items_external_ref_unique')
-    || message.includes('UNIQUE constraint failed: items.external_source')
-    || message.includes('duplicate key value violates unique constraint')
 }
 
 /** Caso de uso de edição com revisão otimista e relações na mesma unidade. */
@@ -293,7 +184,7 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
   const writableFields = new Set([
     'title', 'description', 'priority', 'type', 'status', 'points', 'tokensInput', 'tokensOutput', 'assigneeId',
     'assigneeLabel', 'columnId', 'parentId', 'moduleId', 'startDate', 'dueDate', 'blockedReason',
-    'actualStartDate', 'actualDueDate', 'baselineStartDate', 'baselineDueDate',
+    'actualStartDate', 'actualDueDate',
     'externalSource', 'externalRef',
     'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'versionId', 'costCenterId', 'sprintId', 'sequenceCode',
     'icon', 'color',
@@ -306,7 +197,7 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
 
   const loggableFields = [
     'title', 'description', 'priority', 'assigneeId', 'assigneeLabel', 'points', 'tokensInput', 'tokensOutput',
-    'startDate', 'dueDate', 'actualStartDate', 'actualDueDate', 'baselineStartDate', 'baselineDueDate',
+    'startDate', 'dueDate', 'actualStartDate', 'actualDueDate',
     'externalSource', 'externalRef', 'status',
   ] as const
   const prevItem = await persistence.items.getItem(projectContext, projectId, itemId)
@@ -314,10 +205,6 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
 
   const trackerError = validateTrackerMetadata(body, prevItem)
   if (trackerError) return trackerError
-  const nextSource = body.externalSource !== undefined ? body.externalSource : prevItem.externalSource
-  const nextRef = body.externalRef !== undefined ? body.externalRef : prevItem.externalRef
-  const externalRefError = await validateExternalRefAvailability(context, projectId, nextSource, nextRef, itemId)
-  if (externalRefError) return externalRefError
 
   if (updates.sequenceCode !== undefined && updates.sequenceCode !== null && updates.sequenceCode !== prevItem.sequenceCode) {
     const projectItems = await persistence.items.listItems(projectContext, projectId)
@@ -386,7 +273,6 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
     title: 'Título', description: 'Descrição', priority: 'Prioridade', assigneeId: 'Responsável',
     assigneeLabel: 'Responsável externo', points: 'Pontos', tokensInput: 'Tokens de entrada', tokensOutput: 'Tokens de saída',
     startDate: 'Início', dueDate: 'Fim', actualStartDate: 'Início realizado', actualDueDate: 'Fim realizado',
-    baselineStartDate: 'Início original', baselineDueDate: 'Fim original',
     externalSource: 'Origem externa', externalRef: 'Chave externa', status: 'Status',
   }
   const changes = loggableFields

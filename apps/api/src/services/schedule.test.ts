@@ -10,7 +10,7 @@ function item(id: string, overrides: Partial<ItemRecord> = {}): ItemRecord {
     acceptanceCriteria: null, notes: null, status: 'IN_PROGRESS', statusBeforeArchive: null, costCenterId: null,
     priority: 'MEDIUM', points: null, tokensInput: null, tokensOutput: null, assigneeId: null, assigneeApiKeyId: null, blockedReason: null,
     position: 0, startDate: null, dueDate: null,
-    externalSource: null, externalRef: null, assigneeLabel: null, actualStartDate: null, actualDueDate: null, baselineStartDate: null, baselineDueDate: null,
+    externalSource: null, externalRef: null, assigneeLabel: null, actualStartDate: null, actualDueDate: null,
     versionId: null, icon: null, color: null, authorId: 'u', createdAt: '2026-10-01T00:00:00.000Z', updatedAt: '2026-10-01T00:00:00.000Z',
     ...overrides,
   }
