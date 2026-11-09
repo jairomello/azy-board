@@ -4420,17 +4420,9 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           const sets: string[] = []
           const params: unknown[] = [context.tenantId, projectId, itemId]
           let idx = 4
-          const fields: Record<string, string> = {
-            type: 'type', sequenceCode: 'sequence_code', parentId: 'parent_id', moduleId: 'module_id',
-            columnId: 'column_id', ancestryPath: 'ancestry_path', title: 'title', description: 'description',
-            persona: 'persona', goal: 'goal', benefit: 'benefit', acceptanceCriteria: 'acceptance_criteria',
-            notes: 'notes', status: 'status', statusBeforeArchive: 'status_before_archive',
-            costCenterId: 'cost_center_id', priority: 'priority', points: 'points',
-            tokensInput: 'tokens_input', tokensOutput: 'tokens_output',
-            assigneeId: 'assignee_id', assigneeApiKeyId: 'assignee_api_key_id', blockedReason: 'blocked_reason',
-            position: 'position', startDate: 'start_date', dueDate: 'due_date', versionId: 'version_id',
-            icon: 'icon', color: 'color',
-          }
+          // Usa o mesmo mapa do INSERT para não divergir: qualquer campo novo do
+          // item passa a ser persistido também no update.
+          const fields = ITEM_FIELD_COLUMNS
           for (const [key, col] of Object.entries(fields)) {
             if (key in patch) { sets.push(`${col} = $${idx++}`); params.push((patch as Record<string, unknown>)[key]) }
           }
