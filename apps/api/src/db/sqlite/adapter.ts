@@ -61,6 +61,7 @@ import type {
   StorageCleanupJobRecord,
   StoredAvatarRecord,
   DashboardTokenGroupRow,
+  ExportMappingRecord,
   TagRecord,
   TenantAttachmentSettingsRecord,
   UserCredentialRecord,
@@ -68,7 +69,7 @@ import type {
 import type { ChecklistItemPatch, ColumnPatch, CostCenterPatch, ItemLinkPatch, ItemLogPatch, ModulePatch, NewApiKeyRecord, NewChecklistItemRecord, NewColumnRecord, NewCostCenterRecord, NewItemLinkRecord, NewItemLogRecord, NewModuleRecord, NewProjectMembership, NewSquadRecord, NewTenantRecord, NewVersionRecord, PersistencePorts, ProjectMembershipPatch, ProjectPatch, UserListPage, UserListQuery, UserPreferencesPatch, VersionPatch } from '../../persistence/ports'
 import type { DrizzleDb } from '../index'
 import {
-  apiKeys, assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantRuns, assistantSettings, assistantToolCalls,
+  apiKeys, assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantRuns, assistantSettings, assistantToolCalls, exportMappings,
    attachments, checklistItems, checklists, columns, idempotencyRecords, itemDependencies, itemEvents, itemLinks, itemLogs, itemSprints, itemTags, 
   items, loginAttempts, memberships, modules, projectAnalyticsCoverage, projectCostCenters, projectMetricsDaily, projectVersions, projects, squads, sprintCycleItems, sprintCycles, sprints,
   storageCleanupJobs, tags, tenantAttachmentSettings, tenants, userAvatars, users,
@@ -207,6 +208,28 @@ function mapVersion(row: typeof projectVersions.$inferSelect): ProjectVersionRec
   return {
     id: row.id, tenantId: row.tenantId, projectId: row.projectId, name: row.name, releaseDate: row.releaseDate,
     description: row.description, status: row.status, position: row.position, createdAt: row.createdAt,
+  }
+}
+
+// [TENANT] O JSON é persistido como texto; a leitura tolera registros legados
+// inválidos sem derrubar a listagem do projeto.
+function mapExportMapping(row: typeof exportMappings.$inferSelect): ExportMappingRecord {
+  let fields: ExportMappingRecord['fields'] = []
+  try {
+    const parsed = JSON.parse(row.fieldsJson) as unknown
+    if (Array.isArray(parsed)) {
+      fields = parsed.filter((field): field is ExportMappingRecord['fields'][number] => (
+        Boolean(field) && typeof field === 'object'
+        && typeof (field as { source?: unknown }).source === 'string'
+        && typeof (field as { target?: unknown }).target === 'string'
+      ))
+    }
+  } catch {
+    fields = []
+  }
+  return {
+    id: row.id, projectId: row.projectId, name: row.name, fields,
+    createdAt: row.createdAt, updatedAt: row.updatedAt,
   }
 }
 
@@ -540,6 +563,52 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
 
   return {
     unitOfWork,
+    // [TENANT] Mapeamentos são sempre lidos/escritos com tenant_id + project_id.
+    exportMappings: {
+      async listMappings(context, projectId) {
+        // [TENANT] Mapeamentos são privados do usuário que os criou.
+        const rows = await database.select().from(exportMappings).where(and(
+          eq(exportMappings.tenantId, context.tenantId), eq(exportMappings.projectId, projectId),
+          eq(exportMappings.createdBy, context.actorUserId ?? ''),
+        )).orderBy(asc(exportMappings.name))
+        return rows.map(mapExportMapping)
+      },
+      async getMapping(context, projectId, mappingId) {
+        const [row] = await database.select().from(exportMappings).where(and(
+          eq(exportMappings.tenantId, context.tenantId), eq(exportMappings.projectId, projectId), eq(exportMappings.id, mappingId),
+          eq(exportMappings.createdBy, context.actorUserId ?? ''),
+        ))
+        return row ? mapExportMapping(row) : null
+      },
+      async createMapping(context, projectId, input) {
+        const now = new Date().toISOString()
+        const [row] = await database.insert(exportMappings).values({
+          id: generateId(), tenantId: context.tenantId, projectId, name: input.name,
+          fieldsJson: JSON.stringify(input.fields), createdBy: context.actorUserId,
+          createdAt: now, updatedAt: now,
+        }).returning()
+        if (!row) throw new Error('Falha ao criar mapeamento de exportação no adapter SQLite.')
+        return mapExportMapping(row)
+      },
+      async updateMapping(context, projectId, mappingId, patch) {
+        const [row] = await database.update(exportMappings).set({
+          ...(patch.name !== undefined ? { name: patch.name } : {}),
+          ...(patch.fields !== undefined ? { fieldsJson: JSON.stringify(patch.fields) } : {}),
+          updatedAt: new Date().toISOString(),
+        }).where(and(
+          eq(exportMappings.tenantId, context.tenantId), eq(exportMappings.projectId, projectId), eq(exportMappings.id, mappingId),
+          eq(exportMappings.createdBy, context.actorUserId ?? ''),
+        )).returning()
+        return row ? mapExportMapping(row) : null
+      },
+      async deleteMapping(context, projectId, mappingId) {
+        const rows = await database.delete(exportMappings).where(and(
+          eq(exportMappings.tenantId, context.tenantId), eq(exportMappings.projectId, projectId), eq(exportMappings.id, mappingId),
+          eq(exportMappings.createdBy, context.actorUserId ?? ''),
+        )).returning({ id: exportMappings.id })
+        return rows.length > 0
+      },
+    },
     health: {
       // [DB-SWAP] Consulta trivial; não toca rollups nem histórico de eventos.
       async ping() {

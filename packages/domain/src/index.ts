@@ -96,3 +96,6 @@ export function updatedWithinStart(window: Exclude<UpdatedWithin, 'current-sprin
 // Progresso por coluna (change progresso-por-coluna-e-ajustes-dashboard): peso de avanço
 // por coluna e cálculo do avanço de um card. Reexportado para API, web e MCP.
 export * from './progress'
+
+// Catálogo e contratos da exportação (bruta e com mapeamento dinâmico).
+export * from './export'

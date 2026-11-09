@@ -359,5 +359,7 @@
   "linkOrigin": "Origin",
   "dragDropHere": "Drop here",
   "dragDropCanceled": "Move canceled: drop the card on a column.",
-  "dragMoveRefused": "Move refused: the previous order and column were kept."
+  "dragMoveRefused": "Move refused: the previous order and column were kept.",
+  "exportData": "Export data",
+  "dataGroup": "Data"
 }

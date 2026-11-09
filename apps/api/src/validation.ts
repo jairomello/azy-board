@@ -214,6 +214,47 @@ export const tagSchema = z.object({ name: z.string().trim().min(1).max(100), col
 export const updateTagSchema = z.object({ name: z.string().trim().min(1).max(100).optional(), color: z.string().trim().max(30).optional(), expectedName: z.string().trim().min(1).max(100).optional(), expectedColor: z.string().trim().max(30).optional() }).strict()
 export const versionSchema = z.object({ name: z.string().trim().min(1).max(200), releaseDate: z.string().nullable().optional(), description: optionalText().nullable().optional(), status: z.enum(['PLANNED', 'IN_DEV', 'RELEASED', 'CANCELLED']).optional() }).strict()
 export const updateVersionSchema = versionSchema.partial().extend({ position: z.number().int().min(0).optional() }).strict()
+
+// Exportação — mapeamentos nomeados e requisição de download.
+export const exportMappingFieldSchema = z.object({
+  source: z.string().trim().min(1).max(100),
+  target: z.string().trim().min(1).max(120),
+  type: z.enum(['string', 'number', 'date', 'boolean']).optional(),
+}).strict()
+export const createExportMappingSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  fields: z.array(exportMappingFieldSchema).min(1).max(200),
+}).strict()
+export const updateExportMappingSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  fields: z.array(exportMappingFieldSchema).min(1).max(200).optional(),
+}).strict()
+export const exportFiltersSchema = z.object({
+  moduleId: z.string().min(1).optional(),
+  sprintId: z.string().min(1).optional(),
+  assigneeId: z.string().min(1).optional(),
+  squadId: z.string().min(1).optional(),
+  versionId: z.string().min(1).optional(),
+  costCenterId: z.string().min(1).optional(),
+  authorId: z.string().min(1).optional(),
+  priority: z.string().min(1).optional(),
+  status: z.string().min(1).optional(),
+  types: z.array(itemTypeSchema).max(10).optional(),
+  tagIds: z.array(z.string().min(1)).max(100).optional(),
+  includeArchived: z.boolean().optional(),
+}).strict()
+export const exportRequestSchema = z.object({
+  format: z.enum(['csv', 'xlsx']),
+  mode: z.enum(['raw', 'dynamic']),
+  mappingId: z.string().min(1).optional(),
+  mapping: z.object({ fields: z.array(exportMappingFieldSchema).min(1).max(200) }).strict().optional(),
+  filters: exportFiltersSchema.optional(),
+}).strict().superRefine((value, ctx) => {
+  if (value.mode === 'dynamic' && !value.mappingId && !value.mapping) {
+    ctx.addIssue({ code: 'custom', path: ['mapping'], message: 'Selecione um mapeamento salvo ou informe os campos do mapeamento.' })
+  }
+})
+
 export const createUserSchema = z.object({ email: z.string().trim().email().max(320).optional(), name: z.string().trim().min(1).max(200).optional(), password: z.string().max(200).optional(), globalGroup: z.enum(['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT']).optional() }).strict().superRefine((value, ctx) => {
   if (value.password === undefined || value.password === '') return
   const issues = passwordPolicyIssues(value.password, value.email)

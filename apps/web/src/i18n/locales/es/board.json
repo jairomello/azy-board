@@ -359,5 +359,7 @@
   "linkOrigin": "Origen",
   "dragDropHere": "Soltar aquí",
   "dragDropCanceled": "Movimiento cancelado: suelta la tarjeta sobre una columna.",
-  "dragMoveRefused": "Movimiento rechazado: se mantuvieron el orden y la columna anteriores."
+  "dragMoveRefused": "Movimiento rechazado: se mantuvieron el orden y la columna anteriores.",
+  "exportData": "Exportar datos",
+  "dataGroup": "Datos"
 }

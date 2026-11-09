@@ -14,6 +14,7 @@ import { checklistsRouter } from './routes/checklists'
 import { shadowMarkdownRouter } from './routes/shadowMarkdown'
 import { apiKeysRouter, userApiKeysRouter } from './routes/apiKeys'
 import { versionsRouter } from './routes/versions'
+import { exportRouter } from './routes/export'
 import { usersRouter } from './routes/users'
 import { skillsRouter } from './routes/skills'
 import { helpRouter } from './routes/help'
@@ -134,6 +135,7 @@ api.route('/projects/:projectId/board.md', shadowMarkdownRouter)
 api.route('/projects/:projectId/api-keys', apiKeysRouter)
 api.route('/api-keys', userApiKeysRouter)
 api.route('/projects/:projectId/versions', versionsRouter)
+api.route('/projects/:projectId', exportRouter)
 api.route('/users', usersRouter)
 api.route('/skills', skillsRouter)
 api.route('/help', helpRouter)
