@@ -48,6 +48,8 @@ export interface CardData {
   tokensTotal?: number | null
   ancestryPath: string // JSON
   assignee?: { id: string; name: string; avatarUrl: string | null } | null
+  // Responsável externo sem conta: exibido quando não há usuário atribuído.
+  assigneeLabel?: string | null
   authorId?: string | null
   author?: { id: string; name: string; avatarUrl: string | null } | null
   versionId?: string | null
@@ -423,7 +425,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
               <span className="font-medium leading-none">{card.attachmentCount ?? 0}</span>
             </span>
           )}
-          {card.assignee && (
+          {card.assignee ? (
             <div className="ml-auto">
               <UserAvatar
                 user={{ name: card.assignee.name, avatarUrl: card.assignee.avatarUrl, aiModelName: card.assigneeApiKey?.aiModelName }}
@@ -431,7 +433,11 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
                 showAiBadge={!!card.assigneeApiKey}
               />
             </div>
-          )}
+          ) : card.assigneeLabel ? (
+            <span className="ml-auto max-w-[45%] truncate text-xs text-muted-foreground" title={card.assigneeLabel}>
+              {card.assigneeLabel}
+            </span>
+          ) : null}
         </div>
       </div>
         </>

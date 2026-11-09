@@ -469,6 +469,15 @@ export interface ItemRecord {
   position: number
   startDate: string | null
   dueDate: string | null
+  // Metadados de rastreio do tracker: chave externa, responsável sem conta e
+  // datas de acompanhamento (realizadas e baseline).
+  externalSource: string | null
+  externalRef: string | null
+  assigneeLabel: string | null
+  actualStartDate: string | null
+  actualDueDate: string | null
+  baselineStartDate: string | null
+  baselineDueDate: string | null
   authorId: string | null
   versionId: string | null
   icon: string | null

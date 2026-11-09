@@ -12,6 +12,15 @@ export const itemTypeSchema = z.enum(['EPIC', 'STORY', 'TASK', 'BUG', 'EXTERNAL'
 const optionalText = (max = 20_000) => z.string().max(max)
 const optionalId = z.string().min(1).nullable().optional()
 const optionalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()
+// Metadados de rastreio do tracker: chave externa (planilha/Jira) e responsável
+// sem conta. O par source/ref é validado em conjunto na aplicação.
+const trackerBlankToNull = <T extends z.ZodTypeAny>(schema: T) => z.preprocess(
+  value => (typeof value === 'string' && value.trim() === '' ? null : value),
+  schema,
+)
+const optionalExternalSource = trackerBlankToNull(z.string().trim().min(1).max(100).nullable().optional())
+const optionalExternalRef = trackerBlankToNull(z.string().trim().min(1).max(200).nullable().optional())
+const optionalAssigneeLabel = trackerBlankToNull(z.string().trim().max(200).nullable().optional())
 // Aparência (Card T14): `icon` precisa pertencer ao ICON_CATALOG e `color` à ICON_COLORS.
 const optionalIcon = z.string().refine(isIconName, 'Ícone não pertence ao catálogo').nullable().optional()
 const optionalIconColor = z.string().refine(isIconColor, 'Cor não pertence à paleta de ícones').nullable().optional()
@@ -73,8 +82,16 @@ export const createItemSchema = z.object({
   tokensOutput: z.number().int().min(0).nullable().optional(),
   ...itemTextFields,
   assigneeId: optionalId,
+  assigneeLabel: optionalAssigneeLabel,
   startDate: optionalDate,
   dueDate: optionalDate,
+  blockedReason: optionalText(2_000).nullable().optional(),
+  actualStartDate: optionalDate,
+  actualDueDate: optionalDate,
+  baselineStartDate: optionalDate,
+  baselineDueDate: optionalDate,
+  externalSource: optionalExternalSource,
+  externalRef: optionalExternalRef,
   versionId: optionalId,
   costCenterId: optionalId,
   icon: optionalIcon,
@@ -82,6 +99,14 @@ export const createItemSchema = z.object({
   sprintId: optionalId,
   tagIds: z.array(z.string().min(1)).max(500).optional(),
   idempotencyKey: z.string().min(1).max(200).optional(),
+}).strict()
+
+// Upsert por chave externa: título é opcional no corpo porque, quando o item
+// já existe, a operação atua como PATCH; na criação a aplicação exige o título.
+export const upsertItemSchema = createItemSchema.extend({
+  title: z.string().trim().min(1).max(500).optional(),
+  externalSource: z.string().trim().min(1).max(100),
+  externalRef: z.string().trim().min(1).max(200),
 }).strict()
 
 export const updateItemSchema = z.object({
@@ -94,6 +119,7 @@ export const updateItemSchema = z.object({
   tokensInput: z.number().int().min(0).nullable().optional(),
   tokensOutput: z.number().int().min(0).nullable().optional(),
   assigneeId: optionalId,
+  assigneeLabel: optionalAssigneeLabel,
   columnId: optionalId,
   parentId: optionalId,
   moduleId: optionalId,
@@ -101,6 +127,12 @@ export const updateItemSchema = z.object({
   startDate: optionalDate,
   dueDate: optionalDate,
   blockedReason: optionalText(2_000).nullable().optional(),
+  actualStartDate: optionalDate,
+  actualDueDate: optionalDate,
+  baselineStartDate: optionalDate,
+  baselineDueDate: optionalDate,
+  externalSource: optionalExternalSource,
+  externalRef: optionalExternalRef,
   versionId: optionalId,
   costCenterId: optionalId,
   icon: optionalIcon,
@@ -142,6 +174,8 @@ const itemFiltersSchema = z.object({
   column: z.string().min(1).nullable().optional(),
   tag: z.string().min(1).nullable().optional(),
   titleContains: z.string().max(500).nullable().optional(),
+  externalSource: z.string().trim().min(1).max(100).nullable().optional(),
+  externalRef: z.string().trim().min(1).max(200).nullable().optional(),
   onlyLeaves: z.boolean().nullable().optional(),
   matchAll: z.boolean().optional(),
 }).strict()
@@ -436,6 +470,7 @@ const openApiSchemaMap = {
   CreateProjectRequest: createProjectSchema,
   UpdateProjectRequest: updateProjectSchema,
   CreateItemRequest: createItemSchema,
+  UpsertItemRequest: upsertItemSchema,
   UpdateItemRequest: updateItemSchema,
   BatchUpdateRequest: batchUpdateSchema,
   BatchRequest: batchSchema,

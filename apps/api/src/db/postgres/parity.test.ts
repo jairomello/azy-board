@@ -384,6 +384,33 @@ describe.skipIf(!runPostgres)('Paridade SIMPLE ↔ ADVANCED', () => {
       expect(itemSqlite.points).toBe(itemPg.points)
       expect(itemSqlite.status).toBe(itemPg.status)
 
+      // Metadados do tracker: mesmas colunas, mesmos valores e mesma busca por chave.
+      const trackerInput = {
+        type: 'TASK' as const,
+        title: 'Tracker',
+        status: 'IN_PROGRESS' as const,
+        assigneeLabel: 'Infra Vivo',
+        actualStartDate: '2026-01-10',
+        actualDueDate: '2026-01-20',
+        baselineStartDate: '2026-01-01',
+        baselineDueDate: '2026-01-15',
+        externalSource: 'planilha',
+        externalRef: 'parity-1',
+      }
+      const trackerSqlite = await sqlite.ports.unitOfWork.createItemWithRelations(
+        { ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id },
+        { projectId: projectSqlite.id, ...trackerInput },
+      )
+      const trackerPg = await pg.ports.unitOfWork.createItemWithRelations(
+        { ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id },
+        { projectId: projectPg.id, ...trackerInput },
+      )
+      for (const field of ['assigneeLabel', 'actualStartDate', 'actualDueDate', 'baselineStartDate', 'baselineDueDate', 'externalSource', 'externalRef', 'status'] as const) {
+        expect(trackerSqlite[field]).toBe(trackerPg[field])
+      }
+      expect((await sqlite.ports.items.findByExternalRef({ ...ctx, tenantId: tenantSqlite.id }, projectSqlite.id, 'planilha', 'parity-1'))?.id).toBe(trackerSqlite.id)
+      expect((await pg.ports.items.findByExternalRef({ ...ctx, tenantId: tenantPg.id }, projectPg.id, 'planilha', 'parity-1'))?.id).toBe(trackerPg.id)
+
       const childSqlite = await sqlite.ports.unitOfWork.createItemWithRelations(
         { ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id },
         { projectId: projectSqlite.id, type: 'BUG', parentId: itemSqlite.id, title: 'Filho' },

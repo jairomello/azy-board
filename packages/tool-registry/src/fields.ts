@@ -58,7 +58,7 @@ export const toolFields: Record<string, ToolFields> = {
   batch_move: { fields: ['projectId', 'itemIds', 'columnName'], required: ['projectId', 'itemIds', 'columnName'] },
   complete_task: { fields: ['projectId', 'taskId'], required: ['projectId', 'taskId'] },
   release_task: { fields: ['projectId', 'taskId'], required: ['projectId', 'taskId'] },
-  create_task: { fields: ['projectId', 'title', 'description', 'type', 'priority', 'points', 'parentId', 'moduleId', 'assigneeId', 'status', 'icon', 'color'], required: ['projectId', 'title'] },
+  create_task: { fields: ['projectId', 'title', 'description', 'type', 'priority', 'points', 'parentId', 'moduleId', 'assigneeId', 'assigneeLabel', 'status', 'blockedReason', 'actualStartDate', 'actualDueDate', 'baselineStartDate', 'baselineDueDate', 'externalSource', 'externalRef', 'icon', 'color'], required: ['projectId', 'title'] },
   create_checklist: { fields: ['projectId', 'itemId', 'name'], required: ['projectId', 'itemId', 'name'] },
   add_checklist_item: { fields: ['projectId', 'itemId', 'checklistId', 'text', 'dueDate', 'assigneeId', 'description'], required: ['projectId', 'itemId', 'checklistId', 'text'] },
   add_checklist_item_to_task: { fields: ['projectId', 'itemId', 'checklistName', 'text', 'dueDate', 'assigneeId', 'description'], required: ['projectId', 'itemId', 'checklistName', 'text'] },
@@ -111,10 +111,11 @@ export const toolFields: Record<string, ToolFields> = {
 // Campos aceitos na projeção `fields` de list_tasks. Fonte única entre o
 // validador MCP e a API — nomes desconhecidos são rejeitados em ambas as camadas.
 export const PROJECTION_FIELDS: readonly string[] = [
-  'id', 'title', 'type', 'status', 'columnId', 'isLeaf', 'parentId', 'moduleId', 'assigneeId', 'authorId',
+  'id', 'title', 'type', 'status', 'columnId', 'isLeaf', 'parentId', 'moduleId', 'assigneeId', 'assigneeLabel', 'authorId',
   'description', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'childrenCount', 'checklistProgress',
   'sprintId', 'sprintName', 'tagIds', 'tagNames', 'priority', 'points', 'tokensInput', 'tokensOutput', 'tokensTotal', 'costCenterId', 'versionId',
-  'blockedReason', 'startDate', 'dueDate', 'position', 'sequenceCode', 'ancestryPath', 'createdAt', 'updatedAt',
+  'blockedReason', 'startDate', 'dueDate', 'actualStartDate', 'actualDueDate', 'baselineStartDate', 'baselineDueDate',
+  'externalSource', 'externalRef', 'position', 'sequenceCode', 'ancestryPath', 'createdAt', 'updatedAt',
   'icon', 'color',
 ]
 

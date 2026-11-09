@@ -55,7 +55,7 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
     costCenters, tags: projectTags, memberships: projectMemberships, users: tenantUsers, sprintLinks, tagLinks } = snapshot
   const filters = body.filters ?? {}
   const changes = body.changes
-  const allowedFields = new Set(['title', 'description', 'priority', 'type', 'status', 'points', 'tokensInput', 'tokensOutput', 'assignee', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode'])
+  const allowedFields = new Set(['title', 'description', 'priority', 'type', 'status', 'points', 'tokensInput', 'tokensOutput', 'assignee', 'assigneeLabel', 'column', 'parent', 'module', 'startDate', 'dueDate', 'blockedReason', 'actualStartDate', 'actualDueDate', 'baselineStartDate', 'baselineDueDate', 'externalSource', 'externalRef', 'persona', 'goal', 'benefit', 'acceptanceCriteria', 'notes', 'version', 'costCenter', 'sprint', 'sequenceCode'])
   if (!Array.isArray(changes) || changes.length < 1 || changes.length > 20) return c.json({ code: 'VALIDATION_ERROR', error: 'changes deve conter entre 1 e 20 alterações' }, 422)
   const changedFields = new Set<string>()
   for (const change of changes) {
@@ -141,7 +141,9 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
     const resolvedChanges = changes.map(change => {
       const field = change.field as string, operation = change.operation as string
       if (operation === 'SET' && (typeof change.value !== 'string' || !change.value.trim())) throw new Error(`VALUE_REQUIRED_${field}`)
-      if (['TODAY', 'OFFSET_DAYS', 'COPY_CREATED_DATE'].includes(operation) && field !== 'startDate' && field !== 'dueDate') throw new Error(`INVALID_OPERATION_${field}`)
+      const dateFields = ['startDate', 'dueDate', 'actualStartDate', 'actualDueDate', 'baselineStartDate', 'baselineDueDate']
+      if (['TODAY', 'OFFSET_DAYS'].includes(operation) && !dateFields.includes(field)) throw new Error(`INVALID_OPERATION_${field}`)
+      if (operation === 'COPY_CREATED_DATE' && field !== 'startDate') throw new Error(`INVALID_OPERATION_${field}`)
       if (operation === 'CLEAR' && ['title', 'priority', 'type', 'status'].includes(field)) throw new Error(`FIELD_NOT_CLEARABLE_${field}`)
       if (field === 'parent' && operation === 'CLEAR') throw new Error('HIERARCHY_REQUIRED')
       if (operation === 'OFFSET_DAYS' && (typeof change.value !== 'string' || !/^-?\d+$/.test(change.value) || Math.abs(Number(change.value)) > 36_500)) throw new Error(`INVALID_OFFSET_${field}`)
@@ -165,7 +167,7 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
       return { field, operation, value: change.value as string | null, relationId }
     })
     const relationFields: Record<string, string> = { assignee: 'assigneeId', column: 'columnId', parent: 'parentId', module: 'moduleId', version: 'versionId', costCenter: 'costCenterId' }
-    const labels: Record<string, string> = { title: 'Título', description: 'Descrição', priority: 'Prioridade', type: 'Tipo', status: 'Status', points: 'Pontos', tokensInput: 'Tokens de entrada', tokensOutput: 'Tokens de saída', assignee: 'Responsável', column: 'Coluna', parent: 'Pai', module: 'Módulo', startDate: 'Início', dueDate: 'Fim', blockedReason: 'Motivo do bloqueio', persona: 'Persona', goal: 'Objetivo', benefit: 'Benefício', acceptanceCriteria: 'Critérios de aceite', notes: 'Notas', version: 'Versão', costCenter: 'Centro de custo', sprint: 'Sprint' }
+    const labels: Record<string, string> = { title: 'Título', description: 'Descrição', priority: 'Prioridade', type: 'Tipo', status: 'Status', points: 'Pontos', tokensInput: 'Tokens de entrada', tokensOutput: 'Tokens de saída', assignee: 'Responsável', assigneeLabel: 'Responsável externo', column: 'Coluna', parent: 'Pai', module: 'Módulo', startDate: 'Início', dueDate: 'Fim', actualStartDate: 'Início realizado', actualDueDate: 'Fim realizado', baselineStartDate: 'Início original', baselineDueDate: 'Fim original', externalSource: 'Origem externa', externalRef: 'Chave externa', blockedReason: 'Motivo do bloqueio', persona: 'Persona', goal: 'Objetivo', benefit: 'Benefício', acceptanceCriteria: 'Critérios de aceite', notes: 'Notas', version: 'Versão', costCenter: 'Centro de custo', sprint: 'Sprint' }
     const now = new Date().toISOString()
     const updatesById = new Map<string, Record<string, unknown>>()
     for (const item of matched) {
@@ -195,6 +197,15 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
       const startDate = (update.startDate === undefined ? item.startDate : update.startDate) as string | null
       const dueDate = (update.dueDate === undefined ? item.dueDate : update.dueDate) as string | null
       if ((startDate && !isoDate(startDate)) || (dueDate && !isoDate(dueDate)) || (startDate && dueDate && startDate > dueDate)) throw new Error('INVALID_DATE_RANGE')
+      const actualStart = (update.actualStartDate === undefined ? item.actualStartDate : update.actualStartDate) as string | null
+      const actualDue = (update.actualDueDate === undefined ? item.actualDueDate : update.actualDueDate) as string | null
+      if ((actualStart && !isoDate(actualStart)) || (actualDue && !isoDate(actualDue)) || (actualStart && actualDue && actualStart > actualDue)) throw new Error('INVALID_ACTUAL_DATE_RANGE')
+      const baselineStart = (update.baselineStartDate === undefined ? item.baselineStartDate : update.baselineStartDate) as string | null
+      const baselineDue = (update.baselineDueDate === undefined ? item.baselineDueDate : update.baselineDueDate) as string | null
+      if ((baselineStart && !isoDate(baselineStart)) || (baselineDue && !isoDate(baselineDue)) || (baselineStart && baselineDue && baselineStart > baselineDue)) throw new Error('INVALID_BASELINE_DATE_RANGE')
+      const nextExternalSource = (update.externalSource === undefined ? item.externalSource : update.externalSource) as string | null
+      const nextExternalRef = (update.externalRef === undefined ? item.externalRef : update.externalRef) as string | null
+      if ((nextExternalSource === null) !== (nextExternalRef === null)) throw new Error('INVALID_EXTERNAL_REF')
       const title = String(update.title ?? item.title).trim()
       if (!title || title.length > 500) throw new Error('INVALID_TITLE')
       update.title = changedFields.has('title') ? title : item.title
@@ -217,6 +228,16 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
         if (!item.sequenceCode) continue
         if (owners.has(item.sequenceCode)) throw new Error('SEQUENCE_CODE_DUPLICATED')
         owners.set(item.sequenceCode, item.id)
+      }
+    }
+    // Chave externa única por projeto no estado resultante do lote.
+    if (changedFields.has('externalRef') || changedFields.has('externalSource')) {
+      const owners = new Map<string, string>()
+      for (const item of resulting.values()) {
+        if (!item.externalSource || !item.externalRef) continue
+        const key = `${item.externalSource}\u0000${item.externalRef}`
+        if (owners.has(key)) throw new Error('EXTERNAL_REF_DUPLICATED')
+        owners.set(key, item.id)
       }
     }
     // A hierarquia só é revalidada quando a mutação toca pai/tipo: estruturas preexistentes
@@ -333,6 +354,9 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
     const code = error instanceof Error ? error.message : 'BULK_UPDATE_FAILED'
     if (code === 'SEQUENCE_CODE_DUPLICATED') return c.json({ code, error: 'O sequenceCode informado já existe neste projeto.' }, 409)
     if (code === 'INVALID_SEQUENCE_CODE') return c.json({ code, error: 'sequenceCode deve seguir o padrão [ESTBX]\\d+ (ex.: T12).' }, 422)
+    if (code === 'EXTERNAL_REF_DUPLICATED') return c.json({ code, error: 'A chave externa informada já existe neste projeto.' }, 409)
+    if (code === 'INVALID_EXTERNAL_REF') return c.json({ code, error: 'externalSource e externalRef devem ser informados juntos.' }, 422)
+    if (code === 'INVALID_ACTUAL_DATE_RANGE' || code === 'INVALID_BASELINE_DATE_RANGE') return c.json({ code, error: 'A data final não pode ser anterior à inicial.' }, 422)
     return c.json({ code, error: 'Nenhuma alteração foi aplicada. Revise os filtros e valores informados.' }, 422)
   }
 })

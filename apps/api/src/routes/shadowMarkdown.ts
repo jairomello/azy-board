@@ -40,7 +40,8 @@ shadowMarkdownRouter.get('/', requireRole('VIEWER'), async (c) => {
     } else {
       for (const item of colItems) {
         const statusIcon = item.status === 'DONE' ? '[x]' : item.status === 'IN_PROGRESS' ? '[/]' : '[ ]'
-        const assignee = item.assignee?.name ?? 'unassigned'
+        // Responsável externo não tem conta: o label assume quando não há usuário.
+        const assignee = item.assignee?.name ?? item.assigneeLabel ?? 'unassigned'
         const pts = item.points ? ` [${item.points}pts]` : ''
         const tags = item.itemTags.length > 0
           ? ` {${item.itemTags.map(it => it.tag.name).join(', ')}}`

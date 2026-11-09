@@ -839,6 +839,16 @@ export async function toolCreateTask(
     versionId?: string
     icon?:       string
     color?:      string
+    status?:     string
+    assigneeId?: string
+    assigneeLabel?: string
+    blockedReason?: string
+    actualStartDate?: string
+    actualDueDate?: string
+    baselineStartDate?: string
+    baselineDueDate?: string
+    externalSource?: string
+    externalRef?: string
   }
 ): Promise<Item> {
   const { projectId, ...taskData } = args
