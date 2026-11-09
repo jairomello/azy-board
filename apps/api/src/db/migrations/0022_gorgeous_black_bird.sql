@@ -35,7 +35,7 @@ CREATE TABLE `__new_attachments` (
 	`created_at` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')) NOT NULL,
 	FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`tenant_id`,`item_id`) REFERENCES `items`(`tenant_id`,`id`) ON UPDATE no action ON DELETE no action,
-	CONSTRAINT "attachments_size_check" CHECK("__new_attachments"."size" >= 0)
+	CONSTRAINT "attachments_size_check" CHECK("size" >= 0)
 );
 --> statement-breakpoint
 INSERT INTO `__new_attachments`("id", "tenant_id", "item_id", "filename", "original_name", "mime_type", "size", "storage_path", "created_at") SELECT "id", "tenant_id", "item_id", "filename", "original_name", "mime_type", "size", "storage_path", "created_at" FROM `attachments`;--> statement-breakpoint
@@ -50,7 +50,7 @@ CREATE TABLE `__new_checklists` (
 	`created_at` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')) NOT NULL,
 	FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`tenant_id`,`item_id`) REFERENCES `items`(`tenant_id`,`id`) ON UPDATE no action ON DELETE no action,
-	CONSTRAINT "checklists_position_check" CHECK("__new_checklists"."position" >= 0)
+	CONSTRAINT "checklists_position_check" CHECK("position" >= 0)
 );
 --> statement-breakpoint
 INSERT INTO `__new_checklists`("id", "tenant_id", "item_id", "name", "position", "created_at") SELECT "id", "tenant_id", "item_id", "name", "position", "created_at" FROM `checklists`;--> statement-breakpoint
@@ -99,10 +99,10 @@ CREATE TABLE `__new_items` (
 	FOREIGN KEY (`tenant_id`,`cost_center_id`) REFERENCES `project_cost_centers`(`tenant_id`,`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`tenant_id`,`version_id`) REFERENCES `project_versions`(`tenant_id`,`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`tenant_id`,`parent_id`) REFERENCES `items`(`tenant_id`,`id`) ON UPDATE no action ON DELETE no action,
-	CONSTRAINT "items_points_check" CHECK("__new_items"."points" IS NULL OR "__new_items"."points" >= 0),
-	CONSTRAINT "items_position_check" CHECK("__new_items"."position" >= 0),
-	CONSTRAINT "items_dates_check" CHECK("__new_items"."start_date" IS NULL OR "__new_items"."due_date" IS NULL OR "__new_items"."due_date" >= "__new_items"."start_date"),
-	CONSTRAINT "items_type_check" CHECK("__new_items"."type" IN ('EPIC','STORY','TASK','BUG'))
+	CONSTRAINT "items_points_check" CHECK("points" IS NULL OR "points" >= 0),
+	CONSTRAINT "items_position_check" CHECK("position" >= 0),
+	CONSTRAINT "items_dates_check" CHECK("start_date" IS NULL OR "due_date" IS NULL OR "due_date" >= "start_date"),
+	CONSTRAINT "items_type_check" CHECK("type" IN ('EPIC','STORY','TASK','BUG'))
 );
 --> statement-breakpoint
 INSERT INTO `__new_items`("id", "tenant_id", "project_id", "type", "sequence_code", "parent_id", "module_id", "column_id", "ancestry_path", "title", "description", "persona", "goal", "benefit", "acceptance_criteria", "notes", "status", "status_before_archive", "cost_center_id", "priority", "points", "assignee_id", "assignee_api_key_id", "blocked_reason", "position", "start_date", "due_date", "author_id", "version_id", "created_at", "updated_at") SELECT "id", "tenant_id", "project_id", "type", "sequence_code", "parent_id", "module_id", "column_id", "ancestry_path", "title", "description", "persona", "goal", "benefit", "acceptance_criteria", "notes", "status", "status_before_archive", "cost_center_id", "priority", "points", "assignee_id", "assignee_api_key_id", "blocked_reason", "position", "start_date", "due_date", "author_id", "version_id", "created_at", "updated_at" FROM `items`;--> statement-breakpoint
@@ -138,7 +138,7 @@ CREATE TABLE `__new_project_cost_centers` (
 	FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`tenant_id`,`project_id`) REFERENCES `projects`(`tenant_id`,`id`) ON UPDATE no action ON DELETE no action,
-	CONSTRAINT "project_cost_centers_sort_order_check" CHECK("__new_project_cost_centers"."sort_order" >= 0)
+	CONSTRAINT "project_cost_centers_sort_order_check" CHECK("sort_order" >= 0)
 );
 --> statement-breakpoint
 INSERT INTO `__new_project_cost_centers`("id", "tenant_id", "project_id", "code", "description", "sort_order", "created_at") SELECT "id", "tenant_id", "project_id", "code", "description", "sort_order", "created_at" FROM `project_cost_centers`;--> statement-breakpoint
@@ -164,9 +164,9 @@ CREATE TABLE `__new_projects` (
 	FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`tenant_id`,`manager_user_id`) REFERENCES `users`(`tenant_id`,`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`tenant_id`,`simple_story_id`) REFERENCES `items`(`tenant_id`,`id`) ON UPDATE no action ON DELETE no action,
-	CONSTRAINT "projects_planned_points_check" CHECK("__new_projects"."planned_points" IS NULL OR "__new_projects"."planned_points" >= 0),
-	CONSTRAINT "projects_planned_hours_check" CHECK("__new_projects"."planned_hours" IS NULL OR "__new_projects"."planned_hours" >= 0),
-	CONSTRAINT "projects_planned_dates_check" CHECK("__new_projects"."start_date" IS NULL OR "__new_projects"."planned_end_date" IS NULL OR "__new_projects"."planned_end_date" >= "__new_projects"."start_date")
+	CONSTRAINT "projects_planned_points_check" CHECK("planned_points" IS NULL OR "planned_points" >= 0),
+	CONSTRAINT "projects_planned_hours_check" CHECK("planned_hours" IS NULL OR "planned_hours" >= 0),
+	CONSTRAINT "projects_planned_dates_check" CHECK("start_date" IS NULL OR "planned_end_date" IS NULL OR "planned_end_date" >= "start_date")
 );
 --> statement-breakpoint
 INSERT INTO `__new_projects`("id", "tenant_id", "name", "description", "board_mode", "simple_story_id", "manager_user_id", "is_restricted", "is_hidden", "start_date", "planned_end_date", "planned_points", "planned_hours", "scope", "created_at") SELECT "id", "tenant_id", "name", "description", "board_mode", "simple_story_id", "manager_user_id", "is_restricted", "is_hidden", "start_date", "planned_end_date", "planned_points", "planned_hours", "scope", "created_at" FROM `projects`;--> statement-breakpoint
@@ -184,7 +184,7 @@ CREATE TABLE `__new_sprints` (
 	`created_at` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')) NOT NULL,
 	FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`tenant_id`,`project_id`) REFERENCES `projects`(`tenant_id`,`id`) ON UPDATE no action ON DELETE no action,
-	CONSTRAINT "sprints_dates_check" CHECK("__new_sprints"."end_date" >= "__new_sprints"."start_date")
+	CONSTRAINT "sprints_dates_check" CHECK("end_date" >= "start_date")
 );
 --> statement-breakpoint
 INSERT INTO `__new_sprints`("id", "tenant_id", "project_id", "name", "status", "start_date", "end_date", "created_at") SELECT "id", "tenant_id", "project_id", "name", "status", "start_date", "end_date", "created_at" FROM `sprints`;--> statement-breakpoint
@@ -229,7 +229,7 @@ CREATE TABLE `__new_users` (
 	`language` text DEFAULT 'pt-BR' NOT NULL,
 	`created_at` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')) NOT NULL,
 	FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON UPDATE no action ON DELETE no action,
-	CONSTRAINT "users_global_group_check" CHECK("__new_users"."global_group" IN ('TEAM_MEMBER','MANAGER','ADMIN','ROOT'))
+	CONSTRAINT "users_global_group_check" CHECK("global_group" IN ('TEAM_MEMBER','MANAGER','ADMIN','ROOT'))
 );
 --> statement-breakpoint
 INSERT INTO `__new_users`("id", "tenant_id", "email", "password_hash", "name", "global_group", "avatar_url", "theme", "light_shell_theme", "language", "created_at") SELECT "id", "tenant_id", "email", "password_hash", "name", "global_group", "avatar_url", "theme", "light_shell_theme", "language", "created_at" FROM `users`;--> statement-breakpoint
