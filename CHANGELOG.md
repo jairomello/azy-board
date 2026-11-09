@@ -11,6 +11,12 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Fixed
 
+- **Atualização dos metadados do tracker passa a persistir no ADVANCED.** O
+  update do adapter PostgreSQL usava um mapa de campos próprio que não incluía
+  `externalSource`, `externalRef`, `assigneeLabel`, `actualStartDate` e
+  `actualDueDate`; o `PATCH` respondia 200, mas descartava esses campos. O update
+  agora usa o mesmo mapa do INSERT e a paridade SQLite/PostgreSQL cobre a
+  atualização e a releitura dos cinco campos.
 - **Reordenar cards na mesma coluna não falha mais no perfil ADVANCED.** O
   `PATCH /projects/:id/items/reorder` chamava `items.reorderItems`, que no
   adapter PostgreSQL ainda era um stub `NOT_IMPLEMENTED` e respondia 500 — a tela

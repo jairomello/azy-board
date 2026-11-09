@@ -407,6 +407,29 @@ describe.skipIf(!runPostgres)('Paridade SIMPLE ↔ ADVANCED', () => {
         expect(trackerSqlite[field]).toBe(trackerPg[field])
       }
 
+      // Regressão: o update também precisa persistir os metadados do tracker.
+      const trackerPatch = {
+        actualStartDate: '2026-02-01',
+        actualDueDate: '2026-02-10',
+        assigneeLabel: 'Squad Técnica NT',
+        externalSource: 'jira',
+        externalRef: 'parity-1-updated',
+      }
+      const trackerUpdatedSqlite = await sqlite.ports.unitOfWork.updateItemWithRelations(
+        { ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id },
+        projectSqlite.id, trackerSqlite.id, trackerPatch,
+      )
+      const trackerUpdatedPg = await pg.ports.unitOfWork.updateItemWithRelations(
+        { ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id },
+        projectPg.id, trackerPg.id, trackerPatch,
+      )
+      expect(trackerUpdatedSqlite).not.toBeNull()
+      expect(trackerUpdatedPg).not.toBeNull()
+      for (const field of ['actualStartDate', 'actualDueDate', 'assigneeLabel', 'externalSource', 'externalRef'] as const) {
+        expect(trackerUpdatedSqlite![field]).toBe(trackerPatch[field])
+        expect(trackerUpdatedPg![field]).toBe(trackerPatch[field])
+      }
+
       const childSqlite = await sqlite.ports.unitOfWork.createItemWithRelations(
         { ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id },
         { projectId: projectSqlite.id, type: 'BUG', parentId: itemSqlite.id, title: 'Filho' },
