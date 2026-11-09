@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
+  ChevronLeft,
+  ChevronRight,
   FolderKanban,
   LayoutDashboard,
   Menu,
@@ -57,6 +59,26 @@ interface NavItem {
   children?: NavItem[]
 }
 
+const SIDEBAR_EXPANDED_STORAGE_KEY = 'shell-sidebar-expanded'
+
+function readSidebarExpandedPreference(): boolean | null {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_EXPANDED_STORAGE_KEY)
+    if (raw === 'true') return true
+    if (raw === 'false') return false
+  } catch {
+    // localStorage indisponível (SecurityError): usa o fallback responsivo.
+  }
+  return null
+}
+
+function defaultSidebarExpanded(): boolean {
+  const stored = readSidebarExpandedPreference()
+  if (stored !== null) return stored
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return true
+  return window.matchMedia('(min-width: 1280px)').matches
+}
+
 export function AppShell({
   children,
   projectId,
@@ -86,6 +108,7 @@ export function AppShell({
   const { t: tAssistant } = useTranslation('assistant')
   const buildInfo = getBuildInfo()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [sidebarExpanded, setSidebarExpanded] = useState(defaultSidebarExpanded)
   const [adminExpanded, setAdminExpanded] = useState(location.pathname.startsWith('/admin'))
   const inferredScreen: AssistantScreen = location.pathname === '/projects'
     ? 'projects-index'
@@ -109,6 +132,14 @@ export function AppShell({
   useEffect(() => {
     if (projectId) localStorage.setItem('last-project-id', projectId)
   }, [projectId])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_EXPANDED_STORAGE_KEY, String(sidebarExpanded))
+    } catch {
+      // localStorage indisponível: mantém somente em memória.
+    }
+  }, [sidebarExpanded])
 
   useEffect(() => {
     setPageContext({ screen: assistantScreen ?? inferredScreen, projectId, projectName, item: assistantSelectedItem ?? null, boardView: assistantBoardView, filters: assistantFilters, screenSnapshot: assistantScreenSnapshot ?? null })
@@ -201,18 +232,18 @@ export function AppShell({
         <Link
           data-shell-desktop-brand
           to="/projects"
-          className="h-full w-full flex items-center justify-start lg:justify-center min-[1280px]:justify-start rounded-lg text-shell-foreground"
+          className={`h-full w-full flex items-center justify-start lg:justify-center ${sidebarExpanded ? 'min-[1280px]:justify-start' : 'min-[1280px]:justify-center'} rounded-lg text-shell-foreground`}
           aria-label="AzyBoard"
         >
           <BrandLogo
             markClassName="w-10 h-10 rounded-xl bg-white/95 p-1.5 shadow-[0_6px_18px_rgba(0,0,0,0.14)]"
-            wordmarkClassName="text-base lg:hidden min-[1280px]:block"
+            wordmarkClassName={`text-base lg:hidden ${sidebarExpanded ? 'min-[1280px]:block' : 'min-[1280px]:hidden'}`}
           />
         </Link>
       </div>
 
       <div className="min-h-0 flex-1 flex flex-col px-3 pb-4">
-        <p className="mt-7 mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-shell-muted hidden min-[1280px]:block">
+        <p className={`mt-7 mb-2 px-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-shell-muted hidden ${sidebarExpanded ? 'min-[1280px]:block' : 'min-[1280px]:hidden'}`}>
           {tCommon('workspace')}
         </p>
         <nav className="space-y-1 mt-4 min-[1280px]:mt-0" aria-label={tCommon('navigation')}>
@@ -227,7 +258,7 @@ export function AppShell({
               className={`group h-10 w-full flex items-center gap-3 px-2.5 rounded-lg transition-colors ${item.active ? 'bg-shell-active text-shell-foreground shadow-[inset_3px_0_0_var(--shell-accent)]' : 'text-shell-muted hover:text-shell-foreground hover:bg-white/10'}`}
             >
               <Icon className="w-[18px] h-[18px] flex-shrink-0" />
-              <span className="text-sm font-medium hidden min-[1280px]:block">{item.label}</span>
+              <span className={`text-sm font-medium hidden ${sidebarExpanded ? 'min-[1280px]:block' : 'min-[1280px]:hidden'}`}>{item.label}</span>
             </button>
           ) : (
             <Link
@@ -241,12 +272,12 @@ export function AppShell({
               }`}
             >
               <Icon className="w-[18px] h-[18px] flex-shrink-0" />
-              <span className="text-sm font-medium hidden min-[1280px]:block">{item.label}</span>
+              <span className={`text-sm font-medium hidden ${sidebarExpanded ? 'min-[1280px]:block' : 'min-[1280px]:hidden'}`}>{item.label}</span>
             </Link>
           )
           const children =
             item.children && adminExpanded ? (
-              <div className="max-lg:block lg:hidden min-[1280px]:block ml-7 mt-1 space-y-1 border-l border-shell-border pl-2">
+              <div className={`max-lg:block lg:hidden ${sidebarExpanded ? 'min-[1280px]:block' : 'min-[1280px]:hidden'} ml-7 mt-1 space-y-1 border-l border-shell-border pl-2`}>
                 {item.children.map((child) => {
                   const ChildIcon = child.icon
                   if (!child.href) return null
@@ -284,12 +315,12 @@ export function AppShell({
           )
           return (
             <div key={item.href ?? item.label} className="max-[1279px]:flex max-[1279px]:justify-center">
-              <div className="min-[1280px]:hidden">
+              <div className={sidebarExpanded ? 'min-[1280px]:hidden' : 'min-[1280px]:block'}>
                 <Tooltip label={item.label}>
                   {itemContent}{children}
                 </Tooltip>
               </div>
-              <div className="hidden min-[1280px]:block">
+              <div className={`hidden ${sidebarExpanded ? 'min-[1280px]:block' : 'min-[1280px]:hidden'}`}>
                 {itemContent}
                 {children}
               </div>
@@ -298,15 +329,28 @@ export function AppShell({
         })}
         </nav>
 
-        <div className="mt-auto px-2 hidden min-[1280px]:block">
-          <p className="text-xs font-medium text-shell-foreground truncate flex items-center gap-1.5">
-            {ProjectIcon ? <ProjectIcon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: projectColor ?? undefined }} /> : null}
-            <span className="truncate">{projectName ?? tCommon('workspace')}</span>
-          </p>
-          <p className="text-[11px] text-shell-muted mt-0.5">{tCommon('connectedWork')}</p>
-          <p data-build-version className="text-[11px] text-shell-muted mt-0.5">
-            {tCommon('buildVersion', { version: buildInfo.version })}
-          </p>
+        <div className="mt-auto px-2">
+          <div className={`hidden ${sidebarExpanded ? 'min-[1280px]:block' : 'min-[1280px]:hidden'}`}>
+            <p className="text-xs font-medium text-shell-foreground truncate flex items-center gap-1.5">
+              {ProjectIcon ? <ProjectIcon className="w-3.5 h-3.5 flex-shrink-0" style={{ color: projectColor ?? undefined }} /> : null}
+              <span className="truncate">{projectName ?? tCommon('workspace')}</span>
+            </p>
+            <p className="text-[11px] text-shell-muted mt-0.5">{tCommon('connectedWork')}</p>
+            <p data-build-version className="text-[11px] text-shell-muted mt-0.5">
+              {tCommon('buildVersion', { version: buildInfo.version })}
+            </p>
+          </div>
+          <div className={`hidden min-[1280px]:flex mt-3 ${sidebarExpanded ? 'justify-end -mr-1' : 'justify-center'}`}>
+            <button
+              type="button"
+              aria-label={sidebarExpanded ? tCommon('collapseSidebar') : tCommon('expandSidebar')}
+              title={sidebarExpanded ? tCommon('collapseSidebar') : tCommon('expandSidebar')}
+              onClick={() => setSidebarExpanded((expanded) => !expanded)}
+              className="inline-flex items-center justify-center h-7 w-7 rounded-md text-shell-muted hover:text-shell-foreground hover:bg-white/10"
+            >
+              {sidebarExpanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -315,7 +359,7 @@ export function AppShell({
   return (
     <div
       data-shell-layout
-      className="h-screen overflow-hidden bg-canvas text-foreground flex flex-col lg:grid lg:grid-cols-[68px_minmax(0,1fr)] min-[1280px]:grid-cols-[220px_minmax(0,1fr)] lg:grid-rows-[64px_minmax(0,1fr)] lg:p-3"
+      className={`h-screen overflow-hidden bg-canvas text-foreground flex flex-col lg:grid lg:grid-cols-[68px_minmax(0,1fr)] ${sidebarExpanded ? 'min-[1280px]:grid-cols-[220px_minmax(0,1fr)]' : 'min-[1280px]:grid-cols-[68px_minmax(0,1fr)]'} lg:grid-rows-[64px_minmax(0,1fr)] lg:p-3`}
     >
       {mobileOpen && (
         <div className="fixed inset-x-0 top-[76px] bottom-0 z-50 lg:hidden">

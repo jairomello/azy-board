@@ -1,9 +1,10 @@
 // [CONTRATO-ESTRUTURAL] layout CSS do shell; o happy-dom não calcula layout.
 // A cobertura comportamental equivalente deve migrar para testes de componente/E2E.
 import { describe, expect, test } from 'bun:test'
+import { readFile } from 'node:fs/promises'
 
 async function source(path: string) {
-  return fetch(new URL(path, import.meta.url)).then(response => response.text())
+  return readFile(new URL(path, import.meta.url), 'utf8')
 }
 
 function contains(text: string, expected: string) {
@@ -48,7 +49,7 @@ describe('contrato do shell integrado', () => {
 
     contains(shell, 'data-shell-sidebar-brand')
     contains(shell, 'data-shell-mobile-brand')
-    contains(shell, 'text-base lg:hidden min-[1280px]:block')
+    contains(shell, "wordmarkClassName={`text-base lg:hidden ${sidebarExpanded ? 'min-[1280px]:block' : 'min-[1280px]:hidden'}`}")
     contains(shell, 'lg:hidden')
     expect(shell.match(/<BrandLogo/g)?.length).toBe(2)
   })
@@ -58,7 +59,17 @@ describe('contrato do shell integrado', () => {
 
     contains(shell, 'lg:grid-cols-[68px_minmax(0,1fr)]')
     contains(shell, 'min-[1280px]:grid-cols-[220px_minmax(0,1fr)]')
-    contains(shell, 'lg:justify-center min-[1280px]:justify-start')
+    contains(shell, 'min-[1280px]:grid-cols-[68px_minmax(0,1fr)]')
+    contains(shell, "lg:justify-center ${sidebarExpanded ? 'min-[1280px]:justify-start' : 'min-[1280px]:justify-center'}")
+  })
+
+  test('permite expandir e retrair a sidebar com persistencia local', async () => {
+    const shell = await source('./components/AppShell.tsx')
+
+    contains(shell, "const SIDEBAR_EXPANDED_STORAGE_KEY = 'shell-sidebar-expanded'")
+    contains(shell, "const [sidebarExpanded, setSidebarExpanded] = useState(defaultSidebarExpanded)")
+    contains(shell, "localStorage.setItem(SIDEBAR_EXPANDED_STORAGE_KEY, String(sidebarExpanded))")
+    contains(shell, "aria-label={sidebarExpanded ? tCommon('collapseSidebar') : tCommon('expandSidebar')}")
   })
 
   test('sobrepoe a sidebar arredondada ao header sem linhas de divisao', async () => {

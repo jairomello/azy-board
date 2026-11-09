@@ -21,7 +21,10 @@ function renderShell(props: { onProjectNameActivate?: () => void }) {
   )
 }
 
-beforeEach(async () => { await i18n.changeLanguage('pt-BR') })
+beforeEach(async () => {
+  localStorage.clear()
+  await i18n.changeLanguage('pt-BR')
+})
 
 describe('AppShell — nome do projeto no header (T59)', () => {
   test('com onProjectNameActivate, o nome vira um controle que dispara a ação', async () => {
@@ -59,5 +62,22 @@ describe('AppShell — nome do projeto no header (T59)', () => {
 
     delete (globalThis as Record<string, unknown>).__APP_VERSION__
     delete (globalThis as Record<string, unknown>).__BUILD_DATE__
+  })
+
+  test('permite retrair e expandir a sidebar no desktop e persiste a preferencia', async () => {
+    const user = userEvent.setup()
+    renderShell({})
+
+    const toggleButton = screen.getByRole('button', { name: /menu lateral/i })
+    const initialLabel = toggleButton.getAttribute('aria-label')
+    const firstExpected = initialLabel === 'Retrair menu lateral' ? 'false' : 'true'
+
+    await user.click(toggleButton)
+    expect(localStorage.getItem('shell-sidebar-expanded')).toBe(firstExpected)
+
+    const secondLabel = firstExpected === 'false' ? 'Expandir menu lateral' : 'Retrair menu lateral'
+    const secondExpected = firstExpected === 'false' ? 'true' : 'false'
+    await user.click(screen.getByRole('button', { name: secondLabel }))
+    expect(localStorage.getItem('shell-sidebar-expanded')).toBe(secondExpected)
   })
 })

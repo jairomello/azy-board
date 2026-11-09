@@ -5,6 +5,9 @@
     { "file": "apps/web/src/components/ShowHiddenProjectsSwitch.tsx", "expression": "labelKey", "reason": "chave calculada por props do switch" },
     { "file": "apps/web/src/components/CardChildrenSection.tsx", "expression": "itemTypeMeta(child.type).labelKey", "reason": "chave derivada do catálogo de tipos de item" },
     { "file": "apps/web/src/components/ItemModal.tsx", "expression": "typeMeta.labelKey", "reason": "chave derivada do catálogo de tipos de item" },
-    { "file": "apps/web/src/components/ItemDetailHeader.tsx", "expression": "typeMeta.labelKey", "reason": "chave derivada do catálogo de tipos de item" }
+    { "file": "apps/web/src/components/ItemDetailHeader.tsx", "expression": "typeMeta.labelKey", "reason": "chave derivada do catálogo de tipos de item" },
+    { "file": "apps/web/src/pages/TreeViewPage.tsx", "expression": "labelKey", "reason": "chave repassada ao gatilho de célula a partir da definição de coluna" },
+    { "file": "apps/web/src/pages/TreeViewPage.tsx", "expression": "definition.labelKey", "reason": "chave derivada da definição de coluna da grade da árvore" },
+    { "file": "apps/web/src/pages/TreeViewPage.tsx", "expression": "column.labelKey", "reason": "chave derivada da coluna configurada pelo usuário" }
   ]
 }
