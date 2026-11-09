@@ -3,16 +3,18 @@ import type { DragEvent as ReactDragEvent } from 'react'
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, Bug as BugIcon, GripHorizontal, Loader2, Pencil, Plus } from 'lucide-react'
+import { Archive, Bug as BugIcon, GripHorizontal, GripVertical, Loader2, Pencil, Plus } from 'lucide-react'
 import { ApiError, api } from '../lib/api'
 import { formatDateValue } from '../lib/formatters'
 import { displayPersonName } from '../lib/personName'
 import { invalidateTree, queryKeys } from '../lib/queryKeys'
 import { buildScreenSnapshot } from '../lib/assistantSnapshot'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../components/Toast'
 import type { BoardFilterState } from '../components/BoardFilters'
 import type { AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 import type { Priority, TaskStatus } from '@azy-board/domain'
+import { buildTreeParentMap, resolveTreeMove } from './treeMoveRules'
 
 // Nó genérico da árvore retornado por /items/tree
 export interface TreeNode {
@@ -336,6 +338,15 @@ interface RowProps {
   cellStateFor: (itemId: string, field: TreeEditableField) => EditableCellStatus
   onPatchItem: (itemId: string, field: TreeEditableField, value: unknown, expectedUpdatedAt?: string) => Promise<void>
   onToggle: () => void
+  // Movimento entre pais (arraste da alça na coluna Nome).
+  canMove?: boolean
+  isMoving?: boolean
+  isMoveTarget?: boolean
+  onMoveStart?: (event: ReactDragEvent<HTMLElement>) => void
+  onMoveEnd?: () => void
+  onMoveOver?: (event: ReactDragEvent<HTMLTableRowElement>) => void
+  onMoveLeave?: (event: ReactDragEvent<HTMLTableRowElement>) => void
+  onMoveDrop?: (event: ReactDragEvent<HTMLTableRowElement>) => void
   // Tarefa 10.2 — callback de arquivamento na tree view (não disponível para módulos)
   onArchive?: () => void
   onEdit?: () => void
@@ -378,6 +389,14 @@ function Row({
   cellStateFor,
   onPatchItem,
   onToggle,
+  canMove = false,
+  isMoving = false,
+  isMoveTarget = false,
+  onMoveStart,
+  onMoveEnd,
+  onMoveOver,
+  onMoveLeave,
+  onMoveDrop,
   onArchive,
   onEdit,
   onCreate,
@@ -430,10 +449,35 @@ function Row({
           ) : (
             <span className="w-3.5 flex-shrink-0" />
           )}
+          {canMove && onMoveStart && (
+            <button
+              type="button"
+              draggable
+              onDragStart={onMoveStart}
+              onDragEnd={onMoveEnd}
+              aria-label={t('tree.moveItem', { label })}
+              title={t('tree.moveHint')}
+              className="flex-shrink-0 cursor-grab rounded p-0.5 text-muted-foreground/60 transition hover:bg-muted hover:text-foreground active:cursor-grabbing"
+            >
+              <GripVertical className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          )}
           {typeInfo && (
-            <span className={`text-xs px-1.5 py-0.5 rounded font-bold flex-shrink-0 ${typeInfo.cls}`}>
-              {typeInfo.label}
-            </span>
+            onEdit ? (
+              <button
+                type="button"
+                onClick={event => { event.stopPropagation(); onEdit() }}
+                aria-label={t('tree.editItemWithType', { type: t(`tree.types.${type.toLowerCase()}`), label })}
+                title={t('tree.editItem')}
+                className={`text-xs px-1.5 py-0.5 rounded font-bold flex-shrink-0 transition hover:ring-2 hover:ring-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${typeInfo.cls}`}
+              >
+                {typeInfo.label}
+              </button>
+            ) : (
+              <span className={`text-xs px-1.5 py-0.5 rounded font-bold flex-shrink-0 ${typeInfo.cls}`}>
+                {typeInfo.label}
+              </span>
+            )
           )}
           {!editable || !canEdit ? (
             <span className={`font-medium ${
@@ -879,7 +923,12 @@ function Row({
   }
 
   return (
-    <tr className="group relative border-b border-border/60 transition-colors hover:bg-muted/20">
+    <tr
+      className={`group relative border-b border-border/60 transition-colors hover:bg-muted/20 ${isMoveTarget ? 'bg-primary/5 ring-1 ring-inset ring-primary/40' : ''} ${isMoving ? 'opacity-50' : ''}`}
+      onDragOver={onMoveOver}
+      onDragLeave={onMoveLeave}
+      onDrop={onMoveDrop}
+    >
       {visibleColumns.map(columnId => {
         switch (columnId) {
           case 'name': return <Fragment key="name">{renderNameColumn()}</Fragment>
@@ -920,6 +969,14 @@ function NodeRows({
   onEdit,
   onCreate,
   moduleId,
+  canMove,
+  movingId,
+  moveTargetId,
+  onMoveStart,
+  onMoveEnd,
+  onMoveOver,
+  onMoveLeave,
+  onMoveDrop,
 }: {
   nodes: TreeNode[]
   depth: number
@@ -937,6 +994,14 @@ function NodeRows({
   onEdit?: (id: string) => void
   onCreate?: (type: TreeCreationType, context: TreeActionContext) => void
   moduleId?: string
+  canMove: boolean
+  movingId: string | null
+  moveTargetId: string | null
+  onMoveStart: (event: ReactDragEvent<HTMLElement>, node: TreeNode) => void
+  onMoveEnd: () => void
+  onMoveOver: (event: ReactDragEvent<HTMLTableRowElement>, node: TreeNode) => void
+  onMoveLeave: (event: ReactDragEvent<HTMLTableRowElement>, node: TreeNode) => void
+  onMoveDrop: (event: ReactDragEvent<HTMLTableRowElement>, node: TreeNode) => void
 }) {
   return (
     <>
@@ -973,12 +1038,20 @@ function NodeRows({
             onToggle={() => onToggle(node.id)}
             // Módulos não são arquiváveis — só EPICs, STORYs, TASKs e BUGs
             onArchive={node.type !== 'module' ? () => onArchive(node.id, node.children.length) : undefined}
-            onEdit={node.type !== 'module' ? () => onEdit?.(node.id) : undefined}
+            onEdit={node.type !== 'module' && onEdit ? () => onEdit(node.id) : undefined}
             onCreate={onCreate ? (type, context) => onCreate(type, {
               ...context,
               parentId: node.id,
               moduleId: node.type === 'module' ? node.id : (node.moduleId ?? moduleId),
             }) : undefined}
+            canMove={canMove && node.type !== 'module'}
+            isMoving={movingId === node.id}
+            isMoveTarget={moveTargetId === node.id}
+            onMoveStart={event => onMoveStart(event, node)}
+            onMoveEnd={onMoveEnd}
+            onMoveOver={event => onMoveOver(event, node)}
+            onMoveLeave={event => onMoveLeave(event, node)}
+            onMoveDrop={event => onMoveDrop(event, node)}
           />
           {expanded.has(node.id) && (node.children ?? []).length > 0 && (
             <NodeRows
@@ -998,6 +1071,14 @@ function NodeRows({
               onEdit={onEdit}
               onCreate={onCreate}
               moduleId={node.type === 'module' ? node.id : (node.moduleId ?? moduleId)}
+              canMove={canMove}
+              movingId={movingId}
+              moveTargetId={moveTargetId}
+              onMoveStart={onMoveStart}
+              onMoveEnd={onMoveEnd}
+              onMoveOver={onMoveOver}
+              onMoveLeave={onMoveLeave}
+              onMoveDrop={onMoveDrop}
             />
           )}
         </Fragment>
@@ -1054,6 +1135,7 @@ export function TreeViewPage({
 }: Props) {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const { toast } = useToast()
   const queryClient = useQueryClient()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   // Tarefa 10.2 — confirmação de arquivamento inline na tree view (quando sem callback externo)
@@ -1065,6 +1147,11 @@ export function TreeViewPage({
   const gridContainerRef = useRef<HTMLDivElement | null>(null)
   const [columnWidths, setColumnWidths] = useState<TreeGridColumnWidthMap>(() => readTreeGridWidths(user?.id, projectId))
   const [cellStates, setCellStates] = useState<Record<string, EditableCellStatus>>({})
+  // Movimento entre pais: o nó arrastado fica no ref (handlers de drag) e o id
+  // no estado apenas para pintar a linha em trânsito.
+  const movingNodeRef = useRef<TreeNode | null>(null)
+  const [movingId, setMovingId] = useState<string | null>(null)
+  const [moveTargetId, setMoveTargetId] = useState<string | null>(null)
   const [draggingColumnId, setDraggingColumnId] = useState<TreeGridColumnId | null>(null)
   const [dragOverColumnId, setDragOverColumnId] = useState<TreeGridColumnId | null>(null)
   const [dragOverPosition, setDragOverPosition] = useState<'before' | 'after' | null>(null)
@@ -1147,9 +1234,15 @@ export function TreeViewPage({
   // Card T26 — recorte fixado antes do filtro de epics vazios.
   const scopedTree = pinnedItemIds ? pruneTreeToIds(tree, new Set(pinnedItemIds)) : tree
   // Tarefa 11.5 — aplicar filtro hideEmptyEpics na árvore
-  const displayTree = filters?.hideEmptyEpics
-    ? scopedTree.map(filterHideEmptyEpics).filter((n): n is TreeNode => n !== null)
-    : scopedTree
+  const displayTree = useMemo(
+    () => (filters?.hideEmptyEpics
+      ? scopedTree.map(filterHideEmptyEpics).filter((n): n is TreeNode => n !== null)
+      : scopedTree),
+    [scopedTree, filters?.hideEmptyEpics],
+  )
+
+  // Mapa filho → pai da árvore exibida: usado no arraste para recusar ciclos.
+  const moveParentMap = useMemo(() => buildTreeParentMap(displayTree), [displayTree])
 
   // Card T16 — fotografia do contexto da árvore: população apresentada pela
   // mesma árvore renderizada (nós de agrupamento excluídos do conjunto).
@@ -1222,6 +1315,70 @@ export function TreeViewPage({
       setCellStates(previous => ({ ...previous, [key]: 'error' }))
     }
   }, [projectId, queryClient, user?.id])
+
+  // Movimento entre pais: a alça da coluna Nome inicia o arraste; a linha de
+  // destino só aceita o drop quando `resolveTreeMove` devolve um patch válido.
+  const handleMoveStart = useCallback((event: ReactDragEvent<HTMLElement>, node: TreeNode) => {
+    if (!canEdit || node.type === 'module') {
+      event.preventDefault()
+      return
+    }
+    movingNodeRef.current = node
+    setMovingId(node.id)
+    setMoveTargetId(null)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', node.id)
+  }, [canEdit])
+
+  const handleMoveEnd = useCallback(() => {
+    movingNodeRef.current = null
+    setMovingId(null)
+    setMoveTargetId(null)
+  }, [])
+
+  const handleMoveOver = useCallback((event: ReactDragEvent<HTMLTableRowElement>, node: TreeNode) => {
+    const drag = movingNodeRef.current
+    if (!drag) return
+    if (!resolveTreeMove(drag, node, moveParentMap)) {
+      setMoveTargetId(current => (current === node.id ? null : current))
+      return
+    }
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setMoveTargetId(current => (current === node.id ? current : node.id))
+  }, [moveParentMap])
+
+  const handleMoveLeave = useCallback((event: ReactDragEvent<HTMLTableRowElement>, node: TreeNode) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+    setMoveTargetId(current => (current === node.id ? null : current))
+  }, [])
+
+  const handleMoveDrop = useCallback(async (event: ReactDragEvent<HTMLTableRowElement>, node: TreeNode) => {
+    event.preventDefault()
+    const drag = movingNodeRef.current
+    movingNodeRef.current = null
+    setMovingId(null)
+    setMoveTargetId(null)
+    if (!drag) return
+    const patch = resolveTreeMove(drag, node, moveParentMap)
+    if (!patch) return
+    try {
+      await api.patch(`/projects/${projectId}/items/${drag.id}`, {
+        ...patch,
+        ...(drag.updatedAt ? { expectedUpdatedAt: drag.updatedAt } : {}),
+      })
+      // Expande o novo pai para o item continuar visível após a reconciliação.
+      setExpanded(previous => new Set(previous).add(node.id))
+      await Promise.all([
+        invalidateTree(queryClient, user?.id, projectId),
+        queryClient.invalidateQueries({ queryKey: queryKeys.board(user?.id, projectId) }),
+      ])
+      toast(t('tree.moveSuccess', { label: drag.title ?? drag.name ?? '', target: node.title ?? node.name ?? '' }))
+    } catch (error) {
+      toast(error instanceof ApiError && error.message ? error.message : t('tree.moveError'), 'error')
+      await invalidateTree(queryClient, user?.id, projectId).catch(() => {})
+    }
+  }, [moveParentMap, projectId, queryClient, toast, t, user?.id])
 
   const orderedVisibleColumns = useMemo(
     () => normalizeTreeGridLayout(visibleColumns),
@@ -1634,6 +1791,14 @@ export function TreeViewPage({
                 onPatchItem={patchTreeField}
                 onEdit={canEdit ? onEdit : undefined}
                 onCreate={canCreate ? onCreate : undefined}
+                canMove={canEdit}
+                movingId={movingId}
+                moveTargetId={moveTargetId}
+                onMoveStart={handleMoveStart}
+                onMoveEnd={handleMoveEnd}
+                onMoveOver={handleMoveOver}
+                onMoveLeave={handleMoveLeave}
+                onMoveDrop={handleMoveDrop}
               />
             </tbody>
           </table>
