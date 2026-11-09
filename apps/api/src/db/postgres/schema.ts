@@ -296,6 +296,21 @@ export const projectVersions = pgTable('project_versions', {
   statusCheck: check('project_versions_status_check', sql`${table.status} IN ('PLANNED','IN_DEV','RELEASED','CANCELLED')`),
 }))
 
+// EXPORT_MAPPINGS — mapeamentos nomeados da exportação dinâmica (por projeto).
+export const exportMappings = pgTable('export_mappings', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id),
+  projectId: text('project_id').notNull(),
+  name: text('name').notNull(),
+  fieldsJson: text('fields_json').notNull(),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('export_mappings_tenant_id_id_unique').on(table.tenantId, table.id),
+  nameUnique: uniqueIndex('export_mappings_tenant_project_name_unique').on(table.tenantId, table.projectId, table.name),
+}))
+
 // ---------------------------------------------------------------------------
 // ITEMS
 // ---------------------------------------------------------------------------

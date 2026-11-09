@@ -7,6 +7,7 @@ import {
   CalendarRange,
   CheckSquare,
   ChevronDown,
+  Download,
   ExternalLink,
   Filter,
   Flag,
@@ -48,6 +49,7 @@ interface Props {
   onExpandAll: () => void
   onCollapseAll: () => void
   onOpenArchived: () => void
+  onOpenExport?: () => void
   onCreate: (type: ItemType | 'MODULE') => void
   // Card T33 — no modo compacto: resumo de filtros e indicador fino de progresso.
   compactFilters?: ReactNode
@@ -80,6 +82,7 @@ export function BoardCommandBar({
   onExpandAll,
   onCollapseAll,
   onOpenArchived,
+  onOpenExport,
   onCreate,
   compactFilters,
   progress,
@@ -273,6 +276,19 @@ export function BoardCommandBar({
                     </div>
                   </div>
                 )}
+                {onOpenExport && (
+                  <div className="mb-4 rounded-lg border border-border/70 bg-surface p-3">
+                    <p className="mb-2 text-xs font-semibold text-muted-foreground">{t('dataGroup')}</p>
+                    <button
+                      type="button"
+                      onClick={() => { setOptionsOpen(false); onOpenExport() }}
+                      className="inline-flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span>{t('exportData')}</span>
+                    </button>
+                  </div>
+                )}
                 <BoardFilters
                  modules={hideModules ? [] : modules}
                  sprints={sprints}
@@ -330,6 +346,16 @@ export function BoardCommandBar({
           <Gauge className="w-3.5 h-3.5" />
            <span className="hidden xl:inline">{density === 'comfortable' ? t('comfortable') : t('compact')}</span>
         </button>
+        {onOpenExport && (
+          <button
+            onClick={onOpenExport}
+            title={t('exportData')}
+            aria-label={t('exportData')}
+            className={`${controlClass} w-9 !px-0 inline-flex items-center justify-center`}
+          >
+            <Download className="w-3.5 h-3.5" />
+          </button>
+        )}
         <button
           onClick={onOpenArchived}
            title={t('archivedItems')}

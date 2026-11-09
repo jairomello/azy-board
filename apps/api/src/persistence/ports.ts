@@ -4,7 +4,7 @@
  * lookup global por e-mail é a única exceção de escopo (identidade global).
  */
 import type { AssistantApprovalStatus, AssistantRunStatus } from '@azy-board/assistant-contracts'
-import type { BoardMode, ColumnBaseStatus, GlobalGroup, ItemType, MemberRole, Priority, TaskStatus } from '@azy-board/domain'
+import type { BoardMode, ColumnBaseStatus, ExportMappingInput, ExportMappingRecord, GlobalGroup, ItemType, MemberRole, Priority, TaskStatus } from '@azy-board/domain'
 import type {
   AssistantApprovalDetailRecord,
   AssistantConversationRecord,
@@ -748,6 +748,14 @@ export interface UnitOfWork {
   applySprintTransition(context: MutationContext, plan: SprintTransitionPlan): Promise<SprintTransitionResult>
 }
 
+export interface ExportMappingPort {
+  listMappings(context: PersistenceContext, projectId: string): Promise<ExportMappingRecord[]>
+  getMapping(context: PersistenceContext, projectId: string, mappingId: string): Promise<ExportMappingRecord | null>
+  createMapping(context: MutationContext, projectId: string, input: ExportMappingInput): Promise<ExportMappingRecord>
+  updateMapping(context: MutationContext, projectId: string, mappingId: string, patch: Partial<ExportMappingInput>): Promise<ExportMappingRecord | null>
+  deleteMapping(context: MutationContext, projectId: string, mappingId: string): Promise<boolean>
+}
+
 export interface PersistencePorts extends PersistenceTransaction {
   health: HealthPort
   domainEvents: DomainEventPort
@@ -758,6 +766,7 @@ export interface PersistencePorts extends PersistenceTransaction {
   idempotency: IdempotencyPort
   batch: BatchMutationPort
   planningGapSnapshots: PlanningGapSnapshotPort
+  exportMappings: ExportMappingPort
   unitOfWork: UnitOfWork
 }
 

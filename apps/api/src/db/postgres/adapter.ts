@@ -4,6 +4,7 @@ import type {
   ApiKeyRecord,
   ColumnRecord,
   CostCenterRecord,
+  ExportMappingRecord,
   ItemLogRecord,
   ItemLinkRecord,
   ItemDependencyRecord,
@@ -265,6 +266,28 @@ function mapVersion(row: PgRow): ProjectVersionRecord {
     description: row.description as string | null,
     status: row.status as ProjectVersionRecord['status'],
     position: row.position as number, createdAt: row.created_at as string,
+  }
+}
+
+// [TENANT] O JSON é persistido como texto; a leitura tolera registros legados
+// inválidos sem derrubar a listagem do projeto.
+function mapExportMapping(row: PgRow): ExportMappingRecord {
+  let fields: ExportMappingRecord['fields'] = []
+  try {
+    const parsed = JSON.parse(String(row.fields_json ?? '[]')) as unknown
+    if (Array.isArray(parsed)) {
+      fields = parsed.filter((field): field is ExportMappingRecord['fields'][number] => (
+        Boolean(field) && typeof field === 'object'
+        && typeof (field as { source?: unknown }).source === 'string'
+        && typeof (field as { target?: unknown }).target === 'string'
+      ))
+    }
+  } catch {
+    fields = []
+  }
+  return {
+    id: row.id as string, projectId: row.project_id as string, name: row.name as string, fields,
+    createdAt: row.created_at as string, updatedAt: row.updated_at as string,
   }
 }
 
@@ -4074,6 +4097,41 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           sprintLinks: sprintLinks.map(r => ({ itemId: r.item_id as string, relatedId: r.related_id as string })),
           tagLinks: tagLinks.map(r => ({ itemId: r.item_id as string, relatedId: r.related_id as string })),
         }
+      },
+    },
+    // [TENANT] Mapeamentos são sempre lidos/escritos com tenant_id + project_id.
+    exportMappings: {
+      async listMappings(context: PersistenceContext, projectId: string): Promise<ExportMappingRecord[]> {
+        // [TENANT] Mapeamentos são privados do usuário que os criou.
+        const rows = await q('SELECT * FROM export_mappings WHERE tenant_id = $1 AND project_id = $2 AND created_by = $3 ORDER BY name',
+          [context.tenantId, projectId, context.actorUserId ?? ''])
+        return rows.map(mapExportMapping)
+      },
+      async getMapping(context: PersistenceContext, projectId: string, mappingId: string): Promise<ExportMappingRecord | null> {
+        const row = await q1('SELECT * FROM export_mappings WHERE tenant_id = $1 AND project_id = $2 AND id = $3 AND created_by = $4',
+          [context.tenantId, projectId, mappingId, context.actorUserId ?? ''])
+        return row ? mapExportMapping(row) : null
+      },
+      async createMapping(context: MutationContext, projectId: string, input: { name: string; fields: ExportMappingRecord['fields'] }): Promise<ExportMappingRecord> {
+        const now = new Date().toISOString()
+        const row = await q1(`INSERT INTO export_mappings (id, tenant_id, project_id, name, fields_json, created_by, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+          [generateId(), context.tenantId, projectId, input.name, JSON.stringify(input.fields), context.actorUserId, now, now])
+        if (!row) throw new Error('Falha ao criar mapeamento de exportação no adapter PostgreSQL.')
+        return mapExportMapping(row)
+      },
+      async updateMapping(context: MutationContext, projectId: string, mappingId: string, patch: { name?: string; fields?: ExportMappingRecord['fields'] }): Promise<ExportMappingRecord | null> {
+        const sets: string[] = ['updated_at = $5']
+        const params: unknown[] = [context.tenantId, projectId, mappingId, context.actorUserId ?? '', new Date().toISOString()]
+        if (patch.name !== undefined) { params.push(patch.name); sets.push(`name = $${params.length}`) }
+        if (patch.fields !== undefined) { params.push(JSON.stringify(patch.fields)); sets.push(`fields_json = $${params.length}`) }
+        const row = await q1(`UPDATE export_mappings SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 AND created_by = $4 RETURNING *`, params)
+        return row ? mapExportMapping(row) : null
+      },
+      async deleteMapping(context: MutationContext, projectId: string, mappingId: string): Promise<boolean> {
+        const rows = await q('DELETE FROM export_mappings WHERE tenant_id = $1 AND project_id = $2 AND id = $3 AND created_by = $4 RETURNING id',
+          [context.tenantId, projectId, mappingId, context.actorUserId ?? ''])
+        return rows.length > 0
       },
     },
     unitOfWork: {

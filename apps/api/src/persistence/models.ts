@@ -1014,3 +1014,6 @@ export interface AssistantEventFullRecord {
   payloadJson: string
   createdAt: string
 }
+
+// Mapeamentos de exportação usam os contratos compartilhados de @azy-board/domain.
+export type { ExportMappingField, ExportMappingInput, ExportMappingRecord } from '@azy-board/domain'

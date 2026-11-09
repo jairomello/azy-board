@@ -679,6 +679,31 @@ export const projectVersions = sqliteTable('project_versions', {
 }))
 
 // ---------------------------------------------------------------------------
+// EXPORT_MAPPINGS — mapeamentos de campos salvos por projeto
+//
+// Guarda o mapeamento "campo da ferramenta → coluna do arquivo" usado na
+// exportação dinâmica. `fields_json` é um array de { source, target } validado
+// contra o catálogo de @azy-board/domain; o adapter apenas persiste o JSON.
+// [TENANT] Toda leitura/escrita inclui tenant_id e project_id.
+// ---------------------------------------------------------------------------
+export const exportMappings = sqliteTable('export_mappings', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id),
+  projectId: text('project_id').notNull(),
+  name: text('name').notNull(),
+  fieldsJson: text('fields_json').notNull(),
+  createdBy: text('created_by'),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+  updatedAt: text('updated_at').notNull().default(defaultNowIso()),
+}, (table) => ({
+  tenantIdUnique: uniqueIndex('export_mappings_tenant_id_id_unique').on(table.tenantId, table.id),
+  // Nome único por projeto: salvar de novo com o mesmo nome é uma atualização
+  // explícita, nunca uma duplicata silenciosa.
+  nameUnique: uniqueIndex('export_mappings_tenant_project_name_unique').on(table.tenantId, table.projectId, table.name),
+  projectFk: foreignKey(() => ({ columns: [table.tenantId, table.projectId], foreignColumns: [projects.tenantId, projects.id] })),
+}))
+
+// ---------------------------------------------------------------------------
 // ITEM_LOGS — histórico de atividades de cada item (auto + manual)
 //
 // type 'auto'   → gerado pelo sistema em edições/movimentações; não editável

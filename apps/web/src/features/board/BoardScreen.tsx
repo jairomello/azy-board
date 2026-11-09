@@ -13,7 +13,7 @@
 //   - hooks/useBoardArchiving                → arquivamento/restauração
 //   - hooks/useBoardFilterValidation         → coerência dos filtros vs catálogos
 //   - hooks/useBoardAgentSession             → comandos de visão, foco e snapshot (T16–T19)
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useParams, useSearchParams, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -44,6 +44,7 @@ import { TreeViewPage, type TreeActionContext } from '../../pages/TreeViewPage'
 import { useAuth } from '../../contexts/AuthContext'
 import { AppShell } from '../../components/AppShell'
 import { BoardCommandBar } from '../../components/BoardCommandBar'
+
 import { BoardContextHeader, BoardStatusRail } from '../../components/BoardContext'
 import { itemsAdvance, type ItemType } from '@azy-board/domain'
 import { cardAdvance, columnAdvanceBands } from './model/cardAdvance'
@@ -74,6 +75,22 @@ import { buildEpicGroups, groupEpicsByModule, selectBoardCards, selectOrphanCard
 import type { ItemData } from './model/types'
 import { applyViewCommand, readPinnedResult, subscribeViewSession } from '../../lib/assistantViewStore'
 import { VIEW_COMMAND_SCHEMA_VERSION, type AssistantPlanningResult } from '@azy-board/assistant-contracts'
+
+// O editor de mapeamento (drag-and-drop) é carregado sob demanda para não
+// entrar no orçamento dos chunks principais da board.
+const ExportDialog = lazy(async () => {
+  const [{ default: i18n }, pt, en, es] = await Promise.all([
+    import('../../i18n'),
+    import('../../i18n/locales/pt-BR/export.json'),
+    import('../../i18n/locales/en/export.json'),
+    import('../../i18n/locales/es/export.json'),
+  ])
+  i18n.addResourceBundle('pt-BR', 'export', pt.default, true, true)
+  i18n.addResourceBundle('en', 'export', en.default, true, true)
+  i18n.addResourceBundle('es', 'export', es.default, true, true)
+  const module = await import('../../components/ExportDialog')
+  return { default: module.ExportDialog }
+})
 
 /** Retângulo de viewport de um elemento, para a prévia e para o assentamento. */
 function measureRect(element: Element | null): DragTargetRect | null {
@@ -152,6 +169,7 @@ export default function BoardPage() {
   const queryClient = useQueryClient()
   const [moduleModalOpen, setModuleModalOpen] = useState(false)
   const [planningOpen, setPlanningOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const location = useLocation()
   const [newModuleName, setNewModuleName] = useState('')
   const [newModuleDescription, setNewModuleDescription] = useState('')
@@ -592,6 +610,7 @@ export default function BoardPage() {
             ))
           }}
           onOpenArchived={archiving.openArchivedModal}
+          onOpenExport={() => setExportOpen(true)}
           onCreate={openCreation}
           onRecalculate={() => void runRecalculate()}
           recalculating={recalculating}
@@ -802,6 +821,28 @@ export default function BoardPage() {
 
       {planningOpen && projectId && (
         <ProjectPlanningModal projectId={projectId} onClose={() => setPlanningOpen(false)} />
+      )}
+
+      {exportOpen && projectId && (
+        <Suspense fallback={null}>
+          <ExportDialog
+            projectId={projectId}
+            filters={{
+              moduleId: filters.moduleId || undefined,
+              sprintId: filters.sprintId || undefined,
+              assigneeId: filters.assigneeId || undefined,
+              squadId: filters.squadId || undefined,
+              versionId: filters.versionId || undefined,
+              costCenterId: filters.costCenterId || undefined,
+              authorId: filters.authorId || undefined,
+              priority: filters.priority || undefined,
+              status: filters.status || undefined,
+              types: filters.types.length ? filters.types : undefined,
+              tagIds: filters.tagIds.length ? filters.tagIds : undefined,
+            }}
+            onClose={() => setExportOpen(false)}
+          />
+        </Suspense>
       )}
 
       <BoardModals
