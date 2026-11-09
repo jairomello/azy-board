@@ -647,6 +647,10 @@ export default function BoardPage() {
            <TreeViewPage
            projectId={projectId!}
              filters={filters}
+             members={members}
+             sprints={sprints}
+             versions={projectVersions}
+             costCenters={projectCostCenters}
              pinnedItemIds={pinnedResult ? pinnedResult.itemIds : null}
              canCreate={members.find(member => member.userId === user?.id)?.role !== 'VIEWER'}
              canEdit={members.find(member => member.userId === user?.id)?.role !== 'VIEWER'}

@@ -45,10 +45,10 @@ CREATE TABLE `__new_items` (
 	FOREIGN KEY (`tenant_id`,`cost_center_id`) REFERENCES `project_cost_centers`(`tenant_id`,`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`tenant_id`,`version_id`) REFERENCES `project_versions`(`tenant_id`,`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`tenant_id`,`parent_id`) REFERENCES `items`(`tenant_id`,`id`) ON UPDATE no action ON DELETE no action,
-	CONSTRAINT "items_points_check" CHECK("__new_items"."points" IS NULL OR "__new_items"."points" >= 0),
-	CONSTRAINT "items_position_check" CHECK("__new_items"."position" >= 0),
-	CONSTRAINT "items_dates_check" CHECK("__new_items"."start_date" IS NULL OR "__new_items"."due_date" IS NULL OR "__new_items"."due_date" >= "__new_items"."start_date"),
-	CONSTRAINT "items_type_check" CHECK("__new_items"."type" IN ('EPIC','STORY','TASK','BUG','EXTERNAL'))
+	CONSTRAINT "items_points_check" CHECK("points" IS NULL OR "points" >= 0),
+	CONSTRAINT "items_position_check" CHECK("position" >= 0),
+	CONSTRAINT "items_dates_check" CHECK("start_date" IS NULL OR "due_date" IS NULL OR "due_date" >= "start_date"),
+	CONSTRAINT "items_type_check" CHECK("type" IN ('EPIC','STORY','TASK','BUG','EXTERNAL'))
 );
 --> statement-breakpoint
 INSERT INTO `__new_items`("id", "tenant_id", "project_id", "type", "sequence_code", "parent_id", "module_id", "column_id", "ancestry_path", "title", "description", "persona", "goal", "benefit", "acceptance_criteria", "notes", "status", "status_before_archive", "cost_center_id", "priority", "points", "assignee_id", "assignee_api_key_id", "blocked_reason", "position", "start_date", "due_date", "author_id", "version_id", "icon", "color", "created_at", "updated_at") SELECT "id", "tenant_id", "project_id", "type", "sequence_code", "parent_id", "module_id", "column_id", "ancestry_path", "title", "description", "persona", "goal", "benefit", "acceptance_criteria", "notes", "status", "status_before_archive", "cost_center_id", "priority", "points", "assignee_id", "assignee_api_key_id", "blocked_reason", "position", "start_date", "due_date", "author_id", "version_id", "icon", "color", "created_at", "updated_at" FROM `items`;

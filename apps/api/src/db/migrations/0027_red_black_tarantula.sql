@@ -12,7 +12,7 @@ CREATE TABLE `__new_checklist_items` (
 	FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`tenant_id`,`checklist_id`) REFERENCES `checklists`(`tenant_id`,`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`tenant_id`,`assignee_id`) REFERENCES `users`(`tenant_id`,`id`) ON UPDATE no action ON DELETE no action,
-	CONSTRAINT "checklist_items_position_check" CHECK("__new_checklist_items"."position" >= 0)
+	CONSTRAINT "checklist_items_position_check" CHECK("position" >= 0)
 );
 --> statement-breakpoint
 INSERT INTO `__new_checklist_items`("id", "tenant_id", "checklist_id", "text", "checked", "position") SELECT "id", "tenant_id", "checklist_id", "text", "checked", "position" FROM `checklist_items`;--> statement-breakpoint
