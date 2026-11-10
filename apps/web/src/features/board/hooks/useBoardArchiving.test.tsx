@@ -83,7 +83,7 @@ describe('useBoardArchiving — reconciliação da grade', () => {
     const action = toasts[0]?.options?.action
     expect(action?.label).toBe('undo')
     // A janela de arrependimento precisa durar mais que o toast comum (3,5s).
-    expect(toasts[0]?.options?.durationMs ?? 0).toBeGreaterThanOrEqual(5000)
+    expect(toasts[0]?.options?.durationMs).toBe(7000)
 
     act(() => { action?.onClick() })
 
