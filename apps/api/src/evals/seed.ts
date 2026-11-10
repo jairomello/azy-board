@@ -1,5 +1,6 @@
 import { columns, items, tenants, users } from '../db/schema'
 import { eq } from 'drizzle-orm'
+import { fileURLToPath } from 'node:url'
 import type { DrizzleDb } from '../db/index'
 import { generateId } from '../utils/id'
 import type { EvalCaseContext, EvalSeedItem, ItemType } from './types'
@@ -26,7 +27,7 @@ export async function createEvalWorld(): Promise<EvalWorld> {
   const { db } = await import('../db/index')
   const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
   const { app } = await import('../index')
-  await migrate(db, { migrationsFolder: new URL('../db/migrations', import.meta.url).pathname })
+  await migrate(db, { migrationsFolder: fileURLToPath(new URL('../db/migrations', import.meta.url)) })
   const tenantId = generateId(), userId = generateId(), email = `agent-eval+${tenantId}@test.local`
   const now = new Date().toISOString()
   await db.insert(tenants).values({ id: tenantId, name: 'Tenant Agent Eval', slug: `agent-eval-${tenantId}`, createdAt: now })
