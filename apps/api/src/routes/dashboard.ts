@@ -84,9 +84,10 @@ dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
     persistence.dashboard.listAgingDetailPage(projectContext, projectId, filter, 'WIP', limit + 1, wipCursor.position?.startedAt ? { startedAt: wipCursor.position.startedAt, id: wipCursor.position.id } : undefined),
     persistence.dashboard.listAgingDetailPage(projectContext, projectId, filter, 'BLOCKED', limit + 1, blockedCursor.position?.startedAt ? { startedAt: blockedCursor.position.startedAt, id: blockedCursor.position.id } : undefined),
     persistence.dashboard.listLeafItems(projectContext, projectId, filter, { limit: limit + 1, overdue: { asOf: today, match: true }, ...(overdueCursor.position ? { afterId: overdueCursor.position.id } : {}) }),
-    // "Restante" = escopo ativo que não está atrasado. N/A (CANCELLED) não entra:
-    // o total do donut já exclui N/A, então a lista precisa da mesma população.
-    persistence.dashboard.listLeafItems(projectContext, projectId, filter, { limit: limit + 1, statuses: ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE'], overdue: { asOf: today, match: false }, ...(remainingCursor.position ? { afterId: remainingCursor.position.id } : {}) }),
+    // "Restante" = cards de trabalho que não estão atrasados. Atraso é sinal de prazo:
+    // card não concluído com prazo vencido conta mesmo em N/A, então o universo do
+    // donut é todo o escopo de trabalho (inclui N/A) e não só o escopo ativo.
+    persistence.dashboard.listLeafItems(projectContext, projectId, filter, { limit: limit + 1, overdue: { asOf: today, match: false }, ...(remainingCursor.position ? { afterId: remainingCursor.position.id } : {}) }),
   ])
   const sum = (groups: typeof aggregates, select: 'count' | 'estimatedCount' | 'points' | 'donePoints' | 'overdueCount' | 'overduePoints' | 'unassignedCount' | 'unassignedEstimatedCount' | 'unassignedPoints' | 'labelOnlyCount' | 'labelOnlyEstimatedCount' | 'labelOnlyPoints') => groups.reduce((total, group) => total + group[select], 0)
   const byStatus = Object.fromEntries([...activeStatuses].map(status => [status, sum(aggregates.filter(row => row.status === status), 'count')]))
@@ -95,6 +96,7 @@ dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
   // EXTERNAL é dependência externa e fica fora do progresso, contada à parte.
   const workAggregates = aggregates.filter(row => row.status !== 'CANCELLED')
   const cancelledTotal = sum(aggregates.filter(row => row.status === 'CANCELLED'), 'count')
+  const cancelledPoints = sum(aggregates.filter(row => row.status === 'CANCELLED'), 'points')
   const total = sum(workAggregates, 'count'); const done = sum(workAggregates.filter(row => row.status === 'DONE'), 'count')
   const totalPoints = sum(workAggregates, 'points'); const donePoints = sum(workAggregates, 'donePoints'); const estimatedCount = sum(workAggregates, 'estimatedCount')
   const activeAggregates = aggregates.filter(row => activeStatuses.has(row.status))
@@ -122,7 +124,7 @@ dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
     wip: { limit, total: wipTotal, hasMore: wipHasMore, truncated: wipHasMore, nextCursor: wipHasMore && wipLast ? createDashboardCursor(scope('snapshot-wip', 'startedAt,id:asc'), { startedAt: wipLast.startedAt, id: wipLast.id }) : null },
     blocked: { limit, total: blockedTotal, hasMore: blockedHasMore, truncated: blockedHasMore, nextCursor: blockedHasMore && blockedLast ? createDashboardCursor(scope('snapshot-blocked', 'startedAt,id:asc'), { startedAt: blockedLast.startedAt, id: blockedLast.id }) : null },
     overdue: { limit, total: overdueTotal, hasMore: overdueHasMore, truncated: overdueHasMore, nextCursor: overdueHasMore && overdueLast ? createDashboardCursor(scope('snapshot-overdue', 'id:asc'), { id: overdueLast.id }) : null },
-    remaining: { limit, total: total - overdueTotal, hasMore: remainingHasMore, truncated: remainingHasMore, nextCursor: remainingHasMore && remainingLast ? createDashboardCursor(scope('snapshot-remaining', 'id:asc'), { id: remainingLast.id }) : null },
+    remaining: { limit, total: total + cancelledTotal - overdueTotal, hasMore: remainingHasMore, truncated: remainingHasMore, nextCursor: remainingHasMore && remainingLast ? createDashboardCursor(scope('snapshot-remaining', 'id:asc'), { id: remainingLast.id }) : null },
   }
   const detail = (row: typeof overdueRows[number]) => ({ id: row.id, sequenceCode: row.sequenceCode, title: row.title, type: row.type, status: row.status, points: row.points, assigneeId: row.assigneeId, dueDate: row.dueDate })
   const memberRows = await persistence.dashboard.listMembersWithSquads(projectContext, projectId)
@@ -156,7 +158,7 @@ dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
       progressScope: { total, done, cancelled: cancelledTotal, completionPercent: completionPercent(done, total), advance, points: totalPoints, donePoints, estimationCoverage: completionPercent(estimatedCount, total) },
       wip: { total: wipTotal, byStatus, byStatusPoints, pointsCoverage: completionPercent(sum(activeAggregates, 'estimatedCount'), wipTotal), items: wip, pagination: detailsPagination.wip },
       blocked: { total: blockedTotal, items: blockedDetails, pagination: detailsPagination.blocked },
-      overdue: { total: overdueTotal, points: overduePoints, items: overdueRows.map(detail), remainingItems: remainingRows.map(detail), pagination: detailsPagination.overdue, remainingPagination: detailsPagination.remaining },
+      overdue: { total: overdueTotal, points: overduePoints, scopeTotal: total + cancelledTotal, scopePoints: totalPoints + cancelledPoints, items: overdueRows.map(detail), remainingItems: remainingRows.map(detail), pagination: detailsPagination.overdue, remainingPagination: detailsPagination.remaining },
      teamLoad: { members: team, unassignedWip: unassigned, labelOnlyWip: labelOnly, blockedUnassignedSubset: sum(unassignedBlocked, 'count'), unassignedWipPoints: unassignedEstimated ? sum(unassignedRows, 'unassignedPoints') : null, labelOnlyWipPoints: labelOnlyEstimated ? sum(unassignedRows, 'labelOnlyPoints') : null, blockedUnassignedPoints: unassignedBlockedEstimated ? sum(unassignedBlocked, 'points') : null, pointsCoverage: completionPercent(teamEstimated, teamTotal) },
   }, external: { total: externalTotal, done: externalDone, completionPercent: completionPercent(externalDone, externalTotal) } })
 })
