@@ -2,7 +2,7 @@ import { and, asc, count, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from 
 import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts'
 import type { ItemDependencyType, ItemType } from '@azy-board/domain'
 import type { Database } from 'bun:sqlite'
-import { foldNameForSearch, likeContainsPattern, SQLITE_NAME_FOLD_FUNCTION, sqliteNameSortKeySql } from '../nameNormalization'
+import { foldNameForSearch, likeContainsPattern, nameSortKeySql, SQLITE_NAME_FOLD_FUNCTION, sqliteNameSortKeySql } from '../nameNormalization'
 import type {
   AttachmentRecord,
   ChecklistItemRecord,
@@ -444,15 +444,22 @@ type SqliteFunctionRegistrar = {
 
 const nameFoldRegistered = new WeakSet<Database>()
 
-function ensureNameFoldFunction(sqlite: Database) {
-  if (nameFoldRegistered.has(sqlite)) return
+function ensureNameFoldFunction(sqlite: Database): boolean {
+  if (nameFoldRegistered.has(sqlite)) return true
   const register = (sqlite as unknown as SqliteFunctionRegistrar).function
-  register?.call(sqlite, SQLITE_NAME_FOLD_FUNCTION, { deterministic: true }, value => foldNameForSearch(String(value ?? '')))
+  // Bun < 1.4 não expõe `Database.function`. Nesse runtime o adapter volta para
+  // a expressão SQL de replace aninhado (que funciona no parser do Linux/CI).
+  if (!register) return false
+  register.call(sqlite, SQLITE_NAME_FOLD_FUNCTION, { deterministic: true }, value => foldNameForSearch(String(value ?? '')))
   nameFoldRegistered.add(sqlite)
+  return true
 }
 
 export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Database): PersistencePorts {
-  ensureNameFoldFunction(sqlite)
+  const supportsNameFoldFunction = ensureNameFoldFunction(sqlite)
+  const nameSortKey = (column: string) => supportsNameFoldFunction
+    ? sqliteNameSortKeySql(column)
+    : nameSortKeySql(column)
   const itemCommands = createSqliteItemUnitOfWork(sqlite)
   const projectCommands = createSqliteProjectUnitOfWork(sqlite)
   const ensureAssistantSettings = (tenantId: string, updatedAt: string) => {
@@ -691,7 +698,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           // Mesma dobra de acentos da grade de membros: "alvaro" encontra "Álvaro".
           const pattern = likeContainsPattern(foldNameForSearch(term))
           conditions.push(or(
-            sql`${sql.raw(sqliteNameSortKeySql('users.name'))} LIKE ${pattern} ESCAPE '\\'`,
+            sql`${sql.raw(nameSortKey('users.name'))} LIKE ${pattern} ESCAPE '\\'`,
             sql`lower(users.email) LIKE ${pattern} ESCAPE '\\'`,
           )!)
         }
@@ -699,7 +706,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         const where = and(...conditions)
         const rows = await database.select().from(users)
           .where(where)
-          .orderBy(sql.raw(sqliteNameSortKeySql('users.name')), asc(users.id))
+          .orderBy(sql.raw(nameSortKey('users.name')), asc(users.id))
           .limit(query.limit)
           .offset(query.offset)
         const [totals] = await database.select({ total: count() }).from(users).where(where)
@@ -1224,7 +1231,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           // então `lower()` sozinho perderia "Álvaro" ao procurar por "alvaro".
           const pattern = likeContainsPattern(foldNameForSearch(term))
           conditions.push(or(
-            sql`${sql.raw(sqliteNameSortKeySql('users.name'))} LIKE ${pattern} ESCAPE '\\'`,
+            sql`${sql.raw(nameSortKey('users.name'))} LIKE ${pattern} ESCAPE '\\'`,
             sql`lower(users.email) LIKE ${pattern} ESCAPE '\\'`,
           )!)
         }
@@ -1241,7 +1248,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
             eq(memberships.userId, users.id),
           ))
           .where(where)
-          .orderBy(sql.raw(sqliteNameSortKeySql('users.name')), asc(users.id))
+          .orderBy(sql.raw(nameSortKey('users.name')), asc(users.id))
           .limit(query.limit)
           .offset(query.offset)
 
