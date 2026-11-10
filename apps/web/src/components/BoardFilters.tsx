@@ -62,7 +62,7 @@ const iconBtn = (active: boolean) =>
 
 // Status são múltiplos: os checkboxes combinam os valores com OR, e o estado
 // viaja como lista separada por vírgula (mesmo formato aceito pela API).
-const STATUS_VALUES = ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'] as const
+const STATUS_VALUES = ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'] as const
 
 function selectedStatuses(status: string): string[] {
   return status.split(',').map(value => value.trim()).filter(Boolean)
@@ -81,6 +81,7 @@ export function BoardFilters({
   const activeStatuses = new Set(selectedStatuses(filters.status))
   const statusOptions = [
     { value: 'NOT_STARTED', label: t('statusNotStarted') },
+    { value: 'PLANNED', label: t('statusPlanned') },
     { value: 'IN_PROGRESS', label: t('statusInProgress') },
     { value: 'BLOCKED', label: t('statusBlocked') },
     { value: 'DONE', label: t('statusDone') },

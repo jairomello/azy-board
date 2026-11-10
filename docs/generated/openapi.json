@@ -327,6 +327,7 @@
             "type": "string",
             "enum": [
               "NOT_STARTED",
+              "PLANNED",
               "IN_PROGRESS",
               "BLOCKED",
               "DONE",
@@ -625,6 +626,7 @@
             "type": "string",
             "enum": [
               "NOT_STARTED",
+              "PLANNED",
               "IN_PROGRESS",
               "BLOCKED",
               "DONE",
@@ -989,6 +991,7 @@
                       "type": "string",
                       "enum": [
                         "NOT_STARTED",
+                        "PLANNED",
                         "IN_PROGRESS",
                         "BLOCKED",
                         "DONE",
@@ -1283,8 +1286,11 @@
             "type": "string",
             "enum": [
               "NOT_STARTED",
+              "PLANNED",
               "IN_PROGRESS",
-              "DONE"
+              "BLOCKED",
+              "DONE",
+              "CANCELLED"
             ]
           },
           "progressWeight": {

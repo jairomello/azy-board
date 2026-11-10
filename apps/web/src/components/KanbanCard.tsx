@@ -30,6 +30,7 @@ const TYPE_STYLES: Record<ItemType, { label: string; cls: string }> = {
 
 const STATUS_INDICATOR: Record<TaskStatus, string> = {
   NOT_STARTED: 'border-l-slate-300 dark:border-l-slate-600',
+  PLANNED: 'border-l-sky-400 dark:border-l-sky-500',
   IN_PROGRESS: 'border-l-status-progress',
   BLOCKED: 'border-l-status-blocked',
   DONE: 'border-l-status-done',

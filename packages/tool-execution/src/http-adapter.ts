@@ -480,7 +480,9 @@ export async function toolListColumns(api: ApiCall, projectId: string): Promise<
 
 export async function toolCreateColumn(api: ApiCall, projectId: string, args: { name: string; baseStatus: string }): Promise<Column> {
   if (!args.name?.trim()) throw new Error('name é obrigatório')
-  return api(`/projects/${projectId}/columns`, 'POST', { ...args, name: args.name.trim() }) as Promise<Column>
+  if (!args.baseStatus) throw new Error('baseStatus é obrigatório')
+  // O corpo da rota é estrito: só name/baseStatus podem ir (projectId vaza no path).
+  return api(`/projects/${projectId}/columns`, 'POST', { name: args.name.trim(), baseStatus: args.baseStatus }) as Promise<Column>
 }
 
 export async function toolReorderColumns(api: ApiCall, projectId: string, order: string[]): Promise<unknown> {

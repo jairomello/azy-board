@@ -1,4 +1,4 @@
-import type { ActivityActorType, ActivitySource } from '@azy-board/domain'
+import type { ActivityActorType, ActivitySource, ColumnBaseStatus } from '@azy-board/domain'
 import type { MutationContext } from '../persistence/models'
 import { persistence } from '../persistence/runtime'
 import { COMMAND_NAMESPACES } from '../persistence/idempotency'
@@ -57,6 +57,6 @@ export async function moveItem(input: ItemMutationInput & { columnId: string; co
   await persistence.unitOfWork.moveItem(context, input.projectId, input.itemId, {
     id: input.columnId,
     name: input.columnName,
-    baseStatus: input.baseStatus as 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE',
+    baseStatus: input.baseStatus as ColumnBaseStatus,
   }, input.fromColumnName)
 }

@@ -76,7 +76,7 @@ export const createItemSchema = z.object({
   moduleId: optionalId,
   columnId: optionalId,
   priority: prioritySchema.optional(),
-  status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED']).optional(),
+  status: z.enum(['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED']).optional(),
   points: z.number().finite().nullable().optional(),
   tokensInput: z.number().int().min(0).nullable().optional(),
   tokensOutput: z.number().int().min(0).nullable().optional(),
@@ -103,7 +103,7 @@ export const updateItemSchema = z.object({
   priority: prioritySchema.optional(),
   type: z.enum(['TASK', 'BUG', 'EXTERNAL']).optional(),
   sequenceCode: z.string().regex(/^[ESTBX]\d+$/).max(20).nullable().optional(),
-  status: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED']).optional(),
+  status: z.enum(['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED']).optional(),
   points: z.number().finite().min(0).nullable().optional(),
   tokensInput: z.number().int().min(0).nullable().optional(),
   tokensOutput: z.number().int().min(0).nullable().optional(),
@@ -152,7 +152,7 @@ const itemFiltersSchema = z.object({
   // para detectar escrita concorrente entre a prévia e a aprovação.
   expectedRevisions: z.record(z.string().max(64), z.string().min(1).max(40)).optional(),
   types: z.array(itemTypeSchema).nullable().optional(),
-  statuses: z.array(z.enum(['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED', 'ARCHIVED'])).nullable().optional(),
+  statuses: z.array(z.enum(['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED', 'ARCHIVED'])).nullable().optional(),
   sprint: z.string().min(1).nullable().optional(),
   version: z.string().min(1).nullable().optional(),
   module: z.string().min(1).nullable().optional(),
@@ -205,8 +205,8 @@ export const checklistItemSchema = z.object({ text: z.string().trim().min(1).max
 export const updateChecklistItemSchema = z.object({ text: z.string().trim().min(1).max(2_000).optional(), checked: z.boolean().optional(), position: z.number().int().min(0).optional(), ...advancedChecklistItemFields }).strict()
 // Peso de avanço por coluna: nulo limpa o valor explícito e volta ao derivado.
 const progressWeightSchema = z.number().int().min(0).max(100).nullable().optional()
-export const columnSchema = z.object({ name: z.string().trim().min(1).max(200), baseStatus: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'DONE']), progressWeight: progressWeightSchema }).strict()
-export const updateColumnSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), baseStatus: z.enum(['NOT_STARTED', 'IN_PROGRESS', 'DONE']).optional(), progressWeight: progressWeightSchema }).strict()
+export const columnSchema = z.object({ name: z.string().trim().min(1).max(200), baseStatus: z.enum(['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED']), progressWeight: progressWeightSchema }).strict()
+export const updateColumnSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), baseStatus: z.enum(['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED']).optional(), progressWeight: progressWeightSchema }).strict()
 export const reorderSchema = z.object({ order: z.array(z.string().min(1)).max(500) }).strict()
 export const deleteColumnSchema = z.object({ moveToColumnId: z.string().min(1).nullable() }).strict()
 export const sprintSchema = z.object({ name: z.string().trim().min(1).max(200).optional(), startDate: z.string().min(1).optional(), endDate: z.string().min(1).optional() }).strict()
@@ -478,7 +478,7 @@ const planningGapNodeSchema: z.ZodType = z.lazy(() => z.object({
 export const planningGapQuerySchema = z.object({
   scope: z.object({
     types: z.array(z.enum(['TASK', 'BUG'])).min(1).max(2).nullable().optional(),
-    statuses: z.array(z.enum(['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED', 'ARCHIVED'])).min(1).max(6).nullable().optional(),
+    statuses: z.array(z.enum(['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED', 'ARCHIVED'])).min(1).max(7).nullable().optional(),
     moduleId: z.string().min(1).max(128).nullable().optional(),
     assignee: z.string().min(1).max(200).nullable().optional(),
     includeArchived: z.boolean().nullable().optional(),

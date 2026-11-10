@@ -13,6 +13,7 @@ export function statusLabel(status: string, t: DashboardTranslator): string {
   if (status === 'DONE') return t('done')
   if (status === 'IN_PROGRESS') return t('inProgress')
   if (status === 'BLOCKED') return t('blockedStatus')
+  if (status === 'PLANNED') return t('planned')
   if (status === 'NOT_STARTED') return t('notStarted')
   return status
 }

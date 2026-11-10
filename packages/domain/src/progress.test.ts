@@ -72,6 +72,20 @@ describe('derivação do peso de avanço por coluna', () => {
     expect(columnProgressWeight(column('c', 'CANCELLED', 0), [column('c', 'CANCELLED', 0)])).toBe(0)
   })
 
+  test('coluna planejada vale 0 e não desloca a faixa do fluxo', () => {
+    const weights = resolveColumnProgressWeights([
+      column('backlog', 'NOT_STARTED', 0),
+      column('planejado', 'PLANNED', 1),
+      column('fazendo', 'IN_PROGRESS', 2),
+      column('testar', 'IN_PROGRESS', 3),
+      column('concluidas', 'DONE', 4),
+    ])
+    expect(weights.get('planejado')).toBe(0)
+    // A faixa continua entre 50 e 90: PLANNED não consome posição.
+    expect(weights.get('fazendo')).toBe(50)
+    expect(weights.get('testar')).toBe(90)
+  })
+
   test('a ordem usa a posição da coluna, não a ordem de entrada', () => {
     const weights = resolveColumnProgressWeights([
       column('testar', 'IN_PROGRESS', 3),

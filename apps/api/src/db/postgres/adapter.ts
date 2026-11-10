@@ -1655,8 +1655,20 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         if (patch.progressWeight !== undefined) { sets.push(`progress_weight = $${idx++}`); params.push(patch.progressWeight) }
         if (!sets.length) return null
         return tx(async (client) => {
+          const previous = await client.query<{ base_status: string }>(
+            'SELECT base_status FROM columns WHERE tenant_id = $1 AND project_id = $2 AND id = $3 FOR UPDATE',
+            [context.tenantId, projectId, columnId],
+          )
+          if (!previous.rows[0]) return null
           const result = await client.query(`UPDATE columns SET ${sets.join(', ')} WHERE tenant_id = $1 AND project_id = $2 AND id = $3 RETURNING *`, params)
           if (!result.rows[0]) return null
+          // Cards sincronizados com o status anterior acompanham a coluna; status
+          // divergente (ex.: bloqueio explícito) é preservado.
+          if (patch.baseStatus !== undefined && patch.baseStatus !== previous.rows[0].base_status) {
+            await client.query(`UPDATE items SET status = $1, updated_at = now()
+              WHERE tenant_id = $2 AND project_id = $3 AND column_id = $4 AND status = $5`,
+              [patch.baseStatus, context.tenantId, projectId, columnId, previous.rows[0].base_status])
+          }
           await emitMetadataEventPg(client, context.tenantId, projectId, 'columns')
           return mapColumn(result.rows[0] as PgRow)
         })
@@ -4089,7 +4101,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           modules: modules.map(r => ({ id: r.id as string, name: r.name as string })),
           sprints: sprints.map(r => ({ id: r.id as string, name: r.name as string, status: r.status as 'PROPOSED' | 'OPEN' | 'CLOSED' })),
           versions: versions.map(r => ({ id: r.id as string, name: r.name as string, status: r.status as 'PLANNED' | 'IN_DEV' | 'RELEASED' | 'CANCELLED' })),
-          columns: columns.map(r => ({ id: r.id as string, name: r.name as string, baseStatus: r.base_status as 'NOT_STARTED' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' | 'CANCELLED' })),
+          columns: columns.map(r => ({ id: r.id as string, name: r.name as string, baseStatus: r.base_status as 'NOT_STARTED' | 'PLANNED' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' | 'CANCELLED' })),
           costCenters: costCenters.map(r => ({ id: r.id as string, code: r.code as string, sortOrder: r.sort_order as number })),
           tags: tags.map(r => ({ id: r.id as string, name: r.name as string })),
           memberships: memberships.map(r => ({ userId: r.user_id as string })),
@@ -4655,7 +4667,13 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       },
       async releaseItem(context, projectId, itemId, activity) {
         await tx(async (client) => {
-          await client.query('UPDATE items SET assignee_id = NULL, assignee_api_key_id = NULL, updated_at = now() WHERE tenant_id = $1 AND project_id = $2 AND id = $3',
+          // O status acompanha o baseStatus da coluna atual (paridade com o SQLite);
+          // sem coluna conhecida, mantém o status gravado.
+          await client.query(`UPDATE items SET assignee_id = NULL, assignee_api_key_id = NULL,
+            status = COALESCE((SELECT c.base_status FROM columns c
+              WHERE c.tenant_id = items.tenant_id AND c.project_id = items.project_id AND c.id = items.column_id), status),
+            updated_at = now()
+            WHERE tenant_id = $1 AND project_id = $2 AND id = $3`,
             [context.tenantId, projectId, itemId])
           if (activity) {
             const now = new Date().toISOString()
@@ -5091,7 +5109,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
               COALESCE((SELECT string_agg(s.sprint_id, ',' ORDER BY s.sprint_id) FROM item_sprints s WHERE s.tenant_id = i.tenant_id AND s.item_id = i.id), '') AS sprint_ids
             FROM items i
             WHERE i.tenant_id = $1 AND i.project_id = $2
-              AND i.type IN ('TASK', 'BUG', 'EXTERNAL') AND i.status IN ('NOT_STARTED', 'IN_PROGRESS', 'BLOCKED')
+              AND i.type IN ('TASK', 'BUG', 'EXTERNAL') AND i.status IN ('NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED')
               AND NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id)
               AND EXISTS (SELECT 1 FROM item_sprints link WHERE link.tenant_id = i.tenant_id AND link.item_id = i.id AND link.sprint_id = $3)
             ORDER BY i.id`, [tenantId, projectId, plan.sourceSprintId])).rows as PgRow[]

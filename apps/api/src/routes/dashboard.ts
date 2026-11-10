@@ -21,7 +21,7 @@ dashboardRouter.use('*', async (c, next) => {
 const activeStatuses = new Set(['IN_PROGRESS', 'BLOCKED'])
 export const isEligibleLeaf = (item: { type: string; status: string }, leaf: boolean) => leaf && (item.type === 'TASK' || item.type === 'BUG') && item.status !== 'ARCHIVED'
 export const completionPercent = (done: number, total: number) => total === 0 ? null : done / total * 100
-export const distributionByStatus = (rows: Array<{ status: string; points: number | null }>) => Object.fromEntries(['DONE', 'IN_PROGRESS', 'BLOCKED', 'NOT_STARTED'].map(status => [status, { count: rows.filter(row => row.status === status).length, points: rows.filter(row => row.status === status).reduce((sum, row) => sum + (row.points ?? 0), 0) }]))
+export const distributionByStatus = (rows: Array<{ status: string; points: number | null }>) => Object.fromEntries(['DONE', 'IN_PROGRESS', 'BLOCKED', 'PLANNED', 'NOT_STARTED'].map(status => [status, { count: rows.filter(row => row.status === status).length, points: rows.filter(row => row.status === status).reduce((sum, row) => sum + (row.points ?? 0), 0) }]))
 export const topTenOldest = <T extends { age: number }>(items: T[]) => [...items].sort((a, b) => b.age - a.age).slice(0, 10)
 export const overdueGroups = <T extends { status: string; dueDate: string | null }>(rows: T[], today: string) => {
   const overdue = rows.filter(row => !['DONE', 'CANCELLED'].includes(row.status) && Boolean(row.dueDate && row.dueDate < today))
@@ -86,8 +86,8 @@ dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
     persistence.dashboard.listLeafItems(projectContext, projectId, filter, { limit: limit + 1, overdue: { asOf: today, match: false }, ...(remainingCursor.position ? { afterId: remainingCursor.position.id } : {}) }),
   ])
   const sum = (groups: typeof aggregates, select: 'count' | 'estimatedCount' | 'points' | 'donePoints' | 'overdueCount' | 'overduePoints') => groups.reduce((total, group) => total + group[select], 0)
-  const byStatus = Object.fromEntries(['DONE', 'IN_PROGRESS', 'BLOCKED', 'NOT_STARTED'].map(status => [status, sum(aggregates.filter(row => row.status === status), 'count')]))
-  const byStatusPoints = Object.fromEntries(['DONE', 'IN_PROGRESS', 'BLOCKED', 'NOT_STARTED'].map(status => [status, sum(aggregates.filter(row => row.status === status), 'points')]))
+  const byStatus = Object.fromEntries(['DONE', 'IN_PROGRESS', 'BLOCKED', 'PLANNED', 'NOT_STARTED'].map(status => [status, sum(aggregates.filter(row => row.status === status), 'count')]))
+  const byStatusPoints = Object.fromEntries(['DONE', 'IN_PROGRESS', 'BLOCKED', 'PLANNED', 'NOT_STARTED'].map(status => [status, sum(aggregates.filter(row => row.status === status), 'points')]))
   const total = sum(aggregates, 'count'); const done = sum(aggregates.filter(row => row.status === 'DONE'), 'count')
   const totalPoints = sum(aggregates, 'points'); const donePoints = sum(aggregates, 'donePoints'); const estimatedCount = sum(aggregates, 'estimatedCount')
   const activeAggregates = aggregates.filter(row => activeStatuses.has(row.status))

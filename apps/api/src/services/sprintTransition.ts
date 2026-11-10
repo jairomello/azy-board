@@ -16,7 +16,7 @@ export class SprintTransitionError extends Error {
 }
 
 export const SPRINT_TRANSITION_MAX_CANDIDATES = 500
-const ELIGIBLE_STATUSES = new Set(['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED'])
+const ELIGIBLE_STATUSES = new Set(['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED'])
 
 /** Resolve "próxima" pela menor startDate estritamente posterior à origem. */
 export function resolveNextSprint(source: SprintRecord, sprints: SprintRecord[]): SprintRecord {
