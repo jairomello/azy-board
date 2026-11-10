@@ -87,7 +87,7 @@ describe('contratos do dashboard do projeto', () => {
     contains(visuals, "state === 'empty' || state === 'inapplicable' ? 'min-h-[150px]'")
     const page = await source('./pages/ProjectDashboardPage.tsx')
     // Uma única legenda para os dois recortes do WIP.
-    expect(page.match(/ChartLegend items=\{\[t\('done'\)/g)?.length).toBe(1)
+    expect(page.match(/ChartLegend items=\{\[t\('inProgress'\)/g)?.length).toBe(1)
     // O gauge de pontos não repete a unidade no rótulo.
     expect(page.includes("unit={t('points')}")).toBe(false)
   })
@@ -108,7 +108,7 @@ describe('contratos do dashboard do projeto', () => {
     const board = await source('./features/board/BoardScreen.tsx')
     contains(app, '/projects/:projectId/dashboard')
     contains(shell, 'navDashboard')
-    expect(page.match(/<Box title=/g)?.length).toBe(9)
+    expect(page.match(/<Box title=/g)?.length).toBe(10)
     expect(page.includes("t('sprintBox')")).toBe(false)
     expect(page.includes("t('versions')")).toBe(false)
     for (const endpoint of ['/snapshot', '/burnup', '/aging', '/hours']) contains(page, endpoint)
