@@ -30,6 +30,19 @@ const COLUMN_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$/
 
 const sortKeyCache = new Map<string, string>()
 
+/** Função SQLite registrada por conexão (ver `createSqlitePersistencePorts`). */
+export const SQLITE_NAME_FOLD_FUNCTION = 'azy_fold_name'
+
+/**
+ * No SQLite, o dobrador é uma função JS registrada na conexão. O `replace()`
+ * aninhado por acento tem mais de 60 níveis e estoura o parser em builds com
+ * limite de profundidade baixo (macOS), derrubando a listagem de pessoas.
+ */
+export function sqliteNameSortKeySql(column: string): string {
+  if (!COLUMN_PATTERN.test(column)) throw new Error(`Coluna inválida para ordenação de nome: ${column}`)
+  return `${SQLITE_NAME_FOLD_FUNCTION}(${column})`
+}
+
 /**
  * Expressão SQL que normaliza a coluna de nome para ordenação/busca: dobra os acentos
  * listados (maiúsculas e minúsculas) e aplica `lower()`. O mesmo texto roda em SQLite e

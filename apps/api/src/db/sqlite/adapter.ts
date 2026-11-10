@@ -2,7 +2,7 @@ import { and, asc, count, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from 
 import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts'
 import type { ItemDependencyType, ItemType } from '@azy-board/domain'
 import type { Database } from 'bun:sqlite'
-import { foldNameForSearch, likeContainsPattern, nameSortKeySql } from '../nameNormalization'
+import { foldNameForSearch, likeContainsPattern, SQLITE_NAME_FOLD_FUNCTION, sqliteNameSortKeySql } from '../nameNormalization'
 import type {
   AttachmentRecord,
   ChecklistItemRecord,
@@ -433,7 +433,25 @@ function readTransitionCandidatesSqlite(sqlite: Database, tenantId: string, proj
 }
 
 /** Factory SIMPLE: ambos handles são explícitos e pertencem à mesma instalação. */
+// A dobra de acentos na ordenação/busca de pessoas precisa de uma expressão
+// SQL. O `replace()` aninhado tem mais de 60 níveis e estoura o parser do
+// SQLite em builds com limite baixo (macOS); por isso a conexão registra esta
+// função JS e o adapter usa `azy_fold_name(coluna)` no lugar da expressão.
+type SqliteFunctionRegistrar = {
+  function?: (name: string, options: { deterministic: boolean }, fn: (value: unknown) => string) => void
+}
+
+const nameFoldRegistered = new WeakSet<Database>()
+
+function ensureNameFoldFunction(sqlite: Database) {
+  if (nameFoldRegistered.has(sqlite)) return
+  const register = (sqlite as unknown as SqliteFunctionRegistrar).function
+  register?.call(sqlite, SQLITE_NAME_FOLD_FUNCTION, { deterministic: true }, value => foldNameForSearch(String(value ?? '')))
+  nameFoldRegistered.add(sqlite)
+}
+
 export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Database): PersistencePorts {
+  ensureNameFoldFunction(sqlite)
   const itemCommands = createSqliteItemUnitOfWork(sqlite)
   const projectCommands = createSqliteProjectUnitOfWork(sqlite)
   const ensureAssistantSettings = (tenantId: string, updatedAt: string) => {
@@ -672,7 +690,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           // Mesma dobra de acentos da grade de membros: "alvaro" encontra "Álvaro".
           const pattern = likeContainsPattern(foldNameForSearch(term))
           conditions.push(or(
-            sql`${sql.raw(nameSortKeySql('users.name'))} LIKE ${pattern} ESCAPE '\\'`,
+            sql`${sql.raw(sqliteNameSortKeySql('users.name'))} LIKE ${pattern} ESCAPE '\\'`,
             sql`lower(users.email) LIKE ${pattern} ESCAPE '\\'`,
           )!)
         }
@@ -680,7 +698,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         const where = and(...conditions)
         const rows = await database.select().from(users)
           .where(where)
-          .orderBy(sql.raw(nameSortKeySql('users.name')), asc(users.id))
+          .orderBy(sql.raw(sqliteNameSortKeySql('users.name')), asc(users.id))
           .limit(query.limit)
           .offset(query.offset)
         const [totals] = await database.select({ total: count() }).from(users).where(where)
@@ -1205,7 +1223,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           // então `lower()` sozinho perderia "Álvaro" ao procurar por "alvaro".
           const pattern = likeContainsPattern(foldNameForSearch(term))
           conditions.push(or(
-            sql`${sql.raw(nameSortKeySql('users.name'))} LIKE ${pattern} ESCAPE '\\'`,
+            sql`${sql.raw(sqliteNameSortKeySql('users.name'))} LIKE ${pattern} ESCAPE '\\'`,
             sql`lower(users.email) LIKE ${pattern} ESCAPE '\\'`,
           )!)
         }
@@ -1222,7 +1240,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
             eq(memberships.userId, users.id),
           ))
           .where(where)
-          .orderBy(sql.raw(nameSortKeySql('users.name')), asc(users.id))
+          .orderBy(sql.raw(sqliteNameSortKeySql('users.name')), asc(users.id))
           .limit(query.limit)
           .offset(query.offset)
 

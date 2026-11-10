@@ -11,6 +11,12 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Fixed
 
+- **Listagem e ordenação de pessoas volta a funcionar no SQLite do macOS.** A
+  dobra de acentos usava `replace()` aninhado em mais de 60 níveis; builds do
+  SQLite com limite de profundidade menor estouravam o parser ("parser stack
+  overflow"). A conexão SQLite agora registra `azy_fold_name` — a mesma dobra em
+  JS usada no termo de busca — e o adapter ordena/filtra pela função. O
+  PostgreSQL mantém a expressão SQL compartilhada.
 - **Arquivar uma atividade da grade agora a remove da Tree View na hora e pode
   ser desfeito.** O arquivamento atualizava só o cache do Kanban (`allItems`),
   mas a grade lê `/items/tree` com chave por filtro. A linha continuava visível
