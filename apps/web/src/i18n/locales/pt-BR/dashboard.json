@@ -124,5 +124,6 @@
   "hintSpi": "Conclusão do escopo ativo dividida pelo esperado para hoje. 1,00 = no prazo; abaixo de 0,85 é crítico.",
   "hintDaysToFinish": "Dias corridos entre hoje e o término planejado. Negativo significa prazo já vencido.",
   "hintCompletion": "Itens concluídos ÷ escopo ativo (TASK/BUG sem N/A). Dependências externas não entram.",
-  "hintAdvance": "Média do peso da coluna de cada item: mostra o quanto o trabalho andou no fluxo, mesmo sem concluir."
+  "hintAdvance": "Média do peso da coluna de cada item: mostra o quanto o trabalho andou no fluxo, mesmo sem concluir.",
+  "externalOwner": "Responsável externo"
 }

@@ -84,7 +84,9 @@ dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
     persistence.dashboard.listAgingDetailPage(projectContext, projectId, filter, 'WIP', limit + 1, wipCursor.position?.startedAt ? { startedAt: wipCursor.position.startedAt, id: wipCursor.position.id } : undefined),
     persistence.dashboard.listAgingDetailPage(projectContext, projectId, filter, 'BLOCKED', limit + 1, blockedCursor.position?.startedAt ? { startedAt: blockedCursor.position.startedAt, id: blockedCursor.position.id } : undefined),
     persistence.dashboard.listLeafItems(projectContext, projectId, filter, { limit: limit + 1, overdue: { asOf: today, match: true }, ...(overdueCursor.position ? { afterId: overdueCursor.position.id } : {}) }),
-    persistence.dashboard.listLeafItems(projectContext, projectId, filter, { limit: limit + 1, overdue: { asOf: today, match: false }, ...(remainingCursor.position ? { afterId: remainingCursor.position.id } : {}) }),
+    // "Restante" = escopo ativo que não está atrasado. N/A (CANCELLED) não entra:
+    // o total do donut já exclui N/A, então a lista precisa da mesma população.
+    persistence.dashboard.listLeafItems(projectContext, projectId, filter, { limit: limit + 1, statuses: ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE'], overdue: { asOf: today, match: false }, ...(remainingCursor.position ? { afterId: remainingCursor.position.id } : {}) }),
   ])
   const sum = (groups: typeof aggregates, select: 'count' | 'estimatedCount' | 'points' | 'donePoints' | 'overdueCount' | 'overduePoints' | 'unassignedCount' | 'unassignedEstimatedCount' | 'unassignedPoints' | 'labelOnlyCount' | 'labelOnlyEstimatedCount' | 'labelOnlyPoints') => groups.reduce((total, group) => total + group[select], 0)
   const byStatus = Object.fromEntries([...activeStatuses].map(status => [status, sum(aggregates.filter(row => row.status === status), 'count')]))

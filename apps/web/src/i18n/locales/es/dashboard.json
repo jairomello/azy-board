@@ -124,5 +124,6 @@
   "hintSpi": "Conclusión del alcance activo dividida por lo esperado para hoy. 1,00 = en plazo; por debajo de 0,85 es crítico.",
   "hintDaysToFinish": "Días corridos entre hoy y el término planificado. Negativo significa plazo vencido.",
   "hintCompletion": "Elementos completados ÷ alcance activo (TASK/BUG sin N/A). Las dependencias externas no entran.",
-  "hintAdvance": "Promedio del peso de la columna de cada elemento: muestra cuánto avanzó el trabajo en el flujo, incluso sin completar."
+  "hintAdvance": "Promedio del peso de la columna de cada elemento: muestra cuánto avanzó el trabajo en el flujo, incluso sin completar.",
+  "externalOwner": "Responsable externo"
 }

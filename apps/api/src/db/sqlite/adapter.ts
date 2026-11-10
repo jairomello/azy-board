@@ -1,4 +1,4 @@
-import { and, asc, count, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
+import { and, asc, count, eq, gt, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm'
 import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts'
 import type { ItemDependencyType, ItemType } from '@azy-board/domain'
 import type { Database } from 'bun:sqlite'
@@ -2482,7 +2482,8 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           doneTokensOutput: sql<number>`COALESCE(SUM(CASE WHEN ${items.status} = 'DONE' THEN ${items.tokensOutput} ELSE 0 END), 0)`,
           count: sql<number>`COUNT(*)`,
         }
-        const conditions = dashboardLeafConditions(context, projectId, filter)
+        // Tokens seguem a população de progresso: N/A (CANCELLED) não entra no escopo.
+        const conditions = [...dashboardLeafConditions(context, projectId, filter), ne(items.status, 'CANCELLED')]
         const normalize = (rows: Array<{ key: string | null } & Record<string, unknown>>) => rows.map(row => ({
           key: row.key ?? null,
           tokensInput: Number(row.tokensInput), tokensOutput: Number(row.tokensOutput),

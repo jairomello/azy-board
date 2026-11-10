@@ -124,5 +124,6 @@
   "hintSpi": "Active scope completion divided by what was expected by today. 1.00 = on schedule; below 0.85 is critical.",
   "hintDaysToFinish": "Calendar days between today and the planned end date. Negative means the deadline has passed.",
   "hintCompletion": "Completed items ÷ active scope (TASK/BUG without N/A). External dependencies are excluded.",
-  "hintAdvance": "Average column weight per item: shows how far work moved through the flow, even before completion."
+  "hintAdvance": "Average column weight per item: shows how far work moved through the flow, even before completion.",
+  "externalOwner": "External owner"
 }

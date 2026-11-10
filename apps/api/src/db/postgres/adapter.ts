@@ -3219,7 +3219,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           const rows = await q(
             `SELECT s.sprint_id AS key, ${sums}
              FROM items i INNER JOIN item_sprints s ON s.tenant_id = i.tenant_id AND s.item_id = i.id
-             WHERE ${query.where}
+             WHERE ${query.where} AND i.status <> 'CANCELLED'
              GROUP BY s.sprint_id`,
             query.params,
           )
@@ -3229,7 +3229,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           const rows = await q(
             `SELECT m.squad_id AS key, ${sums}
              FROM items i LEFT JOIN memberships m ON m.tenant_id = i.tenant_id AND m.project_id = i.project_id AND m.user_id = i.assignee_id
-             WHERE ${query.where}
+             WHERE ${query.where} AND i.status <> 'CANCELLED'
              GROUP BY m.squad_id`,
             query.params,
           )
@@ -3240,8 +3240,9 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             : groupBy === 'moduleId' ? 'i.module_id'
               : groupBy === 'versionId' ? 'i.version_id'
                 : 'i.assignee_id'
+        // Tokens seguem a população de progresso: N/A (CANCELLED) não entra no escopo.
         const rows = await q(
-          `SELECT ${column} AS key, ${sums} FROM items i WHERE ${query.where} GROUP BY ${column}`,
+          `SELECT ${column} AS key, ${sums} FROM items i WHERE ${query.where} AND i.status <> 'CANCELLED' GROUP BY ${column}`,
           query.params,
         )
         return toRows(rows)
