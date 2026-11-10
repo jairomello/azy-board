@@ -85,30 +85,22 @@ export function teamLoadHasWip(snapshot: DashboardSnapshot): boolean {
 }
 
 export function teamLoadData(snapshot: DashboardSnapshot, mode: 'items' | 'points', t: DashboardTranslator): ChartDatum[] {
-  // Cada barra é o WIP do responsável (em andamento + bloqueados). A soma das barras
-  // precisa fechar com o total do box: membros + responsável externo + sem responsável.
+  // Carga = trabalho ATIVO sob responsabilidade do time. Bloqueado não sobrecarrega
+  // ninguém e item com responsável externo não é do time: ambos ficam fora das barras
+  // (a nota do box informa quantos ficaram de fora).
   const members = snapshot.boxes.teamLoad.members.map(member => ({
     name: displayPersonName(member.userName),
     title: member.userName,
-    value: mode === 'items' ? member.wipTotal : (member.wipPoints ?? 0),
+    value: mode === 'items' ? Math.max(0, member.wipTotal - (member.blockedSubset ?? 0)) : Math.max(0, (member.wipPoints ?? 0) - (member.blockedPoints ?? 0)),
     pointsAvailable: member.wipPoints !== null,
   }))
-  const labelOnly = snapshot.boxes.teamLoad.labelOnlyWip ?? 0
-  const externalOwner = labelOnly > 0
-    ? [{
-        name: t('externalOwner'),
-        title: t('externalOwner'),
-        value: mode === 'items' ? labelOnly : (snapshot.boxes.teamLoad.labelOnlyWipPoints ?? 0),
-        pointsAvailable: snapshot.boxes.teamLoad.labelOnlyWipPoints != null,
-      }]
-    : []
-  const unassigned = snapshot.boxes.teamLoad.unassignedWip
-  if (!unassigned) return [...members, ...externalOwner]
+  const unassigned = Math.max(0, snapshot.boxes.teamLoad.unassignedWip - (snapshot.boxes.teamLoad.blockedUnassignedSubset ?? 0))
+  if (!unassigned) return members
   const unassignedLabel = t('unassigned')
-  return [...members, ...externalOwner, {
+  return [...members, {
     name: unassignedLabel,
     title: unassignedLabel,
-    value: mode === 'items' ? unassigned : (snapshot.boxes.teamLoad.unassignedWipPoints ?? 0),
+    value: mode === 'items' ? unassigned : Math.max(0, (snapshot.boxes.teamLoad.unassignedWipPoints ?? 0) - (snapshot.boxes.teamLoad.unassignedBlockedPoints ?? 0)),
     pointsAvailable: snapshot.boxes.teamLoad.unassignedWipPoints !== null,
   }]
 }

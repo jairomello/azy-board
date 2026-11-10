@@ -116,7 +116,6 @@
     "unknown": "Sin datos"
   },
   "progressScopeNote": "Alcance activo: TASK/BUG, sin N/A ({{cancelled}} fuera). Dependencias externas: {{external}}.",
-  "wipTotalItems": "{{count}} elementos en curso o bloqueados",
   "completion": "Conclusión",
   "expectedVsCompletion": "Esperado: {{expected}}% · Completado: {{completion}}%",
   "indicatorsScopeNote": "{{total}} elementos activos · {{cancelled}} N/A fuera · {{external}} dependencias externas",
@@ -125,5 +124,5 @@
   "hintDaysToFinish": "Días corridos entre hoy y el término planificado. Negativo significa plazo vencido.",
   "hintCompletion": "Elementos completados ÷ alcance activo (TASK/BUG sin N/A). Las dependencias externas no entran.",
   "hintAdvance": "Promedio del peso de la columna de cada elemento: muestra cuánto avanzó el trabajo en el flujo, incluso sin completar.",
-  "externalOwner": "Responsable externo"
+  "teamLoadNote": "{{blocked}} bloqueados y {{external}} con responsable externo quedan fuera de esta carga."
 }

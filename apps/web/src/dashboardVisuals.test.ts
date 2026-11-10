@@ -20,8 +20,8 @@ describe('dashboard chart adapters', () => {
     const empty = snapshot(); const hours: DashboardHours = { semantics: '', totalMinutes: 0, rows: [] }
     expect(progressData(empty, t).donut[1].value).toBe(6); expect(JSON.stringify(hoursByAuthorData(hours, t))).toBe('[]'); expect(statusData(empty, 'items', t).length).toBe(2)
     const unestimated = teamLoadData(snapshot({ teamLoad: { members: [{ userId: 'u', userName: 'Sem pontos', squadId: null, squadName: null, wipTotal: 1, wipPoints: null, pointsCoverage: 0 }], unassignedWip: 0, unassignedWipPoints: null, pointsCoverage: 0 } }), 'points', t)[0]; expect(unestimated.name).toBe('Sem pontos'); expect(unestimated.value).toBe(0); expect(unestimated.pointsAvailable).toBe(false)
-    // O WIP do responsável inclui os bloqueados: a barra precisa fechar com o total do box.
-    const blockedSubset = teamLoadData(snapshot({ teamLoad: { members: [{ userId: 'u', userName: 'Bloqueada', squadId: null, squadName: null, wipTotal: 2, blockedSubset: 1, wipPoints: 5, blockedPoints: 2, pointsCoverage: 100 }], unassignedWip: 0, unassignedWipPoints: null, pointsCoverage: 100 } }), 'items', t)[0]; expect(blockedSubset.value).toBe(2)
+    // Bloqueado não sobrecarrega a equipe: fica fora da barra do responsável.
+    const blockedSubset = teamLoadData(snapshot({ teamLoad: { members: [{ userId: 'u', userName: 'Bloqueada', squadId: null, squadName: null, wipTotal: 2, blockedSubset: 1, wipPoints: 5, blockedPoints: 2, pointsCoverage: 100 }], unassignedWip: 0, unassignedWipPoints: null, pointsCoverage: 100 } }), 'items', t)[0]; expect(blockedSubset.value).toBe(1)
   })
 })
 
@@ -125,17 +125,18 @@ describe('seletor da carga da equipe (B12)', () => {
     expect(teamLoadHasWip(idle)).toBe(false)
   })
 
-  test('as barras fecham com o total do box: bloqueados e responsável externo entram', () => {
+  test('carga mostra só trabalho ativo do time: bloqueado e responsável externo ficam fora', () => {
     const full = snapshot({
       teamLoad: {
         members: [{ userId: 'u', userName: 'Ana', squadId: null, squadName: null, wipTotal: 3, blockedSubset: 1, wipPoints: 5, blockedPoints: 2, pointsCoverage: 100 }],
         unassignedWip: 2, labelOnlyWip: 1, unassignedWipPoints: 4, labelOnlyWipPoints: 1, pointsCoverage: 100,
       },
     })
-    // Ana (3, inclui 1 bloqueado) + responsável externo (1) + sem responsável (2) = 6 itens.
-    expect(teamLoadData(full, 'items', t).map(item => item.value)).toEqual([3, 1, 2])
-    expect(teamLoadData(full, 'points', t).map(item => item.value)).toEqual([5, 1, 4])
-    expect(teamLoadData(full, 'items', t).map(item => item.name)).toContain('externalOwner')
+    // Ana: 3 no WIP − 1 bloqueado = 2 em andamento; sem responsável: 2.
+    expect(teamLoadData(full, 'items', t).map(item => item.value)).toEqual([2, 2])
+    expect(teamLoadData(full, 'points', t).map(item => item.value)).toEqual([3, 4])
+    // Item com responsável externo não vira barra: não é carga do time.
+    expect(teamLoadData(full, 'items', t)).toHaveLength(2)
   })
 })
 
