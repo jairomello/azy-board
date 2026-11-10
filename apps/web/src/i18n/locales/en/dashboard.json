@@ -114,5 +114,10 @@
     "yellow": "At risk",
     "red": "Critical",
     "unknown": "No data"
-  }
+  },
+  "progressScopeNote": "Active scope: TASK/BUG, excluding N/A ({{cancelled}} out). External dependencies: {{external}}.",
+  "wipTotalItems": "{{count}} items in progress or blocked",
+  "completion": "Completion",
+  "expectedVsCompletion": "Expected: {{expected}}% · Completed: {{completion}}%",
+  "indicatorsScopeNote": "{{total}} active items · {{cancelled}} N/A out · {{external}} external dependencies"
 }

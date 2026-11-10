@@ -42,6 +42,7 @@ import type {
   DashboardHoursFilter,
   DashboardAgingDetailItem,
   DashboardLeafItemPageOptions,
+  DashboardLeafPopulation,
   DashboardDimensionProjectionMeta,
   DashboardDimensionSnapshotRecord,
   DashboardMemberRow,
@@ -636,10 +637,10 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
     return rows[0] ?? null
   }
 
-  function dashboardLeafWhere(context: PersistenceContext, projectId: string, filter?: DashboardPopulationFilter) {
+  function dashboardLeafWhere(context: PersistenceContext, projectId: string, filter?: DashboardPopulationFilter, population: DashboardLeafPopulation = 'WORK') {
     const params: unknown[] = [context.tenantId, projectId]
     const conditions = [
-      'i.tenant_id = $1', 'i.project_id = $2', "i.type IN ('TASK', 'BUG', 'EXTERNAL')", "i.status <> 'ARCHIVED'",
+      'i.tenant_id = $1', 'i.project_id = $2', population === 'EXTERNAL' ? "i.type = 'EXTERNAL'" : "i.type IN ('TASK', 'BUG')", "i.status <> 'ARCHIVED'",
       'NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id)',
     ]
     const addArray = (column: string, values: string[]) => {
@@ -3171,8 +3172,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         } satisfies DashboardDimensionSnapshotRecord))
       },
       // [DB-SWAP] Usa os mesmos agregados sem hidratar população completa na aplicação.
-      async aggregateLeafItems(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, today: string): Promise<DashboardSnapshotAggregateRow[]> {
-        const query = dashboardLeafWhere(context, projectId, filter)
+      async aggregateLeafItems(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, today: string, population: DashboardLeafPopulation = 'WORK'): Promise<DashboardSnapshotAggregateRow[]> {
+        const query = dashboardLeafWhere(context, projectId, filter, population)
         const params = [...query.params, today]
         const rows = await q(
           `SELECT i.status, i.assignee_id, i.column_id,
@@ -3181,7 +3182,13 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
                   COALESCE(SUM(i.points), 0)::int AS points,
                    COALESCE(SUM(CASE WHEN i.status = 'DONE' THEN i.points ELSE 0 END), 0)::int AS done_points,
                   COUNT(*) FILTER (WHERE i.due_date IS NOT NULL AND i.due_date < $${params.length} AND i.status NOT IN ('DONE', 'CANCELLED'))::int AS overdue_count,
-                  COALESCE(SUM(i.points) FILTER (WHERE i.due_date IS NOT NULL AND i.due_date < $${params.length} AND i.status NOT IN ('DONE', 'CANCELLED')), 0)::int AS overdue_points
+                  COALESCE(SUM(i.points) FILTER (WHERE i.due_date IS NOT NULL AND i.due_date < $${params.length} AND i.status NOT IN ('DONE', 'CANCELLED')), 0)::int AS overdue_points,
+                  COUNT(*) FILTER (WHERE i.assignee_id IS NULL AND i.assignee_api_key_id IS NULL AND NULLIF(btrim(i.assignee_label), '') IS NULL)::int AS unassigned_count,
+                  COUNT(i.points) FILTER (WHERE i.assignee_id IS NULL AND i.assignee_api_key_id IS NULL AND NULLIF(btrim(i.assignee_label), '') IS NULL)::int AS unassigned_estimated_count,
+                  COALESCE(SUM(i.points) FILTER (WHERE i.assignee_id IS NULL AND i.assignee_api_key_id IS NULL AND NULLIF(btrim(i.assignee_label), '') IS NULL), 0)::int AS unassigned_points,
+                  COUNT(*) FILTER (WHERE i.assignee_id IS NULL AND i.assignee_api_key_id IS NULL AND NULLIF(btrim(i.assignee_label), '') IS NOT NULL)::int AS label_only_count,
+                  COUNT(i.points) FILTER (WHERE i.assignee_id IS NULL AND i.assignee_api_key_id IS NULL AND NULLIF(btrim(i.assignee_label), '') IS NOT NULL)::int AS label_only_estimated_count,
+                  COALESCE(SUM(i.points) FILTER (WHERE i.assignee_id IS NULL AND i.assignee_api_key_id IS NULL AND NULLIF(btrim(i.assignee_label), '') IS NOT NULL), 0)::int AS label_only_points
            FROM items i WHERE ${query.where}
            GROUP BY i.status, i.assignee_id, i.column_id`,
           params,
@@ -3190,6 +3197,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           status: row.status as string, assigneeId: row.assignee_id as string | null, columnId: row.column_id as string | null,
           count: row.count as number, estimatedCount: row.estimated_count as number,
           points: row.points as number, donePoints: row.done_points as number, overdueCount: row.overdue_count as number, overduePoints: row.overdue_points as number,
+          unassignedCount: row.unassigned_count as number, unassignedEstimatedCount: row.unassigned_estimated_count as number, unassignedPoints: row.unassigned_points as number,
+          labelOnlyCount: row.label_only_count as number, labelOnlyEstimatedCount: row.label_only_estimated_count as number, labelOnlyPoints: row.label_only_points as number,
         }))
       },
       // T80 — recortes de tokens por dimensão, sempre por agregação SQL da população filtrada.

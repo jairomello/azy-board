@@ -33,6 +33,7 @@ import type {
   DashboardDimensionProjectionMeta,
   DashboardDimensionSnapshotRecord,
   DashboardLeafItemPageOptions,
+  DashboardLeafPopulation,
   DashboardMemberRow,
   DashboardPopulationFilter,
   DashboardSnapshotAggregateRow,
@@ -392,7 +393,7 @@ export interface DashboardReadPort {
   getDimensionProjectionMeta(context: PersistenceContext, projectId: string): Promise<DashboardDimensionProjectionMeta | null>
   listDimensionSnapshots(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, from: string, to: string): Promise<DashboardDimensionSnapshotRecord[]>
   /** Agregados de status/points/atrasos e carga por responsável sem hidratar itens. */
-  aggregateLeafItems(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, today: string): Promise<DashboardSnapshotAggregateRow[]>
+  aggregateLeafItems(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, today: string, population?: DashboardLeafPopulation): Promise<DashboardSnapshotAggregateRow[]>
   /** T80 — agregado de tokens por uma dimensão (status/tipo/módulo/versão/sprint/responsável/squad). */
   groupLeafTokens(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, groupBy: DashboardTokenGroupBy): Promise<DashboardTokenGroupRow[]>
   listSprintItemIds(context: PersistenceContext, projectId: string, sprintIds: string[]): Promise<string[]>

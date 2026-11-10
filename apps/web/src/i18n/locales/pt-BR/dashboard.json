@@ -114,5 +114,10 @@
     "yellow": "Atenção",
     "red": "Crítico",
     "unknown": "Sem dados"
-  }
+  },
+  "progressScopeNote": "Escopo ativo: TASK/BUG, sem N/A ({{cancelled}} fora). Dependências externas: {{external}}.",
+  "wipTotalItems": "{{count}} itens em andamento ou bloqueados",
+  "completion": "Conclusão",
+  "expectedVsCompletion": "Esperado: {{expected}}% · Concluído: {{completion}}%",
+  "indicatorsScopeNote": "{{total}} itens ativos · {{cancelled}} N/A fora · {{external}} dependências externas"
 }

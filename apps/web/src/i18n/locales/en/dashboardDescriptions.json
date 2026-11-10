@@ -1,8 +1,8 @@
 {
   "wipByItems": "By item count",
   "wipByPoints": "By points",
-  "descriptionProgressScope": "Compares completed work with total scope by items and points.",
-  "descriptionWip": "Shows the current distribution of work in progress by status.",
+  "descriptionProgressScope": "Compares completed work with the active scope (TASK/BUG without N/A), by items and points. External dependencies are excluded.",
+  "descriptionWip": "Breaks down work in progress (in progress and blocked) by items and points.",
   "descriptionBlocked": "Shows how many items are blocked and which have accumulated the most days.",
   "descriptionOverdue": "Compares overdue items and points with the remaining scope.",
   "descriptionBurnup": "Shows how scope and completed items changed over time.",

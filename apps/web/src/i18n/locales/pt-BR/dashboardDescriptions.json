@@ -1,8 +1,8 @@
 {
   "wipByItems": "Por quantidade de itens",
   "wipByPoints": "Por pontos",
-  "descriptionProgressScope": "Compara o que foi concluído com o escopo total, por itens e pontos.",
-  "descriptionWip": "Mostra a distribuição atual do trabalho em progresso por status.",
+  "descriptionProgressScope": "Compara o concluído com o escopo ativo (TASK/BUG sem N/A), por itens e pontos. Dependências externas ficam fora.",
+  "descriptionWip": "Distribui o trabalho em progresso (em andamento e bloqueados) por itens e pontos.",
   "descriptionBlocked": "Mostra quantos itens estão bloqueados e quais acumulam mais dias.",
   "descriptionOverdue": "Compara os itens e pontos atrasados com o restante do escopo.",
   "descriptionBurnup": "Mostra como o escopo e os itens concluídos evoluíram ao longo do tempo.",

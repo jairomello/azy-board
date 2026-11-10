@@ -271,7 +271,7 @@ describe('rollup diário transacional (Item 13)', () => {
     expect(snapshot.boxes.progressScope).toMatchObject({ total: 5, done: 1, points: 6, donePoints: 3, estimationCoverage: 80 })
     // Avanço: 100 (concluída) + 90 (única coluna em progresso) e 0 nos itens sem coluna → 38.
     expect(snapshot.boxes.progressScope.advance).toBe(38)
-    expect(snapshot.boxes.wip).toMatchObject({ total: 2, byStatus: { IN_PROGRESS: 1, BLOCKED: 1 }, pointsCoverage: 80 })
+    expect(snapshot.boxes.wip).toMatchObject({ total: 2, byStatus: { IN_PROGRESS: 1, BLOCKED: 1 }, pointsCoverage: 50 })
     expect(snapshot.boxes.blocked.total).toBe(1)
     expect(snapshot.boxes.overdue).toMatchObject({ total: 1, items: [{ title: 'Bloqueado atrasado' }] })
     expect(snapshot.boxes.overdue.points).toBe(2)
@@ -332,39 +332,57 @@ describe('rollup diário transacional (Item 13)', () => {
       { id: generateId(), tenantId: indTenant, projectId: indProject, type: 'TASK', title: 'Em andamento sem início real', status: 'IN_PROGRESS', columnId: wipColumnId, priority: 'MEDIUM', points: null, assigneeId: adminId, dueDate: null, position: 1, createdAt: now, updatedAt: now },
       { id: generateId(), tenantId: indTenant, projectId: indProject, type: 'TASK', title: 'Bloqueada sem motivo', status: 'BLOCKED', priority: 'HIGH', points: 2, assigneeId: adminId, dueDate: '2026-01-01', blockedReason: null, position: 2, createdAt: now, updatedAt: now },
       { id: generateId(), tenantId: indTenant, projectId: indProject, type: 'TASK', title: 'Aberta sem responsável e sem prazo', status: 'NOT_STARTED', priority: 'LOW', points: 0, assigneeId: null, dueDate: null, position: 3, createdAt: now, updatedAt: now },
+      // N/A fora do progresso; EXTERNAL é dependência externa; responsável só no rótulo não é "sem responsável".
+      { id: generateId(), tenantId: indTenant, projectId: indProject, type: 'TASK', title: 'Cancelada não entra no progresso', status: 'CANCELLED', priority: 'LOW', points: 5, assigneeId: adminId, dueDate: null, position: 4, createdAt: now, updatedAt: now },
+      { id: generateId(), tenantId: indTenant, projectId: indProject, type: 'EXTERNAL', title: 'Dependência externa', status: 'NOT_STARTED', priority: 'LOW', points: 8, assigneeId: null, dueDate: null, position: 5, createdAt: now, updatedAt: now },
+      { id: generateId(), tenantId: indTenant, projectId: indProject, type: 'TASK', title: 'Responsável externo no rótulo', status: 'IN_PROGRESS', priority: 'MEDIUM', points: 1, assigneeId: null, assigneeLabel: 'Cliente X', dueDate: null, position: 6, createdAt: now, updatedAt: now },
     ])
     const session = await token(adminId, indTenant, email)
     const response = await request(`/projects/${indProject}/dashboard/indicators`, session)
     expect(response.status).toBe(200)
     const body = await response.json() as {
-      total: number; done: number; advancePercent: number; expectedPercent: number; spi: number; spiStatus: string; daysToFinish: number
-      blocked: number; overdue: number; wip: number; unassignedWip: number; completionPercent: number
+      total: number; done: number; cancelled: number; advancePercent: number; expectedPercent: number; spi: number; spiStatus: string; daysToFinish: number
+      blocked: number; overdue: number; wip: number; unassignedWip: number; labelOnlyWip: number; completionPercent: number
+      external: { total: number; done: number }
       hygiene: { totalOpen: number; withoutAssignee: number; withoutDueDate: number; withoutPriority: number; doneWithoutActualDate: number; inProgressWithoutActualStart: number; blockedWithoutReason: number }
     }
+    // Escopo de progresso: TASK/BUG sem N/A. EXTERNAL e CANCELLED ficam fora.
     expect(body.total).toBe(4)
     expect(body.done).toBe(1)
+    expect(body.cancelled).toBe(1)
+    expect(body.external).toMatchObject({ total: 1, done: 0 })
     expect(body.blocked).toBe(1)
     expect(body.overdue).toBe(1)
-    expect(body.wip).toBe(2)
+    expect(body.wip).toBe(3)
+    // Só o item sem usuário, sem API key e sem rótulo conta como sem responsável.
     expect(body.unassignedWip).toBe(0)
+    expect(body.labelOnlyWip).toBe(1)
     expect(body.hygiene).toMatchObject({
-      totalOpen: 3,
+      totalOpen: 4,
       withoutAssignee: 1,
-      withoutDueDate: 2,
+      withoutDueDate: 3,
       withoutPriority: 0,
       doneWithoutActualDate: 1,
-      inProgressWithoutActualStart: 1,
+      inProgressWithoutActualStart: 2,
       blockedWithoutReason: 1,
     })
     expect(body.daysToFinish).toBe(5)
     expect(body.expectedPercent).toBeCloseTo(66.7, 1)
+    expect(body.completionPercent).toBe(25)
+    // SPI passa a ser conclusão ÷ esperado (não o avanço no fluxo).
+    expect(body.spi).toBeCloseTo(0.375, 3)
     expect(body.spiStatus).toBe('RED')
-    expect(body.spi).toBeGreaterThan(0)
 
     const snapshotResponse = await request(`/projects/${indProject}/dashboard/snapshot`, session)
-    const snapshot = await snapshotResponse.json() as { boxes: { progressScope: { advance: number; completionPercent: number } } }
+    const snapshot = await snapshotResponse.json() as { boxes: { progressScope: { total: number; done: number; cancelled: number; advance: number; completionPercent: number; byStatus?: unknown }; wip: { byStatus: Record<string, number>; total: number } }; external: { total: number } }
     expect(body.advancePercent).toBe(snapshot.boxes.progressScope.advance)
     expect(body.completionPercent).toBe(snapshot.boxes.progressScope.completionPercent)
+    // O snapshot precisa concordar com os indicadores: mesma população e mesmos números.
+    expect(snapshot.boxes.progressScope).toMatchObject({ total: 4, done: 1, cancelled: 1 })
+    expect(snapshot.external.total).toBe(1)
+    // O box WIP mostra apenas o que compõe o total (em andamento e bloqueados).
+    expect(Object.keys(snapshot.boxes.wip.byStatus).sort()).toEqual(['BLOCKED', 'IN_PROGRESS'])
+    expect(snapshot.boxes.wip.byStatus.IN_PROGRESS + snapshot.boxes.wip.byStatus.BLOCKED).toBe(snapshot.boxes.wip.total)
   })
 })
 
