@@ -75,7 +75,11 @@ export function useBoardArchiving({ projectId, allItems, setAllItems, invalidate
     // [TENANT] arquivamento escopado ao projeto da rota.
     if (!projectId) return
     try {
-      await api.post(`/projects/${projectId}/items/${itemId}/archive`, {})
+      // O consentimento da cascata é da tela (modal de confirmação). Sem
+      // `confirm`, o servidor devolve apenas o aviso de descendentes e NÃO
+      // arquiva — o item reaparecia depois do refetch, embora o toast dissesse
+      // "arquivado".
+      await api.post(`/projects/${projectId}/items/${itemId}/archive`, { confirm: true })
       setAllItems(previous => computeIsLeaf(withoutSubtree(previous, itemId)))
       // A Tree View lê `/items/tree` com chave por filtro: o cache do board não
       // alimenta a grade. Sem invalidar a árvore, a linha arquivada permanecia

@@ -7,6 +7,7 @@ import type { ItemData } from '../model/types'
 
 const fetchOriginal = globalThis.fetch
 const calls: string[] = []
+const bodies: Array<{ url: string; body: unknown }> = []
 
 const item: ItemData = {
   id: 'task-1',
@@ -20,9 +21,11 @@ const item: ItemData = {
 
 beforeEach(() => {
   calls.length = 0
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
+  bodies.length = 0
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     calls.push(url)
+    if (typeof init?.body === 'string') bodies.push({ url, body: JSON.parse(init.body) })
     if (url.includes('/items/task-1/archive') || url.includes('/items/task-1/unarchive')) {
       return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     }
@@ -55,6 +58,8 @@ describe('useBoardArchiving — reconciliação da grade', () => {
     await waitFor(() => expect(treeCalls).toBe(1))
     expect(boardCalls).toBe(1)
     expect(itemsCalls).toBe(1)
+    // Sem `confirm`, o servidor devolve só o aviso de cascata e não arquiva.
+    expect(bodies.find(entry => entry.url.includes('/archive'))?.body).toEqual({ confirm: true })
   })
 
   test('oferece "Desfazer" no toast e restaura o item na grade', async () => {

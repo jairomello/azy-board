@@ -17,7 +17,10 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
   até um refetch manual. O fluxo passou a invalidar a árvore junto com o board, e
   falha de releitura não transforma um arquivamento bem-sucedido em erro. O
   toast de sucesso agora traz **Desfazer**, que restaura o item e refaz board e
-  árvore, com uma janela de 7 segundos.
+  árvore, com uma janela de 7 segundos. O envio de arquivamento passou a incluir
+  `confirm: true` depois da confirmação da tela — antes, itens com filhos
+  recebiam só o aviso de cascata do servidor e **não eram arquivados de fato**,
+  embora o toast dissesse o contrário.
 
 - **Controles de coluna da árvore não vazam sobre os popovers do shell.** O
   `+` e o menu de inserção de coluna usavam `z-20`/`z-30` e, por estarem depois
@@ -76,7 +79,9 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
   task/bug — e, em task/bug, um segundo alvo pequeno para Bug (o "+" cria um
   irmão sob o mesmo pai). Sem pílula nem rótulos em repouso; o tipo é explicado
   pelo tooltip acessível, o contêiner é expandido antes de abrir a modal e o
-  clique reaproveita a criação existente com `parentId`/`moduleId` corretos.
+  clique reaproveita a criação existente com `parentId`/`moduleId` corretos. A
+  criação de épico também revalida board e árvore (antes ela persistia no
+  módulo, mas a grade não era atualizada).
 - **Status múltiplo no filtro do board.** O filtro de status deixou de ser uma
   seleção única e passou a usar checkboxes, combinando os valores marcados com
   OR (`status=IN_PROGRESS,DONE`). A regra vale para Kanban, Tree View, chips de
