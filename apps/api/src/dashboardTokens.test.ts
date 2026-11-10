@@ -74,6 +74,8 @@ describe('T80 — endpoint de tokens', () => {
       { id: 'tk-a', tenantId, projectId, type: 'TASK', title: 'A', ancestryPath: '[]', status: 'DONE', priority: 'MEDIUM', position: 0, points: 3, tokensInput: 1000, tokensOutput: 200, createdAt: now, updatedAt: now },
       { id: 'tk-b', tenantId, projectId, type: 'TASK', title: 'B', ancestryPath: '[]', status: 'IN_PROGRESS', priority: 'MEDIUM', position: 1, points: 2, tokensInput: 400, tokensOutput: 100, createdAt: now, updatedAt: now },
       { id: 'tk-c', tenantId, projectId, type: 'BUG', title: 'C', ancestryPath: '[]', status: 'NOT_STARTED', priority: 'MEDIUM', position: 2, points: null, tokensOutput: 50, createdAt: now, updatedAt: now },
+      // Token é consumo: card N/A continua contando.
+      { id: 'tk-d', tenantId, projectId, type: 'TASK', title: 'D cancelada', ancestryPath: '[]', status: 'CANCELLED', priority: 'MEDIUM', position: 3, points: 1, tokensInput: 300, createdAt: now, updatedAt: now },
     ])
     adminSession = await session(viewerId, tenantId, `viewer-${viewerId}@tb.test`)
     outsiderSession = await session(outsiderId, tenantId, `out-${outsiderId}@tb.test`)
@@ -90,11 +92,13 @@ describe('T80 — endpoint de tokens', () => {
     }
     expect(body.hasTokens).toBe(true)
     expect(body.filters.inapplicable).toEqual(['from', 'to'])
-    expect(body.boxes.scope).toMatchObject({ tokens: 1750, doneTokens: 1200, count: 3 })
+    expect(body.boxes.scope).toMatchObject({ tokens: 2050, doneTokens: 1200, count: 4 })
     const byStatus = Object.fromEntries(body.boxes.byStatus.map(row => [row.key, row.tokens]))
     expect(byStatus.DONE).toBe(1200)
     expect(byStatus.IN_PROGRESS).toBe(500)
     expect(byStatus.NOT_STARTED).toBe(50)
+    // N/A entra no recorte e no total: o token foi consumido mesmo o card tendo sido cancelado.
+    expect(byStatus.CANCELLED).toBe(300)
   })
 
   test('período é aplicável à série e declarado inaplicável aos recortes', async () => {
@@ -105,14 +109,14 @@ describe('T80 — endpoint de tokens', () => {
     expect(body.seriesFilters.inapplicable).toEqual(['squadId', 'assigneeId'])
     expect(body.series.map(row => row.date)).toEqual(['2026-04-01', '2026-04-02', '2026-04-03'])
     // Sem histórico capturado, a semente vem do estado atual na data de início da cobertura.
-    expect(body.series.map(row => row.tokens)).toEqual([1750, 1750, 1750])
+    expect(body.series.map(row => row.tokens)).toEqual([2050, 2050, 2050])
   })
 
   test('agrupamento por módulo e filtro por tipo', async () => {
     const response = await request(`/projects/${projectId}/dashboard/tokens?type=TASK`, adminSession)
     const body = await response.json() as { boxes: { scope: { tokens: number; count: number }; byType: Array<Record<string, unknown>> } }
-    expect(body.boxes.scope).toMatchObject({ tokens: 1700, count: 2 })
-    expect(body.boxes.byType).toEqual([{ key: 'TASK', tokensInput: 1400, tokensOutput: 300, tokens: 1700, doneTokensInput: 1000, doneTokensOutput: 200, count: 2 }])
+    expect(body.boxes.scope).toMatchObject({ tokens: 2000, count: 3 })
+    expect(body.boxes.byType).toEqual([{ key: 'TASK', tokensInput: 1700, tokensOutput: 300, tokens: 2000, doneTokensInput: 1000, doneTokensOutput: 200, count: 3 }])
   })
 
   test('RBAC: projeto sem membership na resposta protegida', async () => {
@@ -131,7 +135,7 @@ describe('T80 — endpoint de tokens', () => {
     expect(new TextEncoder().encode(text).length).toBeLessThan(256 * 1024)
     const body = JSON.parse(text) as { items: unknown[]; pagination: { limit: number; total: number; hasMore: boolean; truncated: boolean } }
     expect(body.items).toHaveLength(2)
-    expect(body.pagination).toMatchObject({ limit: 2, total: 3, hasMore: true, truncated: true })
+    expect(body.pagination).toMatchObject({ limit: 2, total: 4, hasMore: true, truncated: true })
   })
 
   test('pai oculto pelo filtro não entra no recorte de tokens', async () => {
