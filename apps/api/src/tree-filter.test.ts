@@ -148,6 +148,11 @@ describe('filtros de população da árvore', () => {
     expect(leaves.map(leaf => leaf.id)).toEqual([taskProgressId])
   })
 
+  test('status múltiplos combinam com OR', async () => {
+    const leaves = collectLeaves(await getTree(session, projectId, 'status=IN_PROGRESS,DONE'))
+    expect(leaves.map(leaf => leaf.id).sort()).toEqual([taskDoneId, taskProgressId, bugProgressId].sort())
+  })
+
   test('filtra por prioridade', async () => {
     const leaves = collectLeaves(await getTree(session, projectId, 'priority=HIGH'))
     expect(leaves.map(leaf => leaf.id)).toEqual([taskProgressId])

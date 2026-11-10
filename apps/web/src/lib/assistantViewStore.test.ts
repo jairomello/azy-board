@@ -30,6 +30,14 @@ describe('assistantViewStore (card T17)', () => {
     expect(sessions[0].filters.types).toEqual(['BUG'])
   })
 
+  test('normaliza status múltiplo do comando para a string do board', () => {
+    const { sessions, unsubscribe } = capture()
+    applyViewCommand('p1', command({ type: 'set_filters', filters: { status: ['IN_PROGRESS', 'DONE'] } }))
+    unsubscribe()
+
+    expect(sessions[0].filters.status).toBe('IN_PROGRESS,DONE')
+  })
+
   test('alterna a visualização e abre item', () => {
     const { sessions, unsubscribe } = capture()
     applyViewCommand('p1', command({ type: 'set_view', view: { mode: 'tree', activeModuleId: 'm1' } }))

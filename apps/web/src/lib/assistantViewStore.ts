@@ -94,7 +94,14 @@ export function syncCurrentViewSession(projectId: string, session: AssistantView
   if (existing) writeRaw(projectId, session, existing.history)
 }
 
-function filterValueToBoardField(_key: string, value: AssistantScreenFilterValue): unknown {
+function filterValueToBoardField(key: string, value: AssistantScreenFilterValue): unknown {
+  // Status é uma lista de valores combinados com OR, mas o estado do board o
+  // guarda como string separada por vírgula (mesmo formato da query da API).
+  if (key === 'status') {
+    if (Array.isArray(value)) return value.join(',')
+    if (value && typeof value === 'object' && 'operator' in value && value.operator === 'IS_EMPTY') return ''
+    return value
+  }
   if (Array.isArray(value)) return value
   if (typeof value === 'boolean') return value
   if (value && typeof value === 'object' && 'operator' in value && value.operator === 'IS_EMPTY') return EMPTY_FILTER_VALUE

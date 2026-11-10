@@ -159,8 +159,13 @@ export function populationFilterReasons(item: ItemVisibilityInput, filters: Visi
   if (filters.priority && item.priority !== filters.priority) {
     reasons.push({ code: 'FILTER', field: 'priority', value: filters.priority })
   }
-  if (filters.status && item.status !== filters.status) {
-    reasons.push({ code: 'FILTER', field: 'status', value: filters.status })
+  if (filters.status) {
+    // Múltiplos status são combinados com OR (lista separada por vírgula),
+    // espelhando o filtro por checkboxes do board e a query `status=a,b`.
+    const statuses = filters.status.split(',').map(status => status.trim()).filter(Boolean)
+    if (statuses.length > 0 && !statuses.includes(item.status)) {
+      reasons.push({ code: 'FILTER', field: 'status', value: filters.status })
+    }
   }
   if (filters.types.length > 0 && !filters.types.includes(item.type)) {
     reasons.push({ code: 'FILTER', field: 'types', value: filters.types.join(',') })

@@ -1822,7 +1822,7 @@ export function TreeViewPage({
                       </div>
                       {columnId !== 'actions' && (
                         // Faixa no limite da coluna. O + fica na base para não cobrir a área de arraste.
-                        <span className="group/edge absolute right-0 top-0 z-20 flex h-full w-4 translate-x-1/2 items-end justify-center rounded transition hover:bg-primary/10">
+                        <span className="group/edge absolute right-0 top-0 z-10 flex h-full w-4 translate-x-1/2 items-end justify-center rounded transition hover:bg-primary/10">
                           <span aria-hidden className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border/70" />
                           <button
                             type="button"
@@ -1885,7 +1885,7 @@ export function TreeViewPage({
             <div
               ref={columnMenuRef}
               style={{ left: columnMenu.left, width: COLUMN_MENU_WIDTH }}
-              className="absolute top-11 z-30 -translate-x-1/2 rounded-xl border border-border bg-card p-3 shadow-lg"
+              className="absolute top-11 z-10 -translate-x-1/2 rounded-xl border border-border bg-card p-3 shadow-lg"
             >
               <p className="mb-2 px-1 text-xs font-semibold text-foreground">{t('tree.visibleColumns')}</p>
               <div className="max-h-[22rem] space-y-0.5 overflow-y-auto">

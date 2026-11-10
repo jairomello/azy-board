@@ -11,6 +11,11 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Fixed
 
+- **Controles de coluna da árvore não vazam sobre os popovers do shell.** O
+  `+` e o menu de inserção de coluna usavam `z-20`/`z-30` e, por estarem depois
+  no DOM, pintavam acima do painel de Filtros (`z-20` da command bar). Os
+  controles da grade passaram para `z-10`, mantendo a ordem conteúdo < command
+  bar < header < sidebar < modais.
 - **Rótulo de status unificado em pt-BR.** O filtro exibia "Em andamento"
   (`board:statusInProgress`) enquanto a coluna Status da árvore e o dashboard
   exibiam "Em progresso" (`common:status.IN_PROGRESS`). Eram o mesmo valor
@@ -45,6 +50,10 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Added
 
+- **Status múltiplo no filtro do board.** O filtro de status deixou de ser uma
+  seleção única e passou a usar checkboxes, combinando os valores marcados com
+  OR (`status=IN_PROGRESS,DONE`). A regra vale para Kanban, Tree View, chips de
+  filtros ativos, exportação e snapshot do agente.
 - **Metadados de rastreio do tracker.** O item passa a ter chave externa
   informativa (`externalSource`/`externalRef`), responsável externo
   (`assigneeLabel`) e datas realizadas (`actualStartDate`, `actualDueDate`).

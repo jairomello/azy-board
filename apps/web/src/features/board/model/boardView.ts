@@ -119,7 +119,10 @@ export function selectBoardCards(input: BoardPopulationInput): ItemData[] {
     if (filters.sprintId) leafStories = leafStories.filter(story => matchesSprintFilter(story.itemSprints, filters.sprintId))
     if (filters.versionId) leafStories = leafStories.filter(story => matchesScalarFilter(story.versionId, filters.versionId))
     if (filters.priority) leafStories = leafStories.filter(story => story.priority === filters.priority)
-    if (filters.status) leafStories = leafStories.filter(story => story.status === filters.status)
+    if (filters.status) {
+      const statuses = filters.status.split(',').map(status => status.trim()).filter(Boolean)
+      leafStories = leafStories.filter(story => statuses.includes(story.status))
+    }
     if (filters.authorId) leafStories = leafStories.filter(story => matchesMemberFilter(story.authorId, story.author?.id, filters.authorId))
     if (filters.costCenterId) leafStories = leafStories.filter(story => matchesScalarFilter(story.costCenterId, filters.costCenterId))
     leafStories = leafStories.filter(story => matchesUpdatedWithin(story, filters.updatedWithin, activeSprintId))

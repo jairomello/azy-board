@@ -31,6 +31,16 @@ describe('filtros ativos do Board', () => {
     expect(active.find(item => item.value === 'missing-tag')?.valueLabel).toBe('missing-tag')
   })
 
+  test('cria um chip por status marcado e remove apenas o status clicado', () => {
+    const multi = { ...filters, status: 'DONE,IN_PROGRESS' }
+    const active = normalizeActiveBoardFilters(multi, catalogs, labels)
+    const statusChips = active.filter(item => item.key === 'status')
+    expect(statusChips.map(item => item.value)).toEqual(['DONE', 'IN_PROGRESS'])
+    expect(removeActiveBoardFilter(multi, 'status', 'DONE').status).toBe('IN_PROGRESS')
+    expect(removeActiveBoardFilter(multi, 'status', 'IN_PROGRESS').status).toBe('DONE')
+    expect(removeActiveBoardFilter(multi, 'status').status).toBe('')
+  })
+
   test('não exibe ocultação de histórias quando a representação é cards', () => {
     const active = normalizeActiveBoardFilters(filters, catalogs, labels)
     expect(active.some(item => item.key === 'hideEmptyStories')).toBe(false)
