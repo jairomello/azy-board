@@ -103,7 +103,6 @@
   "descriptionDeadlineIndicators": "SPI, expected vs actual progress, days to finish and data hygiene.",
   "spi": "SPI",
   "daysToFinish": "Days to finish",
-  "expectedVsAdvance": "Expected: {{expected}}% · Progress: {{advance}}%",
   "hygiene": "Data hygiene",
   "hygieneWithoutAssignee": "{{count}} open without assignee",
   "hygieneWithoutDueDate": "{{count}} open without due date",

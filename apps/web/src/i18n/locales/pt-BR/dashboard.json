@@ -103,7 +103,6 @@
   "descriptionDeadlineIndicators": "SPI, avanço × esperado, dias para o término e higiene da base.",
   "spi": "SPI",
   "daysToFinish": "Dias para o término",
-  "expectedVsAdvance": "Esperado: {{expected}}% · Avanço: {{advance}}%",
   "hygiene": "Higiene da base",
   "hygieneWithoutAssignee": "{{count}} aberto(s) sem responsável",
   "hygieneWithoutDueDate": "{{count}} aberto(s) sem prazo",
