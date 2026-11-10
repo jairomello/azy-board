@@ -2109,7 +2109,7 @@ export function TreeViewPage({
             if (!definition || !key) return null
             const options: Array<{ value: string; label: string }> =
               key === 'status'
-                ? (['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'] as TaskStatus[]).map(value => ({ value, label: t(`status.${value}`, { defaultValue: value }) }))
+                ? (['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'] as TaskStatus[]).map(value => ({ value, label: t(`status.${value}`, { defaultValue: value }) }))
                 : key === 'priority'
                   ? (['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as Priority[]).map(value => ({ value, label: t(`priority.${value}`, { defaultValue: value }) }))
                   : key === 'assigneeId'
