@@ -618,23 +618,27 @@ function Row({
             className="absolute inset-x-0 bottom-0 z-20 flex h-3.5 translate-y-1/2 cursor-copy items-center opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100"
             style={{ paddingLeft: `${16 + indentPx + 20}px` }}
           >
-            <span aria-hidden className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-primary/20" />
-            {inlineCreateTypes!.map((type, index) => {
-              const typeLabel = t(`tree.types.${type.toLowerCase()}`)
-              const isBug = type === 'BUG'
-              return (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={event => { event.stopPropagation(); onInlineCreate(type) }}
-                  aria-label={t('tree.addBelow', { type: typeLabel, label })}
-                  title={t('tree.addBelow', { type: typeLabel, label })}
-                  className={`relative z-10 flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-full border border-border/80 bg-card text-muted-foreground shadow-sm transition hover:border-primary/60 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${index === 0 ? '-translate-x-1/2' : 'ml-2'} ${isBug ? 'hover:text-red-600' : ''}`}
-                >
-                  {isBug ? <BugIcon className="h-3 w-3" aria-hidden /> : <Plus className="h-3 w-3" aria-hidden />}
-                </button>
-              )
-            })}
+            {/* Guia contínua, centralizada por auto-margens para coincidir com
+                o centro dos discos. */}
+            <span aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 top-0 my-auto h-px bg-primary/20" />
+            <div className="flex items-center gap-2">
+              {inlineCreateTypes!.map(type => {
+                const typeLabel = t(`tree.types.${type.toLowerCase()}`)
+                const isBug = type === 'BUG'
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={event => { event.stopPropagation(); onInlineCreate(type) }}
+                    aria-label={t('tree.addBelow', { type: typeLabel, label })}
+                    title={t('tree.addBelow', { type: typeLabel, label })}
+                    className={`relative z-10 flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-full border border-border/80 bg-card text-muted-foreground shadow-sm transition hover:border-primary/60 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${isBug ? 'hover:text-red-600' : ''}`}
+                  >
+                    {isBug ? <BugIcon className="h-3 w-3" aria-hidden /> : <Plus className="h-3 w-3" aria-hidden />}
+                  </button>
+                )
+              })}
+            </div>
           </div>
         )}
       </td>
