@@ -28,6 +28,11 @@ export interface TreeNode {
   progress?: number
   startDate?: string | null
   dueDate?: string | null
+  actualStartDate?: string | null
+  actualDueDate?: string | null
+  assigneeLabel?: string | null
+  externalSource?: string | null
+  externalRef?: string | null
   versionId?: string | null
   costCenterId?: string | null
   sprintId?: string | null
@@ -68,6 +73,10 @@ type TreeGridColumnId =
   | 'dependencies'
   | 'startDate'
   | 'dueDate'
+  | 'actualStartDate'
+  | 'actualDueDate'
+  | 'assigneeLabel'
+  | 'externalRef'
   | 'priority'
   | 'sprint'
   | 'version'
@@ -95,6 +104,10 @@ const TREE_GRID_COLUMNS: readonly TreeGridColumnDefinition[] = [
   { id: 'dependencies', labelKey: 'tree.dependencies', defaultVisible: true },
   { id: 'startDate', labelKey: 'tree.start', defaultVisible: true },
   { id: 'dueDate', labelKey: 'tree.endDate', defaultVisible: true },
+  { id: 'actualStartDate', labelKey: 'tree.actualStartDate', defaultVisible: false },
+  { id: 'actualDueDate', labelKey: 'tree.actualDueDate', defaultVisible: false },
+  { id: 'assigneeLabel', labelKey: 'tree.assigneeLabel', defaultVisible: false },
+  { id: 'externalRef', labelKey: 'tree.externalRef', defaultVisible: false },
   { id: 'priority', labelKey: 'tree.priority', defaultVisible: false },
   { id: 'sprint', labelKey: 'tree.sprint', defaultVisible: false },
   { id: 'version', labelKey: 'tree.version', defaultVisible: false },
@@ -113,6 +126,10 @@ const TREE_GRID_COLUMN_DEFAULT_WIDTH: Record<TreeGridColumnId, number> = {
   dependencies: 160,
   startDate: 130,
   dueDate: 130,
+  actualStartDate: 130,
+  actualDueDate: 130,
+  assigneeLabel: 190,
+  externalRef: 190,
   priority: 140,
   sprint: 160,
   version: 160,
@@ -128,6 +145,10 @@ const TREE_GRID_COLUMN_MIN_WIDTH: Record<TreeGridColumnId, number> = {
   dependencies: 120,
   startDate: 120,
   dueDate: 120,
+  actualStartDate: 120,
+  actualDueDate: 120,
+  assigneeLabel: 150,
+  externalRef: 150,
   priority: 120,
   sprint: 140,
   version: 140,
@@ -227,6 +248,10 @@ type TreeEditableField =
   | 'points'
   | 'startDate'
   | 'dueDate'
+  | 'actualStartDate'
+  | 'actualDueDate'
+  | 'assigneeLabel'
+  | 'externalRef'
   | 'priority'
   | 'sprintId'
   | 'versionId'
@@ -321,6 +346,11 @@ interface RowProps {
   progress?: number
   startDate?: string | null
   dueDate?: string | null
+  actualStartDate?: string | null
+  actualDueDate?: string | null
+  assigneeLabel?: string | null
+  externalSource?: string | null
+  externalRef?: string | null
   sprintId?: string
   versionId?: string | null
   costCenterId?: string | null
@@ -372,6 +402,11 @@ function Row({
   progress,
   startDate,
   dueDate,
+  actualStartDate,
+  actualDueDate,
+  assigneeLabel,
+  externalSource,
+  externalRef,
   sprintId,
   versionId,
   costCenterId,
@@ -678,7 +713,10 @@ function Row({
     )
   }
 
-  function renderDateColumn(field: 'startDate' | 'dueDate', value: string | null | undefined) {
+  function renderDateColumn(
+    field: 'startDate' | 'dueDate' | 'actualStartDate' | 'actualDueDate',
+    value: string | null | undefined,
+  ) {
     const state = cellStateFor(itemId, field)
     if (!editable || !canEdit) return <td className="py-2 px-2 text-xs text-muted-foreground">{value ?? '—'}</td>
     return (
@@ -707,12 +745,41 @@ function Row({
               className={`h-7 rounded-md border px-2 text-xs ${editableCellClass(state)}`}
             />
           ) : (
-            <CellTrigger field={field} labelKey={field === "startDate" ? "tree.start" : "tree.endDate"}>
+            <CellTrigger
+              field={field}
+              labelKey={
+                field === 'startDate' ? 'tree.start'
+                  : field === 'dueDate' ? 'tree.endDate'
+                    : field === 'actualStartDate' ? 'tree.actualStartDate'
+                      : 'tree.actualDueDate'
+              }
+            >
               {formatDateCell(value) ?? <span className="text-muted-foreground">—</span>}
             </CellTrigger>
           )}
           <StatusIndicator state={state} />
         </div>
+      </td>
+    )
+  }
+
+  function renderAssigneeLabelColumn() {
+    return (
+      <td className="py-2 px-2 text-xs text-muted-foreground">
+        {assigneeLabel
+          ? <span title={assigneeLabel}>{assigneeLabel}</span>
+          : <span className="text-muted-foreground">—</span>}
+      </td>
+    )
+  }
+
+  function renderExternalRefColumn() {
+    const value = externalRef ? `${externalSource ? `${externalSource}:` : ''}${externalRef}` : null
+    return (
+      <td className="py-2 px-2 text-xs text-muted-foreground">
+        {value
+          ? <span title={value}>{value}</span>
+          : <span className="text-muted-foreground">—</span>}
       </td>
     )
   }
@@ -939,6 +1006,10 @@ function Row({
           case 'dependencies': return <Fragment key="dependencies">{renderDependenciesColumn()}</Fragment>
           case 'startDate': return <Fragment key="startDate">{renderDateColumn('startDate', startDate)}</Fragment>
           case 'dueDate': return <Fragment key="dueDate">{renderDateColumn('dueDate', dueDate)}</Fragment>
+          case 'actualStartDate': return <Fragment key="actualStartDate">{renderDateColumn('actualStartDate', actualStartDate)}</Fragment>
+          case 'actualDueDate': return <Fragment key="actualDueDate">{renderDateColumn('actualDueDate', actualDueDate)}</Fragment>
+          case 'assigneeLabel': return <Fragment key="assigneeLabel">{renderAssigneeLabelColumn()}</Fragment>
+          case 'externalRef': return <Fragment key="externalRef">{renderExternalRefColumn()}</Fragment>
           case 'priority': return <Fragment key="priority">{renderPriorityColumn()}</Fragment>
           case 'sprint': return <Fragment key="sprint">{renderSprintColumn()}</Fragment>
           case 'version': return <Fragment key="version">{renderVersionColumn()}</Fragment>
@@ -1019,6 +1090,11 @@ function NodeRows({
             progress={node.progress}
             startDate={node.startDate}
             dueDate={node.dueDate}
+            actualStartDate={node.actualStartDate}
+            actualDueDate={node.actualDueDate}
+            assigneeLabel={node.assigneeLabel}
+            externalSource={node.externalSource}
+            externalRef={node.externalRef}
             sprintId={firstSprintId(node)}
             versionId={node.versionId}
             costCenterId={node.costCenterId}

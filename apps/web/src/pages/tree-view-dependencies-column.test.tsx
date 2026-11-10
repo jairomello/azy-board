@@ -14,6 +14,11 @@ const treeData = [
         id: 'epic-1', title: 'Epic', type: 'EPIC',
         updatedAt: '2026-11-01T10:00:00.000Z',
         assignee: { id: 'user-1', name: 'Thiago Corrêa Simas de Melo Porto' },
+        actualStartDate: '2026-01-10',
+        actualDueDate: '2026-01-20',
+        assigneeLabel: 'Infra Vivo',
+        externalSource: 'planilha',
+        externalRef: 'REF-1',
         dependencyCount: 1,
         dependencies: [{ dependsOnItemId: 'epic-2', dependencyType: 'FS', lagDays: 0, dependsOn: { id: 'epic-2', title: 'Epic 2', type: 'EPIC', sequenceCode: 'E2' } }],
         children: [],
@@ -83,6 +88,23 @@ describe('TreeViewPage — coluna de dependências (Card T46)', () => {
     await waitFor(() => expect(screen.getByText('Dependências')).toBeInTheDocument())
     // O épico depende de outro épico (E2) — o cell mostra o código do dependido.
     await waitFor(() => expect(screen.getByText('E2')).toBeInTheDocument())
+  })
+})
+
+describe('TreeViewPage — colunas de datas realizadas e responsável externo', () => {
+  test('exibe as colunas novas quando incluídas na grade', async () => {
+    localStorage.setItem('tree-grid-columns:user-1:project-1', JSON.stringify([
+      'name', 'status', 'actualStartDate', 'actualDueDate', 'assigneeLabel', 'externalRef', 'actions',
+    ]))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><MemoryRouter><TreeViewPage projectId="project-1" /></MemoryRouter></QueryClientProvider>)
+
+    await waitFor(() => expect(screen.getByText('Início realizado')).toBeInTheDocument())
+    expect(screen.getByText('Fim realizado')).toBeInTheDocument()
+    expect(screen.getByText('Responsável externo')).toBeInTheDocument()
+    expect(screen.getByText('Chave externa')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('Infra Vivo')).toBeInTheDocument())
+    expect(screen.getByText('planilha:REF-1')).toBeInTheDocument()
   })
 })
 

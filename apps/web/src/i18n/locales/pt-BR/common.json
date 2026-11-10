@@ -310,7 +310,11 @@
       "task": "Task",
       "bug": "Bug"
     },
-    "advanceColumn": "Avanço"
+    "advanceColumn": "Avanço",
+    "actualStartDate": "Início realizado",
+    "actualDueDate": "Fim realizado",
+    "assigneeLabel": "Responsável externo",
+    "externalRef": "Chave externa"
   },
   "loadMore": "Carregar mais",
   "buildVersion": "Versão {{version}}",

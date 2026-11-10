@@ -310,7 +310,11 @@
       "task": "Task",
       "bug": "Bug"
     },
-    "advanceColumn": "Flow progress"
+    "advanceColumn": "Flow progress",
+    "actualStartDate": "Actual start",
+    "actualDueDate": "Actual end",
+    "assigneeLabel": "External assignee",
+    "externalRef": "External reference"
   },
   "loadMore": "Load more",
   "buildVersion": "Version {{version}}",

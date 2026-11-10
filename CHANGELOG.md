@@ -40,6 +40,11 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
   carga faz uma segunda passada de `PATCH` para aplicar status, bloqueio e
   demais metadados. Os campos são expostos em REST, MCP (`update_item`,
   `update_items`, `list_tasks`) e na modal/card.
+- **Colunas de acompanhamento na grade da árvore.** A tree view passa a
+  oferecer as colunas "Início realizado", "Fim realizado", "Responsável
+  externo" e "Chave externa" no seletor de colunas. As datas realizadas são
+  editáveis inline; o responsável externo e a chave são exibidos em modo
+  leitura.
 - **Listagem de usuários com busca, filtro e paginação.** A administração de
   usuários ordena por nome (com dobra de acentos), busca por nome/e-mail e filtra
   por grupo no servidor, com páginas de 25/50/100. `GET /users` passa a devolver
