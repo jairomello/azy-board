@@ -148,6 +148,83 @@ dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
   } })
 })
 
+dashboardRouter.get('/indicators', requireRole('VIEWER'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext; const projectId = c.req.param('projectId')!
+  const projectContext = userPersistenceContext(ctx)
+  const filter = populationFilter(name => c.req.query(name))
+  const today = new Date().toISOString().slice(0, 10)
+  const [project, aggregates, leaves, projectColumns] = await Promise.all([
+    persistence.projects.getProject(projectContext, projectId),
+    persistence.dashboard.aggregateLeafItems(projectContext, projectId, filter, today),
+    persistence.dashboard.listLeafItems(projectContext, projectId, filter),
+    persistence.projects.listColumns(projectContext, projectId),
+  ])
+  if (!project) return c.json({ error: 'Projeto não encontrado' }, 404)
+
+  const sum = (groups: typeof aggregates, select: 'count' | 'overdueCount') => groups.reduce((total, group) => total + group[select], 0)
+  const total = sum(aggregates, 'count')
+  const done = sum(aggregates.filter(row => row.status === 'DONE'), 'count')
+  const activeAggregates = aggregates.filter(row => activeStatuses.has(row.status))
+  const wipTotal = sum(activeAggregates, 'count')
+  const blockedTotal = sum(aggregates.filter(row => row.status === 'BLOCKED'), 'count')
+  const overdueTotal = sum(aggregates, 'overdueCount')
+  const unassignedWip = sum(activeAggregates.filter(row => row.assigneeId === null), 'count')
+
+  const columnWeights = resolveColumnProgressWeights(projectColumns.map(column => ({
+    id: column.id, baseStatus: column.baseStatus, position: column.position, progressWeight: column.progressWeight,
+  })))
+  const advance = total > 0
+    ? Math.round(aggregates.reduce((acc, row) => acc + row.count * (row.columnId ? columnWeights.get(row.columnId) ?? 0 : 0), 0) / total)
+    : 0
+
+  const openStatuses = new Set(['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED'])
+  const open = leaves.filter(item => openStatuses.has(item.status))
+  const hygiene = {
+    totalOpen: open.length,
+    withoutAssignee: open.filter(item => !item.assigneeId && !item.assigneeApiKeyId).length,
+    withoutDueDate: open.filter(item => !item.dueDate).length,
+    withoutPriority: open.filter(item => !item.priority).length,
+    doneWithoutActualDate: leaves.filter(item => item.status === 'DONE' && !item.actualDueDate).length,
+    inProgressWithoutActualStart: leaves.filter(item => item.status === 'IN_PROGRESS' && !item.actualStartDate).length,
+    blockedWithoutReason: leaves.filter(item => item.status === 'BLOCKED' && !item.blockedReason).length,
+  }
+
+  const start = project.startDate ? Date.parse(`${project.startDate}T00:00:00.000Z`) : null
+  const end = project.plannedEndDate ? Date.parse(`${project.plannedEndDate}T00:00:00.000Z`) : null
+  const todayMs = Date.parse(`${today}T00:00:00.000Z`)
+  const daysTotal = start !== null && end !== null ? Math.max(1, Math.round((end - start) / 86_400_000)) : null
+  const daysElapsed = start !== null ? Math.max(0, Math.round((todayMs - start) / 86_400_000)) : null
+  const expectedPercent = daysTotal !== null && daysElapsed !== null
+    ? Math.min(100, Math.max(0, (daysElapsed / daysTotal) * 100))
+    : null
+  const spi = expectedPercent !== null && expectedPercent > 0 ? advance / expectedPercent : null
+  const spiStatus = spi === null ? 'UNKNOWN' : spi >= 0.95 ? 'GREEN' : spi >= 0.85 ? 'YELLOW' : 'RED'
+  const daysToFinish = end !== null ? Math.round((end - todayMs) / 86_400_000) : null
+  const coverage = await persistence.dashboard.getCoverage(projectContext, projectId)
+
+  return c.json({
+    coverage: coverage ? { startedAt: coverage.coverageStartedAt, partial: true } : { startedAt: null, partial: true },
+    filters: { applied: ['moduleId', 'sprintId', 'versionId', 'squadId', 'assigneeId', 'type'], inapplicable: ['from', 'to'] },
+    project: { startDate: project.startDate ?? null, plannedEndDate: project.plannedEndDate ?? null },
+    today,
+    daysElapsed,
+    daysTotal,
+    daysToFinish,
+    advancePercent: advance,
+    expectedPercent: expectedPercent === null ? null : Number(expectedPercent.toFixed(1)),
+    spi: spi === null ? null : Number(spi.toFixed(3)),
+    spiStatus,
+    completionPercent: completionPercent(done, total),
+    total,
+    done,
+    overdue: overdueTotal,
+    blocked: blockedTotal,
+    wip: wipTotal,
+    unassignedWip,
+    hygiene,
+  })
+})
+
 dashboardRouter.get('/hours', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext; const projectId = c.req.param('projectId')!; const from = c.req.query('from'); const to = c.req.query('to')
   const periodError = period(from, to); if (periodError) return c.json({ error: periodError }, 422)

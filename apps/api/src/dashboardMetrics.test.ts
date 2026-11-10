@@ -312,6 +312,60 @@ describe('rollup diário transacional (Item 13)', () => {
     expect(agingCodes).toContain('T42')
     expect(agingCodes.every(code => code === null || typeof code === 'string')).toBe(true)
   })
+
+  test('indicators calcula SPI, dias para o término e higiene a partir do board', async () => {
+    const indTenant = generateId(), indProject = generateId(), adminId = generateId()
+    const email = `${generateId()}@indicators.test`
+    await db.insert(tenants).values({ id: indTenant, name: 'Indicators', slug: `ind-${indTenant.slice(0, 8)}`, createdAt: now })
+    await db.insert(users).values({ id: adminId, tenantId: indTenant, email, passwordHash: 'h', name: 'Indicators member', createdAt: now })
+    const startDate = new Date(Date.now() - 10 * 86_400_000).toISOString().slice(0, 10)
+    const plannedEndDate = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10)
+    await db.insert(projects).values({ id: indProject, tenantId: indTenant, name: 'Projeto indicators', managerUserId: adminId, startDate, plannedEndDate, createdAt: now })
+    await db.insert(memberships).values({ id: generateId(), tenantId: indTenant, userId: adminId, projectId: indProject, role: 'ADMIN', createdAt: now })
+    const wipColumnId = generateId(), doneColumnId = generateId()
+    await db.insert(columns).values([
+      { id: wipColumnId, tenantId: indTenant, projectId: indProject, name: 'Fazendo', baseStatus: 'IN_PROGRESS', position: 0 },
+      { id: doneColumnId, tenantId: indTenant, projectId: indProject, name: 'Concluídas', baseStatus: 'DONE', position: 1 },
+    ])
+    await db.insert(items).values([
+      { id: generateId(), tenantId: indTenant, projectId: indProject, type: 'TASK', title: 'Concluída sem data real', status: 'DONE', columnId: doneColumnId, priority: 'MEDIUM', points: 3, assigneeId: adminId, dueDate: null, position: 0, createdAt: now, updatedAt: now },
+      { id: generateId(), tenantId: indTenant, projectId: indProject, type: 'TASK', title: 'Em andamento sem início real', status: 'IN_PROGRESS', columnId: wipColumnId, priority: 'MEDIUM', points: null, assigneeId: adminId, dueDate: null, position: 1, createdAt: now, updatedAt: now },
+      { id: generateId(), tenantId: indTenant, projectId: indProject, type: 'TASK', title: 'Bloqueada sem motivo', status: 'BLOCKED', priority: 'HIGH', points: 2, assigneeId: adminId, dueDate: '2026-01-01', blockedReason: null, position: 2, createdAt: now, updatedAt: now },
+      { id: generateId(), tenantId: indTenant, projectId: indProject, type: 'TASK', title: 'Aberta sem responsável e sem prazo', status: 'NOT_STARTED', priority: 'LOW', points: 0, assigneeId: null, dueDate: null, position: 3, createdAt: now, updatedAt: now },
+    ])
+    const session = await token(adminId, indTenant, email)
+    const response = await request(`/projects/${indProject}/dashboard/indicators`, session)
+    expect(response.status).toBe(200)
+    const body = await response.json() as {
+      total: number; done: number; advancePercent: number; expectedPercent: number; spi: number; spiStatus: string; daysToFinish: number
+      blocked: number; overdue: number; wip: number; unassignedWip: number; completionPercent: number
+      hygiene: { totalOpen: number; withoutAssignee: number; withoutDueDate: number; withoutPriority: number; doneWithoutActualDate: number; inProgressWithoutActualStart: number; blockedWithoutReason: number }
+    }
+    expect(body.total).toBe(4)
+    expect(body.done).toBe(1)
+    expect(body.blocked).toBe(1)
+    expect(body.overdue).toBe(1)
+    expect(body.wip).toBe(2)
+    expect(body.unassignedWip).toBe(0)
+    expect(body.hygiene).toMatchObject({
+      totalOpen: 3,
+      withoutAssignee: 1,
+      withoutDueDate: 2,
+      withoutPriority: 0,
+      doneWithoutActualDate: 1,
+      inProgressWithoutActualStart: 1,
+      blockedWithoutReason: 1,
+    })
+    expect(body.daysToFinish).toBe(5)
+    expect(body.expectedPercent).toBeCloseTo(66.7, 1)
+    expect(body.spiStatus).toBe('RED')
+    expect(body.spi).toBeGreaterThan(0)
+
+    const snapshotResponse = await request(`/projects/${indProject}/dashboard/snapshot`, session)
+    const snapshot = await snapshotResponse.json() as { boxes: { progressScope: { advance: number; completionPercent: number } } }
+    expect(body.advancePercent).toBe(snapshot.boxes.progressScope.advance)
+    expect(body.completionPercent).toBe(snapshot.boxes.progressScope.completionPercent)
+  })
 })
 
 describe('oráculo histórico pequeno e matriz de filtros do burnup', () => {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Activity, AlertCircle, BarChart3, Clock3, Cloud, CloudOff, Filter, ListTodo, RefreshCw, Sparkles, Users } from 'lucide-react'
-import type { DashboardAging, DashboardBurnup, DashboardFilters, DashboardHours, DashboardItemDetail, DashboardSnapshot, DashboardState, DashboardTokens } from '@azy-board/ui-contracts'
+import type { DashboardAging, DashboardBurnup, DashboardFilters, DashboardHours, DashboardIndicators, DashboardItemDetail, DashboardSnapshot, DashboardState, DashboardTokens } from '@azy-board/ui-contracts'
 import { AppShell } from '../components/AppShell'
 import { formatDate } from '../lib/formatters'
 import { api } from '../lib/api'
@@ -73,6 +73,7 @@ export default function ProjectDashboardPage() {
         api.get<Option[]>(`/projects/${pid}/versions`, { signal }),
         api.get<Option[]>(`/projects/${pid}/squads`, { signal }),
         api.get<Option[]>(`/projects/${pid}/members`, { signal }),
+        api.get<DashboardIndicators>(`/projects/${pid}/dashboard/indicators${suffix}`, { signal }),
       ])
       const states: Record<string, DashboardState> = {}
       const pick = <T,>(index: number, box: string): T | null => { const result = results[index]; if (result?.status === 'fulfilled') { states[box] = 'ready'; return result.value as T } states[box] = 'error'; return null }
@@ -82,6 +83,7 @@ export default function ProjectDashboardPage() {
         aging: pick<DashboardAging>(2, 'aging'),
         hours: pick<DashboardHours>(3, 'hours'),
         tokens: pick<DashboardTokens>(4, 'tokens'),
+        indicators: pick<DashboardIndicators>(11, 'indicators'),
         projectName: results[5]?.status === 'fulfilled' ? (results[5].value as { name: string }).name : '',
         projectIcon: results[5]?.status === 'fulfilled' ? ((results[5].value as { icon?: string | null }).icon ?? null) : null,
         projectColor: results[5]?.status === 'fulfilled' ? ((results[5].value as { color?: string | null }).color ?? null) : null,
@@ -120,11 +122,12 @@ export default function ProjectDashboardPage() {
   const aging = query.data?.aging ?? null
   const hours = query.data?.hours ?? null
   const tokens = query.data?.tokens ?? null
+  const indicators = query.data?.indicators ?? null
   const projectName = query.data?.projectName ?? ''
   const projectIcon = query.data?.projectIcon ?? null
   const projectColor = query.data?.projectColor ?? null
   const catalogs = query.data?.catalogs ?? { modules: [], sprints: [], versions: [], squads: [], members: [] }
-  const states = query.data?.states ?? { snapshot: query.isPending ? 'loading' : 'error', burnup: query.isPending ? 'loading' : 'error', aging: query.isPending ? 'loading' : 'error', hours: query.isPending ? 'loading' : 'error', tokens: query.isPending ? 'loading' : 'error' }
+  const states = query.data?.states ?? { snapshot: query.isPending ? 'loading' : 'error', burnup: query.isPending ? 'loading' : 'error', aging: query.isPending ? 'loading' : 'error', hours: query.isPending ? 'loading' : 'error', tokens: query.isPending ? 'loading' : 'error', indicators: query.isPending ? 'loading' : 'error' }
   useEffect(() => { try { localStorage.setItem(`dashboard-filters:${projectId}`, JSON.stringify(filters)) } catch {} }, [filters, projectId])
   // Card T20 — publica os filtros/período vigentes para o Azy Agent consultar as
   // mesmas métricas oficiais. O bloco vive fora do escopo de mutação do board.
@@ -163,6 +166,25 @@ export default function ProjectDashboardPage() {
     <form className="mb-6 rounded-2xl border border-border bg-surface p-4" aria-label={t("filtersMenu")} onSubmit={event => event.preventDefault()}><div className="mb-3 flex items-center gap-2 text-xs font-semibold"><Filter className="h-4 w-4 text-primary" />{t('filtersMenu', { defaultValue: 'Filters' })}<button type="button" className="ml-auto text-primary underline" onClick={() => setFilters(initialFilters)}>{t('clear')}</button></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">{filterFields.map(([key, label]) => <label key={key} className="text-xs text-muted-foreground">{t(label)}{key === 'from' || key === 'to' ? <input type="date" value={filters[key]} onChange={event => update(key, event.target.value)} className="mt-1 block w-full rounded-lg border border-input bg-background px-2 py-2 text-sm text-foreground" /> : <select value={filters[key]} onChange={event => update(key, event.target.value)} className="mt-1 block w-full rounded-lg border border-input bg-background px-2 py-2 text-sm text-foreground"><option value="">{t('all')}</option>{key === 'type' ? <><option value="TASK">{t('task')}</option><option value="BUG">{t('bug')}</option></> : (catalogs[key === 'moduleId' ? 'modules' : key === 'sprintId' ? 'sprints' : key === 'versionId' ? 'versions' : key === 'squadId' ? 'squads' : 'members']).map(option => <option key={option.id} value={option.id}>{option.name}</option>)}</select>}</label>)}</div><p className="mt-3 text-[11px] text-muted-foreground">{t('inapplicablePeriod')} · {t('inapplicablePeople')}</p></form>
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Box title={t('progressScope')} icon={BarChart3} description={t('descriptionProgressScope')} state={state('snapshot')} t={t}>{progress && <><div className={`grid gap-2 ${pointsEstimated(snapshot!) ? 'grid-cols-2' : 'grid-cols-1'}`}><Gauge value={snapshot!.boxes.progressScope.done} total={snapshot!.boxes.progressScope.total} label={t('done')} />{pointsEstimated(snapshot!) && <Gauge value={snapshot!.boxes.progressScope.donePoints} total={snapshot!.boxes.progressScope.points} label={t('points')} />}</div>{pointsEstimated(snapshot!) ? <p className="text-xs text-muted-foreground">{t('estimated')}: {Math.round(snapshot!.boxes.progressScope.estimationCoverage!)}%</p> : <p className="text-xs text-muted-foreground">{t('noEstimatesHint')}</p>}<FlowAdvanceIndicator advance={snapshot!.boxes.progressScope.advance} label={t('flowAdvance')} /></>}</Box>
+
+        <Box title={t('deadlineIndicators')} icon={Clock3} description={t('descriptionDeadlineIndicators')} state={state('indicators')} t={t}>
+          {indicators && <>
+            <div className="grid grid-cols-2 gap-2">
+              <MetricValue label={t('spi')} value={indicators.spi == null ? '—' : indicators.spi.toFixed(2)} />
+              <MetricValue label={t('daysToFinish')} value={indicators.daysToFinish == null ? '—' : indicators.daysToFinish} />
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">{t('expectedVsAdvance', { expected: indicators.expectedPercent ?? '—', advance: indicators.advancePercent })}</p>
+            <p className={`mt-2 inline-flex rounded-full px-2 py-1 text-xs font-semibold ${indicators.spiStatus === 'GREEN' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300' : indicators.spiStatus === 'YELLOW' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' : indicators.spiStatus === 'RED' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' : 'bg-muted text-muted-foreground'}`}>{t(`spiStatus.${indicators.spiStatus.toLowerCase()}`)}</p>
+            <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+              <p className="font-semibold text-foreground">{t('hygiene')}</p>
+              <p>{t('hygieneWithoutAssignee', { count: indicators.hygiene.withoutAssignee })}</p>
+              <p>{t('hygieneWithoutDueDate', { count: indicators.hygiene.withoutDueDate })}</p>
+              <p>{t('hygieneDoneWithoutActualDate', { count: indicators.hygiene.doneWithoutActualDate })}</p>
+              <p>{t('hygieneInProgressWithoutActualStart', { count: indicators.hygiene.inProgressWithoutActualStart })}</p>
+              <p>{t('hygieneBlockedWithoutReason', { count: indicators.hygiene.blockedWithoutReason })}</p>
+            </div>
+          </>}
+        </Box>
         <Box title={t('wip')} icon={ListTodo} description={t('descriptionWip')} state={state('snapshot')} t={t}>{snapshot && <><div className={`grid gap-2 ${wipPointsCovered ? 'grid-cols-2' : 'grid-cols-1'}`}><div><p className="mb-1 text-center text-xs font-semibold text-foreground">{t('wipByItems')}</p><Donut data={statusData(snapshot, 'items', t).map(item => ({ name: String(item.label), value: item.value }))} /></div>{wipPointsCovered && <div><p className="mb-1 text-center text-xs font-semibold text-foreground">{t('wipByPoints')}</p><Donut data={statusData(snapshot, 'points', t).map(item => ({ name: String(item.label), value: item.value }))} /></div>}</div><ChartLegend items={[t('done'), t('inProgress'), t('blockedStatus'), t('notStarted')]} /><p className="text-xs text-muted-foreground">{wipPointsCovered ? `${t('pointsCoverage')}: ${Math.round(snapshot.boxes.wip.pointsCoverage!)}%` : t('noEstimatesHint')}</p></>}</Box>
         <Box title={t('blocked')} icon={AlertCircle} description={t('descriptionBlocked')} state={state('snapshot')} t={t}>{snapshot && <><MetricValue label={t('total')} value={snapshot.boxes.blocked.total} />{snapshot.boxes.blocked.items.length ? <HorizontalRankingBar data={rankingData(snapshot.boxes.blocked.items, 'blocked')} unit={t('days')} onSelect={id => setSelectedItem(snapshot.boxes.blocked.items.find(item => item.id === id) ?? null)} /> : <ChartEmptyState>{t('noData')}</ChartEmptyState>}</>}</Box>
          <Box title={t('overdue')} icon={Clock3} description={t('descriptionOverdue')} state={state('snapshot')} t={t}>{snapshot && progress && <><MetricValue label={t('total')} value={snapshot.boxes.overdue.total} /><div className="grid grid-cols-2 gap-2"><DonutComparison title={t('overdueItems')} selected={snapshot.boxes.overdue.total} total={progress.total} selectedLabel={t('overdue')} totalLabel={t("remaining")} onSliceClick={index => { const collection = index === 0 ? 'overdue' : 'remaining'; const items = collection === 'overdue' ? snapshot.boxes.overdue.items : snapshot.boxes.overdue.remainingItems; const pagination = collection === 'overdue' ? snapshot.boxes.overdue.pagination : snapshot.boxes.overdue.remainingPagination; setOverdueModal({ metric: 'items', items, collection, cursor: pagination?.nextCursor ?? null }) }} /><DonutComparison title={t('overduePoints')} selected={snapshot.boxes.overdue.points ?? snapshot.boxes.overdue.items.reduce((sum, item) => sum + (item.points ?? 0), 0)} total={progress.points} selectedLabel={t('overdue')} totalLabel={t("remaining")} onSliceClick={index => { const collection = index === 0 ? 'overdue' : 'remaining'; const items = collection === 'overdue' ? snapshot.boxes.overdue.items : snapshot.boxes.overdue.remainingItems; const pagination = collection === 'overdue' ? snapshot.boxes.overdue.pagination : snapshot.boxes.overdue.remainingPagination; setOverdueModal({ metric: 'points', items: items.filter(item => item.points != null), collection, cursor: pagination?.nextCursor ?? null }) }} /></div></>}</Box>

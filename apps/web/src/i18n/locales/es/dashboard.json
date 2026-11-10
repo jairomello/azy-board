@@ -97,5 +97,22 @@
   "tokensStart": "Cobertura de tokens desde {{date}}.",
   "tokensNoSeries": "Sin evolución de tokens en el período.",
   "tokensChartDescription": "Serie diaria de tokens registrados y de tokens en ítems concluidos.",
-  "noTokensHint": "No hay consumo de tokens registrado. Registra tokens en las tarjetas para verlos aquí."
+  "noTokensHint": "No hay consumo de tokens registrado. Registra tokens en las tarjetas para verlos aquí.",
+  "deadlineIndicators": "Plazo",
+  "descriptionDeadlineIndicators": "SPI, avance vs esperado, días para el término e higiene de la base.",
+  "spi": "SPI",
+  "daysToFinish": "Días para el término",
+  "expectedVsAdvance": "Esperado: {{expected}}% · Avance: {{advance}}%",
+  "hygiene": "Higiene de la base",
+  "hygieneWithoutAssignee": "{{count}} abierto(s) sin responsable",
+  "hygieneWithoutDueDate": "{{count}} abierto(s) sin plazo",
+  "hygieneDoneWithoutActualDate": "{{count}} concluido(s) sin fecha real",
+  "hygieneInProgressWithoutActualStart": "{{count}} en curso sin inicio real",
+  "hygieneBlockedWithoutReason": "{{count}} bloqueado(s) sin motivo",
+  "spiStatus": {
+    "green": "En plazo",
+    "yellow": "Atención",
+    "red": "Crítico",
+    "unknown": "Sin datos"
+  }
 }

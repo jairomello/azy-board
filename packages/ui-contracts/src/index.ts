@@ -426,6 +426,36 @@ export interface DashboardSnapshot {
   }
 }
 
+export interface DashboardIndicators {
+  coverage: DashboardCoverage
+  filters: DashboardFilterInfo
+  project: { startDate: string | null; plannedEndDate: string | null }
+  today: string
+  daysElapsed: number | null
+  daysTotal: number | null
+  daysToFinish: number | null
+  advancePercent: number
+  expectedPercent: number | null
+  spi: number | null
+  spiStatus: 'GREEN' | 'YELLOW' | 'RED' | 'UNKNOWN'
+  completionPercent: number | null
+  total: number
+  done: number
+  overdue: number
+  blocked: number
+  wip: number
+  unassignedWip: number
+  hygiene: {
+    totalOpen: number
+    withoutAssignee: number
+    withoutDueDate: number
+    withoutPriority: number
+    doneWithoutActualDate: number
+    inProgressWithoutActualStart: number
+    blockedWithoutReason: number
+  }
+}
+
 export interface DashboardBurnupPoint { date: string; total: number; done: number; points: number; donePoints: number }
 export interface DashboardBurnup { partial: boolean; coverageStartedAt?: string | null; projection?: { status: 'ROLLUP' | 'READY' | 'FALLBACK'; version?: number | null; sourceStatus?: string }; warnings?: string[]; series: DashboardBurnupPoint[] }
 export interface DashboardAging { coverageStartedAt: string | null; total?: number; pagination?: DashboardPagination; items: DashboardItemDetail[] }

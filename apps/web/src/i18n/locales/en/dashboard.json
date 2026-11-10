@@ -97,5 +97,22 @@
   "tokensStart": "Token coverage from {{date}}.",
   "tokensNoSeries": "No token evolution in the period.",
   "tokensChartDescription": "Daily series of registered tokens and tokens in completed items.",
-  "noTokensHint": "No token usage recorded. Register tokens on cards to track them here."
+  "noTokensHint": "No token usage recorded. Register tokens on cards to track them here.",
+  "deadlineIndicators": "Schedule",
+  "descriptionDeadlineIndicators": "SPI, expected vs actual progress, days to finish and data hygiene.",
+  "spi": "SPI",
+  "daysToFinish": "Days to finish",
+  "expectedVsAdvance": "Expected: {{expected}}% · Progress: {{advance}}%",
+  "hygiene": "Data hygiene",
+  "hygieneWithoutAssignee": "{{count}} open without assignee",
+  "hygieneWithoutDueDate": "{{count}} open without due date",
+  "hygieneDoneWithoutActualDate": "{{count}} done without actual date",
+  "hygieneInProgressWithoutActualStart": "{{count}} in progress without actual start",
+  "hygieneBlockedWithoutReason": "{{count}} blocked without reason",
+  "spiStatus": {
+    "green": "On track",
+    "yellow": "At risk",
+    "red": "Critical",
+    "unknown": "No data"
+  }
 }
