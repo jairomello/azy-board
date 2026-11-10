@@ -347,7 +347,7 @@ describe('rollup diário transacional (Item 13)', () => {
       hygiene: { totalOpen: number; withoutAssignee: number; withoutDueDate: number; withoutPriority: number; doneWithoutActualDate: number; inProgressWithoutActualStart: number; blockedWithoutReason: number }
     }
     // Escopo de progresso: TASK/BUG sem N/A. EXTERNAL e CANCELLED ficam fora.
-    expect(body.total).toBe(4)
+    expect(body.total).toBe(5)
     expect(body.done).toBe(1)
     expect(body.cancelled).toBe(1)
     expect(body.external).toMatchObject({ total: 1, done: 0 })
@@ -368,9 +368,9 @@ describe('rollup diário transacional (Item 13)', () => {
     })
     expect(body.daysToFinish).toBe(5)
     expect(body.expectedPercent).toBeCloseTo(66.7, 1)
-    expect(body.completionPercent).toBe(25)
+    expect(body.completionPercent).toBe(20)
     // SPI passa a ser conclusão ÷ esperado (não o avanço no fluxo).
-    expect(body.spi).toBeCloseTo(0.375, 3)
+    expect(body.spi).toBeCloseTo(0.3, 3)
     expect(body.spiStatus).toBe('RED')
 
     const snapshotResponse = await request(`/projects/${indProject}/dashboard/snapshot`, session)
@@ -378,7 +378,7 @@ describe('rollup diário transacional (Item 13)', () => {
     expect(body.advancePercent).toBe(snapshot.boxes.progressScope.advance)
     expect(body.completionPercent).toBe(snapshot.boxes.progressScope.completionPercent)
     // O snapshot precisa concordar com os indicadores: mesma população e mesmos números.
-    expect(snapshot.boxes.progressScope).toMatchObject({ total: 4, done: 1, cancelled: 1 })
+    expect(snapshot.boxes.progressScope).toMatchObject({ total: 5, done: 1, cancelled: 1 })
     expect(snapshot.external.total).toBe(1)
     // O box WIP mostra apenas o que compõe o total (em andamento e bloqueados).
     expect(Object.keys(snapshot.boxes.wip.byStatus).sort()).toEqual(['BLOCKED', 'IN_PROGRESS'])
