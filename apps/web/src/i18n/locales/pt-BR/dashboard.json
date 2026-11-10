@@ -66,7 +66,7 @@
   "estimated": "Cobertura de estimativa",
   "flowAdvance": "Avanço no fluxo",
   "noEstimatesHint": "Sem estimativas neste projeto — defina pontos nos cards para acompanhar por pontos.",
-  "inProgress": "Em progresso",
+  "inProgress": "Em andamento",
   "blockedStatus": "Bloqueados",
   "unassigned": "Sem responsável",
   "wipTotal": "WIP",

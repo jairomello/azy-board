@@ -11,6 +11,19 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Fixed
 
+- **Rótulo de status unificado em pt-BR.** O filtro exibia "Em andamento"
+  (`board:statusInProgress`) enquanto a coluna Status da árvore e o dashboard
+  exibiam "Em progresso" (`common:status.IN_PROGRESS`). Eram o mesmo valor
+  `IN_PROGRESS`; o texto agora é "Em andamento" em todos os pontos, com teste de
+  paridade entre os namespaces e os três idiomas.
+- **Filtros da Tree View deixam de divergir do Kanban.** A grade da árvore só
+  enviava módulo, responsável, sprint e tags para `GET /items/tree`; status,
+  prioridade, versão, autor, centro de custo, tipo, squad e última alteração
+  ficavam restritos ao kanban, então filtrar por "Em andamento" ainda listava
+  cards concluídos e não iniciados. A árvore agora aplica a mesma fonte única de
+  motivos de população do board (`populationFilterReasons`) às folhas e omite
+  ramos sem nenhum card no recorte, mantendo apenas os grupos que levam a itens
+  correspondentes.
 - **Atualização dos metadados do tracker passa a persistir no ADVANCED.** O
   update do adapter PostgreSQL usava um mapa de campos próprio que não incluía
   `externalSource`, `externalRef`, `assigneeLabel`, `actualStartDate` e

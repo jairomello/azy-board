@@ -19,6 +19,26 @@ describe('i18n runtime contract', () => {
     await i18n.changeLanguage('pt-BR')
   })
 
+  // O mesmo status aparece no filtro (`board:statusInProgress`) e na coluna
+  // Status da grade (`common:status.IN_PROGRESS`). Rótulos divergentes fazem o
+  // usuário achar que o filtro não corresponde ao valor exibido.
+  test('status label é idêntico entre filtro e coluna de status', async () => {
+    const boardKeys: Record<string, string> = {
+      NOT_STARTED: 'statusNotStarted',
+      IN_PROGRESS: 'statusInProgress',
+      BLOCKED: 'statusBlocked',
+      DONE: 'statusDone',
+      CANCELLED: 'statusCancelled',
+    }
+    for (const language of ['pt-BR', 'en', 'es']) {
+      await i18n.changeLanguage(language)
+      for (const [status, boardKey] of Object.entries(boardKeys)) {
+        expect(i18n.t(`board:${boardKey}`)).toBe(i18n.t(`common:status.${status}`))
+      }
+    }
+    await i18n.changeLanguage('pt-BR')
+  })
+
   test('formats dates and numbers using the active locale', async () => {
     await i18n.changeLanguage('pt-BR')
     expect(formatDate('2026-09-09T15:00:00Z').includes('09/09/2026')).toBe(true)

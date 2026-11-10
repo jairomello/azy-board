@@ -80,11 +80,19 @@ O sistema SHALL permitir editar campos diretamente na tabela via `PATCH /project
 ---
 
 ### Requirement: Filtros na Tree View
-O sistema SHALL aplicar os mesmos filtros do Kanban (módulo, sprint, responsável, tags) à Tree View via `GET /projects/:id/items/tree` com os mesmos query params. O progresso SHALL ser recalculado sobre o resultado filtrado.
+O sistema SHALL aplicar à Tree View os mesmos filtros de população do Kanban (módulo, sprint, responsável, squad, tags, status, prioridade, versão, autor, centro de custo, tipo e última alteração) via `GET /projects/:id/items/tree`, usando a mesma fonte única de motivos de visibilidade do board. O progresso SHALL ser recalculado sobre o resultado filtrado.
 
 #### Scenario: Filtro por responsável na Tree View
 - **WHEN** usuário seleciona um membro no filtro
-- **THEN** Tree View exibe apenas itens atribuídos a esse membro, mantendo a hierarquia visível mas esmaecendo nós sem itens correspondentes
+- **THEN** Tree View exibe apenas itens atribuídos a esse membro; ramos sem nenhum item correspondente são omitidos e os que têm correspondência permanecem para navegação
+
+#### Scenario: Filtro por status na Tree View
+- **WHEN** usuário seleciona um status no filtro
+- **THEN** Tree View exibe apenas as folhas com esse status, sem listar cards concluídos ou não iniciados fora do recorte
+
+#### Scenario: Filtros combinados na Tree View
+- **WHEN** o usuário combina mais de um filtro de população (por exemplo, responsável e status)
+- **THEN** as folhas exibidas atendem a todos os filtros simultaneamente
 
 #### Scenario: Progresso reflete filtro na Tree View
 - **WHEN** usuário filtra a árvore por sprint ou responsável
