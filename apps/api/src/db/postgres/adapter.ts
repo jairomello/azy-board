@@ -3076,8 +3076,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           params.push(page.overdue.asOf)
           const dateParam = `$${params.length}`
           conditions.push(page.overdue.match
-            ? `i.due_date IS NOT NULL AND i.due_date < ${dateParam} AND i.status <> 'DONE'`
-            : `(i.due_date IS NULL OR i.due_date >= ${dateParam} OR i.status = 'DONE')`)
+            ? `i.due_date IS NOT NULL AND i.due_date < ${dateParam} AND i.status NOT IN ('DONE','CANCELLED')`
+            : `(i.due_date IS NULL OR i.due_date >= ${dateParam} OR i.status IN ('DONE','CANCELLED'))`)
         }
         if (page?.afterId) {
           params.push(page.afterId)
@@ -3181,8 +3181,8 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
                   COUNT(i.points)::int AS estimated_count,
                   COALESCE(SUM(i.points), 0)::int AS points,
                    COALESCE(SUM(CASE WHEN i.status = 'DONE' THEN i.points ELSE 0 END), 0)::int AS done_points,
-                  COUNT(*) FILTER (WHERE i.due_date IS NOT NULL AND i.due_date < $${params.length} AND i.status <> 'DONE')::int AS overdue_count,
-                  COALESCE(SUM(i.points) FILTER (WHERE i.due_date IS NOT NULL AND i.due_date < $${params.length} AND i.status <> 'DONE'), 0)::int AS overdue_points,
+                  COUNT(*) FILTER (WHERE i.due_date IS NOT NULL AND i.due_date < $${params.length} AND i.status NOT IN ('DONE', 'CANCELLED'))::int AS overdue_count,
+                  COALESCE(SUM(i.points) FILTER (WHERE i.due_date IS NOT NULL AND i.due_date < $${params.length} AND i.status NOT IN ('DONE', 'CANCELLED')), 0)::int AS overdue_points,
                   COUNT(*) FILTER (WHERE i.assignee_id IS NULL AND i.assignee_api_key_id IS NULL AND NULLIF(btrim(i.assignee_label), '') IS NULL)::int AS unassigned_count,
                   COUNT(i.points) FILTER (WHERE i.assignee_id IS NULL AND i.assignee_api_key_id IS NULL AND NULLIF(btrim(i.assignee_label), '') IS NULL)::int AS unassigned_estimated_count,
                   COALESCE(SUM(i.points) FILTER (WHERE i.assignee_id IS NULL AND i.assignee_api_key_id IS NULL AND NULLIF(btrim(i.assignee_label), '') IS NULL), 0)::int AS unassigned_points,

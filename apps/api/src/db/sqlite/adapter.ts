@@ -2362,8 +2362,8 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         if (page?.statuses?.length) conditions.push(inArray(items.status, page.statuses as ItemRecord['status'][]))
         if (page?.overdue) {
           conditions.push(page.overdue.match
-            ? and(lt(items.dueDate, page.overdue.asOf), sql`${items.status} <> 'DONE'`)!
-            : or(isNull(items.dueDate), gte(items.dueDate, page.overdue.asOf), eq(items.status, 'DONE'))!)
+            ? and(lt(items.dueDate, page.overdue.asOf), sql`${items.status} NOT IN ('DONE', 'CANCELLED')`)!
+            : or(isNull(items.dueDate), gte(items.dueDate, page.overdue.asOf), inArray(items.status, ['DONE', 'CANCELLED']))!)
         }
         if (page?.afterId) conditions.push(gt(items.id, page.afterId))
         let query = database.select().from(items).where(and(...conditions))
@@ -2455,8 +2455,8 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           estimatedCount: sql<number>`COUNT(${items.points})`,
           points: sql<number>`COALESCE(SUM(${items.points}), 0)`,
           donePoints: sql<number>`COALESCE(SUM(CASE WHEN ${items.status} = 'DONE' THEN ${items.points} ELSE 0 END), 0)`,
-          overdueCount: sql<number>`COALESCE(SUM(CASE WHEN ${items.dueDate} IS NOT NULL AND ${items.dueDate} < ${today} AND ${items.status} <> 'DONE' THEN 1 ELSE 0 END), 0)`,
-          overduePoints: sql<number>`COALESCE(SUM(CASE WHEN ${items.dueDate} IS NOT NULL AND ${items.dueDate} < ${today} AND ${items.status} <> 'DONE' THEN ${items.points} ELSE 0 END), 0)`,
+          overdueCount: sql<number>`COALESCE(SUM(CASE WHEN ${items.dueDate} IS NOT NULL AND ${items.dueDate} < ${today} AND ${items.status} NOT IN ('DONE', 'CANCELLED') THEN 1 ELSE 0 END), 0)`,
+          overduePoints: sql<number>`COALESCE(SUM(CASE WHEN ${items.dueDate} IS NOT NULL AND ${items.dueDate} < ${today} AND ${items.status} NOT IN ('DONE', 'CANCELLED') THEN ${items.points} ELSE 0 END), 0)`,
           unassignedCount: sql<number>`COALESCE(SUM(CASE WHEN ${items.assigneeId} IS NULL AND ${items.assigneeApiKeyId} IS NULL AND NULLIF(TRIM(${items.assigneeLabel}), '') IS NULL THEN 1 ELSE 0 END), 0)`,
           unassignedEstimatedCount: sql<number>`COALESCE(SUM(CASE WHEN ${items.assigneeId} IS NULL AND ${items.assigneeApiKeyId} IS NULL AND NULLIF(TRIM(${items.assigneeLabel}), '') IS NULL AND ${items.points} IS NOT NULL THEN 1 ELSE 0 END), 0)`,
           unassignedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${items.assigneeId} IS NULL AND ${items.assigneeApiKeyId} IS NULL AND NULLIF(TRIM(${items.assigneeLabel}), '') IS NULL THEN ${items.points} ELSE 0 END), 0)`,

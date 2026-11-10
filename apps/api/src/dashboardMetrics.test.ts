@@ -352,8 +352,8 @@ describe('rollup diário transacional (Item 13)', () => {
     expect(body.cancelled).toBe(1)
     expect(body.external).toMatchObject({ total: 1, done: 0 })
     expect(body.blocked).toBe(1)
-    // Atraso é sinal de prazo: card não concluído com prazo vencido conta mesmo em N/A.
-    expect(body.overdue).toBe(2)
+    // Regra de atraso mantida: N/A não entra no atraso, mas entra no universo/restante.
+    expect(body.overdue).toBe(1)
     expect(body.wip).toBe(3)
     // Só o item sem usuário, sem API key e sem rótulo conta como sem responsável.
     expect(body.unassignedWip).toBe(0)
@@ -386,12 +386,12 @@ describe('rollup diário transacional (Item 13)', () => {
     expect(snapshot.boxes.wip.byStatus.IN_PROGRESS + snapshot.boxes.wip.byStatus.BLOCKED).toBe(snapshot.boxes.wip.total)
     // "Restante" do donut de atrasados usa a mesma população: N/A não entra na lista.
     const overdueBox = (snapshot as unknown as { boxes: { overdue: { scopeTotal: number; items: Array<{ title: string }>; remainingItems: Array<{ title: string }>; remainingPagination: { total: number } } } }).boxes.overdue
-    // O N/A vencido aparece nos atrasados e não no restante.
-    expect(overdueBox.items.some(item => item.title === 'Cancelada não entra no progresso')).toBe(true)
-    expect(overdueBox.remainingItems.some(item => item.title === 'Cancelada não entra no progresso')).toBe(false)
+    // O N/A não é atraso, mas conta no universo e por isso aparece no restante.
+    expect(overdueBox.items.some(item => item.title === 'Cancelada não entra no progresso')).toBe(false)
+    expect(overdueBox.remainingItems.some(item => item.title === 'Cancelada não entra no progresso')).toBe(true)
     // Universo do donut = escopo de trabalho completo (5 ativos + 1 N/A); restante = universo − atrasados.
     expect(overdueBox.scopeTotal).toBe(6)
-    expect(overdueBox.remainingPagination.total).toBe(6 - 2)
+    expect(overdueBox.remainingPagination.total).toBe(6 - 1)
   })
 })
 
