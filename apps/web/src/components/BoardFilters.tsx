@@ -60,6 +60,14 @@ const iconBtn = (active: boolean) =>
       : 'border-border text-muted-foreground hover:text-foreground hover:border-border/80'
   }`
 
+// Status são múltiplos: os checkboxes combinam os valores com OR, e o estado
+// viaja como lista separada por vírgula (mesmo formato aceito pela API).
+const STATUS_VALUES = ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'] as const
+
+function selectedStatuses(status: string): string[] {
+  return status.split(',').map(value => value.trim()).filter(Boolean)
+}
+
 export function BoardFilters({
   modules, sprints, members, tags, versions = [], costCenters = [], squads = [],
   filters, onChange,
@@ -70,6 +78,14 @@ export function BoardFilters({
   const { t } = useTranslation('board')
   const showOptions = section !== 'filters'
   const showDataFilters = section !== 'options'
+  const activeStatuses = new Set(selectedStatuses(filters.status))
+  const statusOptions = [
+    { value: 'NOT_STARTED', label: t('statusNotStarted') },
+    { value: 'IN_PROGRESS', label: t('statusInProgress') },
+    { value: 'BLOCKED', label: t('statusBlocked') },
+    { value: 'DONE', label: t('statusDone') },
+    { value: 'CANCELLED', label: t('statusCancelled') },
+  ] satisfies Array<{ value: typeof STATUS_VALUES[number]; label: string }>
   const activeCount = [
     filters.moduleId,
     filters.sprintId,
@@ -119,6 +135,14 @@ export function BoardFilters({
   function toggleTag(id: string) {
     const already = filters.tagIds.includes(id)
     update({ tagIds: already ? filters.tagIds.filter(x => x !== id) : [...filters.tagIds, id] })
+  }
+
+  function toggleStatus(status: string) {
+    const selected = selectedStatuses(filters.status)
+    const next = selected.includes(status)
+      ? selected.filter(value => value !== status)
+      : [...selected, status]
+    update({ status: next.join(',') })
   }
 
   return (
@@ -262,9 +286,6 @@ export function BoardFilters({
       <select aria-label={t('filterPriority')} value={filters.priority} onChange={e => update({ priority: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
          <option value="">{t('filterPriority')}</option><option value="LOW">{t('priorityLow')}</option><option value="MEDIUM">{t('priorityMedium')}</option><option value="HIGH">{t('priorityHigh')}</option><option value="CRITICAL">{t('priorityCritical')}</option>
       </select>
-      <select aria-label={t('filterStatus')} value={filters.status} onChange={e => update({ status: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
-         <option value="">{t('filterStatus')}</option><option value="NOT_STARTED">{t('statusNotStarted')}</option><option value="IN_PROGRESS">{t('statusInProgress')}</option><option value="BLOCKED">{t('statusBlocked')}</option><option value="DONE">{t('statusDone')}</option><option value="CANCELLED">{t('statusCancelled')}</option>
-      </select>
       {members.length > 0 && <select aria-label={t('filterAuthor')} value={filters.authorId} onChange={e => update({ authorId: e.target.value })} className="text-xs px-2 py-1 bg-background border border-border rounded-lg outline-none focus:border-primary text-muted-foreground">
          <option value="">{t('filterAuthor')}</option><option value={EMPTY_FILTER_VALUE}>{t('noAuthor')}</option>{members.map(m => <option key={m.userId} value={m.userId}>{m.name}</option>)}
       </select>}
@@ -286,6 +307,29 @@ export function BoardFilters({
          <option value="current-sprint">{t('recentCurrentSprint')}</option>
          <option value="1m">{t('recentMonth')}</option>
       </select>
+      </div>}
+
+      {/* Status (multi — OR entre os marcados) */}
+      {showDataFilters && <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label={t('filterStatus')}>
+         <span className="w-20 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t('filterStatus')}</span>
+        {statusOptions.map(option => (
+          <label
+            key={option.value}
+            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 text-xs transition ${
+              activeStatuses.has(option.value)
+                ? 'border-primary/40 bg-primary/10 text-foreground'
+                : 'border-border text-muted-foreground hover:border-border/80'
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={activeStatuses.has(option.value)}
+              onChange={() => toggleStatus(option.value)}
+              className="h-3.5 w-3.5 rounded accent-primary"
+            />
+            {option.label}
+          </label>
+        ))}
       </div>}
 
       {/* Tipo (multi) */}

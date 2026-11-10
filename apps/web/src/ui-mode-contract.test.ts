@@ -129,12 +129,26 @@ describe('contratos de UI dos modos de board', () => {
 
   test('Tree View renderiza progresso limitado e acessível', async () => {
     const tree = await source('./pages/TreeViewPage.tsx')
+    const filterQuery = await source('./features/board/model/treeFilterQuery.ts')
     contains(tree, 'role="progressbar"')
     contains(tree, 'aria-valuemin={0}')
     contains(tree, 'aria-valuemax={100}')
     contains(tree, 'Math.max(0, Math.min(100')
-    contains(tree, "params.set('tagIds'")
+    contains(tree, 'buildTreeFilterQuery(filters)')
+    contains(filterQuery, "params.set('tagIds'")
     contains(tree, 'setExpanded(previous =>')
+  })
+
+  test('controles de coluna da árvore não vazam sobre os popovers do shell', async () => {
+    const tree = await source('./pages/TreeViewPage.tsx')
+    const shell = await source('./components/AppShell.tsx')
+    // O slot `commandBar` (filtros/opções/criação) usa z-20; os controles da
+    // grade precisam ficar abaixo para o painel aberto cobri-los por inteiro.
+    contains(shell, 'relative z-20')
+    expect(tree.includes('absolute right-0 top-0 z-20')).toBe(false)
+    contains(tree, 'absolute right-0 top-0 z-10')
+    expect(tree.includes('absolute top-11 z-30')).toBe(false)
+    contains(tree, 'absolute top-11 z-10')
   })
 
   test('Tree View oferece criação contextual e edição por linha', async () => {

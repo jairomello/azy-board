@@ -12,6 +12,7 @@ import { buildScreenSnapshot } from '../lib/assistantSnapshot'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
 import type { BoardFilterState } from '../components/BoardFilters'
+import { buildTreeFilterQuery } from '../features/board/model/treeFilterQuery'
 import type { AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 import type { Priority, TaskStatus } from '@azy-board/domain'
 import { buildTreeParentMap, resolveTreeMove } from './treeMoveRules'
@@ -1260,14 +1261,7 @@ export function TreeViewPage({
 
   // Árvore via camada de cache única (chave por identidade/projeto + filtros).
   // Mutações de hierarquia invalidam a chave com invalidateTree (sem gatilho de refetch próprio).
-  const qs = useMemo(() => {
-    const params = new URLSearchParams()
-    if (filters?.moduleId)   params.set('moduleId', filters.moduleId)
-    if (filters?.assigneeId) params.set('assigneeId', filters.assigneeId)
-    if (filters?.sprintId)   params.set('sprintId', filters.sprintId)
-    if (filters?.tagIds.length) params.set('tagIds', filters.tagIds.join(','))
-    return params.toString()
-  }, [filters?.moduleId, filters?.assigneeId, filters?.sprintId, filters?.tagIds.join(',')])
+  const qs = useMemo(() => buildTreeFilterQuery(filters), [filters])
 
   const query = useQuery({
     queryKey: [...queryKeys.tree(user?.id, projectId), qs],
@@ -1346,6 +1340,13 @@ export function TreeViewPage({
         moduleId: filters?.moduleId || null,
         sprintId: filters?.sprintId || null,
         assigneeId: filters?.assigneeId || null,
+        squadId: filters?.squadId || null,
+        versionId: filters?.versionId || null,
+        priority: filters?.priority || null,
+        status: filters?.status || null,
+        authorId: filters?.authorId || null,
+        costCenterId: filters?.costCenterId || null,
+        types: filters?.types.length ? filters.types : null,
         tagIds: filters?.tagIds.length ? filters.tagIds : null,
       },
       actionCardIds,
@@ -1821,7 +1822,7 @@ export function TreeViewPage({
                       </div>
                       {columnId !== 'actions' && (
                         // Faixa no limite da coluna. O + fica na base para não cobrir a área de arraste.
-                        <span className="group/edge absolute right-0 top-0 z-20 flex h-full w-4 translate-x-1/2 items-end justify-center rounded transition hover:bg-primary/10">
+                        <span className="group/edge absolute right-0 top-0 z-10 flex h-full w-4 translate-x-1/2 items-end justify-center rounded transition hover:bg-primary/10">
                           <span aria-hidden className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border/70" />
                           <button
                             type="button"
@@ -1884,7 +1885,7 @@ export function TreeViewPage({
             <div
               ref={columnMenuRef}
               style={{ left: columnMenu.left, width: COLUMN_MENU_WIDTH }}
-              className="absolute top-11 z-30 -translate-x-1/2 rounded-xl border border-border bg-card p-3 shadow-lg"
+              className="absolute top-11 z-10 -translate-x-1/2 rounded-xl border border-border bg-card p-3 shadow-lg"
             >
               <p className="mb-2 px-1 text-xs font-semibold text-foreground">{t('tree.visibleColumns')}</p>
               <div className="max-h-[22rem] space-y-0.5 overflow-y-auto">

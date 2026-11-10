@@ -118,7 +118,7 @@
   },
   "status": {
     "NOT_STARTED": "Não iniciada",
-    "IN_PROGRESS": "Em progresso",
+    "IN_PROGRESS": "Em andamento",
     "BLOCKED": "Bloqueada",
     "DONE": "Concluída",
     "CANCELLED": "Cancelada"

@@ -72,6 +72,29 @@ describe('BoardFilters (DOM por papel/rótulo)', () => {
     expect(mudancas[mudancas.length - 1]?.types).toEqual(['TASK'])
   })
 
+  test('alterna status por checkbox e permite múltiplos valores', async () => {
+    const user = userEvent.setup()
+    const mudancas: BoardFilterState[] = []
+    renderFilters({ status: 'IN_PROGRESS' }, f => mudancas.push(f))
+
+    expect(screen.getByRole('checkbox', { name: t('statusInProgress') })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: t('statusDone') })).not.toBeChecked()
+
+    await user.click(screen.getByRole('checkbox', { name: t('statusDone') }))
+
+    expect(mudancas[mudancas.length - 1]?.status).toBe('IN_PROGRESS,DONE')
+  })
+
+  test('desmarca apenas o status clicado', async () => {
+    const user = userEvent.setup()
+    const mudancas: BoardFilterState[] = []
+    renderFilters({ status: 'IN_PROGRESS,DONE' }, f => mudancas.push(f))
+
+    await user.click(screen.getByRole('checkbox', { name: t('statusDone') }))
+
+    expect(mudancas[mudancas.length - 1]?.status).toBe('IN_PROGRESS')
+  })
+
   test('alterna a visão de módulo para abas', async () => {
     const user = userEvent.setup()
     const mudancas: BoardFilterState[] = []

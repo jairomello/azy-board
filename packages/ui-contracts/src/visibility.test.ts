@@ -127,6 +127,13 @@ describe('populationFilterReasons', () => {
     expect(reasons).toContainEqual({ code: 'FILTER', field: 'types', value: 'BUG' })
     expect(reasons).toContainEqual({ code: 'FILTER', field: 'tagIds', value: 't1' })
   })
+
+  test('status múltiplos combinam com OR', () => {
+    const filters: VisibilityFilterState = { ...baseFilters, status: 'IN_PROGRESS,DONE' }
+    expect(populationFilterReasons(item({ status: 'IN_PROGRESS' }), filters)).toEqual([])
+    expect(populationFilterReasons(item({ status: 'DONE' }), filters)).toEqual([])
+    expect(populationFilterReasons(item({ status: 'NOT_STARTED' }), filters)).toContainEqual({ code: 'FILTER', field: 'status', value: 'IN_PROGRESS,DONE' })
+  })
 })
 
 describe('ancestryRefs', () => {

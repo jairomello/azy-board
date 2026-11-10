@@ -30,8 +30,8 @@ O sistema SHALL exibir filtros de conteúdo em um painel acionado pelo botão `F
 - **THEN** apenas itens cujo `versionId` corresponde à versão selecionada são exibidos
 
 #### Scenario: Filtro por prioridade ou status
-- **WHEN** o usuário seleciona uma prioridade ou status no painel Filtros
-- **THEN** apenas cards com o valor selecionado são exibidos
+- **WHEN** o usuário seleciona uma prioridade ou marca um ou mais status no painel Filtros
+- **THEN** apenas cards com a prioridade selecionada ou com qualquer um dos status marcados são exibidos (OR entre status)
 
 #### Scenario: Filtro por tipo de card
 - **WHEN** o usuário seleciona um ou mais tipos (`TASK`, `BUG`) no painel Filtros

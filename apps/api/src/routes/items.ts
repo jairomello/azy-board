@@ -5,7 +5,12 @@ import { addTreeProgress, type TreeProgressContext, type TreeProgressNode } from
 import type { RequestContext } from '@azy-board/api-contracts'
 import type { ActivityActorType, ActivitySource, ItemType } from '@azy-board/domain'
 import { UPDATED_WITHIN_VALUES, isUpdatedWithin, updatedWithinStart, type UpdatedWithin } from '@azy-board/domain'
-import { parseWorkDuration } from '@azy-board/ui-contracts'
+import {
+  parseWorkDuration,
+  populationFilterReasons,
+  type ItemVisibilityInput,
+  type VisibilityFilterState,
+} from '@azy-board/ui-contracts'
 import { PROJECTION_FIELDS } from '@azy-board/tool-registry'
 import { IDEMPOTENCY_RETENTION_MS, payloadHash } from '../services/idempotency'
 import { COMMAND_NAMESPACES, isIdempotencyConflict, isIdempotentReplay, isPendingBody, parseEnvelope } from '../persistence/idempotency'
@@ -131,9 +136,34 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const projectId = c.req.param('projectId')!
   const filterModuleId = c.req.query('moduleId')
-  const filterAssigneeId = c.req.query('assigneeId')
   const filterSprintId = c.req.query('sprintId')
   const filterTagIds = c.req.query('tagIds')?.split(',').filter(Boolean) ?? []
+  const updatedWithin = parseUpdatedWithin(c.req.query('updatedWithin'))
+  if (updatedWithin === 'invalid') {
+    return c.json({
+      error: `Valor inválido para updatedWithin: "${c.req.query('updatedWithin')}". Opções: ${UPDATED_WITHIN_VALUES.join(', ')}`,
+      code: 'INVALID_UPDATED_WITHIN', retryable: false, details: { field: 'updatedWithin' },
+    }, 422)
+  }
+
+  // A árvore precisa honrar exatamente o mesmo recorte de população do board.
+  // Antes só `moduleId/assigneeId/sprintId/tagIds` chegavam ao servidor; os
+  // demais filtros (status, prioridade, versão, autor, centro de custo, tipo,
+  // squad e última alteração) ficavam só no kanban e a grade mostrava tudo.
+  const visibilityFilters: VisibilityFilterState = {
+    // O módulo é aplicado no nível do épico, mais abaixo.
+    moduleId: '',
+    sprintId: filterSprintId ?? '',
+    assigneeId: c.req.query('assigneeId') ?? '',
+    squadId: c.req.query('squadId') ?? '',
+    versionId: c.req.query('versionId') ?? '',
+    priority: c.req.query('priority') ?? '',
+    status: c.req.query('status') ?? '',
+    authorId: c.req.query('authorId') ?? '',
+    costCenterId: c.req.query('costCenterId') ?? '',
+    types: (c.req.query('types')?.split(',').filter(Boolean) ?? []) as ItemType[],
+    tagIds: filterTagIds,
+  }
 
   // [TENANT] Filtra por tenantId + projectId; exclui itens arquivados por padrão
   const projectContext = userPersistenceContext(ctx)
@@ -170,20 +200,70 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
   // [TENANT] O modo e a STORY fixa são resolvidos dentro do projeto do tenant atual.
   const project = await persistence.projects.getProject(projectContext, projectId)
 
-  let sprintItemIds: Set<string> | null = null
-  if (filterSprintId) {
-    sprintItemIds = new Set(activeItems.filter(item => item.itemSprints.some(link => link.sprintId === filterSprintId)).map(item => item.id))
-  }
+  // Squad: o filtro por squad precisa dos membros do projeto, como no board.
+  const squadMemberIds = visibilityFilters.squadId
+    ? (await persistence.projects.listProjectMembers(projectContext, projectId))
+      .filter(member => member.squadId === visibilityFilters.squadId)
+      .map(member => member.userId)
+    : undefined
 
-  let tagItemIds: Set<string> | null = null
-  if (filterTagIds.length > 0) {
-    tagItemIds = new Set(activeItems.filter(item => item.itemTags.some(link => filterTagIds.includes(link.tag.id))).map(item => item.id))
+  // [T57] Janela de última alteração — mesma semântica da listagem de itens.
+  let updatedBoundary: string | null = null
+  let updatedSprintId: string | null = null
+  if (updatedWithin === 'current-sprint') {
+    updatedSprintId = (await resolveActiveSprint(projectContext, projectId))?.id ?? null
+  } else if (updatedWithin) {
+    updatedBoundary = updatedWithinStart(updatedWithin, new Date())
   }
 
   const epics = treeItems.filter(i =>
     i.type === 'EPIC' &&
     (!filterModuleId || i.moduleId === filterModuleId)
   )
+
+  const itemById = new Map(treeItems.map(item => [item.id, item]))
+
+  // Com filtro de população ativo, grupos sem nenhuma folha no recorte são ruído:
+  // a árvore deve mostrar apenas os ramos que levam a itens correspondentes.
+  // O filtro de módulo continua sendo aplicado apenas aos épicos.
+  const hasLeafFilters = Boolean(
+    visibilityFilters.sprintId || visibilityFilters.assigneeId || visibilityFilters.squadId ||
+    visibilityFilters.versionId || visibilityFilters.priority || visibilityFilters.status ||
+    visibilityFilters.authorId || visibilityFilters.costCenterId ||
+    visibilityFilters.types.length > 0 || visibilityFilters.tagIds.length > 0 || updatedWithin,
+  )
+
+  // Mesma fonte única de motivos de filtro usada pelo board e pelo agente.
+  function passesLeafFilters(child: (typeof treeItems)[number], hasChildren: boolean): boolean {
+    const parent = child.parentId ? itemById.get(child.parentId) : undefined
+    const input: ItemVisibilityInput = {
+      type: child.type,
+      status: child.status,
+      parentId: child.parentId ?? null,
+      moduleId: child.moduleId ?? null,
+      versionId: child.versionId ?? null,
+      assigneeId: child.assigneeId ?? null,
+      assigneeUserId: child.assignee?.id ?? null,
+      authorId: child.authorId ?? null,
+      authorUserId: child.author?.id ?? null,
+      costCenterId: child.costCenterId ?? null,
+      priority: child.priority,
+      itemSprints: child.itemSprints,
+      tagIds: child.itemTags.map(link => link.tag.id),
+      parentIsStory: parent?.type === 'STORY',
+      hasChildren,
+      squadMemberIds: visibilityFilters.squadId ? squadMemberIds : undefined,
+    }
+    // O filtro de tipo do board só oferece TASK/BUG; itens EXTERNAL continuam
+    // visíveis na árvore como informação, independentemente do chip escolhido.
+    const leafFilters = child.type === 'EXTERNAL' ? { ...visibilityFilters, types: [] as ItemType[] } : visibilityFilters
+    if (populationFilterReasons(input, leafFilters).length > 0) return false
+    if (updatedWithin === 'current-sprint') {
+      return Boolean(updatedSprintId && child.itemSprints.some(link => link.sprintId === updatedSprintId))
+    }
+    if (updatedBoundary && child.updatedAt < updatedBoundary) return false
+    return true
+  }
 
   function buildChildren(parentId: string, depth: number): TreeProgressNode[] {
     const children = treeItems
@@ -195,9 +275,11 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
       const hasChildren = treeItems.some(item => item.parentId === child.id)
       const leafItems = !hasChildren && ['TASK', 'BUG', 'EXTERNAL'].includes(child.type)
 
-      if (filterAssigneeId && leafItems && child.assigneeId !== filterAssigneeId) return null
-      if (sprintItemIds && leafItems && !sprintItemIds.has(child.id)) return null
-      if (tagItemIds && leafItems && !tagItemIds.has(child.id)) return null
+      // Contêineres (módulo/épico/história) permanecem para navegação; o recorte
+      // de população vale para as folhas, como no board. Sem folhas no recorte,
+      // o grupo inteiro desaparece.
+      if (leafItems && !passesLeafFilters(child, hasChildren)) return null
+      if (hasLeafFilters && !leafItems && nested.length === 0) return null
 
       return {
         ...child,
@@ -211,27 +293,32 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
   if (project?.boardMode === 'SIMPLE') {
     const fixedStory = treeItems.find(item => item.id === project.simpleStoryId) ?? treeItems.find(item => item.type === 'STORY' && !item.parentId)
     if (!fixedStory) return c.json([])
+    const children = buildChildren(fixedStory.id, 0)
+    if (hasLeafFilters && children.length === 0) return c.json([])
     return c.json(addTreeProgress([{
       ...fixedStory,
       type: 'STORY' as const,
       ancestryPath: [],
       isLeaf: false,
-      children: buildChildren(fixedStory.id, 0),
+      children,
     }], treeProgressContext))
   }
 
-  const epicNodes = epics.map(epic => ({
-    ...epic,
-    ancestryPath: [],
-    isLeaf: false,
-    children: buildChildren(epic.id, 2),
-  }))
+  const epicNodes = epics
+    .map(epic => ({
+      ...epic,
+      ancestryPath: [],
+      isLeaf: false,
+      children: buildChildren(epic.id, 2),
+    }))
+    .filter(epic => !hasLeafFilters || epic.children.length > 0)
   const moduleNodes = (filterModuleId ? allModules.filter(m => m.id === filterModuleId) : allModules)
     .map(mod => ({
       ...mod,
       type: 'module' as const,
       children: epicNodes.filter(e => e.moduleId === mod.id),
     }))
+    .filter(mod => !hasLeafFilters || mod.children.length > 0)
 
   // T61 — pula os níveis ocultos na árvore (aplica-se também à visão hierárquica).
   const hideModules = project?.boardMode === 'HIERARCHICAL' && project.hideModules === true

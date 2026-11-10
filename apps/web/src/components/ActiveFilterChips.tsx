@@ -75,7 +75,9 @@ export function normalizeActiveBoardFilters(filters: BoardFilterState, catalogs:
     return center ? `${center.code}${center.description ? ` - ${center.description}` : ''}` : shortId(filters.costCenterId)
   })()))
   add('priority', filters.priority, labels.priority, labels.priorityValues[filters.priority] ?? shortId(filters.priority))
-  add('status', filters.status, labels.status, labels.statusValues[filters.status] ?? shortId(filters.status))
+  for (const status of filters.status.split(',').map(value => value.trim()).filter(Boolean)) {
+    add('status', status, labels.status, labels.statusValues[status] ?? shortId(status))
+  }
   for (const type of filters.types) add('types', type, labels.type, labels.typeValues[type] ?? shortId(type))
   for (const tagId of filters.tagIds) add('tagIds', tagId, labels.tag, catalogs.tags.find(tag => tag.id === tagId)?.name ?? shortId(tagId))
   add('updatedWithin', filters.updatedWithin, labels.updated, labels.updatedValues[filters.updatedWithin] ?? shortId(filters.updatedWithin))
@@ -89,6 +91,11 @@ export function normalizeActiveBoardFilters(filters: BoardFilterState, catalogs:
 
 export function removeActiveBoardFilter(filters: BoardFilterState, key: ActiveFilterKey, value?: string): BoardFilterState {
   if (key === 'types' || key === 'tagIds') return { ...filters, [key]: filters[key].filter(item => item !== value) }
+  if (key === 'status') {
+    if (!value) return { ...filters, status: '' }
+    const remaining = filters.status.split(',').map(item => item.trim()).filter(item => item && item !== value)
+    return { ...filters, status: remaining.join(',') }
+  }
   if (key === 'hideEmptyEpics' || key === 'hideEmptyStories' || key === 'showSubtasks') return { ...filters, [key]: false }
   if (key === 'storyDisplay') return { ...filters, storyDisplay: 'lanes' }
   if (key === 'moduleViewMode') return { ...filters, moduleViewMode: 'hierarchy' }
