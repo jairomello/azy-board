@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 // change member-batch-add-grid — testes de unidade do adapter SQLite para a grade de
 // candidatos a membro (busca/paginação no banco) e para a adição em lote transacional.
 import { describe, expect, test } from 'bun:test'
@@ -8,7 +10,7 @@ import * as schema from '../schema'
 import { createSqlitePersistencePorts } from './adapter'
 import type { PersistenceContext } from '../../persistence/models'
 
-const migrationsFolder = new URL('../migrations', import.meta.url).pathname
+const migrationsFolder = fileURLToPath(new URL('../migrations', import.meta.url))
 
 function setup() {
   const sqlite = new Database(':memory:')

@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 // T80 — alteração de tokens alimenta o histórico de analytics (evento + snapshot).
 import { describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
@@ -7,7 +9,7 @@ import * as schema from '../schema'
 import type { PersistenceContext } from '../../persistence/models'
 import { createSqlitePersistencePorts } from './adapter'
 
-const migrationsFolder = new URL('../migrations', import.meta.url).pathname
+const migrationsFolder = fileURLToPath(new URL('../migrations', import.meta.url))
 const now = new Date().toISOString()
 
 function setup() {

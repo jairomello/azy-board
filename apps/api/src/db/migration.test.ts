@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
@@ -7,7 +9,7 @@ import { eq } from 'drizzle-orm'
 import { mkdir } from 'node:fs/promises'
 
 describe('migration de outbox de limpeza de storage (Item 12)', () => {
-  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+  const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url))
 
   test('aplica em base vazia, é idempotente e mantém foreign_key_check limpo', () => {
     const sqlite = new Database(':memory:')
@@ -31,7 +33,7 @@ describe('migration de outbox de limpeza de storage (Item 12)', () => {
     const database = drizzle(sqlite, { schema })
     const pre = `/tmp/azyboard-migrations-${crypto.randomUUID()}`
     await mkdir(`${pre}/meta`, { recursive: true })
-    const source = new URL('./migrations', import.meta.url).pathname
+    const source = fileURLToPath(new URL('./migrations', import.meta.url))
     const journal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ tag: string }> }
     // Mantém as migrations posteriores (0024+) aplicadas para que o schema do
     // Drizzle atual case com a base; apenas a 0023 é reaplicada no migrate final.
@@ -53,7 +55,7 @@ describe('migration de outbox de limpeza de storage (Item 12)', () => {
 })
 
 describe('migration de rollup diário do dashboard (Item 13)', () => {
-  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+  const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url))
 
   test('aplica em base vazia e idempotente com foreign_key_check limpo', () => {
     const sqlite = new Database(':memory:')
@@ -103,7 +105,7 @@ describe('migração das configurações de modelo do Azy Agent', () => {
   test('preserva a configuração singleton como primeiro modelo elegível', async () => {
     const sqlite = new Database(':memory:')
     const database = drizzle(sqlite, { schema })
-    const source = new URL('./migrations', import.meta.url).pathname
+    const source = fileURLToPath(new URL('./migrations', import.meta.url))
     const fullJournal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ idx: number; tag: string }> }
     const priorEntries = fullJournal.entries.filter(entry => entry.idx <= 32)
     const pre = `/tmp/azyboard-assistant-model-migration-${crypto.randomUUID()}`
@@ -144,7 +146,7 @@ describe('migration de analytics', () => {
   test('é idempotente em base vazia e cria índices aditivos', async () => {
     const sqlite = new Database(':memory:')
     const database = drizzle(sqlite, { schema })
-    const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+    const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url))
     await migrate(database, { migrationsFolder })
     await migrate(database, { migrationsFolder })
     const tables = sqlite.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
@@ -163,7 +165,7 @@ describe('migration de analytics', () => {
   test('migra base atual, deduplica associações e só cria ciclo para sprint aberta', async () => {
     const sqlite = new Database(':memory:')
     const database = drizzle(sqlite, { schema })
-    const source = new URL('./migrations', import.meta.url).pathname
+    const source = fileURLToPath(new URL('./migrations', import.meta.url))
     const pre = `/tmp/azyboard-migrations-${crypto.randomUUID()}`
     await mkdir(`${pre}/meta`, { recursive: true })
     const prior = ['0000_unified-item-model.sql', '0001_card-checklists.sql', '0002_card-modal-enhancements.sql', '0003_modules-and-versions.sql', '0004_slippery_absorbing_man.sql', '0005_careful_catseye.sql', '0006_simple-board-mode.sql', '0007_api-key-lifecycle.sql', '0008_idempotency.sql', '0009_user-global-group.sql', '0010_sprint-lifecycle.sql']
@@ -200,7 +202,7 @@ describe('migration de analytics', () => {
 })
 
 describe('migration de foto de perfil (Card T2)', () => {
-  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+  const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url))
 
   test('cria user_avatars com FKs compostas e foreign_key_check limpo', () => {
     const sqlite = new Database(':memory:')
@@ -219,7 +221,7 @@ describe('migration de foto de perfil (Card T2)', () => {
 })
 
 describe('migration de checklists detalhados (Card T5)', () => {
-  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+  const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url))
 
   test('cria advanced_checklists e os campos avançados com foreign_key_check limpo', () => {
     const sqlite = new Database(':memory:')
@@ -240,7 +242,7 @@ describe('migration de checklists detalhados (Card T5)', () => {
   test('preserva itens de checklist existentes no rebuild', async () => {
     const sqlite = new Database(':memory:')
     const database = drizzle(sqlite, { schema })
-    const source = new URL('./migrations', import.meta.url).pathname
+    const source = fileURLToPath(new URL('./migrations', import.meta.url))
     const pre = `/tmp/azyboard-t5-${crypto.randomUUID()}`
     await mkdir(`${pre}/meta`, { recursive: true })
     const journal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ tag: string; idx: number }> }
@@ -270,7 +272,7 @@ describe('migration de checklists detalhados (Card T5)', () => {
 })
 
 describe('migration de identidade global de e-mail (Item 29)', () => {
-  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+  const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url))
 
   test('aplica em base vazia, é idempotente e cria o índice global', () => {
     const sqlite = new Database(':memory:')
@@ -287,7 +289,7 @@ describe('migration de identidade global de e-mail (Item 29)', () => {
   test('saneia e-mails duplicados entre tenants antes de criar a unicidade global', async () => {
     const sqlite = new Database(':memory:')
     const database = drizzle(sqlite, { schema })
-    const source = new URL('./migrations', import.meta.url).pathname
+    const source = fileURLToPath(new URL('./migrations', import.meta.url))
     const pre = `/tmp/azyboard-item29-${crypto.randomUUID()}`
     await mkdir(`${pre}/meta`, { recursive: true })
     const journal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ tag: string; idx: number }> }
@@ -321,7 +323,7 @@ describe('migration de identidade global de e-mail (Item 29)', () => {
 })
 
 describe('migration de tentativas de login (Item 28)', () => {
-  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+  const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url))
 
   test('cria login_attempts com índices, check de outcome e sem colunas sensíveis', () => {
     const sqlite = new Database(':memory:')
@@ -352,7 +354,7 @@ describe('migration de tentativas de login (Item 28)', () => {
 })
 
 describe('migration de aparência de projeto e item (Card T14)', () => {
-  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+  const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url))
 
   test('adiciona icon/color nullable em projects e items com foreign_key_check limpo', () => {
     const sqlite = new Database(':memory:')
@@ -389,7 +391,7 @@ describe('migration de aparência de projeto e item (Card T14)', () => {
   test('aplica a 0038 ao atualizar uma base já na 0037', async () => {
     const sqlite = new Database(':memory:')
     const database = drizzle(sqlite, { schema })
-    const source = new URL('./migrations', import.meta.url).pathname
+    const source = fileURLToPath(new URL('./migrations', import.meta.url))
     const journal = JSON.parse(await Bun.file(`${source}/meta/_journal.json`).text()) as { version: string; dialect: string; entries: Array<{ idx: number; tag: string }> }
     const upTo0037 = journal.entries.filter(entry => entry.idx <= 37)
     const pre = `/tmp/azyboard-t14-regression-${crypto.randomUUID()}`
@@ -410,7 +412,7 @@ describe('migration de aparência de projeto e item (Card T14)', () => {
 })
 
 describe('migration do índice de última alteração (Card T57)', () => {
-  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+  const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url))
 
   test('cria items_tenant_project_updated_idx com foreign_key_check limpo', () => {
     const sqlite = new Database(':memory:')
@@ -425,7 +427,7 @@ describe('migration do índice de última alteração (Card T57)', () => {
 })
 
 describe('migration de dependências entre itens (Card T46)', () => {
-  const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+  const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url))
 
   test('cria item_dependencies com FKs compostas, unicidade por par e checks', () => {
     const sqlite = new Database(':memory:')

@@ -1,6 +1,7 @@
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const root = new URL('..', import.meta.url).pathname
+const root = fileURLToPath(new URL('..', import.meta.url))
 const skillDir = join(root, 'skills/azyboard')
 
 // Camada espelho carregada pelo opencode. O conteúdo deve ser idêntico ao oficial

@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, test } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -9,7 +11,7 @@ import { join } from 'node:path'
 // - SIMPLE carrega o mesmo grafo sem exigir serviços externos.
 // `bun --isolate` não isola variáveis de ambiente/grafo de módulos entre testes,
 // por isso o processo é lançado explicitamente aqui.
-const API_DIR = new URL('../../', import.meta.url).pathname.replace(/\/$/, '')
+const API_DIR = fileURLToPath(new URL('../../', import.meta.url)).replace(/\/$/, '')
 
 function runProbe(env: Record<string, string | undefined>, preload?: string) {
   const cmd = preload

@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 // Card T57 — marcador de última alteração: mutações do card e de dependentes
 // atualizam o `updated_at` do item dono e dos seus ancestrais.
 import { describe, expect, test } from 'bun:test'
@@ -8,7 +10,7 @@ import * as schema from '../schema'
 import type { MutationContext } from '../../persistence/models'
 import { createSqlitePersistencePorts } from './adapter'
 
-const migrationsFolder = new URL('../migrations', import.meta.url).pathname
+const migrationsFolder = fileURLToPath(new URL('../migrations', import.meta.url))
 const OLD = '2020-01-01T00:00:00.000Z'
 
 function setup() {

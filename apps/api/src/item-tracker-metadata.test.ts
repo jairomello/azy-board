@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
 
@@ -11,7 +13,7 @@ const { tenants, users } = await import('./db/schema')
 const { signJwt } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 
-await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('./db/migrations', import.meta.url)) })
 
 // biome-ignore lint/suspicious/noExplicitAny: JSON arbitrário deserializado nos testes.
 type JsonRecord = Record<string, any>

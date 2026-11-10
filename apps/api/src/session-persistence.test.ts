@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 // Card T31 — persistência de sessão: durações, renovação deslizante e limite absoluto.
 import { afterEach, describe, expect, setSystemTime, test } from 'bun:test'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
@@ -19,7 +21,7 @@ const {
 } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 
-await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('./db/migrations', import.meta.url)) })
 
 const REAL_NOW = Date.now()
 afterEach(() => setSystemTime(REAL_NOW))

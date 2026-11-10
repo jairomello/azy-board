@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
@@ -14,7 +16,7 @@ const { executeSharedTool } = await import('./services/assistantTools')
 const { authorizeAssistantTool } = await import('./routes/assistant')
 const { createWorkerToolApi } = await import('./services/workerContext')
 
-await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('./db/migrations', import.meta.url)) })
 
 interface JsonRpcResult { result?: Record<string, unknown>; error?: { code: number; message: string } }
 

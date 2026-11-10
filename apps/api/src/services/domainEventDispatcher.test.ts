@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, test } from 'bun:test'
 
 process.env.DATABASE_URL = ':memory:'
@@ -8,7 +10,7 @@ const { persistence } = await import('../persistence/runtime')
 const { dispatchDueEvents } = await import('./domainEventDispatcher')
 const { durableReplayPlan } = await import('./websocket')
 
-await migrate(db, { migrationsFolder: new URL('../db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('../db/migrations', import.meta.url)) })
 
 const TENANT = 'tenant-dispatcher'
 

@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
 import { eq } from 'drizzle-orm'
@@ -16,7 +18,7 @@ const { persistence } = await import('./persistence/runtime')
 const { executeAssistantRun } = await import('./services/assistantRunExecutor')
 const { estimateRequestedActions, formatAssistantPromptContext, itemTypeScopeForMessage, toolsForMessage, canUseProject, toolApi, screenOverviewFromSnapshot } = await import('./routes/assistant')
 
-await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('./db/migrations', import.meta.url)) })
 
 async function request(path: string, userId: string, tenantId: string, method = 'GET') {
   const session = await signJwt({ sub: userId, tenantId, email: `${userId}@test.local`, role: 'user' })

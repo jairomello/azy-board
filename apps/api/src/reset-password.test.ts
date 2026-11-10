@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 
@@ -11,7 +13,7 @@ const { passwordPolicyIssues } = await import('./services/passwordPolicy')
 const { generateId } = await import('./utils/id')
 const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
 
-await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('./db/migrations', import.meta.url)) })
 
 const ORIGINAL = 'Original123!'
 

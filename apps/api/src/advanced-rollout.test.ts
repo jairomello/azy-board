@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -15,7 +17,7 @@ import type { InstallationMarker } from './db/installationMarkers'
 const PG_URL = process.env.TEST_PG_URL ?? 'postgresql://postgres:postgres@localhost:5432/azyboard_advanced_rollout'
 const REDIS_URL = process.env.TEST_REDIS_URL ?? 'redis://127.0.0.1:6379'
 const runPostgres = await shouldRunPostgresTests(PG_URL)
-const API_DIR = new URL('../', import.meta.url).pathname.replace(/\/$/, '')
+const API_DIR = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const instanceDir = mkdtempSync(join(tmpdir(), 'azyboard-advanced-rollout-'))
 
 function readMarker(): InstallationMarker {

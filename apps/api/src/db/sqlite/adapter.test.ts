@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
@@ -7,7 +9,7 @@ import * as schema from '../schema'
 import { createSqlitePersistencePorts } from './adapter'
 import type { MutationContext, PersistenceContext } from '../../persistence/models'
 
-const migrationsFolder = new URL('../migrations', import.meta.url).pathname
+const migrationsFolder = fileURLToPath(new URL('../migrations', import.meta.url))
 
 function setup() {
   const sqlite = new Database(':memory:')

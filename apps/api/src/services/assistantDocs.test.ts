@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { SHARED_TOOL_NAMES } from '@azy-board/tool-registry'
@@ -12,7 +14,7 @@ const { AssistantHarness, AZY_AGENT_SYSTEM_PROMPT } = await import('./assistantH
 const { retrieveKnowledge } = await import('./assistantKnowledge')
 import type { ModelProvider, ModelResponse } from './openaiProvider'
 
-await migrate(db, { migrationsFolder: new URL('../db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('../db/migrations', import.meta.url)) })
 
 const id = () => crypto.randomUUID()
 

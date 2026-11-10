@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { beforeAll, describe, expect, test } from 'bun:test'
 import sharp from 'sharp'
 
@@ -11,7 +13,7 @@ const { signJwt } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
 
-await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('./db/migrations', import.meta.url)) })
 
 async function token(userId: string, tenantId: string) {
   return signJwt({ sub: userId, tenantId, email: `${userId}@test.local`, role: 'user' })
