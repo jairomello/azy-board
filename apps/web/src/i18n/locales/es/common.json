@@ -315,7 +315,10 @@
     "actualStartDate": "Inicio real",
     "actualDueDate": "Fin real",
     "assigneeLabel": "Responsable externo",
-    "externalRef": "Clave externa"
+    "externalRef": "Clave externa",
+    "filterColumn": "Filtrar {{column}}",
+    "allValues": "Todos",
+    "addBelow": "Agregar {{type}} debajo de {{label}}"
   },
   "loadMore": "Cargar más",
   "buildVersion": "Versión {{version}}",

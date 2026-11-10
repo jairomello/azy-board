@@ -103,6 +103,7 @@
   "emptyEpics": "Empty epics",
   "emptyStories": "Empty stories",
   "clear": "Clear",
+  "clearAllFilters": "Clear filters",
   "refineDescription": "Refine visible items without changing the project.",
   "viewBoard": "Board",
   "viewTree": "Tree",

@@ -315,7 +315,10 @@
     "actualStartDate": "Início realizado",
     "actualDueDate": "Fim realizado",
     "assigneeLabel": "Responsável externo",
-    "externalRef": "Chave externa"
+    "externalRef": "Chave externa",
+    "filterColumn": "Filtrar {{column}}",
+    "allValues": "Todos",
+    "addBelow": "Adicionar {{type}} abaixo de {{label}}"
   },
   "loadMore": "Carregar mais",
   "buildVersion": "Versão {{version}}",

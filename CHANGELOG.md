@@ -11,6 +11,12 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Fixed
 
+- **Arquivar uma atividade da grade agora a remove da Tree View na hora.** O
+  arquivamento atualizava só o cache do Kanban (`allItems`), mas a grade lê
+  `/items/tree` com chave por filtro. A linha continuava visível até um refetch
+  manual. O fluxo passou a invalidar a árvore junto com o board, e falha de
+  releitura não transforma um arquivamento bem-sucedido em erro.
+
 - **Controles de coluna da árvore não vazam sobre os popovers do shell.** O
   `+` e o menu de inserção de coluna usavam `z-20`/`z-30` e, por estarem depois
   no DOM, pintavam acima do painel de Filtros (`z-20` da command bar). Os
@@ -50,6 +56,23 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Added
 
+- **Limpar filtros fica visível assim que há filtro aplicado.** Além do botão
+  dentro do popover de filtros, a command bar passa a exibir um "Limpar" com o
+  contador ao lado do botão de filtros. A contagem e o "Limpar" usam a mesma
+  função (`countActiveBoardFilters`/`clearBoardFilters`), então `updatedWithin`
+  também é limpo e as preferências de exibição (subtarefas, formato de histórias
+  e abas de módulo) são preservadas.
+- **Filtro direto no cabeçalho da coluna da grade (Tree View).** Status (com
+  múltipla seleção em OR, igual ao board), responsável, prioridade, sprint,
+  versão e centro de custo ganharam um ícone de filtro no cabeçalho, com popover
+  ancorado na coluna, estado ativo destacado e opção "Todos" para limpar. Os
+  valores viajam no mesmo `BoardFilterState`, então valem para Kanban, Tree View,
+  chips e exportação.
+- **Criar atividade abaixo da linha na Tree View.** Ao passar o mouse na base de
+  uma linha, aparecem atalhos para criar o próximo nível da hierarquia — módulo
+  → épico, épico → história, história → task/bug — e, em task/bug, um irmão sob o
+  mesmo pai. A criação reutiliza a modal existente, já com `parentId`/`moduleId`
+  corretos.
 - **Status múltiplo no filtro do board.** O filtro de status deixou de ser uma
   seleção única e passou a usar checkboxes, combinando os valores marcados com
   OR (`status=IN_PROGRESS,DONE`). A regra vale para Kanban, Tree View, chips de

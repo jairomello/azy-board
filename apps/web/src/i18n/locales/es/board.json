@@ -103,6 +103,7 @@
   "emptyEpics": "Épicas vacías",
   "emptyStories": "Historias vacías",
   "clear": "Limpiar",
+  "clearAllFilters": "Limpiar filtros",
   "refineDescription": "Refina los elementos visibles sin cambiar el proyecto.",
   "viewBoard": "Board",
   "viewTree": "Árbol",

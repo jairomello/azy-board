@@ -3,7 +3,7 @@ import type { DragEvent as ReactDragEvent } from 'react'
 import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, Bug as BugIcon, GripHorizontal, GripVertical, Loader2, Pencil, Plus } from 'lucide-react'
+import { Archive, Bug as BugIcon, Check, Filter, GripHorizontal, GripVertical, Loader2, Pencil, Plus } from 'lucide-react'
 import { ApiError, api } from '../lib/api'
 import { formatDateValue } from '../lib/formatters'
 import { displayPersonName } from '../lib/personName'
@@ -12,6 +12,7 @@ import { buildScreenSnapshot } from '../lib/assistantSnapshot'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
 import type { BoardFilterState } from '../components/BoardFilters'
+import { EMPTY_FILTER_VALUE } from '../features/board/model/types'
 import { buildTreeFilterQuery } from '../features/board/model/treeFilterQuery'
 import type { AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 import type { Priority, TaskStatus } from '@azy-board/domain'
@@ -95,6 +96,8 @@ type TreeGridColumnWidthMap = Partial<Record<TreeGridColumnId, number>>
 
 // Largura do painel de colunas (w-72), usada para ancorá-lo sem estourar o card.
 const COLUMN_MENU_WIDTH = 288
+// Largura do popover de filtro do cabeçalho (w-56).
+const COLUMN_FILTER_MENU_WIDTH = 224
 
 const TREE_GRID_COLUMNS: readonly TreeGridColumnDefinition[] = [
   { id: 'name', labelKey: 'tree.name', defaultVisible: true, locked: true },
@@ -118,6 +121,51 @@ const TREE_GRID_COLUMNS: readonly TreeGridColumnDefinition[] = [
 
 const TREE_GRID_COLUMN_MAP = new Map(TREE_GRID_COLUMNS.map(column => [column.id, column]))
 const TREE_GRID_DEFAULT_ORDER = TREE_GRID_COLUMNS.map(column => column.id)
+
+// Colunas cujo cabeçalho oferece filtro direto. A chave aponta para o campo
+// correspondente em `BoardFilterState`, para a grade e o board compartilharem o
+// mesmo recorte (a query de `/items/tree` já envia todos esses filtros).
+export type TreeColumnFilterKey = 'status' | 'assigneeId' | 'priority' | 'sprintId' | 'versionId' | 'costCenterId'
+
+const TREE_GRID_COLUMN_FILTERS: Partial<Record<TreeGridColumnId, TreeColumnFilterKey>> = {
+  status: 'status',
+  assignee: 'assigneeId',
+  priority: 'priority',
+  sprint: 'sprintId',
+  version: 'versionId',
+  costCenter: 'costCenterId',
+}
+
+export function treeColumnFilterKey(columnId: TreeGridColumnId): TreeColumnFilterKey | undefined {
+  return TREE_GRID_COLUMN_FILTERS[columnId]
+}
+
+export function isTreeColumnFilterActive(columnId: TreeGridColumnId, filters?: Partial<BoardFilterState>): boolean {
+  const key = TREE_GRID_COLUMN_FILTERS[columnId]
+  return Boolean(key && filters?.[key])
+}
+
+// Criação contextual por linha: o "+" que aparece na base da linha cria o
+// próximo nível da hierarquia (módulo → épico → história → task/bug). Em
+// TASK/BUG, cria um irmão sob o mesmo pai em vez de um filho.
+export function treeInlineCreationTypes(type: string): TreeCreationType[] {
+  if (type === 'module') return ['EPIC']
+  if (type === 'EPIC') return ['STORY']
+  return ['TASK', 'BUG']
+}
+
+export function treeInlineCreationContext(
+  node: Pick<TreeNode, 'id' | 'type' | 'parentId' | 'moduleId'>,
+  inheritedModuleId?: string,
+): TreeActionContext {
+  if (node.type === 'module') return { moduleId: node.id }
+  const moduleId = node.moduleId ?? inheritedModuleId
+  if (node.type === 'EPIC' || node.type === 'STORY') {
+    return { parentId: node.id, ...(moduleId ? { moduleId } : {}) }
+  }
+  return { ...(node.parentId ? { parentId: node.parentId } : {}), ...(moduleId ? { moduleId } : {}) }
+}
+
 const TREE_GRID_COLUMN_DEFAULT_WIDTH: Record<TreeGridColumnId, number> = {
   name: 320,
   status: 170,
@@ -382,6 +430,9 @@ interface RowProps {
   onArchive?: () => void
   onEdit?: () => void
   onCreate?: (type: TreeCreationType, context: TreeActionContext) => void
+  // Criação rápida abaixo da linha (aparece no hover da base da linha).
+  inlineCreateTypes?: TreeCreationType[]
+  onInlineCreate?: (type: TreeCreationType) => void
 }
 
 export type TreeCreationType = 'MODULE' | 'EPIC' | 'STORY' | 'TASK' | 'BUG'
@@ -436,6 +487,8 @@ function Row({
   onArchive,
   onEdit,
   onCreate,
+  inlineCreateTypes,
+  onInlineCreate,
 }: RowProps) {
   const { t } = useTranslation()
   const [editingField, setEditingField] = useState<TreeEditableField | null>(null)
@@ -468,7 +521,7 @@ function Row({
   function renderNameColumn() {
     const titleState = cellStateFor(itemId, 'title')
     return (
-      <td className="py-2 pr-2 text-sm" style={{ paddingLeft: `${16 + indentPx}px` }}>
+      <td className="relative py-2 pr-2 text-sm" style={{ paddingLeft: `${16 + indentPx}px` }}>
         <div className="flex items-center gap-2">
           {hasChildren ? (
             <button
@@ -555,6 +608,34 @@ function Row({
             </div>
           )}
         </div>
+        {onInlineCreate && (inlineCreateTypes?.length ?? 0) > 0 && (
+          // Fica na base da linha e só aparece no hover: o clique cria o próximo
+          // nível hierárquico (ou um irmão, no caso de TASK/BUG).
+          <div
+            data-inline-add={itemId}
+            className="pointer-events-none absolute bottom-0 z-20 flex translate-y-1/2 items-center opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
+            style={{ left: `${16 + indentPx + 20}px` }}
+          >
+            <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-border bg-card px-1 py-0.5 shadow-sm">
+              {inlineCreateTypes!.map(type => {
+                const typeLabel = t(`tree.types.${type.toLowerCase()}`)
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={event => { event.stopPropagation(); onInlineCreate(type) }}
+                    aria-label={t('tree.addBelow', { type: typeLabel, label })}
+                    title={t('tree.addBelow', { type: typeLabel, label })}
+                    className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
+                  >
+                    <Plus className="h-2.5 w-2.5" aria-hidden />
+                    {typeLabel}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </td>
     )
   }
@@ -1121,6 +1202,8 @@ function NodeRows({
               parentId: node.id,
               moduleId: node.type === 'module' ? node.id : (node.moduleId ?? moduleId),
             }) : undefined}
+            inlineCreateTypes={onCreate ? treeInlineCreationTypes(node.type) : undefined}
+            onInlineCreate={onCreate ? type => onCreate(type, treeInlineCreationContext(node, moduleId)) : undefined}
             canMove={canMove && node.type !== 'module'}
             isMoving={movingId === node.id}
             isMoveTarget={moveTargetId === node.id}
@@ -1167,6 +1250,8 @@ function NodeRows({
 interface Props {
   projectId: string
   filters?: BoardFilterState
+  // Filtro aplicado direto do cabeçalho da coluna compartilha o estado do board.
+  onFiltersChange?: (filters: BoardFilterState) => void
   members?: TreeMemberOption[]
   sprints?: TreeSprintOption[]
   versions?: TreeVersionOption[]
@@ -1198,6 +1283,7 @@ function pruneTreeToIds(nodes: TreeNode[], allowed: Set<string>): TreeNode[] {
 export function TreeViewPage({
   projectId,
   filters,
+  onFiltersChange,
   members = [],
   sprints = [],
   versions = [],
@@ -1221,6 +1307,10 @@ export function TreeViewPage({
   // O menu guarda onde foi aberto: posição horizontal da faixa e índice de inserção da coluna.
   const [columnMenu, setColumnMenu] = useState<{ left: number; insertIndex: number } | null>(null)
   const columnMenuRef = useRef<HTMLDivElement | null>(null)
+  // Filtro do cabeçalho: mesma âncora do painel de colunas, para não ser
+  // recortado pelo contêiner com overflow da grade.
+  const [columnFilterMenu, setColumnFilterMenu] = useState<{ columnId: TreeGridColumnId; left: number; top: number } | null>(null)
+  const columnFilterMenuRef = useRef<HTMLDivElement | null>(null)
   const gridContainerRef = useRef<HTMLDivElement | null>(null)
   const [columnWidths, setColumnWidths] = useState<TreeGridColumnWidthMap>(() => readTreeGridWidths(user?.id, projectId))
   const [cellStates, setCellStates] = useState<Record<string, EditableCellStatus>>({})
@@ -1258,6 +1348,25 @@ export function TreeViewPage({
       window.removeEventListener('keydown', handleKeyDown)
     }
   }, [columnMenu])
+
+  useEffect(() => {
+    if (!columnFilterMenu) return
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as HTMLElement
+      if (columnFilterMenuRef.current?.contains(target)) return
+      if (target.closest?.('[data-column-filter]')) return
+      setColumnFilterMenu(null)
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setColumnFilterMenu(null)
+    }
+    window.addEventListener('mousedown', handlePointerDown)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [columnFilterMenu])
 
   // Árvore via camada de cache única (chave por identidade/projeto + filtros).
   // Mutações de hierarquia invalidam a chave com invalidateTree (sem gatilho de refetch próprio).
@@ -1521,6 +1630,36 @@ export function TreeViewPage({
     const left = Math.min(Math.max(rawLeft, half + 8), maxLeft)
     setColumnMenu(current => (current?.insertIndex === insertIndex ? null : { left, insertIndex }))
   }, [])
+
+  // Filtro direto do cabeçalho: abre abaixo do título da coluna, alinhado ao
+  // centro do gatilho, e reutiliza o estado de filtros do board.
+  const openColumnFilterMenu = useCallback((event: ReactMouseEvent<HTMLButtonElement>, columnId: TreeGridColumnId) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const container = gridContainerRef.current
+    if (!container) return
+    const containerRect = container.getBoundingClientRect()
+    const anchorRect = event.currentTarget.getBoundingClientRect()
+    const half = COLUMN_FILTER_MENU_WIDTH / 2
+    const rawLeft = anchorRect.left - containerRect.left + anchorRect.width / 2
+    const maxLeft = Math.max(half + 8, containerRect.width - half - 8)
+    const left = Math.min(Math.max(rawLeft, half + 8), maxLeft)
+    const top = anchorRect.bottom - containerRect.top + 6
+    setColumnFilterMenu(current => (current?.columnId === columnId ? null : { columnId, left, top }))
+  }, [])
+
+  const applyColumnFilter = useCallback((columnId: TreeGridColumnId, value: string) => {
+    const key = treeColumnFilterKey(columnId)
+    if (!key || !filters || !onFiltersChange) return
+    if (key === 'status') {
+      const selected = filters.status.split(',').map(item => item.trim()).filter(Boolean)
+      const next = selected.includes(value) ? selected.filter(item => item !== value) : [...selected, value]
+      onFiltersChange({ ...filters, status: next.join(',') })
+      return
+    }
+    onFiltersChange({ ...filters, [key]: filters[key] === value ? '' : value })
+    setColumnFilterMenu(null)
+  }, [filters, onFiltersChange])
 
   const resolveColumnWidth = useCallback((columnId: TreeGridColumnId): number => {
     return columnWidths[columnId] ?? TREE_GRID_COLUMN_DEFAULT_WIDTH[columnId]
@@ -1819,6 +1958,19 @@ export function TreeViewPage({
                           </button>
                         )}
                         <span className="truncate">{t(definition.labelKey, { defaultValue: columnId })}</span>
+                        {treeColumnFilterKey(columnId) && onFiltersChange && (
+                          <button
+                            type="button"
+                            data-column-filter={columnId}
+                            onClick={(event) => openColumnFilterMenu(event, columnId)}
+                            aria-expanded={columnFilterMenu?.columnId === columnId}
+                            aria-label={t('tree.filterColumn', { column: t(definition.labelKey, { defaultValue: columnId }) })}
+                            title={t('tree.filterColumn', { column: t(definition.labelKey, { defaultValue: columnId }) })}
+                            className={`ml-1 inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded transition hover:bg-card hover:text-foreground ${isTreeColumnFilterActive(columnId, filters) ? 'text-primary' : 'text-muted-foreground/50'}`}
+                          >
+                            <Filter className="h-3 w-3" aria-hidden />
+                          </button>
+                        )}
                       </div>
                       {columnId !== 'actions' && (
                         // Faixa no limite da coluna. O + fica na base para não cobrir a área de arraste.
@@ -1933,6 +2085,69 @@ export function TreeViewPage({
               </div>
             </div>
           )}
+          {columnFilterMenu && filters && onFiltersChange && (() => {
+            const columnId = columnFilterMenu.columnId
+            const definition = TREE_GRID_COLUMN_MAP.get(columnId)
+            const key = treeColumnFilterKey(columnId)
+            if (!definition || !key) return null
+            const options: Array<{ value: string; label: string }> =
+              key === 'status'
+                ? (['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'] as TaskStatus[]).map(value => ({ value, label: t(`status.${value}`, { defaultValue: value }) }))
+                : key === 'priority'
+                  ? (['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as Priority[]).map(value => ({ value, label: t(`priority.${value}`, { defaultValue: value }) }))
+                  : key === 'assigneeId'
+                    ? [{ value: EMPTY_FILTER_VALUE, label: t('board:unassigned') }, ...members.map(member => ({ value: member.userId, label: displayPersonName(member.name) }))]
+                    : key === 'sprintId'
+                      ? [{ value: EMPTY_FILTER_VALUE, label: t('board:noSprint') }, ...sprints.map(sprint => ({ value: sprint.id, label: sprint.name }))]
+                      : key === 'versionId'
+                        ? [{ value: EMPTY_FILTER_VALUE, label: t('board:noVersion') }, ...versions.map(version => ({ value: version.id, label: version.name }))]
+                        : [{ value: EMPTY_FILTER_VALUE, label: t('board:noCostCenter') }, ...costCenters.map(center => ({ value: center.id, label: `${center.code}${center.description ? ` - ${center.description}` : ''}` }))]
+            const selected = key === 'status'
+              ? filters.status.split(',').map(value => value.trim()).filter(Boolean)
+              : [filters[key]]
+            return (
+              <div
+                ref={columnFilterMenuRef}
+                style={{ left: columnFilterMenu.left, top: columnFilterMenu.top, width: COLUMN_FILTER_MENU_WIDTH }}
+                className="absolute z-10 -translate-x-1/2 rounded-xl border border-border bg-card p-2 shadow-lg"
+              >
+                <p className="mb-1 px-1 text-xs font-semibold text-foreground">
+                  {t('tree.filterColumn', { column: t(definition.labelKey, { defaultValue: columnId }) })}
+                </p>
+                <div className="max-h-64 space-y-0.5 overflow-y-auto">
+                  {key !== 'status' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onFiltersChange({ ...filters, [key]: '' })
+                        setColumnFilterMenu(null)
+                      }}
+                      className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-muted/60 ${selected[0] ? 'text-foreground' : 'font-semibold text-primary'}`}
+                    >
+                      {t('tree.allValues')}
+                      {!selected[0] && <Check className="h-3.5 w-3.5" aria-hidden />}
+                    </button>
+                  )}
+                  {options.map(option => {
+                    const active = selected.includes(option.value)
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role={key === 'status' ? 'checkbox' : undefined}
+                        aria-checked={key === 'status' ? active : undefined}
+                        onClick={() => applyColumnFilter(columnId, option.value)}
+                        className={`flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-muted/60 ${active ? 'bg-primary/10 font-semibold text-foreground' : 'text-muted-foreground'}`}
+                      >
+                        <span className="truncate">{option.label}</span>
+                        {active && <Check className="h-3.5 w-3.5 flex-shrink-0 text-primary" aria-hidden />}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })()}
         </div>
 
         {displayTree.length === 0 && (

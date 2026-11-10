@@ -18,6 +18,8 @@ export interface BoardArchivingOptions {
   allItems: ItemData[]
   setAllItems: (value: ItemData[] | ((previous: ItemData[]) => ItemData[])) => void
   invalidateBoard: () => void
+  /** A grade da árvore tem cache próprio por filtro; sem esta invalidação a linha arquivada continua visível. */
+  invalidateTree?: () => Promise<unknown>
   toast: (message: string, type?: 'success' | 'error') => void
   tBoard: (key: string) => string
 }
@@ -45,7 +47,7 @@ function withoutSubtree(allItems: ItemData[], itemId: string): ItemData[] {
   })
 }
 
-export function useBoardArchiving({ projectId, allItems, setAllItems, invalidateBoard, toast, tBoard }: BoardArchivingOptions) {
+export function useBoardArchiving({ projectId, allItems, setAllItems, invalidateBoard, invalidateTree, toast, tBoard }: BoardArchivingOptions) {
   const [archiveConfirm, setArchiveConfirm] = useState<ArchiveConfirmation | null>(null)
   const [archivedModal, setArchivedModal] = useState(false)
   const [archivedItems, setArchivedItems] = useState<ArchivedItem[]>([])
@@ -57,12 +59,19 @@ export function useBoardArchiving({ projectId, allItems, setAllItems, invalidate
     try {
       await api.post(`/projects/${projectId}/items/${itemId}/archive`, {})
       setAllItems(previous => computeIsLeaf(withoutSubtree(previous, itemId)))
+      // A Tree View lê `/items/tree` com chave por filtro: o cache do board não
+      // alimenta a grade. Sem invalidar a árvore, a linha arquivada permanecia
+      // na tela até um refetch manual. Falha de releitura não desfaz o arquivamento.
+      await Promise.all([
+        Promise.resolve(invalidateBoard()).catch(() => {}),
+        invalidateTree?.().catch(() => {}),
+      ])
       setArchiveConfirm(null)
       toast(tBoard('itemArchived'), 'success')
     } catch {
       toast(tBoard('archiveItemError'), 'error')
     }
-  }, [projectId, setAllItems, toast, tBoard])
+  }, [projectId, setAllItems, invalidateBoard, invalidateTree, toast, tBoard])
 
   // Conta descendentes não-arquivados para pedir confirmação quando há filhos.
   const requestArchive = useCallback((itemId: string) => {

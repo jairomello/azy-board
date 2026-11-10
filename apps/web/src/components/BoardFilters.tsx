@@ -68,6 +68,51 @@ function selectedStatuses(status: string): string[] {
   return status.split(',').map(value => value.trim()).filter(Boolean)
 }
 
+/**
+ * Filtros que restringem a população exibida. As preferências de exibição
+ * (`showSubtasks`, `storyDisplay`, `moduleViewMode`) não entram na contagem nem
+ * no "Limpar": limpar filtros não deve desfazer a forma de visualização.
+ */
+export function countActiveBoardFilters(filters: BoardFilterState): number {
+  return [
+    filters.moduleId,
+    filters.sprintId,
+    filters.assigneeId,
+    filters.squadId,
+    filters.types.length > 0,
+    filters.tagIds.length > 0,
+    filters.versionId,
+    filters.priority,
+    filters.status,
+    filters.authorId,
+    filters.costCenterId,
+    filters.updatedWithin,
+    filters.hideEmptyEpics,
+    filters.storyDisplay === 'lanes' && filters.hideEmptyStories,
+  ].filter(Boolean).length
+}
+
+/** Zera os filtros de população preservando as preferências de exibição. */
+export function clearBoardFilters(filters: BoardFilterState): BoardFilterState {
+  return {
+    ...filters,
+    moduleId: '',
+    sprintId: '',
+    assigneeId: '',
+    squadId: '',
+    types: [],
+    tagIds: [],
+    versionId: '',
+    priority: '',
+    status: '',
+    authorId: '',
+    costCenterId: '',
+    updatedWithin: '',
+    hideEmptyEpics: false,
+    hideEmptyStories: false,
+  }
+}
+
 export function BoardFilters({
   modules, sprints, members, tags, versions = [], costCenters = [], squads = [],
   filters, onChange,
@@ -87,45 +132,14 @@ export function BoardFilters({
     { value: 'DONE', label: t('statusDone') },
     { value: 'CANCELLED', label: t('statusCancelled') },
   ] satisfies Array<{ value: typeof STATUS_VALUES[number]; label: string }>
-  const activeCount = [
-    filters.moduleId,
-    filters.sprintId,
-    filters.assigneeId,
-    filters.squadId,
-    filters.types.length > 0,
-    filters.tagIds.length > 0,
-    filters.versionId,
-    filters.priority,
-    filters.status,
-    filters.authorId,
-    filters.costCenterId,
-    filters.updatedWithin,
-  ].filter(Boolean).length
+  const activeCount = countActiveBoardFilters(filters)
 
   function update(partial: Partial<BoardFilterState>) {
     onChange({ ...filters, ...partial })
   }
 
   function clear() {
-    onChange({
-      moduleId: '',
-      sprintId: '',
-      assigneeId: '',
-      squadId: '',
-      types: [],
-      tagIds: [],
-      versionId: '',
-      priority: '',
-      status: '',
-      authorId: '',
-      costCenterId: '',
-      updatedWithin: '',
-      hideEmptyEpics: false,
-      hideEmptyStories: false,
-      showSubtasks: filters.showSubtasks,
-      storyDisplay: filters.storyDisplay,
-      moduleViewMode: filters.moduleViewMode,
-    })
+    onChange(clearBoardFilters(filters))
   }
 
   function toggleType(t: ItemType) {

@@ -397,8 +397,6 @@ export default function BoardPage() {
     cancelPendingReads: cancelBoardReads,
   })
 
-  const archiving = useBoardArchiving({ projectId, allItems, setAllItems, invalidateBoard, toast, tBoard })
-
   // Agrupar por EPIC. No modo de lanes, cada grupo contém também as histórias
   // do épico e seus cards visíveis, formando EPIC → STORY → CARD.
   const epicGroups = useMemo(() => buildEpicGroups({
@@ -421,9 +419,11 @@ export default function BoardPage() {
 
 
   // Cria novo item TASK/BUG via modal (botões da toolbar)
-  const invalidateTreeForProject = useCallback(() => {
-    void invalidateTree(queryClient, user?.id, projectId)
-  }, [queryClient, user?.id, projectId])
+  const invalidateTreeForProject = useCallback(() => (
+    invalidateTree(queryClient, user?.id, projectId)
+  ), [queryClient, user?.id, projectId])
+
+  const archiving = useBoardArchiving({ projectId, allItems, setAllItems, invalidateBoard, invalidateTree: invalidateTreeForProject, toast, tBoard })
 
   const {
     handleModalCreate, handleCardCreate, handleTitleSave, handleModalSave, handleAddSubtask,
@@ -666,6 +666,7 @@ export default function BoardPage() {
            <TreeViewPage
            projectId={projectId!}
              filters={filters}
+             onFiltersChange={setFilters}
              members={members}
              sprints={sprints}
              versions={projectVersions}

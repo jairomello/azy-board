@@ -315,7 +315,10 @@
     "actualStartDate": "Actual start",
     "actualDueDate": "Actual end",
     "assigneeLabel": "External assignee",
-    "externalRef": "External reference"
+    "externalRef": "External reference",
+    "filterColumn": "Filter {{column}}",
+    "allValues": "All",
+    "addBelow": "Add {{type}} below {{label}}"
   },
   "loadMore": "Load more",
   "buildVersion": "Version {{version}}",
