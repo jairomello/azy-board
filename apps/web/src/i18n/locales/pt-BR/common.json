@@ -118,6 +118,7 @@
   },
   "status": {
     "NOT_STARTED": "Não iniciada",
+    "PLANNED": "Planejada",
     "IN_PROGRESS": "Em andamento",
     "BLOCKED": "Bloqueada",
     "DONE": "Concluída",

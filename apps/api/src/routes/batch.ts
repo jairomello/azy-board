@@ -205,7 +205,7 @@ batchRouter.post('/items/update', requireRole('MEMBER'), async (c) => {
       update.title = changedFields.has('title') ? title : item.title
       if (changedFields.has('priority') && !['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].includes(String(update.priority))) throw new Error('INVALID_PRIORITY')
       if (changedFields.has('type') && !['TASK', 'BUG', 'EXTERNAL'].includes(String(update.type))) throw new Error('INVALID_TYPE')
-      if (changedFields.has('status') && !['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'].includes(String(update.status))) throw new Error('INVALID_STATUS')
+      if (changedFields.has('status') && !['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'].includes(String(update.status))) throw new Error('INVALID_STATUS')
       if (changedFields.has('points') && update.points !== null && (!Number.isInteger(update.points) || Number(update.points) < 0)) throw new Error('INVALID_POINTS')
       for (const tokenField of ['tokensInput', 'tokensOutput'] as const) {
         if (changedFields.has(tokenField) && update[tokenField] !== null && (!Number.isInteger(update[tokenField]) || Number(update[tokenField]) < 0)) throw new Error('INVALID_TOKENS')

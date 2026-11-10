@@ -23,7 +23,7 @@ function baseProps(overrides: Record<string, unknown> = {}) {
     isAdmin: true,
     openSections: new Set(['columns']), onToggleSection: () => {},
     onCreateColumn: async () => {}, onRenameColumn: async () => {}, onDeleteColumn: async () => {},
-    onUpdateColumnWeight: async () => {},
+    onUpdateColumnWeight: async () => {}, onUpdateColumnStatus: async () => {},
     onCreateSquad: async () => {}, onRenameSquad: async () => {}, onDeleteSquad: async () => {},
     onAddMembers: async () => ({ ok: true, created: [], skipped: [], invalid: [] }), onEditMember: async () => {}, onRemoveMember: async () => {},
     onCreateCostCenter: async () => {}, onEditCostCenter: async () => {}, onDeleteCostCenter: async () => {},
@@ -104,6 +104,27 @@ describe('peso de avanço nas configurações do projeto', () => {
     await user.clear(input)
     await user.tab()
     expect(calls).toEqual([{ id: 'c-testar', weight: null }])
+  })
+
+  test('admin troca o status base da coluna', async () => {
+    const calls: Array<{ id: string; status: string }> = []
+    const user = userEvent.setup()
+    render(<OrganizationSettingsSections {...baseProps({
+      onUpdateColumnStatus: async (id: string, status: string) => { calls.push({ id, status }) },
+    })} />)
+
+    const selects = screen.getAllByLabelText('Status base da coluna') as HTMLSelectElement[]
+    expect(selects).toHaveLength(6)
+    const fazer = selects[1]!
+    expect(fazer.value).toBe('NOT_STARTED')
+    await user.selectOptions(fazer, 'PLANNED')
+    expect(calls).toEqual([{ id: 'c-fazer', status: 'PLANNED' }])
+  })
+
+  test('quem não é admin vê o status base como texto, sem seletor', () => {
+    render(<OrganizationSettingsSections {...baseProps({ isAdmin: false })} />)
+    expect(screen.queryAllByLabelText('Status base da coluna')).toHaveLength(0)
+    expect(screen.getAllByText('Não iniciada').length).toBeGreaterThan(0)
   })
 
   test('o indicador reflete o novo peso sem recarregar a aplicação', async () => {

@@ -422,7 +422,7 @@ function readTransitionCandidatesSqlite(sqlite: Database, tenantId: string, proj
       (SELECT group_concat(s.sprint_id, ',') FROM item_sprints s WHERE s.tenant_id = i.tenant_id AND s.item_id = i.id) AS sprint_ids
     FROM items i
     WHERE i.tenant_id = ? AND i.project_id = ?
-      AND i.type IN ('TASK', 'BUG', 'EXTERNAL') AND i.status IN ('NOT_STARTED', 'IN_PROGRESS', 'BLOCKED')
+      AND i.type IN ('TASK', 'BUG', 'EXTERNAL') AND i.status IN ('NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED')
       AND NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id)
       AND EXISTS (SELECT 1 FROM item_sprints link WHERE link.tenant_id = i.tenant_id AND link.item_id = i.id AND link.sprint_id = ?)
   `).all(tenantId, projectId, sourceSprintId)
@@ -930,8 +930,8 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
       },
       async updateColumn(context, projectId, columnId, patch: ColumnPatch) {
         const found = runSqliteAtomic(sqlite, () => {
-          const row = sqlite.query<{ id: string }, [string, string, string]>(
-            'SELECT id FROM columns WHERE tenant_id = ? AND project_id = ? AND id = ?',
+          const row = sqlite.query<{ id: string; base_status: string }, [string, string, string]>(
+            'SELECT id, base_status FROM columns WHERE tenant_id = ? AND project_id = ? AND id = ?',
           ).get(context.tenantId, projectId, columnId)
           if (!row) return false
           if (patch.name !== undefined) {
@@ -941,6 +941,13 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           if (patch.baseStatus !== undefined) {
             sqlite.query('UPDATE columns SET base_status = ? WHERE tenant_id = ? AND project_id = ? AND id = ?')
               .run(patch.baseStatus, context.tenantId, projectId, columnId)
+            // Cards que estavam sincronizados com o status anterior acompanham a coluna;
+            // status divergente (ex.: bloqueio explícito) é preservado.
+            if (patch.baseStatus !== row.base_status) {
+              sqlite.query(`UPDATE items SET status = ?, updated_at = ?
+                WHERE tenant_id = ? AND project_id = ? AND column_id = ? AND status = ?`)
+                .run(patch.baseStatus, new Date().toISOString(), context.tenantId, projectId, columnId, row.base_status)
+            }
           }
           // `null` limpa o peso explícito (volta ao derivado); ausente não altera.
           if (patch.progressWeight !== undefined) {

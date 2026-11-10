@@ -22,7 +22,8 @@ O nome descreve a etapa para a equipe, como `Backlog`, `Em desenvolvimento` ou `
 
 | Status base | Significado funcional |
 |---|---|
-| `NOT_STARTED` | Trabalho ainda não iniciado. |
+| `NOT_STARTED` | Trabalho ainda não iniciado e não priorizado (backlog). |
+| `PLANNED` | Trabalho priorizado, ainda não iniciado (ex.: `Planejado`, `A Fazer`). |
 | `IN_PROGRESS` | Trabalho em andamento. |
 | `BLOCKED` | Trabalho impedido de avançar. |
 | `DONE` | Trabalho concluído. |

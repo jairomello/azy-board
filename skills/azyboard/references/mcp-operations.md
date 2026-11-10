@@ -72,7 +72,7 @@ Para marcar vários passos, prefira `check_items` com no máximo 100 entradas. C
 
 ### Transição revisável de sprint
 
-`prepare_sprint_transition` (ADMIN, somente-leitura) monta o plano de carry-over; `apply_sprint_transition` (ADMIN) aplica o plano aprovado atomicamente e de forma idempotente (T38). O plano acrescenta a sprint de destino aos pendentes elegíveis (TASK/BUG folhas `NOT_STARTED`/`IN_PROGRESS`/`BLOCKED`) preservando a origem e demais vínculos, e fecha o ciclo da origem como `CLOSED` sem ativar o destino. Concluídos (`DONE`/`CANCELLED`), pais, arquivados e itens fora da origem permanecem intactos.
+`prepare_sprint_transition` (ADMIN, somente-leitura) monta o plano de carry-over; `apply_sprint_transition` (ADMIN) aplica o plano aprovado atomicamente e de forma idempotente (T38). O plano acrescenta a sprint de destino aos pendentes elegíveis (TASK/BUG folhas `NOT_STARTED`/`PLANNED`/`IN_PROGRESS`/`BLOCKED`) preservando a origem e demais vínculos, e fecha o ciclo da origem como `CLOSED` sem ativar o destino. Concluídos (`DONE`/`CANCELLED`), pais, arquivados e itens fora da origem permanecem intactos.
 
 Carry-over é **acréscimo de vínculo**, não `SET sprint`: o card passa a aparecer nos filtros das duas sprints. Resolva "próxima" pelo menor `startDate` posterior à origem entre `PROPOSED`/`OPEN`; empate, homônimo, destino igual/`CLOSED`/externo ou origem sem ciclo exigem nova prévia ou esclarecimento. O servidor revalida população, ciclos e destino no commit; alteração após a prévia retorna conflito. Nunca crie sprint com datas inventadas nem reabra uma sprint `CLOSED`.
 

@@ -64,6 +64,7 @@
   "priorityHigh": "Alta",
   "priorityCritical": "Crítica",
   "statusNotStarted": "No iniciada",
+  "statusPlanned": "Planificada",
   "statusInProgress": "En progreso",
   "statusBlocked": "Bloqueada",
   "statusDone": "Completada",

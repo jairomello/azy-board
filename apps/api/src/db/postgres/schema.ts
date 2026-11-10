@@ -256,7 +256,7 @@ export const columns = pgTable('columns', {
 }, (table) => ({
   tenantIdUnique: uniqueIndex('columns_tenant_id_id_unique').on(table.tenantId, table.id),
   positionCheck: check('columns_position_check', sql`${table.position} >= 0`),
-  baseStatusCheck: check('columns_base_status_check', sql`${table.baseStatus} IN ('NOT_STARTED','IN_PROGRESS','BLOCKED','DONE','CANCELLED')`),
+  baseStatusCheck: check('columns_base_status_check', sql`${table.baseStatus} IN ('NOT_STARTED','PLANNED','IN_PROGRESS','BLOCKED','DONE','CANCELLED')`),
 }))
 
 // ---------------------------------------------------------------------------
@@ -372,8 +372,8 @@ export const items = pgTable('items', {
   positionCheck: check('items_position_check', sql`${table.position} >= 0`),
   datesCheck: check('items_dates_check', sql`${table.startDate} IS NULL OR ${table.dueDate} IS NULL OR ${table.dueDate} >= ${table.startDate}`),
   typeCheck: check('items_type_check', sql`${table.type} IN ('EPIC','STORY','TASK','BUG','EXTERNAL')`),
-  statusCheck: check('items_status_check', sql`${table.status} IN ('NOT_STARTED','IN_PROGRESS','BLOCKED','DONE','CANCELLED','ARCHIVED')`),
-  statusBeforeArchiveCheck: check('items_status_before_archive_check', sql`${table.statusBeforeArchive} IS NULL OR ${table.statusBeforeArchive} IN ('NOT_STARTED','IN_PROGRESS','BLOCKED','DONE','CANCELLED')`),
+  statusCheck: check('items_status_check', sql`${table.status} IN ('NOT_STARTED','PLANNED','IN_PROGRESS','BLOCKED','DONE','CANCELLED','ARCHIVED')`),
+  statusBeforeArchiveCheck: check('items_status_before_archive_check', sql`${table.statusBeforeArchive} IS NULL OR ${table.statusBeforeArchive} IN ('NOT_STARTED','PLANNED','IN_PROGRESS','BLOCKED','DONE','CANCELLED')`),
   priorityCheck: check('items_priority_check', sql`${table.priority} IN ('LOW','MEDIUM','HIGH','CRITICAL')`),
 }))
 

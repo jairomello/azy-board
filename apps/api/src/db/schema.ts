@@ -509,7 +509,7 @@ export const columns = sqliteTable('columns', {
   projectId: text('project_id').notNull(),
   name: text('name').notNull(),
   baseStatus: text('base_status', {
-    enum: ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'],
+    enum: ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'],
   }).notNull().default('NOT_STARTED'),
   // Peso de avanço da coluna (0–100). Nulo = derivado do baseStatus e da posição
   // entre as colunas do mesmo status (ver packages/domain progress.ts). A faixa é
@@ -588,11 +588,11 @@ export const items = sqliteTable('items', {
   // Campos operacionais de TASK/BUG
   // [DB-SWAP] ARCHIVED adicionado ao enum; em PostgreSQL usar ALTER TYPE ... ADD VALUE
   status: text('status', {
-    enum: ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED', 'ARCHIVED'],
+    enum: ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED', 'ARCHIVED'],
   }).notNull().default('NOT_STARTED'),
   // Status anterior ao arquivamento — permite restauração fiel ao estado original
   statusBeforeArchive: text('status_before_archive', {
-    enum: ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'],
+    enum: ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'],
   }),
   // Centro de custo associado ao item — nullable; auto-preenchido server-side na criação
   // [TENANT] tenant_id já cobre isolamento; costCenterId pertence ao mesmo projeto
