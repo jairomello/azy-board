@@ -25,6 +25,7 @@ describe('i18n runtime contract', () => {
   test('status label é idêntico entre filtro e coluna de status', async () => {
     const boardKeys: Record<string, string> = {
       NOT_STARTED: 'statusNotStarted',
+      PLANNED: 'statusPlanned',
       IN_PROGRESS: 'statusInProgress',
       BLOCKED: 'statusBlocked',
       DONE: 'statusDone',

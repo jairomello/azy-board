@@ -7,7 +7,7 @@
 //
 // Sem valor explícito, o peso é derivado do `baseStatus` e da posição entre as colunas
 // do mesmo status:
-// - `NOT_STARTED`/`CANCELLED` = 0;
+// - `NOT_STARTED`/`PLANNED`/`CANCELLED` = 0;
 // - `DONE` = 100;
 // - `IN_PROGRESS`/`BLOCKED` = faixa do fluxo: a última coluna vale 90; quando há mais de
 //   uma, a primeira vale 50 e as demais são distribuídas entre 50 e 90.

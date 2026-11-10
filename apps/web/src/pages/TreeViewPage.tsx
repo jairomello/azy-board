@@ -587,7 +587,7 @@ function Row({
               }}
               className={`h-7 rounded-md border px-2 text-xs ${editableCellClass(state)}`}
             >
-              {(['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'] as TaskStatus[]).map(option => (
+              {(['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'] as TaskStatus[]).map(option => (
                 <option key={option} value={option}>{t(`status.${option}`, { defaultValue: option })}</option>
               ))}
             </select>

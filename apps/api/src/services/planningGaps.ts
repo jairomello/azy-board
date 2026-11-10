@@ -66,8 +66,8 @@ export function buildPlanningGapSnapshot(input: {
   const scope = request.scope ?? {}
   const types = scope.types ?? ['TASK', 'BUG']
   const statuses = scope.statuses ?? (scope.includeArchived
-    ? ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED', 'ARCHIVED']
-    : ['NOT_STARTED', 'IN_PROGRESS', 'BLOCKED'])
+    ? ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED', 'ARCHIVED']
+    : ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED'])
   const selected = input.candidates.filter(item => {
     if (!types.includes(item.type)) return false
     if (!statuses.includes(item.status)) return false

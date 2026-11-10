@@ -823,7 +823,11 @@ export function createSqliteItemUnitOfWork(database: Database) {
     releaseItem(context: MutationContext, projectId: string, itemId: string, activity = 'Trabalho liberado'): void {
       runSqliteAtomic(database, () => {
         const before = readItemSnapshot(database, context.tenantId, projectId, itemId)
-        database.query(`UPDATE items SET assignee_id = NULL, assignee_api_key_id = NULL, status = 'NOT_STARTED', updated_at = ?
+        // O status acompanha o baseStatus da coluna atual; sem coluna, volta a NOT_STARTED.
+        database.query(`UPDATE items SET assignee_id = NULL, assignee_api_key_id = NULL,
+          status = COALESCE((SELECT c.base_status FROM columns c
+            WHERE c.tenant_id = items.tenant_id AND c.project_id = items.project_id AND c.id = items.column_id), 'NOT_STARTED'),
+          updated_at = ?
           WHERE tenant_id = ? AND project_id = ? AND id = ?`)
           .run(new Date().toISOString(), context.tenantId, projectId, itemId)
         if (before) {

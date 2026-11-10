@@ -142,7 +142,7 @@ O schema permite valores nulos e a aplicação decide quais campos apresentar co
 | `start_date` | Não | Data de início. |
 | `due_date` | Não | Data limite. |
 
-`status` aceita `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `CANCELLED` e `ARCHIVED`.
+`status` aceita `NOT_STARTED`, `PLANNED`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `CANCELLED` e `ARCHIVED`.
 
 Ao arquivar, o valor anterior vai para `status_before_archive`; ao restaurar, esse valor volta para `status` e o campo auxiliar é limpo.
 

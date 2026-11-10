@@ -20,7 +20,8 @@ order: 2
 
 | Status | Significado |
 |---|---|
-| Não iniciada | O trabalho ainda não começou. |
+| Não iniciada | O trabalho ainda não começou e não está priorizado (backlog). |
+| Planejada | O trabalho foi priorizado, mas ainda não começou. Mesmo peso de avanço de "não iniciada". |
 | Em andamento | O item está sendo executado. |
 | Bloqueada | Existe um impedimento para continuar. |
 | Concluída | O resultado esperado foi entregue. |
@@ -31,7 +32,9 @@ order: 2
 
 Cada coluna representa uma etapa do fluxo e possui um status base. Ao mover um card para outra coluna, o item assume o status base da coluna de destino.
 
-Uma coluna pode representar os estados: não iniciada, em andamento, bloqueada, concluída ou cancelada. O arquivamento não é uma coluna, mas um ciclo de vida separado.
+Uma coluna pode representar os estados: não iniciada, planejada, em andamento, bloqueada, concluída ou cancelada. O arquivamento não é uma coluna, mas um ciclo de vida separado.
+
+"Planejada" (`PLANNED`) é o status de uma coluna como `Planejado` ou `A Fazer`: o trabalho já foi priorizado, mas ainda não começou. "Não iniciada" (`NOT_STARTED`) fica reservado ao que ainda não foi priorizado, como o `Backlog`. Os dois têm peso de avanço 0; a diferença está no status exibido no card e nos filtros.
 
 ## Prioridades
 
