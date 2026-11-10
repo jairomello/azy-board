@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { burnupData, burnupHasEvolution, hoursByAuthorData, progressData, rankingData, statusData, teamLoadData, tokenRecorteData, tokenSeriesData, tokenStatusData, tokensHaveSeries } from './dashboardAdapters'
+import { burnupData, burnupHasEvolution, hoursByAuthorData, progressData, rankingData, statusData, teamLoadData, teamLoadHasWip, tokenRecorteData, tokenSeriesData, tokenStatusData, tokensHaveSeries } from './dashboardAdapters'
 import type { DashboardAging, DashboardBurnup, DashboardHours, DashboardSnapshot, DashboardTokens } from '@azy-board/ui-contracts'
 import ptBRDescriptions from './i18n/locales/pt-BR/dashboardDescriptions.json'
 import enDescriptions from './i18n/locales/en/dashboardDescriptions.json'
@@ -7,19 +7,20 @@ import esDescriptions from './i18n/locales/es/dashboardDescriptions.json'
 
 const t = (key: string) => key
 
-const snapshot = (overrides: Partial<DashboardSnapshot['boxes']> = {}): DashboardSnapshot => ({ coverage: { startedAt: null, partial: false }, filters: { applied: [], inapplicable: [] }, boxes: { progressScope: { total: 10, done: 4, completionPercent: 40, advance: 70, points: 20, donePoints: 8, estimationCoverage: 80 }, wip: { total: 3, byStatus: { DONE: 0, IN_PROGRESS: 2, BLOCKED: 1, NOT_STARTED: 0 }, byStatusPoints: { DONE: 0, IN_PROGRESS: 4, BLOCKED: 2, NOT_STARTED: 0 }, pointsCoverage: 80, items: [] }, blocked: { total: 0, items: [] }, overdue: { total: 0, items: [], remainingItems: [] }, teamLoad: { members: [], unassignedWip: 1, unassignedWipPoints: null, pointsCoverage: null }, ...overrides } })
+const snapshot = (overrides: Partial<DashboardSnapshot['boxes']> = {}): DashboardSnapshot => ({ coverage: { startedAt: null, partial: false }, filters: { applied: [], inapplicable: [] }, boxes: { progressScope: { total: 10, done: 4, cancelled: 2, completionPercent: 40, advance: 70, points: 20, donePoints: 8, estimationCoverage: 80 }, wip: { total: 3, byStatus: { IN_PROGRESS: 2, BLOCKED: 1 }, byStatusPoints: { IN_PROGRESS: 4, BLOCKED: 2 }, pointsCoverage: 80, items: [] }, blocked: { total: 0, items: [] }, overdue: { total: 0, items: [], remainingItems: [] }, teamLoad: { members: [], unassignedWip: 1, unassignedWipPoints: null, pointsCoverage: null }, ...overrides } })
 
 describe('dashboard chart adapters', () => {
   test('normal data feeds the current visualizations', () => {
     const current = snapshot({ teamLoad: { members: [{ userId: 'u', userName: 'Ana', squadId: null, squadName: null, wipTotal: 2, wipPoints: 5, pointsCoverage: 50 }], unassignedWip: 0, unassignedWipPoints: null, pointsCoverage: 50 } })
     const burnup: DashboardBurnup = { partial: true, coverageStartedAt: '2026-01-01', series: [{ date: '2026-01-01', total: 2, done: 1, points: 4, donePoints: 2 }] }
     const hours: DashboardHours = { semantics: 'manual', totalMinutes: 150, byAuthor: [{ authorId: 'u', authorName: 'Ana', squadName: 'Core', totalMinutes: 150 }], pagination: { limit: 50, total: 2, hasMore: false, truncated: false, nextCursor: null }, totalRows: 2, rows: [{ id: 'l1', authorId: 'u', authorName: 'Ana', squadName: 'Core', itemId: 'i', versionId: null, moduleId: null, durationMin: 90, createdAt: '2026-01-02T10:00:00Z' }] }
-    expect(progressData(current, t).donut.length).toBe(2); expect(progressData(current, t).advance).toBe(70); expect(statusData(current, 'items', t).length).toBe(4); expect(statusData(current, 'points', t).find(item => item.status === 'IN_PROGRESS')?.value).toBe(4); expect(statusData(current, 'items', t).find(item => item.status === 'IN_PROGRESS')?.label).toBe('inProgress'); expect(burnupData(burnup, 'points')[0].done).toBe(2); expect(teamLoadData(current, 'items', t)[0].value).toBe(2); expect(teamLoadData(current, 'points', t)[0].value).toBe(5); expect(hoursByAuthorData(hours, t)[0].value).toBe(150)
+    expect(progressData(current, t).donut.length).toBe(2); expect(progressData(current, t).advance).toBe(70); expect(statusData(current, 'items', t).length).toBe(2); expect(statusData(current, 'points', t).find(item => item.status === 'IN_PROGRESS')?.value).toBe(4); expect(statusData(current, 'items', t).find(item => item.status === 'IN_PROGRESS')?.label).toBe('inProgress'); expect(burnupData(burnup, 'points')[0].done).toBe(2); expect(teamLoadData(current, 'items', t)[0].value).toBe(2); expect(teamLoadData(current, 'points', t)[0].value).toBe(5); expect(hoursByAuthorData(hours, t)[0].value).toBe(150)
   })
   test('empty, zero-blocked, partial and many-item inputs stay finite', () => {
     const empty = snapshot(); const hours: DashboardHours = { semantics: '', totalMinutes: 0, rows: [] }
-    expect(progressData(empty, t).donut[1].value).toBe(6); expect(JSON.stringify(hoursByAuthorData(hours, t))).toBe('[]'); expect(statusData(empty, 'items', t).length).toBe(4)
+    expect(progressData(empty, t).donut[1].value).toBe(6); expect(JSON.stringify(hoursByAuthorData(hours, t))).toBe('[]'); expect(statusData(empty, 'items', t).length).toBe(2)
     const unestimated = teamLoadData(snapshot({ teamLoad: { members: [{ userId: 'u', userName: 'Sem pontos', squadId: null, squadName: null, wipTotal: 1, wipPoints: null, pointsCoverage: 0 }], unassignedWip: 0, unassignedWipPoints: null, pointsCoverage: 0 } }), 'points', t)[0]; expect(unestimated.name).toBe('Sem pontos'); expect(unestimated.value).toBe(0); expect(unestimated.pointsAvailable).toBe(false)
+    // Bloqueado não sobrecarrega a equipe: fica fora da barra do responsável.
     const blockedSubset = teamLoadData(snapshot({ teamLoad: { members: [{ userId: 'u', userName: 'Bloqueada', squadId: null, squadName: null, wipTotal: 2, blockedSubset: 1, wipPoints: 5, blockedPoints: 2, pointsCoverage: 100 }], unassignedWip: 0, unassignedWipPoints: null, pointsCoverage: 100 } }), 'items', t)[0]; expect(blockedSubset.value).toBe(1)
   })
 })
@@ -106,6 +107,36 @@ describe('rótulos do dashboard vêm da tradução (B11)', () => {
     // Horas sem autor usam a chave traduzida, não um literal em inglês.
     const hours: DashboardHours = { semantics: '', totalMinutes: 0, rows: [{ id: 'l', authorId: 'u', authorName: null, squadName: null, itemId: 'i', versionId: null, moduleId: null, durationMin: 30, createdAt: '2026-01-02T10:00:00Z' }] }
     expect(hoursByAuthorData(hours, marked)[0]?.name).toBe('<unknownAuthor>')
+  })
+})
+
+describe('seletor da carga da equipe (B12)', () => {
+  test('permanece disponível em "pontos" mesmo quando não há estimativa', () => {
+    // Sem estimativa: o gráfico por pontos fica vazio, mas o seletor precisa continuar
+    // visível — senão não há como voltar para a visão por itens.
+    const withoutPoints = snapshot({
+      teamLoad: { members: [{ userId: 'u', userName: 'Ana', squadId: null, squadName: null, wipTotal: 3, wipPoints: null, pointsCoverage: 0 }], unassignedWip: 1, unassignedWipPoints: null, pointsCoverage: 0 },
+    })
+    expect(teamLoadHasWip(withoutPoints)).toBe(true)
+    expect(teamLoadData(withoutPoints, 'points', t).every(item => Number(item.value) === 0)).toBe(true)
+    expect(teamLoadData(withoutPoints, 'points', t).some(item => item.pointsAvailable)).toBe(false)
+    // Sem WIP não há o que alternar: o box mostra o estado vazio.
+    const idle = snapshot({ teamLoad: { members: [], unassignedWip: 0, unassignedWipPoints: null, pointsCoverage: null } })
+    expect(teamLoadHasWip(idle)).toBe(false)
+  })
+
+  test('carga mostra só trabalho ativo do time: bloqueado e responsável externo ficam fora', () => {
+    const full = snapshot({
+      teamLoad: {
+        members: [{ userId: 'u', userName: 'Ana', squadId: null, squadName: null, wipTotal: 3, blockedSubset: 1, wipPoints: 5, blockedPoints: 2, pointsCoverage: 100 }],
+        unassignedWip: 2, labelOnlyWip: 1, unassignedWipPoints: 4, labelOnlyWipPoints: 1, pointsCoverage: 100,
+      },
+    })
+    // Ana: 3 no WIP − 1 bloqueado = 2 em andamento; sem responsável: 2.
+    expect(teamLoadData(full, 'items', t).map(item => item.value)).toEqual([2, 2])
+    expect(teamLoadData(full, 'points', t).map(item => item.value)).toEqual([3, 4])
+    // Item com responsável externo não vira barra: não é carga do time.
+    expect(teamLoadData(full, 'items', t)).toHaveLength(2)
   })
 })
 

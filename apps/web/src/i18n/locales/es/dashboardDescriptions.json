@@ -1,13 +1,13 @@
 {
   "wipByItems": "Por cantidad de elementos",
   "wipByPoints": "Por puntos",
-  "descriptionProgressScope": "Compara el trabajo completado con el alcance total por elementos y puntos.",
-  "descriptionWip": "Muestra la distribución actual del trabajo en progreso por estado.",
+  "descriptionProgressScope": "Compara lo completado con el alcance activo (TASK/BUG sin N/A), por elementos y puntos. Las dependencias externas quedan fuera.",
+  "descriptionWip": "Distribuye el trabajo en curso (en curso y bloqueados) por elementos y puntos.",
   "descriptionBlocked": "Muestra cuántos elementos están bloqueados y cuáles acumulan más días.",
   "descriptionOverdue": "Compara los elementos y puntos atrasados con el resto del alcance.",
   "descriptionBurnup": "Muestra cómo evolucionaron el alcance y los elementos completados.",
   "descriptionAging": "Lista los elementos WIP más antiguos desde el inicio de su episodio actual.",
-  "descriptionTeamLoad": "Muestra la cantidad de trabajo en progreso por responsable.",
+  "descriptionTeamLoad": "Distribuye el trabajo en curso por responsable del equipo. Los bloqueados y los elementos con responsable externo no entran en la carga.",
   "descriptionHours": "Suma las horas de registros manuales, agrupadas por autor.",
   "descriptionTokens": "Consumo de tokens de IA registrado en el proyecto por estado, tipo y dimensiones, además de la evolución diaria; la serie comienza en la fecha de inicio de cobertura de tokens."
 }

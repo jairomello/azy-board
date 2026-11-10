@@ -1,13 +1,13 @@
 {
   "wipByItems": "By item count",
   "wipByPoints": "By points",
-  "descriptionProgressScope": "Compares completed work with total scope by items and points.",
-  "descriptionWip": "Shows the current distribution of work in progress by status.",
+  "descriptionProgressScope": "Compares completed work with the active scope (TASK/BUG without N/A), by items and points. External dependencies are excluded.",
+  "descriptionWip": "Breaks down work in progress (in progress and blocked) by items and points.",
   "descriptionBlocked": "Shows how many items are blocked and which have accumulated the most days.",
   "descriptionOverdue": "Compares overdue items and points with the remaining scope.",
   "descriptionBurnup": "Shows how scope and completed items changed over time.",
   "descriptionAging": "Lists the oldest WIP items since their current episode began.",
-  "descriptionTeamLoad": "Shows the amount of work in progress for each assignee.",
+  "descriptionTeamLoad": "Distributes in-progress work by team owner. Blocked items and items with an external owner are not part of the load.",
   "descriptionHours": "Sums hours entered in manual logs, grouped by author.",
   "descriptionTokens": "AI token usage recorded in the project by status, type and dimensions, plus the daily evolution; the series starts at the token coverage start date."
 }

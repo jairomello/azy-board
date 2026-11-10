@@ -14,6 +14,7 @@ export function statusLabel(status: string, t: DashboardTranslator): string {
   if (status === 'IN_PROGRESS') return t('inProgress')
   if (status === 'BLOCKED') return t('blockedStatus')
   if (status === 'PLANNED') return t('planned')
+  if (status === 'PLANNED') return t('planned')
   if (status === 'NOT_STARTED') return t('notStarted')
   return status
 }
@@ -76,7 +77,19 @@ export function rankingData(items: DashboardSnapshot['boxes']['blocked']['items'
     }))
 }
 
+/**
+ * O seletor de visão da carga da equipe depende da existência de WIP — nunca dos
+ * valores do modo atual. Em "pontos" sem estimativa o gráfico fica vazio, mas o
+ * seletor precisa continuar acessível para voltar à visão por itens.
+ */
+export function teamLoadHasWip(snapshot: DashboardSnapshot): boolean {
+  return snapshot.boxes.teamLoad.members.some(member => member.wipTotal > 0) || snapshot.boxes.teamLoad.unassignedWip > 0
+}
+
 export function teamLoadData(snapshot: DashboardSnapshot, mode: 'items' | 'points', t: DashboardTranslator): ChartDatum[] {
+  // Carga = trabalho ATIVO sob responsabilidade do time. Bloqueado não sobrecarrega
+  // ninguém e item com responsável externo não é do time: ambos ficam fora das barras
+  // (a nota do box informa quantos ficaram de fora).
   const members = snapshot.boxes.teamLoad.members.map(member => ({
     name: displayPersonName(member.userName),
     title: member.userName,

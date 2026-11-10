@@ -418,11 +418,46 @@ export interface DashboardSnapshot {
   coverage: DashboardCoverage
   filters: DashboardFilterInfo
   boxes: {
-    progressScope: { total: number; done: number; completionPercent: number | null; /** Avanço no fluxo (peso da coluna), distinto da conclusão. */ advance: number; points: number; donePoints: number; estimationCoverage: number | null }
+    progressScope: { total: number; done: number; /** N/A fora do escopo de progresso. */ cancelled: number; completionPercent: number | null; /** Avanço no fluxo (peso da coluna), distinto da conclusão. */ advance: number; points: number; donePoints: number; estimationCoverage: number | null }
     wip: { total: number; byStatus: Record<string, number>; byStatusPoints: Record<string, number>; pointsCoverage: number | null; items: DashboardItemDetail[]; pagination?: DashboardPagination }
     blocked: { total: number; items: DashboardItemDetail[]; pagination?: DashboardPagination }
-    overdue: { total: number; points?: number; items: DashboardItemDetail[]; remainingItems: DashboardItemDetail[]; pagination?: DashboardPagination; remainingPagination?: DashboardPagination }
-    teamLoad: { members: Array<{ userId: string; userName: string; squadId: string | null; squadName: string | null; wipTotal: number; blockedSubset?: number; wipPoints: number | null; blockedPoints?: number | null; pointsCoverage: number | null }>; unassignedWip: number; blockedUnassignedSubset?: number; unassignedWipPoints: number | null; unassignedBlockedPoints?: number | null; pointsCoverage: number | null }
+    overdue: { total: number; points?: number; /** Universo do donut: todo o escopo de trabalho (inclui N/A). */ scopeTotal?: number; scopePoints?: number; items: DashboardItemDetail[]; remainingItems: DashboardItemDetail[]; pagination?: DashboardPagination; remainingPagination?: DashboardPagination }
+    teamLoad: { members: Array<{ userId: string; userName: string; squadId: string | null; squadName: string | null; wipTotal: number; blockedSubset?: number; wipPoints: number | null; blockedPoints?: number | null; pointsCoverage: number | null }>; unassignedWip: number; labelOnlyWip?: number; blockedUnassignedSubset?: number; unassignedWipPoints: number | null; labelOnlyWipPoints?: number | null; unassignedBlockedPoints?: number | null; pointsCoverage: number | null }
+  }
+  /** Dependências externas (tipo EXTERNAL): fora do progresso de trabalho. */
+  external?: { total: number; done: number; completionPercent: number | null }
+}
+
+export interface DashboardIndicators {
+  coverage: DashboardCoverage
+  filters: DashboardFilterInfo
+  project: { startDate: string | null; plannedEndDate: string | null }
+  today: string
+  daysElapsed: number | null
+  daysTotal: number | null
+  daysToFinish: number | null
+  advancePercent: number
+  expectedPercent: number | null
+  spi: number | null
+  spiStatus: 'GREEN' | 'YELLOW' | 'RED' | 'UNKNOWN'
+  completionPercent: number | null
+  total: number
+  done: number
+  cancelled: number
+  overdue: number
+  blocked: number
+  wip: number
+  unassignedWip: number
+  labelOnlyWip: number
+  external: { total: number; done: number; completionPercent: number | null }
+  hygiene: {
+    totalOpen: number
+    withoutAssignee: number
+    withoutDueDate: number
+    withoutPriority: number
+    doneWithoutActualDate: number
+    inProgressWithoutActualStart: number
+    blockedWithoutReason: number
   }
 }
 

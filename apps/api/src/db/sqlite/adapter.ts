@@ -26,6 +26,7 @@ import type {
   DashboardHoursRow,
   DashboardAgingDetailItem,
   DashboardLeafItemPageOptions,
+  DashboardLeafPopulation,
   DashboardDimensionSnapshotRecord,
   DashboardMemberRow,
   DashboardPopulationFilter,
@@ -535,10 +536,10 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
     },
   }
 
-  const dashboardLeafConditions = (context: PersistenceContext, projectId: string, filter?: DashboardPopulationFilter) => {
+  const dashboardLeafConditions = (context: PersistenceContext, projectId: string, filter?: DashboardPopulationFilter, population: DashboardLeafPopulation = 'WORK') => {
     const conditions = [
       eq(items.tenantId, context.tenantId), eq(items.projectId, projectId),
-      inArray(items.type, ['TASK', 'BUG', 'EXTERNAL']), sql`${items.status} <> 'ARCHIVED'`,
+      inArray(items.type, population === 'EXTERNAL' ? ['EXTERNAL'] : ['TASK', 'BUG']), sql`${items.status} <> 'ARCHIVED'`,
       sql`NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = ${context.tenantId} AND child.project_id = ${projectId} AND child.parent_id = ${items.id})`,
     ]
     if (!filter) return conditions
@@ -2452,7 +2453,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         } satisfies DashboardDimensionSnapshotRecord))
       },
       // [DB-SWAP] Contagens/status/points/team são agregados SQL, equivalentes ao port PostgreSQL.
-      async aggregateLeafItems(context, projectId, filter, today): Promise<DashboardSnapshotAggregateRow[]> {
+      async aggregateLeafItems(context, projectId, filter, today, population: DashboardLeafPopulation = 'WORK'): Promise<DashboardSnapshotAggregateRow[]> {
         const rows = await database.select({
           status: items.status,
           assigneeId: items.assigneeId,
@@ -2463,12 +2464,20 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           donePoints: sql<number>`COALESCE(SUM(CASE WHEN ${items.status} = 'DONE' THEN ${items.points} ELSE 0 END), 0)`,
           overdueCount: sql<number>`COALESCE(SUM(CASE WHEN ${items.dueDate} IS NOT NULL AND ${items.dueDate} < ${today} AND ${items.status} NOT IN ('DONE', 'CANCELLED') THEN 1 ELSE 0 END), 0)`,
           overduePoints: sql<number>`COALESCE(SUM(CASE WHEN ${items.dueDate} IS NOT NULL AND ${items.dueDate} < ${today} AND ${items.status} NOT IN ('DONE', 'CANCELLED') THEN ${items.points} ELSE 0 END), 0)`,
-        }).from(items).where(and(...dashboardLeafConditions(context, projectId, filter)))
+          unassignedCount: sql<number>`COALESCE(SUM(CASE WHEN ${items.assigneeId} IS NULL AND ${items.assigneeApiKeyId} IS NULL AND NULLIF(TRIM(${items.assigneeLabel}), '') IS NULL THEN 1 ELSE 0 END), 0)`,
+          unassignedEstimatedCount: sql<number>`COALESCE(SUM(CASE WHEN ${items.assigneeId} IS NULL AND ${items.assigneeApiKeyId} IS NULL AND NULLIF(TRIM(${items.assigneeLabel}), '') IS NULL AND ${items.points} IS NOT NULL THEN 1 ELSE 0 END), 0)`,
+          unassignedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${items.assigneeId} IS NULL AND ${items.assigneeApiKeyId} IS NULL AND NULLIF(TRIM(${items.assigneeLabel}), '') IS NULL THEN ${items.points} ELSE 0 END), 0)`,
+          labelOnlyCount: sql<number>`COALESCE(SUM(CASE WHEN ${items.assigneeId} IS NULL AND ${items.assigneeApiKeyId} IS NULL AND NULLIF(TRIM(${items.assigneeLabel}), '') IS NOT NULL THEN 1 ELSE 0 END), 0)`,
+          labelOnlyEstimatedCount: sql<number>`COALESCE(SUM(CASE WHEN ${items.assigneeId} IS NULL AND ${items.assigneeApiKeyId} IS NULL AND NULLIF(TRIM(${items.assigneeLabel}), '') IS NOT NULL AND ${items.points} IS NOT NULL THEN 1 ELSE 0 END), 0)`,
+          labelOnlyPoints: sql<number>`COALESCE(SUM(CASE WHEN ${items.assigneeId} IS NULL AND ${items.assigneeApiKeyId} IS NULL AND NULLIF(TRIM(${items.assigneeLabel}), '') IS NOT NULL THEN ${items.points} ELSE 0 END), 0)`,
+        }).from(items).where(and(...dashboardLeafConditions(context, projectId, filter, population)))
           .groupBy(items.status, items.assigneeId, items.columnId)
         return rows.map(row => ({
           status: row.status, assigneeId: row.assigneeId, columnId: row.columnId,
           count: Number(row.count), estimatedCount: Number(row.estimatedCount),
           points: Number(row.points), donePoints: Number(row.donePoints), overdueCount: Number(row.overdueCount), overduePoints: Number(row.overduePoints),
+          unassignedCount: Number(row.unassignedCount), unassignedEstimatedCount: Number(row.unassignedEstimatedCount), unassignedPoints: Number(row.unassignedPoints),
+          labelOnlyCount: Number(row.labelOnlyCount), labelOnlyEstimatedCount: Number(row.labelOnlyEstimatedCount), labelOnlyPoints: Number(row.labelOnlyPoints),
         }))
       },
       // T80 — recortes de tokens por dimensão, sempre por agregação SQL da população filtrada.
@@ -2480,6 +2489,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           doneTokensOutput: sql<number>`COALESCE(SUM(CASE WHEN ${items.status} = 'DONE' THEN ${items.tokensOutput} ELSE 0 END), 0)`,
           count: sql<number>`COUNT(*)`,
         }
+        // Tokens são consumo: contam em qualquer status (inclusive N/A), como na série do rollup.
         const conditions = dashboardLeafConditions(context, projectId, filter)
         const normalize = (rows: Array<{ key: string | null } & Record<string, unknown>>) => rows.map(row => ({
           key: row.key ?? null,

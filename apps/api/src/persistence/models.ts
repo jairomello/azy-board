@@ -751,7 +751,22 @@ export interface DashboardSnapshotAggregateRow {
   donePoints: number
   overdueCount: number
   overduePoints: number
+  /** Itens da linha sem nenhum responsável: sem usuário, sem API key e sem rótulo externo. */
+  unassignedCount: number
+  unassignedEstimatedCount: number
+  unassignedPoints: number
+  /** Itens da linha sem usuário do time, mas com responsável externo registrado em `assigneeLabel`. */
+  labelOnlyCount: number
+  labelOnlyEstimatedCount: number
+  labelOnlyPoints: number
 }
+
+/**
+ * População do dashboard.
+ * - `WORK`: folhas de trabalho (TASK/BUG) — base de progresso, WIP, atraso e higiene.
+ * - `EXTERNAL`: dependências externas (EXTERNAL), contadas à parte e fora do progresso.
+ */
+export type DashboardLeafPopulation = 'WORK' | 'EXTERNAL'
 
 export interface DashboardLeafItemPageOptions {
   limit: number
