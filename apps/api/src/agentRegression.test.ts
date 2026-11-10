@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { and, eq } from 'drizzle-orm'
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
@@ -10,7 +12,7 @@ const { tenants, users, projects, items, modules, columns } = await import('./db
 const { signJwt } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 
-await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('./db/migrations', import.meta.url)) })
 
 let tenantId: string
 let userId: string

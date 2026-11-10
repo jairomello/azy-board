@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { beforeAll, describe, expect, test } from 'bun:test'
 
 process.env.DATABASE_URL = ':memory:'
@@ -9,7 +11,7 @@ const { hashPassword, signJwt } = await import('./services/auth')
 const { generateId } = await import('./utils/id')
 const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
 
-await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('./db/migrations', import.meta.url)) })
 
 interface ListedUser { id: string; name: string; email: string; globalGroup: string }
 interface ListedPage { data: ListedUser[]; page: number; limit: number; total: number; hasMore: boolean }

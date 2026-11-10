@@ -292,4 +292,74 @@ export const journeys: Journey[] = [
       await page.getByText('Resposta determinística do agente de teste.').waitFor({ timeout: 30_000 })
     },
   },
+  // Garante os fluxos da grade da árvore que só existiam em teste de componente:
+  // filtro pelo cabeçalho persistido, arquivamento em cascata que realmente
+  // persiste e desfazer que restaura depois de recarregar.
+  {
+    name: 'árvore: filtro por cabeçalho, cascata de arquivamento e desfazer',
+    run: async page => {
+      await page.goto(`${webUrl}/projects`)
+      await createProject(page, 'Projeto Grade E2E', 'HIERARCHICAL')
+      await openBoardOf(page, 'Projeto Grade E2E')
+      const projectId = projectIdFromUrl(page)
+
+      const moduleResponse = await page.request.post(`${apiUrl}/api/projects/${projectId}/modules`, { data: { name: 'Módulo Grade E2E' } })
+      assert(moduleResponse.ok(), `módulo respondeu ${moduleResponse.status()}`)
+      const module = (await moduleResponse.json()) as { id: string }
+      const epicResponse = await page.request.post(`${apiUrl}/api/projects/${projectId}/items`, { data: { type: 'EPIC', title: 'Épico Grade E2E', moduleId: module.id } })
+      assert(epicResponse.ok(), `épico respondeu ${epicResponse.status()}`)
+      const epic = (await epicResponse.json()) as { id: string }
+      const storyResponse = await page.request.post(`${apiUrl}/api/projects/${projectId}/items`, { data: { type: 'STORY', title: 'História Grade E2E', parentId: epic.id } })
+      assert(storyResponse.ok(), `história respondeu ${storyResponse.status()}`)
+      const story = (await storyResponse.json()) as { id: string }
+      const doneResponse = await page.request.post(`${apiUrl}/api/projects/${projectId}/items`, { data: { type: 'TASK', title: 'Task concluída E2E', parentId: story.id } })
+      const openResponse = await page.request.post(`${apiUrl}/api/projects/${projectId}/items`, { data: { type: 'TASK', title: 'Task aberta E2E', parentId: story.id } })
+      assert(doneResponse.ok() && openResponse.ok(), 'criação das tasks falhou')
+      const done = (await doneResponse.json()) as { id: string }
+      const donePatch = await page.request.patch(`${apiUrl}/api/projects/${projectId}/items/${done.id}`, { data: { status: 'DONE' } })
+      assert(donePatch.ok(), `PATCH de status respondeu ${donePatch.status()}`)
+
+      await page.reload()
+      await page.getByRole('button', { name: 'Árvore' }).click()
+      await page.getByRole('button', { name: 'Expandir tudo' }).click()
+      await page.getByText('História Grade E2E', { exact: true }).waitFor({ timeout: 15_000 })
+      await page.getByText('Task aberta E2E', { exact: true }).waitFor({ timeout: 15_000 })
+
+      // Filtro do cabeçalho: só a concluída fica; limpar devolve a outra.
+      await page.getByRole('button', { name: 'Filtrar Status' }).click()
+      await page.getByRole('checkbox', { name: 'Concluída' }).click()
+      await page.getByText('Task aberta E2E', { exact: true }).waitFor({ state: 'detached', timeout: 15_000 })
+      await page.getByText('Task concluída E2E', { exact: true }).waitFor({ timeout: 15_000 })
+      await page.getByRole('button', { name: 'Limpar filtros' }).click()
+      await page.getByText('Task aberta E2E', { exact: true }).waitFor({ timeout: 15_000 })
+
+      // Persistência do filtro: recarrega, volta à árvore e o recorte continua.
+      await page.getByRole('button', { name: 'Filtrar Status' }).click()
+      await page.getByRole('checkbox', { name: 'Concluída' }).click()
+      await page.reload()
+      await page.getByRole('button', { name: 'Árvore' }).click()
+      await page.getByRole('button', { name: 'Limpar filtros' }).waitFor({ timeout: 15_000 })
+      await page.getByRole('button', { name: 'Expandir tudo' }).click()
+      await page.getByText('Task concluída E2E', { exact: true }).waitFor({ timeout: 15_000 })
+      assert((await page.getByText('Task aberta E2E', { exact: true }).count()) === 0, 'filtro de status não persistiu após recarregar')
+      await page.getByRole('button', { name: 'Limpar filtros' }).click()
+      await page.getByText('Task aberta E2E', { exact: true }).waitFor({ timeout: 15_000 })
+
+      // Cascata: arquiva a história (com as duas tasks) e desfaz pelo toast.
+      await page.getByRole('button', { name: 'Arquivar História Grade E2E', exact: true }).click()
+      await page.getByRole('button', { name: 'Arquivar item', exact: true }).click()
+      await page.getByText('História Grade E2E', { exact: true }).waitFor({ state: 'detached', timeout: 15_000 })
+      assert((await page.getByText('Task concluída E2E', { exact: true }).count()) === 0, 'descendentes não sumiram da grade')
+
+      await page.getByRole('button', { name: 'Desfazer' }).click()
+      await page.getByText('História Grade E2E', { exact: true }).waitFor({ timeout: 15_000 })
+
+      // A restauração precisa sobreviver ao reload (persistida no servidor).
+      await page.reload()
+      await page.getByRole('button', { name: 'Árvore' }).click()
+      await page.getByRole('button', { name: 'Expandir tudo' }).click()
+      await page.getByText('História Grade E2E', { exact: true }).waitFor({ timeout: 15_000 })
+      await page.getByText('Task concluída E2E', { exact: true }).waitFor({ timeout: 15_000 })
+    },
+  },
 ]

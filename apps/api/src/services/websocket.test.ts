@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { afterEach, describe, expect, test } from 'bun:test'
 import type { ServerWebSocket } from 'bun'
 import type { WsClientData } from './websocket'
@@ -21,7 +23,7 @@ const {
   wsHandler,
 } = await import('./websocket')
 
-await migrate(db, { migrationsFolder: new URL('../db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('../db/migrations', import.meta.url)) })
 
 const TENANT = 't'
 

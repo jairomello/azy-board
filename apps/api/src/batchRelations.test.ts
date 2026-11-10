@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { and, eq } from 'drizzle-orm'
 
@@ -6,7 +8,7 @@ process.env.DATABASE_URL = ':memory:'
 const { app } = await import('./index')
 const { db } = await import('./db/index')
 const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
-await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('./db/migrations', import.meta.url)) })
 
 const {
   tenants, users, projects, projectAnalyticsCoverage, items, tags, itemTags, sprints, itemSprints,

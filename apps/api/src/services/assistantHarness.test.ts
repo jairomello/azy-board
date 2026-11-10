@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { and, eq } from 'drizzle-orm'
 import { coerceArgumentsBySchema, normalizeDurationArguments } from '@azy-board/tool-registry'
@@ -30,7 +32,7 @@ class MockProvider implements ModelProvider {
   async *streamRun() { yield { type: 'text_delta' as const, text: 'ok' } }
 }
 
-await migrate(db, { migrationsFolder: new URL('../db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('../db/migrations', import.meta.url)) })
 
 describe('Azy Agent harness', () => {
   let tenantId: string

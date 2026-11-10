@@ -228,11 +228,15 @@ export function useBoardItemEditing(options: BoardItemEditingOptions) {
         })
         setAllItems(previous => upsertItem(previous, item))
       }
+      // O épico nasce/muda de módulo na árvore: sem revalidar, a criação
+      // contextual por linha persistia mas não aparecia na grade.
+      invalidateBoard()
+      invalidateTreeForProject()
     } catch (error) {
       toast(tBoard('errorSave'), 'error')
       throw error instanceof Error ? error : new Error('failed')
     }
-  }, [projectId, setAllItems, toast, tBoard])
+  }, [projectId, setAllItems, invalidateBoard, invalidateTreeForProject, toast, tBoard])
 
   const handleModuleCreate = useCallback(async () => {
     if (!projectId || !newModuleName.trim()) return

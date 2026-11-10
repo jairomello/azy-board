@@ -125,4 +125,21 @@ describe('edição: conflito e autorização (T38/T39)', () => {
     expect(h.invalidations()).toBe(1)
     expect(h.treeInvalidations()).toBe(1)
   })
+
+  // Criação contextual por linha (módulo → épico): o épico precisa nascer no
+  // módulo e a grade precisa ser revalidada, senão persiste e não aparece.
+  test('criação de épico envia o módulo e revalida board e árvore', async () => {
+    const created = { ...item, id: 'epic-9', type: 'EPIC', title: 'Novo épico' }
+    postImpl = async () => created
+    const h = harness()
+
+    await h.result.current.handleEpicSave({ title: 'Novo épico', moduleId: 'mod-1', description: '' })
+
+    expect(postCalls).toHaveLength(1)
+    expect(postCalls[0]?.[0]).toBe('/projects/project-1/items')
+    expect(postCalls[0]?.[1]).toMatchObject({ type: 'EPIC', moduleId: 'mod-1', title: 'Novo épico' })
+    expect(h.sets).toHaveLength(1)
+    expect(h.invalidations()).toBe(1)
+    expect(h.treeInvalidations()).toBe(1)
+  })
 })

@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 // T80 — recortes e série de tokens de IA no Dashboard.
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
@@ -9,7 +11,7 @@ const { app } = await import('./index')
 const { db, sqlite } = await import('./db/index')
 const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
 sqlite.exec('PRAGMA foreign_keys = OFF;')
-await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('./db/migrations', import.meta.url)) })
 sqlite.exec('PRAGMA foreign_keys = ON;')
 
 const { tenants, users, projects, items, memberships, projectAnalyticsCoverage } = await import('./db/schema')

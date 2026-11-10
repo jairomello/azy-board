@@ -11,6 +11,23 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Fixed
 
+- **Listagem e ordenação de pessoas volta a funcionar no SQLite do macOS.** A
+  dobra de acentos usava `replace()` aninhado em mais de 60 níveis; builds do
+  SQLite com limite de profundidade menor estouravam o parser ("parser stack
+  overflow"). A conexão SQLite agora registra `azy_fold_name` — a mesma dobra em
+  JS usada no termo de busca — e o adapter ordena/filtra pela função. O
+  PostgreSQL mantém a expressão SQL compartilhada.
+- **Arquivar uma atividade da grade agora a remove da Tree View na hora e pode
+  ser desfeito.** O arquivamento atualizava só o cache do Kanban (`allItems`),
+  mas a grade lê `/items/tree` com chave por filtro. A linha continuava visível
+  até um refetch manual. O fluxo passou a invalidar a árvore junto com o board, e
+  falha de releitura não transforma um arquivamento bem-sucedido em erro. O
+  toast de sucesso agora traz **Desfazer**, que restaura o item e refaz board e
+  árvore, com uma janela de 7 segundos. O envio de arquivamento passou a incluir
+  `confirm: true` depois da confirmação da tela — antes, itens com filhos
+  recebiam só o aviso de cascata do servidor e **não eram arquivados de fato**,
+  embora o toast dissesse o contrário.
+
 - **Controles de coluna da árvore não vazam sobre os popovers do shell.** O
   `+` e o menu de inserção de coluna usavam `z-20`/`z-30` e, por estarem depois
   no DOM, pintavam acima do painel de Filtros (`z-20` da command bar). Os
@@ -50,6 +67,27 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Added
 
+- **Limpar filtros fica visível assim que há filtro aplicado.** Além do botão
+  dentro do popover de filtros, a command bar passa a exibir um "Limpar" com o
+  contador ao lado do botão de filtros. A contagem e o "Limpar" usam a mesma
+  função (`countActiveBoardFilters`/`clearBoardFilters`), então `updatedWithin`
+  também é limpo e as preferências de exibição (subtarefas, formato de histórias
+  e abas de módulo) são preservadas.
+- **Filtro direto no cabeçalho da coluna da grade (Tree View).** Status (com
+  múltipla seleção em OR, igual ao board), responsável, prioridade, sprint,
+  versão e centro de custo ganharam um ícone de filtro no cabeçalho, com popover
+  ancorado na coluna, estado ativo destacado e opção "Todos" para limpar. Os
+  valores viajam no mesmo `BoardFilterState`, então valem para Kanban, Tree View,
+  chips e exportação.
+- **Criar atividade abaixo da linha na Tree View.** Ao encostar o mouse na base
+  de uma linha, aparece uma guia horizontal discreta com um único "+" no nível
+  hierárquico do próximo item — módulo → épico, épico → história, história →
+  task/bug — e, em task/bug, um segundo alvo pequeno para Bug (o "+" cria um
+  irmão sob o mesmo pai). Sem pílula nem rótulos em repouso; o tipo é explicado
+  pelo tooltip acessível, o contêiner é expandido antes de abrir a modal e o
+  clique reaproveita a criação existente com `parentId`/`moduleId` corretos. A
+  criação de épico também revalida board e árvore (antes ela persistia no
+  módulo, mas a grade não era atualizada).
 - **Status múltiplo no filtro do board.** O filtro de status deixou de ser uma
   seleção única e passou a usar checkboxes, combinando os valores marcados com
   OR (`status=IN_PROGRESS,DONE`). A regra vale para Kanban, Tree View, chips de

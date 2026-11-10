@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
 import { Hono } from 'hono'
 import { mkdtemp } from 'node:fs/promises'
@@ -22,7 +24,7 @@ const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
 // Readiness consulta o banco (assertCutoverReady). Um `:memory:` sem migração não
 // tem tabelas e reportaria a dependência 'database'; o cenário válido é banco
 // migrado e íntegro, como em uma instalação real.
-await migrate(db, { migrationsFolder: new URL('../db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('../db/migrations', import.meta.url)) })
 
 describe('health endpoints', () => {
   let logs: string[] = []

@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, test, beforeEach, } from 'bun:test'
 import { eq } from 'drizzle-orm'
 
@@ -11,7 +13,7 @@ const { persistence } = await import('../persistence/runtime')
 
 const id = () => crypto.randomUUID()
 
-await migrate(db, { migrationsFolder: new URL('../db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('../db/migrations', import.meta.url)) })
 
 let tenantId: string
 let userId: string

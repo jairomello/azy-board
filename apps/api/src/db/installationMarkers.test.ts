@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
@@ -131,7 +133,7 @@ describe('marcadores de perfil por instalação', () => {
     sqlite.exec('PRAGMA foreign_keys = ON;')
     try {
       const database = drizzle(sqlite, { schema })
-      await migrate(database, { migrationsFolder: new URL('./migrations', import.meta.url).pathname })
+      await migrate(database, { migrationsFolder: fileURLToPath(new URL('./migrations', import.meta.url)) })
       const store = sqliteInstallationMarkerStore(sqlite)
       await database.insert(schema.tenants).values({ id: 'legacy-tenant', name: 'Legado', slug: 'legado' })
 
@@ -150,7 +152,7 @@ describe('marcadores de perfil por instalação', () => {
     sqlite.exec('PRAGMA foreign_keys = ON;')
     try {
       const database = drizzle(sqlite, { schema })
-      await migrate(database, { migrationsFolder: new URL('./migrations', import.meta.url).pathname })
+      await migrate(database, { migrationsFolder: fileURLToPath(new URL('./migrations', import.meta.url)) })
       const store = sqliteInstallationMarkerStore(sqlite)
       await ensureInstallationMarkers(context.config, store)
       sqlite.query(`UPDATE installation_metadata SET profile = 'ADVANCED' WHERE id = 1`).run()
@@ -167,7 +169,7 @@ describe('marcadores de perfil por instalação', () => {
     sqlite.exec('PRAGMA foreign_keys = ON;')
     try {
       const database = drizzle(sqlite, { schema })
-      await migrate(database, { migrationsFolder: new URL('./migrations', import.meta.url).pathname })
+      await migrate(database, { migrationsFolder: fileURLToPath(new URL('./migrations', import.meta.url)) })
       const store = sqliteInstallationMarkerStore(sqlite)
       await ensureInstallationMarkers(context.config, store)
       await rm(join(context.config.instanceDir, INSTALLATION_MARKER_FILENAME))

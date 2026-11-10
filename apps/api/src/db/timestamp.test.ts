@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { drizzle } from 'drizzle-orm/bun-sqlite'
@@ -5,7 +7,7 @@ import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
 import * as schema from './schema'
 import { mkdir } from 'node:fs/promises'
 
-const migrationsFolder = new URL('./migrations', import.meta.url).pathname
+const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url))
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 const NOW_WINDOW_MS = 5 * 60 * 1000
 

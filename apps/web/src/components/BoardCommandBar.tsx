@@ -19,10 +19,11 @@ import {
   SlidersHorizontal,
   Plus,
   Target,
+  X,
 } from 'lucide-react'
 import type { BoardMode, ItemType } from '@azy-board/domain'
 import type { Tag } from './TagSelector'
-import { BoardFilters, type BoardFilterState } from './BoardFilters'
+import { BoardFilters, clearBoardFilters, countActiveBoardFilters, type BoardFilterState } from './BoardFilters'
 
 interface Option { id: string; name: string }
 interface Member { userId: string; name: string }
@@ -100,21 +101,7 @@ export function BoardCommandBar({
   const optionsRef = useRef<HTMLDivElement>(null)
   const createRef = useRef<HTMLDivElement>(null)
 
-  const activeCount = [
-    filters.moduleId,
-    filters.sprintId,
-    filters.assigneeId,
-    filters.squadId,
-    filters.types.length > 0,
-    filters.tagIds.length > 0,
-    filters.versionId,
-    filters.priority,
-    filters.status,
-    filters.authorId,
-    filters.costCenterId,
-    filters.hideEmptyEpics,
-    filters.storyDisplay === 'lanes' && filters.hideEmptyStories,
-  ].filter(Boolean).length
+  const activeCount = countActiveBoardFilters(filters)
 
   useEffect(() => {
     function closeMenus(event: MouseEvent) {
@@ -179,18 +166,7 @@ export function BoardCommandBar({
               </div>
               {activeCount > 0 && (
                 <button
-                  onClick={() => onFiltersChange({
-                    ...filters,
-                    moduleId: '',
-                    sprintId: '',
-                    assigneeId: '',
-                    squadId: '',
-                     types: [],
-                     tagIds: [],
-                     versionId: '', priority: '', status: '', authorId: '',
-                     costCenterId: '',
-                     hideEmptyEpics: false, hideEmptyStories: false,
-                   })}
+                  onClick={() => onFiltersChange(clearBoardFilters(filters))}
                   className="text-xs font-medium text-primary hover:underline"
                 >
                    {t('clear')} {activeCount}
@@ -222,6 +198,22 @@ export function BoardCommandBar({
            </div>
          )}
        </div>
+
+       {activeCount > 0 && (
+         <button
+           type="button"
+           onClick={() => onFiltersChange(clearBoardFilters(filters))}
+           title={t('clearAllFilters')}
+           aria-label={t('clearAllFilters')}
+           className={`${controlClass} flex items-center gap-1.5 !border-primary/40 !text-primary hover:!bg-primary/10`}
+         >
+           <X className="w-3.5 h-3.5" />
+           <span className="hidden sm:inline">{t('clear')}</span>
+           <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] text-primary-foreground">
+             {activeCount}
+           </span>
+         </button>
+       )}
 
        {compactFilters}
 

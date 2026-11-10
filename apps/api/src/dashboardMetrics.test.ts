@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { beforeAll, describe, expect, test } from 'bun:test'
 import { and, eq } from 'drizzle-orm'
 import { createSprintCycle, type ItemAnalyticsSnapshot } from './services/analytics'
@@ -8,7 +10,7 @@ const { app } = await import('./index')
 const { db, sqlite } = await import('./db/index')
 const { migrate } = await import('drizzle-orm/bun-sqlite/migrator')
 sqlite.exec('PRAGMA foreign_keys = OFF;')
-await migrate(db, { migrationsFolder: new URL('./db/migrations', import.meta.url).pathname })
+await migrate(db, { migrationsFolder: fileURLToPath(new URL('./db/migrations', import.meta.url)) })
 sqlite.exec('PRAGMA foreign_keys = ON;')
 
 const {
