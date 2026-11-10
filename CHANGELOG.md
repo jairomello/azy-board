@@ -11,11 +11,13 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Fixed
 
-- **Arquivar uma atividade da grade agora a remove da Tree View na hora.** O
-  arquivamento atualizava só o cache do Kanban (`allItems`), mas a grade lê
-  `/items/tree` com chave por filtro. A linha continuava visível até um refetch
-  manual. O fluxo passou a invalidar a árvore junto com o board, e falha de
-  releitura não transforma um arquivamento bem-sucedido em erro.
+- **Arquivar uma atividade da grade agora a remove da Tree View na hora e pode
+  ser desfeito.** O arquivamento atualizava só o cache do Kanban (`allItems`),
+  mas a grade lê `/items/tree` com chave por filtro. A linha continuava visível
+  até um refetch manual. O fluxo passou a invalidar a árvore junto com o board, e
+  falha de releitura não transforma um arquivamento bem-sucedido em erro. O
+  toast de sucesso agora traz **Desfazer**, que restaura o item e refaz board e
+  árvore, com uma janela de 7 segundos.
 
 - **Controles de coluna da árvore não vazam sobre os popovers do shell.** O
   `+` e o menu de inserção de coluna usavam `z-20`/`z-30` e, por estarem depois
@@ -68,11 +70,13 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
   ancorado na coluna, estado ativo destacado e opção "Todos" para limpar. Os
   valores viajam no mesmo `BoardFilterState`, então valem para Kanban, Tree View,
   chips e exportação.
-- **Criar atividade abaixo da linha na Tree View.** Ao passar o mouse na base de
-  uma linha, aparecem atalhos para criar o próximo nível da hierarquia — módulo
-  → épico, épico → história, história → task/bug — e, em task/bug, um irmão sob o
-  mesmo pai. A criação reutiliza a modal existente, já com `parentId`/`moduleId`
-  corretos.
+- **Criar atividade abaixo da linha na Tree View.** Ao encostar o mouse na base
+  de uma linha, aparece uma guia horizontal discreta com um único "+" no nível
+  hierárquico do próximo item — módulo → épico, épico → história, história →
+  task/bug — e, em task/bug, um segundo alvo pequeno para Bug (o "+" cria um
+  irmão sob o mesmo pai). Sem pílula nem rótulos em repouso; o tipo é explicado
+  pelo tooltip acessível, o contêiner é expandido antes de abrir a modal e o
+  clique reaproveita a criação existente com `parentId`/`moduleId` corretos.
 - **Status múltiplo no filtro do board.** O filtro de status deixou de ser uma
   seleção única e passou a usar checkboxes, combinando os valores marcados com
   OR (`status=IN_PROGRESS,DONE`). A regra vale para Kanban, Tree View, chips de

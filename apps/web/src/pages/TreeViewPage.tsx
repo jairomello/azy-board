@@ -609,31 +609,32 @@ function Row({
           )}
         </div>
         {onInlineCreate && (inlineCreateTypes?.length ?? 0) > 0 && (
-          // Fica na base da linha e só aparece no hover: o clique cria o próximo
-          // nível hierárquico (ou um irmão, no caso de TASK/BUG).
+          // Faixa fina na base da linha: em repouso, nada aparece. Ao encostar o
+          // mouse na linha, surge uma guia horizontal com um único "+" no nível
+          // hierárquico do filho e, quando aplicável, um segundo alvo discreto
+          // para Bug. Sem pílula, sem rótulos, sem deslocar o layout.
           <div
             data-inline-add={itemId}
-            className="pointer-events-none absolute bottom-0 z-20 flex translate-y-1/2 items-center opacity-0 transition-opacity focus-within:pointer-events-auto focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
-            style={{ left: `${16 + indentPx + 20}px` }}
+            className="absolute inset-x-0 bottom-0 z-20 flex h-3.5 translate-y-1/2 cursor-copy items-center opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100"
+            style={{ paddingLeft: `${16 + indentPx + 20}px` }}
           >
-            <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-border bg-card px-1 py-0.5 shadow-sm">
-              {inlineCreateTypes!.map(type => {
-                const typeLabel = t(`tree.types.${type.toLowerCase()}`)
-                return (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={event => { event.stopPropagation(); onInlineCreate(type) }}
-                    aria-label={t('tree.addBelow', { type: typeLabel, label })}
-                    title={t('tree.addBelow', { type: typeLabel, label })}
-                    className="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
-                  >
-                    <Plus className="h-2.5 w-2.5" aria-hidden />
-                    {typeLabel}
-                  </button>
-                )
-              })}
-            </div>
+            <span aria-hidden className="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-primary/20" />
+            {inlineCreateTypes!.map((type, index) => {
+              const typeLabel = t(`tree.types.${type.toLowerCase()}`)
+              const isBug = type === 'BUG'
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={event => { event.stopPropagation(); onInlineCreate(type) }}
+                  aria-label={t('tree.addBelow', { type: typeLabel, label })}
+                  title={t('tree.addBelow', { type: typeLabel, label })}
+                  className={`relative z-10 flex h-[18px] w-[18px] cursor-pointer items-center justify-center rounded-full border border-border/80 bg-card text-muted-foreground shadow-sm transition hover:border-primary/60 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${index === 0 ? '-translate-x-1/2' : 'ml-2'} ${isBug ? 'hover:text-red-600' : ''}`}
+                >
+                  {isBug ? <BugIcon className="h-3 w-3" aria-hidden /> : <Plus className="h-3 w-3" aria-hidden />}
+                </button>
+              )
+            })}
           </div>
         )}
       </td>
@@ -1122,6 +1123,7 @@ function NodeRows({
   onEdit,
   onCreate,
   moduleId,
+  onEnsureExpanded,
   canMove,
   movingId,
   moveTargetId,
@@ -1147,6 +1149,7 @@ function NodeRows({
   onEdit?: (id: string) => void
   onCreate?: (type: TreeCreationType, context: TreeActionContext) => void
   moduleId?: string
+  onEnsureExpanded?: (id: string) => void
   canMove: boolean
   movingId: string | null
   moveTargetId: string | null
@@ -1203,7 +1206,15 @@ function NodeRows({
               moduleId: node.type === 'module' ? node.id : (node.moduleId ?? moduleId),
             }) : undefined}
             inlineCreateTypes={onCreate ? treeInlineCreationTypes(node.type) : undefined}
-            onInlineCreate={onCreate ? type => onCreate(type, treeInlineCreationContext(node, moduleId)) : undefined}
+            onInlineCreate={onCreate ? type => {
+              // Expande o contêiner antes de abrir a modal: o novo item nasce
+              // logo abaixo da linha em que o usuário clicou.
+              const containerId = node.type === 'module' || node.type === 'EPIC' || node.type === 'STORY'
+                ? node.id
+                : (node.parentId ?? node.id)
+              onEnsureExpanded?.(containerId)
+              onCreate(type, treeInlineCreationContext(node, moduleId))
+            } : undefined}
             canMove={canMove && node.type !== 'module'}
             isMoving={movingId === node.id}
             isMoveTarget={moveTargetId === node.id}
@@ -1231,6 +1242,7 @@ function NodeRows({
               onEdit={onEdit}
               onCreate={onCreate}
               moduleId={node.type === 'module' ? node.id : (node.moduleId ?? moduleId)}
+              onEnsureExpanded={onEnsureExpanded}
               canMove={canMove}
               movingId={movingId}
               moveTargetId={moveTargetId}
@@ -2020,6 +2032,7 @@ export function TreeViewPage({
                 onPatchItem={patchTreeField}
                 onEdit={canEdit ? onEdit : undefined}
                 onCreate={canCreate ? onCreate : undefined}
+                onEnsureExpanded={id => setExpanded(previous => previous.has(id) ? previous : new Set(previous).add(id))}
                 canMove={canEdit}
                 movingId={movingId}
                 moveTargetId={moveTargetId}

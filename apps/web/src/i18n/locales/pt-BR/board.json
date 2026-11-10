@@ -314,6 +314,7 @@
   "addCard": "Adicionar card",
   "noArchivedItems": "Nenhum item arquivado neste projeto.",
   "itemArchived": "Item arquivado",
+  "undo": "Desfazer",
   "archiveItemError": "Erro ao arquivar item",
   "itemRestored": "Item restaurado",
   "unarchiveItemError": "Erro ao restaurar item",

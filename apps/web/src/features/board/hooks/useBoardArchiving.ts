@@ -6,6 +6,7 @@
 import { useCallback, useState } from 'react'
 import type { AncestorNode } from '@azy-board/ui-contracts'
 import { api } from '../../../lib/api'
+import type { ToastOptions } from '../../../components/Toast'
 import { computeIsLeaf, type ArchivedItem, type ItemData } from '../model/types'
 
 export interface ArchiveConfirmation {
@@ -20,7 +21,7 @@ export interface BoardArchivingOptions {
   invalidateBoard: () => void
   /** A grade da árvore tem cache próprio por filtro; sem esta invalidação a linha arquivada continua visível. */
   invalidateTree?: () => Promise<unknown>
-  toast: (message: string, type?: 'success' | 'error') => void
+  toast: (message: string, type?: 'success' | 'error', options?: ToastOptions) => void
   tBoard: (key: string) => string
 }
 
@@ -53,6 +54,23 @@ export function useBoardArchiving({ projectId, allItems, setAllItems, invalidate
   const [archivedItems, setArchivedItems] = useState<ArchivedItem[]>([])
   const [archivedLoading, setArchivedLoading] = useState(false)
 
+  const unarchive = useCallback(async (itemId: string) => {
+    if (!projectId) return
+    try {
+      await api.post(`/projects/${projectId}/items/${itemId}/unarchive`, {})
+      setArchivedItems(previous => previous.filter(item => item.id !== itemId))
+      // A restauração também precisa refazer a grade: o item volta à posição
+      // hierárquica e o cache da árvore não é alimentado pelo board.
+      await Promise.all([
+        Promise.resolve(invalidateBoard()).catch(() => {}),
+        invalidateTree?.().catch(() => {}),
+      ])
+      toast(tBoard('itemRestored'), 'success')
+    } catch {
+      toast(tBoard('unarchiveItemError'), 'error')
+    }
+  }, [projectId, invalidateBoard, invalidateTree, toast, tBoard])
+
   const executeArchive = useCallback(async (itemId: string) => {
     // [TENANT] arquivamento escopado ao projeto da rota.
     if (!projectId) return
@@ -67,11 +85,15 @@ export function useBoardArchiving({ projectId, allItems, setAllItems, invalidate
         invalidateTree?.().catch(() => {}),
       ])
       setArchiveConfirm(null)
-      toast(tBoard('itemArchived'), 'success')
+      // Janela curta de arrependimento: o próprio toast desfaz o arquivamento.
+      toast(tBoard('itemArchived'), 'success', {
+        durationMs: 7000,
+        action: { label: tBoard('undo'), onClick: () => { void unarchive(itemId) } },
+      })
     } catch {
       toast(tBoard('archiveItemError'), 'error')
     }
-  }, [projectId, setAllItems, invalidateBoard, invalidateTree, toast, tBoard])
+  }, [projectId, setAllItems, invalidateBoard, invalidateTree, unarchive, toast, tBoard])
 
   // Conta descendentes não-arquivados para pedir confirmação quando há filhos.
   const requestArchive = useCallback((itemId: string) => {
@@ -109,18 +131,6 @@ export function useBoardArchiving({ projectId, allItems, setAllItems, invalidate
   }, [projectId])
 
   const closeArchivedModal = useCallback(() => setArchivedModal(false), [])
-
-  const unarchive = useCallback(async (itemId: string) => {
-    if (!projectId) return
-    try {
-      await api.post(`/projects/${projectId}/items/${itemId}/unarchive`, {})
-      setArchivedItems(previous => previous.filter(item => item.id !== itemId))
-      invalidateBoard()
-      toast(tBoard('itemRestored'), 'success')
-    } catch {
-      toast(tBoard('unarchiveItemError'), 'error')
-    }
-  }, [projectId, invalidateBoard, toast, tBoard])
 
   return {
     archiveConfirm,
