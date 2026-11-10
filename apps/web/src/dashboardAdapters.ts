@@ -75,6 +75,15 @@ export function rankingData(items: DashboardSnapshot['boxes']['blocked']['items'
     }))
 }
 
+/**
+ * O seletor de visão da carga da equipe depende da existência de WIP — nunca dos
+ * valores do modo atual. Em "pontos" sem estimativa o gráfico fica vazio, mas o
+ * seletor precisa continuar acessível para voltar à visão por itens.
+ */
+export function teamLoadHasWip(snapshot: DashboardSnapshot): boolean {
+  return snapshot.boxes.teamLoad.members.some(member => member.wipTotal > 0) || snapshot.boxes.teamLoad.unassignedWip > 0
+}
+
 export function teamLoadData(snapshot: DashboardSnapshot, mode: 'items' | 'points', t: DashboardTranslator): ChartDatum[] {
   const members = snapshot.boxes.teamLoad.members.map(member => ({
     name: displayPersonName(member.userName),

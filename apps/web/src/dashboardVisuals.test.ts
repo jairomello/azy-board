@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { burnupData, burnupHasEvolution, hoursByAuthorData, progressData, rankingData, statusData, teamLoadData, tokenRecorteData, tokenSeriesData, tokenStatusData, tokensHaveSeries } from './dashboardAdapters'
+import { burnupData, burnupHasEvolution, hoursByAuthorData, progressData, rankingData, statusData, teamLoadData, teamLoadHasWip, tokenRecorteData, tokenSeriesData, tokenStatusData, tokensHaveSeries } from './dashboardAdapters'
 import type { DashboardAging, DashboardBurnup, DashboardHours, DashboardSnapshot, DashboardTokens } from '@azy-board/ui-contracts'
 import ptBRDescriptions from './i18n/locales/pt-BR/dashboardDescriptions.json'
 import enDescriptions from './i18n/locales/en/dashboardDescriptions.json'
@@ -106,6 +106,22 @@ describe('rótulos do dashboard vêm da tradução (B11)', () => {
     // Horas sem autor usam a chave traduzida, não um literal em inglês.
     const hours: DashboardHours = { semantics: '', totalMinutes: 0, rows: [{ id: 'l', authorId: 'u', authorName: null, squadName: null, itemId: 'i', versionId: null, moduleId: null, durationMin: 30, createdAt: '2026-01-02T10:00:00Z' }] }
     expect(hoursByAuthorData(hours, marked)[0]?.name).toBe('<unknownAuthor>')
+  })
+})
+
+describe('seletor da carga da equipe (B12)', () => {
+  test('permanece disponível em "pontos" mesmo quando não há estimativa', () => {
+    // Sem estimativa: o gráfico por pontos fica vazio, mas o seletor precisa continuar
+    // visível — senão não há como voltar para a visão por itens.
+    const withoutPoints = snapshot({
+      teamLoad: { members: [{ userId: 'u', userName: 'Ana', squadId: null, squadName: null, wipTotal: 3, wipPoints: null, pointsCoverage: 0 }], unassignedWip: 1, unassignedWipPoints: null, pointsCoverage: 0 },
+    })
+    expect(teamLoadHasWip(withoutPoints)).toBe(true)
+    expect(teamLoadData(withoutPoints, 'points', t).every(item => Number(item.value) === 0)).toBe(true)
+    expect(teamLoadData(withoutPoints, 'points', t).some(item => item.pointsAvailable)).toBe(false)
+    // Sem WIP não há o que alternar: o box mostra o estado vazio.
+    const idle = snapshot({ teamLoad: { members: [], unassignedWip: 0, unassignedWipPoints: null, pointsCoverage: null } })
+    expect(teamLoadHasWip(idle)).toBe(false)
   })
 })
 

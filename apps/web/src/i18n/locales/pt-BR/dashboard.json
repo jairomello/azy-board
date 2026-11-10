@@ -119,5 +119,10 @@
   "wipTotalItems": "{{count}} itens em andamento ou bloqueados",
   "completion": "Conclusão",
   "expectedVsCompletion": "Esperado: {{expected}}% · Concluído: {{completion}}%",
-  "indicatorsScopeNote": "{{total}} itens ativos · {{cancelled}} N/A fora · {{external}} dependências externas"
+  "indicatorsScopeNote": "{{total}} itens ativos · {{cancelled}} N/A fora · {{external}} dependências externas",
+  "howToRead": "Como ler {{metric}}",
+  "hintSpi": "Conclusão do escopo ativo dividida pelo esperado para hoje. 1,00 = no prazo; abaixo de 0,85 é crítico.",
+  "hintDaysToFinish": "Dias corridos entre hoje e o término planejado. Negativo significa prazo já vencido.",
+  "hintCompletion": "Itens concluídos ÷ escopo ativo (TASK/BUG sem N/A). Dependências externas não entram.",
+  "hintAdvance": "Média do peso da coluna de cada item: mostra o quanto o trabalho andou no fluxo, mesmo sem concluir."
 }
