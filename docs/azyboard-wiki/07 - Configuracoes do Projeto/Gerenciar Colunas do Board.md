@@ -25,11 +25,12 @@ O nome descreve a etapa para a equipe, como `Backlog`, `Em desenvolvimento` ou `
 | `NOT_STARTED` | Trabalho ainda não iniciado e não priorizado (backlog). |
 | `PLANNED` | Trabalho priorizado, ainda não iniciado (ex.: `Planejado`, `A Fazer`). |
 | `IN_PROGRESS` | Trabalho em andamento. |
+| `IN_HOMOLOGATION` | Entrega pronta, aguardando o aceite de quem pediu (ainda não concluída). |
 | `BLOCKED` | Trabalho impedido de avançar. |
 | `DONE` | Trabalho concluído. |
 | `CANCELLED` | Trabalho cancelado. |
 
-Colunas diferentes podem compartilhar o mesmo status base. Por exemplo, `Desenvolvimento` e `Revisão` podem representar etapas distintas do fluxo e ainda indicar trabalho em andamento.
+Colunas diferentes podem compartilhar o mesmo status base. Por exemplo, `Desenvolvimento` e `Revisão` podem representar etapas distintas do fluxo e ainda indicar trabalho em andamento. Um fluxo com aceite do cliente costuma ter uma coluna própria de `Em Homologação` com base `IN_HOMOLOGATION`, entre as colunas de teste e `Concluídas`.
 
 ## Criar uma coluna
 

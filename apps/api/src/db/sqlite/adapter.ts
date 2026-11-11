@@ -423,7 +423,7 @@ function readTransitionCandidatesSqlite(sqlite: Database, tenantId: string, proj
       (SELECT group_concat(s.sprint_id, ',') FROM item_sprints s WHERE s.tenant_id = i.tenant_id AND s.item_id = i.id) AS sprint_ids
     FROM items i
     WHERE i.tenant_id = ? AND i.project_id = ?
-      AND i.type IN ('TASK', 'BUG', 'EXTERNAL') AND i.status IN ('NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED')
+      AND i.type IN ('TASK', 'BUG', 'EXTERNAL') AND i.status IN ('NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED')
       AND NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id)
       AND EXISTS (SELECT 1 FROM item_sprints link WHERE link.tenant_id = i.tenant_id AND link.item_id = i.id AND link.sprint_id = ?)
   `).all(tenantId, projectId, sourceSprintId)
@@ -2406,11 +2406,11 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
       },
       async listAgingDetailPage(context, projectId, filter, target, limit, after): Promise<DashboardAgingDetailItem[]> {
         const conditions = dashboardLeafConditions(context, projectId, filter)
-        conditions.push(target === 'BLOCKED' ? eq(items.status, 'BLOCKED') : inArray(items.status, ['IN_PROGRESS', 'BLOCKED']))
+        conditions.push(target === 'BLOCKED' ? eq(items.status, 'BLOCKED') : inArray(items.status, ['IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED']))
         const beforeStatus = sql`CASE WHEN json_valid(e.before_snapshot) THEN json_extract(e.before_snapshot, '$.status') ELSE NULL END`
         const entersTarget = target === 'BLOCKED'
           ? sql`json_extract(e.after_snapshot, '$.status') = 'BLOCKED' AND COALESCE(${beforeStatus}, '') <> 'BLOCKED'`
-          : sql`json_extract(e.after_snapshot, '$.status') IN ('IN_PROGRESS', 'BLOCKED') AND COALESCE(${beforeStatus}, '') NOT IN ('IN_PROGRESS', 'BLOCKED')`
+          : sql`json_extract(e.after_snapshot, '$.status') IN ('IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED') AND COALESCE(${beforeStatus}, '') NOT IN ('IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED')`
         const transitionAt = sql<string | null>`(
           SELECT e.occurred_at FROM item_events e
           WHERE e.tenant_id = ${context.tenantId} AND e.project_id = ${projectId}
@@ -2576,7 +2576,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         const beforeStatus = "CASE WHEN json_valid(before_snapshot) THEN json_extract(before_snapshot, '$.status') ELSE NULL END"
         const enterTarget = target === 'BLOCKED'
           ? `json_extract(after_snapshot, '$.status') = 'BLOCKED' AND COALESCE(${beforeStatus}, '') <> 'BLOCKED'`
-          : `json_extract(after_snapshot, '$.status') IN ('IN_PROGRESS', 'BLOCKED') AND COALESCE(${beforeStatus}, '') NOT IN ('IN_PROGRESS', 'BLOCKED')`
+          : `json_extract(after_snapshot, '$.status') IN ('IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED') AND COALESCE(${beforeStatus}, '') NOT IN ('IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED')`
         const rows = sqlite.query(
           `WITH ranked AS (
              SELECT id, item_id, occurred_at, after_snapshot, before_snapshot,

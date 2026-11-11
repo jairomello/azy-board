@@ -119,6 +119,7 @@
   "status": {
     "NOT_STARTED": "No iniciada",
     "PLANNED": "Planificada",
+    "IN_HOMOLOGATION": "En homologación",
     "IN_PROGRESS": "En progreso",
     "BLOCKED": "Bloqueada",
     "DONE": "Completada",

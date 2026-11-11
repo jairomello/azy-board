@@ -68,6 +68,7 @@
   "flowAdvance": "Avance en el flujo",
   "noEstimatesHint": "Sin estimaciones en este proyecto — define puntos en las tarjetas para seguir por puntos.",
   "inProgress": "En progreso",
+  "inHomologation": "En homologación",
   "blockedStatus": "Bloqueados",
   "unassigned": "Sin responsable",
   "wipTotal": "WIP",

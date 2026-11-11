@@ -3101,11 +3101,11 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       },
       async listAgingDetailPage(context: PersistenceContext, projectId: string, filter: DashboardPopulationFilter, target: 'WIP' | 'BLOCKED', limit: number, after?: { startedAt: string; id: string }): Promise<DashboardAgingDetailItem[]> {
         const query = dashboardLeafWhere(context, projectId, filter)
-        const conditions = [query.where, target === 'BLOCKED' ? "i.status = 'BLOCKED'" : "i.status IN ('IN_PROGRESS','BLOCKED')"]
+        const conditions = [query.where, target === 'BLOCKED' ? "i.status = 'BLOCKED'" : "i.status IN ('IN_PROGRESS','IN_HOMOLOGATION','BLOCKED')"]
         const params = [...query.params]
         const entryPredicate = target === 'BLOCKED'
           ? `(after_snapshot::jsonb ->> 'status') = 'BLOCKED' AND COALESCE(before_snapshot::jsonb ->> 'status', '') <> 'BLOCKED'`
-          : `(after_snapshot::jsonb ->> 'status') IN ('IN_PROGRESS','BLOCKED') AND COALESCE(before_snapshot::jsonb ->> 'status', '') NOT IN ('IN_PROGRESS','BLOCKED')`
+          : `(after_snapshot::jsonb ->> 'status') IN ('IN_PROGRESS','IN_HOMOLOGATION','BLOCKED') AND COALESCE(before_snapshot::jsonb ->> 'status', '') NOT IN ('IN_PROGRESS','IN_HOMOLOGATION','BLOCKED')`
         const transitionAt = `(SELECT e.occurred_at FROM item_events e
           WHERE e.tenant_id = $1 AND e.project_id = $2 AND e.item_id = i.id
             AND e.event_type = 'STATUS_CHANGED' AND ${entryPredicate}
@@ -3300,7 +3300,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         if (!itemIds.length) return []
         const enters = target === 'BLOCKED'
           ? `(after_snapshot::jsonb ->> 'status') = 'BLOCKED' AND COALESCE(before_snapshot::jsonb ->> 'status', '') <> 'BLOCKED'`
-          : `(after_snapshot::jsonb ->> 'status') IN ('IN_PROGRESS', 'BLOCKED') AND COALESCE(before_snapshot::jsonb ->> 'status', '') NOT IN ('IN_PROGRESS', 'BLOCKED')`
+          : `(after_snapshot::jsonb ->> 'status') IN ('IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED') AND COALESCE(before_snapshot::jsonb ->> 'status', '') NOT IN ('IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED')`
         const rows = await q(
           `WITH ranked AS (
              SELECT id, item_id, before_snapshot, after_snapshot, occurred_at,
@@ -4111,7 +4111,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           modules: modules.map(r => ({ id: r.id as string, name: r.name as string })),
           sprints: sprints.map(r => ({ id: r.id as string, name: r.name as string, status: r.status as 'PROPOSED' | 'OPEN' | 'CLOSED' })),
           versions: versions.map(r => ({ id: r.id as string, name: r.name as string, status: r.status as 'PLANNED' | 'IN_DEV' | 'RELEASED' | 'CANCELLED' })),
-          columns: columns.map(r => ({ id: r.id as string, name: r.name as string, baseStatus: r.base_status as 'NOT_STARTED' | 'PLANNED' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE' | 'CANCELLED' })),
+          columns: columns.map(r => ({ id: r.id as string, name: r.name as string, baseStatus: r.base_status as 'NOT_STARTED' | 'PLANNED' | 'IN_PROGRESS' | 'IN_HOMOLOGATION' | 'BLOCKED' | 'DONE' | 'CANCELLED' })),
           costCenters: costCenters.map(r => ({ id: r.id as string, code: r.code as string, sortOrder: r.sort_order as number })),
           tags: tags.map(r => ({ id: r.id as string, name: r.name as string })),
           memberships: memberships.map(r => ({ userId: r.user_id as string })),
@@ -5119,7 +5119,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
               COALESCE((SELECT string_agg(s.sprint_id, ',' ORDER BY s.sprint_id) FROM item_sprints s WHERE s.tenant_id = i.tenant_id AND s.item_id = i.id), '') AS sprint_ids
             FROM items i
             WHERE i.tenant_id = $1 AND i.project_id = $2
-              AND i.type IN ('TASK', 'BUG', 'EXTERNAL') AND i.status IN ('NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED')
+              AND i.type IN ('TASK', 'BUG', 'EXTERNAL') AND i.status IN ('NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED')
               AND NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id)
               AND EXISTS (SELECT 1 FROM item_sprints link WHERE link.tenant_id = i.tenant_id AND link.item_id = i.id AND link.sprint_id = $3)
             ORDER BY i.id`, [tenantId, projectId, plan.sourceSprintId])).rows as PgRow[]

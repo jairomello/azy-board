@@ -273,7 +273,7 @@ export function validateToolArguments(name: string, args: Record<string, unknown
       if (raw.operation === 'OFFSET_DAYS' && (typeof raw.value !== 'string' || !/^-?\d+$/.test(raw.value) || Math.abs(Number(raw.value)) > 36_500)) throw new Error(`Deslocamento inválido para ${raw.field}`)
       if (raw.field === 'priority' && raw.operation === 'SET') assertEnum(raw.value, 'priority', ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'])
       if (raw.field === 'type' && raw.operation === 'SET') assertEnum(raw.value, 'type', ['TASK', 'BUG'])
-      if (raw.field === 'status' && raw.operation === 'SET') assertEnum(raw.value, 'status', ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'])
+      if (raw.field === 'status' && raw.operation === 'SET') assertEnum(raw.value, 'status', ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED', 'DONE', 'CANCELLED'])
       if (raw.field === 'points' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^\d+$/.test(raw.value))) throw new Error('points deve ser um inteiro não negativo')
       if ((raw.field === 'tokensInput' || raw.field === 'tokensOutput') && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^\d+$/.test(raw.value))) throw new Error(`${raw.field} deve ser um inteiro não negativo`)
       if (raw.field === 'sequenceCode' && raw.operation === 'SET' && (typeof raw.value !== 'string' || !/^[ESTB]\d+$/.test(raw.value))) throw new Error('sequenceCode deve seguir o padrão [ESTB]\\d+ (ex.: T12)')
@@ -373,7 +373,7 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     }
     if (value.statuses !== null && value.statuses !== undefined) {
       assertStringArray(value.statuses, 'statuses', 5)
-      for (const status of value.statuses) assertEnum(status, 'status', ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'])
+      for (const status of value.statuses) assertEnum(status, 'status', ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED', 'DONE', 'CANCELLED'])
     }
   }
   if (name === 'update_item_link') {
@@ -397,7 +397,7 @@ export function validateToolArguments(name: string, args: Record<string, unknown
     if (input.releaseDate != null) assertIsoDay(input.releaseDate, 'releaseDate')
   }
   if (name === 'create_task' && input.status != null) {
-    assertEnum(input.status, 'status', ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'])
+    assertEnum(input.status, 'status', ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED', 'DONE', 'CANCELLED'])
   }
   if (name === 'get_dashboard_metrics') {
     assertEnum(input.metric, 'metric', ['snapshot', 'burnup', 'aging', 'hours', 'sprint', 'tokens'])

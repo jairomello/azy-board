@@ -20,7 +20,7 @@ interface Props {
   onCreateCostCenter: (code: string, description: string) => Promise<void>; onEditCostCenter: (id: string, code: string, description: string) => Promise<void>; onDeleteCostCenter: (id: string) => Promise<void>
 }
 
-const statuses: ColumnBaseStatus[] = ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED']
+const statuses: ColumnBaseStatus[] = ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED', 'DONE', 'CANCELLED']
 const roleLabel = (role: string, t: (key: string) => string) => role === 'ADMIN' ? 'Admin' : role === 'MEMBER' ? t('settings:roleMember') : role === 'VIEWER' ? t('settings:roleViewer') : role
 
 // Peso de avanço da coluna: o valor derivado aparece como sugestão (placeholder) e a ação

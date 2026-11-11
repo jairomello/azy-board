@@ -384,7 +384,7 @@ describe('rollup diário transacional (Item 13)', () => {
     expect(snapshot.boxes.progressScope).toMatchObject({ total: 5, done: 1, cancelled: 1 })
     expect(snapshot.external.total).toBe(1)
     // O box WIP mostra apenas o que compõe o total (em andamento e bloqueados).
-    expect(Object.keys(snapshot.boxes.wip.byStatus).sort()).toEqual(['BLOCKED', 'IN_PROGRESS'])
+    expect(Object.keys(snapshot.boxes.wip.byStatus).sort()).toEqual(['BLOCKED', 'IN_HOMOLOGATION', 'IN_PROGRESS'])
     expect(snapshot.boxes.wip.byStatus.IN_PROGRESS + snapshot.boxes.wip.byStatus.BLOCKED).toBe(snapshot.boxes.wip.total)
     // "Restante" do donut de atrasados usa a mesma população: N/A não entra na lista.
     const overdueBox = (snapshot as unknown as { boxes: { overdue: { scopeTotal: number; items: Array<{ title: string }>; remainingItems: Array<{ title: string }>; remainingPagination: { total: number } } } }).boxes.overdue

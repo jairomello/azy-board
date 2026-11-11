@@ -23,6 +23,7 @@ order: 2
 | Não iniciada | O trabalho ainda não começou e não está priorizado (backlog). |
 | Planejada | O trabalho foi priorizado, mas ainda não começou. Mesmo peso de avanço de "não iniciada". |
 | Em andamento | O item está sendo executado. |
+| Em homologação | O trabalho de desenvolvimento terminou e a entrega aguarda o aceite de quem pediu. Ainda não é concluída. |
 | Bloqueada | Existe um impedimento para continuar. |
 | Concluída | O resultado esperado foi entregue. |
 | Cancelada | O item não será mais executado. |
@@ -32,7 +33,9 @@ order: 2
 
 Cada coluna representa uma etapa do fluxo e possui um status base. Ao mover um card para outra coluna, o item assume o status base da coluna de destino.
 
-Uma coluna pode representar os estados: não iniciada, planejada, em andamento, bloqueada, concluída ou cancelada. O arquivamento não é uma coluna, mas um ciclo de vida separado.
+Uma coluna pode representar os estados: não iniciada, planejada, em andamento, em homologação, bloqueada, concluída ou cancelada. O arquivamento não é uma coluna, mas um ciclo de vida separado.
+
+"Em homologação" (`IN_HOMOLOGATION`) é o status de uma coluna como `Em Homologação` ou `Aceite do cliente`: a entrega está pronta, mas o aceite ainda não veio. Ela entra na faixa do fluxo (não no `DONE`), então costuma ser a última coluna antes de `Concluídas`.
 
 "Planejada" (`PLANNED`) é o status de uma coluna como `Planejado` ou `A Fazer`: o trabalho já foi priorizado, mas ainda não começou. "Não iniciada" (`NOT_STARTED`) fica reservado ao que ainda não foi priorizado, como o `Backlog`. Os dois têm peso de avanço 0; a diferença está no status exibido no card e nos filtros.
 
