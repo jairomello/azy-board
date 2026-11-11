@@ -32,6 +32,7 @@ const STATUS_INDICATOR: Record<TaskStatus, string> = {
   NOT_STARTED: 'border-l-slate-300 dark:border-l-slate-600',
   PLANNED: 'border-l-sky-400 dark:border-l-sky-500',
   IN_PROGRESS: 'border-l-status-progress',
+  IN_HOMOLOGATION: 'border-l-amber-400 dark:border-l-amber-500',
   BLOCKED: 'border-l-status-blocked',
   DONE: 'border-l-status-done',
   CANCELLED: 'border-l-slate-400 opacity-60',

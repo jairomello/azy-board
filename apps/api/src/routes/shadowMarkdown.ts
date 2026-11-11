@@ -39,7 +39,7 @@ shadowMarkdownRouter.get('/', requireRole('VIEWER'), async (c) => {
       md += '_vazio_\n'
     } else {
       for (const item of colItems) {
-        const statusIcon = item.status === 'DONE' ? '[x]' : item.status === 'IN_PROGRESS' ? '[/]' : '[ ]'
+        const statusIcon = item.status === 'DONE' ? '[x]' : item.status === 'IN_PROGRESS' || item.status === 'IN_HOMOLOGATION' ? '[/]' : '[ ]'
         // Responsável externo não tem conta: o label assume quando não há usuário.
         const assignee = item.assignee?.name ?? item.assigneeLabel ?? 'unassigned'
         const pts = item.points ? ` [${item.points}pts]` : ''

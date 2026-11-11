@@ -271,7 +271,7 @@ const planningGapScopeSchema = {
   required: ['types', 'statuses', 'moduleId', 'assignee', 'includeArchived'],
   properties: {
     types: { type: ['array', 'null'], items: { type: 'string', enum: ['TASK', 'BUG'] }, description: 'Escopo padrão: TASK/BUG folhas.' },
-    statuses: { type: ['array', 'null'], items: { type: 'string', enum: ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'] }, description: 'Escopo padrão: NOT_STARTED/PLANNED/IN_PROGRESS/BLOCKED.' },
+    statuses: { type: ['array', 'null'], items: { type: 'string', enum: ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED', 'DONE', 'CANCELLED'] }, description: 'Escopo padrão: NOT_STARTED/PLANNED/IN_PROGRESS/IN_HOMOLOGATION/BLOCKED.' },
     moduleId: { type: ['string', 'null'] },
     assignee: { type: ['string', 'null'], description: 'ID, e-mail, nome exato ou me para o ator autenticado.' },
     includeArchived: { type: ['boolean', 'null'], description: 'Por padrão false.' },
@@ -297,7 +297,7 @@ const itemFiltersSchema = {
   properties: {
     itemIds: { type: ['array', 'null'], items: { type: 'string' } },
     types: { type: ['array', 'null'], items: { type: 'string', enum: ['EPIC', 'STORY', 'TASK', 'BUG'] } },
-    statuses: { type: ['array', 'null'], items: { type: 'string', enum: ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'] } },
+    statuses: { type: ['array', 'null'], items: { type: 'string', enum: ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED', 'DONE', 'CANCELLED'] } },
     sprint: { type: ['string', 'null'], description: 'Sprint ID, exact name, or CURRENT for the active sprint.' },
     version: { type: ['string', 'null'], description: 'Version ID or exact name.' },
     module: { type: ['string', 'null'], description: 'Module ID or exact name. Includes descendants of matching epics.' },
@@ -405,8 +405,8 @@ function schemaFor(field: string, isRequired: boolean, toolName?: string): Recor
   if (field === 'limit' && toolName === 'query_planning_gaps') return { ...nullable({ type: 'integer', minimum: 1, maximum: PLANNING_GAP_LIMITS.maxPageSize }), description: `Tamanho da página (padrão ${PLANNING_GAP_LIMITS.defaultPageSize}, máximo ${PLANNING_GAP_LIMITS.maxPageSize}).` }
   if (field === 'limit' || field === 'points' || field === 'offset') return nullable({ type: 'number' })
   if (field === 'tokensInput' || field === 'tokensOutput') return { ...nullable({ type: 'number' }), description: 'Tokens de IA consumidos (inteiro não negativo); o total é derivado da soma.' }
-  if (field === 'status' && toolName === 'create_task') return { type: ['string', 'null'], enum: ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED', null], description: 'Status inicial do item; use o enum de status (não o nome da coluna). Omitir usa o padrão da coluna.' }
-  if (field === 'baseStatus') return { type: 'string', enum: ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED'], description: 'Status base da coluna. PLANNED separa o trabalho priorizado (Planejado) do backlog não priorizado; o status do card passa a ser o da coluna ao movê-lo.' }
+  if (field === 'status' && toolName === 'create_task') return { type: ['string', 'null'], enum: ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED', 'DONE', 'CANCELLED', null], description: 'Status inicial do item; use o enum de status (não o nome da coluna). Omitir usa o padrão da coluna.' }
+  if (field === 'baseStatus') return { type: 'string', enum: ['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED', 'DONE', 'CANCELLED'], description: 'Status base da coluna. PLANNED separa o trabalho priorizado (Planejado) do backlog não priorizado; IN_HOMOLOGATION marca a entrega pronta aguardando aceite (coluna "Em Homologação"), dentro da faixa do fluxo e sem contar como concluída. O status do card passa a ser o da coluna ao movê-lo.' }
   if (field === 'durationMin') return { ...nullable({ type: 'number' }), description: 'Duração em minutos (inteiro não negativo); alternativa a duration.' }
   if (field === 'filters') return itemFiltersSchema
   if (toolName === 'query_planning_gaps' && field === 'scope') return planningGapScopeSchema
@@ -614,7 +614,7 @@ const toolDescriptions: Record<string, string> = {
   query_planning_gaps: 'Consulta itens por lacunas de planejamento com condições tipadas ALL/ANY. Retorna total distinto, grupos sobrepostos identificados e resultado paginado fixado ao ator/projeto.',
   prepare_structure_duplication: 'Prepara um plano somente-leitura para duplicar uma STORY ou subárvore TASK/BUG do mesmo projeto como trabalho novo, listando contagens, campos copiados e exclusões (anexos, horas e histórico nunca são copiados). Não escreve nada; aplique com duplicate_structure usando o plano retornado.',
   duplicate_structure: 'Aplica um plano de prepare_structure_duplication criando itens, relações, checklists/passos e links em uma transação idempotente (T38). Revalida o fingerprint da origem, reinicia status/passos e exige MEMBER. Retorna o mapa origem→cópia.',
-  prepare_sprint_transition: 'Prepara um plano somente-leitura (ADMIN) para transição de sprint: acrescenta a sprint de destino aos pendentes elegíveis (TASK/BUG folhas NOT_STARTED/PLANNED/IN_PROGRESS/BLOCKED) preservando vínculos anteriores e fecha a origem sem ativar o destino. Não escreve nada; aplique com apply_sprint_transition.',
+  prepare_sprint_transition: 'Prepara um plano somente-leitura (ADMIN) para transição de sprint: acrescenta a sprint de destino aos pendentes elegíveis (TASK/BUG folhas NOT_STARTED/PLANNED/IN_PROGRESS/IN_HOMOLOGATION/BLOCKED) preservando vínculos anteriores e fecha a origem sem ativar o destino. Não escreve nada; aplique com apply_sprint_transition.',
   apply_sprint_transition: 'Aplica um plano de prepare_sprint_transition em transação atômica e idempotente (T38): une o destino aos candidatos, registra analytics e fecha origem/ciclo. Revalida população e ciclo no commit; exige ADMIN.',
   get_shadow_markdown: 'Retorna o board do projeto em Markdown (board.md) para leitura rápida.',
   list_tasks: 'Lista itens do projeto; onlyLeaves é true, includeDescriptions é false e limit é 50 por padrão. Filtros opcionais: type, status, assigneeId, sprintId, tagIds, parentId, columnId, moduleId, com projeção fields e paginação por limit/cursor. Omitir um filtro equivale a não filtrar.',
@@ -658,7 +658,7 @@ const toolDescriptions: Record<string, string> = {
   update_item_log: 'Atualiza o texto e/ou a duração de um log de trabalho.',
   update_project: 'Atualiza campos do projeto (nome, descrição, boardMode, planejamento). Omita os campos que não devem mudar. Em projeto HIERARCHICAL, ligar hideModules/hideEpics oculta o nível correspondente e recolhe a hierarquia; em SIMPLE permanecem false.',
   create_module: 'Cria um módulo no projeto.',
-  create_column: 'Cria uma coluna no board com name e baseStatus (NOT_STARTED, PLANNED, IN_PROGRESS, BLOCKED, DONE ou CANCELLED). A coluna nasce no fim do fluxo; use reorder_columns para posicioná-la.',
+  create_column: 'Cria uma coluna no board com name e baseStatus (NOT_STARTED, PLANNED, IN_PROGRESS, IN_HOMOLOGATION, BLOCKED, DONE ou CANCELLED). A coluna nasce no fim do fluxo; use reorder_columns para posicioná-la.',
   reorder_columns: 'Reordena as colunas do board conforme a lista order.',
   create_sprint: 'Cria uma sprint com name, startDate e endDate (YYYY-MM-DD).',
   update_sprint: 'Edita o nome e/ou as datas de uma sprint existente. Use changes com { field, operation: "SET", value }; fields aceitos: name, startDate e endDate (YYYY-MM-DD). A edição preserva o status e os ciclos da sprint; abrir/encerrar continuam em activate_sprint/close_sprint.',

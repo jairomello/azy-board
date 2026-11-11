@@ -68,6 +68,7 @@
   "flowAdvance": "Flow progress",
   "noEstimatesHint": "No estimates in this project — set points on cards to track by points.",
   "inProgress": "In progress",
+  "inHomologation": "In acceptance",
   "blockedStatus": "Blocked",
   "unassigned": "Unassigned",
   "wipTotal": "WIP",

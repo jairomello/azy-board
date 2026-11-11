@@ -146,7 +146,7 @@ export function BoardColumns({
 
 function SortableColumn({ id, colName, colCount, baseStatus, children }: { id: string; colName: string; colCount: number; baseStatus: string; children: React.ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
-  const statusColor = baseStatus === 'DONE' ? 'bg-status-done' : baseStatus === 'BLOCKED' ? 'bg-status-blocked' : baseStatus === 'IN_PROGRESS' ? 'bg-status-progress' : baseStatus === 'PLANNED' ? 'bg-sky-400' : 'bg-slate-400'
+  const statusColor = baseStatus === 'DONE' ? 'bg-status-done' : baseStatus === 'BLOCKED' ? 'bg-status-blocked' : baseStatus === 'IN_PROGRESS' ? 'bg-status-progress' : baseStatus === 'IN_HOMOLOGATION' ? 'bg-amber-400' : baseStatus === 'PLANNED' ? 'bg-sky-400' : 'bg-slate-400'
 
   return (
     <div ref={setNodeRef} data-drop-id={id} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, zIndex: isDragging ? 10 : undefined }} className="board-column flex-shrink-0 w-[292px] bg-surface-raised border border-border/80 rounded-lg flex flex-col overflow-hidden">

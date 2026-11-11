@@ -329,6 +329,7 @@
               "NOT_STARTED",
               "PLANNED",
               "IN_PROGRESS",
+              "IN_HOMOLOGATION",
               "BLOCKED",
               "DONE",
               "CANCELLED"
@@ -628,6 +629,7 @@
               "NOT_STARTED",
               "PLANNED",
               "IN_PROGRESS",
+              "IN_HOMOLOGATION",
               "BLOCKED",
               "DONE",
               "CANCELLED"
@@ -993,6 +995,7 @@
                         "NOT_STARTED",
                         "PLANNED",
                         "IN_PROGRESS",
+                        "IN_HOMOLOGATION",
                         "BLOCKED",
                         "DONE",
                         "CANCELLED",
@@ -1288,6 +1291,7 @@
               "NOT_STARTED",
               "PLANNED",
               "IN_PROGRESS",
+              "IN_HOMOLOGATION",
               "BLOCKED",
               "DONE",
               "CANCELLED"

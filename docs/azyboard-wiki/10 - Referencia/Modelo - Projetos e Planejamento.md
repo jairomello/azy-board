@@ -151,7 +151,7 @@ Etapas configuráveis do Kanban.
 | `base_status` | Sim | Status funcional representado. |
 | `position` | Sim | Ordem horizontal. |
 
-`base_status` aceita `NOT_STARTED`, `PLANNED`, `IN_PROGRESS`, `BLOCKED`, `DONE` ou `CANCELLED`. `ARCHIVED` não é status de coluna.
+`base_status` aceita `NOT_STARTED`, `PLANNED`, `IN_PROGRESS`, `IN_HOMOLOGATION`, `BLOCKED`, `DONE` ou `CANCELLED`. `ARCHIVED` não é status de coluna.
 
 Itens folha apontam para uma coluna por `items.column_id`. A movimentação sincroniza `items.status` com o status base do destino.
 

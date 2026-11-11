@@ -26,7 +26,7 @@ const prepareSchema = z.object({
 const candidateSchema = z.object({
   itemId: z.string().min(1),
   revision: z.string().min(1),
-  status: z.enum(['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'BLOCKED', 'DONE', 'CANCELLED', 'ARCHIVED']),
+  status: z.enum(['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED', 'DONE', 'CANCELLED', 'ARCHIVED']),
   points: z.number().finite().nullable(),
   sprintIds: z.array(z.string()),
 })

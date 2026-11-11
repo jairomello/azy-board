@@ -66,6 +66,7 @@
   "statusNotStarted": "Não iniciada",
   "statusPlanned": "Planejada",
   "statusInProgress": "Em andamento",
+  "statusInHomologation": "Em homologação",
   "statusBlocked": "Bloqueada",
   "statusDone": "Concluída",
   "statusCancelled": "Cancelada",

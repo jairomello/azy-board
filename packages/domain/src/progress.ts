@@ -9,8 +9,8 @@
 // do mesmo status:
 // - `NOT_STARTED`/`PLANNED`/`CANCELLED` = 0;
 // - `DONE` = 100;
-// - `IN_PROGRESS`/`BLOCKED` = faixa do fluxo: a última coluna vale 90; quando há mais de
-//   uma, a primeira vale 50 e as demais são distribuídas entre 50 e 90.
+// - `IN_PROGRESS`/`IN_HOMOLOGATION`/`BLOCKED` = faixa do fluxo: a última coluna vale 90;
+//   quando há mais de uma, a primeira vale 50 e as demais são distribuídas entre 50 e 90.
 //
 // Um item bloqueado não inventa histórico nesta versão: a coluna `BLOCKED` participa da
 // faixa do fluxo como uma etapa em progresso (congelar no último peso conhecido exigiria
@@ -38,7 +38,7 @@ export interface CardChecklistProgress {
 }
 
 function isFlowStatus(status: ColumnBaseStatus): boolean {
-  return status === 'IN_PROGRESS' || status === 'BLOCKED'
+  return status === 'IN_PROGRESS' || status === 'IN_HOMOLOGATION' || status === 'BLOCKED'
 }
 
 function clampWeight(value: number): number {
