@@ -188,8 +188,27 @@ jobs:
           restore-keys: ${{ runner.os }}-bun-
       - name: Instalar dependências
         run: bun install --frozen-lockfile
+      - name: Cache de browsers do Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-playwright-
       - name: Instalar Chromium do Playwright
-        run: bunx playwright install --with-deps chromium
+        # O `--with-deps` depende do apt dos mirrors do Ubuntu (archive/security/
+        # azure). Uma falha transitória de DNS derruba o job ANTES de rodar
+        # qualquer jornada, e o log passa a parecer erro de código. Reinstala com
+        # retry, sem mascarar falha real: só o Playwright é executado aqui.
+        run: |
+          for tentativa in 1 2 3; do
+            if bunx playwright install --with-deps chromium; then
+              exit 0
+            fi
+            echo "::warning::instalação do Chromium falhou na tentativa ${tentativa}; repetindo em 20s"
+            sleep 20
+          done
+          echo "::error::não foi possível instalar o Chromium do Playwright após 3 tentativas"
+          exit 1
       - name: Política de testes de frontend
         run: bun run check:frontend-tests
       - name: E2E de navegador
