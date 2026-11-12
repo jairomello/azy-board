@@ -32,11 +32,14 @@ Cada projeto é apresentado como um bloco selecionável com:
 - Inicial do nome.
 - Nome do projeto.
 - Descrição, quando informada.
+- Barra de progresso geral com percentual e contagem `entregas concluídas/total`.
 - Indicação **Abrir board**.
 - Badges **Restrito** e **Oculto**, quando aplicáveis.
 - Ações de renomear e excluir, disponíveis a contas com permissão de administração.
 
 Projetos ocultos exibidos com a preferência ativada aparecem com borda tracejada e opacidade reduzida, sinalizando o estado sem ocultar o conteúdo.
+
+A barra de progresso usa o **avanço no fluxo** — a média ponderada das folhas `TASK`/`BUG` pelo peso da coluna —, o mesmo indicador do Board e do Dashboard. O percentual não é a razão simples de concluídos pelo total; a contagem ao lado mostra quantas entregas folha já chegaram a `DONE` sobre o total do escopo de progresso. Projeto sem folhas mostra `0%` e `0/0 entregas`; se o resumo não puder ser calculado, o card informa **Progresso indisponível** em vez de inventar um percentual.
 
 ## Abrir um projeto
 

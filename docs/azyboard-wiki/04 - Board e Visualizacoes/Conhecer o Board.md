@@ -101,7 +101,7 @@ Um card pode apresentar:
 - Breadcrumb.
 - Título.
 - Tags.
-- Progresso de checklist.
+- Barra de avanço no fluxo, com progresso de checklist quando existir.
 - Tipo e prioridade.
 - Pontos.
 - Quantidade de filhos.
@@ -109,6 +109,8 @@ Um card pode apresentar:
 - Ações de arquivamento e exclusão.
 
 O controle lateral do card indica se ele pode ser arrastado.
+
+A barra de avanço fica entre as tags/tipo e o rodapé e só aparece quando o avanço é maior que zero. Ela usa um trilho arredondado com marcas a cada 25% e preenchimento em gradiente derivado dos tokens do tema: a família de avanço no parcial e o token de concluído em 100%. O contador de checklist, quando existir, aparece junto da barra. A transição de largura é curta e é desativada quando a pessoa prefere movimento reduzido.
 
 ## Estados do Board
 

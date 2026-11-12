@@ -137,6 +137,17 @@ export interface ProjectRecord {
   createdAt: string
 }
 
+/** Agregado de folhas por projeto/coluna para o progresso da listagem de projetos. */
+export interface ProjectProgressAggregateRow {
+  projectId: string
+  columnId: string | null
+  columnBaseStatus: ColumnBaseStatus | null
+  columnPosition: number | null
+  columnProgressWeight: number | null
+  status: TaskStatus
+  count: number
+}
+
 export interface ColumnRecord {
   id: string
   tenantId: string

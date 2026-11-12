@@ -1,6 +1,6 @@
 import { and, asc, count, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts'
-import type { ItemDependencyType, ItemType } from '@azy-board/domain'
+import type { ColumnBaseStatus, ItemDependencyType, ItemType, TaskStatus } from '@azy-board/domain'
 import type { Database } from 'bun:sqlite'
 import { foldNameForSearch, likeContainsPattern, nameSortKeySql, SQLITE_NAME_FOLD_FUNCTION, sqliteNameSortKeySql } from '../nameNormalization'
 import type {
@@ -52,6 +52,7 @@ import type {
   NewAttachmentRecord,
   PersistenceContext,
   ProjectMemberDetails,
+  ProjectProgressAggregateRow,
   ProjectRecord,
   ProjectVersionRecord,
   SaveAvatarRecord,
@@ -882,6 +883,42 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         if (!options.includeHidden) filters.push(eq(projects.isHidden, false))
         return (await database.select().from(projects).where(and(...filters))).map(mapProject)
       },
+      // [TENANT] O agregado é sempre restrito ao tenant do chamador e aos projetos já autorizados.
+      // [DB-SWAP] Agregação em SQL portável; o adapter PostgreSQL repete o mesmo recorte.
+      async listProjectProgress(context, projectIds) {
+        if (projectIds.length === 0) return []
+        const rows = await database.select({
+          projectId: items.projectId,
+          columnId: items.columnId,
+          columnBaseStatus: columns.baseStatus,
+          columnPosition: columns.position,
+          columnProgressWeight: columns.progressWeight,
+          status: items.status,
+          count: sql<number>`COUNT(*)`,
+        }).from(items)
+          .leftJoin(columns, and(
+            eq(columns.tenantId, items.tenantId),
+            eq(columns.projectId, items.projectId),
+            eq(columns.id, items.columnId),
+          ))
+          .where(and(
+            eq(items.tenantId, context.tenantId),
+            inArray(items.projectId, projectIds),
+            inArray(items.type, ['TASK', 'BUG']),
+            sql`${items.status} NOT IN ('ARCHIVED', 'CANCELLED')`,
+            sql`NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = ${context.tenantId} AND child.project_id = ${items.projectId} AND child.parent_id = ${items.id})`,
+          ))
+          .groupBy(items.projectId, items.columnId, columns.baseStatus, columns.position, columns.progressWeight, items.status)
+        return rows.map(row => ({
+          projectId: row.projectId,
+          columnId: row.columnId ?? null,
+          columnBaseStatus: row.columnBaseStatus ?? null,
+          columnPosition: row.columnPosition ?? null,
+          columnProgressWeight: row.columnProgressWeight ?? null,
+          status: row.status,
+          count: Number(row.count),
+        }))
+      },
       async createProject(context, input) {
         const [row] = await database.insert(projects).values({
           id: generateId(), tenantId: context.tenantId, ...input,
@@ -932,6 +969,13 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
         return (await database.select().from(columns).where(and(
           eq(columns.tenantId, context.tenantId), eq(columns.projectId, projectId),
         )).orderBy(columns.position)).map(mapColumn)
+      },
+      // [TENANT] Leitura em massa sempre restrita ao tenant e aos projetos autorizados.
+      async listColumnsForProjects(context, projectIds) {
+        if (projectIds.length === 0) return []
+        return (await database.select().from(columns).where(and(
+          eq(columns.tenantId, context.tenantId), inArray(columns.projectId, projectIds),
+        )).orderBy(asc(columns.position), asc(columns.id))).map(mapColumn)
       },
       async getColumn(context, projectId, columnId) {
         const row = await database.query.columns.findFirst({ where: and(

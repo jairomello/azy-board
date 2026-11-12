@@ -1242,3 +1242,68 @@ describe.skipIf(!runPostgres)('Paridade do recolhimento de níveis (T61)', () =>
     }
   })
 })
+
+describe.skipIf(!runPostgres)('Paridade do progresso agregado por projeto', () => {
+  async function seedProgress(ports: PersistencePorts) {
+    const tenant = await ports.tenants.createTenant({ name: `Prog ${crypto.randomUUID()}`, slug: `prog-${crypto.randomUUID()}` })
+    const ctx = makeContext(tenant.id)
+    const user = await ports.identity.createUser(ctx, {
+      email: `prog-${crypto.randomUUID()}@test.local`, passwordHash: 'h', name: 'Prog', globalGroup: 'ADMIN',
+    })
+    const scope: PersistenceContext = { ...ctx, actorUserId: user.id, globalGroup: 'ADMIN' }
+    const mut: MutationContext = { ...makeMutationContext(tenant.id), actorUserId: user.id }
+    const project = await ports.unitOfWork.createProjectAggregate(mut, {
+      project: { name: 'Projeto Progresso', boardMode: 'SIMPLE' },
+      defaultColumns: [
+        { name: 'Backlog', baseStatus: 'NOT_STARTED' },
+        { name: 'Fazendo', baseStatus: 'IN_PROGRESS' },
+        { name: 'A Testar', baseStatus: 'IN_PROGRESS' },
+        { name: 'Testando', baseStatus: 'IN_PROGRESS' },
+        { name: 'Concluídas', baseStatus: 'DONE' },
+      ],
+      defaultModuleName: 'Geral',
+      simpleStoryTitle: 'Fluxo',
+    })
+    const batch = await ports.unitOfWork.createItemsBatch(mut, project.id, [
+      { tool: 'create_task', ref: 'a', title: 'A', type: 'TASK' },
+      { tool: 'create_task', ref: 'b', title: 'B', type: 'TASK' },
+      { tool: 'create_task', ref: 'c', title: 'C', type: 'TASK' },
+    ], { atomic: true })
+    const ids = batch.results.map(result => result.data!.id)
+    const projectColumns = await ports.projects.listColumns(scope, project.id)
+    const byName = (name: string) => projectColumns.find(column => column.name === name)!
+    const doing = byName('Fazendo')
+    const done = byName('Concluídas')
+    await ports.unitOfWork.moveItem(mut, project.id, ids[1]!, { id: doing.id, name: doing.name, baseStatus: 'IN_PROGRESS' }, '')
+    await ports.unitOfWork.moveItem(mut, project.id, ids[2]!, { id: done.id, name: done.name, baseStatus: 'DONE' }, '')
+    const aggregate = await ports.projects.listProjectProgress(scope, [project.id])
+    const columns = await ports.projects.listColumnsForProjects(scope, [project.id])
+    return {
+      aggregate: aggregate
+        .map(row => ({ status: row.status, count: row.count, base: row.columnBaseStatus, position: row.columnPosition }))
+        .sort((a, b) => `${a.position}|${a.status}`.localeCompare(`${b.position}|${b.status}`)),
+      columns: columns
+        .map(column => ({ name: column.name, base: column.baseStatus, position: column.position, weight: column.progressWeight }))
+        .sort((a, b) => a.position - b.position),
+    }
+  }
+
+  test('agregado e colunas em massa são equivalentes entre adapters', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    try {
+      const s = await seedProgress(sqlite.ports)
+      const p = await seedProgress(pg.ports)
+      expect(s.aggregate).toEqual(p.aggregate)
+      expect(s.columns).toEqual(p.columns)
+      expect(s.aggregate).toEqual([
+        { status: 'NOT_STARTED', count: 1, base: 'NOT_STARTED', position: 0 },
+        { status: 'IN_PROGRESS', count: 1, base: 'IN_PROGRESS', position: 1 },
+        { status: 'DONE', count: 1, base: 'DONE', position: 4 },
+      ])
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  })
+})

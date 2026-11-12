@@ -11,7 +11,7 @@ Esta matriz oferece uma visão rápida das capacidades do Azy Board e indica ond
 | Área | Capacidades | Módulo do manual |
 |---|---|---|
 | Acesso | Login, sessão, logout e proteção de rotas | [[01 - Acesso e Navegacao/Acesso e Navegacao|Acesso e Navegação]] |
-| Projetos | Listagem, seleção, criação e estrutura inicial | [[02 - Projetos/Projetos|Projetos]] |
+| Projetos | Listagem, seleção, criação, estrutura inicial e progresso geral por projeto | [[02 - Projetos/Projetos|Projetos]] |
 | Modo do board | Formatos hierárquico e simples, escolha e conversão | [[02 - Projetos/Modo do Board Hierarquico e Simples|Modo do Board hierárquico e simples]] |
 | Hierarquia | Módulos, épicos, histórias, tasks, bugs e subtasks | [[03 - Estrutura do Trabalho/Hierarquia dos Itens|Hierarquia dos itens]] |
 | Board | Lanes aninhadas de épicos e histórias, colunas, cards, criação e movimentação | [[04 - Board e Visualizacoes/Conhecer o Board|Conhecer o Board]] |

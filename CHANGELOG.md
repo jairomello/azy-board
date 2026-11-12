@@ -67,6 +67,14 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Added
 
+- **Barras de progresso renovadas no Board e nos projetos.** Os cards do Kanban
+  trocaram o traço fino por uma barra com trilho arredondado, marcas de 25/50/75%
+  e preenchimento em gradiente derivado dos tokens do tema, com estado de
+  concluído e respeito a `prefers-reduced-motion`. A tela de Projetos passou a
+  exibir o progresso geral de cada projeto — percentual de avanço no fluxo e
+  contagem `x/y entregas` — calculado no servidor em uma agregação em massa e
+  igual ao indicador do Dashboard/Board. Projeto sem folhas mostra `0/0`; falha
+  de agregação mostra “Progresso indisponível” sem inventar percentual.
 - **Exportação de cards em CSV e XLSX com mapeamento de campos.** A command bar
   do board ganhou "Exportar dados", com modo bruto (todas as colunas técnicas) e
   modo dinâmico, em que a pessoa escolhe origem, nome e tipo de cada coluna do

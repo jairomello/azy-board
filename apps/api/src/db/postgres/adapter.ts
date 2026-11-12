@@ -23,6 +23,7 @@ import type {
   MutationContext,
   PersistenceContext,
   ProjectMemberDetails,
+  ProjectProgressAggregateRow,
   ProjectRecord,
   ProjectVersionRecord,
   PublicUserRecord,
@@ -108,7 +109,7 @@ import { fingerprintTransition } from '../../services/sprintTransition'
 import { buildPlanningGapSnapshot, planningGapPage, type PlanningGapCandidate } from '../../services/planningGaps'
 import { parseAncestorIds, touchedItemIds } from '../itemTouch'
 import { foldNameForSearch, likeContainsPattern, nameSortKeySql } from '../nameNormalization'
-import type { BoardMode } from '@azy-board/domain'
+import type { BoardMode, ColumnBaseStatus, TaskStatus } from '@azy-board/domain'
 
 /** Mesmo limite de profundidade hierárquica usado pelos comandos SQLite. */
 const MAX_HIERARCHY_DEPTH = 50
@@ -1575,6 +1576,35 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         const rows = await q(`SELECT * FROM projects WHERE ${conditions.join(' AND ')}`, [context.tenantId])
         return rows.map(mapProject)
       },
+      // [TENANT] O agregado é sempre restrito ao tenant do chamador e aos projetos já autorizados.
+      // [DB-SWAP] Espelha o recorte do adapter SQLite para a paridade SIMPLE ↔ ADVANCED.
+      async listProjectProgress(context: PersistenceContext, projectIds: string[]): Promise<ProjectProgressAggregateRow[]> {
+        if (projectIds.length === 0) return []
+        const placeholders = projectIds.map((_, index) => `$${index + 2}`).join(', ')
+        const rows = await q(
+          `SELECT i.project_id, i.column_id, c.base_status, c.position, c.progress_weight, i.status, COUNT(*)::int AS count
+           FROM items i
+           LEFT JOIN columns c ON c.tenant_id = i.tenant_id AND c.project_id = i.project_id AND c.id = i.column_id
+           WHERE i.tenant_id = $1 AND i.project_id IN (${placeholders})
+             AND i.type IN ('TASK', 'BUG')
+             AND i.status NOT IN ('ARCHIVED', 'CANCELLED')
+             AND NOT EXISTS (
+               SELECT 1 FROM items child
+               WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id
+             )
+           GROUP BY i.project_id, i.column_id, c.base_status, c.position, c.progress_weight, i.status`,
+          [context.tenantId, ...projectIds],
+        )
+        return rows.map(row => ({
+          projectId: row.project_id as string,
+          columnId: (row.column_id as string | null) ?? null,
+          columnBaseStatus: (row.base_status as ColumnBaseStatus | null) ?? null,
+          columnPosition: row.position == null ? null : Number(row.position),
+          columnProgressWeight: row.progress_weight == null ? null : Number(row.progress_weight),
+          status: row.status as TaskStatus,
+          count: Number(row.count),
+        }))
+      },
       async createProject(context: PersistenceContext, input: NewProjectRecord): Promise<ProjectRecord> {
         const id = generateId()
         const row = await q1(
@@ -1624,6 +1654,16 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
       async listColumns(context: PersistenceContext, projectId: string): Promise<ColumnRecord[]> {
         const rows = await q('SELECT * FROM columns WHERE tenant_id = $1 AND project_id = $2 ORDER BY position',
           [context.tenantId, projectId])
+        return rows.map(mapColumn)
+      },
+      // [TENANT] Leitura em massa sempre restrita ao tenant e aos projetos autorizados.
+      async listColumnsForProjects(context: PersistenceContext, projectIds: string[]): Promise<ColumnRecord[]> {
+        if (projectIds.length === 0) return []
+        const placeholders = projectIds.map((_, index) => `$${index + 2}`).join(', ')
+        const rows = await q(
+          `SELECT * FROM columns WHERE tenant_id = $1 AND project_id IN (${placeholders}) ORDER BY position, id`,
+          [context.tenantId, ...projectIds],
+        )
         return rows.map(mapColumn)
       },
       async getColumn(context: PersistenceContext, projectId: string, columnId: string): Promise<ColumnRecord | null> {

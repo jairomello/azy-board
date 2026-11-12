@@ -52,6 +52,8 @@ describe('avanço no card do Kanban (T75)', () => {
     const bar = screen.getByRole('progressbar')
     expect(bar.getAttribute('aria-valuenow')).toBe('90')
     expect(bar.getAttribute('aria-label')).toBe('Avanço no fluxo: 90%')
+    expect(bar.closest('.progress-meter')?.getAttribute('data-progress-variant')).toBe('compact')
+    expect(bar.querySelector('.progress-meter__marks')).not.toBeNull()
     // Sem checklist não há contador `marcados/total`.
     expect(document.querySelector('.progress-copy')).toBeNull()
   })

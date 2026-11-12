@@ -14,10 +14,12 @@ import { VisibilityToggles } from '../components/VisibilityToggles'
 import { ProjectVisibilityBadges } from '../components/ProjectVisibilityBadges'
 import { AppearancePicker } from '../components/AppearancePicker'
 import { ProjectPlanningModal } from '../components/ProjectPlanningModal'
+import { ProgressBar } from '../components/ProgressBar'
 import { projectIconComponent } from '../lib/iconCatalog'
 
 type ProjectRole = 'ADMIN' | 'MEMBER' | 'VIEWER'
-interface Project extends ProjectVisibility { id: string; name: string; description: string | null; role: ProjectRole; boardMode: BoardMode; icon?: string | null; color?: string | null }
+interface ProjectProgress { advance: number; done: number; total: number }
+interface Project extends ProjectVisibility { id: string; name: string; description: string | null; role: ProjectRole; boardMode: BoardMode; icon?: string | null; color?: string | null; progress?: ProjectProgress | null }
 
 function ProjectGlyph({ project }: { project: Project }) {
   if (project.icon) {
@@ -56,6 +58,8 @@ export default function ProjectsPage() {
   const listParams = new URLSearchParams()
   if (showHiddenProjects) listParams.set('includeHidden', 'true')
   if (showArchived) listParams.set('includeArchived', 'true')
+  // A tela sempre exibe a barra; o parâmetro evita agregação em outros consumidores.
+  listParams.set('includeProgress', 'true')
   const listQuery = listParams.toString()
   const listVariant = `${showHiddenProjects ? 'withHidden' : 'default'}:${showArchived ? 'archived' : 'active'}`
   const projectsQuery = useQuery({
@@ -299,6 +303,20 @@ export default function ProjectsPage() {
                  <p className="text-muted-foreground text-xs mt-1 line-clamp-2 min-h-8">
                     {p.description || t('defaultProjectDescription')}
                  </p>
+                  <div className="mt-3">
+                    {p.progress ? (
+                      <ProgressBar
+                        variant="labeled"
+                        value={p.progress.advance}
+                        label={t('projectProgressAria', { name: p.name, percent: p.progress.advance, done: p.progress.done, total: p.progress.total })}
+                        valueText={t('projectProgressAria', { name: p.name, percent: p.progress.advance, done: p.progress.done, total: p.progress.total })}
+                        percentLabel={t('projectProgressPercent', { percent: p.progress.advance })}
+                        countLabel={t('projectProgressDeliveries', { done: p.progress.done, total: p.progress.total })}
+                      />
+                    ) : (
+                      <p className="text-xs text-muted-foreground">{t('projectProgressUnavailable')}</p>
+                    )}
+                  </div>
                   {/* min-h reserva a altura do badge para cards sem sinalização não ficarem menores. */}
                   <div className="mt-4 flex items-center gap-2 flex-wrap min-h-6">
                      <span className="inline-flex text-[11px] font-medium text-primary">{t('openBoard')}</span>

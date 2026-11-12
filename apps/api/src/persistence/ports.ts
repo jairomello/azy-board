@@ -67,6 +67,7 @@ import type {
   ProjectVersionRecord,
   PublicUserRecord,
   PersistenceContext,
+  ProjectProgressAggregateRow,
   ProjectRecord,
   ProjectMemberDetails,
   SaveAvatarRecord,
@@ -224,6 +225,10 @@ export interface ProjectTeamPort {
   getProject(context: PersistenceContext, projectId: string): Promise<ProjectRecord | null>
   /** `includeArchived` é opcional e, quando ausente, exclui projetos arquivados. */
   listProjects(context: PersistenceContext, options: { includeHidden: boolean; includeArchived?: boolean }): Promise<ProjectRecord[]>
+  /** Agregado em massa das folhas de progresso por projeto, sem hidratar itens. */
+  listProjectProgress(context: PersistenceContext, projectIds: string[]): Promise<ProjectProgressAggregateRow[]>
+  /** Colunas dos projetos em uma única leitura, para derivar os pesos sem N+1. */
+  listColumnsForProjects(context: PersistenceContext, projectIds: string[]): Promise<ColumnRecord[]>
   createProject(context: PersistenceContext, input: NewProjectRecord): Promise<ProjectRecord>
   updateProject(context: PersistenceContext, projectId: string, patch: ProjectPatch): Promise<ProjectRecord | null>
   getMembership(context: PersistenceContext, projectId: string, userId: string): Promise<MembershipRecord | null>

@@ -4,6 +4,7 @@ import { useSortable } from '@dnd-kit/sortable'
 import { Trash2, GitBranch, Archive, Copy, Check, Workflow, Paperclip, Move } from 'lucide-react'
 import { UserAvatar } from './UserAvatar'
 import { InlineEdit } from './InlineEdit'
+import { ProgressBar } from './ProgressBar'
 import { useToast } from './Toast'
 import { formatCardReference } from '../lib/cardReference'
 import { formatTokens } from '../lib/formatters'
@@ -363,20 +364,11 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
                 </div>
               )}
               {percent > 0 && (
-                <div
-                  className="progress-track h-0.5 w-full rounded-full overflow-hidden"
-                  role="progressbar"
-                  aria-valuenow={percent}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label={t('progressAdvanceLabel', { percent })}
-                  title={t('progressAdvanceLabel', { percent })}
-                >
-                  <div
-                    className={`h-full rounded-full transition-all ${percent === 100 ? 'bg-emerald-500' : 'bg-primary/60'}`}
-                    style={{ width: `${percent}%` }}
-                  />
-                </div>
+                <ProgressBar
+                  value={percent}
+                  label={t('progressAdvanceLabel', { percent })}
+                  valueText={t('progressAdvanceLabel', { percent })}
+                />
               )}
             </div>
           )

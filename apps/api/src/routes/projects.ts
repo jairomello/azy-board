@@ -3,6 +3,8 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import type { RequestContext } from '@azy-board/api-contracts'
+import { resolveColumnProgressWeights } from '@azy-board/domain'
+import type { ColumnRecord, ProjectProgressAggregateRow } from '../persistence/models'
 import { hasGlobalGroup } from '../services/auth'
 import { hasKeyPermission } from '../services/authorization'
 import { triggerStorageCleanupAfterCommit } from '../services/storageCleanup'
@@ -26,6 +28,64 @@ function metadataMutationError(c: { json: (body: unknown, status: ContentfulStat
 
 export const projectsRouter = new Hono<HonoEnv>()
 projectsRouter.use('*', authMiddleware)
+
+interface ProjectProgressSummary {
+  advance: number
+  done: number
+  total: number
+}
+
+/**
+ * Resume o agregado por projeto com a mesma semântica do Dashboard: avanço no
+ * fluxo (média ponderada pelo peso da coluna) e contagem de entregas.
+ */
+function summarizeProjectProgress(
+  rows: ProjectProgressAggregateRow[],
+  projectIds: string[],
+  columnsByProject: Map<string, ColumnRecord[]>,
+  failed: boolean,
+): Map<string, ProjectProgressSummary | null> {
+  const summaries = new Map<string, ProjectProgressSummary | null>()
+  if (failed) {
+    for (const projectId of projectIds) summaries.set(projectId, null)
+    return summaries
+  }
+  const byProject = new Map<string, ProjectProgressAggregateRow[]>()
+  for (const row of rows) {
+    const current = byProject.get(row.projectId)
+    if (current) current.push(row)
+    else byProject.set(row.projectId, [row])
+  }
+  for (const projectId of projectIds) {
+    const projectRows = byProject.get(projectId) ?? []
+    if (projectRows.length === 0) {
+      summaries.set(projectId, { advance: 0, done: 0, total: 0 })
+      continue
+    }
+    // O peso depende de todas as colunas do projeto, inclusive as sem folhas:
+    // derivar apenas das colunas presentes no agregado mudaria a faixa 50–90.
+    const weights = resolveColumnProgressWeights((columnsByProject.get(projectId) ?? []).map(column => ({
+      id: column.id,
+      baseStatus: column.baseStatus,
+      position: column.position,
+      progressWeight: column.progressWeight,
+    })))
+    let total = 0
+    let done = 0
+    let weighted = 0
+    for (const row of projectRows) {
+      total += row.count
+      if (row.status === 'DONE') done += row.count
+      weighted += row.count * (row.columnId ? weights.get(row.columnId) ?? 0 : 0)
+    }
+    summaries.set(projectId, {
+      advance: total > 0 ? Math.round(weighted / total) : 0,
+      done,
+      total,
+    })
+  }
+  return summaries
+}
 
 const DEFAULT_COLUMNS: Array<{ name: string; baseStatus: 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE' }> = [
   { name: 'Backlog', baseStatus: 'NOT_STARTED' },
@@ -111,6 +171,8 @@ projectsRouter.get('/', async (c) => {
   const includeHidden = c.req.query('includeHidden') === 'true'
   // Arquivados são um recorte independente: por padrão ficam fora da listagem.
   const includeArchived = c.req.query('includeArchived') === 'true'
+  // Progresso é opt-in: evita agregar folhas para consumidores que não o exibem.
+  const includeProgress = c.req.query('includeProgress') === 'true'
 
   const persistenceContext = userPersistenceContext(ctx)
   const tenantProjects = await persistence.projects.listProjects(persistenceContext, { includeHidden, includeArchived })
@@ -128,9 +190,35 @@ projectsRouter.get('/', async (c) => {
   const scopedProjects = projectScope
     ? visibleProjects.filter(row => projectScope.includes(row.project.id))
     : visibleProjects
+  const projectIds = scopedProjects.map(row => row.project.id)
+  let progressByProject: Map<string, ProjectProgressSummary | null> | null = null
+  if (includeProgress) {
+    try {
+      const [rows, projectColumns] = await Promise.all([
+        persistence.projects.listProjectProgress(persistenceContext, projectIds),
+        persistence.projects.listColumnsForProjects(persistenceContext, projectIds),
+      ])
+      const columnsByProject = new Map<string, ColumnRecord[]>()
+      for (const column of projectColumns) {
+        const current = columnsByProject.get(column.projectId)
+        if (current) current.push(column)
+        else columnsByProject.set(column.projectId, [column])
+      }
+      progressByProject = summarizeProjectProgress(rows, projectIds, columnsByProject, false)
+    } catch (error) {
+      // Falha de agregação não derruba a listagem: o card sinaliza indisponível.
+      logger.warn('projects: falha ao agregar progresso da listagem', {
+        tenantId: ctx.tenantId,
+        projects: projectIds.length,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      progressByProject = summarizeProjectProgress([], projectIds, new Map(), true)
+    }
+  }
   return c.json(scopedProjects.map(({ project, membership }) => ({
     ...project,
     role: membership?.role ?? (hasGlobalGroup(ctx.globalGroup, 'ADMIN') ? 'ADMIN' as const : 'MEMBER' as const),
+    ...(progressByProject ? { progress: progressByProject.get(project.id) ?? null } : {}),
   })))
 })
 
