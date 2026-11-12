@@ -37,10 +37,23 @@ Cada tipo de item possui um indicador próprio para facilitar a leitura.
 | Nome | Título com recuo hierárquico e indicador de tipo. |
 | Status | Estado atual do item. |
 | Responsável | Pessoa ou agente atribuído. |
-| Pontos | Estimativa da folha ou soma do item pai. |
-| Progresso | Percentual e barra dos itens folha e agregadores. |
 | Início | Data planejada de início. |
 | Fim | Data planejada de conclusão. |
+| Pontos | Estimativa da folha ou soma do item pai. |
+| Progresso | Percentual e barra dos itens folha e agregadores. |
+| Dependências | Itens dos quais a linha depende, pelo código sequencial. |
+| Início realizado | Data real de início, oculta por padrão. |
+| Fim realizado | Data real de conclusão, oculta por padrão. |
+| Responsável externo | Rótulo de responsável sem usuário cadastrado, oculto por padrão. |
+| Chave externa | Referência de origem (`externalSource`/`externalRef`), somente leitura e oculta por padrão. |
+
+O seletor de colunas permite mostrar, ocultar, reordenar e redimensionar as colunas. As colunas de rastreio do tracker nascem ocultas para não alargar a grade padrão.
+
+## Filtros por coluna
+
+O cabeçalho das colunas Status, Responsável, Prioridade, Sprint, Versão e Centro de Custo oferece filtro direto. Um indicador no cabeçalho mostra quando a coluna tem filtro ativo. O menu fecha ao clicar fora ou pressionar `Esc`, sem aplicar nada.
+
+O filtro da coluna é o mesmo do painel **Filtros** e combina por AND com os demais critérios. Limpar filtros fica visível na grade assim que houver critério aplicado.
 
 ## Expandir um nó
 
@@ -71,12 +84,30 @@ As linhas também oferecem ações contextuais de inclusão:
 O modal aberto recebe automaticamente o pai e o módulo compatíveis. A API
 continua validando a hierarquia antes de persistir a criação.
 
+Também é possível criar pela própria linha: a ação de adicionar insere um
+formulário mínimo abaixo do nó, com os tipos compatíveis com a hierarquia.
+Confirmar cria o item e atualiza a árvore; cancelar ou pressionar `Esc` remove a
+linha sem persistir. Viewers não veem a ação.
+
+## Mover itens entre pais
+
+Arraste uma linha sobre outra para mudar o pai:
+
+- Épico para módulo.
+- História para épico.
+- Task, bug ou item externo para história, task ou bug.
+
+O módulo acompanha o pai de destino. Movimentos que quebram a hierarquia, criam
+ciclo ou não mudam o pai são recusados no cliente, e a API revalida a hierarquia
+antes de persistir. Após o movimento, a árvore é recarregada.
+
 ## Editar pela árvore
 
 Selecione o botão **Editar** na linha do épico, história, task ou bug para abrir
-a modal completa do item. O botão não expande nem recolhe o nó. Ao salvar, a
-linha e os valores consolidados dos ancestrais são atualizados; ao cancelar,
-nenhuma alteração é persistida.
+a modal completa do item. Clicar no ícone de tipo da linha abre a mesma modal.
+Nenhum dos dois caminhos expande ou recolhe o nó. Ao salvar, a linha e os valores
+consolidados dos ancestrais são atualizados; ao cancelar, nenhuma alteração é
+persistida.
 
 ## Editar o título inline
 
@@ -86,23 +117,18 @@ nenhuma alteração é persistida.
 
 O novo título é propagado aos breadcrumbs dos descendentes.
 
-## Editar o item pela linha
-
-1. Acione **Editar** na linha do item.
-2. A janela completa do item é aberta para alterações de campos, incluindo o responsável.
-3. Confirme a edição.
-
-O novo título é propagado aos breadcrumbs dos descendentes.
-
 ## Aplicação dos filtros
 
-A árvore respeita os filtros do Board, especialmente:
+A árvore aplica os mesmos filtros de população do Board:
 
-- Módulo.
-- Sprint.
-- Responsável.
-- Tags.
-- Ocultar épicos vazios.
+- Squad, módulo e sprint.
+- Responsável, autor e centro de custo.
+- Versão, prioridade e status.
+- Tipos, tags e última alteração.
+- Ocultar épicos e histórias vazias.
+
+Além do painel de filtros, as colunas Status, Responsável, Prioridade, Sprint,
+Versão e Centro de Custo têm filtro próprio no cabeçalho.
 
 Os ancestrais necessários continuam visíveis para que um resultado nunca apareça sem contexto.
 
@@ -113,6 +139,8 @@ O progresso é recalculado sobre o resultado filtrado. Somente folhas `TASK` e `
 A ação de arquivamento aparece na linha do item. Módulos não podem ser arquivados, mas épicos, histórias, tasks e bugs podem.
 
 Itens com descendentes exigem confirmação antes do arquivamento em cascata.
+Depois de arquivar, o toast exibe **Desfazer** por alguns segundos; a ação
+restaura o item e atualiza board e árvore.
 
 ## Estado vazio
 

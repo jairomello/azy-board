@@ -1,9 +1,14 @@
 ## Purpose
 
 Definir os requisitos da capacidade card management.
+
 ## Requirements
+
 ### Requirement: CRUD completo de cards (tasks folha)
-O sistema SHALL permitir criar, visualizar, editar e excluir cards. Apenas tasks folha (sem filhos) são exibidas como cards móveis no Kanban. Campos: título, descrição (markdown), labels, prioridade (LOW | MEDIUM | HIGH | CRITICAL), responsável, story pai, tags, pontos (inteiro, opcional), status, sprint, versão, centro de custo, datas de início/fim quando disponíveis e os campos opcionais de aparência `icon` (nome no catálogo de ícones) e `color` (hex da paleta). A visualização e edição de TASK/BUG SHALL usar um modal amplo e responsivo com cabeçalho contextual, navegação entre Detalhes, Subtasks, Checklists e Histórico, conteúdo principal e painel de propriedades.
+
+O sistema SHALL permitir criar, visualizar, editar e excluir cards. Apenas tasks folha (sem filhos) são exibidas como cards móveis no Kanban. Campos: título, descrição (markdown), labels, prioridade (LOW | MEDIUM | HIGH | CRITICAL), responsável, **responsável externo (`assigneeLabel`)**, story pai, tags, pontos (inteiro, opcional), status, sprint, versão, centro de custo, datas de início/fim, **datas realizadas (`actualStartDate`/`actualDueDate`)**, **referência externa informativa (`externalSource`/`externalRef`)** e os campos opcionais de aparência `icon` (nome no catálogo de ícones) e `color` (hex da paleta). A visualização e edição de TASK/BUG SHALL usar um modal amplo e responsivo com cabeçalho contextual, navegação entre Detalhes, Subtasks, Checklists e Histórico, conteúdo principal e painel de propriedades.
+
+A criação SHALL continuar gravando `NOT_STARTED` e NÃO SHALL aceitar `blockedReason`; status e bloqueio são aplicados por atualização posterior.
 
 #### Scenario: Abrir edição de card
 - **WHEN** membro clica em um card de TASK ou BUG
@@ -11,7 +16,7 @@ O sistema SHALL permitir criar, visualizar, editar e excluir cards. Apenas tasks
 
 #### Scenario: Visualizar descrição e propriedades
 - **WHEN** usuário abre Detalhes
-- **THEN** descrição rica e campos de relacionamento ficam na área principal, enquanto status, responsável, prioridade, planejamento e informações ficam no painel de propriedades sem alterar seus valores
+- **THEN** descrição rica e campos de relacionamento ficam na área principal, enquanto status, responsável, prioridade, planejamento, datas realizadas e informações ficam no painel de propriedades sem alterar seus valores
 
 #### Scenario: Alternar áreas sem perder edição
 - **WHEN** usuário edita um campo, alterna para Subtasks, Checklists ou Histórico e retorna a Detalhes
@@ -38,8 +43,8 @@ O sistema SHALL permitir criar, visualizar, editar e excluir cards. Apenas tasks
 - **THEN** card é removido do board e do banco; se a task excluída era o último filho de uma task pai, a task pai volta a ser folha e reaparece no Kanban
 
 #### Scenario: Editar aparência do card
-- **WHEN** membro escolhe um `icon` do catálogo e/ou uma `color` da paleta no modal do card e salva
-- **THEN** o sistema persiste os valores, o ícone do item aparece no card do Kanban com a cor definida e a mudança é propagada em tempo real
+- **WHEN** membro altera ícone ou cor do card
+- **THEN** a alteração é persistida e refletida no board, na árvore e nas listagens
 
 ### Requirement: Breadcrumb dinâmico exibido no card
 O sistema SHALL exibir em cada card o caminho hierárquico completo acima do título, entre a linha de topo e o título: `Projeto > Módulo > Épico > Story > Task Pai > ... > Task Atual`.
@@ -115,7 +120,7 @@ O sistema SHALL oferecer um toggle no board para exibir ou ocultar subtasks com 
 ---
 
 ### Requirement: Status base das tasks
-O sistema SHALL manter o status base: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `CANCELLED`.
+O sistema SHALL manter o status base: `NOT_STARTED`, `PLANNED`, `IN_PROGRESS`, `IN_HOMOLOGATION`, `BLOCKED`, `DONE`, `CANCELLED`. O status de um card SHALL acompanhar o `baseStatus` da coluna em que ele está, inclusive em movimentação e em liberação de atribuição.
 
 #### Scenario: Task bloqueada
 - **WHEN** membro marca task como BLOCKED
@@ -125,7 +130,21 @@ O sistema SHALL manter o status base: `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `
 - **WHEN** admin cancela task
 - **THEN** card fica visível no board com indicador de cancelado e não pode receber novas atribuições
 
----
+#### Scenario: Task planejada
+- **WHEN** task está em coluna com status base `PLANNED`
+- **THEN** a task expõe `status = PLANNED`, editável apenas por movimentação de coluna ou por atualização explícita, e aparece nos filtros de status como "Planejada"
+
+#### Scenario: Liberar task preserva o status da coluna
+- **WHEN** task em coluna `PLANNED` ou `IN_PROGRESS` tem a atribuição liberada
+- **THEN** o status permanece o da coluna atual e apenas responsável e vínculo de API key são removidos
+
+#### Scenario: Task em homologação
+- **WHEN** task está em coluna com status base `IN_HOMOLOGATION`
+- **THEN** a task expõe `status = IN_HOMOLOGATION`, aparece como "Em homologação" no card, na grade e nos filtros, e não é contada como concluída
+
+#### Scenario: Homologação não é conclusão
+- **WHEN** o avanço do projeto é calculado com cards em coluna `IN_HOMOLOGATION`
+- **THEN** esses cards valem o peso da coluna (no máximo 90) e não 100, e a proporção de conclusão não os inclui
 
 ### Requirement: Pontuação no card
 O sistema SHALL exibir o campo de pontos no card e no modal de edição. Pontos são opcionais (nullable). Para tasks folha, o valor é editável diretamente. Para tasks pai, o valor exibido é a soma calculada (somente leitura).
@@ -201,3 +220,18 @@ O sistema SHALL exibir o `sequenceCode` do item no card do Kanban, na linha de t
 - **WHEN** um item tem seu `sequenceCode` alterado via API
 - **THEN** o card no Kanban atualiza o código exibido via WebSocket broadcast
 
+### Requirement: Responsável externo e datas realizadas
+
+O sistema SHALL permitir registrar um responsável externo em texto livre (`assigneeLabel`) sem criar conta de usuário, e SHALL permitir registrar datas realizadas separadas das datas previstas. O `assigneeLabel` NÃO SHALL substituir `assigneeId`: quando houver usuário, o usuário é o responsável; o label é informação complementar.
+
+#### Scenario: Responsável externo
+- **WHEN** um membro informa `assigneeLabel: "Infra Vivo"` em um item sem usuário responsável
+- **THEN** o card mostra o label como responsável e o item continua sem `assigneeId`
+
+#### Scenario: Datas realizadas
+- **WHEN** um membro informa `actualStartDate` e `actualDueDate`
+- **THEN** os dois valores são persistidos e exibidos separadamente das datas previstas
+
+#### Scenario: Datas realizadas incoerentes
+- **WHEN** um membro informa uma data final realizada anterior à inicial realizada
+- **THEN** o sistema recusa com erro de validação e não persiste o par incoerente

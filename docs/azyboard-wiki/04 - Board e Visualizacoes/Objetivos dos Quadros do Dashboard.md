@@ -32,13 +32,9 @@ Compara escopo total e trabalho concluído ao longo dos dias UTC. A linha de esc
 
 Mostra há quanto tempo o episódio atual de cada item permanece em WIP. O histograma responde **“há trabalho ativo envelhecendo?”**. A mediana mostra o comportamento típico e o máximo destaca o item mais antigo. “Idade mínima conhecida” indica item que já estava ativo quando o histórico começou.
 
-## Sprint
+## Tokens de IA
 
-Compara o compromisso capturado na abertura do ciclo com o estado atual e o que foi concluído. Serve para responder **“o que foi assumido e quanto avançou?”**. O compromisso não concluído não é previsão nem julgamento da equipe; ciclos migrados aparecem como parciais.
-
-## Versões
-
-Mostra o progresso das entregas por release. As barras de itens e pontos respondem **“quais versões estão avançando e quais ainda estão sem entrega?”**. Versões vazias permanecem visíveis para revelar planejamento ainda não iniciado.
+Mostra os tokens de entrada e saída registrados nas folhas do recorte. Os recortes e a série temporal respondem **“quanto de IA foi consumido neste trabalho?”**. O card segue o mesmo tratamento de filtros, cobertura parcial, estados e acessibilidade dos demais; ausência de registro não significa custo zero.
 
 ## Carga da Equipe
 

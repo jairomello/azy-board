@@ -1,7 +1,9 @@
 ## Purpose
 
 Definir a edição de cards pela modal e pelo board, incluindo título inline, áreas da modal, checklists, histórico e autor.
+
 ## Requirements
+
 ### Requirement: Edição inline do título do card por duplo clique
 O sistema SHALL permitir editar o título do card diretamente no board ao dar duplo clique sobre o texto do título.
 
@@ -20,7 +22,8 @@ O sistema SHALL permitir editar o título do card diretamente no board ao dar du
 ---
 
 ### Requirement: Modal de edição de card organizada em accordions
-O sistema SHALL apresentar campos do card, descrição, subtasks, checklists e Histórico em áreas independentes, preservando edição, criação, abertura de filhos e salvamento. A área Histórico SHALL exibir dois painéis independentes: Auditoria de alterações (eventos automáticos) e Diário de trabalho (registros manuais, com total de duração e formulário inline). A modal SHALL manter título, descrição rich text (Tiptap), prioridade, responsável, story pai, tags, pontos e datas de início e fim. A descrição SHALL ter um rascunho local persistido automaticamente e preservado quando a modal é fechada sem salvar, sendo removido após salvamento confirmado.
+
+O sistema SHALL apresentar campos do card, descrição, subtasks, checklists e Histórico em áreas independentes, preservando edição, criação, abertura de filhos e salvamento. A área Histórico SHALL exibir dois painéis independentes: Auditoria de alterações (eventos automáticos) e Diário de trabalho (registros manuais, com total de duração e formulário inline). A modal SHALL manter título, descrição rich text (Tiptap), prioridade, responsável, **responsável externo**, story pai, tags, pontos, datas de início e fim, **datas realizadas** e a **chave externa em modo somente leitura quando existir**. A descrição SHALL ter um rascunho local persistido automaticamente e preservado quando a modal é fechada sem salvar, sendo removido após salvamento confirmado.
 
 #### Scenario: Seções independentes
 - **WHEN** usuário abre a área Histórico de uma Task, Bug ou Subtask
@@ -37,6 +40,18 @@ O sistema SHALL apresentar campos do card, descrição, subtasks, checklists e H
 #### Scenario: Salvar edições pela modal
 - **WHEN** usuário altera campos e clica em Salvar
 - **THEN** todas as alterações são enviadas via API e o card no board atualiza em tempo real
+
+#### Scenario: Datas realizadas na modal
+- **WHEN** usuário abre as propriedades de planejamento de um card que tem datas realizadas
+- **THEN** as datas previstas e realizadas aparecem em campos separados e podem ser editadas e salvas
+
+#### Scenario: Responsável externo na modal
+- **WHEN** usuário digita um responsável externo e salva
+- **THEN** o texto é persistido em `assigneeLabel` e aparece no card quando não há usuário responsável
+
+#### Scenario: Chave externa somente leitura
+- **WHEN** o card tem `externalSource` e `externalRef`
+- **THEN** a modal exibe a chave como informação somente leitura, sem permitir alteração pelo usuário comum
 
 #### Scenario: Fechar modal sem salvar
 - **WHEN** usuário clica em Cancelar ou pressiona Escape fora de um editor de diário ativo
@@ -182,4 +197,3 @@ O sistema SHALL exibir um campo "Versão" opcional na `ItemModal` de TASK e BUG,
 #### Scenario: Campo Versão oculto quando projeto não tem versões
 - **WHEN** projeto não possui versões cadastradas
 - **THEN** campo "Versão" não é renderizado na ItemModal
-

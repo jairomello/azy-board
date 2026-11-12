@@ -37,7 +37,7 @@ A barra lateral do projeto contém:
 
 O cabeçalho contextual identifica o projeto e a seção atual e reúne seletor de idioma, tema e menu do perfil.
 
-A barra de comandos contém a alternância entre Kanban e árvore, os painéis de filtros e opções, itens arquivados e o menu de criação.
+A barra de comandos contém a alternância entre Kanban e árvore, os painéis de filtros e opções, a exportação de dados, itens arquivados e o menu de criação.
 
 ## Detalhes dos itens
 

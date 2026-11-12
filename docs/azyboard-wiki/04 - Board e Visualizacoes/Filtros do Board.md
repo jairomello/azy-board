@@ -30,7 +30,7 @@ Apresenta somente itens atribuídos à pessoa selecionada. A atribuição pode s
 
 ## Filtros por autor, versão, prioridade e status
 
-Autor identifica quem criou o item. Versão usa o vínculo opcional `items.version_id` e lista apenas versões do projeto atual. Prioridade oferece Baixa, Média, Alta e Crítica; status oferece Não iniciada, Em andamento, Bloqueada, Concluída e Cancelada.
+Autor identifica quem criou o item. Versão usa o vínculo opcional `items.version_id` e lista apenas versões do projeto atual. Prioridade oferece Baixa, Média, Alta e Crítica; status oferece Planejada, Não iniciada, Em andamento, Em homologação, Bloqueada, Concluída e Cancelada. É possível marcar mais de um status; os valores marcados são combinados por OR entre si e por AND com as demais dimensões.
 
 O controle **Versão** permanece visível mesmo quando o projeto ainda não possui versões. Nesse caso, ele fica em **Sem versão** e informa **Nenhuma versão cadastrada**; as versões podem ser criadas em **Configurações do projeto > Versões**.
 
@@ -88,11 +88,9 @@ O botão **Filtros** exibe um contador com a quantidade de critérios ativos. Lo
 
 ## Limpar filtros
 
-1. Abra o painel **Filtros**.
-2. Confira a quantidade de filtros ativos.
-3. Selecione **Limpar** dentro do painel.
+A ação **Limpar filtros** fica visível na barra de comandos e na Tree View assim que existe filtro aplicado, acompanhada da quantidade de critérios ativos. Também é possível limpar pelo painel **Filtros**.
 
-São removidos squad, módulo, sprint, responsável, autor, centro de custo, versão, prioridade, status, tipos, tags e as ocultações de épicos e histórias vazias. O modo de histórias, o controle de subtasks e o modo de exibição dos módulos (hierarquia ou abas) são preservados.
+São removidos squad, módulo, sprint, responsável, autor, centro de custo, versão, prioridade, status, tipos, tags, a janela de última alteração e as ocultações de épicos e histórias vazias. O modo de histórias, o controle de subtasks, o modo de exibição dos módulos (hierarquia ou abas) e a visualização atual (Kanban ou árvore) são preservados.
 
 ## Persistência por projeto
 
@@ -102,7 +100,9 @@ Se o navegador não permitir armazenamento local, o Board continua funcionando, 
 
 ## Filtros na árvore
 
-Módulo, sprint, responsável e ocultação de épicos vazios também influenciam a Tree View. A hierarquia necessária para contextualizar os resultados é preservada.
+A Tree View aplica os mesmos filtros de população do Kanban: squad, módulo, sprint, responsável, autor, centro de custo, versão, prioridade, status, tipos, tags e última alteração. A hierarquia necessária para contextualizar os resultados é preservada.
+
+Além do painel **Filtros**, a grade da árvore oferece filtro direto no cabeçalho das colunas Status, Responsável, Prioridade, Sprint, Versão e Centro de Custo. Os dois caminhos compartilham o mesmo estado: aplicar em um reflete no outro, sempre combinando por AND com os demais critérios.
 
 ## Regras e comportamentos
 

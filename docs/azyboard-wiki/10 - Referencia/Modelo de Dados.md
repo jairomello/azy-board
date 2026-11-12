@@ -63,18 +63,19 @@ erDiagram
 
 ## Inventário das tabelas
 
-O schema possui 32 tabelas:
+O schema possui 46 tabelas:
 
 | Domínio | Tabelas |
 |---|---|
-| Identidade e acesso | `tenants`, `users`, `api_keys`, `memberships` |
-| Projeto e planejamento | `projects`, `squads`, `modules`, `columns`, `sprints`, `project_versions`, `project_cost_centers` |
-| Trabalho | `items` |
+| Identidade e acesso | `tenants`, `users`, `user_avatars`, `api_keys`, `memberships`, `login_attempts` |
+| Projeto e planejamento | `projects`, `squads`, `modules`, `columns`, `sprints`, `project_versions`, `project_cost_centers`, `planning_gap_snapshots` |
+| Trabalho | `items`, `item_dependencies` |
 | Classificação e ciclos | `tags`, `item_tags`, `item_sprints` |
-| Conteúdo e auditoria | `item_logs`, `attachments`, `checklists`, `checklist_items` |
-| Analytics do Dashboard | `project_analytics_coverage`, `item_events`, `sprint_cycles`, `sprint_cycle_items` |
-| Azy Agent | `assistant_credentials`, `assistant_settings`, `assistant_conversations`, `assistant_messages`, `assistant_runs`, `assistant_events`, `assistant_tool_calls`, `assistant_approvals` |
-| Operações | `idempotency_records` |
+| Conteúdo e auditoria | `item_logs`, `item_events`, `attachments`, `checklists`, `checklist_items` |
+| Analytics do Dashboard | `project_analytics_coverage`, `project_analytics_dimension_items`, `project_analytics_dimension_meta`, `project_analytics_dimension_snapshots`, `project_analytics_dimension_state`, `project_metrics_daily`, `sprint_cycles`, `sprint_cycle_items` |
+| Azy Agent | `assistant_credentials`, `assistant_settings`, `assistant_model_configs`, `assistant_conversations`, `assistant_messages`, `assistant_runs`, `assistant_events`, `assistant_tool_calls`, `assistant_approvals` |
+| Exportação | `export_mappings` |
+| Operações | `idempotency_records`, `installation_metadata`, `storage_cleanup_jobs`, `tenant_attachment_settings` |
 
 `item_events` é append-only e preserva snapshots mínimos após a exclusão de itens. `item_sprints` usa associação única por par `(item_id, sprint_id)` garantida por índice físico único.
 

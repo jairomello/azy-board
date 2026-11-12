@@ -6,7 +6,7 @@ order: 10
 
 # Consultar o Dashboard do Projeto
 
-O Dashboard reúne uma fotografia gerencial do projeto sem substituir o Board. O recorte visual atual apresenta oito blocos: Progresso e Escopo, WIP, Bloqueados, Atrasados, Burnup, Aging WIP, Carga da Equipe e Horas Registradas. Sprint e Versões não fazem parte da tela atual.
+O Dashboard reúne uma fotografia gerencial do projeto sem substituir o Board. O recorte visual atual apresenta nove blocos: Progresso e Escopo, WIP, Bloqueados, Atrasados, Burnup, Aging WIP, Tokens de IA, Carga da Equipe e Horas Registradas. Sprint e Versões são filtros do Dashboard, não blocos.
 
 Cada bloco combina uma métrica principal, um gráfico e um detalhe textual equivalente. O gráfico é uma forma de leitura rápida, não uma nova fonte de dados: a lista, tabela ou descrição acessível do card permanece a referência para os valores exatos e para abrir o Board com contexto.
 
@@ -20,6 +20,7 @@ Cada bloco combina uma métrica principal, um gráfico e um detalhe textual equi
 | Atrasados | Total e dois donuts comparativos (atrasados versus restante), em itens e em pontos | Itens cuja data planejada é anterior à data de consulta; clicar em uma fatia abre a lista correspondente. |
 | Burnup | Área temporal de escopo e concluídos, com alternância entre itens e pontos | Evolução diária dentro do histórico disponível, com linha de cobertura quando aplicável. |
 | Aging WIP | Ranking horizontal dos dez itens mais antigos, em dias | Idade do episódio ativo atual; itens iniciados antes da cobertura têm idade mínima conhecida. |
+| Tokens de IA | Recortes de tokens de entrada e saída, com série temporal | Tokens registrados nas folhas do recorte, respeitando filtros aplicáveis, cobertura parcial e estados dos demais cards. |
 | Carga da Equipe | Barras por pessoa com alternância entre itens e pontos | Quantidade de itens WIP não bloqueados por pessoa, ou pontos estimados quando houver cobertura. Não é ranking. |
 | Horas Registradas | Big-number e donut por autor do log | Soma de logs manuais com duração positiva; hover/foco mostra autor e total de horas. |
 

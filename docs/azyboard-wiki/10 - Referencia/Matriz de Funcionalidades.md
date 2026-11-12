@@ -15,10 +15,11 @@ Esta matriz oferece uma visão rápida das capacidades do Azy Board e indica ond
 | Modo do board | Formatos hierárquico e simples, escolha e conversão | [[02 - Projetos/Modo do Board Hierarquico e Simples|Modo do Board hierárquico e simples]] |
 | Hierarquia | Módulos, épicos, histórias, tasks, bugs e subtasks | [[03 - Estrutura do Trabalho/Hierarquia dos Itens|Hierarquia dos itens]] |
 | Board | Lanes aninhadas de épicos e histórias, colunas, cards, criação e movimentação | [[04 - Board e Visualizacoes/Conhecer o Board|Conhecer o Board]] |
-| Dashboard | Oito blocos gerenciais com gráficos, legendas, estados, filtros, cobertura histórica e horas registradas | [[04 - Board e Visualizacoes/Consultar o Dashboard do Projeto|Consultar o Dashboard do Projeto]] |
+| Dashboard | Nove blocos gerenciais com gráficos, legendas, estados, filtros, cobertura histórica, tokens de IA e horas registradas | [[04 - Board e Visualizacoes/Consultar o Dashboard do Projeto|Consultar o Dashboard do Projeto]] |
 | Leitura do Dashboard | Objetivo, interpretação, cores e limites de cada quadro | [[04 - Board e Visualizacoes/Objetivos dos Quadros do Dashboard|Objetivos dos Quadros do Dashboard]] |
-| Filtros | Squad, módulo, sprint, responsável, tipo, tags e ocultação de lanes vazias | [[04 - Board e Visualizacoes/Filtros do Board|Filtros do Board]] |
-| Tree View | Hierarquia expandível, progresso, datas e arquivamento | [[04 - Board e Visualizacoes/Visualizacao em Arvore|Visualização em árvore]] |
+| Filtros | Squad, módulo, sprint, responsável, autor, centro de custo, versão, prioridade, status, tipo, tags, última alteração e ocultação de lanes vazias | [[04 - Board e Visualizacoes/Filtros do Board|Filtros do Board]] |
+| Tree View | Hierarquia expandível, colunas configuráveis, filtros por coluna, progresso, datas, dependências, edição inline, reparentamento e arquivamento | [[04 - Board e Visualizacoes/Visualizacao em Arvore|Visualização em árvore]] |
+| Exportação | CSV e XLSX, modo bruto ou mapeado, mapeamentos salvos por projeto | [[04 - Board e Visualizacoes/Exportar Itens|Exportar itens]] |
 | Épicos | Módulo, descrição, versão e lane principal | [[05 - Epicos e Historias/Criar e Gerenciar Epicos|Criar e gerenciar épicos]] |
 | Histórias | Narrativa ágil, critérios, notas, versão e lane interna do Board | [[05 - Epicos e Historias/Criar e Detalhar Historias|Criar e detalhar histórias]] |
 | Tasks e bugs | Detalhes, estimativa, datas, responsáveis e classificação | [[06 - Tasks Bugs e Subtasks/Criar e Editar Tasks e Bugs|Criar e editar tasks e bugs]] |
@@ -48,4 +49,4 @@ Esta matriz oferece uma visão rápida das capacidades do Azy Board e indica ond
 | Operações em lote | Atualização em massa e criação estruturada via MCP | [[09 - Agentes e Integracoes/Usar as Ferramentas MCP|Usar as ferramentas MCP]] |
 | Tempo real | Eventos e sincronização por projeto | [[04 - Board e Visualizacoes/Sincronizacao em Tempo Real|Sincronização em tempo real]] |
 | Segurança | Multi-tenancy, associação ao projeto e RBAC | [[10 - Referencia/Perfis e Permissoes|Perfis e permissões]] |
-| Modelo de dados | 32 tabelas, relações, hierarquia, cascatas e isolamento | [[10 - Referencia/Modelo de Dados|Modelo de dados]] |
+| Modelo de dados | 46 tabelas, relações, hierarquia, cascatas e isolamento | [[10 - Referencia/Modelo de Dados|Modelo de dados]] |

@@ -45,7 +45,7 @@ A barra de comandos reúne os controles do Board.
 
 ### Filtros
 
-- Painel suspenso **Filtros** com squad, módulo, sprint, responsável, tipo, tags, prioridade, status, versão e centro de custo.
+- Painel suspenso **Filtros** com squad, módulo, sprint, responsável, autor, centro de custo, versão, prioridade, status, tipo, tags e última alteração.
 - O botão exibe um contador de filtros ativos.
 
 ### Opções

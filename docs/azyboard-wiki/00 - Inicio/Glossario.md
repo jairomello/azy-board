@@ -18,12 +18,14 @@ order: 4
 | Card | Representação visual de um item dentro do Board. |
 | Centro de custo | Classificação financeira opcional associada a um item de trabalho. |
 | Coluna | Etapa configurável do fluxo Kanban, associada a um status base. |
-| Dashboard | Área gerencial do projeto com oito blocos de indicadores, como progresso, WIP, bloqueados e burnup. |
+| Dashboard | Área gerencial do projeto com nove blocos de indicadores, como progresso, WIP, bloqueados, burnup e tokens de IA. |
 | Épico | Agrupamento de grande escopo vinculado a um módulo e usado como swimlane no Board. |
+| Exportação | Geração de um arquivo CSV ou XLSX com os cards do projeto, respeitando os filtros do board. |
 | Grupo global | Nível de privilégio da conta no tenant: `TEAM_MEMBER`, `MANAGER`, `ADMIN` ou `ROOT`. |
 | História | Necessidade funcional descrita por uma narrativa ágil e vinculada a um épico. |
 | Item folha | Item que não possui filhos e pode representar trabalho diretamente executável. |
 | Leaf Rule | Regra que determina como itens folha e itens agregadores participam do Kanban. |
+| Mapeamento de exportação | Conjunto salvo por projeto com os campos, nomes e tipos das colunas usadas na exportação dinâmica. |
 | MCP | Model Context Protocol, protocolo usado por agentes para descobrir e executar ferramentas. |
 | Modo do board | Formato do projeto: `HIERARCHICAL` (módulos, épicos e histórias) ou `SIMPLE` (história fixa e fluxo único). |
 | Módulo | Agrupamento funcional de alto nível dentro de um projeto. |

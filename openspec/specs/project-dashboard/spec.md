@@ -1,7 +1,7 @@
 # project-dashboard Specification
 
 ## Purpose
-Apresentar o Dashboard do projeto com dez boxes priorizados, filtros de aplicabilidade explícita, populações sem dupla contagem, burnup, aging WIP e carga da equipe com cobertura declarada, acessível e com estados vazios sem ambiguidade.
+Apresentar o Dashboard do projeto com nove quadros priorizados, filtros de aplicabilidade explícita, populações sem dupla contagem, burnup, aging WIP, tokens de IA e carga da equipe com cobertura declarada, acessível e com estados vazios sem ambiguidade.
 
 ## Requirements
 
@@ -47,12 +47,12 @@ O sistema SHALL disponibilizar `/projects/:projectId/dashboard` e o item "Dashbo
 - **WHEN** usuário tenta abrir Dashboard de projeto fora do seu escopo
 - **THEN** API nega a leitura sem revelar dados de outro tenant/projeto
 
-### Requirement: Dez boxes priorizados
-O sistema SHALL exibir exatamente os grupos Progresso e Escopo, WIP, Bloqueados, Atrasados, Burnup, Aging WIP, Sprint, Versões, Carga da Equipe e Horas Registradas. O sistema SHALL NOT exibir finanças, ações prioritárias, avaliação qualitativa ou recomendação por IA.
+### Requirement: Nove boxes priorizados
+O sistema SHALL exibir exatamente os grupos Progresso e Escopo, WIP, Bloqueados, Atrasados, Burnup, Aging WIP, Tokens de IA, Carga da Equipe e Horas Registradas. Sprint e Versões SHALL NOT ser renderizados como quadros; eles permanecem disponíveis apenas como filtros quando aplicáveis. O sistema SHALL NOT exibir finanças, ações prioritárias, avaliação qualitativa ou recomendação por IA.
 
 #### Scenario: Renderizar visão geral
 - **WHEN** Dashboard possui dados disponíveis
-- **THEN** os dez boxes são apresentados conforme aplicabilidade e cobertura
+- **THEN** os nove boxes são apresentados conforme aplicabilidade e cobertura
 
 #### Scenario: Dados insuficientes
 - **WHEN** box histórico não possui cobertura suficiente
@@ -89,11 +89,15 @@ O sistema SHALL calcular métricas de execução sobre folhas `TASK`/`BUG` não 
 - **THEN** progresso por pontos usa somente pontos conhecidos e exibe cobertura de estimativa
 
 ### Requirement: Boxes de estado atual
-O sistema SHALL calcular Progresso e Escopo, WIP, Bloqueados, Atrasados, Versões e Carga da Equipe a partir do estado atual, permitindo detalhar os itens que compõem cada valor.
+O sistema SHALL calcular Progresso e Escopo, WIP, Bloqueados, Atrasados, Versões e Carga da Equipe a partir do estado atual, permitindo detalhar os itens que compõem cada valor. O box WIP SHALL considerar `IN_PROGRESS`, `IN_HOMOLOGATION` e `BLOCKED` como trabalho aberto em fluxo.
 
 #### Scenario: Item bloqueado
 - **WHEN** folha possui status `BLOCKED`
 - **THEN** participa de WIP e Bloqueados, exibindo motivo e responsável quando disponíveis
+
+#### Scenario: Item em homologação
+- **WHEN** folha possui status `IN_HOMOLOGATION`
+- **THEN** participa de WIP na chave própria `IN_HOMOLOGATION` e não participa de Progresso como concluída
 
 #### Scenario: Item atrasado
 - **WHEN** folha não concluída/cancelada possui `dueDate` anterior à data civil atual
@@ -119,7 +123,11 @@ O sistema SHALL exibir o estado ao fim de cada dia UTC com linhas de escopo tota
 - **THEN** gráfico inicia no baseline disponível e indica cobertura parcial
 
 ### Requirement: Aging WIP observado
-O sistema SHALL calcular aging do episódio ativo atual. Entrada em `IN_PROGRESS`/`BLOCKED` inicia o episódio, transição entre ambos não zera, saída para `NOT_STARTED`, `DONE`, `CANCELLED` ou `ARCHIVED` encerra e uma nova entrada, inclusive por restauração ativa, inicia outro. Para item já ativo no baseline sem início conhecido, SHALL exibir idade mínima desde `coverageStartedAt`.
+O sistema SHALL calcular aging do episódio ativo atual. Entrada em `IN_PROGRESS`, `IN_HOMOLOGATION` ou `BLOCKED` inicia o episódio, transição entre eles não zera, saída para `NOT_STARTED`, `PLANNED`, `DONE`, `CANCELLED` ou `ARCHIVED` encerra e uma nova entrada, inclusive por restauração ativa, inicia outro. Para item já ativo no baseline sem início conhecido, SHALL exibir idade mínima desde `coverageStartedAt`.
+
+#### Scenario: Card planejado não acumula aging
+- **WHEN** um card passa de `IN_PROGRESS` para uma coluna `PLANNED`
+- **THEN** o episódio ativo encerra e o card não acumula aging enquanto estiver planejado
 
 #### Scenario: Item iniciado após cobertura
 - **WHEN** item entra em trabalho após `coverageStartedAt`
@@ -128,17 +136,6 @@ O sistema SHALL calcular aging do episódio ativo atual. Entrada em `IN_PROGRESS
 #### Scenario: Item ativo legado
 - **WHEN** baseline encontra item já ativo sem evento de início
 - **THEN** box identifica a idade como mínima conhecida e não afirma a data real de início
-
-### Requirement: Sprint por ciclo
-O sistema SHALL exibir compromisso como folhas do início do ciclo selecionado, escopo atual como associação no corte `min(agora, cycle.endedAt)`, concluído como `DONE` nesse corte e compromisso não concluído como itens iniciais sem `DONE/CANCELLED` no fim do ciclo. "Carry-over" SHALL ser exibido somente quando associação posterior for observada. Ciclo `MIGRATION` SHALL ser identificado como parcial.
-
-#### Scenario: Sprint aberta após implantação
-- **WHEN** sprint é aberta com itens associados
-- **THEN** box usa o ciclo/baseline capturado na abertura como compromisso
-
-#### Scenario: Sprint legada
-- **WHEN** sprint fechada antes da cobertura é consultada
-- **THEN** box informa ausência de ciclo e mostra somente dados atuais claramente rotulados, se úteis
 
 ### Requirement: Horas registradas existentes
 O sistema SHALL somar somente logs `manual` com `durationMin > 0`, usando `createdAt` como data de registro e agrupando por projeto, item, autor/squad atual do autor e dimensões atuais do item quando aplicável.
@@ -300,3 +297,10 @@ O recorte de pontos do burnup SHALL NOT ser oferecido quando a cobertura de esti
 
 - **WHEN** existe ao menos um item estimado na população
 - **THEN** o recorte de pontos permanece disponível e alterna acessivelmente entre itens e pontos
+
+### Requirement: Distribuição por status
+O sistema SHALL distribuir os cards ativos por status em `DONE`, `IN_PROGRESS`, `BLOCKED`, `PLANNED` e `NOT_STARTED`, tanto em contagem quanto em pontos, de forma que o trabalho priorizado não seja somado ao backlog não priorizado.
+
+#### Scenario: Planejado tem bucket próprio
+- **WHEN** o projeto tem cards em colunas `PLANNED` e `NOT_STARTED`
+- **THEN** a distribuição mostra "Planejada" e "Não iniciada" em buckets separados

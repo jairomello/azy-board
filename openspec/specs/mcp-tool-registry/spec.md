@@ -2,7 +2,9 @@
 
 ## Purpose
 Definir o catálogo compartilhado de ferramentas MCP, seus schemas, policies, routing e contratos de resposta.
+
 ## Requirements
+
 ### Requirement: Fonte única de verdade por ferramenta
 
 O catálogo de ferramentas SHALL definir cada ferramenta em um único descritor que declara, no mesmo ponto, nome, descrição, campos aceitos (com tipo, obrigatoriedade, limites e texto de ajuda), routing, policy e forma da resposta. A fonte única SHALL viver em `packages/tool-registry` (`@azy-board/tool-registry`), acessível por API e MCP via nome de package. Nenhuma outra estrutura SHALL manter listas paralelas de campos obrigatórios, campos por ferramenta, classificação de routing, limites ou shape de resposta que precisem ser editadas separadamente.
@@ -26,6 +28,8 @@ O catálogo de ferramentas SHALL definir cada ferramenta em um único descritor 
 
 O schema exposto ao cliente MCP e ao modo estrito SHALL ser derivado do mesmo descritor usado pela validação de argumentos. O servidor NÃO SHALL manter uma tabela de campos obrigatórios em arquivo separado da definição do catálogo. Uma ferramenta sem obrigatórios e uma ferramenta com obrigatórios SHALL ser tratadas de forma consistente entre exposição e validação.
 
+Os enums de status expostos no catálogo SHALL listar todos os valores aceitos pelo domínio, incluindo `IN_HOMOLOGATION`; `baseStatus` de `create_column` SHALL declarar o enum completo de status base. A validação de argumentos SHALL aceitar exatamente os mesmos valores.
+
 A exposição ao cliente MCP SHALL refletir a obrigatoriedade real do campo em qualquer profundidade do `inputSchema`, incluindo propriedades de objetos e itens de arrays aninhados. O modo estrito SHALL continuar declarando todos os campos em `required` com tipos anuláveis.
 
 #### Scenario: Schema e validação concordam
@@ -33,15 +37,15 @@ A exposição ao cliente MCP SHALL refletir a obrigatoriedade real do campo em q
 - **WHEN** um cliente consulta a lista de ferramentas e depois envia argumentos
 - **THEN** os campos exigidos na exposição são exatamente os exigidos pela validação de argumentos
 
+#### Scenario: Status de homologação aceito
+
+- **WHEN** um agente envia `status: "IN_HOMOLOGATION"` em `update_item` ou `create_task`
+- **THEN** a validação aceita o valor e a chamada prossegue
+
 #### Scenario: Campo opcional omitido é aceito
 
 - **WHEN** um campo opcional é omitido ou enviado como null
 - **THEN** a validação trata o valor como não informado e a chamada prossegue, sem exigir o campo
-
-#### Scenario: Divergência entre schema e validação reprova o gate
-
-- **WHEN** um teste de contrato detecta um campo obrigatório no schema que a validação não exige, ou o inverso
-- **THEN** o teste falha antes do merge, impedindo a divergência
 
 #### Scenario: Campo opcional aninhado omitido é aceito
 
@@ -57,6 +61,11 @@ A exposição ao cliente MCP SHALL refletir a obrigatoriedade real do campo em q
 
 - **WHEN** o harness do Azy Agent monta as ferramentas com `strict: true`
 - **THEN** o schema interno mantém todos os campos de topo e aninhados em `required`, com tipos anuláveis
+
+#### Scenario: Divergência entre schema e validação reprova o gate
+
+- **WHEN** um teste de contrato detecta um campo obrigatório no schema que a validação não exige, ou o inverso
+- **THEN** o teste falha antes do merge, impedindo a divergência
 
 ### Requirement: Routing e classificação derivados do descritor
 
@@ -508,3 +517,56 @@ SHALL impedir a conclusão nem mover o card.
 
 - **WHEN** o card já possui tokens ou não há indício de execução por agente
 - **THEN** a resposta de conclusão não inclui o aviso
+
+### Requirement: Catálogo de colunas com status base explícito
+
+O catálogo MCP SHALL declarar `create_column` com `name` e `baseStatus` obrigatórios, sendo `baseStatus` um enum explícito com `NOT_STARTED`, `PLANNED`, `IN_PROGRESS`, `BLOCKED`, `DONE` e `CANCELLED`. A execução SHALL enviar à rota `POST /projects/:projectId/columns` somente `name` e `baseStatus`, nunca o `projectId` no corpo.
+
+#### Scenario: Criar coluna planejada via MCP
+
+- **WHEN** agente chama `create_column` com `name = "Planejado"` e `baseStatus = "PLANNED"`
+- **THEN** a coluna é criada e a resposta traz o `baseStatus` aplicado
+
+#### Scenario: Corpo estrito sem projectId
+
+- **WHEN** agente chama `create_column` informando `projectId`
+- **THEN** o `projectId` é usado apenas no path da rota e a chamada não é rejeitada por campo desconhecido no corpo
+
+#### Scenario: Enum inválido é rejeitado antes da rede
+
+- **WHEN** agente informa um `baseStatus` fora do enum
+- **THEN** o catálogo rejeita a chamada com erro de validação acionável, sem executar a mutation
+
+### Requirement: Status planejado nas ferramentas de item
+
+O catálogo SHALL incluir `PLANNED` nos enums de status de `create_task`, `update_item`, `update_items` e nos filtros de `list_tasks`, e SHALL descrever a transição de sprint como elegível para `NOT_STARTED`, `PLANNED`, `IN_PROGRESS` e `BLOCKED`.
+
+#### Scenario: Criar card com status planejado
+
+- **WHEN** agente chama `create_task` com `status = "PLANNED"`
+- **THEN** o card é aceito com o status informado
+
+#### Scenario: Filtrar por planejado
+
+- **WHEN** agente chama `list_tasks` com `status = "PLANNED"`
+- **THEN** a resposta traz apenas cards planejados
+
+### Requirement: Campos de metadados do tracker no catálogo
+
+O catálogo compartilhado SHALL declarar os campos de metadados do tracker em `create_task`, `update_item` e `update_items` e SHALL incluir os mesmos campos na projeção de `list_tasks`. Os campos são opcionais: `externalSource`, `externalRef`, `assigneeLabel`, `actualStartDate` e `actualDueDate`. A validação SHALL aceitar os campos apenas quando declarados na ferramenta e SHALL rejeitar campos desconhecidos com a mensagem acionável existente. O catálogo continua sendo a fonte única; nenhuma lista paralela SHALL ser mantida em `apps/mcp`.
+
+#### Scenario: Criar tarefa com metadados
+- **WHEN** um agente chama `create_task` com `externalSource`, `externalRef`, `assigneeLabel` e as datas realizadas
+- **THEN** a chamada é aceita pelo schema, validada e repassada à API com os mesmos valores
+
+#### Scenario: Atualizar metadados
+- **WHEN** um agente chama `update_item` com `changes` contendo `assigneeLabel` ou uma das datas realizadas
+- **THEN** a mudança é aceita, validada e aplicada ao item
+
+#### Scenario: Projeção em list_tasks
+- **WHEN** um agente pede `fields` com `externalRef`, `assigneeLabel` ou uma das datas realizadas em `list_tasks`
+- **THEN** a projeção inclui o campo no payload
+
+#### Scenario: Campo desconhecido
+- **WHEN** um agente envia um campo que não pertence à ferramenta
+- **THEN** a validação rejeita com a mensagem que lista os campos aceitos, sem ignorar silenciosamente

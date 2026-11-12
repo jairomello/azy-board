@@ -67,6 +67,26 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Added
 
+- **Exportação de cards em CSV e XLSX com mapeamento de campos.** A command bar
+  do board ganhou "Exportar dados", com modo bruto (todas as colunas técnicas) e
+  modo dinâmico, em que a pessoa escolhe origem, nome e tipo de cada coluna do
+  arquivo. A exportação respeita os filtros ativos e exclui arquivados por
+  padrão. Mapeamentos podem ser salvos por projeto e reutilizados; nomes são
+  únicos no projeto e a gestão exige papel MEMBER ou superior.
+- **Status base Planejado (`PLANNED`).** Colunas com esse status exibem
+  "Planejada" no card, na grade e nos filtros, distinguindo o trabalho já
+  priorizado do backlog não priorizado. O status entra no filtro, na distribuição
+  do dashboard, na consulta de lacunas e no carry-over de sprint, vale peso de
+  avanço 0 e é elegível na seleção de próximo card pelo agente.
+- **Status base Em homologação (`IN_HOMOLOGATION`).** A entrega pronta para
+  aceite pode ter coluna própria entre o fluxo e as concluídas. O status aparece
+  no card, na grade e nos filtros, participa de WIP e aging, compõe a faixa de
+  avanço (no máximo 90) e não é contado como concluído.
+- **Mover itens entre pais e editar pelo ícone de tipo na Tree View.** Arrastar
+  uma linha sobre outra muda o pai respeitando a hierarquia (épico → módulo,
+  história → épico, task/bug/external → história/task/bug); o módulo acompanha o
+  destino e a API revalida ciclos. O ícone de tipo da linha passou a abrir a
+  modal de edição, sem expandir o nó.
 - **Limpar filtros fica visível assim que há filtro aplicado.** Além do botão
   dentro do popover de filtros, a command bar passa a exibir um "Limpar" com o
   contador ao lado do botão de filtros. A contagem e o "Limpar" usam a mesma

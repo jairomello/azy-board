@@ -35,11 +35,11 @@ Ao criar um projeto no modo hierárquico, a aplicação prepara uma estrutura in
 
 O Board é o ambiente operacional principal. Por padrão, ele representa a hierarquia **Épico → História → Cards** em dois níveis de lanes expansíveis. Dentro de cada história, tasks e bugs são distribuídos pelas colunas de acordo com seu estágio. Itens sem épico são reunidos em **Sem épico**, e cards descendentes de um épico sem história aparecem em **Sem história**.
 
-O Board permite criar itens, editar títulos, abrir detalhes, mover cards, ordenar colunas, filtrar o conteúdo, alternar histórias entre lanes e cards, controlar subtasks e arquivar ou excluir itens.
+O Board permite criar itens, editar títulos, abrir detalhes, mover cards, ordenar colunas, filtrar o conteúdo, alternar histórias entre lanes e cards, controlar subtasks, exportar os cards em CSV ou XLSX e arquivar ou excluir itens.
 
 ### Visualização em árvore
 
-A árvore mostra módulos, épicos, histórias, tasks, bugs e subtasks em uma única estrutura expansível. Ela também apresenta status, responsável, pontos, progresso e datas.
+A árvore mostra módulos, épicos, histórias, tasks, bugs e subtasks em uma única estrutura expansível. Ela também apresenta status, responsável, pontos, progresso, dependências e datas. As colunas são configuráveis, têm filtro direto no cabeçalho e permitem edição inline, criação abaixo da linha e movimentação de itens entre pais.
 
 ### Configurações do projeto
 

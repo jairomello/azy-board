@@ -78,7 +78,7 @@ A árvore possui colunas próprias para:
 
 Essa é a visualização mais adequada para comparar níveis diferentes da hierarquia.
 
-Na Tree View, o cálculo usa somente as folhas presentes no resultado autorizado e filtrado. Itens arquivados não participam, e filtros de módulo, sprint, responsável ou tags podem alterar a média exibida. Uma folha `TASK` ou `BUG` concluída (`DONE`) vale 100%; demais status valem 0%. Agrupadores sem folhas permanecem em 0%.
+Na Tree View, o cálculo usa somente as folhas presentes no resultado autorizado e filtrado. Itens arquivados não participam, e os filtros de população do board — módulo, sprint, responsável, autor, centro de custo, versão, prioridade, status, tipo, tags e última alteração — podem alterar a média exibida. Uma folha `TASK` ou `BUG` concluída (`DONE`) vale 100%; demais status valem 0%. Agrupadores sem folhas permanecem em 0%.
 
 ## Como atualizar a estimativa
 

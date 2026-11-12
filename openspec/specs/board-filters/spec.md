@@ -1,7 +1,9 @@
 ## Purpose
 
 Definir os filtros, controles de visualização e regras de ocultação aplicados ao conteúdo do Board.
+
 ## Requirements
+
 ### Requirement: Filtros e opções no toolbar do board
 O sistema SHALL exibir filtros de conteúdo em um painel acionado pelo botão `Filtros` da command bar. O painel SHALL conter Squad, Módulo, Sprint, Responsável, Autor, Centro de Custo, Versão, Prioridade, Status, tipos e tags. Os filtros de Sprint, Versão, Responsável, Autor e Centro de Custo SHALL oferecer duas opções distintas de estado vazio: uma opção neutra de "sem filtro" (`value=""`), rotulada com o nome do campo (`Sprint`, `Versão`, `Responsável`, `Autor`, `Centro de custo`), e uma opção de valor vazio (`value="__empty__"`), rotulada `Sem sprint`, `Sem versão`, `Não atribuído`, `Sem autor` e `Sem centro de custo`, respectivamente. Quando não houver itens de catálogo, os controles SHALL permanecer visíveis exibindo a indicação neutra, sem permitir seleção de valor vazio inexistente. Sprint SHALL listar `PROPOSED`, `OPEN` e `CLOSED` quando houver sprints. Os controles de visualização SHALL estar no painel separado `Opções`.
 
@@ -212,3 +214,36 @@ O sistema SHALL oferecer, no painel `Filtros`, uma dimensão "Alterados" com as 
 
 - **WHEN** o filtro de alteração está ativo
 - **THEN** ele conta como filtro ativo no indicador do toolbar e no resumo do cabeçalho compacto
+
+### Requirement: Opção de status em homologação no filtro
+
+O filtro de Status do board SHALL oferecer a opção `IN_HOMOLOGATION`, rotulada "Em homologação" em pt-BR, com o mesmo rótulo usado na coluna de status da grade.
+
+#### Scenario: Filtrar cards em homologação
+
+- **WHEN** o usuário marca a opção "Em homologação" no filtro de Status
+- **THEN** apenas cards com `status = IN_HOMOLOGATION` são exibidos
+
+#### Scenario: Rótulo consistente
+
+- **WHEN** o idioma é pt-BR, en ou es
+- **THEN** o rótulo do filtro é idêntico ao da coluna de status da grade para o mesmo idioma
+
+### Requirement: Ação de limpar filtros visível com contador
+O sistema SHALL exibir a ação de limpar filtros de forma visível no board e na Tree View quando houver filtros ativos, acompanhada da contagem de filtros ativos. A ação SHALL limpar os filtros de população e as ocultações de lanes vazias, SHALL preservar `showSubtasks`, `storyDisplay`, `moduleViewMode` e o modo de visualização atual, e SHALL atualizar o `localStorage`.
+
+#### Scenario: Contador acompanha filtros ativos
+- **WHEN** o usuário ativa filtros de conteúdo
+- **THEN** a ação de limpar exibe a contagem de filtros ativos
+
+#### Scenario: Limpar pela command bar
+- **WHEN** o usuário aciona limpar filtros na command bar do board
+- **THEN** os filtros de conteúdo são removidos e as preferências de exibição permanecem
+
+#### Scenario: Limpar na Tree View
+- **WHEN** o usuário aciona limpar filtros na Tree View
+- **THEN** os filtros são removidos e a visualização continua na Tree View
+
+#### Scenario: Sem filtros ativos
+- **WHEN** não há filtros aplicados
+- **THEN** a ação de limpar não é exibida ou fica desabilitada

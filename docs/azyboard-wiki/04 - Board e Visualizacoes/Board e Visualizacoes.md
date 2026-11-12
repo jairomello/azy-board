@@ -27,15 +27,20 @@ O Board é o espaço principal de acompanhamento e operação do projeto. Ele ap
 ### Filtros e controles
 
 - [[04 - Board e Visualizacoes/Filtros do Board|Filtros do Board]]
-  - Squad, módulo, sprint, responsável, tipo e tags.
-  - Combinações, limpeza e persistência.
+  - Squad, módulo, sprint, responsável, autor, centro de custo, versão, prioridade, status, tipo, tags e última alteração.
+  - Filtros por coluna na árvore, combinações, limpeza e persistência.
 - [[04 - Board e Visualizacoes/Controles de Visualizacao do Board|Controles de visualização do Board]]
   - Subtasks, histórias como lanes ou cards, itens vazios, expansão e recolhimento.
 
 ### Visualização em árvore
 
 - [[04 - Board e Visualizacoes/Visualizacao em Arvore|Visualização em árvore]]
-  - Hierarquia, colunas, expansão, edição inline e arquivamento.
+  - Hierarquia, colunas configuráveis, filtros por coluna, edição inline, reparentamento e arquivamento.
+
+### Dados do projeto
+
+- [[04 - Board e Visualizacoes/Exportar Itens|Exportar itens]]
+  - CSV e XLSX, modo bruto ou mapeado, mapeamentos salvos por projeto.
 
 ### Ciclo de vida e sincronização
 
