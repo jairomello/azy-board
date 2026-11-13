@@ -1,4 +1,5 @@
-import { and, asc, count, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
+import { randomBytes } from 'node:crypto'
+import { and, asc, count, desc, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { DEFAULT_GOVERNANCE } from '@azy-board/assistant-contracts'
 import type { ColumnBaseStatus, ItemDependencyType, ItemType, TaskStatus } from '@azy-board/domain'
 import type { Database } from 'bun:sqlite'
@@ -64,6 +65,9 @@ import type {
   StoredAvatarRecord,
   DashboardTokenGroupRow,
   ExportMappingRecord,
+  ProjectIntegrationRecord,
+  IntegrationMessageRecord,
+  IntegrationMessageStatus,
   TagRecord,
   TenantAttachmentSettingsRecord,
   UserCredentialRecord,
@@ -71,7 +75,7 @@ import type {
 import type { ChecklistItemPatch, ColumnPatch, CostCenterPatch, ItemLinkPatch, ItemLogPatch, ModulePatch, NewApiKeyRecord, NewChecklistItemRecord, NewColumnRecord, NewCostCenterRecord, NewItemLinkRecord, NewItemLogRecord, NewModuleRecord, NewProjectMembership, NewSquadRecord, NewTenantRecord, NewVersionRecord, PersistencePorts, ProjectMembershipPatch, ProjectPatch, UserListPage, UserListQuery, UserPreferencesPatch, VersionPatch } from '../../persistence/ports'
 import type { DrizzleDb } from '../index'
 import {
-  apiKeys, assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantRuns, assistantSettings, assistantToolCalls, exportMappings,
+  apiKeys, assistantApprovals, assistantConversations, assistantCredentials, assistantEvents, assistantMessages, assistantRuns, assistantSettings, assistantToolCalls, exportMappings, projectIntegrations, integrationMessages,
    attachments, checklistItems, checklists, columns, idempotencyRecords, itemDependencies, itemEvents, itemLinks, itemLogs, itemSprints, itemTags, 
   items, loginAttempts, memberships, modules, projectAnalyticsCoverage, projectCostCenters, projectMetricsDaily, projectVersions, projects, squads, sprintCycleItems, sprintCycles, sprints,
   storageCleanupJobs, tags, tenantAttachmentSettings, tenants, userAvatars, users,
@@ -215,6 +219,25 @@ function mapVersion(row: typeof projectVersions.$inferSelect): ProjectVersionRec
 
 // [TENANT] O JSON é persistido como texto; a leitura tolera registros legados
 // inválidos sem derrubar a listagem do projeto.
+function mapProjectIntegration(row: typeof projectIntegrations.$inferSelect): ProjectIntegrationRecord {
+  return {
+    id: row.id, tenantId: row.tenantId, projectId: row.projectId, kind: row.kind,
+    publicToken: row.publicToken, teamsSecret: row.teamsSecret,
+    defaultType: row.defaultType, defaultColumnId: row.defaultColumnId,
+    parentItemId: row.parentItemId, moduleId: row.moduleId, enabled: row.enabled,
+    createdBy: row.createdBy, createdByEmail: row.createdByEmail,
+    createdAt: row.createdAt, updatedAt: row.updatedAt,
+  }
+}
+
+function mapIntegrationMessage(row: typeof integrationMessages.$inferSelect): IntegrationMessageRecord {
+  return {
+    id: row.id, integrationId: row.integrationId, tenantId: row.tenantId, projectId: row.projectId,
+    teamsMessageId: row.teamsMessageId, status: row.status as IntegrationMessageStatus,
+    itemId: row.itemId, error: row.error, createdAt: row.createdAt,
+  }
+}
+
 function mapExportMapping(row: typeof exportMappings.$inferSelect): ExportMappingRecord {
   let fields: ExportMappingRecord['fields'] = []
   try {
@@ -634,6 +657,93 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           eq(exportMappings.createdBy, context.actorUserId ?? ''),
         )).returning({ id: exportMappings.id })
         return rows.length > 0
+      },
+    },
+    integrations: {
+      async getByProject(context, projectId, kind) {
+        const [row] = await database.select().from(projectIntegrations).where(and(
+          eq(projectIntegrations.tenantId, context.tenantId),
+          eq(projectIntegrations.projectId, projectId),
+          eq(projectIntegrations.kind, kind),
+        ))
+        return row ? mapProjectIntegration(row) : null
+      },
+      async getByPublicToken(token) {
+        // [TENANT] O token público é global e resolve tenant/projeto da própria integração.
+        const [row] = await database.select().from(projectIntegrations).where(eq(projectIntegrations.publicToken, token))
+        return row ? mapProjectIntegration(row) : null
+      },
+      async upsert(context, projectId, kind, input) {
+        const now = new Date().toISOString()
+        const [existing] = await database.select().from(projectIntegrations).where(and(
+          eq(projectIntegrations.tenantId, context.tenantId),
+          eq(projectIntegrations.projectId, projectId),
+          eq(projectIntegrations.kind, kind),
+        ))
+        if (existing) {
+          const [row] = await database.update(projectIntegrations).set({
+            teamsSecret: input.teamsSecret,
+            ...(input.defaultType !== undefined ? { defaultType: input.defaultType } : {}),
+            ...(input.defaultColumnId !== undefined ? { defaultColumnId: input.defaultColumnId } : {}),
+            ...(input.parentItemId !== undefined ? { parentItemId: input.parentItemId } : {}),
+            ...(input.moduleId !== undefined ? { moduleId: input.moduleId } : {}),
+            ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+            updatedAt: now,
+          }).where(eq(projectIntegrations.id, existing.id)).returning()
+          if (!row) throw new Error('Falha ao atualizar integração no adapter SQLite.')
+          return mapProjectIntegration(row)
+        }
+        const [row] = await database.insert(projectIntegrations).values({
+          id: generateId(), tenantId: context.tenantId, projectId, kind,
+          publicToken: randomBytes(24).toString('hex'), teamsSecret: input.teamsSecret,
+          defaultType: input.defaultType ?? 'TASK', defaultColumnId: input.defaultColumnId ?? null,
+          parentItemId: input.parentItemId ?? null, moduleId: input.moduleId ?? null,
+          enabled: input.enabled ?? true, createdBy: context.actorUserId,
+          createdByEmail: input.createdByEmail ?? null, createdAt: now, updatedAt: now,
+        }).returning()
+        if (!row) throw new Error('Falha ao criar integração no adapter SQLite.')
+        return mapProjectIntegration(row)
+      },
+      async remove(context, projectId, kind) {
+        const [existing] = await database.select({ id: projectIntegrations.id }).from(projectIntegrations).where(and(
+          eq(projectIntegrations.tenantId, context.tenantId),
+          eq(projectIntegrations.projectId, projectId),
+          eq(projectIntegrations.kind, kind),
+        ))
+        if (!existing) return false
+        // O histórico pertence à integração: sai junto para respeitar a FK.
+        await database.delete(integrationMessages).where(eq(integrationMessages.integrationId, existing.id))
+        const rows = await database.delete(projectIntegrations).where(eq(projectIntegrations.id, existing.id)).returning({ id: projectIntegrations.id })
+        return rows.length > 0
+      },
+      async findMessage(integrationId, teamsMessageId) {
+        const [row] = await database.select().from(integrationMessages).where(and(
+          eq(integrationMessages.integrationId, integrationId),
+          eq(integrationMessages.teamsMessageId, teamsMessageId),
+        ))
+        return row ? mapIntegrationMessage(row) : null
+      },
+      async recordMessage(record) {
+        await database.insert(integrationMessages).values({ id: generateId(), ...record })
+      },
+      async countRecentMessages(integrationId, since) {
+        const [row] = await database.select({ value: count() }).from(integrationMessages).where(and(
+          eq(integrationMessages.integrationId, integrationId),
+          gte(integrationMessages.createdAt, since),
+        ))
+        return Number(row?.value ?? 0)
+      },
+      async listMessages(context, projectId, kind, limit) {
+        const [integration] = await database.select({ id: projectIntegrations.id }).from(projectIntegrations).where(and(
+          eq(projectIntegrations.tenantId, context.tenantId),
+          eq(projectIntegrations.projectId, projectId),
+          eq(projectIntegrations.kind, kind),
+        ))
+        if (!integration) return []
+        const rows = await database.select().from(integrationMessages)
+          .where(eq(integrationMessages.integrationId, integration.id))
+          .orderBy(desc(integrationMessages.createdAt)).limit(limit)
+        return rows.map(mapIntegrationMessage)
       },
     },
     health: {

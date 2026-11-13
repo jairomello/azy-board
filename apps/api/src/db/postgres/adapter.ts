@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import type {
   ApiKeyListRecord,
@@ -25,6 +26,9 @@ import type {
   ProjectMemberDetails,
   ProjectProgressAggregateRow,
   ProjectRecord,
+  ProjectIntegrationRecord,
+  IntegrationMessageRecord,
+  IntegrationMessageStatus,
   ProjectVersionRecord,
   PublicUserRecord,
   SquadRecord,
@@ -1207,10 +1211,93 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
     )
   }
 
+  function mapProjectIntegrationRow(row: PgRow): ProjectIntegrationRecord {
+    return {
+      id: row.id as string, tenantId: row.tenant_id as string, projectId: row.project_id as string, kind: row.kind as string,
+      publicToken: row.public_token as string, teamsSecret: row.teams_secret as string,
+      defaultType: row.default_type as string, defaultColumnId: (row.default_column_id as string | null) ?? null,
+      parentItemId: (row.parent_item_id as string | null) ?? null, moduleId: (row.module_id as string | null) ?? null,
+      enabled: Boolean(row.enabled), createdBy: (row.created_by as string | null) ?? null,
+      createdByEmail: (row.created_by_email as string | null) ?? null,
+      createdAt: row.created_at as string, updatedAt: row.updated_at as string,
+    }
+  }
+
+  function mapIntegrationMessageRow(row: PgRow): IntegrationMessageRecord {
+    return {
+      id: row.id as string, integrationId: row.integration_id as string, tenantId: row.tenant_id as string,
+      projectId: row.project_id as string, teamsMessageId: row.teams_message_id as string,
+      status: row.status as IntegrationMessageStatus, itemId: (row.item_id as string | null) ?? null,
+      error: (row.error as string | null) ?? null, createdAt: row.created_at as string,
+    }
+  }
+
   return {
     // -----------------------------------------------------------------------
     // HealthPort
     // -----------------------------------------------------------------------
+    integrations: {
+      async getByProject(context: PersistenceContext, projectId: string, kind: string): Promise<ProjectIntegrationRecord | null> {
+        const row = await q1('SELECT * FROM project_integrations WHERE tenant_id = $1 AND project_id = $2 AND kind = $3', [context.tenantId, projectId, kind])
+        return row ? mapProjectIntegrationRow(row) : null
+      },
+      async getByPublicToken(token: string): Promise<ProjectIntegrationRecord | null> {
+        // [TENANT] O token público é global e resolve tenant/projeto da própria integração.
+        const row = await q1('SELECT * FROM project_integrations WHERE public_token = $1', [token])
+        return row ? mapProjectIntegrationRow(row) : null
+      },
+      async upsert(context, projectId, kind, input): Promise<ProjectIntegrationRecord> {
+        const now = new Date().toISOString()
+        const existing = await q1('SELECT id FROM project_integrations WHERE tenant_id = $1 AND project_id = $2 AND kind = $3', [context.tenantId, projectId, kind])
+        if (existing) {
+          await q(`UPDATE project_integrations SET teams_secret = $1, default_type = COALESCE($2, default_type),
+                   default_column_id = $3, parent_item_id = $4, module_id = $5, enabled = COALESCE($6, enabled), updated_at = $7
+                   WHERE id = $8`,
+            [input.teamsSecret, input.defaultType ?? null, input.defaultColumnId ?? null, input.parentItemId ?? null,
+              input.moduleId ?? null, input.enabled ?? null, now, existing.id])
+          const updated = await q1('SELECT * FROM project_integrations WHERE id = $1', [existing.id])
+          if (!updated) throw new Error('Falha ao atualizar integração no adapter PostgreSQL.')
+          return mapProjectIntegrationRow(updated)
+        }
+        const id = randomBytes(16).toString('hex')
+        await q(`INSERT INTO project_integrations
+                 (id, tenant_id, project_id, kind, public_token, teams_secret, default_type, default_column_id, parent_item_id, module_id, enabled, created_by, created_by_email, created_at, updated_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+          [id, context.tenantId, projectId, kind, randomBytes(24).toString('hex'), input.teamsSecret,
+            input.defaultType ?? 'TASK', input.defaultColumnId ?? null, input.parentItemId ?? null, input.moduleId ?? null,
+            input.enabled ?? true, context.actorUserId, input.createdByEmail ?? null, now, now])
+        const created = await q1('SELECT * FROM project_integrations WHERE id = $1', [id])
+        if (!created) throw new Error('Falha ao criar integração no adapter PostgreSQL.')
+        return mapProjectIntegrationRow(created)
+      },
+      async remove(context, projectId, kind): Promise<boolean> {
+        const existing = await q1('SELECT id FROM project_integrations WHERE tenant_id = $1 AND project_id = $2 AND kind = $3', [context.tenantId, projectId, kind])
+        if (!existing) return false
+        // O histórico pertence à integração: sai junto para respeitar a FK.
+        await q('DELETE FROM integration_messages WHERE integration_id = $1', [existing.id])
+        const rows = await q('DELETE FROM project_integrations WHERE id = $1 RETURNING id', [existing.id])
+        return rows.length > 0
+      },
+      async findMessage(integrationId, teamsMessageId): Promise<IntegrationMessageRecord | null> {
+        const row = await q1('SELECT * FROM integration_messages WHERE integration_id = $1 AND teams_message_id = $2', [integrationId, teamsMessageId])
+        return row ? mapIntegrationMessageRow(row) : null
+      },
+      async recordMessage(record): Promise<void> {
+        await q(`INSERT INTO integration_messages (id, integration_id, tenant_id, project_id, teams_message_id, status, item_id, error, created_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [randomBytes(16).toString('hex'), record.integrationId, record.tenantId, record.projectId, record.teamsMessageId, record.status, record.itemId, record.error, new Date().toISOString()])
+      },
+      async countRecentMessages(integrationId, since): Promise<number> {
+        const row = await q1('SELECT COUNT(*)::int AS value FROM integration_messages WHERE integration_id = $1 AND created_at >= $2', [integrationId, since])
+        return Number(row?.value ?? 0)
+      },
+      async listMessages(context, projectId, kind, limit): Promise<IntegrationMessageRecord[]> {
+        const integration = await q1('SELECT id FROM project_integrations WHERE tenant_id = $1 AND project_id = $2 AND kind = $3', [context.tenantId, projectId, kind])
+        if (!integration) return []
+        const rows = await q('SELECT * FROM integration_messages WHERE integration_id = $1 ORDER BY created_at DESC LIMIT $2', [integration.id, limit])
+        return rows.map(mapIntegrationMessageRow)
+      },
+    },
     health: {
       // [DB-SWAP] Consulta trivial; sem varredura de histórico/backfill por req.
       async ping(): Promise<void> {

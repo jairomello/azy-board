@@ -779,6 +779,49 @@ export interface DashboardSnapshotAggregateRow {
  */
 export type DashboardLeafPopulation = 'WORK' | 'EXTERNAL'
 
+/** E5 — integração de entrada do Teams por projeto. */
+export interface ProjectIntegrationRecord {
+  id: string
+  tenantId: string
+  projectId: string
+  kind: string
+  publicToken: string
+  teamsSecret: string
+  defaultType: string
+  defaultColumnId: string | null
+  parentItemId: string | null
+  moduleId: string | null
+  enabled: boolean
+  createdBy: string | null
+  createdByEmail: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ProjectIntegrationInput {
+  teamsSecret: string
+  createdByEmail?: string | null
+  defaultType?: string
+  defaultColumnId?: string | null
+  parentItemId?: string | null
+  moduleId?: string | null
+  enabled?: boolean
+}
+
+export type IntegrationMessageStatus = 'CREATED' | 'IGNORED' | 'ERROR'
+
+export interface IntegrationMessageRecord {
+  id: string
+  integrationId: string
+  tenantId: string
+  projectId: string
+  teamsMessageId: string
+  status: IntegrationMessageStatus
+  itemId: string | null
+  error: string | null
+  createdAt: string
+}
+
 export interface DashboardLeafItemPageOptions {
   limit: number
   afterId?: string
