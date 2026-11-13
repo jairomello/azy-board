@@ -113,9 +113,6 @@ export default function AccountPage() {
           <div>
             <div className="flex items-center justify-between gap-3 mb-2">
               <p className="text-xs font-semibold text-foreground">{t('lightShellTheme')}</p>
-              {user?.theme === 'dark' && (
-                <span className="text-[11px] text-muted-foreground">{t('lightThemeDarkHint')}</span>
-              )}
             </div>
             <div
               role="radiogroup"
@@ -135,11 +132,24 @@ export default function AccountPage() {
                       selected ? 'border-primary ring-2 ring-primary/20' : 'border-border hover:border-primary/40'
                     }`}
                   >
-                    <span className="h-12 rounded-md overflow-hidden flex border border-black/10 mb-2">
-                      <span className="w-[30%] h-full" style={{ backgroundColor: theme.sidebar }} />
-                      <span className="flex-1 h-full bg-[#eef2f6]">
-                        <span className="block h-[34%]" style={{ backgroundColor: theme.header }} />
-                        <span className="block w-1/2 h-1 rounded-full mt-2 ml-2" style={{ backgroundColor: theme.accent }} />
+                    {/* Amostra dividida: metade superior clara, metade inferior escura. */}
+                    <span aria-hidden="true" className="h-16 rounded-md overflow-hidden flex flex-col border border-black/10 mb-2">
+                      <span data-swatch="light" className="flex-1 flex">
+                        <span className="w-[30%] h-full" style={{ backgroundColor: theme.sidebar }} />
+                        <span className="flex-1 h-full bg-[#eef2f6]">
+                          <span className="block h-[40%]" style={{ backgroundColor: theme.header }} />
+                          <span className="block w-1/2 h-1 rounded-full mt-1.5 ml-2" style={{ backgroundColor: theme.accent }} />
+                        </span>
+                      </span>
+                      <span data-swatch="dark" className="flex-1 flex border-t border-black/20">
+                        <span className="w-[30%] h-full" style={{ backgroundColor: theme.darkSidebar }} />
+                        <span
+                          className="flex-1 h-full"
+                          style={{ backgroundColor: `color-mix(in srgb, ${theme.darkHeader} 55%, #000)` }}
+                        >
+                          <span className="block h-[40%]" style={{ backgroundColor: theme.darkHeader }} />
+                          <span className="block w-1/2 h-1 rounded-full mt-1.5 ml-2" style={{ backgroundColor: theme.darkAccent }} />
+                        </span>
                       </span>
                     </span>
                     <span className="block text-[11px] font-semibold text-foreground truncate">

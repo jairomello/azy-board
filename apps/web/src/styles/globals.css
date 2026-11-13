@@ -173,60 +173,474 @@
     --board-card-glow-b: #b9c4d1;
   }
 
+  /* Fallback do modo escuro: variante escura de `petroleum`, o preset padrão.
+     Vale quando `data-light-shell-theme` está ausente ou traz valor desconhecido.
+     As cores semânticas de status e dos gráficos ficam só aqui: elas não variam
+     por preset, apenas se ajustam ao fundo escuro (ver design.md, D5). */
   :root.dark {
-    --background: 220 15% 7%;
-    --foreground: 210 20% 96%;
-    --card: 218 14% 14%;
-    --card-foreground: 210 40% 98%;
-    --popover: 218 14% 14%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 248 100% 74%;
-    --primary-foreground: 220 16% 9%;
-    --secondary: 218 13% 19%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 218 13% 19%;
-    --muted-foreground: 216 12% 68%;
-    --accent: 248 28% 24%;
-    --accent-foreground: 210 40% 98%;
+    --background: 187 16% 8%;
+    --foreground: 190 16% 95%;
+    --card: 187 14% 14%;
+    --card-foreground: 190 16% 96%;
+    --popover: 187 14% 14%;
+    --popover-foreground: 190 16% 96%;
+    --primary: 166 55% 70%;
+    --primary-foreground: 187 30% 13%;
+    --secondary: 187 12% 20%;
+    --secondary-foreground: 190 16% 95%;
+    --muted: 187 12% 20%;
+    --muted-foreground: 190 9% 70%;
+    --accent: 187 16% 24%;
+    --accent-foreground: 190 16% 95%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
-    --border: 216 12% 24%;
-    --input: 216 12% 28%;
-    --ring: 248 100% 74%;
+    --border: 187 12% 27%;
+    --input: 187 12% 30%;
+    --ring: 166 55% 70%;
 
-    --canvas: 220 15% 7%;
-    --surface: 218 14% 14%;
-    --surface-raised: 218 13% 17%;
-    --surface-floating: 218 13% 12%;
-    --board-canvas: #0b1018;
-    --board-surface: #111823;
-    --board-column: #121a25;
-    --board-card: #151f2d;
-    --board-border: #29384a;
-    --board-line: #263446;
-    --board-glow-a: #38bdf8;
-    --board-glow-b: #818cf8;
-    --board-glow-c: #f472b6;
+    --canvas: 187 16% 8%;
+    --surface: 187 12% 13%;
+    --surface-raised: 187 12% 15%;
+    --surface-floating: 187 12% 11%;
+    --board-canvas: hsl(187 14% 6%);
+    --board-surface: hsl(187 12% 13%);
+    --board-column: hsl(187 12% 15%);
+    --board-card: hsl(187 13% 19%);
+    --board-border: hsl(187 12% 24%);
+    --board-line: hsl(187 12% 21%);
+    --board-glow-a: hsl(166 32% 55%);
+    --board-glow-b: hsl(166 52% 70%);
+    --board-glow-c: hsl(190 35% 60%);
+    --board-card-glow-a: hsl(166 40% 60%);
+    --board-card-glow-b: hsl(166 45% 78%);
     --board-shadow: 0 7px 18px #0008;
     --board-shadow-hover: 0 13px 29px #000b;
-    --board-shadow-focus: 0 0 0 3px #9c91ff45;
-    --shell-sidebar: #171a1f;
-    --shell-header: #20242a;
-    --shell-border: #353a43;
-    --shell-foreground: #f2f4f7;
-    --shell-muted: #aeb5c0;
-    --shell-active: #30353d;
-    --shell-accent: #8b7cff;
-    --shell-accent-foreground: #15121f;
-    --status-progress: #64a0ff;
-    --status-review: #ae81ff;
-    --status-done: #35d49a;
-    --status-blocked: #ff7979;
-    --dashboard-series-scope: #9b8cff;
-    --dashboard-series-done: #35d49a;
+    --board-shadow-focus: 0 0 0 3px hsl(166 55% 70% / 0.28);
+    --shell-sidebar: hsl(187 16% 9%);
+    --shell-header: hsl(187 13% 14%);
+    --shell-border: hsl(187 12% 28%);
+    --shell-foreground: hsl(190 14% 96%);
+    --shell-muted: hsl(190 8% 70%);
+    --shell-active: hsl(166 20% 22%);
+    --shell-accent: hsl(166 72% 60%);
+    --shell-accent-foreground: hsl(187 30% 12%);
+    --status-progress: #6aa8ff;
+    --status-review: #b08cff;
+    --status-done: #3ad6a0;
+    --status-blocked: #ff8080;
+    --dashboard-series-scope: #a394ff;
+    --dashboard-series-done: #3ad6a0;
     --dashboard-series-warning: #fbbf24;
-    --dashboard-series-danger: #ff8585;
-    --dashboard-series-neutral: #8995a7;
+    --dashboard-series-danger: #ff8a8a;
+    --dashboard-series-neutral: #93a0b1;
+  }
+
+  /* Variantes escuras por preset. Cada bloco redefine os tokens dependentes do
+     preset; os demais vêm do fallback acima. A especificidade `0,3,0` vence os
+     blocos claros (`0,2,0`), então nenhum token claro vaza para o escuro.
+     A escada de luminosidade e as matizes estão em design.md, D3. */
+  :root.dark[data-light-shell-theme="ocean"] {
+    --background: 207 16% 8%;
+    --foreground: 210 16% 95%;
+    --card: 207 14% 14%;
+    --card-foreground: 210 16% 96%;
+    --popover: 207 14% 14%;
+    --popover-foreground: 210 16% 96%;
+    --primary: 205 75% 72%;
+    --primary-foreground: 207 30% 13%;
+    --secondary: 207 14% 20%;
+    --secondary-foreground: 210 16% 95%;
+    --muted: 207 14% 20%;
+    --muted-foreground: 210 10% 70%;
+    --accent: 207 20% 24%;
+    --accent-foreground: 210 16% 95%;
+    --border: 207 16% 27%;
+    --input: 207 16% 30%;
+    --ring: 205 75% 72%;
+    --canvas: 207 16% 8%;
+    --surface: 207 16% 13%;
+    --surface-raised: 207 16% 15%;
+    --surface-floating: 207 16% 11%;
+    --board-canvas: hsl(205 14% 6%);
+    --board-surface: hsl(207 16% 13%);
+    --board-column: hsl(207 16% 15%);
+    --board-card: hsl(207 17% 19%);
+    --board-border: hsl(207 16% 24%);
+    --board-line: hsl(207 16% 21%);
+    --board-glow-a: hsl(205 30% 55%);
+    --board-glow-b: hsl(205 45% 72%);
+    --board-glow-c: hsl(210 35% 62%);
+    --board-card-glow-a: hsl(205 35% 60%);
+    --board-card-glow-b: hsl(205 40% 78%);
+    --board-shadow-focus: 0 0 0 3px hsl(205 60% 70% / 0.28);
+    --shell-sidebar: hsl(207 16% 9%);
+    --shell-header: hsl(207 16% 14%);
+    --shell-border: hsl(207 16% 28%);
+    --shell-foreground: hsl(210 14% 96%);
+    --shell-muted: hsl(210 8% 70%);
+    --shell-active: hsl(205 18% 22%);
+    --shell-accent: #67c7ff;
+    --shell-accent-foreground: hsl(207 30% 12%);
+  }
+
+  :root.dark[data-light-shell-theme="emerald"] {
+    --background: 162 14% 8%;
+    --foreground: 165 16% 95%;
+    --card: 162 12% 14%;
+    --card-foreground: 165 16% 96%;
+    --popover: 162 12% 14%;
+    --popover-foreground: 165 16% 96%;
+    --primary: 160 50% 68%;
+    --primary-foreground: 162 30% 13%;
+    --secondary: 162 12% 20%;
+    --secondary-foreground: 165 16% 95%;
+    --muted: 162 12% 20%;
+    --muted-foreground: 165 10% 70%;
+    --accent: 162 18% 24%;
+    --accent-foreground: 165 16% 95%;
+    --border: 162 14% 27%;
+    --input: 162 14% 30%;
+    --ring: 160 50% 68%;
+    --canvas: 162 14% 8%;
+    --surface: 162 14% 13%;
+    --surface-raised: 162 14% 15%;
+    --surface-floating: 162 14% 11%;
+    --board-canvas: hsl(160 10% 6%);
+    --board-surface: hsl(162 14% 13%);
+    --board-column: hsl(162 14% 15%);
+    --board-card: hsl(162 15% 19%);
+    --board-border: hsl(162 14% 24%);
+    --board-line: hsl(162 14% 21%);
+    --board-glow-a: hsl(160 28% 55%);
+    --board-glow-b: hsl(160 42% 70%);
+    --board-glow-c: hsl(175 32% 60%);
+    --board-card-glow-a: hsl(160 32% 58%);
+    --board-card-glow-b: hsl(160 38% 76%);
+    --board-shadow-focus: 0 0 0 3px hsl(160 45% 65% / 0.28);
+    --shell-sidebar: hsl(162 14% 9%);
+    --shell-header: hsl(162 14% 14%);
+    --shell-border: hsl(162 14% 28%);
+    --shell-foreground: hsl(165 14% 96%);
+    --shell-muted: hsl(165 8% 70%);
+    --shell-active: hsl(160 16% 22%);
+    --shell-accent: #69e0b5;
+    --shell-accent-foreground: hsl(162 30% 12%);
+  }
+
+  /* Grafite: âncoras exatas do protótipo docs/prototipos/temas-escuros/grafite.html.
+     É o preset neutro; por isso o acento também é neutro, e não o violeta do
+     shell claro (ver design.md, D3). */
+  :root.dark[data-light-shell-theme="graphite"] {
+    --background: 240 10% 7%;
+    --foreground: 240 9% 94%;
+    --card: 240 7% 13%;
+    --card-foreground: 240 9% 95%;
+    --popover: 240 7% 13%;
+    --popover-foreground: 240 9% 95%;
+    --primary: 240 6% 85%;
+    --primary-foreground: 240 10% 10%;
+    --secondary: 240 5% 19%;
+    --secondary-foreground: 240 9% 95%;
+    --muted: 240 5% 19%;
+    --muted-foreground: 240 5% 67%;
+    --accent: 240 5% 23%;
+    --accent-foreground: 240 9% 95%;
+    --border: 240 5% 23%;
+    --input: 240 5% 27%;
+    --ring: 240 6% 75%;
+    --canvas: 240 10% 7%;
+    --surface: 240 6% 12%;
+    --surface-raised: 240 6% 14%;
+    --surface-floating: 240 6% 11%;
+    --board-canvas: #101114;
+    --board-surface: #1b1d21;
+    --board-column: #1c1e23;
+    --board-card: #25272c;
+    --board-border: #393b40;
+    --board-line: #34363c;
+    --board-glow-a: #a5a7ab;
+    --board-glow-b: #d1d0cb;
+    --board-glow-c: #b9b7b2;
+    --board-card-glow-a: #b3b5ba;
+    --board-card-glow-b: #e0e0dc;
+    --board-shadow: 0 6px 18px #0005;
+    --board-shadow-hover: 0 12px 28px #0008;
+    --board-shadow-focus: 0 0 0 3px #dadad64d;
+    --shell-sidebar: #15161a;
+    --shell-header: #1a1b20;
+    --shell-border: #35373d;
+    --shell-foreground: #f4f3f1;
+    --shell-muted: #aaaab1;
+    --shell-active: #303137;
+    --shell-accent: #dadad6;
+    --shell-accent-foreground: #18191b;
+  }
+
+  :root.dark[data-light-shell-theme="classic"] {
+    --background: 244 10% 8%;
+    --foreground: 246 16% 95%;
+    --card: 244 8% 14%;
+    --card-foreground: 246 16% 96%;
+    --popover: 244 8% 14%;
+    --popover-foreground: 246 16% 96%;
+    --primary: 243 80% 74%;
+    --primary-foreground: 244 30% 13%;
+    --secondary: 244 8% 20%;
+    --secondary-foreground: 246 16% 95%;
+    --muted: 244 8% 20%;
+    --muted-foreground: 246 10% 70%;
+    --accent: 244 14% 24%;
+    --accent-foreground: 246 16% 95%;
+    --border: 244 10% 27%;
+    --input: 244 10% 30%;
+    --ring: 243 80% 74%;
+    --canvas: 244 10% 8%;
+    --surface: 244 10% 13%;
+    --surface-raised: 244 10% 15%;
+    --surface-floating: 244 10% 11%;
+    --board-canvas: hsl(243 8% 6%);
+    --board-surface: hsl(244 10% 13%);
+    --board-column: hsl(244 10% 15%);
+    --board-card: hsl(244 11% 19%);
+    --board-border: hsl(244 10% 24%);
+    --board-line: hsl(244 10% 21%);
+    --board-glow-a: hsl(243 34% 60%);
+    --board-glow-b: hsl(243 60% 74%);
+    --board-glow-c: hsl(250 35% 62%);
+    --board-card-glow-a: hsl(243 40% 62%);
+    --board-card-glow-b: hsl(243 52% 79%);
+    --board-shadow-focus: 0 0 0 3px hsl(243 80% 74% / 0.28);
+    --shell-sidebar: hsl(244 10% 9%);
+    --shell-header: hsl(244 10% 14%);
+    --shell-border: hsl(244 10% 28%);
+    --shell-foreground: hsl(246 14% 96%);
+    --shell-muted: hsl(246 8% 70%);
+    --shell-active: hsl(243 20% 22%);
+    --shell-accent: #635bff;
+    --shell-accent-foreground: hsl(244 30% 12%);
+  }
+
+  :root.dark[data-light-shell-theme="ruby"] {
+    --background: 352 16% 8%;
+    --foreground: 355 16% 95%;
+    --card: 352 14% 14%;
+    --card-foreground: 355 16% 96%;
+    --popover: 352 14% 14%;
+    --popover-foreground: 355 16% 96%;
+    --primary: 351 70% 72%;
+    --primary-foreground: 352 30% 13%;
+    --secondary: 352 14% 20%;
+    --secondary-foreground: 355 16% 95%;
+    --muted: 352 14% 20%;
+    --muted-foreground: 355 10% 70%;
+    --accent: 352 20% 24%;
+    --accent-foreground: 355 16% 95%;
+    --border: 352 16% 27%;
+    --input: 352 16% 30%;
+    --ring: 351 70% 72%;
+    --canvas: 352 16% 8%;
+    --surface: 352 16% 13%;
+    --surface-raised: 352 16% 15%;
+    --surface-floating: 352 16% 11%;
+    --board-canvas: hsl(351 12% 6%);
+    --board-surface: hsl(352 16% 13%);
+    --board-column: hsl(352 16% 15%);
+    --board-card: hsl(352 17% 19%);
+    --board-border: hsl(352 16% 24%);
+    --board-line: hsl(352 16% 21%);
+    --board-glow-a: hsl(351 32% 56%);
+    --board-glow-b: hsl(351 55% 71%);
+    --board-glow-c: hsl(15 38% 62%);
+    --board-card-glow-a: hsl(351 38% 60%);
+    --board-card-glow-b: hsl(351 46% 78%);
+    --board-shadow-focus: 0 0 0 3px hsl(351 70% 68% / 0.28);
+    --shell-sidebar: hsl(352 16% 9%);
+    --shell-header: hsl(352 16% 14%);
+    --shell-border: hsl(352 16% 28%);
+    --shell-foreground: hsl(355 14% 96%);
+    --shell-muted: hsl(355 8% 70%);
+    --shell-active: hsl(351 20% 22%);
+    --shell-accent: #ff6b81;
+    --shell-accent-foreground: hsl(352 30% 12%);
+  }
+
+  :root.dark[data-light-shell-theme="amber"] {
+    --background: 30 15% 8%;
+    --foreground: 34 16% 95%;
+    --card: 30 13% 14%;
+    --card-foreground: 34 16% 96%;
+    --popover: 30 13% 14%;
+    --popover-foreground: 34 16% 96%;
+    --primary: 31 70% 70%;
+    --primary-foreground: 30 30% 13%;
+    --secondary: 30 13% 20%;
+    --secondary-foreground: 34 16% 95%;
+    --muted: 30 13% 20%;
+    --muted-foreground: 34 10% 70%;
+    --accent: 30 19% 24%;
+    --accent-foreground: 34 16% 95%;
+    --border: 30 15% 27%;
+    --input: 30 15% 30%;
+    --ring: 31 70% 70%;
+    --canvas: 30 15% 8%;
+    --surface: 30 15% 13%;
+    --surface-raised: 30 15% 15%;
+    --surface-floating: 30 15% 11%;
+    --board-canvas: hsl(31 11% 6%);
+    --board-surface: hsl(30 15% 13%);
+    --board-column: hsl(30 15% 15%);
+    --board-card: hsl(30 16% 19%);
+    --board-border: hsl(30 15% 24%);
+    --board-line: hsl(30 15% 21%);
+    --board-glow-a: hsl(31 32% 56%);
+    --board-glow-b: hsl(31 55% 69%);
+    --board-glow-c: hsl(45 40% 62%);
+    --board-card-glow-a: hsl(31 40% 60%);
+    --board-card-glow-b: hsl(31 48% 78%);
+    --board-shadow-focus: 0 0 0 3px hsl(31 70% 66% / 0.28);
+    --shell-sidebar: hsl(30 15% 9%);
+    --shell-header: hsl(30 15% 14%);
+    --shell-border: hsl(30 15% 28%);
+    --shell-foreground: hsl(34 14% 96%);
+    --shell-muted: hsl(34 8% 70%);
+    --shell-active: hsl(31 20% 22%);
+    --shell-accent: #ffb15c;
+    --shell-accent-foreground: hsl(30 30% 12%);
+  }
+
+  /* Ameixa: âncoras exatas do protótipo docs/prototipos/temas-escuros/ameixa.html. */
+  :root.dark[data-light-shell-theme="amethyst"] {
+    --background: 260 21% 8%;
+    --foreground: 285 28% 95%;
+    --card: 275 17% 14%;
+    --card-foreground: 285 28% 96%;
+    --popover: 275 17% 14%;
+    --popover-foreground: 285 28% 96%;
+    --primary: 273 77% 79%;
+    --primary-foreground: 272 32% 14%;
+    --secondary: 275 15% 20%;
+    --secondary-foreground: 285 28% 95%;
+    --muted: 275 15% 20%;
+    --muted-foreground: 285 11% 70%;
+    --accent: 275 20% 24%;
+    --accent-foreground: 285 28% 95%;
+    --border: 279 15% 27%;
+    --input: 279 15% 30%;
+    --ring: 273 77% 79%;
+    --canvas: 260 21% 8%;
+    --surface: 275 17% 14%;
+    --surface-raised: 275 18% 16%;
+    --surface-floating: 275 17% 12%;
+    --board-canvas: #121019;
+    --board-surface: #211b29;
+    --board-column: #251f2e;
+    --board-card: #302839;
+    --board-border: #4a3e53;
+    --board-line: #45394b;
+    --board-glow-a: #b28bda;
+    --board-glow-b: #c6a0f5;
+    --board-glow-c: #d8a8e8;
+    --board-card-glow-a: #bb93e6;
+    --board-card-glow-b: #d1b5f4;
+    --board-shadow: 0 6px 18px #0006;
+    --board-shadow-hover: 0 12px 28px #000a;
+    --board-shadow-focus: 0 0 0 3px #c6a0f54d;
+    --shell-sidebar: #19151f;
+    --shell-header: #211b29;
+    --shell-border: #483b50;
+    --shell-foreground: #f9f4fb;
+    --shell-muted: #b6a9bc;
+    --shell-active: #443352;
+    --shell-accent: #c6a0f5;
+    --shell-accent-foreground: #251932;
+  }
+
+  :root.dark[data-light-shell-theme="rose"] {
+    --background: 334 16% 8%;
+    --foreground: 337 16% 95%;
+    --card: 334 14% 14%;
+    --card-foreground: 337 16% 96%;
+    --popover: 334 14% 14%;
+    --popover-foreground: 337 16% 96%;
+    --primary: 333 70% 76%;
+    --primary-foreground: 334 30% 13%;
+    --secondary: 334 14% 20%;
+    --secondary-foreground: 337 16% 95%;
+    --muted: 334 14% 20%;
+    --muted-foreground: 337 10% 70%;
+    --accent: 334 20% 24%;
+    --accent-foreground: 337 16% 95%;
+    --border: 334 16% 27%;
+    --input: 334 16% 30%;
+    --ring: 333 70% 76%;
+    --canvas: 334 16% 8%;
+    --surface: 334 16% 13%;
+    --surface-raised: 334 16% 15%;
+    --surface-floating: 334 16% 11%;
+    --board-canvas: hsl(333 12% 6%);
+    --board-surface: hsl(334 16% 13%);
+    --board-column: hsl(334 16% 15%);
+    --board-card: hsl(334 17% 19%);
+    --board-border: hsl(334 16% 24%);
+    --board-line: hsl(334 16% 21%);
+    --board-glow-a: hsl(333 34% 58%);
+    --board-glow-b: hsl(333 60% 76%);
+    --board-glow-c: hsl(350 40% 62%);
+    --board-card-glow-a: hsl(333 40% 62%);
+    --board-card-glow-b: hsl(333 50% 80%);
+    --board-shadow-focus: 0 0 0 3px hsl(333 70% 72% / 0.28);
+    --shell-sidebar: hsl(334 16% 9%);
+    --shell-header: hsl(334 16% 14%);
+    --shell-border: hsl(334 16% 28%);
+    --shell-foreground: hsl(337 14% 96%);
+    --shell-muted: hsl(337 8% 70%);
+    --shell-active: hsl(333 20% 22%);
+    --shell-accent: #ff8fc0;
+    --shell-accent-foreground: hsl(334 30% 12%);
+  }
+
+  :root.dark[data-light-shell-theme="silver"] {
+    --background: 215 8% 8%;
+    --foreground: 216 12% 95%;
+    --card: 215 6% 14%;
+    --card-foreground: 216 12% 96%;
+    --popover: 215 6% 14%;
+    --popover-foreground: 216 12% 96%;
+    --primary: 214 18% 78%;
+    --primary-foreground: 215 25% 13%;
+    --secondary: 215 6% 20%;
+    --secondary-foreground: 216 12% 95%;
+    --muted: 215 6% 20%;
+    --muted-foreground: 216 8% 70%;
+    --accent: 215 12% 24%;
+    --accent-foreground: 216 12% 95%;
+    --border: 215 8% 27%;
+    --input: 215 8% 30%;
+    --ring: 214 18% 78%;
+    --canvas: 215 8% 8%;
+    --surface: 215 8% 13%;
+    --surface-raised: 215 8% 15%;
+    --surface-floating: 215 8% 11%;
+    --board-canvas: hsl(214 5% 6%);
+    --board-surface: hsl(215 8% 13%);
+    --board-column: hsl(215 8% 15%);
+    --board-card: hsl(215 9% 19%);
+    --board-border: hsl(215 8% 25%);
+    --board-line: hsl(215 8% 21%);
+    --board-glow-a: hsl(214 18% 62%);
+    --board-glow-b: hsl(214 22% 78%);
+    --board-glow-c: hsl(220 18% 66%);
+    --board-card-glow-a: hsl(214 20% 64%);
+    --board-card-glow-b: hsl(214 24% 82%);
+    --board-shadow-focus: 0 0 0 3px hsl(214 25% 72% / 0.28);
+    --shell-sidebar: hsl(215 8% 9%);
+    --shell-header: hsl(215 8% 14%);
+    --shell-border: hsl(215 8% 28%);
+    --shell-foreground: hsl(216 10% 96%);
+    --shell-muted: hsl(216 6% 70%);
+    --shell-active: hsl(214 10% 22%);
+    --shell-accent: #b9c4d1;
+    --shell-accent-foreground: hsl(215 25% 12%);
   }
 }
 
@@ -668,21 +1082,73 @@
   }
 }
 
+/* Modo escuro: o acabamento segue a variante escura do preset ativo
+   (design.md, D4). Os efeitos usam color-mix sobre os tokens do Board, então
+   qualquer preset funciona sem duplicação e o modo claro não é afetado. */
+.dark .board-canvas {
+  background:
+    radial-gradient(ellipse at 90% 0%, color-mix(in srgb, var(--board-glow-b) 6%, transparent), transparent 42%),
+    var(--board-canvas);
+  box-shadow:
+    inset 0 1px color-mix(in srgb, var(--board-glow-b) 12%, transparent),
+    var(--board-shadow);
+}
+
+.dark .board-column {
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--board-glow-a) 8%, var(--board-column)),
+    var(--board-column) 47%,
+    color-mix(in srgb, #000 12%, var(--board-column))
+  );
+}
+
+.dark .board-column-header,
+.dark .board-context-header {
+  background: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--board-glow-a) 9%, var(--board-surface)),
+    var(--board-surface) 55%
+  );
+}
+
+/* O contorno colorido fica só nas bordas superior/direita/inferior: a borda
+   esquerda pertence à faixa de status do card (utilitário `border-l-*`). */
 .dark .kanban-card {
-  background: linear-gradient(155deg, #1b2939ed, #121b29fa 78%);
-  border-color: color-mix(in srgb, var(--board-glow-a) 35%, var(--board-border));
-  box-shadow: 0 8px 21px #0008, 0 0 12px color-mix(in srgb, var(--board-glow-a) 13%, transparent), 0 0 21px color-mix(in srgb, var(--board-glow-b) 8%, transparent);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--board-card-glow-a) 14%, var(--board-card)),
+    var(--board-card) 50%,
+    color-mix(in srgb, #000 10%, var(--board-card))
+  );
+  border-top-color: color-mix(in srgb, var(--board-card-glow-a) 38%, var(--board-border));
+  border-right-color: color-mix(in srgb, var(--board-card-glow-a) 38%, var(--board-border));
+  border-bottom-color: color-mix(in srgb, var(--board-card-glow-a) 38%, var(--board-border));
+  box-shadow:
+    0 5px 14px #0005,
+    0 0 10px color-mix(in srgb, var(--board-card-glow-b) 13%, transparent),
+    inset 0 1px color-mix(in srgb, var(--board-card-glow-b) 20%, transparent);
 }
 
 .dark .kanban-card::before {
-  background: linear-gradient(180deg, #ffffff0c, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--board-card-glow-b) 14%, transparent), transparent);
   opacity: 1;
 }
 
 .dark .kanban-card:hover,
 .dark .kanban-card:focus-within {
-  border-color: color-mix(in srgb, var(--board-glow-a) 62%, var(--board-border));
-  box-shadow: 0 13px 29px #000b, 0 0 17px #38bdf833, 0 0 29px #818cf822;
+  border-top-color: color-mix(in srgb, var(--board-card-glow-a) 58%, var(--board-border));
+  border-right-color: color-mix(in srgb, var(--board-card-glow-a) 58%, var(--board-border));
+  border-bottom-color: color-mix(in srgb, var(--board-card-glow-a) 58%, var(--board-border));
+  box-shadow:
+    0 9px 22px #0008,
+    0 0 16px color-mix(in srgb, var(--board-card-glow-b) 24%, transparent),
+    inset 0 1px color-mix(in srgb, var(--board-card-glow-b) 28%, transparent);
+}
+
+/* Barras de progresso do Board acompanham o gradiente do preset no escuro. */
+.dark .board-workspace .bg-status-progress {
+  background-image: linear-gradient(90deg, var(--board-glow-a), var(--board-glow-b));
 }
 
 @media (max-width: 640px) {

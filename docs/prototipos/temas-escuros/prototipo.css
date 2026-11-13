@@ -1,0 +1,48 @@
+/* Estrutura da demonstração. A aparência clara das superfícies do board vem de base-atual.css. */
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.prototipo-shell { display: flex; min-height: 100vh; }
+.prototipo-sidebar { flex: 0 0 220px; display:flex; flex-direction:column; padding: 18px 14px; background: var(--shell-sidebar); color:var(--shell-foreground); border-right:1px solid var(--shell-border); }
+.prototipo-logo { display:flex; align-items:center; gap:10px; padding:6px 10px 30px; font-weight:750; font-size:17px; }
+.prototipo-logo img { width:38px; height:38px; object-fit:contain; border-radius:10px; background:#fff; padding:5px; }
+.prototipo-caption { padding:0 12px 10px; color:var(--shell-muted); font-size:10px; font-weight:700; letter-spacing:.13em; }
+.prototipo-nav { display:flex; flex-direction:column; gap:4px; }
+.prototipo-nav span { display:flex; align-items:center; gap:12px; padding:11px 13px; border-radius:9px; color:var(--shell-muted); font-size:14px; }
+.prototipo-nav span.ativo { background:var(--shell-active); color:var(--shell-foreground); box-shadow:inset 3px 0 var(--shell-accent); font-weight:600; }
+.prototipo-nav b { font-size:17px; width:19px; text-align:center; }
+.prototipo-sidebar-footer { margin-top:auto; padding:20px 12px 8px; color:var(--shell-muted); font-size:11px; line-height:1.7; }
+.prototipo-main { min-width:0; flex:1; display:flex; flex-direction:column; height:100vh; }
+.prototipo-header { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:74px; padding:12px 22px; background:var(--shell-header); color:var(--shell-foreground); border-bottom:1px solid var(--shell-border); }
+.prototipo-header small { display:block; color:var(--shell-muted); font-size:11px; }
+.prototipo-header strong { font-size:16px; }
+.prototipo-header-right { display:flex; align-items:center; gap:10px; }
+.prototipo-theme-toggle { cursor:pointer; border:1px solid var(--shell-border); background:var(--shell-active); color:var(--shell-foreground); border-radius:9px; padding:8px 12px; font-size:12px; font-weight:600; }
+.prototipo-theme-toggle:focus-visible { outline:2px solid var(--shell-accent); outline-offset:3px; }
+.prototipo-avatar { display:grid; place-items:center; width:34px; height:34px; border-radius:50%; background:var(--shell-active); border:1px solid var(--shell-accent); font-size:11px; font-weight:700; }
+.prototipo-content { min-height:0; flex:1; display:flex; flex-direction:column; gap:12px; padding:12px; }
+.prototipo-toolbar { flex-wrap:wrap; height:auto; min-height:54px; padding:8px 10px; border:1px solid hsl(var(--border)); border-radius:12px; background-color:hsl(var(--surface)); }
+.prototipo-toolbar .spacer { flex:1; }
+.prototipo-button { border:1px solid hsl(var(--border)); color:hsl(var(--foreground)); background:hsl(var(--surface)); border-radius:8px; padding:8px 11px; font-size:12px; white-space:nowrap; }
+.prototipo-create { background:hsl(var(--primary)); color:hsl(var(--primary-foreground)); border:0; font-weight:700; }
+.prototipo-lane { min-height:610px; }
+.prototipo-columns { align-items:stretch; }
+.prototipo-columns .board-column { min-height:500px; }
+.prototipo-columns .board-column-cards { display:flex; flex-direction:column; gap:8px; }
+.prototipo-columns .board-column-cards > * + * { margin-top:0; }
+.prototipo-card-tag { margin-left:auto; color:#5260a5; background:#e4e8fa; border-radius:4px; padding:2px 5px; font-size:10px; }
+.prototipo-priority { background:#e6eafa; color:#5260a5; border-radius:999px; padding:3px 8px; font-size:10px; font-weight:650; }
+.prototipo-agent { margin-left:auto; border-radius:999px; padding:8px 15px; background:hsl(var(--primary)); color:hsl(var(--primary-foreground)); font-weight:700; }
+.prototipo-note { color:hsl(var(--muted-foreground)); font-size:11px; }
+/* A proposta só entra na cascata quando .dark está ativa. */
+:root.dark { --background: 240 10% 7%; --foreground: 240 9% 94%; --card: 240 7% 13%; --card-foreground: 240 9% 95%; --popover: 240 7% 13%; --popover-foreground: 240 9% 95%; --primary: 240 6% 85%; --primary-foreground: 240 10% 10%; --secondary: 240 5% 19%; --secondary-foreground: 240 9% 95%; --muted: 240 5% 19%; --muted-foreground: 240 5% 67%; --accent: 240 5% 23%; --accent-foreground: 240 9% 95%; --border: 240 5% 23%; --input: 240 5% 27%; --ring: 240 6% 75%; --canvas: 240 10% 7%; --surface: 240 6% 12%; --surface-raised: 240 6% 14%; --surface-floating: 240 6% 11%; --board-canvas:#101114; --board-surface:#1b1d21; --board-column:#1c1e23; --board-card:#25272c; --board-border:#393b40; --board-line:#34363c; --board-glow-a:#a5a7ab; --board-glow-b:#d1d0cb; --board-card-glow-a:#b3b5ba; --board-card-glow-b:#e0e0dc; --board-shadow:0 6px 18px #0005; --board-shadow-hover:0 12px 28px #0008; --shell-sidebar:#15161a; --shell-header:#1a1b20; --shell-border:#35373d; --shell-foreground:#f4f3f1; --shell-muted:#aaaab1; --shell-active:#303137; --shell-accent:#dadad6; --shell-accent-foreground:#18191b; }
+:root.dark[data-proposta="ameixa"] { --background: 260 21% 8%; --foreground: 285 28% 95%; --card: 275 17% 14%; --card-foreground: 285 28% 96%; --popover: 275 17% 14%; --popover-foreground: 285 28% 96%; --primary: 273 77% 79%; --primary-foreground: 272 32% 14%; --secondary: 275 15% 20%; --secondary-foreground: 285 28% 95%; --muted: 275 15% 20%; --muted-foreground: 285 11% 70%; --accent: 275 20% 24%; --accent-foreground: 285 28% 95%; --border: 279 15% 27%; --input: 279 15% 30%; --ring: 273 77% 79%; --canvas: 260 21% 8%; --surface: 275 17% 14%; --surface-raised: 275 18% 16%; --surface-floating: 275 17% 12%; --board-canvas:#121019; --board-surface:#211b29; --board-column:#251f2e; --board-card:#302839; --board-border:#4a3e53; --board-line:#45394b; --board-glow-a:#b28bda; --board-glow-b:#c6a0f5; --board-card-glow-a:#bb93e6; --board-card-glow-b:#d1b5f4; --shell-sidebar:#19151f; --shell-header:#211b29; --shell-border:#483b50; --shell-foreground:#f9f4fb; --shell-muted:#b6a9bc; --shell-active:#443352; --shell-accent:#c6a0f5; --shell-accent-foreground:#251932; }
+.dark .board-canvas { background: radial-gradient(ellipse at 90% 0%, color-mix(in srgb, var(--board-glow-b) 6%, transparent), transparent 42%), var(--board-canvas); box-shadow:inset 0 1px color-mix(in srgb, var(--board-glow-b) 12%, transparent), var(--board-shadow); }
+.dark .board-column { background:linear-gradient(155deg, color-mix(in srgb,var(--board-glow-a) 8%,var(--board-column)),var(--board-column) 47%,color-mix(in srgb,#000 12%,var(--board-column))); }
+.dark .board-column-header,.dark .board-context-header { background:linear-gradient(110deg,color-mix(in srgb,var(--board-glow-a) 9%,var(--board-surface)),var(--board-surface) 55%); }
+.dark .kanban-card { background:linear-gradient(145deg,color-mix(in srgb,var(--board-card-glow-a) 14%,var(--board-card)),var(--board-card) 50%,color-mix(in srgb,#000 10%,var(--board-card))); border-color:color-mix(in srgb,var(--board-card-glow-a) 38%,var(--board-border)); box-shadow:0 5px 14px #0005, 0 0 10px color-mix(in srgb,var(--board-card-glow-b) 13%,transparent), inset 0 1px color-mix(in srgb,var(--board-card-glow-b) 20%,transparent); }
+.dark .kanban-card::before { background:linear-gradient(180deg,color-mix(in srgb,var(--board-card-glow-b) 14%,transparent),transparent); opacity:1; }
+.dark .kanban-card:hover,.dark .kanban-card:focus-within { box-shadow:0 9px 22px #0008, 0 0 16px color-mix(in srgb,var(--board-card-glow-b) 24%,transparent),inset 0 1px color-mix(in srgb,var(--board-card-glow-b) 28%,transparent); }
+.dark .prototipo-card-tag,.dark .prototipo-priority { color:hsl(var(--foreground)); background:color-mix(in srgb,var(--board-glow-b) 19%,var(--board-card)); }
+@media(max-width:700px) { .prototipo-sidebar { flex-basis:58px; padding:12px 5px; } .prototipo-logo { padding:6px 4px 24px; } .prototipo-logo img { width:38px; } .prototipo-logo span,.prototipo-caption,.prototipo-nav span em,.prototipo-sidebar-footer { display:none; } .prototipo-nav span { justify-content:center; padding:11px 0; } .prototipo-header { padding:10px 12px; } .prototipo-content { padding:8px; } }
+.prototipo-nav em { font-style:normal; }
+.dark .board-context-header .bg-status-progress, .dark .kanban-card .bg-status-progress { background:linear-gradient(90deg,var(--board-glow-a),var(--board-glow-b)); }

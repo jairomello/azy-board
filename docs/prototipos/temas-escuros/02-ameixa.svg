@@ -1,0 +1,191 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000" role="img" aria-labelledby="title desc"><title id="title">AzyBoard — proposta de tema escuro Ameixa</title><desc id="desc">Proposta visual do board com navegação lateral, seletor de temas e quatro colunas Kanban.</desc><defs><linearGradient id="wash" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#9b70c7" stop-opacity=".13"/><stop offset="1" stop-color="#121019" stop-opacity="0"/></linearGradient><linearGradient id="progress"><stop stop-color="#c6a0f5"/><stop offset="1" stop-color="#d0b7e9"/></linearGradient><linearGradient id="cardSurface" x1="0" y1="0" x2="0.75" y2="1"><stop stop-color="#9b70c7" stop-opacity=".32"/><stop offset=".23" stop-color="#302839"/><stop offset="1" stop-color="#251f2e"/></linearGradient><linearGradient id="columnSurface" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#9b70c7" stop-opacity=".19"/><stop offset=".5" stop-color="#251f2e"/><stop offset="1" stop-color="#121019"/></linearGradient><linearGradient id="panelSurface" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#9b70c7" stop-opacity=".22"/><stop offset=".45" stop-color="#211b29"/><stop offset="1" stop-color="#211b29"/></linearGradient><linearGradient id="reflection" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#c6a0f5" stop-opacity=".0"/><stop offset=".22" stop-color="#c6a0f5" stop-opacity=".40"/><stop offset=".8" stop-color="#c6a0f5" stop-opacity=".05"/><stop offset="1" stop-color="#c6a0f5" stop-opacity="0"/></linearGradient><filter id="cardGlow" x="-15%" y="-25%" width="130%" height="150%"><feGaussianBlur stdDeviation="3.5"/></filter><filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="25"/></filter></defs><style>text{font-family:Inter,Segoe UI,Arial,sans-serif} .mono{font-family:Consolas,monospace;letter-spacing:1.3px} </style>
+<rect x="0" y="0" width="1600" height="1000" rx="0" fill="#121019" />
+<ellipse cx="1350" cy="40" rx="350" ry="180" fill="#9b70c7" opacity=".08" filter="url(#shadow)"/>
+<rect x="0" y="0" width="205" height="1000" rx="0" fill="#19151f" />
+<path d="M205 0V1000" stroke="#473b50"/>
+<rect x="26" y="27" width="38" height="38" rx="12" fill="#c6a0f5" />
+<text x="34" y="53" fill="#251932" font-size="25" font-weight="700" >▦</text>
+<text x="76" y="51" fill="#f9f4fb" font-size="19" font-weight="700" >AzyBoard</text>
+<text x="27" y="110" fill="#a99cad" font-size="10" font-weight="700" class="mono">WORKSPACE</text>
+<text x="31" y="144" fill="#a99cad" font-size="17" font-weight="400" >▦</text>
+<text x="59" y="143" fill="#a99cad" font-size="14" font-weight="500" >Projetos</text>
+<rect x="14" y="165" width="177" height="42" rx="11" fill="#443352" />
+<rect x="14" y="165" width="3" height="42" rx="2" fill="#c6a0f5" />
+<text x="31" y="191" fill="#c6a0f5" font-size="17" font-weight="400" >▤</text>
+<text x="59" y="190" fill="#f9f4fb" font-size="14" font-weight="600" >Board</text>
+<text x="31" y="238" fill="#a99cad" font-size="17" font-weight="400" >◫</text>
+<text x="59" y="237" fill="#a99cad" font-size="14" font-weight="500" >Dashboard</text>
+<text x="31" y="285" fill="#a99cad" font-size="17" font-weight="400" >♙</text>
+<text x="59" y="284" fill="#a99cad" font-size="14" font-weight="500" >Conta</text>
+<text x="31" y="332" fill="#a99cad" font-size="17" font-weight="400" >◉</text>
+<text x="59" y="331" fill="#a99cad" font-size="14" font-weight="500" >Ajuda</text>
+<path d="M25 883H180" stroke="#473b50" stroke-width="1"/>
+<rect x="27" y="905" width="32" height="32" rx="10" fill="#443352" />
+<text x="35" y="927" fill="#c6a0f5" font-size="17" font-weight="400" >✦</text>
+<text x="69" y="918" fill="#f9f4fb" font-size="13" font-weight="700" >Azyboard</text>
+<text x="69" y="936" fill="#a99cad" font-size="11" font-weight="400" >Trabalho conectado</text>
+<text x="27" y="973" fill="#82c7a7" font-size="11" font-weight="600" >◉  Sincronizado</text>
+<text x="240" y="38" fill="#a99cad" font-size="10" font-weight="700" class="mono">WORKSPACE  /  BOARD</text>
+<text x="240" y="72" fill="#f9f4fb" font-size="25" font-weight="700" >Azyboard</text>
+<circle cx="365" cy="63" r="3.5" fill="#81cba5"/>
+<text x="377" y="67" fill="#a99cad" font-size="11" font-weight="400" >Sincronizado</text>
+<rect x="1311" y="30" width="86" height="36" rx="10" fill="url(#panelSurface)" stroke="#473b50" stroke-width="1" />
+<text x="1325" y="53" fill="#d0b7e9" font-size="11" font-weight="700" >PT   EN   ES</text>
+<rect x="1408" y="30" width="37" height="36" rx="10" fill="url(#panelSurface)" stroke="#473b50" stroke-width="1" />
+<text x="1420" y="53" fill="#d0b7e9" font-size="17" font-weight="400" >☼</text>
+<circle cx="1474" cy="48" r="17" fill="#443352" stroke="#c6a0f5"/>
+<text x="1465" y="53" fill="#f9f4fb" font-size="11" font-weight="700" >JA</text>
+<path d="M205 91H1600" stroke="#473b50" stroke-width="1"/>
+<text x="240" y="137" fill="#a99cad" font-size="12" font-weight="500" >Seu espaço de trabalho</text>
+<text x="240" y="170" fill="#f9f4fb" font-size="28" font-weight="700" >Board</text>
+<text x="240" y="194" fill="#a99cad" font-size="13" font-weight="400" >Acompanhe o fluxo e faça as ideias avançarem.</text>
+<rect x="1324" y="131" width="132" height="42" rx="12" fill="#c6a0f5" />
+<text x="1343" y="158" fill="#251932" font-size="14" font-weight="700" >＋  Criar</text>
+<text x="1431" y="157" fill="#251932" font-size="15" font-weight="400" >⌄</text>
+<rect x="240" y="220" width="1320" height="57" rx="13" fill="url(#panelSurface)" stroke="#473b50" stroke-width="1" />
+<rect x="250" y="229" width="72" height="39" rx="9" fill="#443352" />
+<text x="270" y="254" fill="#f9f4fb" font-size="13" font-weight="700" >Board</text>
+<text x="340" y="254" fill="#a99cad" font-size="13" font-weight="600" >Árvore</text>
+<path d="M412 234V263" stroke="#473b50"/>
+<text x="432" y="254" fill="#d0b7e9" font-size="13" font-weight="600" >☰   Filtros</text>
+<text x="537" y="254" fill="#d0b7e9" font-size="13" font-weight="600" >⚑   Opções</text>
+<text x="995" y="253" fill="#a99cad" font-size="10" font-weight="700" class="mono">TEMA ESCURO</text>
+<circle cx="1124" cy="249" r="9" fill="#91949b"/>
+<circle cx="1155" cy="249" r="9" fill="#b78de6"/>
+<circle cx="1186" cy="249" r="9" fill="#779fcd"/>
+<circle cx="1217" cy="249" r="9" fill="#77b99d"/>
+<circle cx="1248" cy="249" r="9" fill="#c89a7c"/>
+<circle cx="1155" cy="249" r="14" fill="none" stroke="#c6a0f5" stroke-width="1.5"/>
+<text x="1278" y="254" fill="#f9f4fb" font-size="12" font-weight="600" >Ameixa</text>
+<path d="M1370 234V263" stroke="#473b50"/>
+<text x="1390" y="254" fill="#d0b7e9" font-size="12" font-weight="600" >◫  Confortável</text>
+<ellipse cx="1450" cy="337" rx="90" ry="22" fill="#c6a0f5" opacity=".12" filter="url(#shadow)"/>
+<rect x="240" y="295" width="1320" height="79" rx="15" fill="url(#panelSurface)" stroke="#473b50" stroke-width="1" />
+<rect x="257" y="312" width="44" height="44" rx="13" fill="#443352" />
+<text x="269" y="341" fill="#c6a0f5" font-size="22" font-weight="700" >◎</text>
+<text x="317" y="329" fill="#f9f4fb" font-size="15" font-weight="700" >Progresso geral</text>
+<text x="317" y="350" fill="#a99cad" font-size="12" font-weight="400" >114 de 122 itens concluídos</text>
+<text x="1155" y="329" fill="#f9f4fb" font-size="17" font-weight="700" >93%</text>
+<text x="1202" y="329" fill="#a99cad" font-size="12" font-weight="400" >de avanço</text>
+<rect x="1155" y="342" width="376" height="6" rx="3" fill="#473b50" />
+<rect x="1155" y="342" width="350" height="6" rx="3" fill="url(#progress)" />
+<path d="M258 296 H1540" stroke="url(#reflection)" stroke-width="1.5"/>
+<text x="241" y="418" fill="#a99cad" font-size="17" font-weight="400" >⌄</text>
+<text x="267" y="417" fill="#f9f4fb" font-size="17" font-weight="700" >Fluxo contínuo</text>
+<rect x="410" y="397" width="71" height="25" rx="12" fill="#443352" />
+<text x="423" y="414" fill="#d0b7e9" font-size="11" font-weight="600" >122 itens</text>
+<text x="1325" y="415" fill="#a99cad" font-size="12" font-weight="400" >114/122 concluídos</text>
+<rect x="1484" y="406" width="76" height="5" rx="3" fill="#473b50" />
+<rect x="1484" y="406" width="70" height="5" rx="3" fill="#c6a0f5" />
+<rect x="240" y="442" width="312" height="504" rx="15" fill="url(#columnSurface)" stroke="#473b50" stroke-width="1" />
+<circle cx="261" cy="470" r="4" fill="#a8a9af"/>
+<text x="274" y="474" fill="#d0b7e9" font-size="11" font-weight="700" class="mono">BACKLOG</text>
+<rect x="507" y="457" width="28" height="25" rx="9" fill="#443352" />
+<text x="521" y="474" fill="#d0b7e9" font-size="11" font-weight="700" text-anchor="middle">8</text>
+<path d="M256 489H536" stroke="#473b50" stroke-width="1"/>
+<rect x="255" y="500" width="282" height="35" rx="9" fill="none" stroke="#473b50" stroke-width="1" stroke-dasharray="4 4"/>
+<text x="268" y="523" fill="#a99cad" font-size="12" font-weight="500" >＋  Adicionar card</text>
+<rect x="572" y="442" width="312" height="504" rx="15" fill="url(#columnSurface)" stroke="#473b50" stroke-width="1" />
+<circle cx="593" cy="470" r="4" fill="#c9ae81"/>
+<text x="606" y="474" fill="#d0b7e9" font-size="11" font-weight="700" class="mono">A FAZER</text>
+<rect x="839" y="457" width="28" height="25" rx="9" fill="#443352" />
+<text x="853" y="474" fill="#d0b7e9" font-size="11" font-weight="700" text-anchor="middle">0</text>
+<path d="M588 489H868" stroke="#473b50" stroke-width="1"/>
+<rect x="587" y="500" width="282" height="35" rx="9" fill="none" stroke="#473b50" stroke-width="1" stroke-dasharray="4 4"/>
+<text x="600" y="523" fill="#a99cad" font-size="12" font-weight="500" >＋  Adicionar card</text>
+<rect x="904" y="442" width="312" height="504" rx="15" fill="url(#columnSurface)" stroke="#473b50" stroke-width="1" />
+<circle cx="925" cy="470" r="4" fill="#9eb8df"/>
+<text x="938" y="474" fill="#d0b7e9" font-size="11" font-weight="700" class="mono">FAZENDO</text>
+<rect x="1171" y="457" width="28" height="25" rx="9" fill="#443352" />
+<text x="1185" y="474" fill="#d0b7e9" font-size="11" font-weight="700" text-anchor="middle">0</text>
+<path d="M920 489H1200" stroke="#473b50" stroke-width="1"/>
+<rect x="919" y="500" width="282" height="35" rx="9" fill="none" stroke="#473b50" stroke-width="1" stroke-dasharray="4 4"/>
+<text x="932" y="523" fill="#a99cad" font-size="12" font-weight="500" >＋  Adicionar card</text>
+<rect x="1236" y="442" width="312" height="504" rx="15" fill="url(#columnSurface)" stroke="#473b50" stroke-width="1" />
+<circle cx="1257" cy="470" r="4" fill="#87c9a7"/>
+<text x="1270" y="474" fill="#d0b7e9" font-size="11" font-weight="700" class="mono">CONCLUÍDAS</text>
+<rect x="1503" y="457" width="28" height="25" rx="9" fill="#443352" />
+<text x="1517" y="474" fill="#d0b7e9" font-size="11" font-weight="700" text-anchor="middle">114</text>
+<path d="M1252 489H1532" stroke="#473b50" stroke-width="1"/>
+<rect x="1251" y="500" width="282" height="35" rx="9" fill="none" stroke="#473b50" stroke-width="1" stroke-dasharray="4 4"/>
+<text x="1264" y="523" fill="#a99cad" font-size="12" font-weight="500" >＋  Adicionar card</text>
+<rect x="255" y="547" width="282" height="156" rx="12" fill="none" stroke="#c6a0f5" stroke-width="2" opacity=".27" filter="url(#cardGlow)"/>
+<rect x="258" y="552" width="276" height="156" rx="13" fill="#000" opacity=".18" filter="url(#shadow)"/>
+<rect x="255" y="547" width="282" height="156" rx="12" fill="url(#cardSurface)" stroke="#473b50" stroke-width="1" />
+<path d="M268 548 H524" stroke="url(#reflection)" stroke-width="1.5"/>
+<text x="271" y="571" fill="#d0b7e9" font-size="15" font-weight="400" >▤</text>
+<text x="293" y="570" fill="#a99cad" font-size="10" font-weight="700" class="mono">T82</text>
+<text x="271" y="596" fill="#a99cad" font-size="9" font-weight="700" class="mono">FLUXO CONTÍNUO</text>
+<text x="271" y="623" fill="#f9f4fb" font-size="14" font-weight="700" >Adotar openspec validate</text>
+<text x="271" y="642" fill="#f9f4fb" font-size="14" font-weight="700" >como gate no CI</text>
+<path d="M271 666H521" stroke="#473b50" stroke-width="1"/>
+<rect x="271" y="676" width="55" height="19" rx="8" fill="#443352" />
+<text x="298" y="689" fill="#d0b7e9" font-size="9" font-weight="700" text-anchor="middle">MÉDIA</text>
+<text x="344" y="689" fill="#a99cad" font-size="10" font-weight="400" >Tarefa</text>
+<circle cx="506" cy="685" r="10" fill="#443352" stroke="#473b50"/>
+<text x="501" y="688" fill="#d0b7e9" font-size="8" font-weight="700" >JA</text>
+<rect x="255" y="715" width="282" height="156" rx="12" fill="none" stroke="#c6a0f5" stroke-width="2" opacity=".27" filter="url(#cardGlow)"/>
+<rect x="258" y="720" width="276" height="156" rx="13" fill="#000" opacity=".18" filter="url(#shadow)"/>
+<rect x="255" y="715" width="282" height="156" rx="12" fill="url(#cardSurface)" stroke="#473b50" stroke-width="1" />
+<path d="M268 716 H524" stroke="url(#reflection)" stroke-width="1.5"/>
+<text x="271" y="739" fill="#d0b7e9" font-size="15" font-weight="400" >▤</text>
+<text x="293" y="738" fill="#a99cad" font-size="10" font-weight="700" class="mono">T83</text>
+<text x="271" y="764" fill="#a99cad" font-size="9" font-weight="700" class="mono">FLUXO CONTÍNUO</text>
+<text x="271" y="791" fill="#f9f4fb" font-size="14" font-weight="700" >Dividir requisitos longos</text>
+<text x="271" y="810" fill="#f9f4fb" font-size="14" font-weight="700" >nas specs OpenSpec</text>
+<path d="M271 834H521" stroke="#473b50" stroke-width="1"/>
+<rect x="271" y="844" width="55" height="19" rx="8" fill="#443352" />
+<text x="298" y="857" fill="#d0b7e9" font-size="9" font-weight="700" text-anchor="middle">MÉDIA</text>
+<text x="344" y="857" fill="#a99cad" font-size="10" font-weight="400" >Tarefa</text>
+<circle cx="506" cy="853" r="10" fill="#443352" stroke="#473b50"/>
+<text x="501" y="856" fill="#d0b7e9" font-size="8" font-weight="700" >JA</text>
+<circle cx="728" cy="690" r="25" fill="#443352" opacity=".65"/>
+<text x="728" y="696" fill="#d0b7e9" font-size="19" font-weight="500" text-anchor="middle">✦</text>
+<text x="728" y="739" fill="#d0b7e9" font-size="13" font-weight="600" text-anchor="middle">Tudo em dia</text>
+<text x="728" y="759" fill="#a99cad" font-size="11" font-weight="400" text-anchor="middle">Novos cards aparecem aqui</text>
+<circle cx="1060" cy="690" r="25" fill="#443352" opacity=".65"/>
+<text x="1060" y="696" fill="#d0b7e9" font-size="19" font-weight="500" text-anchor="middle">↗</text>
+<text x="1060" y="739" fill="#d0b7e9" font-size="13" font-weight="600" text-anchor="middle">Pronto para começar</text>
+<text x="1060" y="759" fill="#a99cad" font-size="11" font-weight="400" text-anchor="middle">Arraste um card para cá</text>
+<rect x="1251" y="547" width="282" height="177" rx="12" fill="none" stroke="#c6a0f5" stroke-width="2" opacity=".27" filter="url(#cardGlow)"/>
+<rect x="1254" y="552" width="276" height="177" rx="13" fill="#000" opacity=".18" filter="url(#shadow)"/>
+<rect x="1251" y="547" width="282" height="177" rx="12" fill="url(#cardSurface)" stroke="#473b50" stroke-width="1" />
+<path d="M1264 548 H1520" stroke="url(#reflection)" stroke-width="1.5"/>
+<text x="1267" y="571" fill="#d0b7e9" font-size="15" font-weight="400" >▤</text>
+<text x="1289" y="570" fill="#a99cad" font-size="10" font-weight="700" class="mono">T14</text>
+<text x="1267" y="596" fill="#a99cad" font-size="9" font-weight="700" class="mono">FLUXO CONTÍNUO</text>
+<text x="1267" y="623" fill="#f9f4fb" font-size="14" font-weight="700" >Pacote de ícones para</text>
+<text x="1267" y="642" fill="#f9f4fb" font-size="14" font-weight="700" >projetos e itens</text>
+<text x="1267" y="666" fill="#a99cad" font-size="10" font-weight="400" >Concluído</text>
+<rect x="1267" y="674" width="250" height="4" rx="2" fill="#473b50" />
+<rect x="1267" y="674" width="250" height="4" rx="2" fill="#c6a0f5" />
+<path d="M1267 687H1517" stroke="#473b50" stroke-width="1"/>
+<rect x="1267" y="697" width="55" height="19" rx="8" fill="#443352" />
+<text x="1294" y="710" fill="#d0b7e9" font-size="9" font-weight="700" text-anchor="middle">MÉDIA</text>
+<text x="1340" y="710" fill="#a99cad" font-size="10" font-weight="400" >Tarefa</text>
+<circle cx="1502" cy="706" r="10" fill="#443352" stroke="#473b50"/>
+<text x="1497" y="709" fill="#d0b7e9" font-size="8" font-weight="700" >JA</text>
+<rect x="1251" y="736" width="282" height="177" rx="12" fill="none" stroke="#c6a0f5" stroke-width="2" opacity=".27" filter="url(#cardGlow)"/>
+<rect x="1254" y="741" width="276" height="177" rx="13" fill="#000" opacity=".18" filter="url(#shadow)"/>
+<rect x="1251" y="736" width="282" height="177" rx="12" fill="url(#cardSurface)" stroke="#473b50" stroke-width="1" />
+<path d="M1264 737 H1520" stroke="url(#reflection)" stroke-width="1.5"/>
+<text x="1267" y="760" fill="#d0b7e9" font-size="15" font-weight="400" >▤</text>
+<text x="1289" y="759" fill="#a99cad" font-size="10" font-weight="700" class="mono">T46</text>
+<text x="1267" y="785" fill="#a99cad" font-size="9" font-weight="700" class="mono">FLUXO CONTÍNUO</text>
+<text x="1267" y="812" fill="#f9f4fb" font-size="14" font-weight="700" >Criar cadastro de</text>
+<text x="1267" y="831" fill="#f9f4fb" font-size="14" font-weight="700" >dependências nas tasks</text>
+<text x="1267" y="855" fill="#a99cad" font-size="10" font-weight="400" >Checklist  ·  15/16</text>
+<rect x="1267" y="863" width="250" height="4" rx="2" fill="#473b50" />
+<rect x="1267" y="863" width="225" height="4" rx="2" fill="#c6a0f5" />
+<path d="M1267 876H1517" stroke="#473b50" stroke-width="1"/>
+<rect x="1267" y="886" width="55" height="19" rx="8" fill="#443352" />
+<text x="1294" y="899" fill="#d0b7e9" font-size="9" font-weight="700" text-anchor="middle">MÉDIA</text>
+<text x="1340" y="899" fill="#a99cad" font-size="10" font-weight="400" >Tarefa</text>
+<circle cx="1502" cy="895" r="10" fill="#443352" stroke="#473b50"/>
+<text x="1497" y="898" fill="#d0b7e9" font-size="8" font-weight="700" >JA</text>
+<text x="240" y="978" fill="#82c7a7" font-size="10" font-weight="400" >●</text>
+<text x="255" y="978" fill="#d0b7e9" font-size="11" font-weight="600" >Sincronizado</text>
+<text x="344" y="978" fill="#a99cad" font-size="11" font-weight="400" >·   Atualizações em tempo real</text>
+<rect x="1412" y="955" width="148" height="34" rx="17" fill="#c6a0f5" />
+<text x="1432" y="977" fill="#251932" font-size="12" font-weight="700" >✦   Azy Agent</text>
+</svg>
