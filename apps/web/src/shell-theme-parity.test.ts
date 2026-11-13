@@ -1,3 +1,7 @@
+// [CONTRATO-ESTRUTURAL] invariante de CSS: garante que cada preset do contrato
+// compartilhado tenha a variante escura correspondente em `globals.css` (e que
+// não exista preset órfão). Tokens estáticos não são observáveis pelo DOM no
+// happy-dom; o restante do arquivo cobre dados e comportamento.
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { LIGHT_SHELL_THEMES, isLightShellTheme } from '@azy-board/ui-contracts'
