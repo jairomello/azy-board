@@ -57,6 +57,15 @@ Código, comentários, commits, mensagens e documentação em **português do Br
 - Se não estiver claro qual card corresponde ao trabalho, pergunte antes de
   encerrar em vez de adivinhar.
 
+## OpenSpec é obrigatório para toda evolução
+
+- Toda mudança de comportamento (feature, correção com efeito observável, contrato de API, UI ou dado) MUST entrar com uma change em `openspec/changes/<nome>/` contendo `proposal.md`, `tasks.md` e `specs/<capability>/spec.md` com deltas `ADDED`/`MODIFIED`/`REMOVED`/`RENAMED`.
+- O delta `MODIFIED` substitui o requisito inteiro: copie **todos** os cenários do spec atual e acrescente os novos. Cenário omitido faz o archive recusar a change.
+- Antes do PR: `bun run openspec:validate` verde (roda no CI, job `contracts`).
+- Depois do merge: arquive com `bunx openspec archive <change> --yes`, que aplica os deltas em `openspec/specs/` e move a change para `openspec/changes/archive/`. Não deixe change concluída ativa.
+- Spec sem delta correspondente ao runtime é gap de evolução: se o comportamento mudou sem change, abra a change retroativa, alinhe o spec e arquive.
+- `bun run check:docs` continua obrigatório junto com a validação do OpenSpec.
+
 ## Verificação antes de declarar concluído
 
 - `bun run check` (typecheck + lint + testes + build).
