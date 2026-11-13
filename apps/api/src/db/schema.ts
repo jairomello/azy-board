@@ -686,6 +686,44 @@ export const projectVersions = sqliteTable('project_versions', {
 // contra o catálogo de @azy-board/domain; o adapter apenas persiste o JSON.
 // [TENANT] Toda leitura/escrita inclui tenant_id e project_id.
 // ---------------------------------------------------------------------------
+// E5 — integração de entrada do Teams por projeto (token público + segredo).
+export const projectIntegrations = sqliteTable('project_integrations', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id),
+  projectId: text('project_id').notNull(),
+  kind: text('kind').notNull(),
+  publicToken: text('public_token').notNull(),
+  teamsSecret: text('teams_secret').notNull(),
+  defaultType: text('default_type').notNull().default('TASK'),
+  defaultColumnId: text('default_column_id'),
+  parentItemId: text('parent_item_id'),
+  moduleId: text('module_id'),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  createdBy: text('created_by'),
+  createdByEmail: text('created_by_email'),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+  updatedAt: text('updated_at').notNull().default(defaultNowIso()),
+}, (table) => ({
+  tokenUnique: uniqueIndex('project_integrations_token_unique').on(table.publicToken),
+  projectKindUnique: uniqueIndex('project_integrations_project_kind_unique').on(table.tenantId, table.projectId, table.kind),
+}))
+
+// Mensagens recebidas do Teams: dedup por (integração, id da mensagem).
+export const integrationMessages = sqliteTable('integration_messages', {
+  id: text('id').primaryKey(),
+  integrationId: text('integration_id').notNull().references(() => projectIntegrations.id),
+  tenantId: text('tenant_id').notNull(),
+  projectId: text('project_id').notNull(),
+  teamsMessageId: text('teams_message_id').notNull(),
+  status: text('status').notNull(),
+  itemId: text('item_id'),
+  error: text('error'),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+}, (table) => ({
+  dedup: uniqueIndex('integration_messages_dedup_unique').on(table.integrationId, table.teamsMessageId),
+  projectCreated: index('integration_messages_project_created_idx').on(table.tenantId, table.projectId, table.createdAt),
+}))
+
 export const exportMappings = sqliteTable('export_mappings', {
   id: text('id').primaryKey(),
   tenantId: text('tenant_id').notNull().references(() => tenants.id),

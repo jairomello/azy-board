@@ -400,6 +400,13 @@
       "when": 1794261218889,
       "tag": "0056_export_mappings",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "6",
+      "when": 1794601036086,
+      "tag": "0057_project_integrations",
+      "breakpoints": true
     }
   ]
 }

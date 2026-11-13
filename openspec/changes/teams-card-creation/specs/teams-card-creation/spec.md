@@ -9,13 +9,17 @@ O sistema SHALL permitir que um ADMIN do projeto ative a criação de cards pelo
 - **WHEN** um ADMIN ativa a integração informando o token de segurança do Teams
 - **THEN** o sistema exibe a URL pública para colar no Teams e a integração fica pronta para receber mensagens
 
-#### Scenario: Rotacionar o token público
-- **WHEN** um ADMIN rotaciona o token público
-- **THEN** a URL anterior deixa de resolver e a nova passa a valer
+#### Scenario: Remover a integração
+- **WHEN** um ADMIN remove a integração
+- **THEN** a URL deixa de resolver e o histórico de mensagens da integração é removido
 
 #### Scenario: Acesso negado
 - **WHEN** um usuário VIEWER ou MEMBER tenta ler ou alterar a integração
 - **THEN** o sistema responde com permissão negada
+
+#### Scenario: Histórico de mensagens
+- **WHEN** um ADMIN abre a configuração
+- **THEN** o sistema mostra as últimas mensagens recebidas com resultado (card criado, ignorada ou erro)
 
 ### Requirement: Recebimento autenticado de mensagem do Teams
 O sistema SHALL expor um endpoint público que resolve a integração pelo token da URL, valida a assinatura HMAC do Teams e rejeita requisições sem assinatura válida, com token desconhecido ou com integração inativa. O endpoint SHALL limitar o tamanho do corpo, aceitar apenas JSON e aplicar limite de uso por integração.

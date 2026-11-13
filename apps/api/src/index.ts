@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { authRouter } from './routes/auth'
-import { teamsIntegrationRouter } from './routes/teamsIntegration'
+import { teamsConfigRouter, teamsIntegrationRouter } from './routes/teamsIntegration'
 import { projectsRouter } from './routes/projects'
 import { columnsRouter } from './routes/columns'
 import { sprintsRouter } from './routes/sprints'
@@ -121,6 +121,7 @@ const api = app.basePath('/api')
 api.use('*', agentResponseMiddleware)
 api.get('/openapi.json', (c) => c.json(openApiDocument()))
 api.route('/projects', projectsRouter)
+api.route('/projects/:projectId/integrations/teams', teamsConfigRouter)
 api.route('/projects/:projectId/columns', columnsRouter)
 api.route('/projects/:projectId/sprints', sprintsRouter)
 api.route('/projects/:projectId/tags', tagsRouter)

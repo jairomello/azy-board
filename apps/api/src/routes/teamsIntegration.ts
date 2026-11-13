@@ -1,41 +1,34 @@
-import { createHmac, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { Hono } from 'hono'
 import type { RequestContext } from '@azy-board/api-contracts'
+import type { HonoEnv } from '../types/hono'
+import { authMiddleware, requireRole } from '../middleware/auth'
 import { createItemApplication } from '../application/items'
-import { userMutationContext } from '../persistence/context'
+import { userMutationContext, userPersistenceContext } from '../persistence/context'
+import { persistence } from '../persistence/runtime'
 import { logger } from '../services/logger'
 
 // E5 — criação de card pelo Teams via outgoing webhook.
 // O Teams assina o corpo com HMAC-SHA256 usando o token de segurança do webhook.
-// A configuração por projeto entra nas próximas etapas; neste primeiro corte ela
-// vem do ambiente para permitir o teste ponta a ponta com o canal real.
+// A integração é resolvida pelo token público da URL e vive no banco por projeto.
 
 const MAX_BODY_BYTES = 32_768
+const RATE_LIMIT_PER_MINUTE = 30
+const KIND = 'TEAMS_WEBHOOK'
 
-interface TeamsIntegrationConfig {
-  token: string
-  secret: string
-  tenantId: string
-  projectId: string
-  actorUserId: string
-  actorEmail: string
-  webBase: string
-  parentId: string
-  moduleId: string
+interface TeamsPayload {
+  id?: string
+  text?: string
+  from?: { name?: string }
 }
 
-function readConfig(): TeamsIntegrationConfig {
-  return {
-    token: process.env.AZY_TEAMS_TOKEN ?? '',
-    secret: process.env.AZY_TEAMS_SECRET ?? '',
-    tenantId: process.env.AZY_TEAMS_TENANT_ID ?? '',
-    projectId: process.env.AZY_TEAMS_PROJECT_ID ?? '',
-    actorUserId: process.env.AZY_TEAMS_ACTOR_USER_ID ?? '',
-    actorEmail: process.env.AZY_TEAMS_ACTOR_EMAIL ?? '',
-    webBase: process.env.AZY_TEAMS_WEB_BASE ?? 'http://localhost:8180',
-    parentId: process.env.AZY_TEAMS_PARENT_ID ?? '',
-    moduleId: process.env.AZY_TEAMS_MODULE_ID ?? '',
-  }
+interface ParsedCommand {
+  title: string
+  type?: 'TASK' | 'BUG'
+  startDate?: string
+  dueDate?: string
+  description?: string
+  ignored: string[]
 }
 
 function signatureMatches(rawBody: string, header: string, secret: string): boolean {
@@ -53,7 +46,7 @@ function signatureMatches(rawBody: string, header: string, secret: string): bool
 
 function cleanText(text: string): string {
   return text
-    // O Teams envia HTML: quebra de linha vira espaço e TODA tag sai (inclusive <at>).
+    // O Teams envia HTML: toda tag sai (inclusive a menção `<at>`).
     .replace(/<br\s*\/?>/gi, ' ')
     .replace(/<\/(p|div|li|tr)>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
@@ -61,18 +54,9 @@ function cleanText(text: string): string {
     .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
-    .replace(/[\u200b\u200c\u200d\ufeff]/g, '')
+    .replace(/\u200b|\u200c|\u200d|\ufeff/g, '')
     .replace(/\s+/g, ' ')
     .trim()
-}
-
-interface ParsedCommand {
-  title: string
-  type?: 'TASK' | 'BUG'
-  startDate?: string
-  dueDate?: string
-  description?: string
-  ignored: string[]
 }
 
 function parseDate(value: string): string | null {
@@ -130,58 +114,98 @@ function parseCommand(text: string): ParsedCommand | null {
   return command
 }
 
-export const teamsIntegrationRouter = new Hono()
+function publicBaseUrl(requestUrl: string): string {
+  return process.env.AZY_PUBLIC_API_URL || new URL(requestUrl).origin
+}
+
+/** Base do web para o link do card. Em produção é a mesma origem da API. */
+function webBaseUrl(requestUrl: string): string {
+  return process.env.AZY_PUBLIC_WEB_URL || new URL(requestUrl).origin
+}
+
+export const teamsIntegrationRouter = new Hono<HonoEnv>()
 
 teamsIntegrationRouter.post('/messages/:token', async (c) => {
-  const config = readConfig()
-  if (!config.token || c.req.param('token') !== config.token) {
-    return c.json({ error: 'Integração não encontrada' }, 404)
-  }
+  const integration = await persistence.integrations.getByPublicToken(c.req.param('token'))
+  if (!integration || !integration.enabled) return c.json({ error: 'Integração não encontrada' }, 404)
 
   const rawBody = await c.req.text()
   if (rawBody.length > MAX_BODY_BYTES) return c.json({ error: 'Payload muito grande' }, 413)
 
   const signature = (c.req.header('authorization') ?? '').replace(/^HMAC\s+/i, '')
-  if (!signatureMatches(rawBody, signature, config.secret)) {
+  if (!signatureMatches(rawBody, signature, integration.teamsSecret)) {
     return c.json({ error: 'Assinatura inválida' }, 401)
   }
 
-  let payload: { id?: string; text?: string; from?: { name?: string } }
+  // Limite por integração: o endpoint é público e assinado, mas não ilimitado.
+  const since = new Date(Date.now() - 60_000).toISOString()
+  if (await persistence.integrations.countRecentMessages(integration.id, since) >= RATE_LIMIT_PER_MINUTE) {
+    return c.json({ error: 'Limite de mensagens por minuto excedido' }, 429, { 'Retry-After': '60' })
+  }
+
+  let payload: TeamsPayload
   try {
     payload = JSON.parse(rawBody)
   } catch {
     return c.json({ type: 'message', text: 'Não consegui ler a mensagem.' })
   }
 
+  const messageId = payload.id ?? createHash('sha256').update(rawBody).digest('hex')
+
+  // Idempotência: o Teams pode reenviar a mesma mensagem.
+  const previous = await persistence.integrations.findMessage(integration.id, messageId)
+  if (previous) {
+    if (previous.status === 'CREATED' && previous.itemId) {
+      const link = `${webBaseUrl(c.req.url)}/projects/${integration.projectId}/board?itemId=${previous.itemId}`
+      return c.json({ type: 'message', text: `Card já criado para esta mensagem.\n[Abrir no Azy Board](${link})` })
+    }
+    return c.json({ type: 'message', text: previous.error ?? 'Esta mensagem já foi processada.' })
+  }
+
   const text = cleanText(payload.text ?? '')
-  logger.info('teams-integration: mensagem recebida', { text: text.slice(0, 200) })
   const command = parseCommand(text)
+  const record = (status: 'CREATED' | 'IGNORED' | 'ERROR', itemId: string | null, error: string | null) =>
+    persistence.integrations.recordMessage({
+      integrationId: integration.id, tenantId: integration.tenantId, projectId: integration.projectId,
+      teamsMessageId: messageId, status, itemId, error,
+    })
+
   if (!command) {
-    return c.json({ type: 'message', text: 'Use `@Azy criar <título>; descrição <texto>; data inicio dd/mm/aa; data fim dd/mm/aa.` para abrir um card no Backlog.' })
+    const help = 'Use `@Azy criar <título>; <descrição>; <data inicio>; <data fim>.` para abrir um card no Backlog.'
+    await record('IGNORED', null, help)
+    return c.json({ type: 'message', text: help })
   }
   if (!command.title || command.title.length > 500) {
-    return c.json({ type: 'message', text: 'Informe um título de até 500 caracteres depois de `criar`.' })
+    const error = 'Informe um título de até 500 caracteres depois de `criar`.'
+    await record('IGNORED', null, error)
+    return c.json({ type: 'message', text: error })
+  }
+  if (!integration.createdBy) {
+    const error = 'Integração sem responsável técnico configurado. Reconfigure em Configurações → Integrações.'
+    await record('ERROR', null, error)
+    return c.json({ type: 'message', text: error })
   }
 
   const context: RequestContext = {
-    userId: config.actorUserId,
-    tenantId: config.tenantId,
-    email: config.actorEmail,
+    userId: integration.createdBy,
+    tenantId: integration.tenantId,
+    email: integration.createdByEmail ?? '',
     globalGroup: 'ADMIN',
   }
 
   try {
     const result = await createItemApplication({
       context,
-      projectId: config.projectId,
+      projectId: integration.projectId,
       minimumRole: 'MEMBER',
       permissionScope: undefined,
       mutationContext: userMutationContext(context, 'TEAMS'),
       body: {
         title: command.title,
-        type: command.type ?? 'TASK',
-        ...(config.parentId ? { parentId: config.parentId } : {}),
-        ...(config.moduleId ? { moduleId: config.moduleId } : {}),
+        type: command.type ?? (integration.defaultType === 'BUG' ? 'BUG' : 'TASK'),
+        ...(integration.parentItemId ? { parentId: integration.parentItemId } : {}),
+        ...(integration.moduleId ? { moduleId: integration.moduleId } : {}),
+        ...(integration.defaultColumnId ? { columnId: integration.defaultColumnId } : {}),
         priority: 'MEDIUM',
         ...(command.startDate ? { startDate: command.startDate } : {}),
         ...(command.dueDate ? { dueDate: command.dueDate } : {}),
@@ -189,23 +213,101 @@ teamsIntegrationRouter.post('/messages/:token', async (c) => {
           ? { description: command.description }
           : payload.from?.name ? { description: `Criado pelo Teams por ${payload.from.name}.` } : {}),
         externalSource: 'TEAMS',
-        ...(payload.id ? { externalRef: payload.id.slice(0, 200) } : {}),
+        externalRef: messageId.slice(0, 200),
       },
     })
     if (!result.ok) {
-      return c.json({ type: 'message', text: `Não consegui criar o card: ${result.body?.error ?? 'erro de validação'}.` })
+      const error = `Não consegui criar o card: ${result.body?.error ?? 'erro de validação'}.`
+      await record('ERROR', null, error)
+      return c.json({ type: 'message', text: error })
     }
-    const record = result.record
-    const code = record.sequenceCode ?? record.id
-    const link = `${config.webBase}/projects/${config.projectId}/board?itemId=${record.id}`
+    const item = result.record
+    const code = item.sequenceCode ?? item.id
+    const link = `${webBaseUrl(c.req.url)}/projects/${integration.projectId}/board?itemId=${item.id}`
     const dates = [command.startDate ? `início ${command.startDate}` : null, command.dueDate ? `fim ${command.dueDate}` : null].filter(Boolean)
     const extra = command.ignored.length ? `\nNão entendi: ${command.ignored.join(' · ')}.` : ''
+    await record('CREATED', item.id, null)
     return c.json({
       type: 'message',
       text: `Card **${code} — ${command.title}** criado no Backlog${dates.length ? ` (${dates.join(', ')})` : ''}.\n[Abrir no Azy Board](${link})${extra}`,
     })
   } catch (error) {
     logger.error('teams-integration: falha ao criar card', { error: error instanceof Error ? error.message : String(error) })
+    await record('ERROR', null, 'Erro interno ao criar o card.')
     return c.json({ type: 'message', text: 'Erro interno ao criar o card. Tente novamente.' })
   }
+})
+
+// ---------------------------------------------------------------------------
+// Configuração (ADMIN) — usada pela tela de configurações do projeto.
+// ---------------------------------------------------------------------------
+export const teamsConfigRouter = new Hono<HonoEnv>()
+teamsConfigRouter.use('*', authMiddleware)
+
+teamsConfigRouter.get('/', requireRole('ADMIN'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const projectId = c.req.param('projectId')!
+  const integration = await persistence.integrations.getByProject(userPersistenceContext(ctx), projectId, KIND)
+  const messages = await persistence.integrations.listMessages(userPersistenceContext(ctx), projectId, KIND, 20)
+  if (!integration) {
+    return c.json({ enabled: false, configured: false, url: null, moduleId: null, parentItemId: null, defaultType: 'TASK', messages: [] })
+  }
+  return c.json({
+    enabled: integration.enabled,
+    configured: true,
+    url: `${publicBaseUrl(c.req.url)}/api/integrations/teams/messages/${integration.publicToken}`,
+    moduleId: integration.moduleId,
+    parentItemId: integration.parentItemId,
+    defaultType: integration.defaultType,
+    messages: messages.map(message => ({
+      teamsMessageId: message.teamsMessageId, status: message.status, itemId: message.itemId,
+      error: message.error, createdAt: message.createdAt,
+    })),
+  })
+})
+
+teamsConfigRouter.put('/', requireRole('ADMIN'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const projectId = c.req.param('projectId')!
+  const body = await c.req.json().catch(() => null) as null | {
+    teamsSecret?: string; moduleId?: string | null; parentItemId?: string | null
+    defaultType?: string; enabled?: boolean
+  }
+  if (!body || typeof body.teamsSecret !== 'string' || body.teamsSecret.trim().length < 16) {
+    return c.json({ error: 'Informe o token de segurança do Teams (mínimo 16 caracteres).' }, 422)
+  }
+  if (body.defaultType !== undefined && body.defaultType !== 'TASK' && body.defaultType !== 'BUG') {
+    return c.json({ error: 'Tipo padrão deve ser TASK ou BUG.' }, 422)
+  }
+  const integration = await persistence.integrations.upsert(
+    { ...userPersistenceContext(ctx), mutation: { origin: 'REST', correlationId: null, actorType: 'HUMAN', actorSource: 'REST', actorLabel: null } },
+    projectId, KIND,
+    {
+      teamsSecret: body.teamsSecret.trim(),
+      createdByEmail: ctx.email,
+      ...(body.moduleId !== undefined ? { moduleId: body.moduleId } : {}),
+      ...(body.parentItemId !== undefined ? { parentItemId: body.parentItemId } : {}),
+      ...(body.defaultType !== undefined ? { defaultType: body.defaultType } : {}),
+      ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+    },
+  )
+  return c.json({
+    enabled: integration.enabled,
+    configured: true,
+    url: `${publicBaseUrl(c.req.url)}/api/integrations/teams/messages/${integration.publicToken}`,
+    moduleId: integration.moduleId,
+    parentItemId: integration.parentItemId,
+    defaultType: integration.defaultType,
+    messages: [],
+  })
+})
+
+teamsConfigRouter.delete('/', requireRole('ADMIN'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const projectId = c.req.param('projectId')!
+  await persistence.integrations.remove(
+    { ...userPersistenceContext(ctx), mutation: { origin: 'REST', correlationId: null, actorType: 'HUMAN', actorSource: 'REST', actorLabel: null } },
+    projectId, KIND,
+  )
+  return c.json({ ok: true })
 })

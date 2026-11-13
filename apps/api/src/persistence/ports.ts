@@ -40,6 +40,9 @@ import type {
   DashboardTokenGroupBy,
   DashboardTokenGroupRow,
   DashboardTransitionRecord,
+  ProjectIntegrationRecord,
+  ProjectIntegrationInput,
+  IntegrationMessageRecord,
   PlanningGapQueryRequest,
   PlanningGapSnapshotRecord,
   StructureDuplicationPlan,
@@ -762,6 +765,18 @@ export interface ExportMappingPort {
   deleteMapping(context: MutationContext, projectId: string, mappingId: string): Promise<boolean>
 }
 
+export interface IntegrationPort {
+  getByProject(context: PersistenceContext, projectId: string, kind: string): Promise<ProjectIntegrationRecord | null>
+  /** Resolve a integração pelo token público (endpoint sem sessão). */
+  getByPublicToken(token: string): Promise<ProjectIntegrationRecord | null>
+  upsert(context: MutationContext, projectId: string, kind: string, input: ProjectIntegrationInput): Promise<ProjectIntegrationRecord>
+  remove(context: MutationContext, projectId: string, kind: string): Promise<boolean>
+  findMessage(integrationId: string, teamsMessageId: string): Promise<IntegrationMessageRecord | null>
+  recordMessage(record: Omit<IntegrationMessageRecord, 'id' | 'createdAt'>): Promise<void>
+  countRecentMessages(integrationId: string, since: string): Promise<number>
+  listMessages(context: PersistenceContext, projectId: string, kind: string, limit: number): Promise<IntegrationMessageRecord[]>
+}
+
 export interface PersistencePorts extends PersistenceTransaction {
   health: HealthPort
   domainEvents: DomainEventPort
@@ -773,6 +788,7 @@ export interface PersistencePorts extends PersistenceTransaction {
   batch: BatchMutationPort
   planningGapSnapshots: PlanningGapSnapshotPort
   exportMappings: ExportMappingPort
+  integrations: IntegrationPort
   unitOfWork: UnitOfWork
 }
 
