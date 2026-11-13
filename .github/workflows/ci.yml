@@ -66,6 +66,8 @@ jobs:
         run: bun run test:agent-skill
       - name: Migrations
         run: bun run test:migrations
+      - name: OpenSpec
+        run: bun run openspec:validate
       - name: Integridade da documentação
         run: bun run check:docs
       - name: Build do web (orçamento de bundle)

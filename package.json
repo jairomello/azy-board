@@ -1,7 +1,10 @@
 {
   "name": "azy-board",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "predev:api": "bun run db:migrate",
     "dev:api": "bun run --cwd apps/api dev",
@@ -35,6 +38,7 @@
     "test:agent-skill": "bun run scripts/check-agent-skill.ts",
     "generate:docs": "bun run scripts/generate-docs.ts",
     "check:docs": "bun run scripts/check-docs.ts",
+    "openspec:validate": "openspec validate --all",
     "audit:release-policy": "bun run scripts/audit-release-policy.ts",
     "check:i18n": "bun run scripts/check-i18n.ts",
     "check:frontend-tests": "bun run scripts/check-frontend-tests.ts",
@@ -52,6 +56,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
+    "@fission-ai/openspec": "2.0.0",
     "@types/pngjs": "^6.0.5",
     "pixelmatch": "^7.2.0",
     "playwright": "^1.63.0",
