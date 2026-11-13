@@ -37,15 +37,31 @@ O sistema SHALL expor um endpoint público que resolve a integração pelo token
 - **THEN** o sistema responde 429 com `Retry-After` e não cria o card
 
 ### Requirement: Criação do card a partir da mensagem
-O sistema SHALL interpretar a mensagem mencionando o bot, criando um card do tipo configurado na coluna inicial configurada, com o título informado e os campos opcionais reconhecidos (`tipo`, `prazo`, `responsável`). O card SHALL registrar a origem `TEAMS` e o identificador da mensagem, e o autor SHALL ser registrado como responsável externo com o nome exibido no Teams.
+O sistema SHALL interpretar a mensagem mencionando o bot, criando um card do tipo configurado na coluna inicial configurada, com o título informado e as datas opcionais de início e fim. O card SHALL entrar no módulo `Backlog` sob a história de entrada do Teams, registrar a origem `TEAMS` e o identificador da mensagem, e SHALL NOT atribuir responsável.
 
 #### Scenario: Comando simples
 - **WHEN** a mensagem é `@Azy criar ajustar X, Y e Z na camada W`
-- **THEN** um card `TASK` é criado na coluna inicial com esse título e origem `TEAMS`
+- **THEN** um card `TASK` é criado no Backlog com esse título e origem `TEAMS`, sem responsável
 
-#### Scenario: Comando com campos
-- **WHEN** a mensagem informa `tipo: BUG`, `prazo` e `responsável`
-- **THEN** o card é criado com esses valores e o restante no padrão
+#### Scenario: Comando com datas
+- **WHEN** a mensagem é `@Azy criar revisar camada W; data inicio 18/11/26; data fim 25/11/26.`
+- **THEN** o card é criado com início `2026-11-18` e fim `2026-11-25`, sem responsável
+
+#### Scenario: Comando com descrição
+- **WHEN** a mensagem é `@Azy criar atividade de teste; detalhar a desc do teste; 12/12/26; 13/12/26`
+- **THEN** o card recebe a descrição "detalhar a desc do teste", início `2026-12-12` e fim `2026-12-13`
+
+#### Scenario: Descrição com rótulo
+- **WHEN** a mensagem inclui `; descrição Validar o fluxo com o time`
+- **THEN** a descrição do card recebe esse texto, sem HTML da mensagem
+
+#### Scenario: HTML da mensagem
+- **WHEN** o Teams envia o texto dentro de `<p>` com a menção `<at>`
+- **THEN** o título e a descrição chegam limpos, sem tags
+
+#### Scenario: Data inválida
+- **WHEN** a data informada não é uma data válida
+- **THEN** o card é criado sem essa data e a resposta informa o que não foi entendido
 
 #### Scenario: Mensagem sem comando
 - **WHEN** a mensagem menciona o bot sem a palavra `criar`

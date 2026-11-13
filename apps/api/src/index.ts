@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { authRouter } from './routes/auth'
+import { teamsIntegrationRouter } from './routes/teamsIntegration'
 import { projectsRouter } from './routes/projects'
 import { columnsRouter } from './routes/columns'
 import { sprintsRouter } from './routes/sprints'
@@ -108,6 +109,8 @@ app.route('/version', versionRouter)
 // para o endpoint público de versão continuar alcançável por quem só publica /api.
 app.route('/api/version', versionRouter)
 app.route('/api/auth', authRouter)
+// E5 — webhook de saída do Teams: autenticado por HMAC, fora da sessão.
+app.route('/api/integrations/teams', teamsIntegrationRouter)
 
 // MCP remoto (Streamable HTTP) — fora de /api (corpo JSON-RPC) e com auth por
 // requisição; ver routes/mcp.ts e DEPLOY.md.

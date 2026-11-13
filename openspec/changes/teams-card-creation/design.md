@@ -45,21 +45,28 @@ Configuração (ADMIN):
 ## Comando
 
 ```text
-@Azy criar <título> [| tipo: BUG] [| prazo: DD/MM/AAAA] [| responsável: Nome]
+@Azy criar <título>; <descrição>; <data início>; <data fim>
+@Azy criar <título>; descrição <texto>; data inicio dd/mm/aa; data fim dd/mm/aa.
 ```
 
-- A menção (`<at>Azy</at>`) é removida antes do parse.
+- A menção (`<at id="0">Azy</at>`) é removida antes do parse.
+- Separador `;` (o `|` continua aceito para mensagens antigas).
+- Texto livre depois do título vira descrição; datas soltas, na ordem, viram início e fim.
+- Datas aceitam `dd/mm/aa` e `dd/mm/aaaa`; ano de dois dígitos vira `20aa`.
 - Sem `criar`, a mensagem é ignorada com resposta explicando o formato.
-- Título vazio ou acima de 200 caracteres é recusado com erro claro.
+- Título vazio ou acima de 500 caracteres é recusado com erro claro.
+- Descrição é opcional; quando ausente, o card registra quem pediu.
+- HTML do Teams (`<p>`, `<br>`, `<at>`) é removido antes do parse.
 - Campos desconhecidos são ignorados e informados na resposta.
 
 ## Criação do card
 
 - Tipo padrão `TASK`; `BUG` quando informado.
 - Coluna inicial configurada (padrão `NOT_STARTED`).
-- `externalSource = 'TEAMS'` e `externalRef = <id da mensagem>` para rastrear a origem.
-- Autor: `assigneeLabel` com o nome exibido no Teams (o payload não traz e-mail). O nome do remetente também entra no log do card.
-- Prioridade padrão `MEDIUM`.
+- **Bolsão**: todo card criado pelo Teams entra no módulo `Backlog` e sob a história `Entrada pelo Teams`, para o time triar depois.
+- `externalSource = 'TEAMS'` e `externalRef = TEAMS:<id da mensagem>` para rastrear a origem.
+- **Sem responsável**: o card nasce sem dono (o payload do Teams não traz e-mail); o nome de quem pediu vai para a descrição, não para a atribuição.
+- Prioridade padrão `MEDIUM`; datas de início e fim vindas da mensagem.
 
 ## Confiabilidade
 

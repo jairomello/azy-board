@@ -17,9 +17,9 @@
 
 ## 3. Interpretação e criação
 
-- [ ] 3.1 Remover a menção e interpretar `criar <título>` com campos opcionais (`tipo`, `prazo`, `responsável`).
-- [ ] 3.2 Criar `TASK`/`BUG` na coluna configurada com `externalSource = 'TEAMS'` e `externalRef` da mensagem.
-- [ ] 3.3 Autor como `assigneeLabel` e registro do remetente no log do card.
+- [x] 3.1 Remover a menção e interpretar `criar <título>; data inicio dd/mm/aa; data fim dd/mm/aa.` (com `|` e `tipo` aceitos por compatibilidade).
+- [x] 3.2 Criar `TASK`/`BUG` na coluna configurada, no módulo `Backlog` sob a história `Entrada pelo Teams`, com `externalSource = 'TEAMS'` e `externalRef` da mensagem.
+- [x] 3.3 Card sem responsável; nome de quem pediu registrado na descrição.
 - [ ] 3.4 Resposta com link do card; erro legível para comando inválido.
 
 ## 4. Configuração (ADMIN)
