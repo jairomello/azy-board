@@ -392,7 +392,7 @@ export function AppShell({
           (`-ml-3` + `rounded-l-none`). */}
       <header
         data-shell-header
-        className="shell-surface relative z-30 mx-3 mt-3 h-16 flex-shrink-0 rounded-2xl border border-shell-border bg-shell-header text-shell-foreground shadow-[0_10px_28px_rgba(20,35,50,0.13)] px-3 sm:px-5 flex items-center gap-3 lg:col-start-2 lg:row-start-1 lg:-ml-1 lg:mr-0 lg:mt-0 lg:pl-8 lg:rounded-l-none lg:rounded-r-2xl lg:border-l-0"
+        className="shell-surface relative z-30 mx-3 mt-3 h-16 flex-shrink-0 rounded-2xl border border-shell-border bg-shell-header text-shell-foreground shadow-[0_10px_28px_rgba(20,35,50,0.13)] px-3 sm:px-5 flex items-center gap-3 lg:col-start-2 lg:row-start-1 lg:-ml-4 lg:mr-0 lg:mt-0 lg:pl-11 lg:rounded-l-none lg:rounded-r-2xl lg:border-l-0"
       >
         <button
           onClick={() => setMobileOpen(true)}

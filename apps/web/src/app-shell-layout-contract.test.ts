@@ -79,8 +79,10 @@ describe('contrato do shell integrado', () => {
     const shell = await source('./components/AppShell.tsx')
 
     contains(shell, 'relative z-40 hidden lg:block')
-    // O header recua o mesmo valor da moldura (`lg:p-1`) para encostar na sidebar.
-    contains(shell, 'lg:-ml-1')
+    // O header recua o raio do canto da sidebar (16 px) para não deixar vão de canvas.
+    contains(shell, 'lg:-ml-4')
+    // O padding compensa o recuo, preservando a posição do conteúdo do header.
+    contains(shell, 'lg:pl-11')
     contains(shell, 'lg:border-r-0')
     contains(shell, 'shadow-[12px_0_24px_-10px_rgba(3,15,23,0.72)')
     expect(shell.includes('rounded-tr-none')).toBe(false)
