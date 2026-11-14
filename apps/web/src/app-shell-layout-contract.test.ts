@@ -39,6 +39,9 @@ describe('contrato do shell integrado', () => {
     }
     contains(shell, 'lg:grid')
     contains(shell, 'lg:grid-rows-[64px_minmax(0,1fr)]')
+    // Moldura externa compacta: 4 px no desktop.
+    contains(shell, 'lg:p-1')
+    expect(shell.includes('lg:p-3')).toBe(false)
     contains(shell, 'lg:row-span-2')
     contains(shell, 'lg:col-start-2')
     contains(shell, 'lg:row-start-2')
@@ -76,7 +79,8 @@ describe('contrato do shell integrado', () => {
     const shell = await source('./components/AppShell.tsx')
 
     contains(shell, 'relative z-40 hidden lg:block')
-    contains(shell, 'lg:-ml-3')
+    // O header recua o mesmo valor da moldura (`lg:p-1`) para encostar na sidebar.
+    contains(shell, 'lg:-ml-1')
     contains(shell, 'lg:border-r-0')
     contains(shell, 'shadow-[12px_0_24px_-10px_rgba(3,15,23,0.72)')
     expect(shell.includes('rounded-tr-none')).toBe(false)

@@ -359,7 +359,7 @@ export function AppShell({
   return (
     <div
       data-shell-layout
-      className={`h-screen overflow-hidden bg-canvas text-foreground flex flex-col lg:grid lg:grid-cols-[68px_minmax(0,1fr)] ${sidebarExpanded ? 'min-[1280px]:grid-cols-[220px_minmax(0,1fr)]' : 'min-[1280px]:grid-cols-[68px_minmax(0,1fr)]'} lg:grid-rows-[64px_minmax(0,1fr)] lg:p-3`}
+      className={`h-screen overflow-hidden bg-canvas text-foreground flex flex-col lg:grid lg:grid-cols-[68px_minmax(0,1fr)] ${sidebarExpanded ? 'min-[1280px]:grid-cols-[220px_minmax(0,1fr)]' : 'min-[1280px]:grid-cols-[68px_minmax(0,1fr)]'} lg:grid-rows-[64px_minmax(0,1fr)] lg:p-1`}
     >
       {mobileOpen && (
         <div className="fixed inset-x-0 top-[76px] bottom-0 z-50 lg:hidden">
@@ -392,7 +392,7 @@ export function AppShell({
           (`-ml-3` + `rounded-l-none`). */}
       <header
         data-shell-header
-        className="shell-surface relative z-30 mx-3 mt-3 h-16 flex-shrink-0 rounded-2xl border border-shell-border bg-shell-header text-shell-foreground shadow-[0_10px_28px_rgba(20,35,50,0.13)] px-3 sm:px-5 flex items-center gap-3 lg:col-start-2 lg:row-start-1 lg:-ml-3 lg:mr-0 lg:mt-0 lg:pl-8 lg:rounded-l-none lg:rounded-r-2xl lg:border-l-0"
+        className="shell-surface relative z-30 mx-3 mt-3 h-16 flex-shrink-0 rounded-2xl border border-shell-border bg-shell-header text-shell-foreground shadow-[0_10px_28px_rgba(20,35,50,0.13)] px-3 sm:px-5 flex items-center gap-3 lg:col-start-2 lg:row-start-1 lg:-ml-1 lg:mr-0 lg:mt-0 lg:pl-8 lg:rounded-l-none lg:rounded-r-2xl lg:border-l-0"
       >
         <button
           onClick={() => setMobileOpen(true)}

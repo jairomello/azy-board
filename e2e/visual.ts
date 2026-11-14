@@ -38,6 +38,10 @@ async function main() {
     await page.getByRole('link', { name: 'Configurações' }).click()
     await page.waitForURL('**/settings', { timeout: 15_000 })
     await page.getByRole('button', { name: 'Colunas' }).waitFor({ timeout: 15_000 })
+    // O shell e o formulário carregam o projeto em consultas distintas: sem esta
+    // espera a captura pega o header ainda no fallback e o formato do board no
+    // estado inicial, gerando diff determinístico entre execuções.
+    await page.locator('[data-shell-header]').getByText('Projeto Visual', { exact: true }).first().waitFor({ timeout: 15_000 })
     results.push(await compareScreenshot(page, 'settings'))
 
     const projectId = page.url().match(/projects\/([0-9a-f-]{36})\//)?.[1]
