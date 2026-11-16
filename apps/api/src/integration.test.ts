@@ -1115,11 +1115,15 @@ describe('auditoria e diário de trabalho', () => {
   let projectId: string
   let itemId: string
   let session: string
+  let userId: string
+  let userName: string
 
   beforeAll(async () => {
     tenantId = generateId()
     await db.insert(tenants).values({ id: tenantId, name: 'Auditoria', slug: `audit-${tenantId}`, createdAt: new Date().toISOString() })
     const user = await createUser(tenantId, 'audit@test.local', 'Audit User')
+    userId = user.id
+    userName = 'Audit User'
     session = await token(user.id, tenantId, user.email)
     const projectResponse = await request('/projects', session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Audit project', boardMode: 'SIMPLE' }) })
     projectId = (await projectResponse.json() as { id: string }).id
@@ -1130,15 +1134,48 @@ describe('auditoria e diário de trabalho', () => {
   test('separa auditoria automática do diário e normaliza duração', async () => {
     const auditResponse = await request(`/projects/${projectId}/items/${itemId}/audit`, session)
     expect(auditResponse.status).toBe(200)
-    expect((await auditResponse.json() as { data: Array<{ type: string }>; total: number }).data.every(log => log.type === 'auto')).toBe(true)
+    const audit = await auditResponse.json() as { data: Array<{ type: string; author: { name: string } | null }>; total: number }
+    expect(audit.data.every(log => log.type === 'auto')).toBe(true)
+    // [B20] O histórico precisa identificar quem alterou, não apenas o tipo do executor.
+    expect(audit.data[0]?.author?.name).toBe(userName)
 
     const createResponse = await request(`/projects/${projectId}/items/${itemId}/work-log`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activity: 'Implementei os testes', duration: '0:50' }) })
     expect(createResponse.status).toBe(201)
     const workLogs = await request(`/projects/${projectId}/items/${itemId}/work-log`, session)
     expect(workLogs.status).toBe(200)
-    expect(await workLogs.json() as { total: number; totalDurationMin: number }).toMatchObject({ total: 1, totalDurationMin: 50 })
+    const workLogBody = await workLogs.json() as { total: number; totalDurationMin: number; data: Array<{ author: { name: string } | null }> }
+    expect(workLogBody).toMatchObject({ total: 1, totalDurationMin: 50 })
+    expect(workLogBody.data[0]?.author?.name).toBe(userName)
     const mixedLegacy = await request(`/projects/${projectId}/items/${itemId}/logs`, session)
     expect((await mixedLegacy.json() as { data: Array<{ type: string }> }).data.some(log => log.type === 'manual')).toBe(true)
+  })
+
+  test('apontamento criado por API key identifica a automação e o autor', async () => {
+    const { key } = generateApiKey()
+    const keyHash = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key))).toString('hex')
+    await db.insert(apiKeys).values({
+      id: generateId(),
+      tenantId,
+      ownerId: userId,
+      name: 'Open Code',
+      keyHash,
+      permissionScope: null,
+      createdAt: new Date().toISOString(),
+    })
+
+    const created = await apiKeyRequest(`/projects/${projectId}/items/${itemId}/logs`, key, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activity: 'Agente revisou os campos do card', durationMin: 15 }),
+    })
+    expect(created.status).toBe(201)
+
+    const logs = await request(`/projects/${projectId}/items/${itemId}/work-log`, session)
+    const body = await logs.json() as { data: Array<{ actorType: string; actorLabel: string | null; author: { name: string } | null; activity: string }> }
+    const agentLog = body.data.find(log => log.activity === 'Agente revisou os campos do card')
+    // [B20] O diário precisa dizer qual automação registrou e quem é o dono da chave.
+    expect(agentLog).toMatchObject({ actorType: 'AGENT', actorLabel: 'Open Code' })
+    expect(agentLog?.author?.name).toBe(userName)
   })
 })
 

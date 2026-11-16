@@ -52,6 +52,8 @@
     "agent": "Agente",
     "human": "Humano",
     "system": "Sistema",
+    "unknown": "Desconhecido",
+    "unidentifiedAuthor": "Autor não identificado",
     "loadMore": "Carregar mais",
     "workLog": "Diário de trabalho",
     "workLogCountOne": "1 registro",

@@ -20,13 +20,28 @@ describe('contrato dos painéis integrados de histórico e diário', () => {
 
   test('auditoria mantém paginação, origem e texto seguro', async () => {
     const panel = await source('./components/ActivityLogPanel.tsx')
+    const actor = await source('./components/LogActor.tsx')
     expect(panel.includes("/audit?page=${nextPage}&limit=20")).toBe(true)
     expect(panel.includes('append ? [...previous, ...res.data]')).toBe(true)
-    expect(panel.includes('actorType')).toBe(true)
+    expect(panel.includes('<LogActor')).toBe(true)
+    expect(actor.includes('actorType')).toBe(true)
     expect(panel.includes('readableActivity')).toBe(true)
     expect(panel.includes('role="alert"')).toBe(false)
     expect(panel.includes('accordion.auditError')).toBe(true)
     expect(panel.includes('accordion.retry')).toBe(true)
+  })
+
+  // [B20] Histórico e diário compartilham a mesma identificação de autor.
+  test('identificação do autor é compartilhada e tem fallback explícito', async () => {
+    const actor = await source('./components/LogActor.tsx')
+    const activity = await source('./components/ActivityLogPanel.tsx')
+    const work = await source('./components/WorkLogPanel.tsx')
+    expect(activity.includes('logActorLabels')).toBe(true)
+    expect(work.includes('<LogActor')).toBe(true)
+    expect(work.includes('logActorLabels')).toBe(true)
+    expect(actor.includes('displayPersonName')).toBe(true)
+    expect(actor.includes('accordion.unidentifiedAuthor')).toBe(true)
+    expect(actor.includes("'@'") || actor.includes('@{displayPersonName')).toBe(true)
   })
 
   test('diário mantém mutações, validação e permissões inline', async () => {

@@ -350,6 +350,10 @@ export interface WorkLog {
   itemId: string
   authorId: string | null
   author?: { id: string; name: string; avatarUrl: string | null } | null
+  // [B20] Origem do executor: o diário também recebe lançamentos de agente (MCP).
+  actorType?: 'HUMAN' | 'AGENT' | 'SYSTEM' | 'UNKNOWN'
+  actorLabel?: string | null
+  source?: 'REST' | 'MCP' | 'SYSTEM' | 'UNKNOWN'
   activity: string
   durationMin: number | null
   createdAt: string

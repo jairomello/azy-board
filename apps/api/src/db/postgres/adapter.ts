@@ -331,7 +331,9 @@ function mapChecklist(row: PgRow, items: ChecklistItemRecord[]): ChecklistRecord
   }
 }
 
-function mapItemLog(row: PgRow): ItemLogRecord {
+// [B20] O autor do log é hidratado pela junção com `users` na leitura. Sem isso o
+// painel Histórico não tem nome para exibir e cai no rótulo genérico "Humano".
+function mapItemLog(row: PgRow, author: { id: string; name: string; avatarUrl: string | null } | null = null): ItemLogRecord {
   return {
     id: row.id as string, tenantId: row.tenant_id as string, itemId: row.item_id as string,
     authorId: row.author_id as string | null, type: row.type as ItemLogRecord['type'],
@@ -341,8 +343,20 @@ function mapItemLog(row: PgRow): ItemLogRecord {
     activity: row.activity as string,
     durationMin: row.duration_min as number | null,
     createdAt: row.created_at as string, updatedAt: row.updated_at as string,
-    author: null,
+    author,
   }
+}
+
+// Colunas extras do LEFT JOIN em `users` usadas para montar o autor do log.
+const itemLogAuthorColumns = 'u.name AS author_name, u.avatar_url AS author_avatar_url'
+const itemLogAuthorJoin = 'LEFT JOIN users u ON u.tenant_id = l.tenant_id AND u.id = l.author_id'
+
+function mapItemLogRow(row: PgRow): ItemLogRecord {
+  const authorName = row.author_name as string | null
+  const authorId = row.author_id as string | null
+  return mapItemLog(row, authorId && authorName
+    ? { id: authorId, name: authorName, avatarUrl: (row.author_avatar_url as string | null) ?? null }
+    : null)
 }
 
 function mapAttachment(row: PgRow): AttachmentRecord {
@@ -2669,26 +2683,29 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
     // -----------------------------------------------------------------------
     workLogs: {
       async listItemLogs(context: PersistenceContext, _projectId: string, itemId: string, options: { type?: string; page: number; limit: number }) {
-        const conditions = ['tenant_id = $1', 'item_id = $2']
+        // [B20] Condições qualificadas com `l.` porque a leitura junta `users`.
+        const conditions = ['l.tenant_id = $1', 'l.item_id = $2']
         const params: unknown[] = [context.tenantId, itemId]
         let idx = 3
-        if (options.type) { conditions.push(`type = $${idx++}`); params.push(options.type) }
+        if (options.type) { conditions.push(`l.type = $${idx++}`); params.push(options.type) }
         const offset = (options.page - 1) * options.limit
         const [countRow, rows] = await Promise.all([
-          q1(`SELECT count(*)::int AS cnt, COALESCE(sum(duration_min), 0)::int AS total_dur FROM item_logs WHERE ${conditions.join(' AND ')}`, params),
-          q(`SELECT * FROM item_logs WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+          q1(`SELECT count(*)::int AS cnt, COALESCE(sum(l.duration_min), 0)::int AS total_dur FROM item_logs l WHERE ${conditions.join(' AND ')}`, params),
+          q(`SELECT l.*, ${itemLogAuthorColumns} FROM item_logs l ${itemLogAuthorJoin}
+             WHERE ${conditions.join(' AND ')} ORDER BY l.created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
             [...params, options.limit, offset]),
         ])
         return {
-          data: rows.map(mapItemLog),
+          data: rows.map(mapItemLogRow),
           total: (countRow?.cnt as number) ?? 0,
           totalDurationMin: (countRow?.total_dur as number) ?? 0,
         }
       },
       async getItemLog(context: PersistenceContext, _projectId: string, itemId: string, logId: string): Promise<ItemLogRecord | null> {
-        const row = await q1('SELECT * FROM item_logs WHERE tenant_id = $1 AND item_id = $2 AND id = $3',
+        const row = await q1(`SELECT l.*, ${itemLogAuthorColumns} FROM item_logs l ${itemLogAuthorJoin}
+          WHERE l.tenant_id = $1 AND l.item_id = $2 AND l.id = $3`,
           [context.tenantId, itemId, logId])
-        return row ? mapItemLog(row) : null
+        return row ? mapItemLogRow(row) : null
       },
       async createItemLog(context: MutationContext, projectId: string, itemId: string, input: Record<string, unknown>): Promise<ItemLogRecord> {
         return tx(async (client) => {
