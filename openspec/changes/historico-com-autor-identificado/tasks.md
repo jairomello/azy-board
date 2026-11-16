@@ -30,4 +30,4 @@
 ## 5. Card
 
 - [x] 5.1 Registrar `Board ref: 228e7141-e724-467d-8a55-ff81c960a695` nos artefatos da change.
-- [ ] 5.2 Fechar o card com `complete_task` e registrar o consumo de tokens.
+- [x] 5.2 Fechar o card com `complete_task` e registrar o consumo de tokens.
