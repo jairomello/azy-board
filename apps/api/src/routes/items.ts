@@ -1128,7 +1128,14 @@ itemsRouter.post('/:itemId/logs', requireRole('MEMBER'), async (c) => {
 
   const idempotencyKey = c.req.header('Idempotency-Key')
   const commandHash = idempotencyKey ? await payloadHash({ projectId, itemId, activity: body.activity.trim(), durationMin: body.durationMin ?? null }) : null
-  const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  // [B20] O diário identifica o executor como o histórico: apontamento feito por
+  // API key/MCP precisa carregar o nome da automação, senão o painel só sabe que
+  // foi agente e cai em "Autor não identificado".
+  const audit = auditContext(c)
+  const mutationContext = userMutationContext(ctx, audit.source)
+  mutationContext.mutation.actorType = audit.actorType
+  mutationContext.mutation.actorSource = audit.source
+  mutationContext.mutation.actorLabel = audit.actorLabel
   if (idempotencyKey && commandHash) {
     mutationContext.idempotency = {
       namespace: COMMAND_NAMESPACES.createItemLog,

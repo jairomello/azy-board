@@ -5,6 +5,7 @@
 - [x] 1.1 Fazer `mapItemLog` aceitar o autor e montar `{ id, name, avatarUrl }`, como no adapter SQLite.
 - [x] 1.2 Juntar `users` em `listItemLogs` com `LEFT JOIN` por `tenant_id`/`id` e qualificar as condições com `l.`.
 - [x] 1.3 Fazer o mesmo em `getItemLog`.
+- [x] 1.4 Gravar `actor_type`, `actor_source` e `actor_label` no apontamento manual criado por API key (MCP), como já ocorre nas mutações do card.
 
 ## 2. Web — identidade do autor
 
@@ -17,7 +18,7 @@
 ## 3. Testes
 
 - [x] 3.1 Paridade PostgreSQL: autor hidratado e log sem autor em `listItemLogs`/`getItemLog`.
-- [x] 3.2 Cobrir auditoria e diário com autor resolvido no teste de integração.
+- [x] 3.2 Cobrir auditoria e diário com autor resolvido no teste de integração, inclusive apontamento criado por API key.
 - [x] 3.3 Teste de componente do `LogActor` (humano, sem autor, agente, sistema, desconhecido, T76).
 - [x] 3.4 Atualizar o contrato estrutural dos painéis de histórico e diário.
 - [x] 3.5 Rodar `bun run typecheck`, `bun run lint`, `bun run build`, `bun run check:docs`, `bun run check:i18n` e `bun run openspec:validate`.

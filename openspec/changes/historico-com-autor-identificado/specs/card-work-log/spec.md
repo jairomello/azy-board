@@ -34,6 +34,10 @@ O sistema SHALL expor endpoints separados para listar, criar, editar e excluir r
 - **WHEN** membro envia descrição e duração válida para o endpoint de diário
 - **THEN** API cria registro manual com `author_id` do contexto autenticado e `duration_min` normalizado
 
+#### Scenario: Apontamento de agente identifica a automação
+- **WHEN** um apontamento manual é criado por API key (MCP)
+- **THEN** o registro guarda `actor_type = AGENT`, `actor_label` com o nome da chave e `author_id` do dono da chave, para o diário exibir o rótulo do agente sem atribuir a automação à pessoa
+
 #### Scenario: Autor resolvido em qualquer perfil de instalação
 - **WHEN** o diário do mesmo card é lido em instalação SIMPLE (SQLite) ou ADVANCED (PostgreSQL)
 - **THEN** ambos devolvem `author` com id, nome e avatar quando `author_id` existe, sem depender do perfil para identificar quem registrou o trabalho

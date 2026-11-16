@@ -1115,12 +1115,14 @@ describe('auditoria e diário de trabalho', () => {
   let projectId: string
   let itemId: string
   let session: string
+  let userId: string
   let userName: string
 
   beforeAll(async () => {
     tenantId = generateId()
     await db.insert(tenants).values({ id: tenantId, name: 'Auditoria', slug: `audit-${tenantId}`, createdAt: new Date().toISOString() })
     const user = await createUser(tenantId, 'audit@test.local', 'Audit User')
+    userId = user.id
     userName = 'Audit User'
     session = await token(user.id, tenantId, user.email)
     const projectResponse = await request('/projects', session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Audit project', boardMode: 'SIMPLE' }) })
@@ -1146,6 +1148,34 @@ describe('auditoria e diário de trabalho', () => {
     expect(workLogBody.data[0]?.author?.name).toBe(userName)
     const mixedLegacy = await request(`/projects/${projectId}/items/${itemId}/logs`, session)
     expect((await mixedLegacy.json() as { data: Array<{ type: string }> }).data.some(log => log.type === 'manual')).toBe(true)
+  })
+
+  test('apontamento criado por API key identifica a automação e o autor', async () => {
+    const { key } = generateApiKey()
+    const keyHash = Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key))).toString('hex')
+    await db.insert(apiKeys).values({
+      id: generateId(),
+      tenantId,
+      ownerId: userId,
+      name: 'Open Code',
+      keyHash,
+      permissionScope: null,
+      createdAt: new Date().toISOString(),
+    })
+
+    const created = await apiKeyRequest(`/projects/${projectId}/items/${itemId}/logs`, key, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activity: 'Agente revisou os campos do card', durationMin: 15 }),
+    })
+    expect(created.status).toBe(201)
+
+    const logs = await request(`/projects/${projectId}/items/${itemId}/work-log`, session)
+    const body = await logs.json() as { data: Array<{ actorType: string; actorLabel: string | null; author: { name: string } | null; activity: string }> }
+    const agentLog = body.data.find(log => log.activity === 'Agente revisou os campos do card')
+    // [B20] O diário precisa dizer qual automação registrou e quem é o dono da chave.
+    expect(agentLog).toMatchObject({ actorType: 'AGENT', actorLabel: 'Open Code' })
+    expect(agentLog?.author?.name).toBe(userName)
   })
 })
 
