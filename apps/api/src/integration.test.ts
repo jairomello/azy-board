@@ -1115,11 +1115,13 @@ describe('auditoria e diário de trabalho', () => {
   let projectId: string
   let itemId: string
   let session: string
+  let userName: string
 
   beforeAll(async () => {
     tenantId = generateId()
     await db.insert(tenants).values({ id: tenantId, name: 'Auditoria', slug: `audit-${tenantId}`, createdAt: new Date().toISOString() })
     const user = await createUser(tenantId, 'audit@test.local', 'Audit User')
+    userName = 'Audit User'
     session = await token(user.id, tenantId, user.email)
     const projectResponse = await request('/projects', session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Audit project', boardMode: 'SIMPLE' }) })
     projectId = (await projectResponse.json() as { id: string }).id
@@ -1130,13 +1132,18 @@ describe('auditoria e diário de trabalho', () => {
   test('separa auditoria automática do diário e normaliza duração', async () => {
     const auditResponse = await request(`/projects/${projectId}/items/${itemId}/audit`, session)
     expect(auditResponse.status).toBe(200)
-    expect((await auditResponse.json() as { data: Array<{ type: string }>; total: number }).data.every(log => log.type === 'auto')).toBe(true)
+    const audit = await auditResponse.json() as { data: Array<{ type: string; author: { name: string } | null }>; total: number }
+    expect(audit.data.every(log => log.type === 'auto')).toBe(true)
+    // [B20] O histórico precisa identificar quem alterou, não apenas o tipo do executor.
+    expect(audit.data[0]?.author?.name).toBe(userName)
 
     const createResponse = await request(`/projects/${projectId}/items/${itemId}/work-log`, session, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activity: 'Implementei os testes', duration: '0:50' }) })
     expect(createResponse.status).toBe(201)
     const workLogs = await request(`/projects/${projectId}/items/${itemId}/work-log`, session)
     expect(workLogs.status).toBe(200)
-    expect(await workLogs.json() as { total: number; totalDurationMin: number }).toMatchObject({ total: 1, totalDurationMin: 50 })
+    const workLogBody = await workLogs.json() as { total: number; totalDurationMin: number; data: Array<{ author: { name: string } | null }> }
+    expect(workLogBody).toMatchObject({ total: 1, totalDurationMin: 50 })
+    expect(workLogBody.data[0]?.author?.name).toBe(userName)
     const mixedLegacy = await request(`/projects/${projectId}/items/${itemId}/logs`, session)
     expect((await mixedLegacy.json() as { data: Array<{ type: string }> }).data.some(log => log.type === 'manual')).toBe(true)
   })

@@ -1306,4 +1306,80 @@ describe.skipIf(!runPostgres)('Paridade do progresso agregado por projeto', () =
       await pg.cleanup()
     }
   })
+
+  // [B20] O histórico só consegue exibir o autor se a leitura resolver o usuário.
+  // O adapter ADVANCED devolvia `author: null` e o painel caía no rótulo "Humano".
+  test('logs de item hidratam o autor igual nos dois adapters', async () => {
+    const sqlite = await setupSqlite()
+    const pg = await setupPostgres()
+    const nome = 'Camila C. A. Martins'
+    try {
+      const ctx = makeContext('tenant-logs')
+      const mutCtx = makeMutationContext('tenant-logs')
+
+      const tenantSqlite = await sqlite.ports.tenants.createTenant({ name: 'Logs', slug: 'logs' })
+      const tenantPg = await pg.ports.tenants.createTenant({ name: 'Logs', slug: 'logs' })
+      const userSqlite = await sqlite.ports.identity.createUser({ ...ctx, tenantId: tenantSqlite.id }, { email: 'camila@test.local', passwordHash: 'h', name: nome, globalGroup: 'ADMIN' })
+      const userPg = await pg.ports.identity.createUser({ ...ctx, tenantId: tenantPg.id }, { email: 'camila@test.local', passwordHash: 'h', name: nome, globalGroup: 'ADMIN' })
+      const projectSqlite = await sqlite.ports.unitOfWork.createProjectAggregate(
+        { ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id },
+        { project: { name: 'P', boardMode: 'SIMPLE' }, defaultColumns: [{ name: 'A Fazer', baseStatus: 'NOT_STARTED' }], defaultModuleName: 'G', simpleStoryTitle: 'S' },
+      )
+      const projectPg = await pg.ports.unitOfWork.createProjectAggregate(
+        { ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id },
+        { project: { name: 'P', boardMode: 'SIMPLE' }, defaultColumns: [{ name: 'A Fazer', baseStatus: 'NOT_STARTED' }], defaultModuleName: 'G', simpleStoryTitle: 'S' },
+      )
+      const itemSqlite = await sqlite.ports.unitOfWork.createItemWithRelations(
+        { ...mutCtx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id },
+        { projectId: projectSqlite.id, type: 'TASK', title: 'Com histórico' },
+        { activity: 'Card criado' },
+      )
+      const itemPg = await pg.ports.unitOfWork.createItemWithRelations(
+        { ...mutCtx, tenantId: tenantPg.id, actorUserId: userPg.id },
+        { projectId: projectPg.id, type: 'TASK', title: 'Com histórico' },
+        { activity: 'Card criado' },
+      )
+      // Log de sistema: sem autor humano, o painel não pode inventar um nome.
+      await sqlite.ports.workLogs.createItemLog(
+        { ...mutCtx, tenantId: tenantSqlite.id, actorUserId: null, actorKind: 'SYSTEM', mutation: { origin: 'SYSTEM', actorType: 'SYSTEM', actorSource: 'SYSTEM', actorLabel: null } },
+        projectSqlite.id, itemSqlite.id, { type: 'auto', activity: 'Rotina do sistema' },
+      )
+      await pg.ports.workLogs.createItemLog(
+        { ...mutCtx, tenantId: tenantPg.id, actorUserId: null, actorKind: 'SYSTEM', mutation: { origin: 'SYSTEM', actorType: 'SYSTEM', actorSource: 'SYSTEM', actorLabel: null } },
+        projectPg.id, itemPg.id, { type: 'auto', activity: 'Rotina do sistema' },
+      )
+
+      const scopeSqlite = { ...ctx, tenantId: tenantSqlite.id, actorUserId: userSqlite.id }
+      const scopePg = { ...ctx, tenantId: tenantPg.id, actorUserId: userPg.id }
+      const sqliteLogs = await sqlite.ports.workLogs.listItemLogs(scopeSqlite, projectSqlite.id, itemSqlite.id, { page: 1, limit: 10 })
+      const pgLogs = await pg.ports.workLogs.listItemLogs(scopePg, projectPg.id, itemPg.id, { page: 1, limit: 10 })
+
+      expect(sqliteLogs.total).toBe(2)
+      expect(pgLogs.total).toBe(2)
+      // Ordem e IDs independentes: compara a forma do autor de cada registro.
+      const authorShape = (logs: Array<{ author: { name: string; avatarUrl: string | null } | null }>) =>
+        logs.map(log => ({ name: log.author?.name ?? null, avatarUrl: log.author?.avatarUrl ?? null }))
+          .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+      expect(authorShape(pgLogs.data)).toEqual(authorShape(sqliteLogs.data))
+
+      const humanSqlite = sqliteLogs.data.find(log => log.authorId === userSqlite.id)
+      const humanPgLog = pgLogs.data.find(log => log.authorId === userPg.id)
+      expect(humanSqlite?.author).toEqual({ id: userSqlite.id, name: nome, avatarUrl: null })
+      expect(humanPgLog?.author).toEqual({ id: userPg.id, name: nome, avatarUrl: null })
+
+      // Log sem autor humano continua sem autor: nada de inventar identidade.
+      expect(sqliteLogs.data.find(log => log.authorId === null)?.author).toBeNull()
+      expect(pgLogs.data.find(log => log.authorId === null)?.author).toBeNull()
+
+      const singlePg = await pg.ports.workLogs.getItemLog(scopePg, projectPg.id, itemPg.id, humanPgLog!.id)
+      expect(singlePg?.author).toEqual({ id: userPg.id, name: nome, avatarUrl: null })
+      const singleSqlite = await sqlite.ports.workLogs.getItemLog(scopeSqlite, projectSqlite.id, itemSqlite.id, humanSqlite!.id)
+      expect(singleSqlite?.author).toEqual({ id: userSqlite.id, name: nome, avatarUrl: null })
+      expect({ name: singlePg?.author?.name, avatarUrl: singlePg?.author?.avatarUrl })
+        .toEqual({ name: singleSqlite?.author?.name, avatarUrl: singleSqlite?.author?.avatarUrl })
+    } finally {
+      sqlite.cleanup()
+      await pg.cleanup()
+    }
+  }, 60_000)
 })

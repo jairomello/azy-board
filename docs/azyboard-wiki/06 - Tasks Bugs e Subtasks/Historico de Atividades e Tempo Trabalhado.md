@@ -29,6 +29,17 @@ O sistema cria registros para mudanças relevantes, como:
 
 Um log automático mostra o executor, origem (humano, agente ou sistema), data, hora e descrição. Ele não pode ser editado.
 
+### Quem fez a alteração
+
+Cada entrada identifica o autor de forma explícita:
+
+- **Pessoa:** o nome aparece como menção (`@Nome Sobrenome`), em duas partes. O nome completo fica no tooltip, e o selo **Humano** indica o tipo de executor.
+- **Agente:** aparece com o rótulo da automação (por exemplo, `Open Code`) e o selo **Agente**, sem menção de pessoa — mesmo quando a automação usou a API key de alguém.
+- **Sistema:** aparece como **Sistema**, para rotinas sem pessoa ou agente responsável.
+- **Sem autor resolvido:** aparece **Autor não identificado**, com o selo do tipo quando ele é conhecido. O painel nunca usa o tipo ("Humano") como se fosse o nome.
+
+O diário de trabalho segue a mesma regra: registros feitos por pessoa mostram a menção, e lançamentos feitos por agente mostram o rótulo da automação.
+
 ## Registrar trabalho no diário
 
 1. Abra o diário de trabalho.

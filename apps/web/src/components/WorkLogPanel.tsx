@@ -6,6 +6,7 @@ import type { WorkLog } from '@azy-board/ui-contracts'
 import type { AssistantFocusEntity } from '@azy-board/assistant-contracts'
 import { formatWorkDuration, parseWorkDuration } from '../lib/workLog'
 import { formatDateTime } from '../lib/formatters'
+import { LogActor, logActorLabels } from './LogActor'
 
 interface Props {
   itemId: string
@@ -20,6 +21,7 @@ interface Props {
 
 export function WorkLogPanel({ itemId, projectId, currentUserId, currentUserRole, onCountChange, onTotalChange, onEntityFocus }: Props) {
   const { t } = useTranslation()
+  const labels = logActorLabels(t)
   const [logs, setLogs] = useState<WorkLog[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -95,7 +97,7 @@ export function WorkLogPanel({ itemId, projectId, currentUserId, currentUserRole
         {loading && logs.length === 0 && <p className="py-6 text-center text-xs text-muted-foreground">{t('loading')}</p>}
         {error && <div className="flex flex-col items-center gap-2 py-6 text-center"><p className="text-xs text-destructive">{t('accordion.workLogError')}</p><button type="button" onClick={() => void fetchLogs()} className="inline-flex items-center gap-1 text-xs text-primary hover:underline"><RotateCcw className="h-3.5 w-3.5" />{t('accordion.retry')}</button></div>}
         {!loading && !error && logs.length === 0 && <div className="py-6 text-center"><p className="text-xs italic text-muted-foreground">{t('accordion.noWorkLog')}</p>{!showForm && <button type="button" onClick={() => setShowForm(true)} className="mt-3 inline-flex items-center gap-1.5 text-xs text-primary hover:underline"><Plus className="h-3.5 w-3.5" />{t('accordion.registerWork')}</button>}</div>}
-        {logs.map(log => { const canManage = log.authorId === currentUserId || currentUserRole === 'ADMIN'; return <article key={log.id} className="rounded-lg border border-border bg-background p-3" onKeyDown={handleKeyDown}>{editing === log.id ? form : <><div className="flex items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-1.5"><Clock3 className="h-3.5 w-3.5 text-primary" /><span className="truncate text-xs font-medium">{log.author?.name ?? t('accordion.human')}</span><span className="text-[10px] text-muted-foreground">{formatDateTime(log.createdAt)}</span></div>{canManage && <div className="flex gap-1"><button type="button" aria-label={t('edit')} onClick={() => startEdit(log)} className="rounded p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary"><Pencil className="h-3 w-3" /></button><button type="button" aria-label={t('delete')} onClick={() => void removeLog(log.id)} className="rounded p-1 text-muted-foreground hover:text-destructive focus-visible:ring-2 focus-visible:ring-primary"><Trash2 className="h-3 w-3" /></button></div>}</div><p className="mt-2 whitespace-pre-line text-xs leading-relaxed">{log.activity}</p>{log.durationMin != null && <p className="mt-1 text-[10px] font-medium text-primary">{formatWorkDuration(log.durationMin)} {t('board:worked')}</p>}</>}</article> })}
+        {logs.map(log => { const canManage = log.authorId === currentUserId || currentUserRole === 'ADMIN'; return <article key={log.id} className="rounded-lg border border-border bg-background p-3" onKeyDown={handleKeyDown}>{editing === log.id ? form : <><div className="flex items-center justify-between gap-2"><LogActor entry={log} labels={labels} timestamp={formatDateTime(log.createdAt)} />{canManage && <div className="flex gap-1"><button type="button" aria-label={t('edit')} onClick={() => startEdit(log)} className="rounded p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary"><Pencil className="h-3 w-3" /></button><button type="button" aria-label={t('delete')} onClick={() => void removeLog(log.id)} className="rounded p-1 text-muted-foreground hover:text-destructive focus-visible:ring-2 focus-visible:ring-primary"><Trash2 className="h-3 w-3" /></button></div>}</div><p className="mt-2 whitespace-pre-line text-xs leading-relaxed">{log.activity}</p>{log.durationMin != null && <p className="mt-1 text-[10px] font-medium text-primary">{formatWorkDuration(log.durationMin)} {t('board:worked')}</p>}</>}</article> })}
       </div>
       {!error && !showForm && !editing && <div className="border-t border-border p-3"><button type="button" onClick={() => setShowForm(true)} className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"><Plus className="h-3.5 w-3.5" />{t('accordion.registerWork')}</button></div>}
       {showForm && form}
