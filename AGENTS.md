@@ -57,6 +57,19 @@ Código, comentários, commits, mensagens e documentação em **português do Br
 - Se não estiver claro qual card corresponde ao trabalho, pergunte antes de
   encerrar em vez de adivinhar.
 
+## Pull request só depois de aprovação e teste local
+
+- Nenhum agente abre PR, publica a branch de trabalho (`git push`) nem pede
+  review sem autorização explícita do Lincoln **depois** de ele testar
+  localmente o resultado.
+- O trabalho permanece local (branch + commits) com todas as verificações
+  rodando. Ao terminar, apresente o que mudou, como rodar/testar e o que está
+  pendente, e **aguarde** um "pode subir" / "abre o PR".
+- Push de branch existente para atualizar um PR já aprovado também conta como
+  subir: avise e confirme antes.
+- Exceção única: quando o próprio pedido já autoriza subir/abrir PR na mesma
+  mensagem e o teste local foi combinado como parte do fluxo.
+
 ## OpenSpec é obrigatório para toda evolução
 
 - Toda mudança de comportamento (feature, correção com efeito observável, contrato de API, UI ou dado) MUST entrar com uma change em `openspec/changes/<nome>/` contendo `proposal.md`, `tasks.md` e `specs/<capability>/spec.md` com deltas `ADDED`/`MODIFIED`/`REMOVED`/`RENAMED`.

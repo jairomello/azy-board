@@ -51,6 +51,7 @@ import { cardAdvance, columnAdvanceBands } from './model/cardAdvance'
 import { useBoardPreferences } from './hooks/useBoardPreferences'
 import { useBoardData } from './hooks/useBoardData'
 import { BoardLanes } from './components/BoardLanes'
+import { UnifiedBoard } from './components/UnifiedBoard'
 import { BoardModals } from './components/BoardModals'
 import { ProjectPlanningModal } from '../../components/ProjectPlanningModal'
 import { useBoardInteraction } from './hooks/useBoardInteraction'
@@ -71,8 +72,8 @@ import {
 import { dropAnchor, type PreviewColumn } from './model/dragPreview'
 
 import { resolveBoardModalTarget, resolveCreationIntent, type NewItemCreation } from './model/interaction'
-import { buildEpicGroups, groupEpicsByModule, selectBoardCards, selectOrphanCards, selectStoryVirtualCards } from './model/boardView'
-import type { ItemData } from './model/types'
+import { buildEpicGroups, groupEpicsByModule, selectBoardCards, selectOrphanCards, selectStoryVirtualCards, selectUnifiedCards } from './model/boardView'
+import type { BoardView, ItemData } from './model/types'
 import { applyViewCommand, readPinnedResult, subscribeViewSession } from '../../lib/assistantViewStore'
 import { VIEW_COMMAND_SCHEMA_VERSION, type AssistantPlanningResult } from '@azy-board/assistant-contracts'
 
@@ -153,7 +154,7 @@ export default function BoardPage() {
     toggleStory,
   } = useBoardPreferences(projectId)
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
-  const [view, setView] = useState<'kanban' | 'tree'>('kanban')
+  const [view, setView] = useState<BoardView>('kanban')
   // Card T26 — recorte fixado de um resultado de lacunas; escopa a exibição ao
   // conjunto exato sem reconverter a expressão em filtros do toolbar.
   const [pinnedResult, setPinnedResult] = useState<AssistantPlanningResult | null>(() => projectId ? readPinnedResult(projectId) : null)
@@ -382,6 +383,13 @@ export default function BoardPage() {
   )
 
   const allDisplayed = useMemo(() => [...boardCards, ...storyVirtualCards], [boardCards, storyVirtualCards])
+  // Terceira visualização: o mesmo recorte dos filtros em uma única faixa de
+  // colunas, sem substituir o Kanban em lanes.
+  const unifiedKanban = view === 'unified'
+  const unifiedCards = useMemo(
+    () => (unifiedKanban ? selectUnifiedCards(allDisplayed, columns) : []),
+    [unifiedKanban, allDisplayed, columns],
+  )
   const handleDragEnd = useBoardInteraction({
     projectId,
     columns,
@@ -535,6 +543,16 @@ export default function BoardPage() {
     else setNewItemCreation(intent.item)
   }
 
+  // Kanban unificado: sem lane de história de onde herdar o pai, a criação pela
+  // coluna abre a modal contextual já com a coluna escolhida.
+  function openCreationInColumn(columnId: string) {
+    const intent = resolveCreationIntent('TASK', {}, {
+      columnId,
+      costCenterId: projectCostCenters[0]?.id ?? null,
+    })
+    if (intent.kind === 'item') setNewItemCreation(intent.item)
+  }
+
   const visibleModuleGroups = filters.moduleViewMode === 'tabs' && !hideModules
     ? moduleGroups.filter(group => group.module.id === activeModuleId)
     : moduleGroups
@@ -568,10 +586,10 @@ export default function BoardPage() {
       onProjectNameActivate={() => setPlanningOpen(true)}
       assistantSelectedItem={assistantSelectedItem}
       assistantScreen={view === 'tree' ? 'project-board-tree' : 'project-board-kanban'}
-      assistantBoardView={view}
+      assistantBoardView={view === 'unified' ? 'kanban' : view}
       assistantFilters={{ hideEmptyEpics: filters.hideEmptyEpics, hideEmptyStories: filters.hideEmptyStories, moduleId: filters.moduleId || null, sprintId: filters.sprintId || null, versionId: filters.versionId || null, squadId: filters.squadId || null, assigneeId: filters.assigneeId || null, types: filters.types.length ? filters.types.join(',') : null }}
       assistantScreenSnapshot={assistantScreenSnapshot}
-       sectionLabel={view === 'kanban' ? tBoard('viewBoard') : tBoard('viewTree')}
+       sectionLabel={view === 'tree' ? tBoard('viewTree') : view === 'unified' ? tBoard('viewUnified') : tBoard('viewBoard')}
        contextLabel={activeSprint?.name ?? tBoard('optionsDescription')}
       headerMeta={syncState === 'synced' || syncState === 'syncing' ? (
         <span className="hidden sm:inline-flex items-center gap-1.5 text-[10px] text-shell-muted">
@@ -623,7 +641,7 @@ export default function BoardPage() {
               filters={filters}
               catalogs={{ modules, sprints, versions: projectVersions, squads: projectSquads, members, tags: projectTags, costCenters: projectCostCenters }}
               labels={activeFilterLabels}
-              visualContext={{ isSimpleBoard, view }}
+              visualContext={{ isSimpleBoard, view: view === 'tree' ? 'tree' : 'kanban' }}
               onRemove={(key: ActiveFilterKey, value) => setFilters(previous => removeActiveBoardFilter(previous, key, value))}
             />
           ) : undefined}
@@ -649,7 +667,7 @@ export default function BoardPage() {
             filters={filters}
             catalogs={{ modules, sprints, versions: projectVersions, squads: projectSquads, members, tags: projectTags, costCenters: projectCostCenters }}
             labels={activeFilterLabels}
-            visualContext={{ isSimpleBoard, view }}
+            visualContext={{ isSimpleBoard, view: view === 'tree' ? 'tree' : 'kanban' }}
             onRemove={(key: ActiveFilterKey, value) => setFilters(previous => removeActiveBoardFilter(previous, key, value))}
           />
         )}
@@ -682,7 +700,7 @@ export default function BoardPage() {
           />
         )}
 
-        {view === 'kanban' && (
+        {view !== 'tree' && (
           <div className="p-3 sm:p-4">
             <BoardDragAnimationProvider value={dragAnimation}>
             <DndContext
@@ -730,7 +748,7 @@ export default function BoardPage() {
                 dragAnimation.onDragCancel()
               }}
             >
-                {!isSimpleBoard && !hideModules && filters.moduleViewMode === 'tabs' && moduleGroups.length > 0 && (
+                {view === 'kanban' && !isSimpleBoard && !hideModules && filters.moduleViewMode === 'tabs' && moduleGroups.length > 0 && (
                 <div role="tablist" aria-label={tBoard('moduleViewTabs')} className="mb-3 flex gap-1.5 overflow-x-auto rounded-xl border border-border/80 bg-surface p-1">
                   {moduleGroups.map(({ module }) => (
                     <button
@@ -766,38 +784,54 @@ export default function BoardPage() {
                   </div>
                 )}
 
-                <BoardLanes
-                  simpleBoard={isSimpleBoard}
-                  simpleStory={simpleStory}
-                  simpleCards={boardCards}
-                  showStoryLanes={filters.storyDisplay === 'lanes'}
-                  orphanCards={orphanCards}
-                  hideModules={hideModules}
-                  hideEpics={hideEpics}
-                  moduleGroups={moduleGroups}
-                  visibleModuleGroups={visibleModuleGroups}
-                  columns={columns}
-                  versions={projectVersions}
-                  sprints={sprints}
-                  collapsedEpics={collapsedEpics}
-                  collapsedModules={collapsedModules}
-                  collapsedStories={collapsedStories}
-                  columnAddForms={columnAddForms}
-                  onToggleEpic={toggleEpic}
-                  onToggleModule={toggleModule}
-                  onToggleStory={toggleStory}
-                  onShowAddForm={colId => setColumnAddForms(prev => ({ ...prev, [colId]: true }))}
-                  onHideAddForm={colId => setColumnAddForms(prev => ({ ...prev, [colId]: false }))}
-                  onCardCreate={handleCardCreate}
-                  onOpenDetail={handleOpenDetail}
-                  onTitleSave={handleTitleSave}
-                  onDelete={handleDeleteItem}
-                  onArchive={archiving.requestArchive}
-                  onEditStory={openStoryModal}
-                  onEditEpic={epic => setEpicModalData({ epic: { id: epic.id, title: epic.title, moduleId: epic.moduleId ?? '', description: epic.description } })}
-                  criticalIds={showCriticalPath ? criticalIds : null}
-                  noModuleLabel={tBoard('noModule')}
-                />
+                {unifiedKanban ? (
+                  <UnifiedBoard
+                    cards={unifiedCards}
+                    columns={columns}
+                    versions={projectVersions}
+                    sprints={sprints}
+                    emptyProject={hasNoLanes}
+                    onQuickAdd={openCreationInColumn}
+                    onOpenDetail={handleOpenDetail}
+                    onTitleSave={handleTitleSave}
+                    onDelete={handleDeleteItem}
+                    onArchive={archiving.requestArchive}
+                    criticalIds={showCriticalPath ? criticalIds : null}
+                  />
+                ) : (
+                  <BoardLanes
+                    simpleBoard={isSimpleBoard}
+                    simpleStory={simpleStory}
+                    simpleCards={boardCards}
+                    showStoryLanes={filters.storyDisplay === 'lanes'}
+                    orphanCards={orphanCards}
+                    hideModules={hideModules}
+                    hideEpics={hideEpics}
+                    moduleGroups={moduleGroups}
+                    visibleModuleGroups={visibleModuleGroups}
+                    columns={columns}
+                    versions={projectVersions}
+                    sprints={sprints}
+                    collapsedEpics={collapsedEpics}
+                    collapsedModules={collapsedModules}
+                    collapsedStories={collapsedStories}
+                    columnAddForms={columnAddForms}
+                    onToggleEpic={toggleEpic}
+                    onToggleModule={toggleModule}
+                    onToggleStory={toggleStory}
+                    onShowAddForm={colId => setColumnAddForms(prev => ({ ...prev, [colId]: true }))}
+                    onHideAddForm={colId => setColumnAddForms(prev => ({ ...prev, [colId]: false }))}
+                    onCardCreate={handleCardCreate}
+                    onOpenDetail={handleOpenDetail}
+                    onTitleSave={handleTitleSave}
+                    onDelete={handleDeleteItem}
+                    onArchive={archiving.requestArchive}
+                    onEditStory={openStoryModal}
+                    onEditEpic={epic => setEpicModalData({ epic: { id: epic.id, title: epic.title, moduleId: epic.moduleId ?? '', description: epic.description } })}
+                    criticalIds={showCriticalPath ? criticalIds : null}
+                    noModuleLabel={tBoard('noModule')}
+                  />
+                )}
 
               <DragOverlay dropAnimation={dropAnimation}>
                 {activeCard && (

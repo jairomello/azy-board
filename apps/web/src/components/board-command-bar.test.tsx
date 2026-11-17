@@ -12,11 +12,11 @@ const baseFilters: BoardFilterState = {
   showSubtasks: false, storyDisplay: 'lanes', moduleViewMode: 'hierarchy',
 }
 
-function renderBar(filters: BoardFilterState, onFiltersChange: (next: BoardFilterState) => void) {
+function renderBar(filters: BoardFilterState, onFiltersChange: (next: BoardFilterState) => void, view: 'kanban' | 'unified' | 'tree' = 'tree', onViewChange: (next: 'kanban' | 'unified' | 'tree') => void = () => {}) {
   render(
     <BoardCommandBar
-      view="tree"
-      onViewChange={() => {}}
+      view={view}
+      onViewChange={onViewChange}
       density="comfortable"
       onDensityChange={() => {}}
       modules={[]}
@@ -36,6 +36,25 @@ function renderBar(filters: BoardFilterState, onFiltersChange: (next: BoardFilte
     />,
   )
 }
+
+describe('BoardCommandBar — três visualizações do board', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('pt-BR')
+  })
+
+  test('oferece Board, Unificado e Árvore, sem substituir o Kanban existente', async () => {
+    const user = userEvent.setup()
+    const views: string[] = []
+    renderBar(baseFilters, () => {}, 'kanban', next => views.push(next))
+
+    expect(screen.getByRole('button', { name: 'Board' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Unificado' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Árvore' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Unificado' }))
+    expect(views).toEqual(['unified'])
+  })
+})
 
 describe('BoardCommandBar — limpar filtro sempre visível quando há filtro aplicado', () => {
   beforeEach(async () => {

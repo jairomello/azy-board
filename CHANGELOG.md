@@ -67,6 +67,16 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Added
 
+- **Kanban unificado: uma terceira visualização para todo o recorte.** O seletor
+  do board passou a oferecer **Board**, **Unificado** e **Árvore**. O `Board`
+  continua exatamente como antes, com lanes de módulo, épico e história; o
+  `Unificado` mostra todos os cards que passam pelos filtros em uma única faixa
+  de colunas, com a contagem somando o recorte e o contexto de origem no
+  breadcrumb do card. No `Unificado`, os controles de abas, expandir/recolher e
+  ocultar lanes vazias somem, **Adicionar card** abre a criação contextual com a
+  coluna escolhida e o arraste, a ordenação e o caminho crítico seguem iguais. A
+  ordenação por posição ganhou desempate por código e título para cards de
+  histórias diferentes que compartilham a mesma coluna.
 - **Barras de progresso renovadas no Board e nos projetos.** Os cards do Kanban
   trocaram o traço fino por uma barra com trilho arredondado, marcas de 25/50/75%
   e preenchimento em gradiente derivado dos tokens do tema, com estado de

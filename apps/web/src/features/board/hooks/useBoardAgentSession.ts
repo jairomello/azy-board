@@ -9,7 +9,7 @@ import { buildScreenSnapshot } from '../../../lib/assistantSnapshot'
 import { subscribeViewSession, syncCurrentViewSession } from '../../../lib/assistantViewStore'
 import { emptyFocusState, getFocusState, subscribeFocus, type AssistantFocusState } from '../../../lib/assistantFocusStore'
 import type { BoardFilterState } from '../../../components/BoardFilters'
-import type { ItemData } from '../model/types'
+import type { BoardView, ItemData } from '../model/types'
 
 export interface BoardAgentSessionOptions {
   projectId?: string
@@ -17,8 +17,8 @@ export interface BoardAgentSessionOptions {
   route: string
   filters: BoardFilterState
   setFilters: Dispatch<SetStateAction<BoardFilterState>>
-  view: 'kanban' | 'tree'
-  setView: Dispatch<SetStateAction<'kanban' | 'tree'>>
+  view: BoardView
+  setView: Dispatch<SetStateAction<BoardView>>
   activeModuleId: string | null
   setActiveModuleId: Dispatch<SetStateAction<string | null>>
   itemModalId: string | null
@@ -73,7 +73,7 @@ export function useBoardAgentSession(options: BoardAgentSessionOptions) {
   // Card T17 — publica o estado corrente como baseline do histórico da visão.
   useEffect(() => {
     if (!projectId) return
-    syncCurrentViewSession(projectId, { filters, mode: view, activeModuleId, openItemId: itemModalId })
+    syncCurrentViewSession(projectId, { filters, mode: view === 'tree' ? 'tree' : 'kanban', activeModuleId, openItemId: itemModalId })
   }, [projectId, filters, view, activeModuleId, itemModalId])
 
   // Card T19 — foco da interface (pilha de modais, item em primeiro plano, aba

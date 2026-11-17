@@ -121,5 +121,12 @@ export function destinationOrderWithInserted(items: ItemData[], columnId: string
 }
 
 export function sortBoardItemsByPosition(items: ItemData[]): ItemData[] {
-  return [...items].sort((left, right) => (left.position ?? 0) - (right.position ?? 0))
+  // Posições podem colidir entre lanes de histórias diferentes; no Kanban
+  // unificado todas caem na mesma coluna, então o código e o título desempatam
+  // para a ordem ser determinística.
+  return [...items].sort((left, right) =>
+    (left.position ?? 0) - (right.position ?? 0)
+    || (left.sequenceCode ?? '').localeCompare(right.sequenceCode ?? '')
+    || left.title.localeCompare(right.title),
+  )
 }

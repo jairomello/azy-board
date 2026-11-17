@@ -55,4 +55,5 @@ describe('persistência dos filtros do board', () => {
 
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull()
   })
+
 })

@@ -23,8 +23,8 @@ O Board é dividido em cinco áreas:
 1. Barra lateral de navegação (Projetos, Board, Dashboard, Configurações, Administração e Conta, conforme permissões).
 2. Cabeçalho contextual com idioma, tema e menu do perfil.
 3. Barra de comandos com visualização, filtros, opções e criação.
-4. Lanes de épico e história no modo **Hierárquico**, ou uma lane única no modo **Simples**.
-5. Colunas e cards dentro do agrupamento ativo.
+4. Seletor com as três visualizações: **Board**, **Unificado** e **Árvore**.
+5. Colunas do fluxo: lanes de épico e história no **Board**, uma faixa com todos os cards do recorte no **Unificado**, ou a grade hierárquica na **Árvore**.
 
 ## Navegação e cabeçalho
 
@@ -38,7 +38,7 @@ A barra de comandos reúne os controles do Board.
 
 ### Visualização
 
-- Alternância segmentada entre **Board** e **Árvore**.
+- Alternância segmentada entre **Board**, **Unificado** e **Árvore**.
 - Seletor rápido de squad.
 - Alternância de densidade (confortável ou compacta).
 - Consulta de itens arquivados (botão de ícone).
@@ -50,7 +50,7 @@ A barra de comandos reúne os controles do Board.
 
 ### Opções
 
-- Painel suspenso **Opções** (disponível no modo hierárquico): mostrar ou ocultar subtasks, alternar histórias entre lanes e cards, ocultar épicos vazios e ocultar histórias vazias.
+- Painel suspenso **Opções** (disponível no Kanban): mostrar ou ocultar subtasks e, no **Board**, alternar histórias entre lanes e cards, ocultar épicos vazios e ocultar histórias vazias. Também reúne cronograma e exportação.
 
 ### Criar
 
@@ -60,11 +60,19 @@ A barra de comandos reúne os controles do Board.
 
 ### Modo de exibição dos módulos
 
-Em projetos hierárquicos, os módulos podem ser exibidos em **Hierarquia** (lanes aninhadas contínuas) ou em **Abas** (um módulo por vez). A escolha fica na barra de comandos e é persistida por projeto.
+Em projetos hierárquicos, no layout **Por épico**, os módulos podem ser exibidos em **Hierarquia** (lanes aninhadas contínuas) ou em **Abas** (um módulo por vez). A escolha fica na barra de comandos e é persistida por projeto.
+
+### As três visualizações
+
+- **Board** (inicial): o Kanban em lanes de módulo, épico e história, descrito abaixo. É a visão que sempre existiu e não muda ao usar o Unificado.
+- **Unificado**: uma única faixa de colunas com todos os cards do recorte. Os filtros definem o que aparece e cada card mantém, no breadcrumb, o épico e a história de origem. Indicado para ver o trabalho todo de uma vez e recortar por sprint, responsável, status ou tag.
+- **Árvore**: a grade hierárquica com edição por célula.
+
+No **Unificado**, os controles de abas de módulo, expandir/recolher e ocultar épicos ou histórias vazias não são exibidos, porque não existem lanes a recolher ou ocultar. **Filtros**, **Opções** (cronograma e exportação), **Criar** e a densidade continuam disponíveis. A visualização escolhida vale para a aba atual; ao reabrir o projeto, o Board inicia em **Board**.
 
 ## Lanes de épico e história
 
-Cada épico forma uma faixa horizontal principal. Seu cabeçalho apresenta:
+No layout **Por épico**, cada épico forma uma faixa horizontal principal. Seu cabeçalho apresenta:
 
 - Nome do épico.
 - Quantidade de histórias e cards visíveis.
@@ -73,6 +81,8 @@ Cada épico forma uma faixa horizontal principal. Seu cabeçalho apresenta:
 - Ação de edição do épico.
 
 Por padrão, cada história forma uma segunda lane dentro do épico. A indentação, a linha hierárquica e a cor de apoio deixam explícito que ela pertence à lane principal. O cabeçalho da história apresenta título, quantidade de cards, progresso, accordion independente e ação de edição.
+
+No layout **Unificado** essas lanes dão lugar a uma única sequência de colunas. O épico e a história continuam rastreáveis pelo breadcrumb do card, e a contagem de cada coluna soma todos os cards do recorte.
 
 Cards com épico, mas sem história ancestral, são reunidos em **Sem história**. Tasks e bugs sem épico são agrupados em **Sem épico**.
 
@@ -84,12 +94,12 @@ No modo **Simples**, o Board exibe uma única história fixa e as colunas do pro
 
 ## Colunas
 
-As colunas representam etapas do fluxo. A mesma ordem é repetida em todas as lanes para permitir a comparação entre épicos e histórias.
+As colunas representam etapas do fluxo. No layout **Por épico**, a mesma ordem é repetida em todas as lanes para permitir a comparação entre épicos e histórias. No layout **Unificado**, a sequência aparece uma única vez e reúne todo o recorte.
 
 O cabeçalho de uma coluna mostra:
 
 - Nome da etapa.
-- Quantidade de cards da lane naquela etapa.
+- Quantidade de cards naquela etapa e agrupamento.
 - Área de arraste para reordenar a coluna.
 
 Existe um espaço de respiro entre o cabeçalho da coluna e o primeiro card. Esse afastamento separa visualmente a identificação da etapa do conteúdo operacional.
@@ -120,11 +130,15 @@ Enquanto os dados do projeto são preparados, a aplicação apresenta um indicad
 
 ### Épico sem cards
 
-Uma lane de épico pode continuar visível mesmo vazia. Isso ajuda a identificar épicos cadastrados que ainda não foram detalhados.
+No layout **Por épico**, uma lane de épico pode continuar visível mesmo vazia. Isso ajuda a identificar épicos cadastrados que ainda não foram detalhados.
 
 ### História sem cards
 
-No modo de lanes, uma história vazia continua visível e oferece as colunas para criação contextual. O filtro **Ocultar histórias vazias** pode removê-la temporariamente.
+No layout **Por épico**, com histórias como lanes, uma história vazia continua visível e oferece as colunas para criação contextual. O filtro **Ocultar histórias vazias** pode removê-la temporariamente.
+
+### Recorte sem cards
+
+No layout **Unificado**, quando nenhum card satisfaz os filtros, as colunas continuam visíveis e o cabeçalho do quadro informa que o recorte atual está vazio.
 
 ### Projeto simples sem itens
 
@@ -164,7 +178,7 @@ A página carrega em paralelo colunas, itens, módulos, tags, sprints, membros, 
 
 ### Agrupamento
 
-O ancestry path de cada item permite localizar os ancestrais épico e história. O frontend utiliza essa informação para construir os dois níveis de lanes, o agrupamento **Sem história** e a lane **Sem épico**.
+O ancestry path de cada item permite localizar os ancestrais épico e história. No layout **Por épico**, o frontend utiliza essa informação para construir os dois níveis de lanes, o agrupamento **Sem história** e a lane **Sem épico**. No layout **Unificado**, o mesmo recorte é exibido em uma lista única por coluna.
 
 ### Interação
 

@@ -10,6 +10,8 @@ Os controles de visualização modificam a forma de apresentar o mesmo projeto. 
 
 Os controles desta página ficam no painel suspenso **Opções**, na barra de comandos do Board, e aparecem somente em projetos hierárquicos — no modo `SIMPLE` não há lanes nem subtasks para alternar.
 
+A escolha entre **Board**, **Unificado** e **Árvore** não fica neste painel: ela está no seletor de visualização, no início da barra de comandos. No **Unificado**, os controles exclusivos de lane (abas de módulo, expandir/recolher e ocultar épicos ou histórias vazias) não são exibidos; os filtros e a exibição de subtasks continuam valendo.
+
 ## Mostrar subtasks
 
 Esse controle alterna o nível operacional apresentado no Kanban.

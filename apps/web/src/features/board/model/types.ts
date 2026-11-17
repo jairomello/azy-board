@@ -86,6 +86,9 @@ export const DEFAULT_FILTERS: BoardFilterState = {
   moduleViewMode: 'hierarchy',
 }
 
+/** Visualizações do board: Kanban em lanes, Kanban unificado e árvore. */
+export type BoardView = 'kanban' | 'unified' | 'tree'
+
 export type BoardCatalogs = {
   members: ProjectMember[]
   projectTags: Tag[]

@@ -33,6 +33,9 @@ interface BoardColumnsProps {
   onShowAddForm: (formKey: string) => void
   onHideAddForm: (formKey: string) => void
   onCardCreate: (colId: string, title: string, type: ItemType, parentId?: string, formKey?: string, versionId?: string, sprintId?: string) => Promise<void>
+  // Kanban unificado: sem lane de história para herdar como pai, o botão abre a
+  // criação contextual da coluna em vez do formulário inline.
+  onQuickAdd?: (columnId: string) => void
   onOpenDetail: (id: string) => void
   onTitleSave: (id: string, title: string) => void
   onDelete?: (id: string) => void
@@ -53,6 +56,7 @@ export function BoardColumns({
   onShowAddForm,
   onHideAddForm,
   onCardCreate,
+  onQuickAdd,
   onOpenDetail,
   onTitleSave,
   onDelete,
@@ -106,7 +110,12 @@ export function BoardColumns({
               <DroppableColumn droppableId={`${laneId}:drop:${column.id}`} isTarget={activeTargetId === undefined ? undefined : activeTargetId === sortableId}>
                 {allowAdd && (
                   <div className="board-column-add px-3 pt-2.5">
-                    {columnAddForms[formKey] ? (
+                    {onQuickAdd ? (
+                      <button onClick={() => onQuickAdd(column.id)} className="board-add-card w-full flex items-center gap-1.5 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition">
+                        <Plus className="w-3.5 h-3.5" />
+                        {t('addCard')}
+                      </button>
+                    ) : columnAddForms[formKey] ? (
                       <AddCardForm
                         versions={versions}
                         sprints={sprints}

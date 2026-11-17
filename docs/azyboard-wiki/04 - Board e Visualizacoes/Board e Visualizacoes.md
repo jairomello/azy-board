@@ -6,7 +6,7 @@ order: 4
 
 # Board e Visualizações
 
-O Board é o espaço principal de acompanhamento e operação do projeto. Ele apresenta o trabalho pela hierarquia **Épico → História → Card**, pelas colunas do fluxo e por modos de visualização complementares.
+O Board é o espaço principal de acompanhamento e operação do projeto. Ele apresenta o trabalho pelas colunas do fluxo — em uma faixa única ou em lanes por épico e história — e por modos de visualização complementares.
 
 ## Guias
 
@@ -14,7 +14,7 @@ O Board é o espaço principal de acompanhamento e operação do projeto. Ele ap
 
 - [[04 - Board e Visualizacoes/Conhecer o Board|Conhecer o Board]]
   - Cabeçalho e identificação do projeto.
-  - Toolbar, swimlanes, colunas e cards.
+  - Toolbar, colunas, cards e as visualizações Board, Unificado e Árvore.
 - [[04 - Board e Visualizacoes/Swimlanes e Colunas|Swimlanes e colunas]]
   - Lanes aninhadas de épicos e histórias, agrupamentos sem história, contagens e ordenação.
 
@@ -30,7 +30,7 @@ O Board é o espaço principal de acompanhamento e operação do projeto. Ele ap
   - Squad, módulo, sprint, responsável, autor, centro de custo, versão, prioridade, status, tipo, tags e última alteração.
   - Filtros por coluna na árvore, combinações, limpeza e persistência.
 - [[04 - Board e Visualizacoes/Controles de Visualizacao do Board|Controles de visualização do Board]]
-  - Subtasks, histórias como lanes ou cards, itens vazios, expansão e recolhimento.
+  - Layout do quadro, subtasks, histórias como lanes ou cards, itens vazios, expansão e recolhimento.
 
 ### Visualização em árvore
 

@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react'
 import type { BoardMode, ItemType } from '@azy-board/domain'
+import type { BoardView } from '../features/board/model/types'
 import type { Tag } from './TagSelector'
 import { BoardFilters, clearBoardFilters, countActiveBoardFilters, type BoardFilterState } from './BoardFilters'
 
@@ -31,8 +32,8 @@ interface Sprint extends Option { status: 'PROPOSED' | 'OPEN' | 'CLOSED' }
 interface CostCenter { id: string; code: string; description?: string | null; sortOrder: number }
 
 interface Props {
-  view: 'kanban' | 'tree'
-  onViewChange: (view: 'kanban' | 'tree') => void
+  view: BoardView
+  onViewChange: (view: BoardView) => void
   density: 'comfortable' | 'compact'
   onDensityChange: (density: 'comfortable' | 'compact') => void
   modules: Option[]
@@ -133,6 +134,15 @@ export function BoardCommandBar({
           {t('viewBoard')}
         </button>
         <button
+          onClick={() => onViewChange('unified')}
+          aria-pressed={view === 'unified'}
+          className={`h-7 px-2.5 rounded-md text-xs font-semibold transition ${
+            view === 'unified' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          {t('viewUnified')}
+        </button>
+        <button
           onClick={() => onViewChange('tree')}
           aria-pressed={view === 'tree'}
           className={`h-7 px-2.5 rounded-md text-xs font-semibold transition ${
@@ -217,7 +227,7 @@ export function BoardCommandBar({
 
        {compactFilters}
 
-       {view === 'kanban' && (
+       {view !== 'tree' && (
          <div ref={optionsRef} className="relative flex-shrink-0">
            <button
              onClick={() => { setOptionsOpen(open => !open); setFiltersOpen(false) }}
@@ -295,8 +305,8 @@ export function BoardCommandBar({
                  onToggleSubtasks={() => quickUpdate({ showSubtasks: !filters.showSubtasks })}
                  storiesAsCards={filters.storyDisplay === 'cards'}
                  onToggleStoryDisplay={() => quickUpdate({ storyDisplay: filters.storyDisplay === 'cards' ? 'lanes' : 'cards' })}
-                  showExpandCollapse={boardMode === 'HIERARCHICAL'}
-                  showModuleViewMode={boardMode === 'HIERARCHICAL'}
+                 showExpandCollapse={view === 'kanban' && boardMode === 'HIERARCHICAL'}
+                 showModuleViewMode={view === 'kanban' && boardMode === 'HIERARCHICAL'}
                  onExpandAll={onExpandAll}
                  onCollapseAll={onCollapseAll}
                  section="options"
@@ -357,7 +367,7 @@ export function BoardCommandBar({
           <Archive className="w-3.5 h-3.5" />
         </button>
 
-        {view === 'kanban' && (
+        {view !== 'tree' && (
           <div ref={createRef} className="relative">
             <button
               onClick={() => setCreateOpen(open => !open)}
