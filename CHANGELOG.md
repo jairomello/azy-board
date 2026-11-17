@@ -11,6 +11,14 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Fixed
 
+- **Card em andamento deixa de aparecer no Backlog.** Editar o status pela modal
+  do card, pela grade da árvore ou por MCP gravava `status` sem tocar em
+  `columnId`; o Kanban, que posiciona pela coluna, continuava mostrando o card na
+  etapa antiga (caso do T230 no projeto NT-VIVO-IAjuda Campo). O servidor passou
+  a reconciliar os dois campos: `status` sem coluna move o card para a primeira
+  coluna compatível, `columnId` faz o status assumir o `baseStatus` da coluna e,
+  quando os dois vêm juntos, a coluna prevalece. Status sem coluna correspondente
+  (`PLANNED`, `BLOCKED`, `CANCELLED`) mantém o card onde está.
 - **Listagem e ordenação de pessoas volta a funcionar no SQLite do macOS.** A
   dobra de acentos usava `replace()` aninhado em mais de 60 níveis; builds do
   SQLite com limite de profundidade menor estouravam o parser ("parser stack

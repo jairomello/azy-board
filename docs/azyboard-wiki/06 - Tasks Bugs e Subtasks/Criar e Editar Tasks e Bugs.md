@@ -75,7 +75,13 @@ O badge e a cor de tipo são atualizados. Épicos e histórias utilizam janelas 
 
 ## Definir status e coluna
 
-O status pode ser escolhido na modal. Também é atualizado ao mover o card para uma coluna com outro status base.
+O status pode ser escolhido na modal ou na grade da árvore. Também é atualizado ao mover o card para uma coluna com outro status base.
+
+Status e coluna representam a mesma etapa e ficam sempre coerentes:
+
+- Ao trocar o status, o card passa para a primeira coluna compatível na ordem do fluxo (por exemplo, **Em andamento** leva para **Fazendo**). Se quiser uma etapa específica com o mesmo status base — **A Testar** ou **Testando** —, mova o card pela coluna.
+- Ao mover o card, o status assume o status base da coluna.
+- Status sem coluna correspondente, como **Bloqueada** ou **Cancelada**, mantêm o card na coluna em que está.
 
 Estados disponíveis:
 
