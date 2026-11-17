@@ -1,9 +1,11 @@
 ## Purpose
 
 Definir o diário manual de trabalho separado da auditoria automática dos cards.
+
 ## Requirements
+
 ### Requirement: Diário de trabalho separado do histórico
-O sistema SHALL oferecer um diário manual independente da auditoria automática, exibido diretamente no painel Diário de trabalho da área Histórico. O painel SHALL exibir registros manuais, quantidade de registros, total de duração registrada e formulário inline para criação, sem abrir outra modal.
+O sistema SHALL oferecer um diário manual independente da auditoria automática, exibido diretamente no painel Diário de trabalho da área Histórico. O painel SHALL exibir registros manuais, quantidade de registros, total de duração registrada e formulário inline para criação, sem abrir outra modal. Cada registro SHALL identificar quem o criou.
 
 #### Scenario: Abrir diário integrado
 - **WHEN** usuário seleciona a área Histórico de um card
@@ -16,6 +18,12 @@ O sistema SHALL oferecer um diário manual independente da auditoria automática
 #### Scenario: Estado vazio acionável
 - **WHEN** card não possui registros manuais
 - **THEN** Diário mostra total zero ou ausência conforme o padrão visual e oferece ação clara para abrir o formulário inline
+
+#### Scenario: Autor visível em cada registro
+- **WHEN** painel Diário renderiza um registro manual
+- **THEN** cada registro exibe o autor pela mesma regra do histórico — nome em duas partes e menção para pessoa, rótulo do agente para automação, e "Autor não identificado" quando não há autor resolvido
+
+---
 
 ### Requirement: Registrar trabalho com duração H:MM
 O sistema SHALL permitir que um membro registre descrição e duração no formato `H:MM` no formulário inline do painel Diário, convertendo a duração para minutos antes de persistir.
@@ -69,3 +77,10 @@ O sistema SHALL expor endpoints separados para listar, criar, editar e excluir r
 - **WHEN** membro envia descrição e duração válida para o endpoint de diário
 - **THEN** API cria registro manual com `author_id` do contexto autenticado e `duration_min` normalizado
 
+#### Scenario: Apontamento de agente identifica a automação
+- **WHEN** um apontamento manual é criado por API key (MCP)
+- **THEN** o registro guarda `actor_type = AGENT`, `actor_label` com o nome da chave e `author_id` do dono da chave, para o diário exibir o rótulo do agente sem atribuir a automação à pessoa
+
+#### Scenario: Autor resolvido em qualquer perfil de instalação
+- **WHEN** o diário do mesmo card é lido em instalação SIMPLE (SQLite) ou ADVANCED (PostgreSQL)
+- **THEN** ambos devolvem `author` com id, nome e avatar quando `author_id` existe, sem depender do perfil para identificar quem registrou o trabalho
