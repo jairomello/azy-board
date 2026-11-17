@@ -5,6 +5,7 @@
 Definir como nomes de pessoas são exibidos nas superfícies de leitura do produto, para que nomes longos não quebrem o layout sem perder a identificação da pessoa.
 
 ## Requirements
+
 ### Requirement: Nome de pessoa exibido em duas partes
 
 As superfícies de leitura que exibem nomes de pessoas SHALL reduzir o nome a duas partes — a primeira e a última — e SHALL limitar o resultado a 15 caracteres, cortando com reticências quando exceder. O nome completo SHALL permanecer acessível por tooltip ou rótulo acessível, e SHALL NOT ser alterado em campos de escolha ou de edição.
@@ -48,3 +49,8 @@ As superfícies de leitura que exibem nomes de pessoas SHALL reduzir o nome a du
 
 - **WHEN** o usuário abre a seleção de responsável ou autor
 - **THEN** as opções listam o nome completo, sem abreviação
+
+#### Scenario: Autor no histórico e no diário do card
+
+- **WHEN** o painel Histórico ou o Diário de trabalho exibe o autor de um registro com nome longo
+- **THEN** a menção do autor usa o nome em duas partes e mantém o nome completo no tooltip

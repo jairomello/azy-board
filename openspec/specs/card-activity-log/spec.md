@@ -1,7 +1,9 @@
 ## Purpose
 
 Definir os requisitos da capacidade card activity log.
+
 ## Requirements
+
 ### Requirement: Registro automático de logs para ações no card
 O sistema SHALL gerar automaticamente um evento de auditoria para toda alteração relevante em uma task, sem intervenção do usuário, identificando o executor e a origem da operação.
 
@@ -24,7 +26,7 @@ O sistema SHALL gerar automaticamente um evento de auditoria para toda alteraç�
 ---
 
 ### Requirement: Descrição de auditoria legível e segura
-O sistema SHALL exibir descrições automáticas como texto legível, sem tags HTML cruas ou execução de markup não confiável.
+O sistema SHALL exibir descrições automáticas como texto legível, sem tags HTML cruas ou execução de markup não confiável. Cada entrada SHALL identificar o autor do registro de forma inequívoca, sem usar o tipo do executor como nome.
 
 #### Scenario: Alteração em rich text
 - **WHEN** auditoria registra alteração de descrição contendo HTML do editor
@@ -33,6 +35,18 @@ O sistema SHALL exibir descrições automáticas como texto legível, sem tags H
 #### Scenario: Origem humano ou agente
 - **WHEN** evento foi gerado por usuário, API key, MCP ou sistema
 - **THEN** histórico exibe nome/identidade disponível e rótulo de origem correspondente, sem atribuir automaticamente uma operação humana a um robô
+
+#### Scenario: Autor humano resolvido na leitura
+- **WHEN** evento automático tem `author_id` de um usuário do tenant
+- **THEN** histórico exibe o nome desse usuário como identidade do registro, em vez de um rótulo genérico de tipo
+
+#### Scenario: Autor indisponível tem fallback explícito
+- **WHEN** o usuário autor do evento não pode ser resolvido
+- **THEN** histórico exibe "Autor não identificado" junto do tipo Humano, preservando data, hora e descrição, sem inventar nome
+
+#### Scenario: Origem desconhecida não é atribuída a humano
+- **WHEN** evento tem origem `UNKNOWN` e não há identidade resolvida
+- **THEN** histórico exibe o selo Desconhecido e não o trata como registro humano
 
 ---
 
@@ -59,8 +73,18 @@ O sistema SHALL exibir somente eventos automáticos do card no painel Auditoria 
 - **WHEN** usuário troca de área ou fecha a `ItemModal`
 - **THEN** nenhum overlay adicional permanece aberto e o estado da modal principal continua consistente
 
+#### Scenario: Autor humano aparece como menção
+- **WHEN** entrada do histórico tem autor humano identificado
+- **THEN** painel exibe a menção `@Nome` em duas partes, com o nome completo acessível por tooltip, e o selo Humano separado
+
+#### Scenario: Registro de agente não vira menção de pessoa
+- **WHEN** entrada do histórico foi gerada por agente
+- **THEN** painel exibe o rótulo do agente e o selo Agente, sem menção de pessoa, mesmo que o registro tenha autor humano vinculado à API key
+
+---
+
 ### Requirement: API de auditoria
-O sistema SHALL expor leitura paginada de eventos automáticos com filtros de tenant, projeto e card, sem misturar registros manuais; a nova apresentação inline SHALL consumir esse mesmo contrato.
+O sistema SHALL expor leitura paginada de eventos automáticos com filtros de tenant, projeto e card, sem misturar registros manuais; a nova apresentação inline SHALL consumir esse mesmo contrato. A resposta SHALL resolver o autor do evento a partir do `author_id` quando ele existir.
 
 #### Scenario: Listar logs de uma task
 - **WHEN** painel Auditoria chama `GET /projects/:projectId/items/:itemId/audit?page=1&limit=20` por usuário autenticado
@@ -70,3 +94,6 @@ O sistema SHALL expor leitura paginada de eventos automáticos com filtros de te
 - **WHEN** usuário consulta card ou evento fora de seu tenant/projeto
 - **THEN** API retorna 404 ou 403 conforme o recurso e não revela dados
 
+#### Scenario: Autor resolvido em qualquer perfil de instalação
+- **WHEN** a mesma base de eventos é lida em instalação SIMPLE (SQLite) ou ADVANCED (PostgreSQL)
+- **THEN** ambos devolvem `author` com id, nome e avatar quando `author_id` existe, e `author` nulo somente quando não há autor
