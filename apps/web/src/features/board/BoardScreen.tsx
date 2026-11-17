@@ -570,7 +570,7 @@ export default function BoardPage() {
     priority: tBoard('filterPriority'), status: tBoard('filterStatus'), type: tBoard('filterType'), tag: tBoard('filterTag'),
     updated: tBoard('filterUpdated'),
     updatedValues: { '1d': tBoard('recentLastDay'), '2d': tBoard('recent2d'), '3d': tBoard('recent3d'), '5d': tBoard('recent5d'), '1w': tBoard('recentWeek'), '1m': tBoard('recentMonth'), 'current-sprint': tBoard('recentCurrentSprint') },
-    hideEmptyEpics: tBoard('hideEmptyEpics'), hideEmptyStories: tBoard('hideEmptyStories'), showSubtasks: tBoard('showSubtasks'),
+    hideEmptyEpics: view === 'tree' ? tBoard('hideEmptyBranches') : tBoard('hideEmptyEpics'), hideEmptyStories: tBoard('hideEmptyStories'), showSubtasks: tBoard('showSubtasks'),
     storyDisplay: tBoard('storyDisplay'), moduleViewMode: tBoard('moduleViewMode'), typeValues: { TASK: tBoard('typeTask'), BUG: tBoard('typeBug') },
     priorityValues: { LOW: tBoard('priorityLow'), MEDIUM: tBoard('priorityMedium'), HIGH: tBoard('priorityHigh'), CRITICAL: tBoard('priorityCritical') },
     statusValues: { NOT_STARTED: tBoard('statusNotStarted'), PLANNED: tBoard('statusPlanned'), IN_PROGRESS: tBoard('statusInProgress'), IN_HOMOLOGATION: tBoard('statusInHomologation'), BLOCKED: tBoard('statusBlocked'), DONE: tBoard('statusDone'), CANCELLED: tBoard('statusCancelled') },
@@ -632,9 +632,9 @@ export default function BoardPage() {
           onCreate={openCreation}
           onRecalculate={() => void runRecalculate()}
           recalculating={recalculating}
-          onToggleCriticalPath={() => void toggleCriticalPath()}
-          criticalPathActive={showCriticalPath}
-          criticalPathAvailable={projectDepsAvailable}
+          onToggleCriticalPath={view === 'tree' ? undefined : () => void toggleCriticalPath()}
+          criticalPathActive={view !== 'tree' && showCriticalPath}
+          criticalPathAvailable={view !== 'tree' && projectDepsAvailable}
           progress={{ completed: sprintCompleted, total: sprintItems.length }}
           compactFilters={density === 'compact' ? (
             <CompactFilterSummary

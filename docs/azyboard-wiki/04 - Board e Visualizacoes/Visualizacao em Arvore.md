@@ -55,6 +55,10 @@ O cabeçalho das colunas Status, Responsável, Prioridade, Sprint, Versão e Cen
 
 O filtro da coluna é o mesmo do painel **Filtros** e combina por AND com os demais critérios. Limpar filtros fica visível na grade assim que houver critério aplicado.
 
+## Ocultar ramos vazios
+
+O painel **Opções** da command bar está disponível também na árvore e oferece **Ocultar ramos vazios** e **Ocultar histórias vazias**. Ramos vazios reúne módulos e épicos sem descendentes visíveis. Histórias sem filhos visíveis e ramos sem descendentes deixam de aparecer depois dos demais filtros; com os dois ativos, as histórias são podadas antes dos ramos, então um épico que só tinha histórias vazias também desaparece. A ocultação é apenas visual e não altera itens.
+
 ## Expandir um nó
 
 1. Localize o indicador ao lado do nome.
@@ -176,7 +180,7 @@ A Tree View consome uma representação hierárquica que começa nos módulos e 
 
 ### Preservação do contexto
 
-O serviço filtra folhas que não atendem aos critérios e reconstrói os ancestrais necessários. A ocultação de épicos vazios é aplicada depois da formação da árvore visível. O payload já inclui o progresso calculado bottom-up, limitado ao intervalo de 0% a 100%.
+O serviço filtra folhas que não atendem aos critérios e reconstrói os ancestrais necessários. A ocultação de histórias vazias é aplicada antes da de épicos vazios, sobre a árvore já filtrada. O payload já inclui o progresso calculado bottom-up, limitado ao intervalo de 0% a 100%.
 
 ### Edição
 

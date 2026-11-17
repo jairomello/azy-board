@@ -105,6 +105,52 @@ describe('BoardFilters (DOM por papel/rótulo)', () => {
     expect(mudancas[mudancas.length - 1]?.moduleViewMode).toBe('tabs')
   })
 
+  test('na árvore exibe apenas os controles de vazio aplicáveis', () => {
+    render(
+      <BoardFilters
+        modules={[]} sprints={[]} members={[]} tags={[]}
+        filters={baseFilters}
+        onChange={() => {}}
+        showSubtasks={false} onToggleSubtasks={() => {}}
+        storiesAsCards={false} onToggleStoryDisplay={() => {}}
+        showModuleViewMode
+        showExpandCollapse
+        view="tree"
+        section="options"
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: t('hideEmptyBranches') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('hideEmptyStories') })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('moduleViewTabs') })).toBeNull()
+    expect(screen.queryByRole('button', { name: t('expandAll') })).toBeNull()
+    expect(screen.queryByRole('button', { name: t('showSubtasks') })).toBeNull()
+    expect(screen.queryByRole('button', { name: t('showStoriesAsCards') })).toBeNull()
+  })
+
+  test('no unificado mantém subtasks e histórias como cards, sem os controles de lane', () => {
+    render(
+      <BoardFilters
+        modules={[]} sprints={[]} members={[]} tags={[]}
+        filters={baseFilters}
+        onChange={() => {}}
+        showSubtasks={false} onToggleSubtasks={() => {}}
+        storiesAsCards={false} onToggleStoryDisplay={() => {}}
+        showModuleViewMode
+        showExpandCollapse
+        view="unified"
+        section="options"
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: t('showSubtasks') })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('showStoriesAsCards') })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: t('hideEmptyEpics') })).toBeNull()
+    expect(screen.queryByRole('button', { name: t('hideEmptyStories') })).toBeNull()
+    expect(screen.queryByRole('button', { name: t('moduleViewTabs') })).toBeNull()
+    expect(screen.queryByRole('button', { name: t('expandAll') })).toBeNull()
+  })
+
   test('filtra por janela de última alteração', async () => {
     const user = userEvent.setup()
     const mudancas: BoardFilterState[] = []

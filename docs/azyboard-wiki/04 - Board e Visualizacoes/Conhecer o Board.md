@@ -50,7 +50,7 @@ A barra de comandos reúne os controles do Board.
 
 ### Opções
 
-- Painel suspenso **Opções** (disponível no Kanban): mostrar ou ocultar subtasks e, no **Board**, alternar histórias entre lanes e cards, ocultar épicos vazios e ocultar histórias vazias. Também reúne cronograma e exportação.
+- Painel suspenso **Opções** (disponível nas três visualizações): mostrar ou ocultar subtasks, alternar histórias entre lanes e cards, ocultar épicos vazios e ocultar histórias vazias — cada visão exibe só o que tem efeito nela. Também reúne cronograma e exportação.
 
 ### Criar
 

@@ -227,8 +227,7 @@ export function BoardCommandBar({
 
        {compactFilters}
 
-       {view !== 'tree' && (
-         <div ref={optionsRef} className="relative flex-shrink-0">
+       <div ref={optionsRef} className="relative flex-shrink-0">
            <button
              onClick={() => { setOptionsOpen(open => !open); setFiltersOpen(false) }}
              aria-expanded={optionsOpen}
@@ -306,7 +305,8 @@ export function BoardCommandBar({
                  storiesAsCards={filters.storyDisplay === 'cards'}
                  onToggleStoryDisplay={() => quickUpdate({ storyDisplay: filters.storyDisplay === 'cards' ? 'lanes' : 'cards' })}
                  showExpandCollapse={view === 'kanban' && boardMode === 'HIERARCHICAL'}
-                 showModuleViewMode={view === 'kanban' && boardMode === 'HIERARCHICAL'}
+                 showModuleViewMode={boardMode === 'HIERARCHICAL'}
+                 view={view}
                  onExpandAll={onExpandAll}
                  onCollapseAll={onCollapseAll}
                  section="options"
@@ -314,7 +314,6 @@ export function BoardCommandBar({
              </div>
            )}
          </div>
-       )}
 
       {squads.length > 0 && (
         <label className="hidden xl:flex items-center gap-1.5 flex-shrink-0">

@@ -50,6 +50,8 @@ interface Props {
   onCollapseAll?: () => void
   showExpandCollapse?: boolean
   showModuleViewMode?: boolean
+  // Visualização atual: os controles de exibição só aparecem onde têm efeito.
+  view?: 'kanban' | 'unified' | 'tree'
   section?: 'all' | 'filters' | 'options'
 }
 
@@ -118,7 +120,7 @@ export function BoardFilters({
   filters, onChange,
   showSubtasks, onToggleSubtasks,
   storiesAsCards, onToggleStoryDisplay,
-  onExpandAll, onCollapseAll, showExpandCollapse = false, showModuleViewMode = true, section = 'all',
+  onExpandAll, onCollapseAll, showExpandCollapse = false, showModuleViewMode = true, view = 'kanban', section = 'all',
 }: Props) {
   const { t } = useTranslation('board')
   const showOptions = section !== 'filters'
@@ -166,7 +168,7 @@ export function BoardFilters({
 
       {showOptions && <div className="flex items-center gap-1.5 flex-wrap">
          <span className="w-20 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t('display')}</span>
-         {showModuleViewMode && <div className="flex items-center rounded-lg border border-border bg-background p-0.5" aria-label={t('moduleModeLabel')}>
+         {showModuleViewMode && view === 'kanban' && <div className="flex items-center rounded-lg border border-border bg-background p-0.5" aria-label={t('moduleModeLabel')}>
           <button
             type="button"
             aria-pressed={filters.moduleViewMode === 'hierarchy'}
@@ -184,13 +186,13 @@ export function BoardFilters({
             {t('moduleViewTabs')}
           </button>
         </div>}
-        <Tooltip label={showSubtasks ? t('hideSubtasks') : t('showSubtasks')}>
+        {view !== 'tree' && <Tooltip label={showSubtasks ? t('hideSubtasks') : t('showSubtasks')}>
           <button aria-pressed={showSubtasks} aria-label={showSubtasks ? t('hideSubtasks') : t('showSubtasks')} onClick={onToggleSubtasks} className={iconBtn(showSubtasks)}>
             <Layers className="w-3.5 h-3.5" />
           </button>
-        </Tooltip>
+        </Tooltip>}
 
-        {showModuleViewMode && <Tooltip label={storiesAsCards ? t('showStoriesAsLanes') : t('showStoriesAsCards')}>
+        {showModuleViewMode && view !== 'tree' && <Tooltip label={storiesAsCards ? t('showStoriesAsLanes') : t('showStoriesAsCards')}>
           <button
             aria-pressed={storiesAsCards}
             aria-label={storiesAsCards ? t('showStoriesAsLanes') : t('showStoriesAsCards')}
@@ -201,7 +203,7 @@ export function BoardFilters({
           </button>
         </Tooltip>}
 
-        {showExpandCollapse && (
+        {showExpandCollapse && view === 'kanban' && (
           <>
             <Tooltip label={t('expandAll')}>
               <button aria-label={t('expandAll')} onClick={onExpandAll} className={iconBtn(false)}>
@@ -215,9 +217,9 @@ export function BoardFilters({
             </Tooltip>
           </>
         )}
-        {showModuleViewMode && <Tooltip label={t('hideEmptyEpics')}>
+        {showModuleViewMode && view !== 'unified' && <Tooltip label={view === 'tree' ? t('hideEmptyBranches') : t('hideEmptyEpics')}>
           <button
-            aria-label={t('hideEmptyEpics')}
+            aria-label={view === 'tree' ? t('hideEmptyBranches') : t('hideEmptyEpics')}
             aria-pressed={filters.hideEmptyEpics}
             onClick={() => update({ hideEmptyEpics: !filters.hideEmptyEpics })}
             className={`${iconBtn(filters.hideEmptyEpics)} flex items-center gap-1.5 px-2`}
@@ -226,7 +228,7 @@ export function BoardFilters({
             <span className="text-[11px]">{t('emptyEpics')}</span>
           </button>
         </Tooltip>}
-        {showModuleViewMode && !storiesAsCards && (
+        {showModuleViewMode && view !== 'unified' && (view === 'tree' || !storiesAsCards) && (
           <Tooltip label={t('hideEmptyStories')}>
             <button
               aria-label={t('hideEmptyStories')}

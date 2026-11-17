@@ -52,6 +52,7 @@
   "recentWeek": "Última semana",
   "recentMonth": "Último mês",
   "recentCurrentSprint": "Sprint atual",
+  "hideEmptyBranches": "Ocultar ramos vazios",
   "hideEmptyEpics": "Ocultar épicos vazios",
   "hideEmptyStories": "Ocultar histórias vazias",
   "storyDisplay": "Histórias",

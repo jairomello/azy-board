@@ -56,6 +56,17 @@ describe('BoardCommandBar — três visualizações do board', () => {
   })
 })
 
+describe('BoardCommandBar — Opções em todas as visualizações', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('pt-BR')
+  })
+
+  test('mantém o painel Opções disponível na árvore', async () => {
+    renderBar(baseFilters, () => {}, 'tree')
+    expect(await screen.findByRole('button', { name: 'Opções' })).toBeInTheDocument()
+  })
+})
+
 describe('BoardCommandBar — limpar filtro sempre visível quando há filtro aplicado', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('pt-BR')

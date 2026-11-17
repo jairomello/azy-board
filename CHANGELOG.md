@@ -75,6 +75,14 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Added
 
+- **Controles de exibição com paridade entre as visualizações.** O painel
+  **Opções** passou a estar disponível também na árvore e no Kanban unificado,
+  mostrando só o que tem efeito na visão atual. No **Unificado**, ficaram
+  disponíveis **Mostrar subtasks** e **Histórias como cards**; na **Árvore**,
+  **Ocultar épicos vazios** e **Ocultar histórias vazias** — este último passou a
+  ser aplicado de fato na grade, podando histórias sem filhos visíveis antes dos
+  épicos. **Recalcular datas** e **Exportar dados** ficaram acessíveis nas três
+  visões; o caminho crítico continua exclusivo do Kanban, onde há destaque.
 - **Kanban unificado: uma terceira visualização para todo o recorte.** O seletor
   do board passou a oferecer **Board**, **Unificado** e **Árvore**. O `Board`
   continua exatamente como antes, com lanes de módulo, épico e história; o
