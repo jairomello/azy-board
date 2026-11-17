@@ -114,13 +114,23 @@ function parseCommand(text: string): ParsedCommand | null {
   return command
 }
 
-function publicBaseUrl(requestUrl: string): string {
-  return process.env.AZY_PUBLIC_API_URL || new URL(requestUrl).origin
+function requestOrigin(c: { req: { url: string; header: (name: string) => string | undefined } }): string {
+  // Atrás do proxy, o esquema real vem em X-Forwarded-Proto (o request interno é http).
+  const proto = c.req.header('x-forwarded-proto')?.split(',')[0]?.trim()
+    || new URL(c.req.url).protocol.replace(':', '')
+  const host = c.req.header('x-forwarded-host')?.split(',')[0]?.trim()
+    || c.req.header('host')
+    || new URL(c.req.url).host
+  return `${proto}://${host}`
+}
+
+function publicBaseUrl(c: { req: { url: string; header: (name: string) => string | undefined } }): string {
+  return process.env.AZY_PUBLIC_API_URL || requestOrigin(c)
 }
 
 /** Base do web para o link do card. Em produção é a mesma origem da API. */
-function webBaseUrl(requestUrl: string): string {
-  return process.env.AZY_PUBLIC_WEB_URL || new URL(requestUrl).origin
+function webBaseUrl(c: { req: { url: string; header: (name: string) => string | undefined } }): string {
+  return process.env.AZY_PUBLIC_WEB_URL || requestOrigin(c)
 }
 
 export const teamsIntegrationRouter = new Hono<HonoEnv>()
@@ -156,7 +166,7 @@ teamsIntegrationRouter.post('/messages/:token', async (c) => {
   const previous = await persistence.integrations.findMessage(integration.id, messageId)
   if (previous) {
     if (previous.status === 'CREATED' && previous.itemId) {
-      const link = `${webBaseUrl(c.req.url)}/projects/${integration.projectId}/board?itemId=${previous.itemId}`
+      const link = `${webBaseUrl(c)}/projects/${integration.projectId}/board?itemId=${previous.itemId}`
       return c.json({ type: 'message', text: `Card já criado para esta mensagem.\n[Abrir no Azy Board](${link})` })
     }
     return c.json({ type: 'message', text: previous.error ?? 'Esta mensagem já foi processada.' })
@@ -223,7 +233,7 @@ teamsIntegrationRouter.post('/messages/:token', async (c) => {
     }
     const item = result.record
     const code = item.sequenceCode ?? item.id
-    const link = `${webBaseUrl(c.req.url)}/projects/${integration.projectId}/board?itemId=${item.id}`
+    const link = `${webBaseUrl(c)}/projects/${integration.projectId}/board?itemId=${item.id}`
     const dates = [command.startDate ? `início ${command.startDate}` : null, command.dueDate ? `fim ${command.dueDate}` : null].filter(Boolean)
     const extra = command.ignored.length ? `\nNão entendi: ${command.ignored.join(' · ')}.` : ''
     await record('CREATED', item.id, null)
@@ -255,7 +265,7 @@ teamsConfigRouter.get('/', requireRole('ADMIN'), async (c) => {
   return c.json({
     enabled: integration.enabled,
     configured: true,
-    url: `${publicBaseUrl(c.req.url)}/api/integrations/teams/messages/${integration.publicToken}`,
+    url: `${publicBaseUrl(c)}/api/integrations/teams/messages/${integration.publicToken}`,
     moduleId: integration.moduleId,
     parentItemId: integration.parentItemId,
     defaultType: integration.defaultType,
@@ -294,7 +304,7 @@ teamsConfigRouter.put('/', requireRole('ADMIN'), async (c) => {
   return c.json({
     enabled: integration.enabled,
     configured: true,
-    url: `${publicBaseUrl(c.req.url)}/api/integrations/teams/messages/${integration.publicToken}`,
+    url: `${publicBaseUrl(c)}/api/integrations/teams/messages/${integration.publicToken}`,
     moduleId: integration.moduleId,
     parentItemId: integration.parentItemId,
     defaultType: integration.defaultType,
