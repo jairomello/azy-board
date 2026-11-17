@@ -8,6 +8,7 @@ import {
   selectBoardCards,
   selectOrphanCards,
   selectStoryVirtualCards,
+  selectUnifiedCards,
 } from './boardView'
 
 const storyPath = (epicId: string, storyId: string) =>
@@ -92,6 +93,26 @@ describe('boardView — agrupamento', () => {
     const orphan = item({ id: 'orphan-1', type: 'TASK', title: 'Órfã', ancestryPath: '[]' })
     const virtual = item({ id: 'story-virtual-x', type: 'TASK', title: 'Virtual', ancestryPath: '[]' })
     expect(selectOrphanCards([orphan, virtual, task]).map(card => card.id)).toEqual(['orphan-1'])
+  })
+})
+
+describe('boardView — Kanban unificado', () => {
+  test('mantém todos os cards do recorte, de épicos diferentes, em uma única lista', () => {
+    const taskA = item({ id: 'task-a', type: 'TASK', title: 'A', ancestryPath: storyPath('epic-1', 'story-1'), columnId: 'col-1' })
+    const taskB = item({ id: 'task-b', type: 'TASK', title: 'B', ancestryPath: storyPath('epic-2', 'story-2'), columnId: 'col-2' })
+    const cards = selectUnifiedCards([taskA, taskB], [{ id: 'col-1' }, { id: 'col-2' }])
+    expect(cards.map(card => card.id)).toEqual(['task-a', 'task-b'])
+  })
+
+  test('card sem coluna entra na primeira coluna do fluxo', () => {
+    const semColuna = item({ id: 'task-sem-coluna', type: 'TASK', title: 'Sem coluna', columnId: null })
+    const cards = selectUnifiedCards([semColuna], [{ id: 'col-1' }, { id: 'col-2' }])
+    expect(cards[0]?.columnId).toBe('col-1')
+  })
+
+  test('sem colunas não inventa destino', () => {
+    const semColuna = item({ id: 'task-sem-coluna', type: 'TASK', title: 'Sem coluna', columnId: null })
+    expect(selectUnifiedCards([semColuna], [])[0]?.columnId).toBeNull()
   })
 })
 

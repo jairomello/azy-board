@@ -36,7 +36,12 @@ const { useBoardItemEditing } = await import('./useBoardItemEditing')
 
 const item = { id: 'task-1', title: 'Tarefa', type: 'TASK', columnId: 'todo', isLeaf: true, status: 'NOT_STARTED', updatedAt: '2026-10-06T00:00:00.000Z' } as ItemData
 
-function harness() {
+interface HarnessOverrides {
+  newItemCreation?: { type: 'TASK' | 'BUG' | 'EXTERNAL'; columnId?: string } | null
+  columns?: Array<{ id: string }>
+}
+
+function harness(overrides: HarnessOverrides = {}) {
   const toasts: Array<[string, string | undefined]> = []
   const sets: unknown[] = []
   let invalidations = 0
@@ -45,8 +50,8 @@ function harness() {
     projectId: 'project-1',
     allItems: [item],
     setAllItems: update => { sets.push(update) },
-    columns: [],
-    newItemCreation: null,
+    columns: (overrides.columns ?? []) as never,
+    newItemCreation: (overrides.newItemCreation ?? null) as never,
     setColumnAddForms: () => undefined,
     modules: [],
     setModules: () => undefined,
@@ -123,6 +128,19 @@ describe('edição: conflito e autorização (T38/T39)', () => {
     const apply = h.sets[0] as (previous: ItemData[]) => ItemData[]
     expect(apply([item]).map(candidate => candidate.id)).toEqual(['task-1', 'task-2'])
     expect(h.invalidations()).toBe(1)
+    expect(h.treeInvalidations()).toBe(1)
+  })
+
+  test('criação pela modal respeita a coluna escolhida e o tipo editado', async () => {
+    postImpl = async () => ({ ...item, id: 'task-3' })
+    const h = harness({ newItemCreation: { type: 'TASK', columnId: 'doing' }, columns: [{ id: 'todo' }] })
+
+    await h.result.current.handleModalCreate('__new__', { title: 'Card novo', type: 'BUG' }, [])
+
+    expect(postCalls).toHaveLength(1)
+    expect(postCalls[0]?.[0]).toBe('/projects/project-1/items')
+    expect(postCalls[0]?.[1]).toMatchObject({ title: 'Card novo', type: 'BUG', columnId: 'doing', tagIds: [] })
+    expect(h.sets).toHaveLength(1)
     expect(h.treeInvalidations()).toBe(1)
   })
 

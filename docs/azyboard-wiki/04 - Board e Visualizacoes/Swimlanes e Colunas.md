@@ -8,9 +8,12 @@ order: 2
 
 Lanes agrupam o trabalho em dois níveis: épico e história. Colunas representam as etapas pelas quais os cards passam dentro do agrupamento ativo.
 
+> [!info] Este é o Kanban em lanes da visualização **Board**
+> O Board abre na visualização **Board**, com lanes por módulo, épico e história. A visualização **Unificado**, no seletor superior, mostra uma única faixa de colunas com todo o recorte e não substitui o Board. Projetos `SIMPLE` sempre usam uma faixa única.
+
 ## Hierarquia padrão
 
-O modo padrão representa:
+Na visualização **Board**, cada nível é representado assim:
 
 ```text
 Épico
@@ -103,7 +106,9 @@ Cada coluna possui:
 - Nome visível.
 - Status base.
 - Posição no fluxo.
-- Contagem de cards por swimlane.
+- Contagem de cards da lane naquela etapa.
+
+Na visualização **Unificado** a coluna aparece uma única vez e a contagem soma todo o recorte.
 
 O nome descreve a etapa específica. O status base traduz essa etapa para um estado geral do item.
 
@@ -137,9 +142,9 @@ No modo de histórias como lanes, o controle **Ocultar histórias vazias** remov
 ## Regras e comportamentos
 
 - Cada épico corresponde a uma lane principal.
-- No modo padrão, cada história corresponde a uma lane interna.
+- Na visualização **Board**, cada história corresponde a uma lane interna.
 - Todas as lanes de história compartilham a mesma ordem de colunas.
-- A contagem é calculada por lane e coluna.
+- A contagem é calculada por lane e coluna no **Board**; no **Unificado**, por coluna do recorte.
 - Recolher não remove nem altera cards.
 - A ordem e os estados recolhidos persistem após sair do projeto.
 - Épicos e histórias arquivados não aparecem entre as lanes ativas.

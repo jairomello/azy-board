@@ -19,14 +19,25 @@ O novo item utiliza inicialmente a primeira coluna, salvo quando outro contexto 
 
 ## Criar diretamente em uma coluna
 
+Na visualização **Board**:
+
 1. Abra a lane desejada.
-2. No modo padrão, expanda a história que deve receber o card.
+2. Expanda a história que deve receber o card.
 3. Na parte inferior da coluna, selecione **Adicionar card**.
 4. Informe o título.
 5. Escolha `Task` ou `Bug`.
 6. Confirme.
 
 Essa criação é indicada para registrar rapidamente trabalho já posicionado em uma etapa. Quando realizada dentro de uma lane de história, o novo card recebe automaticamente essa história como pai.
+
+Na visualização **Unificado**:
+
+1. Na coluna desejada, selecione **Adicionar card**.
+2. A janela completa do item é aberta já com a coluna escolhida.
+3. Escolha a história que será pai do card e preencha os demais campos.
+4. Salve.
+
+Como não há lane de história no quadro único, a escolha do pai fica explícita na janela em vez de ser herdada do contexto.
 
 ## Editar o título no Board
 
@@ -66,7 +77,7 @@ A sequência vertical é salva para manter a organização em acessos posteriore
 
 ## Mover histórias folha no modo de cards
 
-Histórias sem tasks podem participar diretamente do fluxo quando a exibição está em **Histórias como cards**. Quando ainda não possuem coluna, são exibidas na primeira coluna. O primeiro movimento explícito salva sua coluna e seu status. No modo padrão de lanes, histórias funcionam como agrupadores e não são arrastadas entre colunas.
+Histórias sem tasks podem participar diretamente do fluxo quando a exibição está em **Histórias como cards**. Quando ainda não possuem coluna, são exibidas na primeira coluna. O primeiro movimento explícito salva sua coluna e seu status. Na visualização **Board**, histórias funcionam como agrupadores e não são arrastadas entre colunas.
 
 ## Arrastar sobre cards ou espaços vazios
 

@@ -212,3 +212,16 @@ export function selectOrphanCards(allDisplayed: ItemData[]): ItemData[] {
     ['TASK', 'BUG'].includes(item.type) && !getEpicIdFromPath(item.ancestryPath) && !item.id.startsWith('story-virtual-'),
   )
 }
+
+/**
+ * Cards do Kanban unificado: todo o recorte em uma única faixa de colunas.
+ *
+ * Cards sem coluna (histórias virtuais e itens recém-criados) entram na primeira
+ * coluna do fluxo, senão desapareceriam do quadro — no layout em lanes eles
+ * apareciam pela lane, que aqui não existe.
+ */
+export function selectUnifiedCards(cards: ItemData[], columns: Array<{ id: string }>): ItemData[] {
+  const firstColumnId = columns[0]?.id
+  if (!firstColumnId) return cards
+  return cards.map(card => (card.columnId ? card : { ...card, columnId: firstColumnId }))
+}

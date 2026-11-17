@@ -167,6 +167,36 @@ export async function createItemApplication(input: ApplicationAuthorization & {
 }
 
 /** Caso de uso de edição com revisão otimista e relações na mesma unidade. */
+type StatusColumn = { id: string; baseStatus: ColumnBaseStatus }
+
+/**
+ * Card B22 — status e coluna são a mesma etapa vista de dois jeitos. Ao editar o
+ * status sem informar a coluna (modal do card, grade da árvore, MCP), o card passa
+ * para a primeira coluna compatível; ao informar a coluna, o status base manda.
+ * Status sem coluna correspondente (PLANNED, BLOCKED, CANCELLED) não move o card.
+ */
+export function reconcileStatusAndColumn(input: {
+  itemType: ItemType
+  currentColumnId: string | null
+  requestedStatus?: string
+  requestedColumnId?: string | null
+  columns: StatusColumn[]
+}): { status?: ColumnBaseStatus; columnId?: string } {
+  const { itemType, currentColumnId, requestedStatus, requestedColumnId, columns } = input
+  if (!['TASK', 'BUG', 'STORY', 'EXTERNAL'].includes(itemType) || columns.length === 0) return {}
+
+  const requestedColumn = typeof requestedColumnId === 'string'
+    ? columns.find(column => column.id === requestedColumnId)
+    : undefined
+  if (requestedColumn) return { status: requestedColumn.baseStatus }
+
+  if (!requestedStatus) return {}
+  const currentColumn = columns.find(column => column.id === currentColumnId)
+  if (currentColumn?.baseStatus === requestedStatus) return {}
+  const target = columns.find(column => column.baseStatus === requestedStatus)
+  return target ? { columnId: target.id } : {}
+}
+
 export async function updateItemApplication(input: ApplicationAuthorization & {
   mutationContext: MutationContext
   itemId: string
@@ -202,6 +232,26 @@ export async function updateItemApplication(input: ApplicationAuthorization & {
   ] as const
   const prevItem = await persistence.items.getItem(projectContext, projectId, itemId)
   if (!prevItem) return { ok: false, status: 404, body: { error: 'Item não encontrado' } }
+
+  // Card B22 — mantém status e coluna coerentes em qualquer caminho de edição.
+  if (safeBody.status !== undefined || safeBody.columnId !== undefined) {
+    const columns = await persistence.projects.listColumns(projectContext, projectId)
+    const reconciliation = reconcileStatusAndColumn({
+      itemType: prevItem.type,
+      currentColumnId: prevItem.columnId,
+      requestedStatus: safeBody.status as string | undefined,
+      requestedColumnId: safeBody.columnId as string | null | undefined,
+      columns,
+    })
+    if (reconciliation.status !== undefined) {
+      updates.status = reconciliation.status
+      safeBody.status = reconciliation.status
+    }
+    if (reconciliation.columnId !== undefined) {
+      updates.columnId = reconciliation.columnId
+      safeBody.columnId = reconciliation.columnId
+    }
+  }
 
   const trackerError = validateTrackerMetadata(body, prevItem)
   if (trackerError) return trackerError

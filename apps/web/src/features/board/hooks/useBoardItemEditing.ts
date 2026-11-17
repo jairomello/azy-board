@@ -51,7 +51,9 @@ export function useBoardItemEditing(options: BoardItemEditingOptions) {
       // Campos e tags vão numa única requisição (transação no servidor).
       const created = await api.post<ItemData>(`/projects/${projectId}/items`, {
         ...changes,
-        type: newItemCreation.type,
+        // O seletor de tipo da modal prevalece; o tipo da intenção é só o valor
+        // inicial (a captura rápida da coluna abre como TASK e permite BUG).
+        type: changes.type ?? newItemCreation.type,
         columnId: newItemCreation.columnId ?? columns[0]?.id,
         tagIds,
       })

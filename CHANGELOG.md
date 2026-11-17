@@ -11,6 +11,14 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Fixed
 
+- **Card em andamento deixa de aparecer no Backlog.** Editar o status pela modal
+  do card, pela grade da árvore ou por MCP gravava `status` sem tocar em
+  `columnId`; o Kanban, que posiciona pela coluna, continuava mostrando o card na
+  etapa antiga (caso do T230 no projeto NT-VIVO-IAjuda Campo). O servidor passou
+  a reconciliar os dois campos: `status` sem coluna move o card para a primeira
+  coluna compatível, `columnId` faz o status assumir o `baseStatus` da coluna e,
+  quando os dois vêm juntos, a coluna prevalece. Status sem coluna correspondente
+  (`PLANNED`, `BLOCKED`, `CANCELLED`) mantém o card onde está.
 - **Listagem e ordenação de pessoas volta a funcionar no SQLite do macOS.** A
   dobra de acentos usava `replace()` aninhado em mais de 60 níveis; builds do
   SQLite com limite de profundidade menor estouravam o parser ("parser stack
@@ -67,6 +75,24 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Added
 
+- **Controles de exibição com paridade entre as visualizações.** O painel
+  **Opções** passou a estar disponível também na árvore e no Kanban unificado,
+  mostrando só o que tem efeito na visão atual. No **Unificado**, ficaram
+  disponíveis **Mostrar subtasks** e **Histórias como cards**; na **Árvore**,
+  **Ocultar épicos vazios** e **Ocultar histórias vazias** — este último passou a
+  ser aplicado de fato na grade, podando histórias sem filhos visíveis antes dos
+  épicos. **Recalcular datas** e **Exportar dados** ficaram acessíveis nas três
+  visões; o caminho crítico continua exclusivo do Kanban, onde há destaque.
+- **Kanban unificado: uma terceira visualização para todo o recorte.** O seletor
+  do board passou a oferecer **Board**, **Unificado** e **Árvore**. O `Board`
+  continua exatamente como antes, com lanes de módulo, épico e história; o
+  `Unificado` mostra todos os cards que passam pelos filtros em uma única faixa
+  de colunas, com a contagem somando o recorte e o contexto de origem no
+  breadcrumb do card. No `Unificado`, os controles de abas, expandir/recolher e
+  ocultar lanes vazias somem, **Adicionar card** abre a criação contextual com a
+  coluna escolhida e o arraste, a ordenação e o caminho crítico seguem iguais. A
+  ordenação por posição ganhou desempate por código e título para cards de
+  histórias diferentes que compartilham a mesma coluna.
 - **Barras de progresso renovadas no Board e nos projetos.** Os cards do Kanban
   trocaram o traço fino por uma barra com trilho arredondado, marcas de 25/50/75%
   e preenchimento em gradiente derivado dos tokens do tema, com estado de

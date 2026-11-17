@@ -325,6 +325,8 @@ function filterHideEmptyEpics(node: TreeNode): TreeNode | null {
     const filteredChildren = node.children
       .map(filterHideEmptyEpics)
       .filter((c): c is TreeNode => c !== null)
+    // Módulo sem épicos visíveis também é um ramo vazio.
+    if (filteredChildren.length === 0) return null
     return { ...node, children: filteredChildren }
   }
   if (node.type === 'EPIC') {
@@ -340,6 +342,15 @@ function filterHideEmptyEpics(node: TreeNode): TreeNode | null {
   const filteredChildren = node.children
     .map(filterHideEmptyEpics)
     .filter((c): c is TreeNode => c !== null)
+  return { ...node, children: filteredChildren }
+}
+
+// Ocultar histórias vazias na grade: mesma semântica da lane sem cards.
+function filterHideEmptyStories(node: TreeNode): TreeNode | null {
+  const filteredChildren = node.children
+    .map(filterHideEmptyStories)
+    .filter((child): child is TreeNode => child !== null)
+  if (node.type === 'STORY' && filteredChildren.length === 0) return null
   return { ...node, children: filteredChildren }
 }
 
@@ -1429,13 +1440,17 @@ export function TreeViewPage({
 
   // Card T26 — recorte fixado antes do filtro de epics vazios.
   const scopedTree = pinnedItemIds ? pruneTreeToIds(tree, new Set(pinnedItemIds)) : tree
-  // Tarefa 11.5 — aplicar filtro hideEmptyEpics na árvore
-  const displayTree = useMemo(
-    () => (filters?.hideEmptyEpics
-      ? scopedTree.map(filterHideEmptyEpics).filter((n): n is TreeNode => n !== null)
-      : scopedTree),
-    [scopedTree, filters?.hideEmptyEpics],
-  )
+  // Filtros de vazio da grade: as mesmas opções do Kanban, aplicadas à árvore.
+  const displayTree = useMemo(() => {
+    let next = scopedTree
+    if (filters?.hideEmptyStories) {
+      next = next.map(filterHideEmptyStories).filter((node): node is TreeNode => node !== null)
+    }
+    if (filters?.hideEmptyEpics) {
+      next = next.map(filterHideEmptyEpics).filter((node): node is TreeNode => node !== null)
+    }
+    return next
+  }, [scopedTree, filters?.hideEmptyEpics, filters?.hideEmptyStories])
 
   // Mapa filho → pai da árvore exibida: usado no arraste para recusar ciclos.
   const moveParentMap = useMemo(() => buildTreeParentMap(displayTree), [displayTree])

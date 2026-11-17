@@ -8,7 +8,22 @@ order: 5
 
 Os controles de visualização modificam a forma de apresentar o mesmo projeto. Eles não alteram hierarquia, status ou conteúdo dos itens.
 
-Os controles desta página ficam no painel suspenso **Opções**, na barra de comandos do Board, e aparecem somente em projetos hierárquicos — no modo `SIMPLE` não há lanes nem subtasks para alternar.
+Os controles desta página ficam no painel suspenso **Opções**, na barra de comandos, e estão disponíveis nas três visualizações — cada uma mostra somente o que tem efeito nela. Em projetos `SIMPLE` não há hierarquia para alternar.
+
+A escolha entre **Board**, **Unificado** e **Árvore** não fica neste painel: ela está no seletor de visualização, no início da barra de comandos.
+
+| Controle | Board | Unificado | Árvore |
+| --- | :---: | :---: | :---: |
+| Módulos: hierarquia ou abas | Sim | Não | Não |
+| Mostrar subtasks | Sim | Sim | Não |
+| Histórias como cards | Sim | Sim | Não |
+| Expandir/recolher tudo | Sim | Não | Não (a grade tem os próprios botões) |
+| Ocultar ramos vazios (épicos/módulos) | Sim | Não | Sim |
+| Ocultar histórias vazias | Sim | Não | Sim |
+| Recalcular datas e exportar | Sim | Sim | Sim |
+| Caminho crítico | Sim | Sim | Não |
+
+Os controles de aba de módulo, expandir/recolher e ocultar vazios não aparecem no **Unificado** porque não existem lanes a agrupar ou recolher. Na **Árvore**, ocultar épicos e histórias vazias limpa a grade; histórias são podadas antes dos épicos, então um épico que só tinha histórias vazias também desaparece. O caminho crítico não é destacado na grade e por isso não é oferecido nela.
 
 ## Mostrar subtasks
 
@@ -55,11 +70,11 @@ Expandir e recolher tudo estão disponíveis somente no Kanban.
 
 ## Ocultar épicos vazios
 
-Remove swimlanes sem cards visíveis depois dos filtros. Diferentemente dos outros controles desta página, ele participa da contagem de filtros e é desativado pela ação **Limpar**.
+No **Board**, o controle aparece como **Épicos vazios** e remove swimlanes sem cards visíveis depois dos filtros. Na **Árvore**, aparece como **Ramos vazios** e remove módulos e épicos sem descendentes visíveis. Diferentemente dos outros controles desta página, ele participa da contagem de filtros e é desativado pela ação **Limpar**.
 
 ## Ocultar histórias vazias
 
-Disponível somente no modo **Histórias como lanes**. Remove temporariamente histórias sem cards visíveis depois dos demais filtros. O controle participa da contagem de filtros e é desativado pela ação **Limpar**.
+No **Board**, disponível somente no modo **Histórias como lanes**: remove histórias sem cards visíveis depois dos demais filtros. Na **Árvore**, remove histórias sem filhos visíveis. O controle participa da contagem de filtros e é desativado pela ação **Limpar**.
 
 ## Itens arquivados
 
