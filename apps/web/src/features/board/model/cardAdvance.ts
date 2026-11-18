@@ -43,3 +43,20 @@ export function createCardAdvance(columns: Column[]) {
   return (card: { status?: string | null; columnId?: string | null; checklistProgress?: { checked: number; total: number } | null }): number | null =>
     resolve({ status: card.status ?? null, columnId: card.columnId ?? null, checklist: card.checklistProgress ?? null })
 }
+
+/**
+ * B19 — o card está numa coluna de outro status, embora o projeto tenha coluna própria
+ * para o status dele? É o mesmo critério da reconciliação status ↔ coluna da API
+ * (`reconcileStatusAndColumn`): status sem coluna correspondente (ex.: BLOCKED,
+ * CANCELLED num projeto sem essas colunas) não é desencontro. Devolve a coluna atual
+ * quando há desencontro, senão `null`.
+ */
+export function statusColumnMismatch(
+  card: { status?: string | null; columnId?: string | null },
+  columns: Array<Pick<Column, 'id' | 'name' | 'baseStatus'>>,
+): Pick<Column, 'id' | 'name' | 'baseStatus'> | null {
+  if (!card.status) return null
+  const current = columns.find(column => column.id === card.columnId)
+  if (!current || current.baseStatus === card.status) return null
+  return columns.some(column => column.baseStatus === card.status) ? current : null
+}

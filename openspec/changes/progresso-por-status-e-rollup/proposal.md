@@ -12,6 +12,7 @@ O avanço de cada card vinha apenas da **coluna** em que ele está; o status era
 - `CANCELLED` e `ARCHIVED` ficam fora do avanço e da conclusão (nem numerador nem denominador) em todas as telas.
 - Folha de progresso passa a ser qualquer `TASK`, `BUG`, `STORY` ou `EPIC` sem filhos; `EXTERNAL` continua à parte; a STORY fixa do modo `SIMPLE` é sempre contêiner.
 - O agrupador continua sendo a média de todas as folhas válidas abaixo dele, o que equivale à média das filhas **ponderada pelo número de itens** (decisão registrada: a média simples das filhas foi descartada por dar o mesmo peso a 8 e a 226 itens).
+- O card do Board e do Kanban unificado passa a mostrar o **status em texto**, em destaque quando ele não combina com a coluna. Com o avanço vindo do status, um card no Backlog com barra cheia precisa explicar o porquê.
 - Uma única função de domínio (`createAdvanceResolver`, `itemsAdvance`, `aggregatedAdvance`) passa a ser usada pela árvore, lanes, card, cabeçalho de sprint, dashboard (`/snapshot` e `/indicators`) e listagem de projetos; o cálculo próprio do dashboard e da listagem sai.
 
 ## Capabilities
@@ -25,13 +26,14 @@ Nenhuma.
 - `progresso-por-coluna`: o status define a faixa de avanço; cancelado fica fora; folhas de qualquer tipo; mesma regra em todas as telas.
 - `tree-progress`: folhas por status, cancelado com "—", Story/Epic sem filhos contam, `EXTERNAL` sem percentual.
 - `project-management`: a listagem de projetos usa a regra por status e a nova população de folhas.
+- `kanban-card-layout`: etiqueta de status no card, com destaque quando o status não combina com a coluna.
 - `project-dashboard`: população de progresso, conclusão, SPI e burnup inclui Story/Epic sem filhos; avanço pela regra por status.
 
 ## Impact
 
 - Domínio: `packages/domain/src/progress.ts`.
 - API: `services/treeProgress.ts`, `routes/items.ts`, `routes/dashboard.ts`, `routes/projects.ts`; recorte de folhas em `db/sqlite/adapter.ts` e `db/postgres/adapter.ts` (`dashboardLeafWhere`/`dashboardLeafConditions` e `listProjectProgress`).
-- Web: `features/board/model/cardAdvance.ts`, `BoardColumns`, `BoardLanes`, `BoardScreen`.
+- Web: `features/board/model/cardAdvance.ts`, `boardView.ts`, `BoardColumns`, `BoardLanes`, `BoardScreen`, `KanbanCard`, i18n.
 - Sem migração de schema e sem alteração de dados. A correção dos 56 cards com status e coluna desencontrados no projeto real é uma ação de dados separada, que depende de aprovação.
 
 ## Assumptions

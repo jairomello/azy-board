@@ -111,6 +111,7 @@ Um card pode apresentar:
 - Breadcrumb.
 - Título.
 - Tags.
+- Etiqueta com o status do card, ao lado do tipo; em âmbar, com a dica "Status diferente da coluna", quando o status não combina com a coluna em que o card está.
 - Barra de avanço no fluxo, com progresso de checklist quando existir.
 - Tipo e prioridade.
 - Pontos.

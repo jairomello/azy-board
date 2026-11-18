@@ -105,4 +105,27 @@ describe('avanço no card do Kanban (T75)', () => {
     expect(bars).toHaveLength(2)
     expect(bars.every((bar: HTMLElement) => bar.getAttribute('aria-valuenow') === '90')).toBe(true)
   })
+
+  // B19 — o status aparece em texto no card; em destaque quando não combina com a coluna.
+  test('B19: etiqueta mostra o status do card', () => {
+    renderBoard({ tasks: [card('c1', 'fazendo')] })
+    const chip = document.querySelector('[data-card-status]') as HTMLElement
+    expect(chip.getAttribute('data-card-status')).toBe('IN_PROGRESS')
+    expect(chip.textContent).toContain('Em andamento')
+    expect(chip.getAttribute('data-status-mismatch')).toBeNull()
+  })
+
+  test('B19: etiqueta em destaque quando o status não combina com a coluna', () => {
+    renderBoard({ tasks: [card('c1', 'fazer')] })
+    const chip = document.querySelector('[data-card-status]') as HTMLElement
+    expect(chip.getAttribute('data-status-mismatch')).toBe('true')
+    expect(chip.getAttribute('title')).toBe('Status diferente da coluna "A Fazer"')
+  })
+
+  test('B19: status sem coluna própria no projeto não é desencontro', () => {
+    renderBoard({ tasks: [card('c1', 'fazer', null, 'BLOCKED')] })
+    const chip = document.querySelector('[data-card-status]') as HTMLElement
+    expect(chip.textContent).toContain('Bloqueada')
+    expect(chip.getAttribute('data-status-mismatch')).toBeNull()
+  })
 })

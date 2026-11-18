@@ -17,7 +17,7 @@ import { useCardFlip } from '../hooks/useCardFlip'
 import { CARD_REORDER_TRANSITION } from '../model/dragAnimation'
 import type { ItemType } from '@azy-board/domain'
 import type { Column, ItemData, Sprint } from '../model/types'
-import { createCardAdvance } from '../model/cardAdvance'
+import { createCardAdvance, statusColumnMismatch } from '../model/cardAdvance'
 import { sortBoardItemsByPosition } from '../model/interaction'
 import type { ProjectVersion } from '../../../components/ItemModal'
 
@@ -103,7 +103,7 @@ export function BoardColumns({
           const vagaEm = dragging && preview?.targetId === sortableId ? preview.index : -1
           const alturaDaVaga = preview?.height ?? 0
           const renderCard = (task: ItemData, arrastando = false) => (
-            <KanbanCard key={task.id} card={task} advance={cardAdvance(task) ?? undefined} onOpenDetail={onOpenDetail} onTitleSave={onTitleSave} onDelete={onDelete} onArchive={onArchive} critical={criticalIds?.has(task.id)} dragging={arrastando} />
+            <KanbanCard key={task.id} card={task} advance={cardAdvance(task) ?? undefined} statusMismatchColumn={statusColumnMismatch(task, columns)?.name ?? null} onOpenDetail={onOpenDetail} onTitleSave={onTitleSave} onDelete={onDelete} onArchive={onArchive} critical={criticalIds?.has(task.id)} dragging={arrastando} />
           )
           return (
             <SortableColumn key={column.id} id={sortableId} colName={column.name} colCount={columnTasks.length} baseStatus={column.baseStatus}>

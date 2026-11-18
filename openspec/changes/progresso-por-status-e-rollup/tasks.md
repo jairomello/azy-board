@@ -18,12 +18,13 @@
 - [x] 3.2 Lanes e cabeçalho de sprint com status, cancelado fora do avanço e do total.
 - [x] 3.3 Board calcula cabeçalho, módulos e lanes sobre a população de progresso (`selectProgressPopulation`: Leaf Rule, histórias e épicos sem filhos, mesmos filtros), sem mudar os cards exibidos.
 - [x] 3.4 Textos do dashboard (escopo ativo e dica de avanço) em pt-BR, en e es.
+- [x] 3.5 Etiqueta de status no card (Board e Unificado), em destaque quando o status não combina com a coluna (`statusColumnMismatch`, mesmo critério de `reconcileStatusAndColumn`); texto `statusOutOfColumn` em pt-BR, en e es.
 
 ## 4. Testes e validação
 
 - [x] 4.1 Testes de domínio da regra por status (T189, concluído no Backlog, bloqueado, fallback, cancelado, agregados).
 - [x] 4.2 Testes da árvore (cancelado, Story/Epic sem filhos, EXTERNAL, SIMPLE, média ponderada, pontos).
 - [x] 4.3 Teste de API com status × coluna desencontrados: listagem, dashboard e árvore com o mesmo valor.
-- [x] 4.4 Testes de componente do card e das lanes.
+- [x] 4.4 Testes de componente do card (avanço e etiqueta de status) e das lanes.
 - [x] 4.5 Validação local com a cópia do projeto real no perfil ADVANCED: 289 nós da árvore iguais ao cálculo independente; projeto em 69% na árvore, no dashboard e na listagem; no navegador, cabeçalho do board 155 de 241 · 69% e 34 lanes iguais à árvore.
 - [x] 4.6 `bun run typecheck`, `bun run lint`, `bun run check:persistence`, `bun run check:api-boundary`, `bun run build`, `bun run check:docs` e `bun run openspec:validate`.

@@ -22,6 +22,10 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
   parte). Árvore, board, sprint, dashboard e listagem de projetos usam a mesma
   função de domínio; o agrupador é a média das folhas, ponderada pelo número de
   itens. No projeto NT-VIVO-IAjuda Campo o avanço passa de 47% para 69%.
+- **Status do card visível no Board e no Kanban unificado (B19).** O card só
+  indicava o status pela cor da faixa lateral. Agora mostra o status em texto ao
+  lado do tipo e, quando ele não combina com a coluna (ex.: "Concluída" parada no
+  Backlog), a etiqueta fica em âmbar com a dica "Status diferente da coluna".
 - **Card em andamento deixa de aparecer no Backlog.** Editar o status pela modal
   do card, pela grade da árvore ou por MCP gravava `status` sem tocar em
   `columnId`; o Kanban, que posiciona pela coluna, continuava mostrando o card na
