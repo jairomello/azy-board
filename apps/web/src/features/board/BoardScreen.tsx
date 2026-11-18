@@ -33,6 +33,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { Layers } from 'lucide-react'
 import { invalidateTree } from '../../lib/queryKeys'
+import { countActiveBoardFilters } from '../../components/BoardFilters'
 import { KanbanCard } from '../../components/KanbanCard'
 import type { EpicData } from '../../components/EpicModal'
 import type { StoryData } from '../../components/StoryModal'
@@ -46,8 +47,8 @@ import { AppShell } from '../../components/AppShell'
 import { BoardCommandBar } from '../../components/BoardCommandBar'
 
 import { BoardContextHeader, BoardStatusRail } from '../../components/BoardContext'
-import { itemsAdvance, type ItemType } from '@azy-board/domain'
-import { cardAdvance, columnAdvanceBands } from './model/cardAdvance'
+import { countsForProgress, isProgressLeafType, itemsAdvance, type ItemType } from '@azy-board/domain'
+import { createCardAdvance, toProgressColumns } from './model/cardAdvance'
 import { useBoardPreferences } from './hooks/useBoardPreferences'
 import { useBoardData } from './hooks/useBoardData'
 import { BoardLanes } from './components/BoardLanes'
@@ -72,7 +73,7 @@ import {
 import { dropAnchor, type PreviewColumn } from './model/dragPreview'
 
 import { resolveBoardModalTarget, resolveCreationIntent, type NewItemCreation } from './model/interaction'
-import { buildEpicGroups, groupEpicsByModule, selectBoardCards, selectOrphanCards, selectStoryVirtualCards, selectUnifiedCards } from './model/boardView'
+import { buildEpicGroups, groupEpicsByModule, selectBoardCards, selectOrphanCards, selectProgressPopulation, selectStoryVirtualCards, selectUnifiedCards } from './model/boardView'
 import type { BoardView, ItemData } from './model/types'
 import { applyViewCommand, readPinnedResult, subscribeViewSession } from '../../lib/assistantViewStore'
 import { VIEW_COMMAND_SCHEMA_VERSION, type AssistantPlanningResult } from '@azy-board/assistant-contracts'
@@ -339,6 +340,13 @@ export default function BoardPage() {
     allItems: scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId,
   }), [scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId])
 
+  // B19 — população de progresso: folhas de qualquer tipo, com os mesmos filtros dos cards.
+  // Alimenta cabeçalho, módulos e lanes para baterem com a árvore e o dashboard.
+  const progressCards = useMemo(() => selectProgressPopulation({
+    allItems: scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId,
+    onlyModuleFilter: countActiveBoardFilters({ ...filters, moduleId: '', hideEmptyEpics: false, hideEmptyStories: false }) === 0,
+  }), [scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId])
+
   // Card T49 — o toggle de caminho crítico só é oferecido com dependências no board.
   const projectDepsAvailable = useMemo(
     () => boardCards.some(card => ((card as { dependencyCount?: number }).dependencyCount ?? 0) > 0),
@@ -408,8 +416,8 @@ export default function BoardPage() {
   // Agrupar por EPIC. No modo de lanes, cada grupo contém também as histórias
   // do épico e seus cards visíveis, formando EPIC → STORY → CARD.
   const epicGroups = useMemo(() => buildEpicGroups({
-    epics, stories, allDisplayed, filters, noStoryLabel: tBoard('noStory'),
-  }), [epics, stories, allDisplayed, filters, tBoard])
+    epics, stories, allDisplayed, filters, noStoryLabel: tBoard('noStory'), progressCards,
+  }), [epics, stories, allDisplayed, filters, tBoard, progressCards])
 
   const orphanCards = useMemo(() => selectOrphanCards(allDisplayed), [allDisplayed])
 
@@ -520,16 +528,19 @@ export default function BoardPage() {
   const epicsForModal = epics.map(e => ({ id: e.id, title: e.title }))
 
   const activeSprint = sprints.find(sprint => sprint.status === 'OPEN')
-  const sprintItems = activeSprint
-    ? allItems.filter(item => item.itemSprints?.some(link => link.sprintId === activeSprint.id))
-    : allDisplayed
+  // B19 — mesma população de progresso da árvore e do dashboard: folhas de qualquer tipo,
+  // sem cancelados/arquivados. Com sprint aberta, as folhas da sprint.
+  const sprintItems = (activeSprint
+    ? allItems.filter(item => item.isLeaf && isProgressLeafType(item.type) && item.itemSprints?.some(link => link.sprintId === activeSprint.id))
+    : progressCards
+  ).filter(item => countsForProgress(item.status))
   const sprintCompleted = sprintItems.filter(item => item.status === 'DONE').length
-  // T75 — faixas de avanço das colunas, usadas pelo preview de arraste (o board calcula por card).
-  const advanceBands = columnAdvanceBands(columns)
+  // T75 — avanço do card no preview de arraste (mesma regra por status do board, B19).
+  const cardAdvance = createCardAdvance(columns)
   // Avanço no fluxo do recorte exibido (mesma população do cabeçalho), separado da conclusão.
   const sprintAdvance = itemsAdvance(
-    columns.map(column => ({ id: column.id, baseStatus: column.baseStatus, position: column.position, progressWeight: column.progressWeightOverride ?? null })),
-    sprintItems.map(item => ({ columnId: item.columnId, checklist: item.checklistProgress ?? null })),
+    toProgressColumns(columns),
+    sprintItems.map(item => ({ status: item.status, columnId: item.columnId, checklist: item.checklistProgress ?? null })),
   )
 
   function openCreation(type: ItemType | 'MODULE', context: TreeActionContext = {}) {
@@ -836,7 +847,7 @@ export default function BoardPage() {
               <DragOverlay dropAnimation={dropAnimation}>
                 {activeCard && (
                   <div className={`board-drag-overlay__card${dragAnimation.reducedMotion ? ' board-drag-overlay__card--still' : ''}`}>
-                    <KanbanCard card={activeCard} advance={cardAdvance(advanceBands, activeCard)} />
+                    <KanbanCard card={activeCard} advance={cardAdvance(activeCard) ?? undefined} />
                   </div>
                 )}
                 {isColumnDrag && activeId && (

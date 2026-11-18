@@ -85,4 +85,17 @@ describe('avanço nas lanes do board', () => {
     expect(document.querySelector('[data-lane-advance]')?.textContent).toBe('93%')
     expect(document.querySelector('[data-lane-completion]')?.textContent).toBe('1/3')
   })
+
+  test('B19: cancelado fica fora do avanço e do total; status manda sobre a coluna', () => {
+    render(<BoardLanes {...laneProps({
+      simpleCards: [
+        card('c1', 'backlog', 'DONE'),
+        card('c2', 'backlog', 'IN_HOMOLOGATION'),
+        card('c3', 'backlog', 'CANCELLED'),
+      ],
+    })} />)
+    // Concluído no Backlog = 100; homologação sem coluna própria = 90; cancelado fora → 95%.
+    expect(document.querySelector('[data-lane-advance]')?.textContent).toBe('95%')
+    expect(document.querySelector('[data-lane-completion]')?.textContent).toBe('1/2')
+  })
 })

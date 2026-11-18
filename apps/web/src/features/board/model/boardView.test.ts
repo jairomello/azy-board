@@ -7,6 +7,7 @@ import {
   groupEpicsByModule,
   selectBoardCards,
   selectOrphanCards,
+  selectProgressPopulation,
   selectStoryVirtualCards,
   selectUnifiedCards,
 } from './boardView'
@@ -150,5 +151,45 @@ describe('boardView — filtro de última alteração (T57)', () => {
   test('current-sprint usa a sprint vigente', () => {
     expect(select('current-sprint', 'sprint-current')).toEqual(['task-sprint'])
     expect(select('current-sprint', null)).toEqual([])
+  })
+})
+
+// B19 — o progresso do board usa a mesma população da árvore e do dashboard, sem
+// mudar os cards exibidos: folhas de qualquer tipo (Leaf Rule), com os mesmos filtros.
+describe('boardView — população de progresso (B19)', () => {
+  const epic = item({ id: 'epic-1', type: 'EPIC', title: 'Épico', isLeaf: false })
+  const emptyEpic = item({ id: 'epic-2', type: 'EPIC', title: 'Épico vazio', isLeaf: true })
+  const leafStory = item({ id: 'story-leaf', type: 'STORY', title: 'História sem tarefas', status: 'DONE', ancestryPath: epicPath('epic-1'), parentId: 'epic-1', isLeaf: true })
+  const story = item({ id: 'story-1', type: 'STORY', title: 'História', ancestryPath: epicPath('epic-1'), parentId: 'epic-1', isLeaf: false })
+  const parentTask = item({ id: 'task-1', type: 'TASK', title: 'Tarefa pai', ancestryPath: storyPath('epic-1', 'story-1'), parentId: 'story-1', isLeaf: false })
+  const subtask = item({ id: 'sub-1', type: 'TASK', title: 'Subtarefa', ancestryPath: storyPath('epic-1', 'story-1'), parentId: 'task-1', isLeaf: true })
+  const allItems = [epic, emptyEpic, leafStory, story, parentTask, subtask]
+  const input = {
+    ...baseInput, allItems, epics: [epic, emptyEpic], stories: [leafStory, story], storyIdSet: new Set(['story-leaf', 'story-1']),
+  }
+
+  test('inclui subtarefas folha, histórias sem filhos e épicos vazios', () => {
+    const population = selectProgressPopulation({ ...input, filters: filters(), onlyModuleFilter: true })
+    expect(population.map(card => card.id).sort()).toEqual(['epic-2', 'story-leaf', 'sub-1'])
+    // Os cards exibidos continuam os de antes.
+    expect(selectBoardCards({ ...input, filters: filters() }).map(card => card.id)).toEqual(['task-1'])
+  })
+
+  test('com filtro de população ativo não acrescenta épicos vazios', () => {
+    const population = selectProgressPopulation({ ...input, filters: filters({ priority: 'HIGH' }), onlyModuleFilter: false })
+    expect(population.some(card => card.id === 'epic-2')).toBe(false)
+  })
+
+  test('lanes de épico e de história usam a população de progresso', () => {
+    const progressCards = selectProgressPopulation({ ...input, filters: filters({ storyDisplay: 'lanes' }), onlyModuleFilter: true })
+    const groups = buildEpicGroups({
+      epics: [epic, emptyEpic], stories: [leafStory, story], allDisplayed: [parentTask],
+      filters: filters({ storyDisplay: 'lanes' }), noStoryLabel: 'Sem história', progressCards,
+    })
+    const main = groups.find(group => group.epic.id === 'epic-1')!
+    expect(main.progressTasks.map(card => card.id).sort()).toEqual(['story-leaf', 'sub-1'])
+    expect(main.storyGroups.find(group => group.id === 'story-leaf')?.progressTasks?.map(card => card.id)).toEqual(['story-leaf'])
+    expect(main.storyGroups.find(group => group.id === 'story-1')?.progressTasks?.map(card => card.id)).toEqual(['sub-1'])
+    expect(groups.find(group => group.epic.id === 'epic-2')?.progressTasks.map(card => card.id)).toEqual(['epic-2'])
   })
 })

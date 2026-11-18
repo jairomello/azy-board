@@ -199,6 +199,8 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
 
   // [TENANT] O modo e a STORY fixa são resolvidos dentro do projeto do tenant atual.
   const project = await persistence.projects.getProject(projectContext, projectId)
+  // A STORY fixa do modo SIMPLE é contêiner, mesmo vazia (B19).
+  if (project?.simpleStoryId) treeProgressContext.containerIds = new Set([project.simpleStoryId])
 
   // Squad: o filtro por squad precisa dos membros do projeto, como no board.
   const squadMemberIds = visibilityFilters.squadId

@@ -1,10 +1,20 @@
-import { computeAdvance, orderColumns, resolveColumnProgressWeights } from '@azy-board/domain'
+import { createAdvanceResolver, orderColumns, resolveColumnProgressWeights, type ProgressColumn } from '@azy-board/domain'
 import type { Column } from './types'
 
 /** Faixa de avanço de uma coluna: peso efetivo e piso (peso da coluna anterior no fluxo). */
 export interface ColumnAdvanceBand {
   weight: number
   previous: number
+}
+
+/** Colunas do board no formato do domínio, com o peso explícito como valor declarado. */
+export function toProgressColumns(columns: Column[]): ProgressColumn[] {
+  return columns.map(column => ({
+    id: column.id,
+    baseStatus: column.baseStatus,
+    position: column.position,
+    progressWeight: column.progressWeightOverride ?? null,
+  }))
 }
 
 /**
@@ -15,12 +25,7 @@ export interface ColumnAdvanceBand {
  * a árvore e o dashboard usam (`packages/domain/src/progress.ts`).
  */
 export function columnAdvanceBands(columns: Column[]): Map<string, ColumnAdvanceBand> {
-  const ordered = orderColumns(columns.map(column => ({
-    id: column.id,
-    baseStatus: column.baseStatus,
-    position: column.position,
-    progressWeight: column.progressWeightOverride ?? null,
-  })))
+  const ordered = orderColumns(toProgressColumns(columns))
   const weights = resolveColumnProgressWeights(ordered)
   return new Map(ordered.map((column, index) => [column.id, {
     weight: weights.get(column.id) ?? 0,
@@ -28,16 +33,30 @@ export function columnAdvanceBands(columns: Column[]): Map<string, ColumnAdvance
   }]))
 }
 
-/** Avanço de um card dentro da faixa da sua coluna, refinado pelo checklist quando existir. */
-export function cardAdvance(
-  bands: Map<string, ColumnAdvanceBand>,
-  card: { columnId?: string | null; checklistProgress?: { checked: number; total: number } | null },
-): number {
-  const band = card.columnId ? bands.get(card.columnId) : undefined
-  if (!band) return 0
-  return computeAdvance({
-    columnWeight: band.weight,
-    previousColumnWeight: band.previous,
-    checklist: card.checklistProgress ?? null,
-  })
+/**
+ * Avanço de um card (B19): o status define a faixa e a coluna refina, com o checklist
+ * afinando dentro dela — a mesma regra da árvore, das lanes e do dashboard. Card cancelado
+ * ou arquivado não tem avanço (`null`).
+ */
+export function createCardAdvance(columns: Column[]) {
+  const resolve = createAdvanceResolver(toProgressColumns(columns))
+  return (card: { status?: string | null; columnId?: string | null; checklistProgress?: { checked: number; total: number } | null }): number | null =>
+    resolve({ status: card.status ?? null, columnId: card.columnId ?? null, checklist: card.checklistProgress ?? null })
+}
+
+/**
+ * B19 — o card está numa coluna de outro status, embora o projeto tenha coluna própria
+ * para o status dele? É o mesmo critério da reconciliação status ↔ coluna da API
+ * (`reconcileStatusAndColumn`): status sem coluna correspondente (ex.: BLOCKED,
+ * CANCELLED num projeto sem essas colunas) não é desencontro. Devolve a coluna atual
+ * quando há desencontro, senão `null`.
+ */
+export function statusColumnMismatch(
+  card: { status?: string | null; columnId?: string | null },
+  columns: Array<Pick<Column, 'id' | 'name' | 'baseStatus'>>,
+): Pick<Column, 'id' | 'name' | 'baseStatus'> | null {
+  if (!card.status) return null
+  const current = columns.find(column => column.id === card.columnId)
+  if (!current || current.baseStatus === card.status) return null
+  return columns.some(column => column.baseStatus === card.status) ? current : null
 }

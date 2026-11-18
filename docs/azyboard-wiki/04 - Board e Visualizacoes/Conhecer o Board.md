@@ -111,6 +111,7 @@ Um card pode apresentar:
 - Breadcrumb.
 - Título.
 - Tags.
+- Etiqueta com o status do card, ao lado do tipo; em âmbar, com a dica "Status diferente da coluna", quando o status não combina com a coluna em que o card está.
 - Barra de avanço no fluxo, com progresso de checklist quando existir.
 - Tipo e prioridade.
 - Pontos.
@@ -120,7 +121,7 @@ Um card pode apresentar:
 
 O controle lateral do card indica se ele pode ser arrastado.
 
-A barra de avanço fica entre as tags/tipo e o rodapé e só aparece quando o avanço é maior que zero. Ela usa um trilho arredondado com marcas a cada 25% e preenchimento em gradiente derivado dos tokens do tema: a família de avanço no parcial e o token de concluído em 100%. O contador de checklist, quando existir, aparece junto da barra. A transição de largura é curta e é desativada quando a pessoa prefere movimento reduzido.
+A barra de avanço fica entre as tags/tipo e o rodapé e só aparece quando o avanço é maior que zero. O percentual vem do **status** do card, com a coluna refinando dentro da faixa: um card concluído vale 100% mesmo fora da coluna final, um card em homologação fora da coluna de homologação vale o peso dela, e um card cancelado não exibe barra. Ela usa um trilho arredondado com marcas a cada 25% e preenchimento em gradiente derivado dos tokens do tema: a família de avanço no parcial e o token de concluído em 100%. O contador de checklist, quando existir, aparece junto da barra. A transição de largura é curta e é desativada quando a pessoa prefere movimento reduzido.
 
 ## Estados do Board
 

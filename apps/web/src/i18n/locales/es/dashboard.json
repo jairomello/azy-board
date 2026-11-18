@@ -117,14 +117,14 @@
     "red": "Crítico",
     "unknown": "Sin datos"
   },
-  "progressScopeNote": "Alcance activo: TASK/BUG, sin N/A ({{cancelled}} fuera). Dependencias externas: {{external}}.",
+  "progressScopeNote": "Alcance activo: elementos sin hijos, sin N/A ({{cancelled}} fuera). Dependencias externas: {{external}}.",
   "completion": "Conclusión",
   "expectedVsCompletion": "Esperado: {{expected}}% · Completado: {{completion}}%",
   "indicatorsScopeNote": "{{total}} elementos activos · {{cancelled}} N/A fuera · {{external}} dependencias externas",
   "howToRead": "Cómo leer {{metric}}",
   "hintSpi": "Conclusión del alcance activo dividida por lo esperado para hoy. 1,00 = en plazo; por debajo de 0,85 es crítico.",
   "hintDaysToFinish": "Días corridos entre hoy y el término planificado. Negativo significa plazo vencido.",
-  "hintCompletion": "Elementos completados ÷ alcance activo (TASK/BUG sin N/A). Las dependencias externas no entran.",
-  "hintAdvance": "Promedio del peso de la columna de cada elemento: muestra cuánto avanzó el trabajo en el flujo, incluso sin completar.",
+  "hintCompletion": "Elementos completados ÷ alcance activo (elementos sin hijos, sin N/A). Las dependencias externas no entran.",
+  "hintAdvance": "Promedio del avance de cada elemento: el estado define el rango y la columna lo ajusta; muestra cuánto avanzó el trabajo en el flujo, incluso sin completar.",
   "teamLoadNote": "{{blocked}} bloqueados y {{external}} con responsable externo quedan fuera de esta carga."
 }

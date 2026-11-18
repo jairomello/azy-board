@@ -1,4 +1,4 @@
-import { averageAdvance, computeAdvance, orderColumns, resolveColumnProgressWeights, type CardChecklistProgress, type ProgressColumn } from '@azy-board/domain'
+import { averageAdvance, createAdvanceResolver, isProgressLeafType, type CardChecklistProgress, type ProgressColumn } from '@azy-board/domain'
 
 export interface TreeProgressNode {
   id?: string
@@ -8,7 +8,7 @@ export interface TreeProgressNode {
   children?: TreeProgressNode[]
   isLeaf?: boolean
   points?: number | null
-  progress?: number
+  progress?: number | null
 }
 
 export interface TreeProgressContext {
@@ -16,63 +16,67 @@ export interface TreeProgressContext {
   columns: readonly ProgressColumn[]
   /** Progresso de checklist por item, quando disponível. */
   progressByItem?: ReadonlyMap<string, CardChecklistProgress>
+  /** Itens que são sempre contêiner, mesmo vazios (ex.: a STORY fixa do modo SIMPLE). */
+  containerIds?: ReadonlySet<string>
 }
 
-function clampProgress(value: number): number {
-  return Math.max(0, Math.min(100, Math.round(value)))
+interface LeafValue {
+  progress: number | null
+  points: number
 }
 
 /**
- * Enriches a visible tree bottom-up using only TASK/BUG leaves.
+ * Enriquece a árvore visível de baixo para cima (B19).
  *
- * O progresso de cada folha é o **avanço** da sua coluna, refinado pelo checklist
- * (`packages/domain/src/progress.ts`); agrupadores exibem a média do avanço das folhas.
- * Item sem coluna conhecida cai na regra de conclusão (`DONE` = 100%, resto = 0%).
+ * - Folha de progresso = item sem filhos do tipo TASK, BUG, STORY ou EPIC. `EXTERNAL` é
+ *   dependência externa e fica fora, como no dashboard.
+ * - O avanço da folha vem do **status**, refinado pela coluna e pelo checklist
+ *   (`createAdvanceResolver` em `packages/domain/src/progress.ts`).
+ * - Folha cancelada ou arquivada recebe `progress: null` e não entra na conta do pai.
+ * - O agrupador exibe a média de todas as folhas válidas abaixo dele (média das filhas
+ *   ponderada pelo número de itens). Sem nenhuma folha, 0%; só com canceladas, `null`.
+ * - Pontos do agrupador somam só as folhas válidas (cancelado fica fora, como no dashboard).
  */
 export function addTreeProgress<T extends TreeProgressNode>(
   nodes: T[],
   context: TreeProgressContext = { columns: [] },
-): Array<T & { progress: number }> {
-  const ordered = orderColumns(context.columns)
-  const weights = resolveColumnProgressWeights(ordered)
+): Array<T & { progress: number | null }> {
+  const resolve = createAdvanceResolver(context.columns)
 
-  function leafAdvance(node: TreeProgressNode): number {
-    const index = ordered.findIndex(column => column.id === node.columnId)
-    if (index < 0) return node.status === 'DONE' ? 100 : 0
-    const columnWeight = weights.get(ordered[index]!.id) ?? 0
-    const previous = index === 0 ? 0 : weights.get(ordered[index - 1]!.id) ?? 0
+  function isProgressLeaf(node: TreeProgressNode): boolean {
+    if (node.id && context.containerIds?.has(node.id)) return false
+    return (node.children?.length ?? 0) === 0 && isProgressLeafType(node.type)
+  }
+
+  function leafProgress(node: TreeProgressNode): number | null {
     const checklist = node.id ? context.progressByItem?.get(node.id) ?? null : null
-    return computeAdvance({ columnWeight, previousColumnWeight: previous, checklist })
+    return resolve({ status: node.status ?? null, columnId: node.columnId ?? null, checklist })
   }
 
-  function enrich(node: T): T & { progress: number } {
-    const children = (node.children ?? []).map(child => enrich(child as T))
-    const leaves = children.flatMap(child =>
-      child.type === 'TASK' || child.type === 'BUG'
-        ? child.children && child.children.length > 0 ? collectLeaves(child) : [child]
-        : collectLeaves(child)
-    )
-    const isLeaf = node.isLeaf ?? children.length === 0
-    const progress = isLeaf && (node.type === 'TASK' || node.type === 'BUG')
-      ? leafAdvance(node)
-      : leaves.length === 0
-        ? 0
-        : clampProgress(averageAdvance(leaves.map(leaf => leaf.progress ?? 0)))
-    const points = isLeaf && (node.type === 'TASK' || node.type === 'BUG')
-      ? node.points ?? 0
-      : leaves.reduce((sum, leaf) => sum + (leaf.points ?? 0), 0)
-
-    return { ...node, progress, points, children } as T & { progress: number }
+  function enrich(node: T): { node: T & { progress: number | null }; leaves: LeafValue[] } {
+    if (isProgressLeaf(node)) {
+      const progress = leafProgress(node)
+      return {
+        node: { ...node, progress, points: node.points ?? 0, children: node.children ?? [] } as T & { progress: number | null },
+        leaves: [{ progress, points: progress === null ? 0 : node.points ?? 0 }],
+      }
+    }
+    if (node.type === 'EXTERNAL' && (node.children?.length ?? 0) === 0) {
+      // Dependência externa não tem avanço próprio na árvore: exibe "—" e não pesa no pai.
+      return { node: { ...node, progress: null, children: [] } as T & { progress: number | null }, leaves: [] }
+    }
+    const enriched = (node.children ?? []).map(child => enrich(child as T))
+    const leaves = enriched.flatMap(result => result.leaves)
+    const valid = leaves.flatMap(leaf => leaf.progress === null ? [] : [leaf.progress])
+    const progress = leaves.length === 0
+      ? 0
+      : valid.length === 0 ? null : averageAdvance(valid)
+    const points = leaves.reduce((sum, leaf) => sum + leaf.points, 0)
+    return {
+      node: { ...node, progress, points, children: enriched.map(result => result.node) } as T & { progress: number | null },
+      leaves,
+    }
   }
 
-  return nodes.map(enrich)
-}
-
-function collectLeaves(node: TreeProgressNode): TreeProgressNode[] {
-  const children = node.children ?? []
-  if (children.length === 0) {
-    if (node.isLeaf === false) return []
-    return node.type === 'TASK' || node.type === 'BUG' ? [node] : []
-  }
-  return children.flatMap(collectLeaves)
+  return nodes.map(node => enrich(node).node)
 }

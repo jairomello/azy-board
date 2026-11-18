@@ -369,5 +369,6 @@
   "dragDropCanceled": "Movimiento cancelado: suelta la tarjeta sobre una columna.",
   "dragMoveRefused": "Movimiento rechazado: se mantuvieron el orden y la columna anteriores.",
   "exportData": "Exportar datos",
-  "dataGroup": "Datos"
+  "dataGroup": "Datos",
+  "statusOutOfColumn": "Estado distinto de la columna \"{{column}}\""
 }

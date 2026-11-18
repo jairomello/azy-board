@@ -35,6 +35,8 @@ export interface EpicGroup {
   epic: ItemData
   tasks: ItemData[]
   storyGroups: StoryLaneGroup[]
+  /** B19 — folhas de progresso do épico, na mesma população da árvore e do dashboard. */
+  progressTasks: ItemData[]
 }
 
 // [T57] Recorte por última alteração (dias-calendário no fuso do projeto) ou
@@ -152,6 +154,8 @@ export interface EpicGroupsInput {
   allDisplayed: ItemData[]
   filters: BoardFilterState
   noStoryLabel: string
+  /** B19 — população de progresso (`selectProgressPopulation`); sem ela, usa os cards exibidos. */
+  progressCards?: ItemData[]
 }
 
 // Agrupa por EPIC. No modo de lanes, cada grupo contém as histórias do épico e
@@ -159,9 +163,13 @@ export interface EpicGroupsInput {
 export function buildEpicGroups(input: EpicGroupsInput): EpicGroup[] {
   const { epics, stories, allDisplayed, filters, noStoryLabel } = input
   const hideEmpty = filters.hideEmptyEpics || !!filters.squadId
+  const progressSource = (input.progressCards ?? allDisplayed).filter(item => !item.id.startsWith('story-virtual-'))
   return epics
     .map(epic => {
       const epicCards = allDisplayed.filter(item => getEpicIdFromPath(item.ancestryPath) === epic.id)
+      const epicProgress = epic.isLeaf && input.progressCards?.some(item => item.id === epic.id)
+        ? [epic]
+        : progressSource.filter(item => item.id !== epic.id && getEpicIdFromPath(item.ancestryPath) === epic.id)
       const storyGroups: StoryLaneGroup[] = filters.storyDisplay === 'lanes'
         ? stories
             .filter(story => story.parentId === epic.id || getEpicIdFromPath(story.ancestryPath) === epic.id)
@@ -170,6 +178,7 @@ export function buildEpicGroups(input: EpicGroupsInput): EpicGroup[] {
               title: story.title,
               story,
               tasks: epicCards.filter(card => getStoryIdFromPath(card.ancestryPath) === story.id),
+              progressTasks: epicProgress.filter(item => item.id === story.id || getStoryIdFromPath(item.ancestryPath) === story.id),
             }))
             .filter(group => !filters.hideEmptyStories || group.tasks.length > 0)
         : []
@@ -177,11 +186,14 @@ export function buildEpicGroups(input: EpicGroupsInput): EpicGroup[] {
       if (filters.storyDisplay === 'lanes') {
         const cardsWithoutStory = epicCards.filter(card => !getStoryIdFromPath(card.ancestryPath))
         if (cardsWithoutStory.length > 0) {
-          storyGroups.push({ id: `no-story-${epic.id}`, title: noStoryLabel, story: undefined, tasks: cardsWithoutStory })
+          storyGroups.push({
+            id: `no-story-${epic.id}`, title: noStoryLabel, story: undefined, tasks: cardsWithoutStory,
+            progressTasks: epicProgress.filter(item => item.type !== 'STORY' && !getStoryIdFromPath(item.ancestryPath)),
+          })
         }
       }
 
-      return { epic, tasks: epicCards, storyGroups }
+      return { epic, tasks: epicCards, storyGroups, progressTasks: epicProgress }
     })
     .filter(group => !hideEmpty || group.tasks.length > 0)
 }
@@ -205,6 +217,20 @@ export function groupEpicsByModule(input: ModuleGroupsInput): Array<{ module: Mo
     else groups.set(moduleId, { module, epics: [group] })
   }
   return [...groups.values()].sort((a, b) => (a.module.position ?? Number.MAX_SAFE_INTEGER) - (b.module.position ?? Number.MAX_SAFE_INTEGER))
+}
+
+/**
+ * B19 — população de progresso do board: as folhas de progresso (Leaf Rule, incluindo
+ * histórias sem filhos) com os mesmos filtros dos cards, mais os épicos sem filhos quando
+ * nenhum filtro além de módulo está ativo — o mesmo recorte da árvore e do dashboard.
+ * Não altera os cards exibidos; só alimenta percentuais e contagens.
+ */
+export function selectProgressPopulation(input: BoardPopulationInput & { onlyModuleFilter: boolean }): ItemData[] {
+  const leaves = selectBoardCards({ ...input, filters: { ...input.filters, showSubtasks: true, storyDisplay: 'cards' } })
+    .filter(item => item.isLeaf !== false && !item.id.startsWith('story-virtual-'))
+  if (input.isSimpleBoard || !input.onlyModuleFilter) return leaves
+  const leafEpics = input.epics.filter(epic => epic.isLeaf && (!input.filters.moduleId || epic.moduleId === input.filters.moduleId))
+  return [...leaves, ...leafEpics]
 }
 
 export function selectOrphanCards(allDisplayed: ItemData[]): ItemData[] {

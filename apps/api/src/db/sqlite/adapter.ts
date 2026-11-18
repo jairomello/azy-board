@@ -588,8 +588,11 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
   const dashboardLeafConditions = (context: PersistenceContext, projectId: string, filter?: DashboardPopulationFilter, population: DashboardLeafPopulation = 'WORK') => {
     const conditions = [
       eq(items.tenantId, context.tenantId), eq(items.projectId, projectId),
-      inArray(items.type, population === 'EXTERNAL' ? ['EXTERNAL'] : ['TASK', 'BUG']), sql`${items.status} <> 'ARCHIVED'`,
+      // B19: folha de trabalho é qualquer TASK, BUG, STORY ou EPIC sem filhos; EXTERNAL fica à parte.
+      inArray(items.type, population === 'EXTERNAL' ? ['EXTERNAL'] : ['TASK', 'BUG', 'STORY', 'EPIC']), sql`${items.status} <> 'ARCHIVED'`,
       sql`NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = ${context.tenantId} AND child.project_id = ${projectId} AND child.parent_id = ${items.id})`,
+      // A STORY fixa do modo SIMPLE é contêiner, nunca item de trabalho.
+      sql`NOT EXISTS (SELECT 1 FROM projects p WHERE p.tenant_id = ${context.tenantId} AND p.id = ${projectId} AND p.simple_story_id = ${items.id})`,
     ]
     if (!filter) return conditions
     if (filter.moduleIds.length) conditions.push(inArray(items.moduleId, filter.moduleIds))
@@ -1014,9 +1017,11 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           .where(and(
             eq(items.tenantId, context.tenantId),
             inArray(items.projectId, projectIds),
-            inArray(items.type, ['TASK', 'BUG']),
+            // B19: mesma população de folhas do dashboard e da árvore.
+            inArray(items.type, ['TASK', 'BUG', 'STORY', 'EPIC']),
             sql`${items.status} NOT IN ('ARCHIVED', 'CANCELLED')`,
             sql`NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = ${context.tenantId} AND child.project_id = ${items.projectId} AND child.parent_id = ${items.id})`,
+            sql`NOT EXISTS (SELECT 1 FROM projects p WHERE p.tenant_id = ${context.tenantId} AND p.id = ${items.projectId} AND p.simple_story_id = ${items.id})`,
           ))
           .groupBy(items.projectId, items.columnId, columns.baseStatus, columns.position, columns.progressWeight, items.status)
         return rows.map(row => ({

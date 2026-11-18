@@ -175,4 +175,53 @@ describe('GET /projects com includeProgress', () => {
   })
 })
 
+// B19 — dados legados com status e coluna desencontrados (como no projeto real) e itens
+// cancelados: lista de projetos, dashboard e árvore devem mostrar o mesmo avanço.
+describe('B19: avanço por status igual em todas as telas', () => {
+  test('concluído no Backlog vale 100, homologação no Backlog vale 90 e cancelado fica fora', async () => {
+    const { items } = await import('./db/schema')
+    const { and, eq } = await import('drizzle-orm')
+    const created = await request('/projects', adminSession, {
+      method: 'POST', body: JSON.stringify({ name: 'Projeto B19', boardMode: 'SIMPLE' }),
+    })
+    expect(created.status).toBe(201)
+    const b19ProjectId = ((await created.json()) as { id: string }).id
+    const create = async (title: string) => {
+      const response = await request(`/projects/${b19ProjectId}/items`, adminSession, {
+        method: 'POST', body: JSON.stringify({ title, type: 'TASK' }),
+      })
+      expect(response.status).toBe(201)
+      return ((await response.json()) as { id: string }).id
+    }
+    const done = await create('Concluída no Backlog')
+    const homolog = await create('Em homologação no Backlog')
+    const cancelled = await create('Cancelada')
+    const todo = await create('Não iniciada')
+    // Força o desencontro legado direto no banco: o status muda, a coluna continua no Backlog.
+    const setStatus = (id: string, status: 'DONE' | 'IN_HOMOLOGATION' | 'CANCELLED') =>
+      db.update(items).set({ status }).where(and(eq(items.tenantId, tenantId), eq(items.id, id)))
+    await setStatus(done, 'DONE')
+    await setStatus(homolog, 'IN_HOMOLOGATION')
+    await setStatus(cancelled, 'CANCELLED')
 
+    // Folhas válidas: 100 (concluída), 90 (homologação sem coluna própria → padrão) e 0 → 63%.
+    const projects = await listProjects('?includeProgress=true')
+    const project = projects.find(row => row.id === b19ProjectId)!
+    expect(project.progress).toEqual({ advance: 63, done: 1, total: 3 })
+
+    const dashboard = await request(`/projects/${b19ProjectId}/dashboard/snapshot`, adminSession)
+    expect(dashboard.status).toBe(200)
+    const snapshot = await dashboard.json() as { boxes: { progressScope: { advance: number; done: number; total: number; cancelled: number } } }
+    expect(snapshot.boxes.progressScope).toMatchObject({ advance: 63, done: 1, total: 3, cancelled: 1 })
+
+    const tree = await request(`/projects/${b19ProjectId}/items/tree`, adminSession)
+    expect(tree.status).toBe(200)
+    const [root] = await tree.json() as Array<{ progress: number | null; children: Array<{ id: string; progress: number | null }> }>
+    expect(root!.progress).toBe(63)
+    const byId = new Map(root!.children.map(child => [child.id, child.progress]))
+    expect(byId.get(done)).toBe(100)
+    expect(byId.get(homolog)).toBe(90)
+    expect(byId.get(cancelled)).toBeNull()
+    expect(byId.get(todo)).toBe(0)
+  })
+})

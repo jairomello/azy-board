@@ -3,7 +3,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { HonoEnv } from '../types/hono'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import type { RequestContext } from '@azy-board/api-contracts'
-import { resolveColumnProgressWeights } from '@azy-board/domain'
+import { aggregatedAdvance, countsForProgress } from '@azy-board/domain'
 import type { ColumnRecord, ProjectProgressAggregateRow } from '../persistence/models'
 import { hasGlobalGroup } from '../services/auth'
 import { hasKeyPermission } from '../services/authorization'
@@ -64,22 +64,18 @@ function summarizeProjectProgress(
     }
     // O peso depende de todas as colunas do projeto, inclusive as sem folhas:
     // derivar apenas das colunas presentes no agregado mudaria a faixa 50–90.
-    const weights = resolveColumnProgressWeights((columnsByProject.get(projectId) ?? []).map(column => ({
+    const progressColumns = (columnsByProject.get(projectId) ?? []).map(column => ({
       id: column.id,
       baseStatus: column.baseStatus,
       position: column.position,
       progressWeight: column.progressWeight,
-    })))
-    let total = 0
-    let done = 0
-    let weighted = 0
-    for (const row of projectRows) {
-      total += row.count
-      if (row.status === 'DONE') done += row.count
-      weighted += row.count * (row.columnId ? weights.get(row.columnId) ?? 0 : 0)
-    }
+    }))
+    // B19: o status define a faixa e a coluna refina; cancelado/arquivado fica fora.
+    const counted = projectRows.filter(row => countsForProgress(row.status))
+    const total = counted.reduce((sum, row) => sum + row.count, 0)
+    const done = counted.filter(row => row.status === 'DONE').reduce((sum, row) => sum + row.count, 0)
     summaries.set(projectId, {
-      advance: total > 0 ? Math.round(weighted / total) : 0,
+      advance: aggregatedAdvance(progressColumns, counted),
       done,
       total,
     })

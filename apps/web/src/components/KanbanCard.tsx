@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSortable } from '@dnd-kit/sortable'
-import { Trash2, GitBranch, Archive, Copy, Check, Workflow, Paperclip, Move } from 'lucide-react'
+import { Trash2, GitBranch, Archive, Copy, Check, Workflow, Paperclip, Move, AlertTriangle } from 'lucide-react'
 import { UserAvatar } from './UserAvatar'
 import { InlineEdit } from './InlineEdit'
 import { ProgressBar } from './ProgressBar'
@@ -27,6 +27,18 @@ const TYPE_STYLES: Record<ItemType, { label: string; cls: string }> = {
   TASK:  { label: 'Task',  cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' },
   BUG:   { label: 'Bug',   cls: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' },
   EXTERNAL: { label: 'Dep. Externa', cls: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' },
+}
+
+// B19 — ponto da etiqueta de status, na mesma família de cor da faixa lateral.
+const STATUS_DOT: Record<TaskStatus, string> = {
+  NOT_STARTED: 'bg-slate-400',
+  PLANNED: 'bg-sky-400',
+  IN_PROGRESS: 'bg-status-progress',
+  IN_HOMOLOGATION: 'bg-amber-400',
+  BLOCKED: 'bg-status-blocked',
+  DONE: 'bg-status-done',
+  CANCELLED: 'bg-slate-400',
+  ARCHIVED: 'bg-slate-300',
 }
 
 const STATUS_INDICATOR: Record<TaskStatus, string> = {
@@ -85,9 +97,11 @@ interface Props {
   // T89 — o quadro indica qual card saiu do fluxo durante o arraste; sem a prop vale
   // o `isDragging` do dnd-kit.
   dragging?: boolean
+  // B19 — nome da coluna atual quando o status do card não combina com ela.
+  statusMismatchColumn?: string | null
 }
 
-export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchive, critical = false, advance, dragging }: Props) {
+export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchive, critical = false, advance, dragging, statusMismatchColumn = null }: Props) {
   const { t } = useTranslation('board')
   const { toast } = useToast()
   const [breadcrumbOpen, setBreadcrumbOpen] = useState(false)
@@ -337,11 +351,30 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
                 </span>
               ))}
             </div>
-            {card.type && TYPE_STYLES[card.type] && (
-              <span className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_STYLES[card.type].cls}`}>
-                {t(card.type === 'EPIC' ? 'typeEpic' : card.type === 'STORY' ? 'typeStory' : card.type === 'TASK' ? 'typeTask' : 'typeBug')}
-              </span>
-            )}
+            <div className="card-type-status flex flex-shrink-0 flex-wrap items-center justify-end gap-1">
+              {/* B19 — status do card em texto; em âmbar quando não combina com a coluna. */}
+              {card.status && (
+                <span
+                  data-card-status={card.status}
+                  data-status-mismatch={statusMismatchColumn ? 'true' : undefined}
+                  title={statusMismatchColumn ? t('statusOutOfColumn', { column: statusMismatchColumn }) : undefined}
+                  className={`card-status-chip inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded font-medium ${statusMismatchColumn
+                    ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-400 dark:bg-amber-900/40 dark:text-amber-200 dark:ring-amber-500'
+                    : 'bg-muted text-muted-foreground'}`}
+                >
+                  {statusMismatchColumn
+                    ? <AlertTriangle className="w-3 h-3" aria-hidden />
+                    : <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[card.status]}`} aria-hidden />}
+                  {t(`common:status.${card.status}`, { defaultValue: card.status })}
+                  {statusMismatchColumn && <span className="sr-only">{t('statusOutOfColumn', { column: statusMismatchColumn })}</span>}
+                </span>
+              )}
+              {card.type && TYPE_STYLES[card.type] && (
+                <span className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_STYLES[card.type].cls}`}>
+                  {t(card.type === 'EPIC' ? 'typeEpic' : card.type === 'STORY' ? 'typeStory' : card.type === 'TASK' ? 'typeTask' : 'typeBug')}
+                </span>
+              )}
+            </div>
           </div>
         )}
 

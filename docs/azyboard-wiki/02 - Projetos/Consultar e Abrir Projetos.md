@@ -39,7 +39,7 @@ Cada projeto é apresentado como um bloco selecionável com:
 
 Projetos ocultos exibidos com a preferência ativada aparecem com borda tracejada e opacidade reduzida, sinalizando o estado sem ocultar o conteúdo.
 
-A barra de progresso usa o **avanço no fluxo** — a média ponderada das folhas `TASK`/`BUG` pelo peso da coluna —, o mesmo indicador do Board e do Dashboard. O percentual não é a razão simples de concluídos pelo total; a contagem ao lado mostra quantas entregas folha já chegaram a `DONE` sobre o total do escopo de progresso. Projeto sem folhas mostra `0%` e `0/0 entregas`; se o resumo não puder ser calculado, o card informa **Progresso indisponível** em vez de inventar um percentual.
+A barra de progresso usa o **avanço no fluxo** — a média das folhas (`TASK`, `BUG`, `STORY` ou `EPIC` sem filhos), em que o **status** de cada folha define a faixa e a coluna refina dentro dela —, o mesmo indicador da árvore, do Board e do Dashboard. Concluído vale 100% em qualquer coluna; cancelados e arquivados ficam fora do percentual e da contagem. O percentual não é a razão simples de concluídos pelo total; a contagem ao lado mostra quantas entregas folha já chegaram a `DONE` sobre o total do escopo de progresso. Projeto sem folhas mostra `0%` e `0/0 entregas`; se o resumo não puder ser calculado, o card informa **Progresso indisponível** em vez de inventar um percentual.
 
 ## Abrir um projeto
 

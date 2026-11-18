@@ -117,14 +117,14 @@
     "red": "Critical",
     "unknown": "No data"
   },
-  "progressScopeNote": "Active scope: TASK/BUG, excluding N/A ({{cancelled}} out). External dependencies: {{external}}.",
+  "progressScopeNote": "Active scope: items without children, excluding N/A ({{cancelled}} out). External dependencies: {{external}}.",
   "completion": "Completion",
   "expectedVsCompletion": "Expected: {{expected}}% · Completed: {{completion}}%",
   "indicatorsScopeNote": "{{total}} active items · {{cancelled}} N/A out · {{external}} external dependencies",
   "howToRead": "How to read {{metric}}",
   "hintSpi": "Active scope completion divided by what was expected by today. 1.00 = on schedule; below 0.85 is critical.",
   "hintDaysToFinish": "Calendar days between today and the planned end date. Negative means the deadline has passed.",
-  "hintCompletion": "Completed items ÷ active scope (TASK/BUG without N/A). External dependencies are excluded.",
-  "hintAdvance": "Average column weight per item: shows how far work moved through the flow, even before completion.",
+  "hintCompletion": "Completed items ÷ active scope (items without children, excluding N/A). External dependencies are excluded.",
+  "hintAdvance": "Average progress per item: the status sets the range and the column refines it; shows how far work moved through the flow, even before completion.",
   "teamLoadNote": "{{blocked}} blocked and {{external}} with an external owner are not part of this load."
 }
