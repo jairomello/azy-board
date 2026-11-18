@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  aggregatedAdvance,
   averageAdvance,
   columnProgressWeight,
   completionRatio,
   computeAdvance,
+  countsForProgress,
+  createAdvanceResolver,
+  isProgressLeafType,
   itemsAdvance,
   previousColumnProgressWeight,
   resolveColumnProgressWeights,
@@ -192,5 +196,109 @@ describe('avanço de um conjunto de cards', () => {
   test('proporção de conclusão é distinta do avanço', () => {
     expect(completionRatio(['DONE', 'DONE', 'IN_PROGRESS', 'NOT_STARTED'])).toBe(50)
     expect(completionRatio([])).toBe(0)
+  })
+
+  test('cancelado e arquivado ficam fora da conclusão', () => {
+    expect(completionRatio(['DONE', 'CANCELLED', 'ARCHIVED', 'NOT_STARTED'])).toBe(50)
+    expect(completionRatio(['CANCELLED'])).toBe(0)
+  })
+})
+
+// B19 — o status define a faixa de avanço e a coluna refina dentro dela.
+describe('avanço por status (B19)', () => {
+  // Mesmo fluxo do projeto real: Backlog, A Fazer, Fazendo 50, A Testar 63, Testando 77,
+  // Em Homologação 90, Concluídas 100.
+  const real: ProgressColumn[] = [
+    column('backlog', 'NOT_STARTED', 0),
+    column('fazer', 'NOT_STARTED', 1),
+    column('fazendo', 'IN_PROGRESS', 2),
+    column('testar', 'IN_PROGRESS', 3),
+    column('testando', 'IN_PROGRESS', 4),
+    column('homolog', 'IN_HOMOLOGATION', 5),
+    column('concluidas', 'DONE', 6),
+  ]
+  const resolve = createAdvanceResolver(real)
+
+  test('pesos derivados do fluxo real', () => {
+    const weights = resolveColumnProgressWeights(real)
+    expect(['fazendo', 'testar', 'testando', 'homolog', 'concluidas'].map(id => weights.get(id))).toEqual([50, 63, 77, 90, 100])
+  })
+
+  test('T189: em homologação parado no Backlog vale 90, e não 0', () => {
+    expect(resolve({ status: 'IN_HOMOLOGATION', columnId: 'backlog' })).toBe(90)
+  })
+
+  test('concluído vale 100 em qualquer coluna, inclusive com checklist incompleto', () => {
+    expect(resolve({ status: 'DONE', columnId: 'backlog' })).toBe(100)
+    expect(resolve({ status: 'DONE', columnId: 'fazendo' })).toBe(100)
+    expect(resolve({ status: 'DONE', columnId: 'concluidas', checklist: { checked: 0, total: 10 } })).toBe(100)
+  })
+
+  test('não iniciado e planejado valem 0 mesmo em coluna do fluxo', () => {
+    expect(resolve({ status: 'NOT_STARTED', columnId: 'fazendo' })).toBe(0)
+    expect(resolve({ status: 'PLANNED', columnId: 'testar' })).toBe(0)
+  })
+
+  test('em andamento na coluna compatível usa o peso da coluna', () => {
+    expect(resolve({ status: 'IN_PROGRESS', columnId: 'testar' })).toBe(63)
+    expect(resolve({ status: 'IN_PROGRESS', columnId: 'testando' })).toBe(77)
+  })
+
+  test('em andamento fora de coluna compatível usa a primeira coluna em andamento', () => {
+    expect(resolve({ status: 'IN_PROGRESS', columnId: 'backlog' })).toBe(50)
+    expect(resolve({ status: 'IN_PROGRESS', columnId: 'homolog' })).toBe(50)
+    expect(resolve({ status: 'IN_PROGRESS', columnId: null })).toBe(50)
+  })
+
+  test('checklist afina dentro da faixa da coluna usada', () => {
+    // Faixa de "Fazendo" é 0→50; metade do checklist → 25, com o card fora da coluna.
+    expect(resolve({ status: 'IN_PROGRESS', columnId: 'backlog', checklist: { checked: 2, total: 4 } })).toBe(25)
+    // Faixa de "A Testar" é 50→63.
+    expect(resolve({ status: 'IN_PROGRESS', columnId: 'testar', checklist: { checked: 1, total: 2 } })).toBe(57)
+  })
+
+  test('bloqueado fica onde parou no fluxo e vale 0 antes de começar', () => {
+    expect(resolve({ status: 'BLOCKED', columnId: 'testando' })).toBe(77)
+    expect(resolve({ status: 'BLOCKED', columnId: 'fazer' })).toBe(0)
+  })
+
+  test('cancelado e arquivado ficam fora da conta', () => {
+    expect(resolve({ status: 'CANCELLED', columnId: 'concluidas' })).toBeNull()
+    expect(resolve({ status: 'ARCHIVED', columnId: 'fazendo' })).toBeNull()
+    expect(countsForProgress('CANCELLED')).toBe(false)
+    expect(countsForProgress('DONE')).toBe(true)
+  })
+
+  test('sem coluna do status no projeto usa o valor padrão do status', () => {
+    const semHomologacao = createAdvanceResolver([column('fazer', 'NOT_STARTED', 0), column('fim', 'DONE', 1)])
+    expect(semHomologacao({ status: 'IN_HOMOLOGATION', columnId: 'fazer' })).toBe(90)
+    expect(semHomologacao({ status: 'IN_PROGRESS', columnId: 'fazer' })).toBe(50)
+  })
+
+  test('sem status informado mantém a regra anterior, só pela coluna', () => {
+    expect(resolve({ columnId: 'testar' })).toBe(63)
+    expect(resolve({ columnId: null })).toBe(0)
+  })
+
+  test('cancelado não entra no denominador da média', () => {
+    expect(itemsAdvance(real, [
+      { status: 'DONE', columnId: 'concluidas' },
+      { status: 'CANCELLED', columnId: 'backlog' },
+    ])).toBe(100)
+    expect(itemsAdvance(real, [{ status: 'CANCELLED', columnId: 'backlog' }])).toBe(0)
+  })
+
+  test('linhas agregadas usam a mesma regra e ignoram cancelados', () => {
+    expect(aggregatedAdvance(real, [
+      { status: 'DONE', columnId: 'backlog', count: 3 },
+      { status: 'IN_HOMOLOGATION', columnId: 'backlog', count: 1 },
+      { status: 'CANCELLED', columnId: 'backlog', count: 10 },
+    ])).toBe(98)
+    expect(aggregatedAdvance(real, [])).toBe(0)
+  })
+
+  test('tipos que contam como folha de progresso', () => {
+    expect(['TASK', 'BUG', 'STORY', 'EPIC'].every(isProgressLeafType)).toBe(true)
+    expect(isProgressLeafType('EXTERNAL')).toBe(false)
   })
 })

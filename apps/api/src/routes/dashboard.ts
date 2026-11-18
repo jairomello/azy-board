@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { resolveColumnProgressWeights } from '@azy-board/domain'
+import { aggregatedAdvance, isProgressLeafType } from '@azy-board/domain'
 import { authMiddleware, requireRole } from '../middleware/auth'
 import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
@@ -19,7 +19,8 @@ dashboardRouter.use('*', async (c, next) => {
 })
 
 const activeStatuses = new Set(['IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED'])
-export const isEligibleLeaf = (item: { type: string; status: string }, leaf: boolean) => leaf && (item.type === 'TASK' || item.type === 'BUG') && item.status !== 'ARCHIVED'
+// B19: folha de trabalho é qualquer TASK, BUG, STORY ou EPIC sem filhos (EXTERNAL fica à parte).
+export const isEligibleLeaf = (item: { type: string; status: string }, leaf: boolean) => leaf && isProgressLeafType(item.type) && item.status !== 'ARCHIVED'
 export const completionPercent = (done: number, total: number) => total === 0 ? null : done / total * 100
 export const distributionByStatus = (rows: Array<{ status: string; points: number | null }>) => Object.fromEntries(['DONE', 'IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED', 'PLANNED', 'NOT_STARTED'].map(status => [status, { count: rows.filter(row => row.status === status).length, points: rows.filter(row => row.status === status).reduce((sum, row) => sum + (row.points ?? 0), 0) }]))
 export const topTenOldest = <T extends { age: number }>(items: T[]) => [...items].sort((a, b) => b.age - a.age).slice(0, 10)
@@ -92,7 +93,7 @@ dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
   const sum = (groups: typeof aggregates, select: 'count' | 'estimatedCount' | 'points' | 'donePoints' | 'overdueCount' | 'overduePoints' | 'unassignedCount' | 'unassignedEstimatedCount' | 'unassignedPoints' | 'labelOnlyCount' | 'labelOnlyEstimatedCount' | 'labelOnlyPoints') => groups.reduce((total, group) => total + group[select], 0)
   const byStatus = Object.fromEntries([...activeStatuses].map(status => [status, sum(aggregates.filter(row => row.status === status), 'count')]))
   const byStatusPoints = Object.fromEntries([...activeStatuses].map(status => [status, sum(aggregates.filter(row => row.status === status), 'points')]))
-  // População do progresso: TASK/BUG (já garantido pelo adapter) sem N/A (CANCELLED).
+  // População do progresso: folhas TASK/BUG/STORY/EPIC (garantido pelo adapter) sem N/A (CANCELLED).
   // EXTERNAL é dependência externa e fica fora do progresso, contada à parte.
   const workAggregates = aggregates.filter(row => row.status !== 'CANCELLED')
   const cancelledTotal = sum(aggregates.filter(row => row.status === 'CANCELLED'), 'count')
@@ -100,15 +101,12 @@ dashboardRouter.get('/snapshot', requireRole('VIEWER'), async (c) => {
   const total = sum(workAggregates, 'count'); const done = sum(workAggregates.filter(row => row.status === 'DONE'), 'count')
   const totalPoints = sum(workAggregates, 'points'); const donePoints = sum(workAggregates, 'donePoints'); const estimatedCount = sum(workAggregates, 'estimatedCount')
   const activeAggregates = aggregates.filter(row => activeStatuses.has(row.status))
-  // Avanço no fluxo: média ponderada das folhas pelo peso da coluna (indicador distinto da
-  // conclusão, que continua sendo `done / total`). A coluna desconhecida vale 0.
+  // Avanço no fluxo (B19): o status define a faixa e a coluna refina — mesma regra da árvore,
+  // do board e da lista de projetos. Indicador distinto da conclusão (`done / total`).
   const projectColumns = await persistence.projects.listColumns(projectContext, projectId)
-  const columnWeights = resolveColumnProgressWeights(projectColumns.map(column => ({
+  const advance = aggregatedAdvance(projectColumns.map(column => ({
     id: column.id, baseStatus: column.baseStatus, position: column.position, progressWeight: column.progressWeight,
-  })))
-  const advance = total > 0
-    ? Math.round(workAggregates.reduce((sum, row) => sum + row.count * (row.columnId ? columnWeights.get(row.columnId) ?? 0 : 0), 0) / total)
-    : 0
+  })), workAggregates)
   const externalTotal = sum(externalAggregates, 'count')
   const externalDone = sum(externalAggregates.filter(row => row.status === 'DONE'), 'count')
   const blockedTotal = sum(aggregates.filter(row => row.status === 'BLOCKED'), 'count')
@@ -178,7 +176,7 @@ dashboardRouter.get('/indicators', requireRole('VIEWER'), async (c) => {
   if (!project) return c.json({ error: 'Projeto não encontrado' }, 404)
 
   const sum = (groups: typeof aggregates, select: 'count' | 'overdueCount' | 'unassignedCount' | 'labelOnlyCount') => groups.reduce((total, group) => total + group[select], 0)
-  // Progresso e SPI: folhas de trabalho (TASK/BUG) sem N/A. EXTERNAL fica fora e é contado à parte.
+  // Progresso e SPI: folhas de trabalho (TASK/BUG/STORY/EPIC) sem N/A. EXTERNAL fica fora e é contado à parte.
   const workAggregates = aggregates.filter(row => row.status !== 'CANCELLED')
   const total = sum(workAggregates, 'count')
   const done = sum(workAggregates.filter(row => row.status === 'DONE'), 'count')
@@ -192,12 +190,10 @@ dashboardRouter.get('/indicators', requireRole('VIEWER'), async (c) => {
   const externalTotal = sum(externalAggregates, 'count')
   const externalDone = sum(externalAggregates.filter(row => row.status === 'DONE'), 'count')
 
-  const columnWeights = resolveColumnProgressWeights(projectColumns.map(column => ({
+  // Avanço no fluxo (B19): mesma regra por status da árvore e do board.
+  const advance = aggregatedAdvance(projectColumns.map(column => ({
     id: column.id, baseStatus: column.baseStatus, position: column.position, progressWeight: column.progressWeight,
-  })))
-  const advance = total > 0
-    ? Math.round(workAggregates.reduce((acc, row) => acc + row.count * (row.columnId ? columnWeights.get(row.columnId) ?? 0 : 0), 0) / total)
-    : 0
+  })), workAggregates)
 
   const openStatuses = new Set(['NOT_STARTED', 'PLANNED', 'IN_PROGRESS', 'IN_HOMOLOGATION', 'BLOCKED'])
   const open = leaves.filter(item => openStatuses.has(item.status))

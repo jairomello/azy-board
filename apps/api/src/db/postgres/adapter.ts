@@ -659,8 +659,11 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
   function dashboardLeafWhere(context: PersistenceContext, projectId: string, filter?: DashboardPopulationFilter, population: DashboardLeafPopulation = 'WORK') {
     const params: unknown[] = [context.tenantId, projectId]
     const conditions = [
-      'i.tenant_id = $1', 'i.project_id = $2', population === 'EXTERNAL' ? "i.type = 'EXTERNAL'" : "i.type IN ('TASK', 'BUG')", "i.status <> 'ARCHIVED'",
+      'i.tenant_id = $1', 'i.project_id = $2', // B19: folha de trabalho é qualquer TASK, BUG, STORY ou EPIC sem filhos; EXTERNAL fica à parte.
+      population === 'EXTERNAL' ? "i.type = 'EXTERNAL'" : "i.type IN ('TASK', 'BUG', 'STORY', 'EPIC')", "i.status <> 'ARCHIVED'",
       'NOT EXISTS (SELECT 1 FROM items child WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id)',
+      // A STORY fixa do modo SIMPLE é contêiner, nunca item de trabalho.
+      'NOT EXISTS (SELECT 1 FROM projects p WHERE p.tenant_id = i.tenant_id AND p.id = i.project_id AND p.simple_story_id = i.id)',
     ]
     const addArray = (column: string, values: string[]) => {
       if (!values.length) return
@@ -1687,11 +1690,15 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
            FROM items i
            LEFT JOIN columns c ON c.tenant_id = i.tenant_id AND c.project_id = i.project_id AND c.id = i.column_id
            WHERE i.tenant_id = $1 AND i.project_id IN (${placeholders})
-             AND i.type IN ('TASK', 'BUG')
+             AND i.type IN ('TASK', 'BUG', 'STORY', 'EPIC')
              AND i.status NOT IN ('ARCHIVED', 'CANCELLED')
              AND NOT EXISTS (
                SELECT 1 FROM items child
                WHERE child.tenant_id = i.tenant_id AND child.project_id = i.project_id AND child.parent_id = i.id
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM projects p
+               WHERE p.tenant_id = i.tenant_id AND p.id = i.project_id AND p.simple_story_id = i.id
              )
            GROUP BY i.project_id, i.column_id, c.base_status, c.position, c.progress_weight, i.status`,
           [context.tenantId, ...projectIds],

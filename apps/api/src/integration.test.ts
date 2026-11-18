@@ -279,13 +279,15 @@ describe('modos de board de projetos', () => {
     const returnedModule = tree[0]!
     const returnedEpic = returnedModule.children.find(item => item.id === epicId)!
     const returnedStory = returnedEpic.children.find(item => item.id === storyId)!
-    expect(returnedModule.progress).toBe(50)
-    expect(returnedEpic.progress).toBe(50)
-     expect(returnedStory.progress).toBe(50)
+    // B19: o BUG em andamento sem coluna vale a primeira coluna em andamento (50), e não 0.
+    // Folhas: 100 (concluída) e 50 (em andamento) → 75%.
+    expect(returnedModule.progress).toBe(75)
+    expect(returnedEpic.progress).toBe(75)
+     expect(returnedStory.progress).toBe(75)
      expect(returnedStory.points).toBe(5)
      expect(returnedStory.children.find(item => item.id === doneId)?.assignee?.name).toBe('Admin Teste')
     expect(returnedStory.children.find(item => item.id === doneId)?.progress).toBe(100)
-    expect(returnedStory.children.find(item => item.id === openId)?.progress).toBe(0)
+    expect(returnedStory.children.find(item => item.id === openId)?.progress).toBe(50)
     expect(returnedStory.children.some(item => item.id === archivedId)).toBe(false)
 
     const filtered = await request(`/projects/${project.id}/items/tree?tagIds=${tag}`, adminToken)

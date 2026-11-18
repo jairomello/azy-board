@@ -11,6 +11,17 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Fixed
 
+- **Percentual de avanço passa a respeitar o status e a ignorar cancelados (B19).**
+  O avanço de cada card vinha só da coluna: card concluído parado no Backlog
+  valia 0% e o T189, em homologação na coluna Backlog, também. Cancelados
+  entravam como 0% na árvore, nas lanes e no card, mas o dashboard os excluía.
+  Agora o status define a faixa e a coluna refina (`DONE` = 100 em qualquer
+  coluna; `IN_PROGRESS`/`IN_HOMOLOGATION` fora da coluna compatível usam a
+  primeira coluna do status), `CANCELLED`/`ARCHIVED` ficam fora do avanço e da
+  conclusão, e Stories/Epics sem filhos contam como folhas (`EXTERNAL` segue à
+  parte). Árvore, board, sprint, dashboard e listagem de projetos usam a mesma
+  função de domínio; o agrupador é a média das folhas, ponderada pelo número de
+  itens. No projeto NT-VIVO-IAjuda Campo o avanço passa de 47% para 69%.
 - **Card em andamento deixa de aparecer no Backlog.** Editar o status pela modal
   do card, pela grade da árvore ou por MCP gravava `status` sem tocar em
   `columnId`; o Kanban, que posiciona pela coluna, continuava mostrando o card na

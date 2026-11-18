@@ -53,6 +53,8 @@ export interface StoryLaneGroup {
   title: string
   story?: ItemData
   tasks: ItemData[]
+  /** B19 — folhas de progresso da lane (inclui a própria história quando ela não tem filhos). */
+  progressTasks?: ItemData[]
 }
 
 // Card T18 — predicados de filtro movidos para o avaliador compartilhado

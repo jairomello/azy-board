@@ -1,9 +1,9 @@
 // Peso de avanço por coluna e cálculo do avanço de um card.
 //
 // O progresso do produto deixou de ser binário (DONE = 100%, resto = 0%) e passou a
-// derivar da posição do card no fluxo: cada coluna tem um peso, e o checklist afina
-// dentro da faixa da coluna. Fonte única da regra — API (dashboard) e web (board,
-// sprint e árvore) usam exatamente estas funções.
+// derivar do fluxo: cada coluna tem um peso, e o checklist afina dentro da faixa da
+// coluna. Fonte única da regra — API (árvore, dashboard, lista de projetos) e web
+// (board, lanes, sprint) usam exatamente estas funções.
 //
 // Sem valor explícito, o peso é derivado do `baseStatus` e da posição entre as colunas
 // do mesmo status:
@@ -12,9 +12,10 @@
 // - `IN_PROGRESS`/`IN_HOMOLOGATION`/`BLOCKED` = faixa do fluxo: a última coluna vale 90;
 //   quando há mais de uma, a primeira vale 50 e as demais são distribuídas entre 50 e 90.
 //
-// Um item bloqueado não inventa histórico nesta versão: a coluna `BLOCKED` participa da
-// faixa do fluxo como uma etapa em progresso (congelar no último peso conhecido exigiria
-// o histórico de eventos por item).
+// B19 — o **status** do item define a faixa de avanço e a coluna só refina dentro dela
+// (`createAdvanceResolver`). Item cancelado ou arquivado fica fora da conta (nem soma nem
+// entra no denominador), e o agrupador é a média de todos os itens válidos abaixo dele —
+// o que equivale à média das filhas ponderada pelo número de itens de cada uma.
 import type { ColumnBaseStatus } from './index'
 
 /** Teto da faixa do fluxo: nenhuma coluna em progresso vale 100 (isso é do `DONE`). */
@@ -128,29 +129,118 @@ export function averageAdvance(values: readonly number[]): number {
   return clampWeight(values.reduce((total, value) => total + value, 0) / values.length)
 }
 
-/**
- * Avanço de um conjunto de cards (média das folhas) a partir das colunas do projeto.
- * O card sem coluna conhecida vale 0%. Use as colunas com o valor explícito em
- * `progressWeight` para que a derivação aconteça aqui, em um único lugar.
- */
-export function itemsAdvance(
-  columns: readonly ProgressColumn[],
-  items: readonly { columnId?: string | null; checklist?: CardChecklistProgress | null }[],
-): number {
-  const ordered = orderColumns(columns)
-  const weights = resolveColumnProgressWeights(ordered)
-  const advances = items.map(item => {
-    const index = ordered.findIndex(column => column.id === item.columnId)
-    if (index < 0) return 0
-    const columnWeight = weights.get(ordered[index]!.id) ?? 0
-    const previous = index === 0 ? 0 : weights.get(ordered[index - 1]!.id) ?? 0
-    return computeAdvance({ columnWeight, previousColumnWeight: previous, checklist: item.checklist ?? null })
-  })
-  return averageAdvance(advances)
+/** Status que ficam fora de qualquer indicador de progresso (nem numerador nem denominador). */
+export const PROGRESS_EXCLUDED_STATUSES: readonly string[] = ['CANCELLED', 'ARCHIVED']
+
+/** Tipos que contam no progresso quando não têm filhos. `EXTERNAL` é dependência e fica à parte. */
+export const PROGRESS_LEAF_TYPES: readonly string[] = ['TASK', 'BUG', 'STORY', 'EPIC']
+
+/** O item entra no progresso? (cancelado e arquivado nunca entram) */
+export function countsForProgress(status: string | null | undefined): boolean {
+  return !status || !PROGRESS_EXCLUDED_STATUSES.includes(status)
 }
 
-/** Proporção de conclusão (folhas `DONE`) sobre o total — indicador distinto do avanço. */
+/** O item é uma folha de progresso? Item sem filhos de tipo TASK, BUG, STORY ou EPIC. */
+export function isProgressLeafType(type: string | null | undefined): boolean {
+  return !!type && PROGRESS_LEAF_TYPES.includes(type)
+}
+
+export interface AdvanceItem {
+  status?: string | null
+  columnId?: string | null
+  checklist?: CardChecklistProgress | null
+}
+
+/** Valor padrão quando o projeto não tem coluna do status do item. */
+const STATUS_FALLBACK_WEIGHT: Record<string, number> = {
+  IN_PROGRESS: FLOW_WEIGHT_START,
+  IN_HOMOLOGATION: FLOW_WEIGHT_TOP,
+  BLOCKED: 0,
+}
+
+/**
+ * Cria a função que calcula o avanço de um item a partir das colunas do projeto.
+ *
+ * - `CANCELLED`/`ARCHIVED` → `null` (fora da conta);
+ * - `DONE` → 100; `NOT_STARTED`/`PLANNED` → 0, em qualquer coluna;
+ * - `IN_PROGRESS`/`IN_HOMOLOGATION` → faixa da própria coluna quando o `baseStatus` dela é
+ *   o mesmo do item; senão, faixa da primeira coluna do projeto com esse status; sem
+ *   nenhuma, 50 (andamento) ou 90 (homologação);
+ * - `BLOCKED` → faixa da própria coluna quando ela é do fluxo (fica onde parou); fora do
+ *   fluxo, 0 (bloqueado antes de começar);
+ * - sem status informado → regra anterior, só pela coluna (compatibilidade).
+ *
+ * O checklist sempre afina dentro da faixa escolhida e nunca reduz o avanço.
+ */
+export function createAdvanceResolver(columns: readonly ProgressColumn[]): (item: AdvanceItem) => number | null {
+  const ordered = orderColumns(columns)
+  const weights = resolveColumnProgressWeights(ordered)
+  const indexById = new Map(ordered.map((column, index) => [column.id, index]))
+
+  function band(index: number, checklist: CardChecklistProgress | null | undefined): number {
+    const column = ordered[index]!
+    const columnWeight = weights.get(column.id) ?? 0
+    const previous = index === 0 ? 0 : weights.get(ordered[index - 1]!.id) ?? 0
+    return computeAdvance({ columnWeight, previousColumnWeight: previous, checklist: checklist ?? null })
+  }
+
+  return (item: AdvanceItem): number | null => {
+    const status = item.status ?? null
+    if (!countsForProgress(status)) return null
+    const index = item.columnId ? indexById.get(item.columnId) : undefined
+    const column = index === undefined ? null : ordered[index]!
+    if (!status) return index === undefined ? 0 : band(index, item.checklist)
+    if (status === 'DONE') return DONE_WEIGHT
+    if (status === 'NOT_STARTED' || status === 'PLANNED') return 0
+    if (status === 'BLOCKED') {
+      return column && index !== undefined && isFlowStatus(column.baseStatus) ? band(index, item.checklist) : 0
+    }
+    if (status === 'IN_PROGRESS' || status === 'IN_HOMOLOGATION') {
+      if (column && index !== undefined && column.baseStatus === status) return band(index, item.checklist)
+      const fallback = ordered.findIndex(candidate => candidate.baseStatus === status)
+      if (fallback >= 0) return band(fallback, item.checklist)
+      return STATUS_FALLBACK_WEIGHT[status] ?? 0
+    }
+    return index === undefined ? 0 : band(index, item.checklist)
+  }
+}
+
+/**
+ * Avanço de um conjunto de itens (média dos itens válidos) a partir das colunas do projeto.
+ * Cancelados e arquivados ficam fora; conjunto sem item válido vale 0%. Use as colunas com o
+ * valor explícito em `progressWeight` para que a derivação aconteça aqui, em um único lugar.
+ */
+export function itemsAdvance(columns: readonly ProgressColumn[], items: readonly AdvanceItem[]): number {
+  const resolve = createAdvanceResolver(columns)
+  return averageAdvance(items.map(resolve).filter((value): value is number => value !== null))
+}
+
+/**
+ * Avanço de linhas agregadas (`count` itens com o mesmo status e coluna), usado por
+ * consultas SQL agrupadas (dashboard, lista de projetos). Mesma regra de `itemsAdvance`.
+ */
+export function aggregatedAdvance(
+  columns: readonly ProgressColumn[],
+  rows: readonly { status?: string | null; columnId?: string | null; count: number }[],
+): number {
+  const resolve = createAdvanceResolver(columns)
+  let total = 0
+  let weighted = 0
+  for (const row of rows) {
+    const value = resolve({ status: row.status, columnId: row.columnId })
+    if (value === null || row.count <= 0) continue
+    total += row.count
+    weighted += row.count * value
+  }
+  return total > 0 ? clampWeight(weighted / total) : 0
+}
+
+/**
+ * Proporção de conclusão (folhas `DONE`) sobre o total — indicador distinto do avanço.
+ * Cancelados e arquivados ficam fora do total.
+ */
 export function completionRatio(statuses: readonly string[]): number {
-  if (!statuses.length) return 0
-  return clampWeight((statuses.filter(status => status === 'DONE').length / statuses.length) * 100)
+  const counted = statuses.filter(status => countsForProgress(status))
+  if (!counted.length) return 0
+  return clampWeight((counted.filter(status => status === 'DONE').length / counted.length) * 100)
 }

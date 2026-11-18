@@ -12,11 +12,11 @@ const columns: Column[] = [
   { id: 'testar', name: 'A Testar', baseStatus: 'IN_PROGRESS', position: 2, progressWeight: 90, progressWeightOverride: null },
 ]
 
-const card = (id: string, columnId: string, checklistProgress?: { checked: number; total: number } | null): ItemData => ({
+const card = (id: string, columnId: string, checklistProgress?: { checked: number; total: number } | null, status = 'IN_PROGRESS'): ItemData => ({
   id,
   type: 'TASK',
   title: `Card ${id}`,
-  status: 'IN_PROGRESS',
+  status,
   columnId,
   isLeaf: true,
   checklistProgress: checklistProgress ?? null,
@@ -66,11 +66,27 @@ describe('avanço no card do Kanban (T75)', () => {
     expect(document.querySelector('.progress-copy')?.textContent).toBe('3/6')
   })
 
-  test('card em coluna de trabalho não iniciado não exibe a região de avanço', () => {
-    renderBoard({ tasks: [card('c1', 'fazer')] })
+  test('card não iniciado não exibe a região de avanço', () => {
+    renderBoard({ tasks: [card('c1', 'fazer', null, 'NOT_STARTED')] })
 
     expect(screen.queryByRole('progressbar')).toBeNull()
     expect(document.querySelector('.checklist-progress')).toBeNull()
+  })
+
+  test('B19: o status manda quando o card está numa coluna incompatível', () => {
+    // Em andamento parado em "A Fazer": vale a primeira coluna em andamento (50), e não 0.
+    renderBoard({ tasks: [card('c1', 'fazer')] })
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('50')
+  })
+
+  test('B19: card concluído fora da coluna final exibe 100%', () => {
+    renderBoard({ tasks: [card('c1', 'fazer', null, 'DONE')] })
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('100')
+  })
+
+  test('B19: card cancelado não exibe avanço', () => {
+    renderBoard({ tasks: [card('c1', 'testar', null, 'CANCELLED')] })
+    expect(screen.queryByRole('progressbar')).toBeNull()
   })
 
   test('respeita o peso explícito configurado na coluna', () => {

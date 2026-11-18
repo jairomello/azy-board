@@ -5,7 +5,10 @@ describe('fórmulas do dashboard', () => {
   test('aplica leaf rule antes da população e não duplica pais', () => {
     expect(isEligibleLeaf({ type: 'TASK', status: 'IN_PROGRESS' }, true)).toBe(true)
     expect(isEligibleLeaf({ type: 'TASK', status: 'IN_PROGRESS' }, false)).toBe(false)
-    expect(isEligibleLeaf({ type: 'STORY', status: 'DONE' }, true)).toBe(false)
+    // B19: STORY/EPIC sem filhos são itens de trabalho; EXTERNAL fica à parte.
+    expect(isEligibleLeaf({ type: 'STORY', status: 'DONE' }, true)).toBe(true)
+    expect(isEligibleLeaf({ type: 'STORY', status: 'DONE' }, false)).toBe(false)
+    expect(isEligibleLeaf({ type: 'EXTERNAL', status: 'DONE' }, true)).toBe(false)
     expect(isEligibleLeaf({ type: 'TASK', status: 'ARCHIVED' }, true)).toBe(false)
   })
 
