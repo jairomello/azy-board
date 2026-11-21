@@ -15,6 +15,7 @@
   "progressAdvanceLabel": "Avance en el flujo: {{percent}}%",
   "progressChecklistLabel": "Progreso del checklist: {{checked}} de {{total}} elementos ({{percent}}%)",
   "progressSubtasksLabel": "Progreso de las subtareas: {{percent}}% ({{countLabel}})",
+  "progressSubtasksCount": "{{count}} subtareas",
   "progressSubtasksCount_one": "{{count}} subtarea",
   "progressSubtasksCount_other": "{{count}} subtareas",
   "progressDone": "Completados",
