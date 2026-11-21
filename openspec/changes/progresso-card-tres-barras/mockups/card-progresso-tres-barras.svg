@@ -1,0 +1,191 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="720" viewBox="0 0 980 720" role="img" aria-labelledby="titulo descricao">
+  <title id="titulo">Mockup do card com três barras de progresso</title>
+  <desc id="descricao">Card do Kanban exibindo a barra de progresso em roxo, a barra de checklist em ciano e a barra de subtasks em âmbar, com legenda.</desc>
+
+  <defs>
+    <linearGradient id="fundo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7f8fc"/>
+      <stop offset="1" stop-color="#eef1f8"/>
+    </linearGradient>
+    <linearGradient id="principal" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6d5efc"/>
+      <stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="checklist" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0ea5a4"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+    <linearGradient id="subtasks" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#fb923c"/>
+    </linearGradient>
+    <linearGradient id="faixa" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+    <filter id="sombra" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#1f2a44" flood-opacity="0.10"/>
+    </filter>
+    <filter id="sombraLeve" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#1f2a44" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="980" height="720" fill="url(#fundo)"/>
+
+  <text x="48" y="42" font-family="Inter, 'Segoe UI', sans-serif" font-size="20" font-weight="700" fill="#202433">Card com até três barras de progresso</text>
+  <text x="48" y="66" font-family="Inter, 'Segoe UI', sans-serif" font-size="12" fill="#6b7280">Progresso (status + coluna) · barra de checklist · barra de subtasks</text>
+
+  <!-- Card principal -->
+  <g filter="url(#sombra)">
+    <rect x="48" y="100" width="392" height="386" rx="13" fill="#ffffff" stroke="#e3e6ef"/>
+    <path d="M61 100 h 0 a 13 13 0 0 0 -13 13 v 360 a 13 13 0 0 0 13 13 h 0 z" fill="url(#faixa)"/>
+  </g>
+
+  <!-- Alça de arraste -->
+  <g opacity="0.55" stroke="#9aa1b4" stroke-width="1.4" stroke-linecap="round">
+    <path d="M75 150 v 12 M69 156 h 12"/>
+    <path d="M72 147 l 3 -3 3 3 M72 165 l 3 3 3 -3 M66 153 l -3 3 3 3 M84 153 l 3 3 -3 3"/>
+  </g>
+
+  <!-- Topo: ícone, código, ações -->
+  <rect x="106" y="116" width="24" height="24" rx="7" fill="#e0e7ff" stroke="#c7d2fe"/>
+  <text x="118" y="133" text-anchor="middle" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="700" fill="#4338ca">#</text>
+  <text x="140" y="132" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" font-weight="600" fill="#6b7280">T258</text>
+  <g fill="none" stroke="#9aa1b4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="344" y="120" width="10" height="12" rx="2"/>
+    <path d="M366 121 h 14 M366 126 h 14 M366 131 h 8"/>
+    <path d="M396 120 v 13 M392 133 h 8"/>
+  </g>
+
+  <!-- Breadcrumb -->
+  <text x="106" y="168" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#8a90a3">Projeto Violeta › Épico Autenticação › História Login</text>
+
+  <!-- Título -->
+  <text x="106" y="194" font-family="Inter, 'Segoe UI', sans-serif" font-size="15" font-weight="700" fill="#202433">Implementar autenticação Violeta</text>
+  <text x="106" y="216" font-family="Inter, 'Segoe UI', sans-serif" font-size="15" font-weight="700" fill="#202433">no ambiente de PRD</text>
+
+  <!-- Tags, status e tipo -->
+  <rect x="106" y="234" width="58" height="20" rx="10" fill="#8b5cf6"/>
+  <text x="135" y="248" text-anchor="middle" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#ffffff">backend</text>
+  <rect x="170" y="234" width="52" height="20" rx="10" fill="#0ea5a4"/>
+  <text x="196" y="248" text-anchor="middle" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#ffffff">auth</text>
+
+  <rect x="274" y="234" width="84" height="20" rx="5" fill="#eef2f7"/>
+  <circle cx="285" cy="244" r="3" fill="#367bf5"/>
+  <text x="292" y="248" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#52607a">Em andamento</text>
+  <rect x="364" y="234" width="36" height="20" rx="5" fill="#dbeafe"/>
+  <text x="382" y="248" text-anchor="middle" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#1d4ed8">Task</text>
+
+  <!-- Região de progresso -->
+  <text x="106" y="284" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="700" letter-spacing="0.6" fill="#8a90a3">PROGRESSO</text>
+  <text x="394" y="284" text-anchor="end" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" font-weight="700" fill="#202433">62%</text>
+  <rect x="106" y="292" width="288" height="6" rx="3" fill="#e8ebf3"/>
+  <rect x="106" y="292" width="179" height="6" rx="3" fill="url(#principal)"/>
+  <g opacity="0.35" fill="#ffffff">
+    <rect x="177" y="292" width="1" height="6"/>
+    <rect x="249" y="292" width="1" height="6"/>
+    <rect x="321" y="292" width="1" height="6"/>
+  </g>
+
+  <!-- Checklist -->
+  <g transform="translate(106 322)" fill="none" stroke="#0e7490" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="0" y="0" width="11" height="13" rx="2"/>
+    <path d="M3 3.5 h 5 M3 6.5 h 5 M3 9.5 h 3"/>
+  </g>
+  <text x="124" y="333" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#0e7490">12/20</text>
+  <rect x="230" y="326" width="164" height="4" rx="2" fill="#e3f4f6"/>
+  <rect x="230" y="326" width="98" height="4" rx="2" fill="url(#checklist)"/>
+
+  <!-- Subtasks -->
+  <g transform="translate(106 354)" fill="none" stroke="#b45309" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="5.5" cy="2.5" r="2"/>
+    <circle cx="2.5" cy="10.5" r="2"/>
+    <circle cx="8.5" cy="10.5" r="2"/>
+    <path d="M5.5 4.5 v 2 M5.5 6.5 h -3 v 2 M5.5 6.5 h 3 v 2"/>
+  </g>
+  <text x="124" y="366" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#b45309">4 subtarefas · 75%</text>
+  <rect x="230" y="359" width="164" height="4" rx="2" fill="#fdf1df"/>
+  <rect x="230" y="359" width="123" height="4" rx="2" fill="url(#subtasks)"/>
+
+  <!-- Rodapé -->
+  <path d="M106 398 H 394" stroke="#edf0f6" stroke-width="1"/>
+  <rect x="106" y="412" width="52" height="20" rx="10" fill="#dbeafe"/>
+  <text x="132" y="426" text-anchor="middle" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#1d4ed8">MÉDIA</text>
+  <text x="170" y="426" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#6b7280">5pt</text>
+  <g transform="translate(196 414)" stroke="#6b7280" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <circle cx="5" cy="2.5" r="2"/>
+    <circle cx="2.5" cy="10" r="2"/>
+    <circle cx="7.5" cy="10" r="2"/>
+    <path d="M5 4.5 v 2 M5 6.5 h -2.5 v 1.5 M5 6.5 h 2.5 v 1.5"/>
+  </g>
+  <text x="210" y="426" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#6b7280">4</text>
+  <circle cx="380" cy="422" r="11" fill="#e0e7ff" stroke="#c7d2fe"/>
+  <text x="380" y="426" text-anchor="middle" font-family="Inter, 'Segoe UI', sans-serif" font-size="9" font-weight="700" fill="#4338ca">AC</text>
+
+  <!-- Legenda -->
+  <g filter="url(#sombraLeve)">
+    <rect x="472" y="100" width="460" height="386" rx="13" fill="#ffffff" stroke="#e3e6ef"/>
+  </g>
+  <text x="496" y="132" font-family="Inter, 'Segoe UI', sans-serif" font-size="13" font-weight="700" fill="#202433">As três barras</text>
+
+  <rect x="496" y="158" width="44" height="6" rx="3" fill="url(#principal)"/>
+  <text x="556" y="164" font-family="Inter, 'Segoe UI', sans-serif" font-size="12" font-weight="700" fill="#202433">Progresso</text>
+  <text x="496" y="184" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" fill="#5b6478">Status + coluna + peso manual da coluna. Sem checklist.</text>
+  <text x="496" y="200" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" fill="#5b6478">É o mesmo percentual das lanes, árvore e dashboard.</text>
+
+  <rect x="496" y="228" width="44" height="4" rx="2" fill="url(#checklist)"/>
+  <text x="556" y="234" font-family="Inter, 'Segoe UI', sans-serif" font-size="12" font-weight="700" fill="#202433">Checklist</text>
+  <text x="496" y="254" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" fill="#5b6478">Agrega todos os checklists do card. Só aparece quando há itens.</text>
+  <text x="496" y="270" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" fill="#5b6478">Fica ao lado do contador 12/20, sem substituí-lo.</text>
+
+  <rect x="496" y="298" width="44" height="4" rx="2" fill="url(#subtasks)"/>
+  <text x="556" y="304" font-family="Inter, 'Segoe UI', sans-serif" font-size="12" font-weight="700" fill="#202433">Subtasks</text>
+  <text x="496" y="324" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" fill="#5b6478">Média de avanço das subtasks diretas. Só aparece quando há filhos.</text>
+  <text x="496" y="340" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" fill="#5b6478">Canceladas e arquivadas ficam fora do cálculo.</text>
+
+  <path d="M496 364 H 908" stroke="#edf0f6" stroke-width="1"/>
+  <text x="496" y="388" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" fill="#5b6478">Até 3 barras no mesmo card. Cada uma tem cor, estilo e nome acessível próprios.</text>
+
+  <!-- Variações -->
+  <text x="48" y="530" font-family="Inter, 'Segoe UI', sans-serif" font-size="13" font-weight="700" fill="#202433">Quando cada barra aparece</text>
+
+  <!-- Variação 1 -->
+  <g filter="url(#sombraLeve)">
+    <rect x="48" y="550" width="276" height="126" rx="11" fill="#ffffff" stroke="#e3e6ef"/>
+  </g>
+  <rect x="48" y="550" width="3" height="126" rx="1.5" fill="#94a3b8"/>
+  <text x="68" y="576" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" font-weight="700" fill="#202433">Sem checklist e sem filhos</text>
+  <text x="68" y="594" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#6b7280">Somente a barra de progresso</text>
+  <rect x="68" y="614" width="232" height="6" rx="3" fill="#e8ebf3"/>
+  <rect x="68" y="614" width="186" height="6" rx="3" fill="url(#principal)"/>
+  <text x="68" y="644" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#6b7280">80%</text>
+
+  <!-- Variação 2 -->
+  <g filter="url(#sombraLeve)">
+    <rect x="340" y="550" width="276" height="126" rx="11" fill="#ffffff" stroke="#e3e6ef"/>
+  </g>
+  <rect x="340" y="550" width="3" height="126" rx="1.5" fill="#4f46e5"/>
+  <text x="360" y="576" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" font-weight="700" fill="#202433">Com checklist, sem filhos</text>
+  <text x="360" y="594" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#6b7280">Progresso + checklist</text>
+  <rect x="360" y="614" width="232" height="6" rx="3" fill="#e8ebf3"/>
+  <rect x="360" y="614" width="162" height="6" rx="3" fill="url(#principal)"/>
+  <rect x="360" y="630" width="232" height="4" rx="2" fill="#e3f4f6"/>
+  <rect x="360" y="630" width="139" height="4" rx="2" fill="url(#checklist)"/>
+  <text x="360" y="656" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#6b7280">70% · 12/20</text>
+
+  <!-- Variação 3 -->
+  <g filter="url(#sombraLeve)">
+    <rect x="632" y="550" width="300" height="126" rx="11" fill="#ffffff" stroke="#e3e6ef"/>
+  </g>
+  <rect x="632" y="550" width="3" height="126" rx="1.5" fill="#4f46e5"/>
+  <text x="652" y="576" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" font-weight="700" fill="#202433">Com checklist e subtasks</text>
+  <text x="652" y="594" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#6b7280">As três barras</text>
+  <rect x="652" y="610" width="256" height="6" rx="3" fill="#e8ebf3"/>
+  <rect x="652" y="610" width="159" height="6" rx="3" fill="url(#principal)"/>
+  <rect x="652" y="624" width="256" height="4" rx="2" fill="#e3f4f6"/>
+  <rect x="652" y="624" width="154" height="4" rx="2" fill="url(#checklist)"/>
+  <rect x="652" y="638" width="256" height="4" rx="2" fill="#fdf1df"/>
+  <rect x="652" y="638" width="192" height="4" rx="2" fill="url(#subtasks)"/>
+  <text x="652" y="664" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#6b7280">62% · 12/20 · 75%</text>
+</svg>

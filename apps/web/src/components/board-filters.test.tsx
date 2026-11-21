@@ -1,6 +1,6 @@
 import { screen } from '../test/setup'
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { render } from '@testing-library/react'
+import { render, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18n from '../i18n'
 import { BoardFilters, type BoardFilterState } from './BoardFilters'
@@ -93,6 +93,21 @@ describe('BoardFilters (DOM por papel/rótulo)', () => {
     await user.click(screen.getByRole('checkbox', { name: t('statusDone') }))
 
     expect(mudancas[mudancas.length - 1]?.status).toBe('IN_PROGRESS')
+  })
+
+  test('opções de status quebram linha dentro do próprio grupo, alinhadas sob a primeira opção', () => {
+    renderFilters()
+
+    const group = screen.getByRole('group', { name: t('filterStatus') })
+    const options = within(group).getAllByRole('checkbox')
+    const linhaDeOpcoes = options[0]?.closest('label')?.parentElement
+
+    expect(linhaDeOpcoes).not.toBeNull()
+    expect(linhaDeOpcoes).not.toBe(group)
+    expect(linhaDeOpcoes?.className).toContain('flex-wrap')
+    for (const option of options) {
+      expect(option.closest('label')?.parentElement).toBe(linhaDeOpcoes)
+    }
   })
 
   test('alterna a visão de módulo para abas', async () => {

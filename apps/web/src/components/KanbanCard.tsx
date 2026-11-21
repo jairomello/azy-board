@@ -52,6 +52,9 @@ const STATUS_INDICATOR: Record<TaskStatus, string> = {
   ARCHIVED: 'border-l-slate-300 opacity-40',
 }
 
+/** Teto de tags visíveis no card; o restante vira `+N`. */
+const MAX_VISIBLE_TAGS = 2
+
 export interface CardData {
   id: string
   title: string
@@ -92,8 +95,11 @@ interface Props {
   onArchive?: (id: string) => void
   // Card T49 — destaque visual de itens do caminho crítico.
   critical?: boolean
-  // T75 — avanço do card (peso da coluna refinado pelo checklist), calculado pelo board.
+  // T75 — progresso do card (status + coluna), calculado pelo board. O checklist tem
+  // barra própria e não altera este percentual.
   advance?: number
+  // B19/novo — progresso das subtasks diretas (média de avanço), calculado pelo board.
+  subtasksProgress?: { advance: number; total: number } | null
   // T89 — o quadro indica qual card saiu do fluxo durante o arraste; sem a prop vale
   // o `isDragging` do dnd-kit.
   dragging?: boolean
@@ -101,7 +107,7 @@ interface Props {
   statusMismatchColumn?: string | null
 }
 
-export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchive, critical = false, advance, dragging, statusMismatchColumn = null }: Props) {
+export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchive, critical = false, advance, subtasksProgress = null, dragging, statusMismatchColumn = null }: Props) {
   const { t } = useTranslation('board')
   const { toast } = useToast()
   const [breadcrumbOpen, setBreadcrumbOpen] = useState(false)
@@ -337,28 +343,43 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
           )}
         </div>
 
-        {/* Etiquetas: tags à esquerda (podem quebrar linha), tipo textual único à direita */}
+        {/* Etiquetas: tags em faixa própria (uma linha, truncadas) e status/tipo embaixo */}
         {(tags.length > 0 || card.type) && (
-          <div className="card-label-row flex items-start justify-between gap-2">
-            <div className="card-tags flex flex-wrap gap-1 min-w-0">
-              {tags.map(({ tag }) => (
-                <span
-                  key={tag.id}
-                  className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white"
-                  style={{ backgroundColor: tag.color }}
-                >
-                  {tag.name}
-                </span>
-              ))}
-            </div>
-            <div className="card-type-status flex flex-shrink-0 flex-wrap items-center justify-end gap-1">
+          <div className="card-label-row flex flex-col gap-1.5">
+            {tags.length > 0 && (
+              <div className="card-tags flex min-w-0 items-center gap-1 overflow-hidden">
+                {tags.slice(0, MAX_VISIBLE_TAGS).map(({ tag }) => (
+                  <span
+                    key={tag.id}
+                    data-tag-id={tag.id}
+                    title={tag.name}
+                    className="kanban-card-tag inline-flex h-5 min-w-0 max-w-[8.5rem] items-center gap-1 overflow-hidden whitespace-nowrap rounded-full border px-2 text-[11px] font-medium leading-none"
+                    style={{ '--tag-color': tag.color } as React.CSSProperties}
+                  >
+                    <span className="kanban-card-tag__dot h-1.5 w-1.5 shrink-0 rounded-full" aria-hidden />
+                    <span className="min-w-0 truncate">{tag.name}</span>
+                  </span>
+                ))}
+                {tags.length > MAX_VISIBLE_TAGS && (
+                  <span
+                    data-tag-overflow={tags.length - MAX_VISIBLE_TAGS}
+                    title={tags.slice(MAX_VISIBLE_TAGS).map(({ tag }) => tag.name).join(', ')}
+                    aria-label={`+${tags.length - MAX_VISIBLE_TAGS} ${t('tagsLabel')}`}
+                    className="inline-flex h-5 shrink-0 items-center rounded-full border border-border bg-muted px-1.5 text-[11px] font-semibold leading-none text-muted-foreground"
+                  >
+                    +{tags.length - MAX_VISIBLE_TAGS}
+                  </span>
+                )}
+              </div>
+            )}
+            <div className="card-type-status flex items-center gap-1">
               {/* B19 — status do card em texto; em âmbar quando não combina com a coluna. */}
               {card.status && (
                 <span
                   data-card-status={card.status}
                   data-status-mismatch={statusMismatchColumn ? 'true' : undefined}
                   title={statusMismatchColumn ? t('statusOutOfColumn', { column: statusMismatchColumn }) : undefined}
-                  className={`card-status-chip inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded font-medium ${statusMismatchColumn
+                  className={`card-status-chip inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap rounded px-1.5 text-xs font-medium ${statusMismatchColumn
                     ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-400 dark:bg-amber-900/40 dark:text-amber-200 dark:ring-amber-500'
                     : 'bg-muted text-muted-foreground'}`}
                 >
@@ -370,7 +391,7 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
                 </span>
               )}
               {card.type && TYPE_STYLES[card.type] && (
-                <span className={`flex-shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${TYPE_STYLES[card.type].cls}`}>
+                <span className={`inline-flex h-5 shrink-0 items-center whitespace-nowrap rounded px-1.5 text-xs font-medium ${TYPE_STYLES[card.type].cls}`}>
                   {t(card.type === 'EPIC' ? 'typeEpic' : card.type === 'STORY' ? 'typeStory' : card.type === 'TASK' ? 'typeTask' : 'typeBug')}
                 </span>
               )}
@@ -378,30 +399,53 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
           </div>
         )}
 
-        {/* T75 — região de avanço entre etiquetas e rodapé: barra do avanço e contador do checklist */}
+        {/* T75 — região de progresso entre etiquetas e rodapé: progresso do card,
+            checklist (quando houver itens) e subtasks (quando houver filhos válidos). */}
         {(() => {
           const checklist = card.checklistProgress && card.checklistProgress.total > 0 ? card.checklistProgress : null
           const percent = Math.max(0, Math.min(100, Math.round(advance ?? 0)))
-          if (!checklist && percent === 0) return null
+          const checklistPercent = checklist ? Math.round((checklist.checked / checklist.total) * 100) : 0
+          const subtasks = subtasksProgress && subtasksProgress.total > 0 ? subtasksProgress : null
+          if (!checklist && percent === 0 && !subtasks) return null
           const checklistDone = checklist ? checklist.checked === checklist.total : false
           return (
-            <div className="checklist-progress space-y-0.5">
-              {checklist && (
-                <div className="progress-copy flex items-center gap-1.5">
-                  <svg className={`w-3 h-3 flex-shrink-0 ${checklistDone ? 'text-emerald-500' : 'text-muted-foreground'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                  </svg>
-                  <span className={`text-xs tabular-nums ${checklistDone ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
-                    {checklist.checked}/{checklist.total}
-                  </span>
-                </div>
-              )}
+            <div className="checklist-progress space-y-1">
               {percent > 0 && (
                 <ProgressBar
                   value={percent}
                   label={t('progressAdvanceLabel', { percent })}
                   valueText={t('progressAdvanceLabel', { percent })}
                 />
+              )}
+              {checklist && (
+                <div className="flex items-center gap-1.5">
+                  <svg className={`w-3 h-3 flex-shrink-0 ${checklistDone ? 'text-emerald-500' : 'text-muted-foreground'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                  </svg>
+                  <span className={`progress-copy text-xs tabular-nums whitespace-nowrap ${checklistDone ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
+                    {checklist.checked}/{checklist.total}
+                  </span>
+                  <ProgressBar
+                    tone="checklist"
+                    value={checklistPercent}
+                    label={t('progressChecklistLabel', { checked: checklist.checked, total: checklist.total, percent: checklistPercent })}
+                    className="min-w-0 flex-1"
+                  />
+                </div>
+              )}
+              {subtasks && (
+                <div className="flex items-center gap-1.5">
+                  <GitBranch className="w-3 h-3 flex-shrink-0 text-muted-foreground" aria-hidden />
+                  <span className="text-xs tabular-nums whitespace-nowrap text-muted-foreground">
+                    {t('progressSubtasksCount', { count: subtasks.total })} · {subtasks.advance}%
+                  </span>
+                  <ProgressBar
+                    tone="subtasks"
+                    value={subtasks.advance}
+                    label={t('progressSubtasksLabel', { percent: subtasks.advance, countLabel: t('progressSubtasksCount', { count: subtasks.total }) })}
+                    className="min-w-0 flex-1"
+                  />
+                </div>
               )}
             </div>
           )

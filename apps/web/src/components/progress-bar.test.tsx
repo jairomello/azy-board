@@ -64,4 +64,35 @@ describe('ProgressBar', () => {
     render(<ProgressBar value={25} label="Escuro" />)
     expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('25')
   })
+
+  test('tom padrão identifica o progresso principal', () => {
+    render(<ProgressBar value={50} label="Progresso" />)
+    const meter = document.querySelector('.progress-meter') as HTMLElement
+    expect(meter.getAttribute('data-progress-tone')).toBe('default')
+    expect(meter.classList.contains('progress-meter--checklist')).toBe(false)
+    expect(meter.classList.contains('progress-meter--subtasks')).toBe(false)
+  })
+
+  test('tom de checklist usa classe e atributo próprios', () => {
+    render(<ProgressBar tone="checklist" value={60} label="Progresso do checklist: 12 de 20 itens (60%)" />)
+    const meter = document.querySelector('.progress-meter') as HTMLElement
+    expect(meter.getAttribute('data-progress-tone')).toBe('checklist')
+    expect(meter.classList.contains('progress-meter--checklist')).toBe(true)
+    expect(screen.getByRole('progressbar').getAttribute('aria-label')).toContain('checklist')
+  })
+
+  test('tom de subtasks usa classe e atributo próprios', () => {
+    render(<ProgressBar tone="subtasks" value={75} label="Progresso das subtasks: 75%" />)
+    const meter = document.querySelector('.progress-meter') as HTMLElement
+    expect(meter.getAttribute('data-progress-tone')).toBe('subtasks')
+    expect(meter.classList.contains('progress-meter--subtasks')).toBe(true)
+  })
+
+  test('checklist em 100% mantém a identidade do tom', () => {
+    render(<ProgressBar tone="checklist" value={100} label="Checklist concluído" />)
+    const meter = document.querySelector('.progress-meter') as HTMLElement
+    expect(meter.getAttribute('data-progress-state')).toBe('done')
+    expect(meter.classList.contains('progress-meter--done')).toBe(true)
+    expect(meter.classList.contains('progress-meter--checklist')).toBe(true)
+  })
 })

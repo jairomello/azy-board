@@ -1,9 +1,9 @@
 // Peso de avanço por coluna e cálculo do avanço de um card.
 //
 // O progresso do produto deixou de ser binário (DONE = 100%, resto = 0%) e passou a
-// derivar do fluxo: cada coluna tem um peso, e o checklist afina dentro da faixa da
-// coluna. Fonte única da regra — API (árvore, dashboard, lista de projetos) e web
-// (board, lanes, sprint) usam exatamente estas funções.
+// derivar do fluxo: cada coluna tem um peso. O checklist tem barra própria no card e
+// NÃO refina o avanço. Fonte única da regra — API (árvore, dashboard, lista de projetos)
+// e web (board, lanes, sprint) usam exatamente estas funções.
 //
 // Sem valor explícito, o peso é derivado do `baseStatus` e da posição entre as colunas
 // do mesmo status:
@@ -30,12 +30,6 @@ export interface ProgressColumn {
   baseStatus: ColumnBaseStatus
   position: number
   progressWeight?: number | null
-}
-
-/** Progresso de checklist de um card (nome próprio para não colidir com o contrato de UI). */
-export interface CardChecklistProgress {
-  checked: number
-  total: number
 }
 
 function isFlowStatus(status: ColumnBaseStatus): boolean {
@@ -94,8 +88,8 @@ export function columnProgressWeight(column: ProgressColumn, columns: readonly P
 }
 
 /**
- * Peso da coluna imediatamente anterior no fluxo — o piso da faixa em que o checklist
- * posiciona o card. A primeira coluna do fluxo tem piso 0.
+ * Peso da coluna imediatamente anterior no fluxo — usada apenas como referência de leitura
+ * do fluxo. Não interfere no avanço, que é o peso da própria coluna.
  */
 export function previousColumnProgressWeight(columnId: string, columns: readonly ProgressColumn[]): number {
   const ordered = orderColumns(columns)
@@ -106,21 +100,11 @@ export function previousColumnProgressWeight(columnId: string, columns: readonly
 }
 
 /**
- * Avanço de um card: o peso da coluna quando não há checklist; com checklist, a posição
- * do checklist dentro da faixa entre o peso da coluna anterior e o da coluna atual.
- * Marcar itens nunca reduz o avanço.
+ * Avanço de um card: o peso da coluna compatível com o status, ajustado pelo peso
+ * explícito configurado. O checklist tem indicador próprio e não entra neste cálculo.
  */
-export function computeAdvance(input: {
-  columnWeight: number
-  previousColumnWeight: number
-  checklist?: CardChecklistProgress | null
-}): number {
-  const columnWeight = clampWeight(input.columnWeight)
-  const checklist = input.checklist
-  if (!checklist || checklist.total <= 0) return columnWeight
-  const floor = Math.min(clampWeight(input.previousColumnWeight), columnWeight)
-  const ratio = Math.max(0, Math.min(1, checklist.checked / checklist.total))
-  return clampWeight(floor + ratio * (columnWeight - floor))
+export function computeAdvance(input: { columnWeight: number }): number {
+  return clampWeight(input.columnWeight)
 }
 
 /** Média do avanço das folhas; conjunto vazio vale 0%. */
@@ -148,7 +132,6 @@ export function isProgressLeafType(type: string | null | undefined): boolean {
 export interface AdvanceItem {
   status?: string | null
   columnId?: string | null
-  checklist?: CardChecklistProgress | null
 }
 
 /** Valor padrão quando o projeto não tem coluna do status do item. */
@@ -170,18 +153,16 @@ const STATUS_FALLBACK_WEIGHT: Record<string, number> = {
  *   fluxo, 0 (bloqueado antes de começar);
  * - sem status informado → regra anterior, só pela coluna (compatibilidade).
  *
- * O checklist sempre afina dentro da faixa escolhida e nunca reduz o avanço.
+ * O checklist não influencia o avanço: ele tem barra própria no card.
  */
 export function createAdvanceResolver(columns: readonly ProgressColumn[]): (item: AdvanceItem) => number | null {
   const ordered = orderColumns(columns)
   const weights = resolveColumnProgressWeights(ordered)
   const indexById = new Map(ordered.map((column, index) => [column.id, index]))
 
-  function band(index: number, checklist: CardChecklistProgress | null | undefined): number {
+  function band(index: number): number {
     const column = ordered[index]!
-    const columnWeight = weights.get(column.id) ?? 0
-    const previous = index === 0 ? 0 : weights.get(ordered[index - 1]!.id) ?? 0
-    return computeAdvance({ columnWeight, previousColumnWeight: previous, checklist: checklist ?? null })
+    return computeAdvance({ columnWeight: weights.get(column.id) ?? 0 })
   }
 
   return (item: AdvanceItem): number | null => {
@@ -189,19 +170,19 @@ export function createAdvanceResolver(columns: readonly ProgressColumn[]): (item
     if (!countsForProgress(status)) return null
     const index = item.columnId ? indexById.get(item.columnId) : undefined
     const column = index === undefined ? null : ordered[index]!
-    if (!status) return index === undefined ? 0 : band(index, item.checklist)
+    if (!status) return index === undefined ? 0 : band(index)
     if (status === 'DONE') return DONE_WEIGHT
     if (status === 'NOT_STARTED' || status === 'PLANNED') return 0
     if (status === 'BLOCKED') {
-      return column && index !== undefined && isFlowStatus(column.baseStatus) ? band(index, item.checklist) : 0
+      return column && index !== undefined && isFlowStatus(column.baseStatus) ? band(index) : 0
     }
     if (status === 'IN_PROGRESS' || status === 'IN_HOMOLOGATION') {
-      if (column && index !== undefined && column.baseStatus === status) return band(index, item.checklist)
+      if (column && index !== undefined && column.baseStatus === status) return band(index)
       const fallback = ordered.findIndex(candidate => candidate.baseStatus === status)
-      if (fallback >= 0) return band(fallback, item.checklist)
+      if (fallback >= 0) return band(fallback)
       return STATUS_FALLBACK_WEIGHT[status] ?? 0
     }
-    return index === undefined ? 0 : band(index, item.checklist)
+    return index === undefined ? 0 : band(index)
   }
 }
 

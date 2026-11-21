@@ -34,14 +34,14 @@ export function columnAdvanceBands(columns: Column[]): Map<string, ColumnAdvance
 }
 
 /**
- * Avanço de um card (B19): o status define a faixa e a coluna refina, com o checklist
- * afinando dentro dela — a mesma regra da árvore, das lanes e do dashboard. Card cancelado
- * ou arquivado não tem avanço (`null`).
+ * Avanço de um card (B19): o status define a faixa e a coluna refina — a mesma regra da
+ * árvore, das lanes e do dashboard. O checklist tem barra própria e não entra aqui.
+ * Card cancelado ou arquivado não tem avanço (`null`).
  */
 export function createCardAdvance(columns: Column[]) {
   const resolve = createAdvanceResolver(toProgressColumns(columns))
-  return (card: { status?: string | null; columnId?: string | null; checklistProgress?: { checked: number; total: number } | null }): number | null =>
-    resolve({ status: card.status ?? null, columnId: card.columnId ?? null, checklist: card.checklistProgress ?? null })
+  return (card: { status?: string | null; columnId?: string | null }): number | null =>
+    resolve({ status: card.status ?? null, columnId: card.columnId ?? null })
 }
 
 /**

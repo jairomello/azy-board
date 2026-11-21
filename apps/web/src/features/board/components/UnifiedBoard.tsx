@@ -5,6 +5,7 @@
 import { useTranslation } from 'react-i18next'
 import type { ProjectVersion } from '../../../components/ItemModal'
 import { BoardColumns } from './BoardColumns'
+import type { SubtasksProgress } from '../model/subtaskProgress'
 import type { Column, ItemData, Sprint } from '../model/types'
 
 interface UnifiedBoardProps {
@@ -12,6 +13,8 @@ interface UnifiedBoardProps {
   columns: Column[]
   versions: ProjectVersion[]
   sprints: Sprint[]
+  /** Progresso das subtasks por id do pai, repassado aos cards. */
+  subtasksByParent?: ReadonlyMap<string, SubtasksProgress>
   /** Projeto ainda sem itens: o CTA de criação do Board já explica o próximo passo. */
   emptyProject?: boolean
   onQuickAdd: (columnId: string) => void
@@ -27,6 +30,7 @@ export function UnifiedBoard({
   columns,
   versions,
   sprints,
+  subtasksByParent,
   emptyProject = false,
   onQuickAdd,
   onOpenDetail,
@@ -53,6 +57,7 @@ export function UnifiedBoard({
         versions={versions}
         sprints={sprints}
         tasks={cards}
+        subtasksByParent={subtasksByParent}
         allowAdd
         columnAddForms={{}}
         onShowAddForm={() => undefined}

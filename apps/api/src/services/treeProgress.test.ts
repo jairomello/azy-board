@@ -30,13 +30,13 @@ describe('progresso da árvore', () => {
     expect(bug?.progress).toBe(90)
   })
 
-  test('checklist afina dentro da faixa da coluna', () => {
+  test('checklist não altera o progresso da folha', () => {
     const withChecklist = addTreeProgress(
       [leaf({ id: 't2', type: 'TASK', status: 'IN_PROGRESS', columnId: 'fazendo' })],
-      { ...context, progressByItem: new Map([['t2', { checked: 3, total: 6 }]]) },
+      context,
     )
-    // "Fazendo" tem faixa 0→50; metade do checklist → 25%.
-    expect(withChecklist[0]?.progress).toBe(25)
+    // "Fazendo" vale 50; o checklist tem barra própria e não refina a árvore.
+    expect(withChecklist[0]?.progress).toBe(50)
   })
 
   test('agrega folhas em qualquer profundidade e calcula a média do avanço', () => {

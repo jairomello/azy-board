@@ -1,4 +1,4 @@
-import { averageAdvance, createAdvanceResolver, isProgressLeafType, type CardChecklistProgress, type ProgressColumn } from '@azy-board/domain'
+import { averageAdvance, createAdvanceResolver, isProgressLeafType, type ProgressColumn } from '@azy-board/domain'
 
 export interface TreeProgressNode {
   id?: string
@@ -14,8 +14,6 @@ export interface TreeProgressNode {
 export interface TreeProgressContext {
   /** Colunas do projeto com o peso explícito em `progressWeight` (a derivação acontece aqui). */
   columns: readonly ProgressColumn[]
-  /** Progresso de checklist por item, quando disponível. */
-  progressByItem?: ReadonlyMap<string, CardChecklistProgress>
   /** Itens que são sempre contêiner, mesmo vazios (ex.: a STORY fixa do modo SIMPLE). */
   containerIds?: ReadonlySet<string>
 }
@@ -30,8 +28,9 @@ interface LeafValue {
  *
  * - Folha de progresso = item sem filhos do tipo TASK, BUG, STORY ou EPIC. `EXTERNAL` é
  *   dependência externa e fica fora, como no dashboard.
- * - O avanço da folha vem do **status**, refinado pela coluna e pelo checklist
- *   (`createAdvanceResolver` em `packages/domain/src/progress.ts`).
+ * - O avanço da folha vem do **status**, refinado apenas pela coluna
+ *   (`createAdvanceResolver` em `packages/domain/src/progress.ts`); o checklist tem
+ *   indicador próprio no card e não influencia este percentual.
  * - Folha cancelada ou arquivada recebe `progress: null` e não entra na conta do pai.
  * - O agrupador exibe a média de todas as folhas válidas abaixo dele (média das filhas
  *   ponderada pelo número de itens). Sem nenhuma folha, 0%; só com canceladas, `null`.
@@ -49,8 +48,7 @@ export function addTreeProgress<T extends TreeProgressNode>(
   }
 
   function leafProgress(node: TreeProgressNode): number | null {
-    const checklist = node.id ? context.progressByItem?.get(node.id) ?? null : null
-    return resolve({ status: node.status ?? null, columnId: node.columnId ?? null, checklist })
+    return resolve({ status: node.status ?? null, columnId: node.columnId ?? null })
   }
 
   function enrich(node: T): { node: T & { progress: number | null }; leaves: LeafValue[] } {

@@ -4,6 +4,8 @@ export interface ProgressBarProps {
   /** Avanço de 0 a 100. Valores fora do intervalo são limitados. */
   value: number
   variant?: 'compact' | 'labeled'
+  /** Identidade visual da barra. `default` é o progresso do card. */
+  tone?: 'default' | 'checklist' | 'subtasks'
   /** Rótulo curto para leitores de tela. */
   label: string
   /** Texto completo com percentual e contagem. Padrão: o próprio label. */
@@ -31,6 +33,7 @@ function clamp(value: number): number {
 export function ProgressBar({
   value,
   variant = 'compact',
+  tone = 'default',
   label,
   valueText,
   percentLabel,
@@ -40,11 +43,13 @@ export function ProgressBar({
   const percent = clamp(value)
   const done = percent === 100
   const showLabels = variant === 'labeled' && Boolean(percentLabel || countLabel)
+  const toneClass = tone === 'default' ? '' : ` progress-meter--${tone}`
 
   return (
     <div
-      className={`progress-meter progress-meter--${variant}${done ? ' progress-meter--done' : ''}${className ? ` ${className}` : ''}`}
+      className={`progress-meter progress-meter--${variant}${toneClass}${done ? ' progress-meter--done' : ''}${className ? ` ${className}` : ''}`}
       data-progress-variant={variant}
+      data-progress-tone={tone}
       data-progress-state={done ? 'done' : 'partial'}
     >
       {showLabels && (

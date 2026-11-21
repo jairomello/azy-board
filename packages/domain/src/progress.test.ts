@@ -114,37 +114,15 @@ describe('peso da coluna anterior no fluxo', () => {
 })
 
 describe('avanço de um card', () => {
-  test('sem checklist usa o peso da coluna', () => {
-    expect(computeAdvance({ columnWeight: 90, previousColumnWeight: 50 })).toBe(90)
-    expect(computeAdvance({ columnWeight: 90, previousColumnWeight: 50, checklist: null })).toBe(90)
+  test('usa o peso da coluna', () => {
+    expect(computeAdvance({ columnWeight: 90 })).toBe(90)
+    expect(computeAdvance({ columnWeight: 50 })).toBe(50)
   })
 
-  test('checklist parcial afina dentro da faixa da coluna', () => {
-    // "Fazendo" (faixa 0→50) com metade dos itens marcados.
-    expect(computeAdvance({ columnWeight: 50, previousColumnWeight: 0, checklist: { checked: 5, total: 10 } })).toBe(25)
-    // "A Testar" (faixa 50→90) com metade dos itens marcados.
-    expect(computeAdvance({ columnWeight: 90, previousColumnWeight: 50, checklist: { checked: 5, total: 10 } })).toBe(70)
-  })
-
-  test('checklist vazio ou sem itens não reduz o avanço', () => {
-    expect(computeAdvance({ columnWeight: 90, previousColumnWeight: 50, checklist: { checked: 0, total: 10 } })).toBe(50)
-    expect(computeAdvance({ columnWeight: 90, previousColumnWeight: 50, checklist: { checked: 0, total: 0 } })).toBe(90)
-  })
-
-  test('checklist completo alcança o topo da faixa da coluna', () => {
-    expect(computeAdvance({ columnWeight: 90, previousColumnWeight: 50, checklist: { checked: 10, total: 10 } })).toBe(90)
-  })
-
-  test('marcar mais itens nunca reduz o avanço', () => {
-    const readings = [0, 1, 3, 7, 10].map(checked =>
-      computeAdvance({ columnWeight: 90, previousColumnWeight: 50, checklist: { checked, total: 10 } }))
-    for (let index = 1; index < readings.length; index += 1) {
-      expect(readings[index]!).toBeGreaterThanOrEqual(readings[index - 1]!)
-    }
-  })
-
-  test('piso acima do peso da coluna não inverte a faixa', () => {
-    expect(computeAdvance({ columnWeight: 20, previousColumnWeight: 90, checklist: { checked: 0, total: 4 } })).toBe(20)
+  test('limita o peso ao intervalo de 0 a 100', () => {
+    expect(computeAdvance({ columnWeight: 140 })).toBe(100)
+    expect(computeAdvance({ columnWeight: -10 })).toBe(0)
+    expect(computeAdvance({ columnWeight: Number.NaN })).toBe(0)
   })
 })
 
@@ -178,9 +156,9 @@ describe('avanço de um conjunto de cards', () => {
     expect(advance).toBe(60)
   })
 
-  test('checklist refina dentro da faixa da coluna', () => {
-    expect(itemsAdvance(columns, [{ columnId: 'fazendo', checklist: { checked: 4, total: 8 } }])).toBe(25)
-    expect(itemsAdvance(columns, [{ columnId: 'fazendo', checklist: { checked: 8, total: 8 } }])).toBe(50)
+  test('checklist não altera a média do conjunto', () => {
+    expect(itemsAdvance(columns, [{ columnId: 'fazendo' }])).toBe(50)
+    expect(itemsAdvance(columns, [{ columnId: 'fazendo' }, { columnId: 'fazendo' }])).toBe(50)
   })
 
   test('card sem coluna conhecida vale 0 e conjunto vazio vale 0', () => {
@@ -228,10 +206,10 @@ describe('avanço por status (B19)', () => {
     expect(resolve({ status: 'IN_HOMOLOGATION', columnId: 'backlog' })).toBe(90)
   })
 
-  test('concluído vale 100 em qualquer coluna, inclusive com checklist incompleto', () => {
+  test('concluído vale 100 em qualquer coluna', () => {
     expect(resolve({ status: 'DONE', columnId: 'backlog' })).toBe(100)
     expect(resolve({ status: 'DONE', columnId: 'fazendo' })).toBe(100)
-    expect(resolve({ status: 'DONE', columnId: 'concluidas', checklist: { checked: 0, total: 10 } })).toBe(100)
+    expect(resolve({ status: 'DONE', columnId: 'concluidas' })).toBe(100)
   })
 
   test('não iniciado e planejado valem 0 mesmo em coluna do fluxo', () => {
@@ -250,11 +228,10 @@ describe('avanço por status (B19)', () => {
     expect(resolve({ status: 'IN_PROGRESS', columnId: null })).toBe(50)
   })
 
-  test('checklist afina dentro da faixa da coluna usada', () => {
-    // Faixa de "Fazendo" é 0→50; metade do checklist → 25, com o card fora da coluna.
-    expect(resolve({ status: 'IN_PROGRESS', columnId: 'backlog', checklist: { checked: 2, total: 4 } })).toBe(25)
-    // Faixa de "A Testar" é 50→63.
-    expect(resolve({ status: 'IN_PROGRESS', columnId: 'testar', checklist: { checked: 1, total: 2 } })).toBe(57)
+  test('checklist não altera o avanço da coluna usada', () => {
+    // A faixa de "Fazendo" é 0→50; o checklist não afina mais esse percentual.
+    expect(resolve({ status: 'IN_PROGRESS', columnId: 'backlog' })).toBe(50)
+    expect(resolve({ status: 'IN_PROGRESS', columnId: 'testar' })).toBe(63)
   })
 
   test('bloqueado fica onde parou no fluxo e vale 0 antes de começar', () => {

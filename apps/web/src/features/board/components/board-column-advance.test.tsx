@@ -58,11 +58,11 @@ describe('avanço no card do Kanban (T75)', () => {
     expect(document.querySelector('.progress-copy')).toBeNull()
   })
 
-  test('checklist parcial afina o avanço dentro da faixa da coluna e mantém o contador', () => {
+  test('checklist não altera o avanço da coluna e mantém o contador', () => {
     renderBoard({ tasks: [card('c1', 'fazendo', { checked: 3, total: 6 })] })
 
-    // "Fazendo" tem faixa 0→50; metade do checklist → 25%.
-    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('25')
+    // "Fazendo" vale 50; o checklist tem barra própria e não afina o progresso.
+    expect(screen.getByRole('progressbar', { name: /Avanço no fluxo/ }).getAttribute('aria-valuenow')).toBe('50')
     expect(document.querySelector('.progress-copy')?.textContent).toBe('3/6')
   })
 

@@ -11,6 +11,23 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Fixed
 
+- **Etiquetas do card em uma única linha, com truncamento e resumo `+N`.**
+  Tags com nome composto (`Entrega 02/12`, `Jornada 1`) quebravam dentro da
+  pílula e desalinhavam status e tipo. As tags agora ocupam uma faixa própria,
+  com altura fixa, no máximo duas visíveis e o restante em `+N`; status e tipo
+  ficam em outra faixa, sem competir por largura. As pílulas usam fundo tênue e
+  ponto colorido para manter a cor da tag sem dominar o card.
+- **Card pode mostrar até três barras de progresso, e o checklist deixa de
+  alterar o progresso principal.** A barra principal volta a refletir apenas
+  status, coluna e peso manual da coluna. Card com checklist ganha uma barra
+  própria (agregando todos os checklists, ao lado de `12/20`), e card com
+  subtasks ganha uma terceira barra com a média de avanço dos filhos diretos.
+  Cada barra tem cor, estilo e nome acessível próprios.
+- **Opções de Status do painel Filtros alinhadas ao quebrar linha.** O rótulo
+  `STATUS` dividia o contêiner com os checkboxes, então `Concluída`/`Cancelada`
+  caíam na segunda linha com recuo diferente do início da primeira. As opções
+  passam a quebrar dentro de um contêiner próprio, alinhado sob a primeira opção;
+  Tipo e Tags recebem o mesmo tratamento.
 - **Percentual de avanço passa a respeitar o status e a ignorar cancelados (B19).**
   O avanço de cada card vinha só da coluna: card concluído parado no Backlog
   valia 0% e o T189, em homologação na coluna Backlog, também. Cancelados

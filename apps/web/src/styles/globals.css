@@ -56,6 +56,10 @@
     --status-review: #8b5cf6;
     --status-done: #10b981;
     --status-blocked: #f06464;
+    --progress-checklist-a: #0ea5a4;
+    --progress-checklist-b: #22d3ee;
+    --progress-subtasks-a: #f59e0b;
+    --progress-subtasks-b: #fb923c;
     --dashboard-series-scope: #635bff;
     --dashboard-series-done: #10b981;
     --dashboard-series-warning: #f59e0b;
@@ -228,6 +232,10 @@
     --status-review: #b08cff;
     --status-done: #3ad6a0;
     --status-blocked: #ff8080;
+    --progress-checklist-a: #2dd4bf;
+    --progress-checklist-b: #67e8f9;
+    --progress-subtasks-a: #fbbf24;
+    --progress-subtasks-b: #fdba74;
     --dashboard-series-scope: #a394ff;
     --dashboard-series-done: #3ad6a0;
     --dashboard-series-warning: #fbbf24;
@@ -866,6 +874,38 @@
   box-shadow: 0 0 10px color-mix(in srgb, var(--status-done) 40%, transparent);
 }
 
+/* Barras secundárias do card: checklist e subtasks. Mais finas, sólidas e sem
+   brilho/marcas para não competir com o progresso principal. */
+.progress-meter--checklist .progress-meter__track,
+.progress-meter--subtasks .progress-meter__track {
+  height: 4px;
+  background: color-mix(in srgb, hsl(var(--foreground)) 10%, hsl(var(--muted)));
+  box-shadow: none;
+}
+
+.progress-meter--checklist .progress-meter__marks,
+.progress-meter--subtasks .progress-meter__marks {
+  display: none;
+}
+
+.progress-meter--checklist .progress-meter__fill {
+  background-image: linear-gradient(90deg, var(--progress-checklist-a), var(--progress-checklist-b));
+  box-shadow: none;
+}
+
+.progress-meter--subtasks .progress-meter__fill {
+  background-image: linear-gradient(90deg, var(--progress-subtasks-a), var(--progress-subtasks-b));
+  box-shadow: none;
+}
+
+.progress-meter--checklist.progress-meter--done .progress-meter__fill {
+  background-image: linear-gradient(90deg, var(--progress-checklist-a), var(--progress-checklist-b));
+}
+
+.progress-meter--subtasks.progress-meter--done .progress-meter__fill {
+  background-image: linear-gradient(90deg, var(--progress-subtasks-a), var(--progress-subtasks-b));
+}
+
 @media (prefers-reduced-motion: reduce) {
   .progress-meter__fill {
     transition: none !important;
@@ -1016,6 +1056,18 @@
     pointer-events: none;
     box-shadow: 0 0 14px color-mix(in srgb, var(--board-glow-a) 12%, transparent), 0 0 24px color-mix(in srgb, var(--board-glow-b) 8%, transparent);
     z-index: -1;
+  }
+
+  /* Etiquetas do card: fundo tênue da cor da tag, borda suave e ponto sólido.
+     O texto usa a cor misturada ao foreground para manter contraste nos dois temas. */
+  .kanban-card-tag {
+    background-color: color-mix(in srgb, var(--tag-color) 16%, transparent);
+    border-color: color-mix(in srgb, var(--tag-color) 30%, transparent);
+    color: color-mix(in srgb, var(--tag-color) 80%, hsl(var(--foreground)));
+  }
+
+  .kanban-card-tag__dot {
+    background-color: var(--tag-color);
   }
 
   .kanban-card:hover,

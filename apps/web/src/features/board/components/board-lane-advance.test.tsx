@@ -67,10 +67,10 @@ describe('avanço nas lanes do board', () => {
     expect(document.querySelector('[data-lane-completion]')?.textContent).toBe('0/1')
   })
 
-  test('checklist afina o avanço dentro da faixa da coluna', () => {
+  test('checklist não altera o avanço da coluna', () => {
     render(<BoardLanes {...laneProps({ simpleCards: [card('c1', 'fazendo', 'IN_PROGRESS', { checked: 3, total: 6 })] })} />)
-    // "Fazendo" tem faixa 0→50; metade do checklist → 25%.
-    expect(document.querySelector('[data-lane-advance]')?.textContent).toBe('25%')
+    // "Fazendo" vale 50; o checklist tem barra própria no card e não entra na lane.
+    expect(document.querySelector('[data-lane-advance]')?.textContent).toBe('50%')
   })
 
   test('média das folhas e conclusão separada', () => {

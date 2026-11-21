@@ -49,6 +49,7 @@ import { BoardCommandBar } from '../../components/BoardCommandBar'
 import { BoardContextHeader, BoardStatusRail } from '../../components/BoardContext'
 import { countsForProgress, isProgressLeafType, itemsAdvance, type ItemType } from '@azy-board/domain'
 import { createCardAdvance, toProgressColumns } from './model/cardAdvance'
+import { subtasksProgressByParent, subtasksProgressForCard } from './model/subtaskProgress'
 import { useBoardPreferences } from './hooks/useBoardPreferences'
 import { useBoardData } from './hooks/useBoardData'
 import { BoardLanes } from './components/BoardLanes'
@@ -347,6 +348,12 @@ export default function BoardPage() {
     onlyModuleFilter: countActiveBoardFilters({ ...filters, moduleId: '', hideEmptyEpics: false, hideEmptyStories: false }) === 0,
   }), [scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId])
 
+  // Barra de subtasks: média de avanço dos filhos diretos, calculada uma vez por render.
+  const subtasksByParent = useMemo(
+    () => subtasksProgressByParent(scopedAllItems, columns),
+    [scopedAllItems, columns],
+  )
+
   // Card T49 — o toggle de caminho crítico só é oferecido com dependências no board.
   const projectDepsAvailable = useMemo(
     () => boardCards.some(card => ((card as { dependencyCount?: number }).dependencyCount ?? 0) > 0),
@@ -540,7 +547,7 @@ export default function BoardPage() {
   // Avanço no fluxo do recorte exibido (mesma população do cabeçalho), separado da conclusão.
   const sprintAdvance = itemsAdvance(
     toProgressColumns(columns),
-    sprintItems.map(item => ({ status: item.status, columnId: item.columnId, checklist: item.checklistProgress ?? null })),
+    sprintItems.map(item => ({ status: item.status, columnId: item.columnId })),
   )
 
   function openCreation(type: ItemType | 'MODULE', context: TreeActionContext = {}) {
@@ -801,6 +808,7 @@ export default function BoardPage() {
                     columns={columns}
                     versions={projectVersions}
                     sprints={sprints}
+                    subtasksByParent={subtasksByParent}
                     emptyProject={hasNoLanes}
                     onQuickAdd={openCreationInColumn}
                     onOpenDetail={handleOpenDetail}
@@ -823,6 +831,7 @@ export default function BoardPage() {
                     columns={columns}
                     versions={projectVersions}
                     sprints={sprints}
+                    subtasksByParent={subtasksByParent}
                     collapsedEpics={collapsedEpics}
                     collapsedModules={collapsedModules}
                     collapsedStories={collapsedStories}
@@ -847,7 +856,7 @@ export default function BoardPage() {
               <DragOverlay dropAnimation={dropAnimation}>
                 {activeCard && (
                   <div className={`board-drag-overlay__card${dragAnimation.reducedMotion ? ' board-drag-overlay__card--still' : ''}`}>
-                    <KanbanCard card={activeCard} advance={cardAdvance(activeCard) ?? undefined} />
+                    <KanbanCard card={activeCard} advance={cardAdvance(activeCard) ?? undefined} subtasksProgress={subtasksProgressForCard(subtasksByParent, activeCard.id)} />
                   </div>
                 )}
                 {isColumnDrag && activeId && (

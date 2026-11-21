@@ -167,15 +167,13 @@ itemsRouter.get('/tree', requireRole('VIEWER'), async (c) => {
 
   // [TENANT] Filtra por tenantId + projectId; exclui itens arquivados por padrão
   const projectContext = userPersistenceContext(ctx)
-  const [allModules, allItems, projectColumns, checklistProgressByItem] = await Promise.all([
+  const [allModules, allItems, projectColumns] = await Promise.all([
     persistence.projects.listModules(projectContext, projectId),
     persistence.items.listItemsWithRelations(projectContext, projectId),
     persistence.projects.listColumns(projectContext, projectId),
-    persistence.checklists.listChecklistProgressByProject(projectContext, projectId),
   ])
   const treeProgressContext: TreeProgressContext = {
     columns: projectColumns.map(column => ({ id: column.id, baseStatus: column.baseStatus, position: column.position, progressWeight: column.progressWeight })),
-    progressByItem: checklistProgressByItem,
   }
   const activeItems = allItems.filter(item => item.status !== 'ARCHIVED')
 

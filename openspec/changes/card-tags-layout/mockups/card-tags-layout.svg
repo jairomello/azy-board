@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="620" viewBox="0 0 920 620" role="img" aria-labelledby="titulo descricao">
+  <title id="titulo">Mockup do layout de etiquetas do card</title>
+  <desc id="descricao">Comparação entre o card atual, com tag longa quebrando linha, e o card novo, com tags truncadas, resumo +N e status em faixa própria.</desc>
+
+  <defs>
+    <linearGradient id="faixa" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+    <filter id="sombra" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#1f2a44" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <rect width="920" height="620" fill="#f5f7fb"/>
+  <text x="40" y="40" font-family="Inter, 'Segoe UI', sans-serif" font-size="19" font-weight="700" fill="#202433">Etiquetas do card: antes e depois</text>
+  <text x="40" y="62" font-family="Inter, 'Segoe UI', sans-serif" font-size="12" fill="#6b7280">Tags em uma linha, com truncamento e resumo +N; status e tipo em faixa própria.</text>
+
+  <!-- Antes -->
+  <text x="40" y="100" font-family="Inter, 'Segoe UI', sans-serif" font-size="12" font-weight="700" fill="#b91c1c">ANTES</text>
+  <g filter="url(#sombra)">
+    <rect x="40" y="114" width="300" height="250" rx="13" fill="#ffffff" stroke="#e3e6ef"/>
+  </g>
+  <rect x="40" y="114" width="3" height="250" rx="1.5" fill="#94a3b8"/>
+  <text x="64" y="140" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="700" fill="#6b7280">T207</text>
+  <text x="64" y="162" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" font-weight="700" fill="#202433">Interface de gestão</text>
+
+  <!-- tag quebrada -->
+  <rect x="64" y="182" width="74" height="42" rx="21" fill="#ef4444"/>
+  <text x="101" y="199" text-anchor="middle" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#ffffff">Entrega</text>
+  <text x="101" y="214" text-anchor="middle" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#ffffff">02/12</text>
+  <rect x="146" y="192" width="82" height="20" rx="5" fill="#eef2f7"/>
+  <circle cx="157" cy="202" r="3" fill="#94a3b8"/>
+  <text x="164" y="206" font-family="Inter, 'Segoe UI', sans-serif" font-size="9" font-weight="600" fill="#52607a">Não iniciada</text>
+  <rect x="236" y="192" width="42" height="20" rx="5" fill="#dbeafe"/>
+  <text x="257" y="206" text-anchor="middle" font-family="Inter, 'Segoe UI', sans-serif" font-size="9" font-weight="600" fill="#1d4ed8">Tarefa</text>
+
+  <rect x="64" y="236" width="252" height="6" rx="3" fill="#e8ebf3"/>
+  <rect x="64" y="236" width="126" height="6" rx="3" fill="#94a3b8"/>
+  <text x="64" y="270" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#b91c1c">A pílula quebra em duas linhas e desalinha o status.</text>
+
+  <!-- Depois -->
+  <text x="380" y="100" font-family="Inter, 'Segoe UI', sans-serif" font-size="12" font-weight="700" fill="#047857">DEPOIS</text>
+  <g filter="url(#sombra)">
+    <rect x="380" y="114" width="300" height="266" rx="13" fill="#ffffff" stroke="#e3e6ef"/>
+  </g>
+  <rect x="380" y="114" width="3" height="266" rx="1.5" fill="url(#faixa)"/>
+  <text x="404" y="140" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" font-weight="700" fill="#6b7280">T207</text>
+  <text x="404" y="162" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" font-weight="700" fill="#202433">Interface de gestão</text>
+
+  <!-- tags -->
+  <rect x="404" y="180" width="104" height="20" rx="10" fill="#fde8e8"/>
+  <circle cx="414" cy="190" r="3" fill="#ef4444"/>
+  <text x="422" y="194" font-family="Inter, 'Segoe UI', sans-serif" font-size="9" font-weight="600" fill="#9f1239">Entrega 02/12</text>
+  <rect x="514" y="180" width="52" height="20" rx="10" fill="#e8f7f4"/>
+  <circle cx="524" cy="190" r="3" fill="#0ea5a4"/>
+  <text x="532" y="194" font-family="Inter, 'Segoe UI', sans-serif" font-size="9" font-weight="600" fill="#0f766e">backend</text>
+  <rect x="572" y="180" width="28" height="20" rx="10" fill="#eef2f7"/>
+  <text x="586" y="194" text-anchor="middle" font-family="Inter, 'Segoe UI', sans-serif" font-size="9" font-weight="700" fill="#52607a">+2</text>
+
+  <!-- status -->
+  <rect x="404" y="208" width="92" height="20" rx="5" fill="#eef2f7"/>
+  <circle cx="415" cy="218" r="3" fill="#367bf5"/>
+  <text x="422" y="222" font-family="Inter, 'Segoe UI', sans-serif" font-size="9" font-weight="600" fill="#52607a">Em andamento</text>
+  <rect x="502" y="208" width="42" height="20" rx="5" fill="#dbeafe"/>
+  <text x="523" y="222" text-anchor="middle" font-family="Inter, 'Segoe UI', sans-serif" font-size="9" font-weight="600" fill="#1d4ed8">Tarefa</text>
+
+  <rect x="404" y="244" width="252" height="6" rx="3" fill="#e8ebf3"/>
+  <rect x="404" y="244" width="126" height="6" rx="3" fill="#6366f1"/>
+  <text x="404" y="278" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#047857">Uma linha, altura fixa e status alinhado.</text>
+
+  <!-- Legenda -->
+  <g filter="url(#sombra)">
+    <rect x="708" y="114" width="172" height="266" rx="13" fill="#ffffff" stroke="#e3e6ef"/>
+  </g>
+  <text x="728" y="142" font-family="Inter, 'Segoe UI', sans-serif" font-size="12" font-weight="700" fill="#202433">Regras</text>
+  <text x="728" y="170" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#5b6478">1. Tags em linha única</text>
+  <text x="728" y="190" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#5b6478">2. Máx. 2 tags + N</text>
+  <text x="728" y="210" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#5b6478">3. Texto trunca, tooltip</text>
+  <text x="728" y="230" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#5b6478">4. Status/tipo em faixa</text>
+  <text x="728" y="250" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#5b6478">   própria</text>
+  <text x="728" y="270" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#5b6478">5. Altura h-5 fixa</text>
+  <text x="728" y="300" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#5b6478">6. Fundo tênue + ponto</text>
+  <text x="728" y="320" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#5b6478">   colorido</text>
+
+  <!-- Casos -->
+  <text x="40" y="420" font-family="Inter, 'Segoe UI', sans-serif" font-size="13" font-weight="700" fill="#202433">Casos cobertos</text>
+  <rect x="40" y="438" width="270" height="132" rx="11" fill="#ffffff" stroke="#e3e6ef"/>
+  <text x="58" y="464" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" font-weight="700" fill="#202433">Muitas tags</text>
+  <rect x="58" y="478" width="78" height="20" rx="10" fill="#fde8e8"/>
+  <circle cx="68" cy="488" r="3" fill="#ef4444"/>
+  <text x="76" y="492" font-family="Inter, 'Segoe UI', sans-serif" font-size="9" fill="#9f1239">Entrega</text>
+  <rect x="142" y="478" width="58" height="20" rx="10" fill="#e8f7f4"/>
+  <circle cx="152" cy="488" r="3" fill="#0ea5a4"/>
+  <text x="160" y="492" font-family="Inter, 'Segoe UI', sans-serif" font-size="9" fill="#0f766e">auth</text>
+  <rect x="206" y="478" width="28" height="20" rx="10" fill="#eef2f7"/>
+  <text x="220" y="492" text-anchor="middle" font-family="Inter, 'Segoe UI', sans-serif" font-size="9" font-weight="700" fill="#52607a">+3</text>
+  <text x="58" y="522" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#5b6478">A lista completa fica no tooltip e no modal.</text>
+
+  <rect x="330" y="438" width="270" height="132" rx="11" fill="#ffffff" stroke="#e3e6ef"/>
+  <text x="348" y="464" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" font-weight="700" fill="#202433">Tag longa</text>
+  <rect x="348" y="478" width="112" height="20" rx="10" fill="#fde8e8"/>
+  <circle cx="358" cy="488" r="3" fill="#ef4444"/>
+  <text x="366" y="492" font-family="Inter, 'Segoe UI', sans-serif" font-size="9" fill="#9f1239">Entrega 02/12…</text>
+  <text x="348" y="522" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#5b6478">Truncamento com reticências; nome no tooltip.</text>
+
+  <rect x="620" y="438" width="260" height="132" rx="11" fill="#ffffff" stroke="#e3e6ef"/>
+  <text x="638" y="464" font-family="Inter, 'Segoe UI', sans-serif" font-size="11" font-weight="700" fill="#202433">Sem tags</text>
+  <rect x="638" y="478" width="82" height="20" rx="10" fill="#eef2f7"/>
+  <circle cx="648" cy="488" r="3" fill="#367bf5"/>
+  <text x="655" y="492" font-family="Inter, 'Segoe UI', sans-serif" font-size="9" fill="#52607a">Em andamento</text>
+  <rect x="726" y="478" width="38" height="20" rx="10" fill="#dbeafe"/>
+  <text x="745" y="492" text-anchor="middle" font-family="Inter, 'Segoe UI', sans-serif" font-size="9" fill="#1d4ed8">Task</text>
+  <text x="638" y="522" font-family="Inter, 'Segoe UI', sans-serif" font-size="10" fill="#5b6478">Status e tipo sobem para a linha de metadados.</text>
+</svg>

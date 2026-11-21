@@ -6,6 +6,7 @@ import { BoardColumns } from './BoardColumns'
 import type { ProjectVersion } from '../../../components/ItemModal'
 import type { Column, ItemData, Module, Sprint, StoryLaneGroup } from '../model/types'
 import { toProgressColumns } from '../model/cardAdvance'
+import type { SubtasksProgress } from '../model/subtaskProgress'
 
 export interface EpicLaneGroup {
   epic: ItemData
@@ -26,6 +27,8 @@ interface BoardLanesProps {
   columns: Column[]
   versions: ProjectVersion[]
   sprints: Sprint[]
+  /** Progresso das subtasks por id do pai, repassado aos cards. */
+  subtasksByParent?: ReadonlyMap<string, SubtasksProgress>
   collapsedEpics: Set<string>
   collapsedModules: Set<string>
   collapsedStories: Set<string>
@@ -52,12 +55,13 @@ interface BoardLanesProps {
 
 export function BoardLanes({
   simpleBoard, simpleStory, simpleCards, showStoryLanes, orphanCards, visibleModuleGroups, columns, versions, sprints,
+  subtasksByParent,
   collapsedEpics, collapsedModules, collapsedStories, columnAddForms, onToggleEpic, onToggleModule, onToggleStory,
   onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, onEditStory, onEditEpic,
   noModuleLabel, hideModules = false, hideEpics = false, criticalIds = null,
 }: BoardLanesProps) {
   const renderEpicGroup = (group: EpicLaneGroup) => (
-    <Swimlane key={group.epic.id} {...laneProps(group.epic.id, group.epic.title, columns, versions, sprints, group.tasks, hideEpics ? false : collapsedEpics.has(group.epic.id), columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, () => onEditEpic(group.epic), criticalIds)}
+    <Swimlane key={group.epic.id} {...laneProps(group.epic.id, group.epic.title, columns, versions, sprints, group.tasks, hideEpics ? false : collapsedEpics.has(group.epic.id), columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, () => onEditEpic(group.epic), criticalIds, subtasksByParent)}
       hideHeader={hideEpics}
       progressTasks={group.progressTasks}
       onToggle={() => onToggleEpic(group.epic.id)}
@@ -70,8 +74,8 @@ export function BoardLanes({
   )
   return (
     <>
-      {simpleBoard && simpleStory && <Swimlane {...laneProps(simpleStory.id, simpleStory.title, columns, versions, sprints, simpleCards, false, columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, null, criticalIds)} />}
-      {!simpleBoard && orphanCards.length > 0 && <Swimlane {...laneProps('orphan', noModuleLabel, columns, versions, sprints, orphanCards, collapsedEpics.has('orphan'), columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, null, criticalIds)} allowAdd={false} onToggle={() => onToggleEpic('orphan')} />}
+      {simpleBoard && simpleStory && <Swimlane {...laneProps(simpleStory.id, simpleStory.title, columns, versions, sprints, simpleCards, false, columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, null, criticalIds, subtasksByParent)} />}
+      {!simpleBoard && orphanCards.length > 0 && <Swimlane {...laneProps('orphan', noModuleLabel, columns, versions, sprints, orphanCards, collapsedEpics.has('orphan'), columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, null, criticalIds, subtasksByParent)} allowAdd={false} onToggle={() => onToggleEpic('orphan')} />}
       {!simpleBoard && hideModules && visibleModuleGroups.flatMap(({ epics }) => epics).map(renderEpicGroup)}
       {!simpleBoard && !hideModules && visibleModuleGroups.map(({ module, epics }) => (
         <ModuleSwimlane key={module.id} title={module.name} epicCount={epics.length} progress={moduleProgress(epics)} points={modulePoints(epics)} collapsed={collapsedModules.has(module.id)} onToggle={() => onToggleModule(module.id)}>
@@ -87,8 +91,9 @@ function laneProps(
   columnAddForms: Record<string, boolean>, onShowAddForm: (id: string) => void, onHideAddForm: (id: string) => void,
   onCardCreate: BoardLanesProps['onCardCreate'], onOpenDetail: (id: string) => void, onTitleSave: (id: string, title: string) => void,
   onDelete: (id: string) => void, onArchive: (id: string) => void, onEditEpic: (() => void) | null, criticalIds: ReadonlySet<string> | null,
+  subtasksByParent: ReadonlyMap<string, SubtasksProgress> | undefined,
 ) {
-  return { swimlaneId, title, columns, versions, sprints, tasks, collapsed, onToggle: () => {}, columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, onEditEpic, criticalIds }
+  return { swimlaneId, title, columns, versions, sprints, tasks, collapsed, onToggle: () => {}, columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, onEditEpic, criticalIds, subtasksByParent }
 }
 
 function moduleProgress(epics: EpicLaneGroup[]) {
@@ -100,16 +105,16 @@ function modulePoints(epics: EpicLaneGroup[]) {
   return epics.flatMap(group => group.tasks).filter(item => item.isLeaf && ['TASK', 'BUG'].includes(item.type)).reduce((sum, item) => sum + (item.points ?? 0), 0)
 }
 
-// Avanço no fluxo (peso da coluna + checklist) e conclusão (DONE) são indicadores
-// distintos: a barra mostra o avanço, o contador mostra a entrega concluída.
-// B19: o status define a faixa e a coluna refina; cancelado e arquivado ficam fora do
-// avanço e do total, como na árvore e no dashboard.
+// Avanço no fluxo (peso da coluna) e conclusão (DONE) são indicadores distintos: a barra
+// mostra o avanço, o contador mostra a entrega concluída. O checklist tem barra própria no
+// card e não entra aqui. B19: o status define a faixa e a coluna refina; cancelado e
+// arquivado ficam fora do avanço e do total, como na árvore e no dashboard.
 function laneProgress(columns: Column[], tasks: ItemData[]) {
   // Cards virtuais de história (agrupadores) não são trabalho e ficam fora.
   const counted = tasks.filter(task => countsForProgress(task.status) && !task.id.startsWith('story-virtual-'))
   const advance = itemsAdvance(
     toProgressColumns(columns),
-    counted.map(task => ({ status: task.status, columnId: task.columnId, checklist: task.checklistProgress ?? null })),
+    counted.map(task => ({ status: task.status, columnId: task.columnId })),
   )
   return { advance, done: counted.filter(task => task.status === 'DONE').length, total: counted.length }
 }
@@ -136,6 +141,8 @@ interface SwimlaneProps {
   hideHeader?: boolean
   /** B19 — folhas de progresso da lane; sem elas, usa os cards exibidos. */
   progressTasks?: ItemData[]
+  /** Progresso das subtasks por id do pai, repassado aos cards. */
+  subtasksByParent?: ReadonlyMap<string, SubtasksProgress>
 }
 
 function Swimlane(props: SwimlaneProps) {
@@ -152,12 +159,12 @@ function Swimlane(props: SwimlaneProps) {
       {props.onEditEpic && <button onClick={props.onEditEpic} className="text-muted-foreground hover:text-foreground transition flex-shrink-0 p-1 rounded hover:bg-muted" title={t('editEpic')}><Pencil className="w-3.5 h-3.5" /></button>}
     </div>}
     {!collapsed && storyGroups && <div className="ml-2 sm:ml-4 pl-3 sm:pl-5 border-l-2 border-violet-400/30 space-y-2.5">{storyGroups.length === 0 && <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">{t('noStoriesInEpic')}</div>}{storyGroups.map(group => <StorySwimlane key={group.id} group={group} {...props} collapsed={props.collapsedStories?.has(group.id) ?? false} onToggle={() => props.onToggleStory?.(group.id)} onEdit={group.story ? () => props.onEditStory?.(group.story!) : undefined} />)}</div>}
-    {!collapsed && !storyGroups && <BoardColumns laneId={props.swimlaneId} columns={props.columns} versions={props.versions} sprints={props.sprints} tasks={props.tasks} parentId={props.defaultParentId ?? undefined} allowAdd={props.allowAdd ?? true} columnAddForms={props.columnAddForms} onShowAddForm={props.onShowAddForm} onHideAddForm={props.onHideAddForm} onCardCreate={props.onCardCreate} onOpenDetail={props.onOpenDetail} onTitleSave={props.onTitleSave} onDelete={props.onDelete} onArchive={props.onArchive} criticalIds={props.criticalIds} />}
+    {!collapsed && !storyGroups && <BoardColumns laneId={props.swimlaneId} columns={props.columns} versions={props.versions} sprints={props.sprints} tasks={props.tasks} subtasksByParent={props.subtasksByParent} parentId={props.defaultParentId ?? undefined} allowAdd={props.allowAdd ?? true} columnAddForms={props.columnAddForms} onShowAddForm={props.onShowAddForm} onHideAddForm={props.onHideAddForm} onCardCreate={props.onCardCreate} onOpenDetail={props.onOpenDetail} onTitleSave={props.onTitleSave} onDelete={props.onDelete} onArchive={props.onArchive} criticalIds={props.criticalIds} />}
   </section>
 }
 
-function StorySwimlane({ group, columns, versions, sprints, columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, collapsed, onToggle, onEdit, criticalIds }: SwimlaneProps & { group: StoryLaneGroup; onEdit?: () => void }) {
+function StorySwimlane({ group, columns, versions, sprints, subtasksByParent, columnAddForms, onShowAddForm, onHideAddForm, onCardCreate, onOpenDetail, onTitleSave, onDelete, onArchive, collapsed, onToggle, onEdit, criticalIds }: SwimlaneProps & { group: StoryLaneGroup; onEdit?: () => void }) {
   const { t } = useTranslation('board')
   const { advance, done, total } = laneProgress(columns, group.progressTasks ?? group.tasks)
-  return <section className="relative rounded-lg border border-violet-300/50 dark:border-violet-500/25 bg-surface-raised overflow-hidden"><span className="absolute -left-[22px] sm:-left-[30px] top-6 w-4 sm:w-6 h-px bg-violet-400/40" aria-hidden /><div className={`flex items-center gap-2.5 px-3 py-2.5 ${collapsed ? '' : 'border-b border-border/70'} bg-violet-500/[0.045]`}><button onClick={onToggle} aria-expanded={!collapsed} className="min-w-0 flex-1 flex items-center gap-2.5 text-left"><svg className={`w-3.5 h-3.5 text-violet-500 transition-transform ${collapsed ? '' : 'rotate-90'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg><BookOpen className="w-3.5 h-3.5 text-violet-600" /><span className="min-w-0"><span className="block text-[10px] uppercase tracking-[0.12em] font-semibold text-violet-600">{group.story ? 'História' : 'Agrupamento'}</span><span className="block text-sm font-semibold text-foreground truncate">{group.title}</span></span><span className="ml-auto text-[11px] text-muted-foreground whitespace-nowrap">{group.tasks.length} {group.tasks.length === 1 ? 'card' : 'cards'}</span><LaneProgressBar advance={advance} done={done} total={total} widthClass="w-32" labelClass="text-[10px]" /></button>{onEdit && <button onClick={onEdit} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition" title={t('editStory')} aria-label={`${t('editStory')} ${group.title}`}><Pencil className="w-3.5 h-3.5" /></button>}</div>{!collapsed && <div className="p-2.5"><BoardColumns laneId={`story-${group.id}`} columns={columns} versions={versions} sprints={sprints} tasks={group.tasks} parentId={group.story?.id} columnAddForms={columnAddForms} onShowAddForm={onShowAddForm} onHideAddForm={onHideAddForm} onCardCreate={onCardCreate} onOpenDetail={onOpenDetail} onTitleSave={onTitleSave} onDelete={onDelete} onArchive={onArchive} criticalIds={criticalIds} /></div>}</section>
+  return <section className="relative rounded-lg border border-violet-300/50 dark:border-violet-500/25 bg-surface-raised overflow-hidden"><span className="absolute -left-[22px] sm:-left-[30px] top-6 w-4 sm:w-6 h-px bg-violet-400/40" aria-hidden /><div className={`flex items-center gap-2.5 px-3 py-2.5 ${collapsed ? '' : 'border-b border-border/70'} bg-violet-500/[0.045]`}><button onClick={onToggle} aria-expanded={!collapsed} className="min-w-0 flex-1 flex items-center gap-2.5 text-left"><svg className={`w-3.5 h-3.5 text-violet-500 transition-transform ${collapsed ? '' : 'rotate-90'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg><BookOpen className="w-3.5 h-3.5 text-violet-600" /><span className="min-w-0"><span className="block text-[10px] uppercase tracking-[0.12em] font-semibold text-violet-600">{group.story ? 'História' : 'Agrupamento'}</span><span className="block text-sm font-semibold text-foreground truncate">{group.title}</span></span><span className="ml-auto text-[11px] text-muted-foreground whitespace-nowrap">{group.tasks.length} {group.tasks.length === 1 ? 'card' : 'cards'}</span><LaneProgressBar advance={advance} done={done} total={total} widthClass="w-32" labelClass="text-[10px]" /></button>{onEdit && <button onClick={onEdit} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition" title={t('editStory')} aria-label={`${t('editStory')} ${group.title}`}><Pencil className="w-3.5 h-3.5" /></button>}</div>{!collapsed && <div className="p-2.5"><BoardColumns laneId={`story-${group.id}`} columns={columns} versions={versions} sprints={sprints} tasks={group.tasks} subtasksByParent={subtasksByParent} parentId={group.story?.id} columnAddForms={columnAddForms} onShowAddForm={onShowAddForm} onHideAddForm={onHideAddForm} onCardCreate={onCardCreate} onOpenDetail={onOpenDetail} onTitleSave={onTitleSave} onDelete={onDelete} onArchive={onArchive} criticalIds={criticalIds} /></div>}</section>
 }

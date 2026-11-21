@@ -327,66 +327,74 @@ export function BoardFilters({
       </select>
       </div>}
 
-      {/* Status (multi — OR entre os marcados) */}
-      {showDataFilters && <div className="flex items-center gap-1.5 flex-wrap" role="group" aria-label={t('filterStatus')}>
-         <span className="w-20 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t('filterStatus')}</span>
-        {statusOptions.map(option => (
-          <label
-            key={option.value}
-            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 text-xs transition ${
-              activeStatuses.has(option.value)
-                ? 'border-primary/40 bg-primary/10 text-foreground'
-                : 'border-border text-muted-foreground hover:border-border/80'
-            }`}
-          >
-            <input
-              type="checkbox"
-              checked={activeStatuses.has(option.value)}
-              onChange={() => toggleStatus(option.value)}
-              className="h-3.5 w-3.5 rounded accent-primary"
-            />
-            {option.label}
-          </label>
-        ))}
+      {/* Status (multi — OR entre os marcados). As opções ficam em um contêiner
+          próprio para que as linhas quebradas alinhem sob a primeira opção, e
+          não sob o rótulo do grupo. */}
+      {showDataFilters && <div className="flex items-start gap-1.5" role="group" aria-label={t('filterStatus')}>
+         <span className="w-20 flex-shrink-0 pt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t('filterStatus')}</span>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+          {statusOptions.map(option => (
+            <label
+              key={option.value}
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 text-xs transition ${
+                activeStatuses.has(option.value)
+                  ? 'border-primary/40 bg-primary/10 text-foreground'
+                  : 'border-border text-muted-foreground hover:border-border/80'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={activeStatuses.has(option.value)}
+                onChange={() => toggleStatus(option.value)}
+                className="h-3.5 w-3.5 rounded accent-primary"
+              />
+              {option.label}
+            </label>
+          ))}
+        </div>
       </div>}
 
       {/* Tipo (multi) */}
-      {showDataFilters && <div className="flex items-center gap-1.5 flex-wrap">
-         <span className="w-20 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t('filterType')}</span>
-        {(['TASK', 'BUG'] as ItemType[]).map(type => (
-          <Tooltip key={type} label={type === 'TASK' ? t('typeTask') : t('typeBug')}>
-            <button
-              onClick={() => toggleType(type)}
-              aria-pressed={filters.types.includes(type)}
-              className={`text-xs px-2 py-1 rounded-full border transition ${
-                filters.types.includes(type)
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'border-border text-muted-foreground hover:border-primary/50'
-              }`}
-            >
-              {type === 'TASK' ? t('typeTask') : t('typeBug')}
-            </button>
-          </Tooltip>
-        ))}
+      {showDataFilters && <div className="flex items-start gap-1.5">
+         <span className="w-20 flex-shrink-0 pt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t('filterType')}</span>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+          {(['TASK', 'BUG'] as ItemType[]).map(type => (
+            <Tooltip key={type} label={type === 'TASK' ? t('typeTask') : t('typeBug')}>
+              <button
+                onClick={() => toggleType(type)}
+                aria-pressed={filters.types.includes(type)}
+                className={`text-xs px-2 py-1 rounded-full border transition ${
+                  filters.types.includes(type)
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'border-border text-muted-foreground hover:border-primary/50'
+                }`}
+              >
+                {type === 'TASK' ? t('typeTask') : t('typeBug')}
+              </button>
+            </Tooltip>
+          ))}
+        </div>
       </div>}
 
       {/* Tags (multi) */}
       {showDataFilters && tags.length > 0 && (
-        <div className="flex items-center gap-1.5 flex-wrap">
-           <span className="w-20 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t('filterTags')}</span>
-          {tags.map(tag => (
-            <button
-              key={tag.id}
-              onClick={() => toggleTag(tag.id)}
-              aria-pressed={filters.tagIds.includes(tag.id)}
-              className={`text-xs px-2 py-0.5 rounded-full border transition text-white ${
-                filters.tagIds.includes(tag.id) ? 'opacity-100 ring-2 ring-offset-1 ring-foreground/30' : 'opacity-60 hover:opacity-100'
-              }`}
-              style={{ backgroundColor: tag.color, borderColor: tag.color }}
-            >
-              {tag.name}
-            </button>
-          ))}
+        <div className="flex items-start gap-1.5">
+           <span className="w-20 flex-shrink-0 pt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t('filterTags')}</span>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            {tags.map(tag => (
+              <button
+                key={tag.id}
+                onClick={() => toggleTag(tag.id)}
+                aria-pressed={filters.tagIds.includes(tag.id)}
+                className={`text-xs px-2 py-0.5 rounded-full border transition text-white ${
+                  filters.tagIds.includes(tag.id) ? 'opacity-100 ring-2 ring-offset-1 ring-foreground/30' : 'opacity-60 hover:opacity-100'
+                }`}
+                style={{ backgroundColor: tag.color, borderColor: tag.color }}
+              >
+                {tag.name}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

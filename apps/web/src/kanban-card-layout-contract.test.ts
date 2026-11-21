@@ -14,8 +14,8 @@ describe('contrato estrutural do layout do KanbanCard (T32 — proposta 01 Essen
     const breadcrumb = card.indexOf('{/* Breadcrumb em linha própria')
     const titulo = card.indexOf('{/* Título em destaque')
     const etiquetas = card.indexOf('{/* Etiquetas:')
-    // T75 — a região entre etiquetas e rodapé passou a exibir o avanço do card.
-    const progresso = card.indexOf('{/* T75 — região de avanço entre etiquetas e rodapé')
+    // T75 — a região entre etiquetas e rodapé passou a exibir o progresso do card.
+    const progresso = card.indexOf('{/* T75 — região de progresso entre etiquetas e rodapé')
     const rodape = card.indexOf('{/* Rodapé com divisor')
 
     expect(topo).toBeGreaterThan(-1)
@@ -48,8 +48,12 @@ describe('contrato estrutural do layout do KanbanCard (T32 — proposta 01 Essen
     const labelUsages = card.split("card.type === 'EPIC' ? 'typeEpic'").length - 1
     expect(labelUsages).toBe(1)
     expect(card.includes('(tags.length > 0 || card.type)')).toBe(true)
-    // Tags podem quebrar linha sem sobrepor o restante
-    expect(card.includes('flex flex-wrap gap-1 min-w-0')).toBe(true)
+    // Etiquetas e estado em faixas separadas; tags não quebram texto.
+    expect(card.includes('(tags.length > 0 || card.type)')).toBe(true)
+    expect(card.includes('flex flex-col gap-1.5')).toBe(true)
+    expect(card.includes('flex min-w-0 items-center gap-1 overflow-hidden')).toBe(true)
+    expect(card.includes('max-w-[8.5rem]')).toBe(true)
+    expect(card.includes('whitespace-nowrap')).toBe(true)
   })
 
   test('rodapé com divisor e campos condicionais (omite ausentes)', async () => {
