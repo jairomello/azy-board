@@ -32,9 +32,12 @@ function renderCard({ advance, checklistProgress = null, subtasksProgress = null
 }
 
 const tones = () =>
-  screen.getAllByRole('progressbar').map((bar: HTMLElement) =>
-    bar.closest('.progress-meter')?.getAttribute('data-progress-tone'),
-  )
+  screen.getAllByRole('progressbar').map((bar: HTMLElement) => {
+    const meter = bar.closest('.progress-meter')
+    if (meter?.classList.contains('progress-meter--checklist')) return 'checklist'
+    if (meter?.classList.contains('progress-meter--subtasks')) return 'subtasks'
+    return 'default'
+  })
 
 beforeEach(async () => {
   await i18n.changeLanguage('pt-BR')

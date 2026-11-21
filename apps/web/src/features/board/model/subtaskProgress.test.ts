@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { subtasksProgressByParent, subtasksProgressForCard } from './subtaskProgress'
+import { subtasksProgressByParent } from './subtaskProgress'
 import type { Column } from './types'
 
 const columns: Column[] = [
@@ -50,9 +50,9 @@ describe('progresso das subtasks por pai', () => {
       { id: 't2', parentId: 'story-1', status: 'NOT_STARTED', columnId: 'fazer' },
     ], columns)
 
-    expect(subtasksProgressForCard(progress, 'story-virtual-story-1')).toEqual({ advance: 50, total: 2 })
-    expect(subtasksProgressForCard(progress, 'story-1')).toEqual({ advance: 50, total: 2 })
-    expect(subtasksProgressForCard(progress, 'sem-filhos')).toBeNull()
+    expect(progress.get('story-virtual-story-1')).toEqual({ advance: 50, total: 2 })
+    expect(progress.get('story-1')).toEqual({ advance: 50, total: 2 })
+    expect(progress.get('sem-filhos')).toBeUndefined()
   })
 
   test('recalcula quando o status de uma subtask muda em tempo real', () => {

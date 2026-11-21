@@ -20,7 +20,8 @@ const VIRTUAL_STORY_PREFIX = 'story-virtual-'
 /**
  * Agrupa os filhos diretos de cada item e calcula a média de avanço deles pela mesma
  * regra do card (status + coluna, sem checklist). Cancelados e arquivados ficam fora;
- * item sem filho válido não entra no mapa. Custo O(n), uma vez por render do board.
+ * item sem filho válido não entra no mapa. Também registra o alias do card virtual de
+ * história, para a consulta no card ser uma busca direta. Custo O(n) por render.
  */
 export function subtasksProgressByParent(
   items: readonly SubtaskItem[],
@@ -43,20 +44,11 @@ export function subtasksProgressByParent(
       .map(item => resolve({ status: item.status ?? null, columnId: item.columnId ?? null }))
       .filter((value): value is number => value !== null)
     if (values.length === 0) continue
-    result.set(parentId, { advance: averageAdvance(values), total: values.length })
+    const progress = { advance: averageAdvance(values), total: values.length }
+    result.set(parentId, progress)
+    result.set(`${VIRTUAL_STORY_PREFIX}${parentId}`, progress)
   }
   return result
-}
-
-/** Consulta tolerando o prefixo dos cards virtuais de história. */
-export function subtasksProgressForCard(
-  progress: ReadonlyMap<string, SubtasksProgress>,
-  cardId: string,
-): SubtasksProgress | null {
-  const direct = progress.get(cardId)
-  if (direct) return direct
-  if (!cardId.startsWith(VIRTUAL_STORY_PREFIX)) return null
-  return progress.get(cardId.slice(VIRTUAL_STORY_PREFIX.length)) ?? null
 }
 
 /** Item completo do board, apenas para leitura dos campos usados no cálculo. */

@@ -49,7 +49,6 @@ export function ProgressBar({
     <div
       className={`progress-meter progress-meter--${variant}${toneClass}${done ? ' progress-meter--done' : ''}${className ? ` ${className}` : ''}`}
       data-progress-variant={variant}
-      data-progress-tone={tone}
       data-progress-state={done ? 'done' : 'partial'}
     >
       {showLabels && (

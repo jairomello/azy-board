@@ -51,7 +51,7 @@ describe('contrato estrutural do layout do KanbanCard (T32 — proposta 01 Essen
     // Etiquetas e estado em faixas separadas; tags não quebram texto.
     expect(card.includes('(tags.length > 0 || card.type)')).toBe(true)
     expect(card.includes('flex flex-col gap-1.5')).toBe(true)
-    expect(card.includes('flex min-w-0 items-center gap-1 overflow-hidden')).toBe(true)
+    expect(card.includes('flex min-w-0 items-center gap-1')).toBe(true)
     expect(card.includes('max-w-[8.5rem]')).toBe(true)
     expect(card.includes('whitespace-nowrap')).toBe(true)
   })

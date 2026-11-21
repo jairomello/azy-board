@@ -44,7 +44,7 @@ describe('KanbanCard — layout das etiquetas', () => {
   test('uma tag longa não quebra e expõe o nome completo no tooltip', () => {
     renderCard({ itemTags: [tag('t1', 'Entrega 02/12')] })
 
-    const tagElement = document.querySelector('[data-tag-id="t1"]') as HTMLElement
+    const tagElement = document.querySelector('.kanban-card-tag') as HTMLElement
     expect(tagElement).not.toBeNull()
     expect(tagElement.getAttribute('title')).toBe('Entrega 02/12')
     expect(tagElement.className).toContain('h-5')
@@ -58,8 +58,8 @@ describe('KanbanCard — layout das etiquetas', () => {
       itemTags: [tag('t1', 'backend'), tag('t2', 'auth', '#0ea5a4')],
     })
 
-    expect(document.querySelectorAll('[data-tag-id]')).toHaveLength(2)
-    expect(document.querySelector('[data-tag-overflow]')).toBeNull()
+    expect(document.querySelectorAll('.kanban-card-tag')).toHaveLength(2)
+    expect(document.querySelector('.card-tags > span:not(.kanban-card-tag)')).toBeNull()
   })
 
   test('mais de duas tags resume o restante em +N', () => {
@@ -73,8 +73,8 @@ describe('KanbanCard — layout das etiquetas', () => {
       ],
     })
 
-    expect(document.querySelectorAll('[data-tag-id]')).toHaveLength(2)
-    const overflow = document.querySelector('[data-tag-overflow]') as HTMLElement
+    expect(document.querySelectorAll('.kanban-card-tag')).toHaveLength(2)
+    const overflow = document.querySelector('.card-tags > span:not(.kanban-card-tag)') as HTMLElement
     expect(overflow).not.toBeNull()
     expect(overflow.textContent).toBe('+3')
     expect(overflow.getAttribute('title')).toBe('Entrega 02/12, Jornada 1, mobile')
@@ -99,7 +99,7 @@ describe('KanbanCard — layout das etiquetas', () => {
   test('a tag usa fundo tênue e ponto colorido no card', () => {
     renderCard({ itemTags: [tag('t1', 'backend', '#8b5cf6')] })
 
-    const tagElement = document.querySelector('[data-tag-id="t1"]') as HTMLElement
+    const tagElement = document.querySelector('.kanban-card-tag') as HTMLElement
     expect(tagElement.classList.contains('kanban-card-tag')).toBe(true)
     expect(tagElement.style.getPropertyValue('--tag-color')).toBe('#8b5cf6')
     const dot = tagElement.querySelector('.kanban-card-tag__dot') as HTMLElement

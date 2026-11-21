@@ -52,9 +52,6 @@ const STATUS_INDICATOR: Record<TaskStatus, string> = {
   ARCHIVED: 'border-l-slate-300 opacity-40',
 }
 
-/** Teto de tags visíveis no card; o restante vira `+N`. */
-const MAX_VISIBLE_TAGS = 2
-
 export interface CardData {
   id: string
   title: string
@@ -347,27 +344,25 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
         {(tags.length > 0 || card.type) && (
           <div className="card-label-row flex flex-col gap-1.5">
             {tags.length > 0 && (
-              <div className="card-tags flex min-w-0 items-center gap-1 overflow-hidden">
-                {tags.slice(0, MAX_VISIBLE_TAGS).map(({ tag }) => (
+              <div className="card-tags flex min-w-0 items-center gap-1">
+                {tags.slice(0, 2).map(({ tag }) => (
                   <span
                     key={tag.id}
-                    data-tag-id={tag.id}
                     title={tag.name}
-                    className="kanban-card-tag inline-flex h-5 min-w-0 max-w-[8.5rem] items-center gap-1 overflow-hidden whitespace-nowrap rounded-full border px-2 text-[11px] font-medium leading-none"
+                    className="kanban-card-tag inline-flex h-5 min-w-0 max-w-[8.5rem] items-center gap-1 whitespace-nowrap rounded-full border px-2 text-[11px] font-medium leading-none"
                     style={{ '--tag-color': tag.color } as React.CSSProperties}
                   >
                     <span className="kanban-card-tag__dot h-1.5 w-1.5 shrink-0 rounded-full" aria-hidden />
                     <span className="min-w-0 truncate">{tag.name}</span>
                   </span>
                 ))}
-                {tags.length > MAX_VISIBLE_TAGS && (
+                {tags.length > 2 && (
                   <span
-                    data-tag-overflow={tags.length - MAX_VISIBLE_TAGS}
-                    title={tags.slice(MAX_VISIBLE_TAGS).map(({ tag }) => tag.name).join(', ')}
-                    aria-label={`+${tags.length - MAX_VISIBLE_TAGS} ${t('tagsLabel')}`}
+                    title={tags.slice(2).map(({ tag }) => tag.name).join(', ')}
+                    aria-label={`+${tags.length - 2} ${t('tagsLabel')}`}
                     className="inline-flex h-5 shrink-0 items-center rounded-full border border-border bg-muted px-1.5 text-[11px] font-semibold leading-none text-muted-foreground"
                   >
-                    +{tags.length - MAX_VISIBLE_TAGS}
+                    +{tags.length - 2}
                   </span>
                 )}
               </div>
@@ -408,13 +403,13 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
           const subtasks = subtasksProgress && subtasksProgress.total > 0 ? subtasksProgress : null
           if (!checklist && percent === 0 && !subtasks) return null
           const checklistDone = checklist ? checklist.checked === checklist.total : false
+          const subtasksCount = subtasks ? t('progressSubtasksCount', { count: subtasks.total }) : ''
           return (
             <div className="checklist-progress space-y-1">
               {percent > 0 && (
                 <ProgressBar
                   value={percent}
                   label={t('progressAdvanceLabel', { percent })}
-                  valueText={t('progressAdvanceLabel', { percent })}
                 />
               )}
               {checklist && (
@@ -429,7 +424,6 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
                     tone="checklist"
                     value={checklistPercent}
                     label={t('progressChecklistLabel', { checked: checklist.checked, total: checklist.total, percent: checklistPercent })}
-                    className="min-w-0 flex-1"
                   />
                 </div>
               )}
@@ -437,13 +431,12 @@ export function KanbanCard({ card, onOpenDetail, onTitleSave, onDelete, onArchiv
                 <div className="flex items-center gap-1.5">
                   <GitBranch className="w-3 h-3 flex-shrink-0 text-muted-foreground" aria-hidden />
                   <span className="text-xs tabular-nums whitespace-nowrap text-muted-foreground">
-                    {t('progressSubtasksCount', { count: subtasks.total })} · {subtasks.advance}%
+                    {subtasksCount} · {subtasks.advance}%
                   </span>
                   <ProgressBar
                     tone="subtasks"
                     value={subtasks.advance}
-                    label={t('progressSubtasksLabel', { percent: subtasks.advance, countLabel: t('progressSubtasksCount', { count: subtasks.total }) })}
-                    className="min-w-0 flex-1"
+                    label={t('progressSubtasksLabel', { percent: subtasks.advance, countLabel: subtasksCount })}
                   />
                 </div>
               )}

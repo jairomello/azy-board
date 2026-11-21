@@ -876,6 +876,12 @@
 
 /* Barras secundárias do card: checklist e subtasks. Mais finas, sólidas e sem
    brilho/marcas para não competir com o progresso principal. */
+.progress-meter--checklist,
+.progress-meter--subtasks {
+  min-width: 0;
+  flex: 1;
+}
+
 .progress-meter--checklist .progress-meter__track,
 .progress-meter--subtasks .progress-meter__track {
   height: 4px;

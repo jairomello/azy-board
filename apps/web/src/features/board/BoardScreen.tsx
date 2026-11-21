@@ -49,7 +49,7 @@ import { BoardCommandBar } from '../../components/BoardCommandBar'
 import { BoardContextHeader, BoardStatusRail } from '../../components/BoardContext'
 import { countsForProgress, isProgressLeafType, itemsAdvance, type ItemType } from '@azy-board/domain'
 import { createCardAdvance, toProgressColumns } from './model/cardAdvance'
-import { subtasksProgressByParent, subtasksProgressForCard } from './model/subtaskProgress'
+import { subtasksProgressByParent } from './model/subtaskProgress'
 import { useBoardPreferences } from './hooks/useBoardPreferences'
 import { useBoardData } from './hooks/useBoardData'
 import { BoardLanes } from './components/BoardLanes'
@@ -856,7 +856,7 @@ export default function BoardPage() {
               <DragOverlay dropAnimation={dropAnimation}>
                 {activeCard && (
                   <div className={`board-drag-overlay__card${dragAnimation.reducedMotion ? ' board-drag-overlay__card--still' : ''}`}>
-                    <KanbanCard card={activeCard} advance={cardAdvance(activeCard) ?? undefined} subtasksProgress={subtasksProgressForCard(subtasksByParent, activeCard.id)} />
+                    <KanbanCard card={activeCard} advance={cardAdvance(activeCard) ?? undefined} subtasksProgress={subtasksByParent.get(activeCard.id) ?? null} />
                   </div>
                 )}
                 {isColumnDrag && activeId && (
