@@ -22,6 +22,10 @@ function Explosao({ mensagem }: { mensagem: string }): ReactNode {
   throw new Error(mensagem)
 }
 
+function ChunkQuebrado(): ReactNode {
+  throw new Error('Failed to fetch dynamically imported module: https://azyboard/assets/BoardPage-abc.js')
+}
+
 describe('AppErrorBoundary', () => {
   test('renderiza os filhos quando não há erro', () => {
     render(<AppErrorBoundary><span>conteúdo</span></AppErrorBoundary>)
@@ -56,5 +60,56 @@ describe('AppErrorBoundary', () => {
     await user.click(screen.getByRole('button', { name: /tentar novamente/i }))
 
     expect(screen.getByText('recuperado')).toBeInTheDocument()
+  })
+
+  test('falha de chunk vira aviso de build desatualizado e tenta recarga única', () => {
+    let recoveries = 0
+
+    render(
+      <AppErrorBoundary
+        isProduction
+        recoverStaleBuild={() => { recoveries += 1; return false }}
+      >
+        <ChunkQuebrado />
+      </AppErrorBoundary>,
+    )
+
+    expect(screen.getByText('Versão desatualizada')).toBeInTheDocument()
+    expect(screen.queryByText('Erro de renderização')).toBeNull()
+    expect(recoveries).toBe(1)
+  })
+
+  test('quando a trava bloqueia a recarga, o botão recarrega a página de verdade', async () => {
+    const user = userEvent.setup()
+    let reloads = 0
+
+    render(
+      <AppErrorBoundary
+        isProduction
+        recoverStaleBuild={() => false}
+        reloadPage={() => { reloads += 1 }}
+      >
+        <ChunkQuebrado />
+      </AppErrorBoundary>,
+    )
+
+    await user.click(screen.getByRole('button', { name: /recarregar página/i }))
+    expect(reloads).toBe(1)
+  })
+
+  test('erro comum não dispara recarga automática', () => {
+    let recoveries = 0
+
+    render(
+      <AppErrorBoundary
+        isProduction
+        recoverStaleBuild={() => { recoveries += 1; return true }}
+      >
+        <Explosao mensagem="falha local" />
+      </AppErrorBoundary>,
+    )
+
+    expect(recoveries).toBe(0)
+    expect(screen.getByText('Erro de renderização')).toBeInTheDocument()
   })
 })

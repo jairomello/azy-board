@@ -524,3 +524,34 @@ add_header X-Frame-Options "DENY" always;
 add_header X-Content-Type-Options "nosniff" always;
 add_header Referrer-Policy "no-referrer" always;
 ```
+
+#### Cache dos estáticos e 404 real
+
+Os assets do Vite têm hash de conteúdo no nome, então podem ficar em cache por
+muito tempo. O `index.html`, ao contrário, precisa ser revalidado em toda
+navegação: se o navegador reutiliza HTML de um build antigo, ele pede chunks que
+o deploy já removeu.
+
+Asset ausente **nunca** pode cair no fallback do SPA. Sem o `=404`, o nginx
+devolve `index.html` com `Content-Type: text/html` para um `.js` inexistente e o
+navegador recusa o módulo (verificação estrita de MIME), quebrando a tela com
+"Erro de renderização".
+
+```nginx
+# Cache longo para assets com hash; 404 real para build antigo.
+location /assets/ {
+  try_files $uri =404;
+  expires 1y;
+}
+
+# HTML sempre revalidado (Cache-Control: no-cache).
+location = /index.html {
+  expires -1;
+}
+```
+
+Não use `add_header` dentro dessas locations: no nginx, declarar `add_header` em
+um nível descarta os headers herdados do `server`, incluindo CSP e `nosniff`.
+Os dois templates versionados (`docker/nginx-web.conf.template` e
+`docker/nginx-web-cloudflare.conf.template`) aplicam essa política, e o teste
+`scripts/check-web-static-cache.test.ts` reprova se ela regredir.

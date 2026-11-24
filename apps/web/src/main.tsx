@@ -7,7 +7,12 @@ import './i18n/index'
 import './styles/globals.css'
 import { getEffectiveTheme, readAutoThemeByTime } from './lib/theme'
 import { queryClient } from './lib/queryClient'
+import { installStaleBuildRecovery } from './lib/staleBuild'
 import { DEFAULT_LIGHT_SHELL_THEME, isLightShellTheme, type Theme } from '@azy-board/ui-contracts'
+
+// Build substituído no servidor: falha de pré-carregamento de chunk/CSS tenta um
+// reload único antes de o import dinâmico rejeitar na tela.
+installStaleBuildRecovery()
 
 // Suporte a deploy path-based (ex.: /app/ atrás de um proxy reverso).
 // Quando publicado atrás de um proxy reverso que injeta window.__BASE_PATH__

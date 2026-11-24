@@ -78,6 +78,22 @@ server {
     proxy_set_header X-Forwarded-Proto $scheme;
   }
 
+  # Assets do Vite têm hash de conteúdo: o arquivo muda de nome quando muda de
+  # conteúdo, então pode ficar em cache por um ano. `=404` é essencial: sem ele,
+  # um asset de build antigo cairia em /index.html (text/html) e o navegador
+  # recusaria o módulo/CSS por verificação estrita de MIME.
+  location /assets/ {
+    try_files $uri =404;
+    expires 1y;
+  }
+
+  # O HTML precisa ser revalidado em toda navegação. Sem isso, o navegador pode
+  # reutilizar um index.html de build antigo e pedir chunks que já não existem.
+  # Não usamos `add_header` aqui para não descartar os headers do `server`.
+  location = /index.html {
+    expires -1;
+  }
+
   location / {
     try_files $uri $uri/ /index.html;
   }

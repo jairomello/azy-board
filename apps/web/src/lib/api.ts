@@ -132,7 +132,9 @@ async function executeRequest<T>(path: string, options: ApiRequestOptions): Prom
     timeout.cleanup()
   }
 
-  if (res.status === 401 && path !== '/auth/me') {
+  // Rotas públicas (`/auth/me` e `/version`) não devem expulsar o usuário para
+  // o login: a checagem de versão roda fora de uma ação do usuário.
+  if (res.status === 401 && path !== '/auth/me' && path !== '/version') {
     redirectToLogin()
   }
 

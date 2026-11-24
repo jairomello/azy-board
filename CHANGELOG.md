@@ -11,6 +11,16 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Fixed
 
+- **Aba aberta em build substituído deixa de quebrar com "Erro de
+  renderização".** Depois de um deploy, o bundle em memória pedia chunks com hash
+  antigo; o nginx respondia o `index.html` com `text/html` e o navegador recusava
+  o módulo por verificação estrita de MIME. Agora o nginx devolve 404 real para
+  asset ausente, mantém cache longo nos assets com hash e exige revalidação do
+  `index.html`. No web, falha de chunk dispara uma recarga única (com trava
+  contra loop), o boundary explica que a versão mudou e oferece recarga de
+  verdade, e um aviso não bloqueante aparece quando a API publica uma versão
+  nova — inclusive ao voltar o foco para a aba depois de muito tempo.
+
 - **Etiquetas do card em uma única linha, com truncamento e resumo `+N`.**
   Tags com nome composto (`Entrega 02/12`, `Jornada 1`) quebravam dentro da
   pílula e desalinhavam status e tipo. As tags agora ocupam uma faixa própria,

@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ToastProvider } from './components/Toast'
 import { AssistantProvider } from './contexts/AssistantContext'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
+import { BuildUpdateNotice } from './components/BuildUpdateNotice'
 import RootAssistantSettings from './components/RootAssistantSettings'
 
 const AzyAgentDrawer = lazy(() => import('./components/AzyAgentDrawer').then(module => ({ default: module.AzyAgentDrawer })))
@@ -47,6 +48,7 @@ export default function App() {
         </Routes>
       </Suspense>
       </AppErrorBoundary>
+      <BuildUpdateNotice />
       <Suspense fallback={null}>
         <AzyAgentDrawer />
       </Suspense>
