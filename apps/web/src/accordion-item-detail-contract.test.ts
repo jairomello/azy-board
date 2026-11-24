@@ -58,7 +58,7 @@ describe('contratos das seções accordion das modais', () => {
     expect(activity.includes('Registrar atividade')).toBe(false)
     contains(workLog, '/work-log?limit=100')
     contains(workLog, 'parseWorkDuration')
-    contains(children, 'STATUS_LABELS')
+    contains(children, 'taskStatusLabel(tCommon, child.status)')
     contains(children, 'line-clamp-2')
     contains(children, 'focus-visible:ring-2')
     contains(children, 'onOpenChild(child.id, child.type)')

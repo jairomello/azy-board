@@ -5,14 +5,6 @@ import type { CardData } from '../../../components/KanbanCard'
 import type { CostCenter, ProjectMember, ProjectVersion } from '../../../components/ItemModal'
 import type { Tag } from '../../../components/TagSelector'
 
-export const STATUS_LABEL: Partial<Record<TaskStatus, string>> = {
-  NOT_STARTED: 'Não iniciada',
-  IN_PROGRESS: 'Em andamento',
-  BLOCKED: 'Bloqueada',
-  DONE: 'Concluída',
-  CANCELLED: 'Cancelada',
-}
-
 export interface ArchivedItem {
   id: string
   type: ItemType

@@ -11,6 +11,15 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
 
 ### Fixed
 
+- **Modal do card lista os sete status e deixa de rotular Planejada e Em
+  homologação como Cancelada.** O seletor de Status era um array fixo com cinco
+  valores, embora o domínio e as colunas trabalhem com sete; o chip do cabeçalho
+  caía no último ramo do ternário e exibia "Cancelada" para `PLANNED` e
+  `IN_HOMOLOGATION`, e o painel de subtasks mostrava o código cru. Agora um
+  catálogo único (`lib/taskStatus.ts`) fornece as sete opções na ordem do fluxo e
+  o rótulo traduzido (`common:status.*`), usado na modal, no cabeçalho e nos
+  filhos; `ARCHIVED` continua fora do seletor.
+
 - **Aba aberta em build substituído deixa de quebrar com "Erro de
   renderização".** Depois de um deploy, o bundle em memória pedia chunks com hash
   antigo; o nginx respondia o `index.html` com `text/html` e o navegador recusava
