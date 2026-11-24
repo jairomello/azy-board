@@ -1,8 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Camera, Loader2, Trash2, X } from 'lucide-react'
 import { AppShell } from '../components/AppShell'
+import { AvatarCropDialog } from '../components/AvatarCropDialog'
+import { UserAvatar } from '../components/UserAvatar'
 import { api, isAbortError } from '../lib/api'
+import { isAcceptedAvatarFile, readFileAsDataUrl } from '../lib/avatarImage'
 import { queryKeys } from '../lib/queryKeys'
 import { useAuth } from '../contexts/AuthContext'
 import type { GlobalGroup } from '@azy-board/domain'
@@ -12,10 +16,12 @@ interface ManagedUsersPage { data: ManagedUser[]; page: number; limit: number; t
 const groups: GlobalGroup[] = ['TEAM_MEMBER', 'MANAGER', 'ADMIN', 'ROOT']
 const PAGE_SIZES = [25, 50, 100]
 const SEARCH_DEBOUNCE_MS = 250
+// Mesmos formatos aceitos pelo editor de foto do próprio perfil.
+const ACCEPTED_TYPES = 'image/png,image/jpeg,image/webp,image/gif,image/avif,image/bmp'
 
 export default function AdminUsersPage() {
   const { t } = useTranslation()
-  const { user } = useAuth()
+  const { user, updateAvatar, removeAvatar } = useAuth()
   const queryClient = useQueryClient()
   const key = queryKeys.adminUsers(user?.id)
   // Filtros e paginação no servidor: a lista pode crescer muito e não deve vir inteira.
@@ -46,6 +52,15 @@ export default function AdminUsersPage() {
   const [resetResult, setResetResult] = useState<{ user: ManagedUser; password: string } | null>(null)
   const [resetBusy, setResetBusy] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Gestão da foto: diálogo aberto pela miniatura, recorte reutilizado e confirmação de remoção.
+  const [photoTarget, setPhotoTarget] = useState<ManagedUser | null>(null)
+  const [photoSrc, setPhotoSrc] = useState<string | null>(null)
+  const [photoSaving, setPhotoSaving] = useState(false)
+  const [photoRemoving, setPhotoRemoving] = useState(false)
+  const [confirmingRemove, setConfirmingRemove] = useState(false)
+  const [photoError, setPhotoError] = useState('')
+  const photoInputRef = useRef<HTMLInputElement>(null)
+  const photoTriggerRef = useRef<HTMLButtonElement | null>(null)
   const canUseRoot = user?.globalGroup === 'ROOT'
   const canResetPassword = user?.globalGroup === 'ROOT'
   // Mutações no padrão reconciliado: o cache só muda após o sucesso (invalidação + refetch).
@@ -93,6 +108,90 @@ export default function AdminUsersPage() {
       setCopied(false)
     }
   }
+  // Foto de perfil: o Administrador pode incluir, substituir e remover a foto de qualquer
+  // usuário do tenant; na própria linha, delega ao fluxo de autoatendimento do AuthContext.
+  function openPhotoDialog(item: ManagedUser, trigger: HTMLButtonElement) {
+    photoTriggerRef.current = trigger
+    setPhotoTarget(item)
+    setPhotoError('')
+    setConfirmingRemove(false)
+  }
+  function closePhotoDialog() {
+    setPhotoTarget(null)
+    setPhotoSrc(null)
+    setConfirmingRemove(false)
+    setPhotoError('')
+    // Devolve o foco ao botão da miniatura que abriu o diálogo.
+    photoTriggerRef.current?.focus()
+  }
+  async function handlePhotoFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    // Permite escolher o mesmo arquivo novamente depois.
+    event.target.value = ''
+    if (!file) return
+    if (!isAcceptedAvatarFile(file)) {
+      setPhotoError(t('adminUsers.photoInvalidType'))
+      return
+    }
+    try {
+      setPhotoError('')
+      setPhotoSrc(await readFileAsDataUrl(file))
+    } catch {
+      setPhotoError(t('adminUsers.photoUpdateFailed'))
+    }
+  }
+  async function savePhoto(blob: Blob) {
+    if (!photoTarget) return
+    const target = photoTarget
+    setPhotoSaving(true)
+    setPhotoError('')
+    try {
+      if (target.id === user?.id) {
+        await updateAvatar(blob)
+      } else {
+        const form = new FormData()
+        form.append('file', blob, 'avatar.webp')
+        await api.upload(`/users/${target.id}/avatar`, form)
+      }
+      setPhotoSrc(null)
+      await invalidate()
+      setMessage(t('adminUsers.photoUpdated', { name: target.name }))
+      closePhotoDialog()
+    } catch (e) {
+      if (!isAbortError(e)) setPhotoError(e instanceof Error ? e.message : t('adminUsers.photoUpdateFailed'))
+    } finally {
+      setPhotoSaving(false)
+    }
+  }
+  async function removePhoto() {
+    if (!photoTarget) return
+    const target = photoTarget
+    setPhotoRemoving(true)
+    setPhotoError('')
+    try {
+      if (target.id === user?.id) {
+        await removeAvatar()
+      } else {
+        await api.delete(`/users/${target.id}/avatar`)
+      }
+      await invalidate()
+      setMessage(t('adminUsers.photoRemoved', { name: target.name }))
+      closePhotoDialog()
+    } catch (e) {
+      if (!isAbortError(e)) setPhotoError(e instanceof Error ? e.message : t('adminUsers.photoRemoveFailed'))
+    } finally {
+      setPhotoRemoving(false)
+    }
+  }
+  useEffect(() => {
+    if (!photoTarget) return
+    function handleKey(event: KeyboardEvent) {
+      // Com o recorte aberto, o Escape pertence ao editor de foto.
+      if (event.key === 'Escape' && !photoSrc) closePhotoDialog()
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [photoTarget, photoSrc])
   const loadError = usersQuery.error && !isAbortError(usersQuery.error) ? (usersQuery.error instanceof Error ? usersQuery.error.message : t('adminUsers.accessDenied')) : ''
   const groupLabels: Record<GlobalGroup, string> = { TEAM_MEMBER: t('adminUsers.groups.teamMember'), MANAGER: t('adminUsers.groups.manager'), ADMIN: t('adminUsers.groups.admin'), ROOT: t('adminUsers.groups.root') }
   return <AppShell sectionLabel={t('admin')} contextLabel={t('adminUsers.context')} contentClassName="overflow-y-auto"><div className="max-w-5xl mx-auto py-6 sm:py-9 space-y-5">
@@ -109,10 +208,10 @@ export default function AdminUsersPage() {
          {PAGE_SIZES.map(size => <option key={size} value={size}>{t('adminUsers.pageSizeOption', { count: size })}</option>)}
        </select>
      </div>
-     <div className="bg-card border border-border rounded-xl overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-border text-left text-muted-foreground"><th className="p-4">{t('users')}</th><th className="p-4">{t('adminUsers.email')}</th><th className="p-4">{t('adminUsers.group')}</th>{canResetPassword && <th className="p-4">{t('adminUsers.actions')}</th>}</tr></thead><tbody>
-       {usersQuery.isLoading && <tr><td colSpan={canResetPassword ? 4 : 3} className="p-4 text-muted-foreground">{t('loading')}</td></tr>}
-       {!usersQuery.isLoading && users.length === 0 && <tr><td colSpan={canResetPassword ? 4 : 3} className="p-4 text-muted-foreground">{t('adminUsers.usersEmpty')}</td></tr>}
-       {users.map(item => <tr key={item.id} className="border-b border-border last:border-0"><td className="p-4 font-medium">{item.name}</td><td className="p-4 text-muted-foreground">{item.email}</td><td className="p-4"><select aria-label={t('adminUsers.userGroup', { name: item.name })} disabled={item.id === user?.id} value={item.globalGroup} onChange={e => void changeGroup(item.id, e.target.value as GlobalGroup)} className="rounded-lg border border-input bg-background px-2 py-1">{groups.filter(g => canUseRoot || g !== 'ROOT').map(g => <option key={g} value={g}>{groupLabels[g]}</option>)}</select></td>{canResetPassword && <td className="p-4"><button type="button" onClick={() => { setCopied(false); setResetTarget(item) }} className="rounded-lg border border-input px-3 py-1.5 text-xs font-semibold hover:bg-accent">{t('adminUsers.resetPassword')}</button></td>}</tr>)}
+     <div className="bg-card border border-border rounded-xl overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-border text-left text-muted-foreground"><th className="p-4 w-12"><span className="sr-only">{t('adminUsers.photo')}</span></th><th className="p-4">{t('users')}</th><th className="p-4">{t('adminUsers.email')}</th><th className="p-4">{t('adminUsers.group')}</th>{canResetPassword && <th className="p-4">{t('adminUsers.actions')}</th>}</tr></thead><tbody>
+       {usersQuery.isLoading && <tr><td colSpan={canResetPassword ? 5 : 4} className="p-4 text-muted-foreground">{t('loading')}</td></tr>}
+       {!usersQuery.isLoading && users.length === 0 && <tr><td colSpan={canResetPassword ? 5 : 4} className="p-4 text-muted-foreground">{t('adminUsers.usersEmpty')}</td></tr>}
+       {users.map(item => <tr key={item.id} className="border-b border-border last:border-0"><td className="p-4 pr-0 w-12"><button type="button" onClick={event => openPhotoDialog(item, event.currentTarget)} aria-label={t('adminUsers.photoOf', { name: item.name })} className="inline-flex rounded-full transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"><UserAvatar user={item} size="sm" /></button></td><td className="p-4 font-medium">{item.name}</td><td className="p-4 text-muted-foreground">{item.email}</td><td className="p-4"><select aria-label={t('adminUsers.userGroup', { name: item.name })} disabled={item.id === user?.id} value={item.globalGroup} onChange={e => void changeGroup(item.id, e.target.value as GlobalGroup)} className="rounded-lg border border-input bg-background px-2 py-1">{groups.filter(g => canUseRoot || g !== 'ROOT').map(g => <option key={g} value={g}>{groupLabels[g]}</option>)}</select></td>{canResetPassword && <td className="p-4"><button type="button" onClick={() => { setCopied(false); setResetTarget(item) }} className="rounded-lg border border-input px-3 py-1.5 text-xs font-semibold hover:bg-accent">{t('adminUsers.resetPassword')}</button></td>}</tr>)}
      </tbody></table></div>
      <div className="flex flex-wrap items-center justify-between gap-3">
        <p className="text-sm text-muted-foreground">{t('adminUsers.showing', { from, to, total })}</p>
@@ -142,6 +241,38 @@ export default function AdminUsersPage() {
            <button type="button" onClick={() => void copyPassword()} className="rounded-lg border border-input px-3 py-2 text-sm font-semibold">{copied ? t('adminUsers.passwordCopied') : t('adminUsers.copyPassword')}</button>
            <button type="button" onClick={() => setResetResult(null)} className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground">{t('adminUsers.close')}</button>
          </div>
+       </div>
+     </div>}
+     {photoTarget && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="presentation">
+       <div role="dialog" aria-modal="true" aria-labelledby="admin-user-photo-title" className="w-full max-w-md rounded-xl border border-border bg-card p-5 space-y-4">
+         <div className="flex items-start justify-between gap-3">
+           <h3 id="admin-user-photo-title" className="text-lg font-bold text-foreground">{t('adminUsers.photoDialogTitle', { name: photoTarget.name })}</h3>
+           <button type="button" onClick={closePhotoDialog} aria-label={t('adminUsers.close')} className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition"><X className="w-4 h-4" /></button>
+         </div>
+         <div className="flex items-center gap-4">
+           <UserAvatar user={photoTarget} size="lg" />
+           <div className="flex flex-col sm:flex-row gap-2">
+             <button type="button" onClick={() => photoInputRef.current?.click()} disabled={photoSaving || photoRemoving} className="h-9 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border border-border text-foreground hover:bg-muted transition disabled:opacity-50">
+               {photoSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+               {photoTarget.avatarUrl ? t('adminUsers.photoChange') : t('adminUsers.photoInclude')}
+             </button>
+             {photoTarget.avatarUrl && <button type="button" onClick={() => setConfirmingRemove(true)} disabled={photoSaving || photoRemoving} className="h-9 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition disabled:opacity-50">
+               {photoRemoving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+               {t('adminUsers.photoRemove')}
+             </button>}
+           </div>
+         </div>
+         {confirmingRemove && <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-3">
+           <p className="text-sm text-muted-foreground">{t('adminUsers.photoRemoveConfirm', { name: photoTarget.name })}</p>
+           <div className="flex justify-end gap-2">
+             <button type="button" onClick={() => setConfirmingRemove(false)} disabled={photoRemoving} className="rounded-lg border border-input px-3 py-2 text-sm font-semibold">{t('adminUsers.cancel')}</button>
+             <button type="button" onClick={() => void removePhoto()} disabled={photoRemoving} className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60">{t('adminUsers.photoRemoveConfirmAction')}</button>
+           </div>
+         </div>}
+         {photoError && <p role="alert" className="rounded-lg bg-red-50 text-red-700 p-3 text-sm">{photoError}</p>}
+         <p className="text-xs text-muted-foreground">{t('adminUsers.photoHint')}</p>
+         <input ref={photoInputRef} type="file" accept={ACCEPTED_TYPES} aria-label={t('adminUsers.photoChooseFile')} className="hidden" onChange={event => void handlePhotoFile(event)} />
+         <AvatarCropDialog open={photoSrc !== null} imageSrc={photoSrc} saving={photoSaving} onCancel={() => setPhotoSrc(null)} onConfirm={blob => void savePhoto(blob)} />
        </div>
      </div>}
    </div></AppShell>

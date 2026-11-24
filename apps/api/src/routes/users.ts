@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
+import type { GlobalGroup } from '@azy-board/domain'
 import { isLightShellTheme, type Language, type LightShellTheme, type Theme } from '@azy-board/ui-contracts'
 import { authMiddleware, requireGlobalGroup } from '../middleware/auth'
 import { hasGlobalGroup, hashPassword, isGlobalGroup, verifyPassword } from '../services/auth'
@@ -220,65 +221,151 @@ usersRouter.patch('/me/password', async (c) => {
   return c.json({ ok: true })
 })
 
-// PUT /users/me/avatar — upload multipart da foto de perfil
-// Fluxo: valida assinatura/tamanho → normaliza 256x256 sem metadados → grava no
-// AvatarStore dedicado (separado dos anexos) → atualiza users.avatar_url versionado.
-usersRouter.put('/me/avatar', async (c) => {
-  const ctx = c.get('ctx') as RequestContext
+// Usuário público devolvido pela Administração de usuários (mesmo shape da listagem).
+interface ManagedUserSummary {
+  id: string
+  email: string
+  name: string
+  avatarUrl: string | null
+  globalGroup: GlobalGroup
+}
 
+type AvatarErrorStatus = 400 | 404 | 413 | 415
+
+type AvatarFailure = { ok: false; status: AvatarErrorStatus; body: { error: string; code: string; retryable: false } }
+type AvatarSuccess = { ok: true; user: ManagedUserSummary }
+
+function avatarFailure(status: AvatarErrorStatus, error: string, code: string): AvatarFailure {
+  return { ok: false, status, body: { error, code, retryable: false } }
+}
+
+// Lê o multipart da foto de perfil, recusando envio inválido antes de tocar no banco.
+async function readAvatarUpload(c: Context<HonoEnv>): Promise<{ ok: true; file: File } | AvatarFailure> {
   let form: FormData
   try {
     form = await c.req.formData()
   } catch {
-    return c.json({ error: 'Envio inválido: esperado multipart/form-data', code: 'INVALID_REQUEST', retryable: false }, 400)
+    return avatarFailure(400, 'Envio inválido: esperado multipart/form-data', 'INVALID_REQUEST')
   }
-
   const file = form.get('file')
   if (!file || typeof file === 'string') {
-    return c.json({ error: 'Arquivo de imagem não informado', code: 'INVALID_REQUEST', retryable: false }, 400)
+    return avatarFailure(400, 'Arquivo de imagem não informado', 'INVALID_REQUEST')
   }
+  return { ok: true, file }
+}
+
+// Grava a foto do usuário alvo (próprio ou indicado pelo Admin), sempre no tenant ativo.
+// Fluxo: valida tamanho → busca o alvo no tenant → normaliza 256x256 sem metadados →
+// grava no AvatarStore dedicado → atualiza users.avatar_url versionado.
+async function saveAvatarForTarget(ctx: RequestContext, targetUserId: string, file: File): Promise<AvatarSuccess | AvatarFailure> {
   if (file.size > MAX_AVATAR_SIZE) {
-    return c.json({ error: 'Imagem acima do tamanho máximo permitido', code: 'PAYLOAD_TOO_LARGE', retryable: false }, 413)
+    return avatarFailure(413, 'Imagem acima do tamanho máximo permitido', 'PAYLOAD_TOO_LARGE')
   }
+  // [TENANT] Alvo explícito sempre filtrado pelo tenant ativo (anti-IDOR).
+  const target = await persistence.identity.findUser(userPersistenceContext(ctx), targetUserId)
+  if (!target) return avatarFailure(404, 'Usuário não encontrado', 'NOT_FOUND')
 
   try {
-    const input = Buffer.from(await file.arrayBuffer())
-    const normalized = await normalizeAvatar(input)
+    const normalized = await normalizeAvatar(Buffer.from(await file.arrayBuffer()))
     const { url } = await avatarStore.save({
-      // [TENANT] Gravação restrita ao tenant e usuário da sessão.
+      // [TENANT] Gravação restrita ao tenant ativo e ao usuário alvo.
       tenantId: ctx.tenantId,
-      userId: ctx.userId,
+      userId: targetUserId,
       mimeType: normalized.mimeType,
       width: normalized.width,
       height: normalized.height,
       contentHash: normalized.contentHash,
       data: normalized.data,
     })
-    // [TENANT] Atualiza o ponteiro público apenas no próprio usuário do tenant.
-    await persistence.identity.updateAvatarUrl(userPersistenceContext(ctx), ctx.userId, url)
+    // [TENANT] Atualiza o ponteiro público apenas no usuário alvo do tenant.
+    await persistence.identity.updateAvatarUrl(userPersistenceContext(ctx), targetUserId, url)
   } catch (error) {
     if (error instanceof AvatarValidationError) {
       const status = error.code === 'IMAGE_TOO_LARGE' ? 413 : 415
-      return c.json({ error: error.message, code: error.code, retryable: false }, status)
+      return avatarFailure(status, error.message, error.code)
     }
     throw error
   }
+
+  const updated = await persistence.identity.findUser(userPersistenceContext(ctx), targetUserId)
+  if (!updated) return avatarFailure(404, 'Usuário não encontrado', 'NOT_FOUND')
+  return {
+    ok: true,
+    user: { id: updated.id, email: updated.email, name: updated.name, avatarUrl: updated.avatarUrl, globalGroup: updated.globalGroup },
+  }
+}
+
+// Remove a foto do usuário alvo, sempre no tenant ativo, e devolve o resumo atualizado.
+async function removeAvatarForTarget(ctx: RequestContext, targetUserId: string): Promise<AvatarSuccess | AvatarFailure> {
+  // [TENANT] Alvo explícito sempre filtrado pelo tenant ativo (anti-IDOR).
+  const target = await persistence.identity.findUser(userPersistenceContext(ctx), targetUserId)
+  if (!target) return avatarFailure(404, 'Usuário não encontrado', 'NOT_FOUND')
+
+  // [TENANT] Remoção restrita ao tenant ativo e ao usuário alvo.
+  await avatarStore.remove(ctx.tenantId, targetUserId)
+  await persistence.identity.updateAvatarUrl(userPersistenceContext(ctx), targetUserId, null)
+
+  const updated = await persistence.identity.findUser(userPersistenceContext(ctx), targetUserId)
+  if (!updated) return avatarFailure(404, 'Usuário não encontrado', 'NOT_FOUND')
+  return {
+    ok: true,
+    user: { id: updated.id, email: updated.email, name: updated.name, avatarUrl: updated.avatarUrl, globalGroup: updated.globalGroup },
+  }
+}
+
+// PUT /users/me/avatar — upload multipart da foto de perfil (autoatendimento)
+usersRouter.put('/me/avatar', async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const upload = await readAvatarUpload(c)
+  if (!upload.ok) return c.json(upload.body, upload.status)
+
+  const saved = await saveAvatarForTarget(ctx, ctx.userId, upload.file)
+  if (!saved.ok) return c.json(saved.body, saved.status)
 
   const user = await loadSelfUser(ctx.tenantId, ctx.userId)
   if (!user) return c.json({ error: 'Usuário não encontrado' }, 404)
   return c.json({ user })
 })
 
-// DELETE /users/me/avatar — remove a foto e volta ao avatar por iniciais
+// PUT /users/:userId/avatar — Admin/Root incluem ou substituem a foto de outro usuário.
+// Registrada depois de /me/avatar para preservar a rota literal de autoatendimento.
+usersRouter.put('/:userId/avatar', requireGlobalGroup('ADMIN'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const targetUserId = c.req.param('userId')
+  if (!targetUserId) return c.json({ error: 'Usuário não especificado' }, 400)
+
+  const upload = await readAvatarUpload(c)
+  if (!upload.ok) return c.json(upload.body, upload.status)
+
+  const saved = await saveAvatarForTarget(ctx, targetUserId, upload.file)
+  if (!saved.ok) return c.json(saved.body, saved.status)
+
+  logger.info('foto de perfil alterada por administrador', { actorUserId: ctx.userId, targetUserId, operation: 'UPDATE' })
+  return c.json({ user: saved.user })
+})
+
+// DELETE /users/me/avatar — remove a foto e volta ao avatar por iniciais (autoatendimento)
 usersRouter.delete('/me/avatar', async (c) => {
   const ctx = c.get('ctx') as RequestContext
-  // [TENANT] Remoção escopada ao tenant/usuário da sessão.
-  await avatarStore.remove(ctx.tenantId, ctx.userId)
-  await persistence.identity.updateAvatarUrl(userPersistenceContext(ctx), ctx.userId, null)
+  const removed = await removeAvatarForTarget(ctx, ctx.userId)
+  if (!removed.ok) return c.json(removed.body, removed.status)
 
   const user = await loadSelfUser(ctx.tenantId, ctx.userId)
   if (!user) return c.json({ error: 'Usuário não encontrado' }, 404)
   return c.json({ user })
+})
+
+// DELETE /users/:userId/avatar — Admin/Root removem a foto de outro usuário.
+usersRouter.delete('/:userId/avatar', requireGlobalGroup('ADMIN'), async (c) => {
+  const ctx = c.get('ctx') as RequestContext
+  const targetUserId = c.req.param('userId')
+  if (!targetUserId) return c.json({ error: 'Usuário não especificado' }, 400)
+
+  const removed = await removeAvatarForTarget(ctx, targetUserId)
+  if (!removed.ok) return c.json(removed.body, removed.status)
+
+  logger.info('foto de perfil removida por administrador', { actorUserId: ctx.userId, targetUserId, operation: 'DELETE' })
+  return c.json({ user: removed.user })
 })
 
 // GET /users/:userId/avatar — serving autenticado, cacheável e sem rota estática
