@@ -542,6 +542,108 @@ async function main() {
     assert(colunaDoItem(movido) === vagasLane[0]!.coluna.split(':col:')[1], `o card não foi persistido na coluna da vaga (${colunaDoItem(movido)})`)
     ok('a posição escolhida na lane foi persistida')
 
+    // ── 7. Unificado com rolagem horizontal ────────────────────────────────
+    // Defeito: a prévia usava a geometria medida na largada; ao rolar a faixa
+    // durante o arraste, a vaga mirava a coluna que estava ali ANTES (fora da
+    // tela) e a soltura persistia a coluna errada. O fluxo de 7 colunas só
+    // cabe inteiro em telas largas, então a rolagem é o caminho normal.
+    await page.setViewportSize({ width: 1024, height: 700 })
+    await page.goto(`${webUrl}/projects`)
+    await createProject(page, 'Arraste no Unificado', 'HIERARCHICAL')
+    await openBoardOf(page, 'Arraste no Unificado')
+    const projetoUnificado = projectIdFromUrl(page)
+    const moduloUnificado = await page.request.post(`${apiUrl}/api/projects/${projetoUnificado}/modules`, { data: { name: 'Módulo do Unificado' } })
+    assert(moduloUnificado.ok(), `POST modules respondeu ${moduloUnificado.status()}`)
+    const epicoUnificado = await page.request.post(`${apiUrl}/api/projects/${projetoUnificado}/items`, {
+      data: { title: 'Épico do Unificado', type: 'EPIC', moduleId: (await moduloUnificado.json() as { id: string }).id },
+    })
+    assert(epicoUnificado.ok(), `POST épico respondeu ${epicoUnificado.status()}`)
+    const historiaUnificada = await page.request.post(`${apiUrl}/api/projects/${projetoUnificado}/items`, {
+      data: { title: 'História do Unificado', type: 'STORY', parentId: (await epicoUnificado.json() as { id: string }).id },
+    })
+    assert(historiaUnificada.ok(), `POST história respondeu ${historiaUnificada.status()}`)
+    const historiaUnificadaId = (await historiaUnificada.json() as { id: string }).id
+    const colunasUnificado = await (await page.request.get(`${apiUrl}/api/projects/${projetoUnificado}/columns`)).json() as Array<{ id: string; name: string }>
+    for (const [titulo, coluna] of [['Card do Unificado', colunasUnificado[0]!], ['Card da Última Coluna', colunasUnificado.at(-1)!]] as const) {
+      const criado = await page.request.post(`${apiUrl}/api/projects/${projetoUnificado}/items`, {
+        data: { title: titulo, type: 'TASK', parentId: historiaUnificadaId, columnId: coluna.id },
+      })
+      assert(criado.ok(), `POST card ${titulo} respondeu ${criado.status()}`)
+    }
+    await page.reload()
+    await page.getByText('Card do Unificado', { exact: true }).first().waitFor({ timeout: 20_000 })
+    await page.getByRole('button', { name: 'Unificado', exact: true }).click()
+    await page.getByText('Card do Unificado', { exact: true }).first().waitFor({ timeout: 15_000 })
+    await page.waitForTimeout(300)
+
+    const larguraDoQuadro = page.viewportSize()!.width
+    // Segura perto da borda para o auto-scroll agir; depois reposiciona sobre a
+    // última coluna visível com a geometria já rolada.
+    const bordaDoUnificado = larguraDoQuadro - 24
+    const inicioDoUnificado = await iniciarArraste(page, 'Card do Unificado')
+    // Segura o ponteiro na borda até o dnd-kit rolar a faixa de colunas.
+    await page.mouse.move(bordaDoUnificado, inicioDoUnificado.y + 40, { steps: 12 })
+    for (let tentativa = 0; tentativa < 10; tentativa++) {
+      await page.mouse.move(bordaDoUnificado, inicioDoUnificado.y + 40, { steps: 2 })
+      await page.waitForTimeout(150)
+    }
+    const rolagemDoUnificado = await page.evaluate(() => {
+      const lista = document.querySelector<HTMLElement>('[data-board-layout="unified"] .overflow-x-auto')
+      return { scrollLeft: Math.round(lista?.scrollLeft ?? 0), clientWidth: lista?.clientWidth ?? 0 }
+    })
+    assert(rolagemDoUnificado.scrollLeft > 0, `a faixa deveria ter rolado durante o arraste: ${JSON.stringify(rolagemDoUnificado)}`)
+    ok(`no Unificado a faixa rola durante o arraste (${rolagemDoUnificado.scrollLeft}px)`)
+
+    const alvosVisiveis = (await colunas(page)).filter(alvo => alvo.rect.x >= 0 && alvo.rect.x < larguraDoQuadro)
+    assert(alvosVisiveis.length > 0, 'nenhuma coluna visível depois da rolagem')
+    const ultimaVisivel = alvosVisiveis.at(-1)!
+    await page.mouse.move(ultimaVisivel.rect.x + ultimaVisivel.rect.width / 2, ultimaVisivel.rect.y + 80, { steps: 10 })
+    await page.waitForTimeout(300)
+
+    const vagaDoUnificado = await page.evaluate(() => {
+      const vaga = document.querySelector<HTMLElement>('.kanban-card-placeholder')
+      if (!vaga) return null
+      const caixa = vaga.getBoundingClientRect()
+      return {
+        x: Math.round(caixa.x),
+        dentroDaTela: caixa.x >= 0 && caixa.x < window.innerWidth,
+        coluna: vaga.closest('[data-drop-id]')?.getAttribute('data-drop-id') ?? null,
+      }
+    })
+    if (!vagaDoUnificado) {
+      console.log('  · início do arraste:', JSON.stringify(inicioDoUnificado))
+      const diagnostico = await page.evaluate(([px, py]: [number, number]) => {
+        const lista = document.querySelector<HTMLElement>('[data-board-layout="unified"] .overflow-x-auto')
+        return {
+          scrollLeft: Math.round(lista?.scrollLeft ?? 0),
+          vagas: document.querySelectorAll('.kanban-card-placeholder').length,
+          arrastando: document.querySelectorAll('.kanban-card--dragging').length,
+          overlay: document.querySelectorAll('.board-drag-overlay__card').length,
+          noPonto: document.elementFromPoint(px, py)?.closest('[data-drop-id]')?.getAttribute('data-drop-id') ?? 'fora',
+          canvas: { top: Math.round(document.querySelector<HTMLElement>('.board-canvas')?.scrollTop ?? 0) },
+          alvos: Array.from(document.querySelectorAll('[data-drop-id]')).map(elemento => {
+            const caixa = elemento.getBoundingClientRect()
+            return `${elemento.getAttribute('data-drop-id')}:x${Math.round(caixa.x)}..${Math.round(caixa.right)} y${Math.round(caixa.y)}..${Math.round(caixa.bottom)}`
+          }),
+          ponto: { px, py },
+        }
+      }, [bordaDoUnificado, inicioDoUnificado.y + 40])
+      console.log('  · diagnóstico:', JSON.stringify(diagnostico))
+    }
+    assert(vagaDoUnificado, 'a vaga desapareceu com a coluna sob o ponteiro')
+    assert(vagaDoUnificado!.coluna === ultimaVisivel.id, `a vaga deveria estar em ${ultimaVisivel.id}, veio ${vagaDoUnificado!.coluna}`)
+    assert(vagaDoUnificado!.dentroDaTela, `a vaga ficou fora da tela (x=${vagaDoUnificado!.x})`)
+    ok('a vaga acompanha a coluna sob o ponteiro depois da rolagem, dentro da tela')
+    // A vaga precisa estar na coluna visível depois da rolagem, não na que
+    // ocupava aquela coordenada antes (o defeito desenhava a vaga em x negativo).
+
+    await page.mouse.up()
+    await page.waitForTimeout(800)
+    const movidoNoUnificado = (await fetchItems(page, projetoUnificado)).find(item => item.title === 'Card do Unificado')
+    assert(colunaDoItem(movidoNoUnificado) === ultimaVisivel.id.split(':col:')[1],
+      `o card deveria persistir na última coluna (${ultimaVisivel.id}), ficou em ${colunaDoItem(movidoNoUnificado)}`)
+    ok('a soltura depois da rolagem persiste a coluna que estava sob o ponteiro')
+
     console.log(`\nVerificação do arraste: ${resultados.length} checagens verdes.`)
     console.log(`Capturas em ${outDir}`)
     if (indice === 0) throw new Error('cruzamentos não executados')

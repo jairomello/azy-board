@@ -5,12 +5,15 @@ import {
   DROP_SETTLE_MS,
   REDUCED_MOTION_MS,
   activatorPointer,
+  adjustPointerForScroll,
   dropDuration,
   planDropAnimation,
   pointerFromDrag,
   prefersReducedMotion,
   resolveDragTarget,
+  scrollDeltaSince,
   toTranslateKeyframe,
+  type DragScrollOrigin,
   type DragTarget,
 } from './model/dragAnimation'
 
@@ -91,5 +94,29 @@ describe('contrato da animação de arraste', () => {
     expect(toTranslateKeyframe({ x: 0, y: 0 })).toEqual({ transform: 'translate3d(0px, 0px, 0)' })
     expect(toTranslateKeyframe({ x: 5, y: 5 }).transform).not.toContain('scale')
     expect(toTranslateKeyframe({ x: 5, y: 5 }).transform).not.toContain('rotate')
+  })
+})
+
+describe('contrato da prévia com o quadro rolado', () => {
+  test('soma a rolagem dos containers desde a largada', () => {
+    const canvas = { scrollLeft: 20, scrollTop: 60 }
+    const faixa = { scrollLeft: 936, scrollTop: 0 }
+    const origins: DragScrollOrigin[] = [
+      { element: canvas as unknown as HTMLElement, left: 0, top: 100 },
+      { element: faixa as unknown as HTMLElement, left: 0, top: 0 },
+    ]
+    expect(scrollDeltaSince(origins)).toEqual({ x: 956, y: -40 })
+  })
+
+  test('sem rolagem o deslocamento é zero', () => {
+    const elemento = { scrollLeft: 12, scrollTop: 34 }
+    expect(scrollDeltaSince([{ element: elemento as unknown as HTMLElement, left: 12, top: 34 }])).toEqual({ x: 0, y: 0 })
+    expect(scrollDeltaSince([])).toEqual({ x: 0, y: 0 })
+  })
+
+  test('reprojeta o ponteiro pela rolagem acumulada, nos dois eixos', () => {
+    expect(adjustPointerForScroll({ x: 100, y: 50 }, { x: 936, y: -40 })).toEqual({ x: 1036, y: 10 })
+    expect(adjustPointerForScroll({ x: 100, y: 50 }, { x: -200, y: 120 })).toEqual({ x: -100, y: 170 })
+    expect(adjustPointerForScroll({ x: 100, y: 50 }, { x: 0, y: 0 })).toEqual({ x: 100, y: 50 })
   })
 })
