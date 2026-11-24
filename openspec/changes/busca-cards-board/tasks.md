@@ -59,5 +59,5 @@
 ## 8. Encerramento
 
 - [x] 8.1 Apresentar diff, evidências e instruções de teste ao Lincoln.
-- [ ] 8.2 Aguardar autorização explícita antes de qualquer push ou PR.
+- [x] 8.2 Autorização explícita recebida após teste local; push e PR liberados.
 - [ ] 8.3 Após aprovação e merge, arquivar a change OpenSpec e concluir o T92 com tokens registrados.
