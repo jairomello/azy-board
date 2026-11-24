@@ -81,6 +81,13 @@ import { VIEW_COMMAND_SCHEMA_VERSION, type AssistantPlanningResult } from '@azy-
 
 // O editor de mapeamento (drag-and-drop) é carregado sob demanda para não
 // entrar no orçamento dos chunks principais da board.
+// T92 — o campo de busca é carregado sob demanda para manter o BoardPage no
+// orçamento de bundle. O fallback reserva o espaço do input no header.
+const CardSearchHeader = lazy(async () => {
+  const module = await import('../../components/CardSearchHeader')
+  return { default: module.default }
+})
+
 const ExportDialog = lazy(async () => {
   const [{ default: i18n }, pt, en, es] = await Promise.all([
     import('../../i18n'),
@@ -101,6 +108,10 @@ function measureRect(element: Element | null): DragTargetRect | null {
   const { left, right, top, bottom } = element.getBoundingClientRect()
   return { left, right, top, bottom }
 }
+
+// T92 — durante a busca as lanes são expandidas sem alterar a preferência
+// persistida de recolhimento do usuário.
+const EMPTY_ID_SET = new Set<string>()
 
 /** Nó do card pelo id; o overlay também tem `data-card-id`, então o primeiro serve. */
 function cardNode(activeId: string): Element | null {
@@ -157,6 +168,10 @@ export default function BoardPage() {
   } = useBoardPreferences(projectId)
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null)
   const [view, setView] = useState<BoardView>('kanban')
+  // T92 — busca no header, independente da visão. Não entra em BoardFilterState:
+  // limpar a busca restaura a visão filtrada sem mexer nos filtros.
+  const [searchQuery, setSearchQuery] = useState('')
+  const searchActive = searchQuery.trim().length > 0
   // Card T26 — recorte fixado de um resultado de lacunas; escopa a exibição ao
   // conjunto exato sem reconverter a expressão em filtros do toolbar.
   const [pinnedResult, setPinnedResult] = useState<AssistantPlanningResult | null>(() => projectId ? readPinnedResult(projectId) : null)
@@ -182,6 +197,9 @@ export default function BoardPage() {
     const itemId = searchParams.get('itemId')
     if (itemId && allItems.some(item => item.id === itemId)) setItemModalId(itemId)
   }, [allItems, searchParams])
+
+  // T92 — a busca é do projeto, não da sessão anterior: trocar de projeto limpa.
+  useEffect(() => { setSearchQuery('') }, [projectId])
 
   // Card T26 — assina o recorte fixado por aba e projeto.
   useEffect(() => {
@@ -338,14 +356,23 @@ export default function BoardPage() {
   const activeSprintId = useMemo(() => sprints.find(sprint => sprint.status === 'OPEN')?.id ?? null, [sprints])
 
   const boardCards = useMemo(() => selectBoardCards({
-    allItems: scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId,
-  }), [scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId])
+    allItems: scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId, searchQuery,
+  }), [scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId, searchQuery])
 
   // B19 — população de progresso: folhas de qualquer tipo, com os mesmos filtros dos cards.
   // Alimenta cabeçalho, módulos e lanes para baterem com a árvore e o dashboard.
   const progressCards = useMemo(() => selectProgressPopulation({
-    allItems: scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId,
+    allItems: scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId, searchQuery,
     onlyModuleFilter: countActiveBoardFilters({ ...filters, moduleId: '', hideEmptyEpics: false, hideEmptyStories: false }) === 0,
+  }), [scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId, searchQuery])
+
+  // T92 — população do dropdown: todos os TASK/BUG do recorte de filtros,
+  // inclusive pais e subtasks. A busca textual é aplicada por `searchCards`.
+  const searchPopulation = useMemo(() => selectBoardCards({
+    allItems: scopedAllItems,
+    filters: { ...filters, showSubtasks: true, storyDisplay: 'lanes' },
+    columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId,
+    searchQuery: '', includeAllTasks: true,
   }), [scopedAllItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId])
 
   // Barra de subtasks: média de avanço dos filhos diretos, calculada uma vez por render.
@@ -393,8 +420,8 @@ export default function BoardPage() {
   // Cards virtuais de histórias NÃO-folha quando toggle "Mostrar histórias" ativo
   // Histórias folha aparecem como cards reais em boardCards (arrastáveis)
   const storyVirtualCards: ItemData[] = useMemo(
-    () => selectStoryVirtualCards(stories, filters, columns),
-    [stories, filters, columns],
+    () => selectStoryVirtualCards(stories, filters, columns, searchQuery),
+    [stories, filters, columns, searchQuery],
   )
 
   const allDisplayed = useMemo(() => [...boardCards, ...storyVirtualCards], [boardCards, storyVirtualCards])
@@ -423,8 +450,8 @@ export default function BoardPage() {
   // Agrupar por EPIC. No modo de lanes, cada grupo contém também as histórias
   // do épico e seus cards visíveis, formando EPIC → STORY → CARD.
   const epicGroups = useMemo(() => buildEpicGroups({
-    epics, stories, allDisplayed, filters, noStoryLabel: tBoard('noStory'), progressCards,
-  }), [epics, stories, allDisplayed, filters, tBoard, progressCards])
+    epics, stories, allDisplayed, filters, noStoryLabel: tBoard('noStory'), progressCards, searchActive,
+  }), [epics, stories, allDisplayed, filters, tBoard, progressCards, searchActive])
 
   const orphanCards = useMemo(() => selectOrphanCards(allDisplayed), [allDisplayed])
 
@@ -537,9 +564,11 @@ export default function BoardPage() {
   const activeSprint = sprints.find(sprint => sprint.status === 'OPEN')
   // B19 — mesma população de progresso da árvore e do dashboard: folhas de qualquer tipo,
   // sem cancelados/arquivados. Com sprint aberta, as folhas da sprint.
-  const sprintItems = (activeSprint
-    ? allItems.filter(item => item.isLeaf && isProgressLeafType(item.type) && item.itemSprints?.some(link => link.sprintId === activeSprint.id))
-    : progressCards
+  const sprintItems = (searchActive
+    ? progressCards
+    : activeSprint
+      ? allItems.filter(item => item.isLeaf && isProgressLeafType(item.type) && item.itemSprints?.some(link => link.sprintId === activeSprint.id))
+      : progressCards
   ).filter(item => countsForProgress(item.status))
   const sprintCompleted = sprintItems.filter(item => item.status === 'DONE').length
   // T75 — avanço do card no preview de arraste (mesma regra por status do board, B19).
@@ -571,15 +600,20 @@ export default function BoardPage() {
     if (intent.kind === 'item') setNewItemCreation(intent.item)
   }
 
-  const visibleModuleGroups = filters.moduleViewMode === 'tabs' && !hideModules
+  // T92 — com busca ativa, abas de módulo esconderiam resultados de outro módulo.
+  const visibleModuleGroups = !searchActive && filters.moduleViewMode === 'tabs' && !hideModules
     ? moduleGroups.filter(group => group.module.id === activeModuleId)
     : moduleGroups
+  const collapsedEpicsForView = searchActive ? EMPTY_ID_SET : collapsedEpics
+  const collapsedModulesForView = searchActive ? EMPTY_ID_SET : collapsedModules
+  const collapsedStoriesForView = searchActive ? EMPTY_ID_SET : collapsedStories
 
   // Board sem nenhum item: projeto recém-criado, ainda sem épico/história/card.
   // Sem isso o canvas fica em branco e o usuário não descobre por onde começar.
   // Depende dos itens existentes, não dos filtros: um recorte vazio já tem o
   // aviso próprio no cabeçalho de contexto.
   const hasNoLanes = scopedAllItems.length === 0
+  const noSearchResults = searchActive && allDisplayed.length === 0 && !hasNoLanes
 
   const activeFilterLabels = {
     filterLabel: tBoard('activeFilters'), module: tBoard('filterModule'), sprint: tBoard('filterSprint'), version: tBoard('filterVersion'),
@@ -602,6 +636,17 @@ export default function BoardPage() {
       projectIcon={projectIcon}
       projectColor={projectColor}
       onProjectNameActivate={() => setPlanningOpen(true)}
+      headerSearch={(
+        <Suspense fallback={<span className="hidden h-9 w-44 md:block lg:w-64" aria-hidden />}>
+          <CardSearchHeader
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
+            items={searchPopulation}
+            onSelect={item => handleOpenDetail(item.id)}
+            loading={loading}
+          />
+        </Suspense>
+      )}
       assistantSelectedItem={assistantSelectedItem}
       assistantScreen={view === 'tree' ? 'project-board-tree' : 'project-board-kanban'}
       assistantBoardView={view === 'unified' ? 'kanban' : view}
@@ -707,6 +752,8 @@ export default function BoardPage() {
              sprints={sprints}
              versions={projectVersions}
              costCenters={projectCostCenters}
+             searchQuery={searchQuery}
+             onClearSearch={() => setSearchQuery('')}
              pinnedItemIds={pinnedResult ? pinnedResult.itemIds : null}
              canCreate={members.find(member => member.userId === user?.id)?.role !== 'VIEWER'}
              canEdit={members.find(member => member.userId === user?.id)?.role !== 'VIEWER'}
@@ -720,6 +767,20 @@ export default function BoardPage() {
 
         {view !== 'tree' && (
           <div className="p-3 sm:p-4">
+            {noSearchResults && (
+              <div className="rounded-xl border border-dashed border-border bg-surface/60 px-6 py-10 text-center" role="status">
+                <p className="text-sm font-semibold text-foreground">{tBoard('cardSearchNoResults', { query: searchQuery })}</p>
+                <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">{tBoard('cardSearchNoResultsHint')}</p>
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  {tBoard('cardSearchClearAction')}
+                </button>
+              </div>
+            )}
+            {!noSearchResults && (
             <BoardDragAnimationProvider value={dragAnimation}>
             <DndContext
               sensors={sensors}
@@ -766,7 +827,7 @@ export default function BoardPage() {
                 dragAnimation.onDragCancel()
               }}
             >
-                {view === 'kanban' && !isSimpleBoard && !hideModules && filters.moduleViewMode === 'tabs' && moduleGroups.length > 0 && (
+                {view === 'kanban' && !searchActive && !isSimpleBoard && !hideModules && filters.moduleViewMode === 'tabs' && moduleGroups.length > 0 && (
                 <div role="tablist" aria-label={tBoard('moduleViewTabs')} className="mb-3 flex gap-1.5 overflow-x-auto rounded-xl border border-border/80 bg-surface p-1">
                   {moduleGroups.map(({ module }) => (
                     <button
@@ -832,9 +893,9 @@ export default function BoardPage() {
                     versions={projectVersions}
                     sprints={sprints}
                     subtasksByParent={subtasksByParent}
-                    collapsedEpics={collapsedEpics}
-                    collapsedModules={collapsedModules}
-                    collapsedStories={collapsedStories}
+                    collapsedEpics={collapsedEpicsForView}
+                    collapsedModules={collapsedModulesForView}
+                    collapsedStories={collapsedStoriesForView}
                     columnAddForms={columnAddForms}
                     onToggleEpic={toggleEpic}
                     onToggleModule={toggleModule}
@@ -869,6 +930,7 @@ export default function BoardPage() {
               </DragOverlay>
             </DndContext>
             </BoardDragAnimationProvider>
+            )}
           </div>
         )}
         </div>

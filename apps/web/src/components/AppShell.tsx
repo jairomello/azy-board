@@ -39,6 +39,8 @@ interface AppShellProps {
   sectionLabel: string
   contextLabel?: string
   headerMeta?: ReactNode
+  /** T92 — busca de cards no topo direito, independente da visão do board. */
+  headerSearch?: ReactNode
   commandBar?: ReactNode
   statusRail?: ReactNode
   contentClassName?: string
@@ -88,6 +90,7 @@ export function AppShell({
   sectionLabel,
   contextLabel,
   headerMeta,
+  headerSearch,
   commandBar,
   statusRail,
   contentClassName = '',
@@ -443,6 +446,7 @@ export function AppShell({
           </div>
         </div>
         <div className="flex items-center gap-2 [&_.shell-control]:border-white/15 [&_.shell-control]:bg-white/10 [&_.shell-control]:text-shell-muted [&_.shell-control:hover]:text-shell-foreground">
+          {headerSearch}
           <div className="hidden md:block"><LanguageSelector /></div>
           <ThemeToggle />
           <ProfileDropdown />
