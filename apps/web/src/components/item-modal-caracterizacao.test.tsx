@@ -2,8 +2,8 @@
 // antes de oferecer o detalhe como modal ou cortina lateral. Prendem o
 // comportamento ATUAL:
 // - A2-04: Esc fecha a modal; com filho empilhado, volta um nível; com campo
-//   alterado (ex.: prioridade), Esc, X e clique no fundo fecham SEM pedir
-//   confirmação e sem salvar;
+//   alterado (prioridade ou status), Esc, X e clique no fundo fecham SEM pedir
+//   confirmação e sem salvar; outras teclas não fecham e não desligam o Esc;
 // - A2-05: Esc com o lightbox de anexo aberto fecha só o lightbox;
 // - A2-07: fecha por clique no fundo, no X e em Cancelar;
 // - A2-08: pilha de filhos com Voltar (sem anterior/próximo), X do filho fecha
@@ -121,6 +121,14 @@ describe('ItemModal — fechar (A2-04, A2-07)', () => {
     expect(contagem.fechou).toBe(1)
   })
 
+  test('outras teclas no body não fecham; o Esc depois delas fecha', async () => {
+    const { contagem } = renderModal()
+    for (const key of ['a', 'Enter']) await act(() => { fireEvent.keyDown(document.body, { key }) })
+    expect(contagem.fechou).toBe(0)
+    await esc()
+    expect(contagem.fechou).toBe(1)
+  })
+
   test('clique no fundo escurecido fecha a modal', () => {
     const { container, contagem } = renderModal()
     const fundo = container.querySelector('.bg-black\\/50') as HTMLElement
@@ -163,20 +171,22 @@ describe('ItemModal — fechar com formulário alterado (A2-04)', () => {
 
   afterEach(() => { window.confirm = confirmOriginal })
 
-  /** O select de prioridade não tem rótulo associado; é o único com a opção CRITICAL. */
-  function seletorDePrioridade() {
+  /**
+   * Os selects de propriedade não têm rótulo associado; cada um é achado por uma
+   * opção exclusiva dele (CRITICAL na prioridade, BLOCKED no status).
+   */
+  function seletorComOpcao(opcao: string) {
     const seletores: HTMLSelectElement[] = Array.from((screen.getByRole('dialog') as HTMLElement).querySelectorAll('select'))
-    const seletor = seletores.find(elemento => elemento.querySelector('option[value="CRITICAL"]'))
+    const seletor = seletores.find(elemento => elemento.querySelector(`option[value="${opcao}"]`))
     expect(seletor).not.toBeUndefined()
     return seletor!
   }
 
-  function alterarPrioridade() {
-    const seletor = seletorDePrioridade()
-    expect(seletor.value).toBe('MEDIUM')
-    fireEvent.change(seletor, { target: { value: 'HIGH' } })
-    expect(seletorDePrioridade().value).toBe('HIGH')
-  }
+  const campos: Array<[string, string, string, string]> = [
+    // [situação, opção que identifica o select, valor inicial, valor alterado]
+    ['a prioridade alterada', 'CRITICAL', 'MEDIUM', 'HIGH'],
+    ['o status alterado', 'BLOCKED', 'NOT_STARTED', 'IN_PROGRESS'],
+  ]
 
   function renderComSalvar() {
     const contagem: Contagem = { fechou: 0 }
@@ -185,33 +195,42 @@ describe('ItemModal — fechar com formulário alterado (A2-04)', () => {
     return { contagem, salvos }
   }
 
-  test('Esc com a prioridade alterada fecha sem confirmação e sem salvar', async () => {
-    const { contagem, salvos } = renderComSalvar()
-    alterarPrioridade()
-    await esc()
-    expect(contagem.fechou).toBe(1)
-    expect(confirmacoes).toEqual([])
-    expect(salvos).toEqual([])
-  })
+  for (const [nome, opcao, inicial, alterado] of campos) {
+    const alterarCampo = () => {
+      const seletor = seletorComOpcao(opcao)
+      expect(seletor.value).toBe(inicial)
+      fireEvent.change(seletor, { target: { value: alterado } })
+      expect(seletorComOpcao(opcao).value).toBe(alterado)
+    }
 
-  test('o X do cabeçalho com a prioridade alterada fecha sem confirmação e sem salvar', () => {
-    const { contagem, salvos } = renderComSalvar()
-    alterarPrioridade()
-    const cabecalho = screen.getByRole('dialog').querySelector('header') as HTMLElement
-    fireEvent.click(within(cabecalho).getByRole('button', { name: 'Cancelar' }))
-    expect(contagem.fechou).toBe(1)
-    expect(confirmacoes).toEqual([])
-    expect(salvos).toEqual([])
-  })
+    test(`Esc com ${nome} fecha sem confirmação e sem salvar`, async () => {
+      const { contagem, salvos } = renderComSalvar()
+      alterarCampo()
+      await esc()
+      expect(contagem.fechou).toBe(1)
+      expect(confirmacoes).toEqual([])
+      expect(salvos).toEqual([])
+    })
 
-  test('clique no fundo com a prioridade alterada fecha sem confirmação e sem salvar', () => {
-    const { contagem, salvos } = renderComSalvar()
-    alterarPrioridade()
-    fireEvent.click(document.querySelector('.bg-black\\/50') as HTMLElement)
-    expect(contagem.fechou).toBe(1)
-    expect(confirmacoes).toEqual([])
-    expect(salvos).toEqual([])
-  })
+    test(`o X do cabeçalho com ${nome} fecha sem confirmação e sem salvar`, () => {
+      const { contagem, salvos } = renderComSalvar()
+      alterarCampo()
+      const cabecalho = screen.getByRole('dialog').querySelector('header') as HTMLElement
+      fireEvent.click(within(cabecalho).getByRole('button', { name: 'Cancelar' }))
+      expect(contagem.fechou).toBe(1)
+      expect(confirmacoes).toEqual([])
+      expect(salvos).toEqual([])
+    })
+
+    test(`clique no fundo com ${nome} fecha sem confirmação e sem salvar`, () => {
+      const { contagem, salvos } = renderComSalvar()
+      alterarCampo()
+      fireEvent.click(document.querySelector('.bg-black\\/50') as HTMLElement)
+      expect(contagem.fechou).toBe(1)
+      expect(confirmacoes).toEqual([])
+      expect(salvos).toEqual([])
+    })
+  }
 })
 
 describe('ItemModal — pilha de filhos (A2-04, A2-08)', () => {

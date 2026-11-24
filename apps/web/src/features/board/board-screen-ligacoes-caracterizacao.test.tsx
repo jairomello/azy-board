@@ -6,12 +6,16 @@
 // - A4-05: no Unificado o contexto publicado ao assistente usa a visão `kanban`;
 // - A5-13: densidade compacta aplica `density-compact`, esconde os chips e grava `board-density`;
 // - A5-04/A5-14: Exportar abre o ExportDialog (lazy) e Arquivados abre o modal;
-// - A3-24: o ExportDialog recebe os filtros atuais (com status, sem preferências de exibição);
+// - A3-24: o ExportDialog recebe os filtros atuais (com status, sem preferências de exibição),
+//   cada valor na chave do filtro de origem;
 // - A5-02: Recalcular datas faz POST no endpoint de cronograma e invalida o board;
-// - A5-03: caminho crítico com 0 dependências avisa e não destaca;
+// - A5-03: caminho crítico com 0 dependências avisa e não destaca; sem card com
+//   dependência o switch fica desabilitado; com dependências destaca em âmbar;
 // - A5-08: Recolher tudo grava os ids de módulos, épicos (+ 'orphan') e histórias;
-// - A3-13: o squad da barra mostra só os cards de responsáveis membros dele;
-// - A1-05: limiar de 5 px do PointerSensor na alça; o corpo do card não arrasta.
+// - A3-13: o squad da barra mostra só os cards de responsáveis membros dele
+//   (card sem responsável some);
+// - A1-05: limiar de 5 px do PointerSensor na alça (4 px não, 6 px sim); o corpo
+//   do card não arrasta.
 //
 // Para montar a tela sem servidor, os módulos de borda são substituídos:
 // sessão (AuthContext), casca (AppShell — que aqui renderiza a barra de comando
@@ -109,22 +113,35 @@ const ITENS: ItemData[] = [
   base({ id: 'task-2', title: 'Tarefa do Bruno', parentId: 'story-2', assigneeId: 'u2', ancestryPath: caminho(['epic-2', 'EPIC', 'Épico Dois'], ['story-2', 'STORY', 'História Dois']) }),
 ]
 
+// task-3 não tem responsável: só entra no cenário do squad.
+const TAREFA_SEM_RESPONSAVEL = base({ id: 'task-3', title: 'Tarefa sem responsável', parentId: 'story-1', ancestryPath: caminho(['epic-1', 'EPIC', 'Épico Um'], ['story-1', 'STORY', 'História Um']) })
+
 const estadoDoBoard = { invalidacoes: 0 }
+
+// Dados do board por teste (o padrão é restaurado no beforeEach).
+interface Cenario {
+  itens: ItemData[]
+  sprints: Array<{ id: string; name: string; status: 'PROPOSED' | 'OPEN' | 'CLOSED' }>
+  versoes: Array<{ id: string; name: string; status: 'PLANNED' | 'IN_DEV' | 'RELEASED' | 'CANCELLED' }>
+  caminhoCritico: { criticalPath: string[]; dependencyCount: number }
+}
+const cenarioPadrao = (): Cenario => ({ itens: ITENS, sprints: [], versoes: [], caminhoCritico: { criticalPath: ['task-1'], dependencyCount: 0 } })
+let cenario = cenarioPadrao()
 
 mockModule('./hooks/useBoardData', () => ({
   useBoardData: () => {
     const [columns, setColumns] = useState<Column[]>(COLUNAS)
-    const [allItems, setAllItems] = useState<ItemData[]>(ITENS)
+    const [allItems, setAllItems] = useState<ItemData[]>(cenario.itens)
     const [modules, setModules] = useState<Module[]>(MODULOS)
     const [projectTags, setProjectTags] = useState([])
     return {
       columns, setColumns,
       allItems, setAllItems,
       modules, setModules,
-      sprints: [], setSprints: () => {},
+      sprints: cenario.sprints, setSprints: () => {},
       members: MEMBROS, setMembers: () => {},
       projectTags, setProjectTags,
-      projectVersions: [], setProjectVersions: () => {},
+      projectVersions: cenario.versoes, setProjectVersions: () => {},
       versionsLoaded: true,
       projectCostCenters: [], setProjectCostCenters: () => {},
       costCentersLoaded: true,
@@ -159,7 +176,7 @@ function json(body: unknown) {
 }
 
 function responder(url: string): Response {
-  if (url.includes('/projects/p1/schedule/critical-path')) return json({ criticalPath: ['task-1'], dependencyCount: 0 })
+  if (url.includes('/projects/p1/schedule/critical-path')) return json(cenario.caminhoCritico)
   if (url.includes('/projects/p1/schedule/recalculate')) return json({ updatedCount: 2 })
   if (url.includes('/projects/p1/items/archived')) return json([])
   if (url.includes('/projects/p1/items/tree')) return json([])
@@ -213,6 +230,7 @@ beforeEach(async () => {
   propsDaCasca.length = 0
   propsDoExport.length = 0
   estadoDoBoard.invalidacoes = 0
+  cenario = cenarioPadrao()
   try { localStorage.clear() } catch { /* sem storage */ }
   try { sessionStorage.clear() } catch { /* sem storage */ }
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -327,6 +345,26 @@ describe('BoardScreen — Exportar e Arquivados pela barra (A5-04, A5-14, A3-24)
     ])
   })
 
+  test('A3-24: cada filtro de recorte chega ao ExportDialog na chave de origem (squad, módulo, sprint, versão, tags)', async () => {
+    // Valores distintos em cada filtro: uma troca entre chaves aparece no valor.
+    cenario.sprints = [{ id: 'sprint-7', name: 'Sprint 7', status: 'PROPOSED' }]
+    cenario.versoes = [{ id: 'versao-9', name: 'Versão 9', status: 'PLANNED' }]
+    localStorage.setItem('board-filters:p1', JSON.stringify({
+      squadId: 'squad-b', moduleId: 'mod-2', sprintId: 'sprint-7', versionId: 'versao-9', tagIds: ['tag-x', 'tag-y'],
+    }))
+    renderBoard()
+    await waitFor(() => expect(consultaBotaoDaBarra(t('exportData'))).not.toBeNull())
+
+    fireEvent.click(botaoDaBarra(t('exportData')))
+
+    await waitFor(() => expect(propsDoExport.length).toBeGreaterThan(0))
+    const filtros = ultimo(propsDoExport)!.filters
+    const definidos = Object.fromEntries(Object.entries(filtros).filter(([, valor]) => valor !== undefined))
+    expect(definidos).toEqual({
+      squadId: 'squad-b', moduleId: 'mod-2', sprintId: 'sprint-7', versionId: 'versao-9', tagIds: ['tag-x', 'tag-y'],
+    })
+  })
+
   test('o ícone Arquivados busca os arquivados e abre o modal', async () => {
     renderBoard()
     await boardMontado()
@@ -376,6 +414,37 @@ describe('BoardScreen — cronograma em Opções (A5-02, A5-03)', () => {
   })
 })
 
+describe('BoardScreen — caminho crítico em Opções (A5-03)', () => {
+  test('sem nenhum card com dependência, o switch do caminho crítico fica desabilitado', async () => {
+    cenario.itens = ITENS.map(item => ({ ...item, dependencyCount: 0 }) as ItemData)
+    renderBoard()
+    await boardMontado()
+    fireEvent.click(botaoDaBarra(t('optionsMenu')))
+
+    const chave = barra().getByRole('switch', { name: t('scheduleCriticalPath') })
+    expect(chave).toBeDisabled()
+    expect(chave).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(chave)
+    await act(() => new Promise(resolve => setTimeout(resolve, 30)))
+    expect(requisicoes.some(([, url]) => url.includes('/schedule/critical-path'))).toBe(false)
+  })
+
+  test('com dependências no servidor, liga o switch e destaca em âmbar só os cards do caminho crítico', async () => {
+    cenario.caminhoCritico = { criticalPath: ['task-1'], dependencyCount: 1 }
+    renderBoard()
+    await boardMontado()
+    expect(cardPorId('task-1')!.classList.contains('ring-amber-400/80')).toBe(false)
+    fireEvent.click(botaoDaBarra(t('optionsMenu')))
+
+    fireEvent.click(barra().getByRole('switch', { name: t('scheduleCriticalPath') }))
+
+    await waitFor(() => expect(cardPorId('task-1')!.classList.contains('ring-amber-400/80')).toBe(true))
+    expect(cardPorId('task-2')!.classList.contains('ring-amber-400/80')).toBe(false)
+    expect(barra().getByRole('switch', { name: t('scheduleCriticalPath') })).toHaveAttribute('aria-checked', 'true')
+    expect(toasts).toEqual([])
+  })
+})
+
 describe('BoardScreen — Recolher tudo em Opções (A5-08)', () => {
   test('grava módulos, épicos + "orphan" e os grupos de história em board-collapsed-*:p1', async () => {
     renderBoard()
@@ -393,19 +462,26 @@ describe('BoardScreen — Recolher tudo em Opções (A5-08)', () => {
 })
 
 describe('BoardScreen — squad na barra (A3-13)', () => {
-  test('escolher um squad mostra só os cards de responsáveis membros dele', async () => {
+  test('escolher um squad mostra só os cards de responsáveis membros dele (card sem responsável some)', async () => {
+    cenario.itens = [...ITENS, TAREFA_SEM_RESPONSAVEL]
     renderBoard()
     await boardMontado()
     expect(cardPorId('task-2')).not.toBeNull()
+    expect(cardPorId('task-3')).not.toBeNull()
     const select = barra().getByRole('combobox', { name: t('filterSquad') })
 
     fireEvent.change(select, { target: { value: 'squad-a' } })
     await waitFor(() => expect(cardPorId('task-2')).toBeNull())
     expect(cardPorId('task-1')).not.toBeNull()
+    expect(cardPorId('task-3')).toBeNull()
 
     fireEvent.change(select, { target: { value: 'squad-b' } })
     await waitFor(() => expect(cardPorId('task-1')).toBeNull())
     expect(cardPorId('task-2')).not.toBeNull()
+    expect(cardPorId('task-3')).toBeNull()
+
+    fireEvent.change(select, { target: { value: '' } })
+    await waitFor(() => expect(cardPorId('task-3')).not.toBeNull())
   })
 })
 
@@ -414,20 +490,20 @@ describe('BoardScreen — limiar do arraste com ponteiro real (A1-05)', () => {
   // arraste, quando inicia, termina fora e é cancelado sem mutação.
   const arrastando = () => document.querySelector('.kanban-card--dragging[data-card-id="task-1"]')
 
-  test('na alça, mover menos de 5 px não inicia o arraste; passar de 5 px inicia', async () => {
+  test('na alça, mover 4 px não inicia o arraste; 6 px (passou de 5) inicia', async () => {
     renderBoard()
     const card = await boardMontado()
     const alca = card.querySelector('.kanban-card-grip') as HTMLElement
 
     act(() => { fireEvent.pointerDown(alca, { button: 0, isPrimary: true, pointerId: 1, clientX: 5000, clientY: 5000 }) })
     act(() => { fireEvent.pointerMove(document, { pointerId: 1, clientX: 5003, clientY: 5000 }) })
-    act(() => { fireEvent.pointerMove(document, { pointerId: 1, clientX: 5003, clientY: 5003 }) })
+    act(() => { fireEvent.pointerMove(document, { pointerId: 1, clientX: 5004, clientY: 5000 }) })
     await act(() => new Promise(resolve => setTimeout(resolve, 30)))
     expect(arrastando()).toBeNull()
 
-    act(() => { fireEvent.pointerMove(document, { pointerId: 1, clientX: 5010, clientY: 5000 }) })
+    act(() => { fireEvent.pointerMove(document, { pointerId: 1, clientX: 5006, clientY: 5000 }) })
     await waitFor(() => expect(arrastando()).not.toBeNull())
-    act(() => { fireEvent.pointerUp(document, { pointerId: 1, clientX: 5010, clientY: 5000 }) })
+    act(() => { fireEvent.pointerUp(document, { pointerId: 1, clientX: 5006, clientY: 5000 }) })
     await waitFor(() => expect(toasts).toEqual([[t('dragDropCanceled'), undefined]]))
     expect(mutacoes()).toEqual([])
     // Após a soltura o dnd-kit mantém por 50 ms um filtro de clique no documento.

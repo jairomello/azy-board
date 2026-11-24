@@ -149,4 +149,22 @@ describe('caracterização A3-30 — set_filters substitui o estado inteiro de f
     expect(result.current.filters.squadId).toBe('')
     expect(result.current.filters.updatedWithin).toBe('')
   })
+
+  test('squadId e showSubtasks vindos no comando são ignorados (não são filtros aceitos)', () => {
+    const { result } = renderHook(() => useCenarioComFiltros(projeto, DEFAULT_FILTERS))
+    // Fora do contrato tipado de propósito: o comando chega da conversa como JSON.
+    const filtros = { priority: 'HIGH', squadId: 'squad-a', showSubtasks: true } as unknown as AssistantViewCommand['filters']
+
+    act(() => applyViewCommand(projeto, comando({ type: 'set_filters', filters: filtros })))
+
+    expect(result.current.filters).toEqual({ ...DEFAULT_FILTERS, priority: 'HIGH' })
+  })
+
+  test('status com mais de um valor vira a lista separada por vírgula, na ordem do comando', () => {
+    const { result } = renderHook(() => useCenarioComFiltros(projeto, DEFAULT_FILTERS))
+
+    act(() => applyViewCommand(projeto, comando({ type: 'set_filters', filters: { status: ['IN_PROGRESS', 'BLOCKED'] } })))
+
+    expect(result.current.filters).toEqual({ ...DEFAULT_FILTERS, status: 'IN_PROGRESS,BLOCKED' })
+  })
 })

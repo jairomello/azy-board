@@ -1,7 +1,8 @@
 // Teste de caracterização da AUSÊNCIA de atalhos de teclado globais no board e
 // na árvore. Hoje, tecla de uma letra/dígito/símbolo pressionada com o foco no
 // body não faz nada: não abre modal, menu ou listbox, não expande nada, não troca
-// a visão, não navega, não move o foco, não dispara toast nem mutação.
+// a visão nem a densidade (nem as preferências gravadas delas), não navega, não
+// move o foco, não dispara toast nem mutação.
 //
 // ATENÇÃO: este arquivo vai mudar DE PROPÓSITO no passo que introduzir os atalhos
 // globais (por isso fica isolado dos demais testes de caracterização). Quando o
@@ -173,7 +174,19 @@ function retrato() {
     menuDeColunas: screen.queryByText('Colunas visíveis') !== null,
     focoNoBody: document.activeElement === document.body,
     local: screen.getByTestId('local').textContent,
+    densidadeCompacta: document.querySelector('.density-compact') !== null,
+    preferencias: preferenciasDeExibicao(),
   }
+}
+
+/** Preferências de exibição gravadas (densidade e visão por projeto). */
+function preferenciasDeExibicao() {
+  const gravadas: Record<string, string | null> = {}
+  for (let indice = 0; indice < localStorage.length; indice += 1) {
+    const chave = localStorage.key(indice)
+    if (chave && (chave === 'board-density' || chave.startsWith('board-view:'))) gravadas[chave] = localStorage.getItem(chave)
+  }
+  return gravadas
 }
 
 async function pressionarNoBody(tecla: string) {

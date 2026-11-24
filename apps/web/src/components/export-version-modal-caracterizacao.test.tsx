@@ -1,6 +1,7 @@
 // Testes de caracterização do Esc no ExportDialog e no VersionDetailModal, rede
 // de segurança antes dos atalhos de teclado globais. Prendem o comportamento
-// ATUAL (A6-09): Esc com foco no body fecha os dois diálogos; outras teclas não.
+// ATUAL (A6-09): Esc com foco no body fecha os dois diálogos, mesmo depois de outras
+// teclas; outras teclas (inclusive Backspace e Delete) não.
 import { screen } from '../test/setup'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { act, configure, fireEvent, render } from '@testing-library/react'
@@ -64,10 +65,19 @@ for (const [nome, montar, textoVisivel] of dialogos) describe(`${nome} — Esc (
     expect(contagem.fechou).toBe(1)
   })
 
-  test('outras teclas não fecham o diálogo', async () => {
+  test('outras teclas (inclusive Backspace e Delete) não fecham o diálogo', async () => {
     const contagem = montar()
     await screen.findAllByText(textoVisivel)
-    for (const key of ['Enter', 'e', 'x', '?', 'Tab']) await tecla(key)
+    for (const key of ['Enter', 'e', 'x', '?', 'Tab', 'Backspace', 'Delete']) await tecla(key)
     expect(contagem.fechou).toBe(0)
+  })
+
+  test('Esc continua fechando depois de outras teclas pressionadas antes', async () => {
+    const contagem = montar()
+    await screen.findAllByText(textoVisivel)
+    for (const key of ['e', 'Enter']) await tecla(key)
+    expect(contagem.fechou).toBe(0)
+    await tecla('Escape')
+    expect(contagem.fechou).toBe(1)
   })
 })

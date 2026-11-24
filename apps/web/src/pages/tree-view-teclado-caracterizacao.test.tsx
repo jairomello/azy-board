@@ -1,9 +1,10 @@
 // Testes de caracterização do teclado na Árvore (TreeViewPage), rede de
 // segurança antes dos atalhos de teclado globais. Prendem o comportamento ATUAL:
 // - A6-06: Esc fecha o menu de colunas ("Adicionar coluna após …") e o menu de
-//   filtro do cabeçalho da coluna ("Filtrar …");
+//   filtro do cabeçalho da coluna ("Filtrar …"), também depois de outras
+//   teclas, que não fecham nenhum dos dois;
 // - A6-07: Esc na edição inline de célula (nome e pontos) cancela: restaura o
-//   valor, sai da edição e não envia PATCH.
+//   valor (inclusive o vazio de pontos nulos), sai da edição e não envia PATCH.
 import { screen } from '../test/setup'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { act, configure, fireEvent, render, waitFor } from '@testing-library/react'
@@ -29,6 +30,7 @@ const arvore = [
       no('epic-1', 'Epic 1', 'EPIC', 'mod-1', [
         no('story-1', 'História 1', 'STORY', 'epic-1', [
           no('task-1', 'Tarefa 1', 'TASK', 'story-1', [], { points: 3 }),
+          no('task-2', 'Tarefa 2', 'TASK', 'story-1', [], { points: null }),
         ]),
       ]),
     ],
@@ -111,11 +113,28 @@ describe('TreeViewPage — Esc fecha os menus da grade (A6-06)', () => {
     expect(screen.queryByRole('checkbox', { name: 'Em andamento' })).toBeNull()
   })
 
-  test('outras teclas não fecham os menus', async () => {
+  const outrasTeclas = async () => {
+    for (const key of ['a', 'Enter', 'Tab', '?']) await act(() => { fireEvent.keyDown(document.body, { key }) })
+  }
+
+  test('outras teclas não fecham o menu de colunas; o Esc depois delas fecha', async () => {
     renderArvore()
     fireEvent.click(await screen.findByRole('button', { name: 'Adicionar coluna após Nome' }))
-    for (const key of ['a', 'Enter', 'Tab', '?']) await act(() => { fireEvent.keyDown(document.body, { key }) })
+    await outrasTeclas()
     expect(screen.getByText('Colunas visíveis')).toBeInTheDocument()
+
+    await esc()
+    expect(screen.queryByText('Colunas visíveis')).toBeNull()
+  })
+
+  test('outras teclas não fecham o menu de filtro da coluna; o Esc depois delas fecha', async () => {
+    renderArvore()
+    fireEvent.click(await screen.findByRole('button', { name: 'Filtrar Status' }))
+    await outrasTeclas()
+    expect(screen.getByRole('checkbox', { name: 'Em andamento' })).toBeInTheDocument()
+
+    await esc()
+    expect(screen.queryByRole('checkbox', { name: 'Em andamento' })).toBeNull()
   })
 })
 
@@ -154,6 +173,22 @@ describe('TreeViewPage — Esc cancela a edição inline de célula (A6-07)', ()
     fireEvent.keyDown(campo, { key: 'Escape' })
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Editar pontos de Tarefa 1' })).toBeInTheDocument())
+    expect(screen.queryByRole('spinbutton')).toBeNull()
+    await act(() => new Promise(resolve => setTimeout(resolve, 20)))
+    expect(mutacoes()).toEqual([])
+  })
+
+  test('pontos vazios: Esc depois de digitar restaura o vazio e não envia PATCH', async () => {
+    renderArvore()
+    await expandirTudo()
+    fireEvent.click(screen.getByRole('button', { name: 'Editar pontos de Tarefa 2' }))
+    const campo = await screen.findByRole('spinbutton')
+    expect(campo).toHaveValue(null)
+    fireEvent.change(campo, { target: { value: '5' } })
+
+    fireEvent.keyDown(campo, { key: 'Escape' })
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Editar pontos de Tarefa 2' })).toBeInTheDocument())
     expect(screen.queryByRole('spinbutton')).toBeNull()
     await act(() => new Promise(resolve => setTimeout(resolve, 20)))
     expect(mutacoes()).toEqual([])

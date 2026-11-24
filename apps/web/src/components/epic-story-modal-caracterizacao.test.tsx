@@ -2,7 +2,8 @@
 // antes dos atalhos de teclado globais e do detalhe em modal/cortina. Prendem o
 // comportamento ATUAL (A2-06 / A6-04):
 // - Esc (no body) fecha a EpicModal e a StoryModal, sem pedir confirmação;
-// - outras teclas não fecham.
+// - outras teclas (inclusive Backspace e Delete) não fecham, e o Esc segue
+//   valendo depois delas.
 import { screen } from '../test/setup'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { act, configure, fireEvent, render } from '@testing-library/react'
@@ -84,9 +85,18 @@ for (const [nome, montar, titulo] of modais) describe(`${nome} — Esc`, () => {
     expect(confirmacoes).toBe(0)
   })
 
-  test('outras teclas não fecham a modal', async () => {
+  test('outras teclas (inclusive Backspace e Delete) não fecham a modal', async () => {
     const contagem = montar()
-    for (const key of ['Enter', 'a', 'x', '?', 'Tab']) await tecla(key)
+    for (const key of ['Enter', 'a', 'x', '?', 'Tab', 'Backspace', 'Delete']) await tecla(key)
     expect(contagem.fechou).toBe(0)
+  })
+
+  test('Esc continua fechando depois de outras teclas pressionadas antes', async () => {
+    const contagem = montar()
+    for (const key of ['a', 'Enter']) await tecla(key)
+    expect(contagem.fechou).toBe(0)
+    await tecla('Escape')
+    expect(contagem.fechou).toBe(1)
+    expect(confirmacoes).toBe(0)
   })
 })

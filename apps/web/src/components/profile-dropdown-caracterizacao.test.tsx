@@ -146,6 +146,10 @@ describe('ProfileDropdown — menu do avatar (A7-01 a A7-04)', () => {
 
     await user.click(screen.getByRole('switch', { name: 'Projetos ocultos' }))
     expect(sessionStorage.getItem('show-hidden-projects')).toBe('false')
+
+    // Depois dos cliques dentro do menu, o clique fora continua fechando.
+    fireEvent.mouseDown(screen.getByTestId('fora'))
+    await waitFor(() => expect(itemConta()).toBeNull())
   })
 
   test('A7-04: Sair chama POST /auth/logout, zera ocultos, apaga rascunhos e limpa o cache', async () => {

@@ -7,7 +7,7 @@
 // - A1-30: ações no hover na ordem copiar → arquivar → excluir, excluir pede
 //   confirmação, e nenhuma ação abre o card;
 // - A1-31: feedback do copiar (ícone de check) e toast em caso de falha;
-// - A1-02: card pai ou EPIC não inicia arraste pela alça.
+// - A1-02: card pai (inclusive STORY com filhos) ou EPIC não inicia arraste pela alça.
 import { screen } from '../test/setup'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import * as bunTest from 'bun:test'
@@ -310,6 +310,10 @@ describe('KanbanCard — card pai ou EPIC não arrasta (A1-02)', () => {
 
   test('card com filhos não inicia o arraste pela alça', async () => {
     expect(await arrastarPelaAlca(cartao({ isLeaf: false }))).toEqual([])
+  })
+
+  test('STORY com filhos não inicia o arraste pela alça', async () => {
+    expect(await arrastarPelaAlca(cartao({ type: 'STORY', isLeaf: false }))).toEqual([])
   })
 
   test('EPIC folha não inicia o arraste pela alça', async () => {
