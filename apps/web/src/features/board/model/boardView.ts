@@ -18,6 +18,7 @@ import {
   type Module,
   type StoryLaneGroup,
 } from './types'
+import { matchesCardSearch } from './cardSearchMatch'
 
 export interface BoardPopulationInput {
   allItems: ItemData[]
@@ -29,6 +30,10 @@ export interface BoardPopulationInput {
   squadMembersMap: Map<string, Set<string>>
   isSimpleBoard: boolean
   activeSprintId?: string | null
+  /** T92 — recorte textual por título, código e responsável. */
+  searchQuery?: string
+  /** T92 — população do dropdown: todos os TASK/BUG, sem a Leaf Rule de exibição. */
+  includeAllTasks?: boolean
 }
 
 export interface EpicGroup {
@@ -54,10 +59,16 @@ function matchesUpdatedWithin(item: ItemData, updatedWithin: string, activeSprin
 // `showSubtasks`, sempre passando pelos motivos de visibilidade compartilhados
 // com o avaliador de escopo do agente.
 export function selectBoardCards(input: BoardPopulationInput): ItemData[] {
-  const { allItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId } = input
+  const { allItems, filters, columns, epics, stories, storyIdSet, squadMembersMap, isSimpleBoard, activeSprintId, searchQuery, includeAllTasks = false } = input
+  const searchActive = Boolean(searchQuery?.trim())
 
   let result: ItemData[]
-  if (filters.showSubtasks) {
+  if (searchActive || includeAllTasks) {
+    // Durante a busca o recorte é todos os TASK/BUG, pais e folhas: o card
+    // procurado pode ser uma subtask, e um pai que casa não pode sumir só por
+    // ter filhos. A Leaf Rule/preferência de exibição voltam ao limpar a busca.
+    result = allItems.filter(item => ['TASK', 'BUG'].includes(item.type))
+  } else if (filters.showSubtasks) {
     // Leaf Rule: TASK/BUG que não são pai de nenhum outro item.
     const parentIdSet = new Set(allItems.map(item => item.parentId).filter(Boolean) as string[])
     result = allItems.filter(item => ['TASK', 'BUG'].includes(item.type) && !parentIdSet.has(item.id))
@@ -89,9 +100,11 @@ export function selectBoardCards(input: BoardPopulationInput): ItemData[] {
   })
   result = result.filter(item => populationFilterReasons(toVisibilityInput(item), visibilityFilters).length === 0)
   result = result.filter(item => matchesUpdatedWithin(item, filters.updatedWithin, activeSprintId))
+  if (searchActive) result = result.filter(item => matchesCardSearch(item, searchQuery!))
 
   // Histórias folha aparecem como cards arrastáveis quando "Histórias no board" ativo.
-  if (!isSimpleBoard && filters.storyDisplay === 'cards' && columns.length > 0) {
+  // Durante a busca o recorte é só de TASK/BUG: histórias são agrupadores, não cards.
+  if (!searchActive && !isSimpleBoard && filters.storyDisplay === 'cards' && columns.length > 0) {
     const firstColId = columns[0]!.id
     let leafStories = stories
       .filter(story => story.isLeaf)
@@ -140,7 +153,9 @@ export function selectStoryVirtualCards(
   stories: ItemData[],
   filters: BoardFilterState,
   columns: Array<{ id: string }>,
+  searchQuery = '',
 ): ItemData[] {
+  if (searchQuery.trim()) return []
   if (filters.storyDisplay !== 'cards' || columns.length === 0) return []
   const firstColId = columns[0]!.id
   return stories
@@ -156,13 +171,15 @@ export interface EpicGroupsInput {
   noStoryLabel: string
   /** B19 — população de progresso (`selectProgressPopulation`); sem ela, usa os cards exibidos. */
   progressCards?: ItemData[]
+  /** T92 — durante a busca, lanes sem card encontrado não aparecem. */
+  searchActive?: boolean
 }
 
 // Agrupa por EPIC. No modo de lanes, cada grupo contém as histórias do épico e
 // seus cards visíveis, formando EPIC → STORY → CARD.
 export function buildEpicGroups(input: EpicGroupsInput): EpicGroup[] {
-  const { epics, stories, allDisplayed, filters, noStoryLabel } = input
-  const hideEmpty = filters.hideEmptyEpics || !!filters.squadId
+  const { epics, stories, allDisplayed, filters, noStoryLabel, searchActive = false } = input
+  const hideEmpty = filters.hideEmptyEpics || !!filters.squadId || searchActive
   const progressSource = (input.progressCards ?? allDisplayed).filter(item => !item.id.startsWith('story-virtual-'))
   return epics
     .map(epic => {
@@ -180,7 +197,7 @@ export function buildEpicGroups(input: EpicGroupsInput): EpicGroup[] {
               tasks: epicCards.filter(card => getStoryIdFromPath(card.ancestryPath) === story.id),
               progressTasks: epicProgress.filter(item => item.id === story.id || getStoryIdFromPath(item.ancestryPath) === story.id),
             }))
-            .filter(group => !filters.hideEmptyStories || group.tasks.length > 0)
+            .filter(group => !(filters.hideEmptyStories || searchActive) || group.tasks.length > 0)
         : []
 
       if (filters.storyDisplay === 'lanes') {

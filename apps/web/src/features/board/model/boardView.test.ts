@@ -193,3 +193,63 @@ describe('boardView — população de progresso (B19)', () => {
     expect(groups.find(group => group.epic.id === 'epic-2')?.progressTasks.map(card => card.id)).toEqual(['epic-2'])
   })
 })
+
+// T92 — a busca é um recorte adicional, combinado com os filtros e aplicado
+// antes do agrupamento. Subtasks entram mesmo com "Mostrar subtasks" desligado.
+describe('boardView — busca de cards (T92)', () => {
+  const epic = item({ id: 'epic-1', type: 'EPIC', title: 'Fase 1', isLeaf: false })
+  const story = item({ id: 'story-1', type: 'STORY', title: 'Fluxo contínuo', parentId: 'epic-1', ancestryPath: epicPath('epic-1'), isLeaf: false })
+  const task = item({
+    id: 'task-busca', type: 'TASK', title: 'Busca de cards no board', sequenceCode: 'T92',
+    parentId: 'story-1', ancestryPath: storyPath('epic-1', 'story-1'), assigneeId: 'u1',
+    assignee: { id: 'u1', name: 'Jairo Silva', avatarUrl: null },
+  })
+  const other = item({ id: 'task-outro', type: 'TASK', title: 'Ajuste de layout', sequenceCode: 'T93', parentId: 'story-1', ancestryPath: storyPath('epic-1', 'story-1') })
+  const subtask = item({ id: 'sub-busca', type: 'TASK', title: 'Busca interna', sequenceCode: 'T94', parentId: 'task-busca', ancestryPath: storyPath('epic-1', 'story-1') })
+  const allItems = [epic, story, task, other, subtask]
+  const input = { ...baseInput, allItems, epics: [epic], stories: [story], storyIdSet: new Set(['story-1']) }
+
+  test('recorta por título, código e responsável', () => {
+    expect(selectBoardCards({ ...input, filters: filters(), searchQuery: 'cards' }).map(card => card.id)).toEqual(['task-busca'])
+    expect(selectBoardCards({ ...input, filters: filters(), searchQuery: 'T92' }).map(card => card.id)).toEqual(['task-busca'])
+    expect(selectBoardCards({ ...input, filters: filters(), searchQuery: 'jairo' }).map(card => card.id)).toEqual(['task-busca'])
+    expect(selectBoardCards({ ...input, filters: filters(), searchQuery: 'busca' }).map(card => card.id).sort()).toEqual(['sub-busca', 'task-busca'])
+  })
+
+  test('inclui subtasks mesmo com "Mostrar subtasks" desligado', () => {
+    expect(selectBoardCards({ ...input, filters: filters(), searchQuery: 'interna' }).map(card => card.id)).toEqual(['sub-busca'])
+  })
+
+  test('combina busca com filtros ativos', () => {
+    expect(selectBoardCards({
+      ...input, filters: filters({ status: 'DONE' }), searchQuery: 'busca',
+    })).toEqual([])
+    expect(selectBoardCards({
+      ...input, filters: filters({ assigneeId: 'u1' }), searchQuery: 'busca',
+    }).map(card => card.id)).toEqual(['task-busca'])
+  })
+
+  test('não mistura histórias folha nem cards virtuais na busca', () => {
+    const leafStory = item({ id: 'story-leaf', type: 'STORY', title: 'Busca folha', parentId: 'epic-1', ancestryPath: epicPath('epic-1'), isLeaf: true })
+    const result = selectBoardCards({
+      ...input, allItems: [...allItems, leafStory], filters: filters({ storyDisplay: 'cards' }), searchQuery: 'cards',
+    })
+    expect(result.map(card => card.id)).toEqual(['task-busca'])
+    expect(selectStoryVirtualCards([story], filters({ storyDisplay: 'cards' }), [{ id: 'col-1' }], 'cards')).toEqual([])
+  })
+
+  test('agrupamento esconde lanes vazias durante a busca', () => {
+    const cards = selectBoardCards({ ...input, filters: filters(), searchQuery: 'cards' })
+    const groups = buildEpicGroups({
+      epics: [epic], stories: [story], allDisplayed: cards, filters: filters(),
+      noStoryLabel: 'Sem história', searchActive: true,
+    })
+    expect(groups.map(group => group.epic.id)).toEqual(['epic-1'])
+    expect(groups[0]!.storyGroups.map(group => group.id)).toEqual(['story-1'])
+  })
+
+  test('população de progresso acompanha a busca', () => {
+    const population = selectProgressPopulation({ ...input, filters: filters(), onlyModuleFilter: false, searchQuery: 'cards' })
+    expect(population.map(card => card.id)).toEqual(['task-busca'])
+  })
+})

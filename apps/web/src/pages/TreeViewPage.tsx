@@ -17,6 +17,7 @@ import { buildTreeFilterQuery } from '../features/board/model/treeFilterQuery'
 import type { AssistantScreenSnapshot } from '@azy-board/assistant-contracts'
 import type { Priority, TaskStatus } from '@azy-board/domain'
 import { buildTreeParentMap, resolveTreeMove } from './treeMoveRules'
+import { filterTreeBySearch } from '../features/board/model/treeSearch'
 
 // Nó genérico da árvore retornado por /items/tree
 export interface TreeNode {
@@ -24,6 +25,7 @@ export interface TreeNode {
   title?: string
   name?: string       // módulos usam `name`
   type: string        // 'module' | 'EPIC' | 'STORY' | 'TASK' | 'BUG'
+  sequenceCode?: string | null
   status?: TaskStatus
   priority?: Priority
   points?: number
@@ -1295,6 +1297,9 @@ interface Props {
   // Card T26 — população fixada do resultado; ancestrais são mantidos apenas
   // como contêineres de navegação, fora da população do resultado.
   pinnedItemIds?: string[] | null
+  // T92 — busca do header aplicada também à grade hierárquica.
+  searchQuery?: string
+  onClearSearch?: () => void
 }
 
 // Card T26 — poda a árvore ao conjunto exato: mantém a folha que pertence ao
@@ -1323,8 +1328,11 @@ export function TreeViewPage({
   onEdit,
   onSnapshotChange,
   pinnedItemIds,
+  searchQuery = '',
+  onClearSearch,
 }: Props) {
   const { t } = useTranslation()
+  const { t: tBoard } = useTranslation('board')
   const { user } = useAuth()
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -1440,9 +1448,12 @@ export function TreeViewPage({
 
   // Card T26 — recorte fixado antes do filtro de epics vazios.
   const scopedTree = pinnedItemIds ? pruneTreeToIds(tree, new Set(pinnedItemIds)) : tree
+  // T92 — busca textual antes dos filtros de vazio: o ramo do card encontrado
+  // permanece, com os ancestrais necessários para chegar até ele.
+  const searchedTree = useMemo(() => filterTreeBySearch(scopedTree, searchQuery), [scopedTree, searchQuery])
   // Filtros de vazio da grade: as mesmas opções do Kanban, aplicadas à árvore.
   const displayTree = useMemo(() => {
-    let next = scopedTree
+    let next = searchedTree
     if (filters?.hideEmptyStories) {
       next = next.map(filterHideEmptyStories).filter((node): node is TreeNode => node !== null)
     }
@@ -1450,7 +1461,14 @@ export function TreeViewPage({
       next = next.map(filterHideEmptyEpics).filter((node): node is TreeNode => node !== null)
     }
     return next
-  }, [scopedTree, filters?.hideEmptyEpics, filters?.hideEmptyStories])
+  }, [searchedTree, filters?.hideEmptyEpics, filters?.hideEmptyStories])
+
+  // T92 — durante a busca a grade abre os ramos com resultado, sem alterar a
+  // preferência persistida de expansão.
+  const expandedForView = useMemo(
+    () => (searchQuery.trim() ? new Set(collectAllIds(displayTree)) : expanded),
+    [displayTree, expanded, searchQuery],
+  )
 
   // Mapa filho → pai da árvore exibida: usado no arraste para recusar ciclos.
   const moveParentMap = useMemo(() => buildTreeParentMap(displayTree), [displayTree])
@@ -1467,7 +1485,7 @@ export function TreeViewPage({
       }
     }
     collect(displayTree)
-    const expandedIds = new Set(expanded)
+    const expandedIds = new Set(expandedForView)
     const collapsedGroupIds = [...new Set(collectAllIds(tree))].filter(id => !expandedIds.has(id))
     return buildScreenSnapshot({
       screen: 'project-board-tree',
@@ -1493,7 +1511,7 @@ export function TreeViewPage({
       actionCardIds,
       revisions: {},
     })
-  }, [projectId, displayTree, expanded, filters, loading])
+  }, [projectId, displayTree, expandedForView, filters, loading])
 
   useEffect(() => { onSnapshotChange?.(treeSnapshot) }, [treeSnapshot, onSnapshotChange])
 
@@ -2039,7 +2057,7 @@ export function TreeViewPage({
               <NodeRows
                 nodes={displayTree}
                 depth={0}
-                expanded={expanded}
+                expanded={expandedForView}
                 onToggle={toggleNode}
                 onArchive={handleArchiveRequest}
                 canEdit={canEdit}
@@ -2184,8 +2202,24 @@ export function TreeViewPage({
         </div>
 
         {displayTree.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground text-sm">
-             {t('tree.empty')}
+          <div className="py-12 text-center text-sm text-muted-foreground">
+            {searchQuery.trim() ? (
+              <>
+                <p className="font-medium text-foreground">{tBoard('cardSearchNoResults', { query: searchQuery })}</p>
+                <p className="mt-1">{tBoard('cardSearchNoResultsHint')}</p>
+                {onClearSearch && (
+                  <button
+                    type="button"
+                    onClick={onClearSearch}
+                    className="mt-3 text-xs font-medium text-primary hover:underline"
+                  >
+                    {tBoard('cardSearchClearAction')}
+                  </button>
+                )}
+              </>
+            ) : (
+              t('tree.empty')
+            )}
           </div>
         )}
       </div>

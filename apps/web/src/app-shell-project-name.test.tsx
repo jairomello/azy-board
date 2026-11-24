@@ -26,6 +26,17 @@ beforeEach(async () => {
   await i18n.changeLanguage('pt-BR')
 })
 
+describe('AppShell — busca no header (T92)', () => {
+  test('renderiza o slot headerSearch no cluster da direita', () => {
+    render(
+      <MemoryRouter>
+        <AppShell sectionLabel="Board" headerSearch={<input aria-label="Buscar cards" />}>conteúdo</AppShell>
+      </MemoryRouter>,
+    )
+    expect(screen.getByLabelText('Buscar cards')).toBeInTheDocument()
+  })
+})
+
 describe('AppShell — nome do projeto no header (T59)', () => {
   test('com onProjectNameActivate, o nome vira um controle que dispara a ação', async () => {
     let activations = 0
