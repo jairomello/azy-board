@@ -52,13 +52,15 @@ describe('Toast — ação de desfazer', () => {
   test('toast sem ação some sozinho depois da duração configurada', async () => {
     function Short() {
       const { toast } = useToast()
-      return <button type="button" onClick={() => toast('Some rápido', 'success', { durationMs: 30 })}>curto</button>
+      // Duração folgada de propósito: com 30 ms o toast podia sumir antes de o
+      // `findByText` observá-lo em runner de CI sob carga, gerando flake.
+      return <button type="button" onClick={() => toast('Some rápido', 'success', { durationMs: 400 })}>curto</button>
     }
     const user = userEvent.setup()
     render(<ToastProvider><Short /></ToastProvider>)
 
     await user.click(screen.getByRole('button', { name: 'curto' }))
     await screen.findByText('Some rápido')
-    await waitFor(() => expect(screen.queryByText('Some rápido')).not.toBeInTheDocument(), { timeout: 1500 })
+    await waitFor(() => expect(screen.queryByText('Some rápido')).not.toBeInTheDocument(), { timeout: 4000 })
   })
 })
