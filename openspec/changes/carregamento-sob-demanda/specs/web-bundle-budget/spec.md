@@ -18,3 +18,17 @@ O web SHALL carregar o código da visão Árvore do board apenas quando essa vis
 
 - **WHEN** o chunk da visão Árvore ultrapassa o teto definido para ele
 - **THEN** a verificação de orçamento falha e informa o chunk, o limite e o valor medido
+
+### Requirement: Diálogos das Configurações carregados sob demanda
+
+O web SHALL carregar o diálogo de membro (adicionar e editar) e o detalhe da versão das Configurações do projeto apenas quando forem abertos, de modo que o chunk das Configurações não os contenha. Cada um SHALL ter teto próprio no orçamento de bundle.
+
+#### Scenario: Configurações sem os diálogos
+
+- **WHEN** o usuário abre as Configurações do projeto
+- **THEN** o chunk das Configurações carregado não inclui o código do diálogo de membro nem do detalhe da versão
+
+#### Scenario: Diálogo baixado ao abrir
+
+- **WHEN** o usuário clica em adicionar ou editar membro, ou abre o detalhe de uma versão
+- **THEN** o código do diálogo é carregado sob demanda e o diálogo abre com o mesmo comportamento de antes

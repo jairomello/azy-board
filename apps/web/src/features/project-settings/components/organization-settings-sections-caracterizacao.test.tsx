@@ -140,7 +140,8 @@ describe('OrganizationSettingsSections — membros & squads', () => {
     const user = userEvent.setup()
     render(<OrganizationSettingsSections {...baseProps()} />)
     await user.click(within(regiao('Membros & Squads')).getByRole('button', { name: 'Adicionar membro' }))
-    expect(screen.getByRole('dialog', { name: 'Adicionar membro' })).toBeInTheDocument()
+    // PB1 — o diálogo é carregado sob demanda: aparece quando o chunk chega.
+    expect(await screen.findByRole('dialog', { name: 'Adicionar membro' })).toBeInTheDocument()
   })
 })
 
