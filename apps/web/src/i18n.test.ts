@@ -27,6 +27,7 @@ describe('i18n runtime contract', () => {
       NOT_STARTED: 'statusNotStarted',
       PLANNED: 'statusPlanned',
       IN_PROGRESS: 'statusInProgress',
+      IN_HOMOLOGATION: 'statusInHomologation',
       BLOCKED: 'statusBlocked',
       DONE: 'statusDone',
       CANCELLED: 'statusCancelled',

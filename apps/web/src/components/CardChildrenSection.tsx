@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 import { resolveAppUrl } from '../lib/appUrl'
 import type { ItemType, Priority } from '@azy-board/domain'
 import { itemTypeMeta } from '../lib/itemTypeMeta'
+import { taskStatusLabel } from '../lib/taskStatus'
 
 interface ChildItem {
   id: string
@@ -39,14 +40,6 @@ const PRIORITY_LABELS: Record<Priority, string> = {
   LOW: 'Baixa', MEDIUM: 'Média', HIGH: 'Alta', CRITICAL: 'Crítica',
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  NOT_STARTED: 'Não iniciada',
-  IN_PROGRESS: 'Em andamento',
-  BLOCKED: 'Bloqueada',
-  DONE: 'Concluída',
-  CANCELLED: 'Cancelada',
-}
-
 function TypeIcon({ type }: { type: ItemType }) {
   if (type === 'BUG') return <Bug className="w-3.5 h-3.5 text-red-500" />
   if (type === 'STORY') return <BookOpen className="w-3.5 h-3.5 text-violet-500" />
@@ -71,6 +64,7 @@ function PriorityIcon({ priority }: { priority: Priority }) {
 
 export function CardChildrenSection({ itemId, projectId, onOpenChild, onCountChange, refreshKey = 0, titleLabel, emptyLabel }: Props) {
   const { t } = useTranslation('board')
+  const { t: tCommon } = useTranslation('common')
   const sectionTitle = titleLabel ?? t('areaSubtasks')
   const sectionEmpty = emptyLabel ?? t('childrenEmptySubtasks')
   const [children, setChildren] = useState<ChildItem[]>([])
@@ -137,7 +131,7 @@ export function CardChildrenSection({ itemId, projectId, onOpenChild, onCountCha
                     {PRIORITY_LABELS[child.priority]}
                   </span>
                   <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    {STATUS_LABELS[child.status] ?? child.status}
+                    {taskStatusLabel(tCommon, child.status)}
                   </span>
                   {child.points != null && <span className="text-[10px] font-medium text-muted-foreground">{child.points} pt</span>}
                   {child.column && <span className="truncate text-[10px] text-muted-foreground">{child.column.name}</span>}

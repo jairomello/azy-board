@@ -86,10 +86,14 @@ Status e coluna representam a mesma etapa e ficam sempre coerentes:
 Estados disponíveis:
 
 - Não iniciada.
+- Planejada.
 - Em andamento.
+- Em homologação.
 - Bloqueada.
 - Concluída.
 - Cancelada.
+
+O arquivamento não aparece nessa lista: é um ciclo de vida à parte, acionado por **Arquivar**.
 
 ## Definir prioridade
 
