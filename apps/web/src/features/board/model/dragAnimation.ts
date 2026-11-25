@@ -33,6 +33,19 @@ export interface DragDelta {
   y: number
 }
 
+/**
+ * Container rolável medido na largada do arraste.
+ *
+ * O quadro rola durante o arraste (auto-scroll do dnd-kit ou rolagem manual) e
+ * isso desloca as colunas na tela sem mover o ponteiro. Guardar a rolagem
+ * inicial permite reprojetar o ponteiro para as coordenadas da medição.
+ */
+export interface DragScrollOrigin {
+  element: HTMLElement
+  left: number
+  top: number
+}
+
 /** Movimento reduzido: nem o deslizamento nem o assentamento animam. */
 export const REDUCED_MOTION_MS = 0
 
@@ -70,6 +83,32 @@ export function dropDuration(destinoValido: boolean, movimentoReduzido: boolean)
 /** Ponteiro atual reconstruído do evento ativador somado ao deslocamento do arraste. */
 export function pointerFromDrag(activator: DragPointer, delta: DragDelta): DragPointer {
   return { x: activator.x + delta.x, y: activator.y + delta.y }
+}
+
+/**
+ * Rolagem acumulada nos containers desde a medição inicial.
+ *
+ * A soma cobre containers aninhados (canvas e faixa de colunas): o conteúdo se
+ * desloca pela soma das rolagens de todos os ancestrais.
+ */
+export function scrollDeltaSince(origins: readonly DragScrollOrigin[]): DragDelta {
+  let x = 0
+  let y = 0
+  for (const origin of origins) {
+    x += origin.element.scrollLeft - origin.left
+    y += origin.element.scrollTop - origin.top
+  }
+  return { x, y }
+}
+
+/**
+ * Reprojeta o ponteiro do arraste para as coordenadas da medição inicial.
+ *
+ * Rolar o quadro para a direita desloca as colunas para a esquerda; o ponteiro
+ * atual, somado à rolagem, volta a cair sobre o conteúdo medido na largada.
+ */
+export function adjustPointerForScroll(pointer: DragPointer, scroll: DragDelta): DragPointer {
+  return { x: pointer.x + scroll.x, y: pointer.y + scroll.y }
 }
 
 /** Ponto do evento ativador (`pointerdown`), quando o evento tiver coordenadas. */

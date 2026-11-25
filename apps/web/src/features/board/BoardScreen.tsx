@@ -69,6 +69,7 @@ import {
   DRAG_OVERLAY_DURATION_VAR,
   dropDuration,
   toTranslateKeyframe,
+  type DragScrollOrigin,
   type DragTargetRect,
 } from './model/dragAnimation'
 import { dropAnchor, type PreviewColumn } from './model/dragPreview'
@@ -263,7 +264,11 @@ export default function BoardPage() {
   // resolvida sobre esta geometria, sem depender das transforms do sortable.
   const measureDragAnimation = useCallback((activeId: string) => {
     const columns: PreviewColumn[] = []
-    for (const element of Array.from(document.querySelectorAll<HTMLElement>('[data-drop-id]'))) {
+    // Containers que rolam durante o arraste (canvas e faixa de colunas). A
+    // posição inicial é guardada para reprojetar o ponteiro a cada rolagem.
+    const scroll: DragScrollOrigin[] = []
+    const elementos = Array.from(document.querySelectorAll<HTMLElement>('[data-drop-id]'))
+    for (const element of elementos) {
       const id = element.dataset.dropId ?? ''
       const columnId = id.split(':col:')[1]
       if (!columnId) continue
@@ -280,11 +285,27 @@ export default function BoardPage() {
         gap: cards.length > 1 ? Math.max(0, cards[1]!.top - cards[0]!.bottom) : 8,
       })
     }
+    // No Unificado há uma faixa; nas lanes, cada lane tem a própria faixa
+    // rolável, e todas compartilham o canvas. Os pais das colunas são únicos
+    // por faixa, então a varredura parte deles e deduplica os ancestrais.
+    const vistos = new Set<HTMLElement>()
+    const containers = new Set(Array.from(elementos, element => element.parentElement).filter((element): element is HTMLElement => Boolean(element)))
+    for (const container of containers) {
+      for (let node: HTMLElement | null = container; node && node !== document.body; node = node.parentElement) {
+        if (vistos.has(node)) continue
+        vistos.add(node)
+        const estilo = getComputedStyle(node)
+        const rolaX = estilo.overflowX === 'auto' || estilo.overflowX === 'scroll'
+        const rolaY = estilo.overflowY === 'auto' || estilo.overflowY === 'scroll'
+        if (rolaX || rolaY) scroll.push({ element: node, left: node.scrollLeft, top: node.scrollTop })
+      }
+    }
     const node = cardNode(activeId)
     const retangulo = node?.getBoundingClientRect()
     const origem = node?.closest<HTMLElement>('[data-drop-id]')?.dataset.dropId?.split(':col:')[1]
     return {
       columns,
+      scroll,
       source: retangulo && origem ? { id: activeId, columnId: origem, height: retangulo.height } : null,
     }
   }, [])

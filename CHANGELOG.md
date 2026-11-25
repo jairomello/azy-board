@@ -20,6 +20,15 @@ Versioning: Semantic Versioning before the BSL change date (2032-04-26).
   o rótulo traduzido (`common:status.*`), usado na modal, no cabeçalho e nos
   filhos; `ARCHIVED` continua fora do seletor.
 
+- **Arraste no Kanban unificado acerta a coluna depois da rolagem horizontal.**
+  A prévia media colunas e cards só na largada; quando o auto-scroll do dnd-kit
+  rolava a faixa até a última etapa, a vaga era calculada com a geometria velha,
+  aparecia fora da tela e a soltura podia persistir a coluna errada — no fluxo de
+  sete colunas, mover para Concluídas parecia "não arrastar". O arraste agora
+  guarda a rolagem inicial dos containers (canvas e faixa de cada lane), reprojeta
+  o ponteiro pela rolagem acumulada e recalcula a prévia no evento `scroll`,
+  inclusive quando o usuário solta sem mover o ponteiro de novo.
+
 - **Aba aberta em build substituído deixa de quebrar com "Erro de
   renderização".** Depois de um deploy, o bundle em memória pedia chunks com hash
   antigo; o nginx respondia o `index.html` com `text/html` e o navegador recusava

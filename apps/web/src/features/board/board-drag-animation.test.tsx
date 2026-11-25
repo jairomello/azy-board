@@ -7,6 +7,7 @@ import {
   useBoardDragAnimation,
   useBoardDragAnimationValue,
   type BoardDragAnimationValue,
+  type BoardDragMeasurement,
 } from './hooks/useBoardDragAnimation'
 import type { PreviewColumn, PreviewSource } from './model/dragPreview'
 
@@ -29,8 +30,8 @@ const colunas: PreviewColumn[] = [
 
 const measure = () => ({ columns: colunas, source: fonte })
 
-function Quadro() {
-  const value = useBoardDragAnimation(measure)
+function Quadro({ medicao = measure }: { medicao?: () => BoardDragMeasurement } = {}) {
+  const value = useBoardDragAnimation(medicao)
   caixa.current = value
   return (
     <BoardDragAnimationProvider value={value}>
@@ -170,5 +171,65 @@ describe('useBoardDragAnimation — prévia do arraste', () => {
     })
     mover({ x: 0, y: 0 })
     expect(caixa.current!.validRef.current).toBe(false)
+  })
+})
+
+/** Container rolável falso: guarda os ouvintes e permite simular a rolagem. */
+function containerRolavel() {
+  const ouvintes = new Set<() => void>()
+  const element = {
+    scrollLeft: 0,
+    scrollTop: 0,
+    addEventListener: (tipo: string, ouvinte: () => void) => { if (tipo === 'scroll') ouvintes.add(ouvinte) },
+    removeEventListener: (tipo: string, ouvinte: () => void) => { if (tipo === 'scroll') ouvintes.delete(ouvinte) },
+  }
+  return {
+    element: element as unknown as HTMLElement,
+    rolar(x: number, y = 0) {
+      element.scrollLeft = x
+      element.scrollTop = y
+      act(() => { for (const ouvinte of [...ouvintes]) ouvinte() })
+    },
+    quantidadeDeOuvintes: () => ouvintes.size,
+  }
+}
+
+describe('useBoardDragAnimation — rolagem durante o arraste', () => {
+  test('recalcula a coluna quando o quadro rola sem o ponteiro se mover', () => {
+    const faixa = containerRolavel()
+    caixa.current = null
+    render(<Quadro medicao={() => ({ columns: colunas, source: fonte, scroll: [{ element: faixa.element, left: 0, top: 0 }] })} />)
+    iniciar()
+    mover({ x: 0, y: 0 })
+    expect(texto('coluna')).toBe('todo')
+
+    // Rolar 300 px desloca o conteúdo para a esquerda: o ponteiro (150) passa a
+    // cair sobre a coluna que estava em 400..692 na medição inicial.
+    faixa.rolar(300)
+    expect(texto('coluna')).toBe('doing')
+    expect(caixa.current!.validRef.current).toBe(true)
+  })
+
+  test('a soltura aproveita a coluna reprojetada e remove os ouvintes de rolagem', () => {
+    const faixa = containerRolavel()
+    caixa.current = null
+    render(<Quadro medicao={() => ({ columns: colunas, source: fonte, scroll: [{ element: faixa.element, left: 0, top: 0 }] })} />)
+    iniciar()
+    mover({ x: 0, y: 0 })
+    faixa.rolar(300)
+    soltar({ x: 0, y: 0 })
+
+    expect(caixa.current!.validRef.current).toBe(true)
+    expect(faixa.quantidadeDeOuvintes()).toBe(0)
+  })
+
+  test('cancelar também remove os ouvintes de rolagem', () => {
+    const faixa = containerRolavel()
+    caixa.current = null
+    render(<Quadro medicao={() => ({ columns: colunas, source: fonte, scroll: [{ element: faixa.element, left: 0, top: 0 }] })} />)
+    iniciar()
+    expect(faixa.quantidadeDeOuvintes()).toBe(1)
+    act(() => { caixa.current!.onDragCancel() })
+    expect(faixa.quantidadeDeOuvintes()).toBe(0)
   })
 })

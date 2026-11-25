@@ -1,6 +1,14 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react'
 import type { DragEndEvent, DragMoveEvent, DragStartEvent } from '@dnd-kit/core'
-import { activatorPointer, pointerFromDrag, prefersReducedMotion, type DragPointer } from '../model/dragAnimation'
+import {
+  activatorPointer,
+  adjustPointerForScroll,
+  pointerFromDrag,
+  prefersReducedMotion,
+  scrollDeltaSince,
+  type DragPointer,
+  type DragScrollOrigin,
+} from '../model/dragAnimation'
 import { emptyPreview, resolveDragPreview, type DragPreview, type PreviewColumn, type PreviewSource } from '../model/dragPreview'
 
 /**
@@ -16,6 +24,11 @@ import { emptyPreview, resolveDragPreview, type DragPreview, type PreviewColumn,
 export interface BoardDragMeasurement {
   columns: PreviewColumn[]
   source: PreviewSource | null
+  /**
+   * Containers roláveis medidos na largada. O quadro rola durante o arraste e,
+   * sem reprojetar o ponteiro, a prévia miraria a coluna que estava ali antes.
+   */
+  scroll?: DragScrollOrigin[]
 }
 
 /** Mede as colunas e o card ativo. Fornecido pelo quadro (DOM). */
@@ -55,6 +68,9 @@ export function useBoardDragAnimation(measure: BoardDragMeasure): BoardDragAnima
   const colunaRef = useRef(false)
   const validRef = useRef(false)
   const previewRef = useRef<DragPreview>(emptyPreview())
+  /** Último deslocamento do ponteiro: a rolagem sozinha também recalcula a prévia. */
+  const lastDeltaRef = useRef<DragPointer | null>(null)
+  const scrollCleanupRef = useRef<(() => void) | null>(null)
 
   /** Ponteiro atual no viewport; `null` quando o evento ativador não o informou. */
   const aplicarPreview = useCallback((proxima: DragPreview) => {
@@ -67,9 +83,32 @@ export function useBoardDragAnimation(measure: BoardDragMeasure): BoardDragAnima
     ))
   }, [])
 
-  const currentPointer = useCallback((delta: { x: number; y: number }): DragPointer | null => (
-    activatorRef.current ? pointerFromDrag(activatorRef.current, delta) : null
-  ), [])
+  const limparRolagem = useCallback(() => {
+    scrollCleanupRef.current?.()
+    scrollCleanupRef.current = null
+  }, [])
+
+  /**
+   * Ponteiro reprojetado para as coordenadas da medição: o deslocamento do
+   * arraste é somado à rolagem acumulada dos containers desde a largada.
+   * Sem isso, rolar o quadro durante o arraste desalinha ponteiro e coluna.
+   */
+  const currentPointer = useCallback((delta: DragPointer): DragPointer | null => {
+    if (!activatorRef.current) return null
+    const rolagem = scrollDeltaSince(medicaoRef.current.scroll ?? [])
+    return adjustPointerForScroll(pointerFromDrag(activatorRef.current, delta), rolagem)
+  }, [])
+
+  /** Resolve e aplica a prévia para um deslocamento do ponteiro. */
+  const aplicarNoDeslocamento = useCallback((delta: DragPointer): DragPreview | null => {
+    const pointer = currentPointer(delta)
+    const source = medicaoRef.current.source
+    if (!pointer || !source) return null
+    const proxima = resolveDragPreview(pointer, source, medicaoRef.current.columns)
+    validRef.current = proxima.targetId !== null
+    aplicarPreview(proxima)
+    return proxima
+  }, [aplicarPreview, currentPointer])
 
   const onDragStart = useCallback((event: DragStartEvent) => {
     const activeId = event.active.id.toString()
@@ -77,6 +116,8 @@ export function useBoardDragAnimation(measure: BoardDragMeasure): BoardDragAnima
     colunaRef.current = activeId.includes(':col:')
     activatorRef.current = activatorPointer(event.activatorEvent)
     validRef.current = false
+    lastDeltaRef.current = null
+    limparRolagem()
     setDragging(true)
     if (colunaRef.current) {
       medicaoRef.current = REPOUSO
@@ -90,41 +131,52 @@ export function useBoardDragAnimation(measure: BoardDragMeasure): BoardDragAnima
     aplicarPreview(medicao.source
       ? resolveDragPreview(activatorRef.current ?? { x: 0, y: 0 }, medicao.source, medicao.columns)
       : emptyPreview())
-  }, [aplicarPreview])
+    // Auto-scroll do dnd-kit e rolagem manual movem as colunas sem emitir
+    // DragMove: ouvir os containers mantém a prévia no conteúdo sob o ponteiro.
+    const rolagem = medicao.scroll ?? []
+    if (rolagem.length > 0) {
+      const aoRolar = () => {
+        if (lastDeltaRef.current) aplicarNoDeslocamento(lastDeltaRef.current)
+      }
+      for (const origin of rolagem) origin.element.addEventListener('scroll', aoRolar, { passive: true })
+      scrollCleanupRef.current = () => {
+        for (const origin of rolagem) origin.element.removeEventListener('scroll', aoRolar)
+      }
+    }
+  }, [aplicarPreview, aplicarNoDeslocamento, limparRolagem])
 
   const onDragMove = useCallback((event: DragMoveEvent) => {
     if (colunaRef.current) return
-    const pointer = currentPointer(event.delta)
-    const source = medicaoRef.current.source
-    if (!pointer || !source) return
-    const proxima = resolveDragPreview(pointer, source, medicaoRef.current.columns)
-    validRef.current = proxima.targetId !== null
-    aplicarPreview(proxima)
-  }, [aplicarPreview, currentPointer])
+    lastDeltaRef.current = event.delta
+    aplicarNoDeslocamento(event.delta)
+  }, [aplicarNoDeslocamento])
 
   const onDragEnd = useCallback((event: DragEndEvent) => {
     if (!colunaRef.current) {
-      const pointer = currentPointer(event.delta)
-      const source = medicaoRef.current.source
-      validRef.current = Boolean(pointer && source && resolveDragPreview(pointer, source, medicaoRef.current.columns).targetId)
+      lastDeltaRef.current = event.delta
+      aplicarNoDeslocamento(event.delta)
     }
+    limparRolagem()
     medicaoRef.current = REPOUSO
     activatorRef.current = null
     colunaRef.current = false
+    lastDeltaRef.current = null
     setActiveId(null)
     setDragging(false)
     aplicarPreview(emptyPreview())
-  }, [aplicarPreview, currentPointer])
+  }, [aplicarNoDeslocamento, aplicarPreview, limparRolagem])
 
   const onDragCancel = useCallback(() => {
     validRef.current = false
+    limparRolagem()
     medicaoRef.current = REPOUSO
     activatorRef.current = null
     colunaRef.current = false
+    lastDeltaRef.current = null
     setActiveId(null)
     setDragging(false)
     aplicarPreview(emptyPreview())
-  }, [aplicarPreview])
+  }, [aplicarPreview, limparRolagem])
 
   return useMemo(() => ({
     preview,

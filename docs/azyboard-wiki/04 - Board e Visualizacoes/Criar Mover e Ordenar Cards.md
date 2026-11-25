@@ -89,6 +89,8 @@ Um card pode ser solto:
 
 A aplicação prioriza o elemento menor sob o cursor para distinguir cards de colunas.
 
+Quando o fluxo não cabe inteiro na tela, segure o card junto à borda para o quadro rolar. A vaga acompanha a coluna que está sob o ponteiro depois da rolagem e é nela que o card é solto — inclusive no layout **Unificado**, de uma única faixa.
+
 ## Excluir pelo Board
 
 A ação de exclusão aparece ao posicionar o cursor sobre o card. Antes de excluir, a aplicação solicita confirmação e informa que filhos e conteúdos relacionados também serão removidos.
