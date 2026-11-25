@@ -31,7 +31,7 @@ import {
   useSensors,
 } from '@dnd-kit/core'
 import { useQueryClient } from '@tanstack/react-query'
-import { Layers } from 'lucide-react'
+import { Layers, Loader2 } from 'lucide-react'
 import { invalidateTree } from '../../lib/queryKeys'
 import { countActiveBoardFilters } from '../../components/BoardFilters'
 import { KanbanCard } from '../../components/KanbanCard'
@@ -41,7 +41,7 @@ import { ActiveFilterChips, removeActiveBoardFilter, type ActiveFilterKey } from
 import { CompactFilterSummary } from '../../components/CompactFilterSummary'
 import { useToast } from '../../components/Toast'
 import { api } from '../../lib/api'
-import { TreeViewPage, type TreeActionContext } from '../../pages/TreeViewPage'
+import type { TreeActionContext } from '../../pages/TreeViewPage'
 import { useAuth } from '../../contexts/AuthContext'
 import { AppShell } from '../../components/AppShell'
 import { BoardCommandBar } from '../../components/BoardCommandBar'
@@ -87,6 +87,14 @@ import { VIEW_COMMAND_SCHEMA_VERSION, type AssistantPlanningResult } from '@azy-
 const CardSearchHeader = lazy(async () => {
   const module = await import('../../components/CardSearchHeader')
   return { default: module.default }
+})
+
+// PB1 — a Árvore (grade, colunas editáveis, criação entre linhas) só é baixada
+// quando a visão Árvore é aberta; Kanban e Unificado não pagam por ela no
+// chunk BoardPage.
+const TreeViewPage = lazy(async () => {
+  const module = await import('../../pages/TreeViewPage')
+  return { default: module.TreeViewPage }
 })
 
 const ExportDialog = lazy(async () => {
@@ -765,6 +773,7 @@ export default function BoardPage() {
         )}
         <div className={`board-canvas min-h-0 flex-1 overflow-x-auto overflow-y-auto rounded-xl border border-border/80 bg-canvas ${density === 'compact' ? 'density-compact' : ''}`}>
         {view === 'tree' && projectId && (
+          <Suspense fallback={<div className="flex h-full min-h-40 items-center justify-center" role="status" aria-busy="true"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden /></div>}>
            <TreeViewPage
            projectId={projectId!}
              filters={filters}
@@ -784,6 +793,7 @@ export default function BoardPage() {
             // Tarefa 10.2 — passa o handler de arquivamento para a tree view
             onArchive={archiving.openArchiveConfirm}
           />
+          </Suspense>
         )}
 
         {view !== 'tree' && (
