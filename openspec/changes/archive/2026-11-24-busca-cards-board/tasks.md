@@ -12,7 +12,7 @@
 
 - [x] 2.1 Criar a change `busca-cards-board` com proposal, tasks e delta `ADDED` da capability `board-card-search`.
 - [x] 2.2 Registrar o `Board ref` do T92 nos artefatos.
-- [ ] 2.3 Rodar `bun run openspec:validate` e `bun run check:docs`.
+- [x] 2.3 Rodar `bun run openspec:validate` e `bun run check:docs`.
 
 ## 3. Modelo de busca
 
@@ -60,4 +60,4 @@
 
 - [x] 8.1 Apresentar diff, evidências e instruções de teste ao Lincoln.
 - [x] 8.2 Autorização explícita recebida após teste local; push e PR liberados.
-- [ ] 8.3 Após aprovação e merge, arquivar a change OpenSpec e concluir o T92 com tokens registrados.
+- [x] 8.3 Após aprovação e merge, arquivar a change OpenSpec e concluir o T92 com tokens registrados.
