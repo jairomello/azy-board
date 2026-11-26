@@ -91,61 +91,54 @@ O sistema SHALL exibir o título em destaque com até duas linhas no modo confor
 - **WHEN** o usuário abre detalhes ou inicia edição inline pelo título
 - **THEN** cada ação mantém o comportamento atual sem disparar a outra por propagação
 
-### Requirement: Linha de etiquetas com tipo textual único
-O sistema SHALL exibir tags à esquerda e, à direita, a etiqueta textual do status do card seguida de uma única etiqueta textual do tipo, usando cores legíveis nos temas claro e escuro. A etiqueta de status SHALL trazer o nome do status no idioma da interface e um marcador na mesma família de cor da faixa lateral. Quando o status do card não combina com a coluna em que ele está e o projeto tem coluna própria para esse status, a etiqueta SHALL ficar em destaque de alerta, com dica e texto acessível que nomeiam a coluna atual. A etiqueta SHALL aparecer igual no Board e no Kanban unificado. Tags múltiplas SHALL poder quebrar linha sem sobreposição.
-
-#### Scenario: Tags à esquerda e tipo à direita
-- **WHEN** o card possui tags e tipo
-- **THEN** as tags ficam à esquerda e o tipo aparece uma única vez à direita
-
-#### Scenario: Tags múltiplas quebram linha
-- **WHEN** as tags não cabem em uma linha
-- **THEN** elas quebram linha e o card aumenta de altura sem cobrir outras regiões
-
-#### Scenario: Status visível no card
-- **WHEN** um card com status `IN_PROGRESS` está na coluna "Fazendo", de status base `IN_PROGRESS`
-- **THEN** o card mostra a etiqueta "Em andamento" ao lado do tipo, sem destaque de alerta
-
-#### Scenario: Status diferente da coluna
-- **WHEN** um card com status `IN_HOMOLOGATION` está na coluna Backlog e o projeto tem a coluna "Em Homologação"
-- **THEN** a etiqueta "Em homologação" aparece em destaque de alerta, com a dica "Status diferente da coluna "Backlog""
-
-#### Scenario: Status sem coluna própria não é desencontro
-- **WHEN** um card `BLOCKED` está em "A Fazer" e o projeto não tem coluna de status base `BLOCKED`
-- **THEN** a etiqueta "Bloqueada" aparece sem destaque de alerta
-
-#### Scenario: Mesma etiqueta no Kanban unificado
-- **WHEN** o usuário alterna entre o Board e o Kanban unificado
-- **THEN** cada card mostra a mesma etiqueta de status e o mesmo destaque nas duas visões
-
 ### Requirement: Região de avanço entre etiquetas e rodapé
 
-O sistema SHALL exibir a barra de avanço do card entre tags/tipo e rodapé sempre que o avanço for maior que zero, com rótulo acessível de avanço no fluxo e indicador legível nos dois temas. Quando o card tiver checklist, o contador `marcados/total` SHALL aparecer junto da barra, sem substituí-la. A barra SHALL usar trilho com cantos arredondados, preenchimento em gradiente derivado dos tokens do tema e marcas discretas de referência. O preenchimento SHALL transicionar de largura ao aparecer ou mudar de valor, exceto quando a preferência `prefers-reduced-motion` estiver ativa, caso em que a barra SHALL aparecer já preenchida e sem animação contínua. Ao atingir 100%, o preenchimento SHALL usar o token de concluído.
+O sistema SHALL exibir entre tags/tipo e rodapé uma região de progresso composta por até três barras, nesta ordem: progresso do card, progresso do checklist e avanço das subtasks. A barra principal SHALL aparecer sempre que o avanço for maior que zero, com rótulo acessível de avanço no fluxo e indicador legível nos dois temas; ela SHALL usar trilho com cantos arredondados, preenchimento em gradiente derivado dos tokens do tema e marcas discretas de referência. As barras de checklist e de subtasks SHALL seguir os requisitos próprios e usar estilos e cores distintos entre si e da barra principal. A região SHALL ser omitida apenas quando as três barras estiverem ausentes. O preenchimento SHALL transicionar de largura ao aparecer ou mudar de valor, exceto quando `prefers-reduced-motion` estiver ativa. Ao atingir 100%, a barra principal SHALL usar o token de concluído.
 
 #### Scenario: Card com checklists
 
 - **WHEN** existe pelo menos um item de checklist
-- **THEN** a barra de avanço e o contador `marcados/total` aparecem entre tags/tipo e rodapé
+- **THEN** a barra de checklist e o contador `marcados/total` aparecem entre tags/tipo e rodapé, junto da barra principal quando houver avanço
 
 #### Scenario: Card sem checklists
 
 - **WHEN** não existe item de checklist e o card está em uma coluna cujo peso de avanço é 90
-- **THEN** a região exibe a barra em 90%, sem contador de checklist
+- **THEN** a região exibe a barra principal em 90%, sem contador de checklist
 
 #### Scenario: Card sem avanço
 
-- **WHEN** o avanço do card é 0, como em uma coluna de trabalho não iniciado
+- **WHEN** o card não tem avanço, checklist com itens nem filhos
 - **THEN** a região de avanço é omitida e não deixa espaço vazio
 
 #### Scenario: Barra no tema escuro
 
 - **WHEN** o tema escuro está ativo
-- **THEN** trilho, preenchimento e marcas permanecem distinguíveis e com contraste legível
+- **THEN** trilhos, preenchimentos e marcas das três barras permanecem distinguíveis e com contraste legível
 
 #### Scenario: Movimento reduzido
 
 - **WHEN** o usuário tem `prefers-reduced-motion: reduce`
-- **THEN** a barra aparece preenchida sem transição de largura nem brilho animado
+- **THEN** as barras aparecem preenchidas sem transição de largura nem brilho animado
+
+#### Scenario: Card com as três barras
+
+- **WHEN** o card tem avanço maior que zero, checklist com itens e subtasks
+- **THEN** a região exibe, nesta ordem, a barra principal, a barra de checklist e a barra de subtasks, sem sobreposição
+
+#### Scenario: Card com checklist e sem subtasks
+
+- **WHEN** o card tem checklist com itens e nenhum filho
+- **THEN** a região exibe a barra principal quando houver avanço e a barra de checklist, sem reservar espaço para a barra de subtasks
+
+#### Scenario: Card com subtasks e sem checklist
+
+- **WHEN** o card tem filhos e nenhum checklist
+- **THEN** a região exibe a barra principal quando houver avanço e a barra de subtasks, sem contador de checklist
+
+#### Scenario: Card com checklist e avanço zero
+
+- **WHEN** o card está em coluna de peso 0, mas tem checklist com itens
+- **THEN** a barra principal é omitida e a barra de checklist permanece visível
 
 ### Requirement: Rodapé com divisor e campos condicionais
 O sistema SHALL separar o rodapé por divisor sutil e alinhar os metadados existentes na ordem prioridade, pontos, contagem de filhos e avatar do responsável ao fim. Campos ausentes SHALL ser omitidos sem reserva de espaço.
@@ -207,3 +200,137 @@ O card do Kanban SHALL exibir um indicador compacto composto por ícone e contag
 #### Scenario: Indicador acessível
 - **WHEN** o indicador de dependências é exibido
 - **THEN** ele possui nome acessível descrevendo a contagem, legível por leitor de tela
+
+### Requirement: Faixa de etiquetas com truncamento e resumo
+
+O sistema SHALL exibir as tags do card em uma faixa própria, em uma única linha,
+com altura fixa e sem quebra de texto dentro da pílula. Cada tag SHALL ter largura
+máxima e truncar com reticências, expondo o nome completo em tooltip. Quando as
+tags não couberem, o sistema SHALL exibir até duas tags e resumir as restantes em
+um chip `+N` com tooltip e nome acessível. Card sem tags SHALL omitir a faixa.
+
+#### Scenario: Tags curtas em uma linha
+
+- **WHEN** o card tem duas tags curtas
+- **THEN** as duas aparecem na faixa de tags, com altura constante e sem quebrar o texto
+
+#### Scenario: Tag longa truncada
+
+- **WHEN** uma tag tem nome maior que a largura máxima definida
+- **THEN** o nome é truncado com reticências, permanece em uma linha e o nome completo aparece no tooltip
+
+#### Scenario: Muitas tags com resumo
+
+- **WHEN** o card tem mais tags do que o espaço permite
+- **THEN** no máximo duas tags aparecem e as restantes são resumidas em `+N`, com a lista completa no tooltip e nome acessível
+
+#### Scenario: Card sem tags
+
+- **WHEN** o card não tem tags
+- **THEN** a faixa de tags é omitida e não reserva espaço vazio
+
+#### Scenario: Tema escuro e densidade compacta
+
+- **WHEN** o tema escuro ou a densidade compacta está ativa
+- **THEN** as tags e o chip `+N` mantêm contraste e alinhamento, sem quebra de texto
+
+### Requirement: Faixa de status e tipo separada das tags
+
+O sistema SHALL exibir status e tipo em uma faixa própria, separada das tags, sem
+quebra de linha e com a mesma altura das tags. A etiqueta de status SHALL manter
+o nome do status no idioma da interface e o destaque de alerta quando o status
+não combina com a coluna. A faixa SHALL permanecer alinhada mesmo quando existir
+tag longa ou muitas tags.
+
+#### Scenario: Status e tipo fora da faixa de tags
+
+- **WHEN** o card tem tags, status e tipo
+- **THEN** as tags ocupam uma faixa e o status e o tipo ocupam outra, sem competir por largura nem desalinhar
+
+#### Scenario: Card sem tags
+
+- **WHEN** o card não tem tags
+- **THEN** status e tipo ocupam a faixa sem lacuna reservada para tags
+
+#### Scenario: Status visível no card
+
+- **WHEN** um card com status `IN_PROGRESS` está na coluna "Fazendo", de status base `IN_PROGRESS`
+- **THEN** o card mostra a etiqueta "Em andamento" ao lado do tipo, sem destaque de alerta
+
+#### Scenario: Status diferente da coluna
+
+- **WHEN** um card com status `IN_HOMOLOGATION` está na coluna Backlog e o projeto tem a coluna "Em Homologação"
+- **THEN** a etiqueta "Em homologação" aparece em destaque de alerta, com a dica "Status diferente da coluna "Backlog""
+
+#### Scenario: Status sem coluna própria não é desencontro
+
+- **WHEN** um card `BLOCKED` está em "A Fazer" e o projeto não tem coluna de status base `BLOCKED`
+- **THEN** a etiqueta "Bloqueada" aparece sem destaque de alerta
+
+#### Scenario: Mesma etiqueta no Kanban unificado
+
+- **WHEN** o usuário alterna entre o Board e o Kanban unificado
+- **THEN** cada card mostra a mesma etiqueta de status e o mesmo destaque nas duas visões
+
+### Requirement: Barra de progresso do checklist no card
+
+O card SHALL exibir uma barra de checklist apenas quando o item tiver ao menos um checklist com itens. A barra SHALL representar a razão entre marcados e total, agregando todos os checklists, ao lado do contador `marcados/total` existente. A barra SHALL usar cor, estilo e nome acessível próprios, distintos das demais barras, e SHALL manter a identidade de checklist em 100%.
+
+#### Scenario: Card com vários checklists
+
+- **WHEN** o card tem dois checklists, com 4 de 6 e 8 de 14 itens marcados
+- **THEN** a barra de checklist mostra 12 de 20 e 60%, e o contador exibe `12/20`
+
+#### Scenario: Checklist sem itens
+
+- **WHEN** o card tem um checklist criado, mas sem nenhum item
+- **THEN** a barra de checklist não é exibida
+
+#### Scenario: Checklist concluído
+
+- **WHEN** todos os itens de todos os checklists do card estão marcados
+- **THEN** a barra de checklist aparece cheia, com o ícone de checklist concluído, e a barra principal continua refletindo apenas status e coluna
+
+#### Scenario: Cor distinta da barra principal
+
+- **WHEN** as barras principal e de checklist aparecem juntas no mesmo card
+- **THEN** cada uma usa sua própria família de cor e estilo, sem ambiguidade entre os dois indicadores
+
+#### Scenario: Nome acessível do checklist
+
+- **WHEN** um leitor de tela percorre o card
+- **THEN** a barra de checklist anuncia o progresso de checklist com marcados, total e percentual, em nome distinto da barra principal
+
+### Requirement: Barra de progresso das subtasks no card
+
+O card SHALL exibir uma barra de subtasks apenas quando o item tiver filhos diretos não cancelados e não arquivados. A barra SHALL representar a média do avanço das subtasks diretas, calculada pela mesma regra de status e coluna da barra principal, sem considerar checklist. A barra SHALL usar estilo, cor e nome acessível próprios e SHALL exibir a quantidade de subtasks consideradas junto do percentual.
+
+#### Scenario: Card com subtasks em andamento
+
+- **WHEN** o card tem quatro subtasks com avanços 100%, 100%, 50% e 0%
+- **THEN** a barra de subtasks mostra 63% e a quantidade de subtasks consideradas
+
+#### Scenario: Card com todas as subtasks concluídas
+
+- **WHEN** todas as subtasks diretas do card estão com status `DONE`
+- **THEN** a barra de subtasks aparece em 100%, mantendo o estilo próprio de subtasks
+
+#### Scenario: Subtasks canceladas ficam fora
+
+- **WHEN** o card tem duas subtasks concluídas e uma cancelada
+- **THEN** a barra de subtasks mostra 100% e considera apenas as duas concluídas
+
+#### Scenario: Card sem subtasks válidas
+
+- **WHEN** o card não tem filhos ou todos os filhos estão cancelados ou arquivados
+- **THEN** a barra de subtasks não é exibida
+
+#### Scenario: Card virtual de história
+
+- **WHEN** uma história não-folha é exibida como card no Kanban
+- **THEN** a barra de subtasks considera as tasks filhas da história
+
+#### Scenario: Nome acessível das subtasks
+
+- **WHEN** um leitor de tela percorre o card
+- **THEN** a barra de subtasks anuncia o percentual médio e a quantidade de subtasks, em nome distinto das outras barras

@@ -6,7 +6,7 @@ Definir o cálculo e a exibição de progresso individual e acumulado na Tree Vi
 
 ### Requirement: Progresso de items na Tree View
 
-O sistema SHALL calcular e exibir progresso percentual na Tree View para items `TASK`, `BUG`, `STORY` e `EPIC`, usando as folhas de progresso do subárvore: itens sem filhos dos tipos `TASK`, `BUG`, `STORY` ou `EPIC`, não cancelados e não arquivados. Uma folha SHALL valer o avanço definido pelo seu status, refinado pela coluna e pelo checklist quando existir; folha cancelada SHALL exibir "—"; agrupadores sem folhas recebem 0% e agrupadores só com folhas canceladas exibem "—". `EXTERNAL` SHALL exibir "—" e não pesar no pai.
+O sistema SHALL calcular e exibir progresso percentual na Tree View para items `TASK`, `BUG`, `STORY` e `EPIC`, usando as folhas de progresso do subárvore: itens sem filhos dos tipos `TASK`, `BUG`, `STORY` ou `EPIC`, não cancelados e não arquivados. Uma folha SHALL valer o avanço definido pelo seu status, refinado apenas pela coluna e pelo peso explícito configurado; o checklist SHALL NOT influenciar o percentual. Folha cancelada SHALL exibir "—"; agrupadores sem folhas recebem 0% e agrupadores só com folhas canceladas exibem "—". `EXTERNAL` SHALL exibir "—" e não pesar no pai.
 
 #### Scenario: Task concluída exibe progresso completo
 
@@ -22,6 +22,11 @@ O sistema SHALL calcular e exibir progresso percentual na Tree View para items `
 
 - **WHEN** um BUG folha está em uma coluna `IN_PROGRESS` cujo peso é 90
 - **THEN** sua linha exibe barra de progresso em 90%
+
+#### Scenario: Checklist não altera o progresso da folha
+
+- **WHEN** uma TASK folha em coluna de peso 50 tem metade dos itens de checklist marcados
+- **THEN** sua linha exibe 50%, sem refinar pelo checklist
 
 #### Scenario: Agrupador calcula progresso acumulado
 
