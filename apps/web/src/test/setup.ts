@@ -18,9 +18,14 @@
 import './register-dom'
 import { afterEach, beforeEach, expect } from 'bun:test'
 import * as matchers from '@testing-library/jest-dom/matchers'
-import { cleanup, within } from '@testing-library/react'
+import { cleanup, configure, within } from '@testing-library/react'
 
 expect.extend(matchers)
+
+// Modais, dialogs e telas carregados sob demanda (lazy) passam de 1 s na
+// primeira importação a frio no runner do CI, estourando o timeout padrão de
+// findBy*/waitFor. 4 s fica abaixo do timeout de 5 s por teste do bun:test.
+configure({ asyncUtilTimeout: 4000 })
 
 // O happy-dom implementa `AbortSignal.timeout`/`AbortSignal.any` usando `this`
 // interno; chamá-los desanexados (como faz `lib/api` ao montar o signal de
