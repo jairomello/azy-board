@@ -6,43 +6,74 @@ order: 1
 
 # Configurar o Servidor MCP
 
-O servidor MCP conecta um cliente compatível ao Azy Board e disponibiliza ferramentas de projeto para um agente de IA. A conexão usa transporte `stdio`; cada instância recebe a URL da API e uma API Key pessoal.
+O MCP do Azy Board pode ser acessado remotamente por HTTP, sem instalar o
+projeto nem executar um processo local. Para instalações hospedadas, esse é o
+modo recomendado: o servidor já roda junto da API e o cliente se conecta à URL
+`/mcp`.
+
+O transporte local `stdio` continua disponível para desenvolvimento e para
+instalações que ainda não oferecem o endpoint HTTP.
 
 ## Antes de começar
 
 Você precisa de:
 
 - acesso ao Azy Board e aos projetos que o agente utilizará;
-- uma API Key criada em **Minha conta**;
-- URL acessível do backend do Azy Board;
-- Bun instalado no ambiente que executará o servidor MCP;
-- caminho local do repositório ou do arquivo compilado do servidor.
+- uma API Key criada em **Minha conta → Gerenciar API Keys**;
+- um cliente compatível com MCP remoto por HTTP.
 
-Consulte [[08 - Conta e Preferencias/Gerenciar API Keys|Gerenciar API Keys]] antes de configurar a credencial.
+Consulte [[08 - Conta e Preferencias/Gerenciar API Keys|Gerenciar API Keys]].
+Copie a chave ao criá-la: o valor integral não será exibido novamente.
 
-## Variáveis de ambiente
+## Conectar ao MCP remoto (recomendado)
 
-| Variável | Obrigatória | Conteúdo |
-|---|---:|---|
-| `EASYBOARD_API_KEY` | Sim | Segredo integral da API Key. |
-| `EASYBOARD_URL` | Não | URL base do backend; padrão `http://localhost:3000`. |
-| `AZYBOARD_PROJECT_ID` | Não | Projeto padrão da codebase; quando definido, `projectId` torna-se opcional nas ferramentas. |
+Na instalação hospedada, o servidor já está em execução. Não instale Bun, não
+clone o repositório e não configure um comando local. Use a URL do MCP exibida
+em **Minha conta → Gerenciar API Keys**. Ela tem o formato:
 
-Embora o nome técnico das variáveis mantenha `EASYBOARD`, elas configuram o servidor MCP do Azy Board.
+```text
+https://<endereco-da-instalacao>/mcp
+```
 
-## Projeto padrão da codebase
+Configure o cliente para usar transporte HTTP e envie a API Key no cabeçalho
+`Authorization: Bearer <sua-api-key>`. Exemplo genérico:
 
-Quando um repositório de código trabalha sempre com o mesmo projeto do Azy
-Board, defina `AZYBOARD_PROJECT_ID` no ambiente do servidor MCP. Com isso, o
-agente não precisa descobrir o projeto a cada comando: `projectId` vira
-opcional e o servidor injeta o padrão. Informar `projectId` explicitamente
-continua permitindo operar outros projetos acessíveis à chave. O ID aparece na
-URL `/projects/<id>/...`; ele não é um segredo e pode ficar versionado na
-configuração MCP do repositório.
+```json
+{
+  "mcpServers": {
+    "azy-board": {
+      "type": "http",
+      "url": "https://<endereco-da-instalacao>/mcp",
+      "headers": {
+        "Authorization": "Bearer azb_sua_chave_aqui"
+      }
+    }
+  }
+}
+```
 
-## Configuração de um cliente MCP
+O formato e o local do arquivo de configuração variam por cliente. Em clientes
+que usam outro formato, mantenha os mesmos dados: transporte HTTP, URL terminada
+em `/mcp` e cabeçalho Bearer.
 
-Cadastre um servidor chamado `azy-board` no cliente. Exemplo com execução pelo código-fonte:
+O endpoint usa Streamable HTTP, é stateless e autentica cada requisição com a
+API Key. Não configure `EASYBOARD_URL` ou `EASYBOARD_API_KEY` como variáveis de
+ambiente do processo local neste modo.
+
+### Projeto de contexto
+
+No modo remoto, `AZYBOARD_PROJECT_ID` não é usado. Informe `projectId` nos
+argumentos das ferramentas que o exigem ou configure o cabeçalho opcional
+`X-Azyboard-Project-Id` no cliente. Sem um projeto de contexto, use uma
+ferramenta como `list_projects` para descobrir os projetos acessíveis.
+
+## Alternativa: servidor local (`stdio`)
+
+Use `stdio` para desenvolvimento local ou quando precisar executar o adaptador
+MCP junto ao código-fonte. Esse modo exige Bun, o repositório (ou a versão
+compilada do servidor) na máquina do cliente e acesso à API do Azy Board.
+
+Exemplo de configuração:
 
 ```json
 {
@@ -55,87 +86,50 @@ Cadastre um servidor chamado `azy-board` no cliente. Exemplo com execução pelo
       ],
       "env": {
         "EASYBOARD_API_KEY": "azb_sua_chave_aqui",
-        "EASYBOARD_URL": "http://localhost:3000"
+        "EASYBOARD_URL": "http://localhost:3000",
+        "AZYBOARD_PROJECT_ID": "<id-opcional-do-projeto-padrao>"
       }
     }
   }
 }
 ```
 
-O local exato do arquivo de configuração varia conforme o cliente. Preserve a estrutura de comando, argumentos e ambiente exigida por ele.
+| Variável | Obrigatória | Conteúdo |
+|---|---:|---|
+| `EASYBOARD_API_KEY` | Sim | API Key integral. |
+| `EASYBOARD_URL` | Não | URL base da API; padrão `http://localhost:3000`. |
+| `AZYBOARD_PROJECT_ID` | Não | Projeto padrão; quando definido, `projectId` pode ser omitido nas ferramentas. |
 
-## Skill oficial
-
-O repositório mantém a skill oficial e agnóstica de cliente em
-`skills/azyboard/SKILL.md`. Carregue esse arquivo no Claude Code, OpenCode,
-Codex ou outro cliente compatível para obter os playbooks, regras operacionais
-e comandos semânticos do Azy Board. Os arquivos em `skills/azyboard/commands/`
-podem ser copiados para a convenção de slash commands do cliente; quando isso
-não for suportado, use os mesmos comandos como prompts em linguagem natural.
-
-Não copie API Keys para a skill ou para arquivos versionados. A configuração
-deve continuar usando `EASYBOARD_API_KEY` e `EASYBOARD_URL` no ambiente ou no
-cofre de segredos do cliente.
-
-## Usar a versão compilada
-
-Em ambientes estáveis, compile o servidor e aponte o cliente para `apps/mcp/dist/index.js`. Isso evita recompilação a cada inicialização.
-
-O processo continua usando Bun, transporte `stdio` e as mesmas variáveis de ambiente.
+O nome técnico das variáveis mantém `EASYBOARD`, embora configurem o Azy Board.
+No modo `stdio`, o processo MCP local usa essa chave para chamar a API.
 
 ## Verificar a conexão
 
-1. Inicie ou recarregue o cliente MCP.
-2. Confirme que o servidor `azy-board` iniciou sem erros.
-3. Verifique se a lista de ferramentas inclui `list_tasks` e `list_modules`.
-4. Execute `list_modules` com um `projectId` permitido.
-5. Confirme que os módulos do projeto foram retornados.
+1. Salve a configuração e recarregue ou reinicie o cliente MCP.
+2. Confirme que `azy-board` conectou sem erro e oferece ferramentas como
+   `list_projects` e `list_tasks`.
+3. Execute `list_projects` e confirme que aparecem apenas projetos acessíveis
+   à sua API Key.
+4. Escolha um projeto e teste uma leitura, por exemplo `list_modules` com o
+   `projectId` retornado.
 
-Essa verificação testa, ao mesmo tempo, inicialização, rede, autenticação e acesso ao projeto.
-
-## Encontrar o projectId
-
-O identificador do projeto aparece na URL das páginas do projeto, entre `/projects/` e a tela atual. Exemplo:
-
-```text
-/projects/01ABCDEF/board
-          ^^^^^^^^ projectId
-```
-
-Use o identificador integral nas ferramentas. As ferramentas também aceitam o
-nome exato do projeto no lugar do ID; nomes ambíguos ou inexistentes retornam
-erro corrigível sem executar a operação.
-
-## Problemas comuns
-
-| Sintoma | Verificação |
-|---|---|
-| `EASYBOARD_API_KEY não configurada` | Confirme a variável no processo MCP. |
-| Erro `401` | Chave ausente, inválida ou revogada. |
-| Erro `403` | O papel do proprietário não permite a ação. |
-| Erro `404` em um projeto | O proprietário não participa do projeto ou o ID está incorreto. |
-| Falha de conexão | Confirme `EASYBOARD_URL`, porta, protocolo e disponibilidade da API. |
-| Ferramenta desconhecida | Recarregue o servidor e confira a versão configurada. |
+No modo remoto, erro `401` normalmente indica cabeçalho ausente, chave inválida
+ou revogada. Erro `403` indica permissão insuficiente; erro `404` pode indicar
+projeto inexistente ou sem acesso.
 
 ## Segurança operacional
 
-- Não grave a chave diretamente em arquivos versionados.
-- Prefira variáveis de ambiente ou o cofre de segredos do cliente.
-- Use uma chave diferente por cliente e ambiente.
-- Revogue imediatamente uma credencial exposta.
-- Execute o servidor somente em uma máquina confiável.
+- Use HTTPS no modo remoto.
+- Trate a API Key como senha: não a grave em arquivos versionados, URLs, logs ou
+  histórico de shell.
+- Prefira o cofre de segredos do cliente quando disponível.
+- Use uma chave diferente por cliente e ambiente e revogue imediatamente uma
+  credencial exposta.
+- A API Key herda as permissões da pessoa proprietária; ela não concede
+  privilégios adicionais.
 
 ## Funcionalidades relacionadas
 
 - [[08 - Conta e Preferencias/Gerenciar API Keys|Gerenciar API Keys]]
 - [[09 - Agentes e Integracoes/Usar as Ferramentas MCP|Usar as ferramentas MCP]]
 - [[09 - Agentes e Integracoes/Integrar pela API REST e Autenticar Agentes|Integrar pela API REST e autenticar agentes]]
-
-<details>
-<summary><strong>Como funciona tecnicamente</strong></summary>
-
-O processo usa o SDK do Model Context Protocol com `StdioServerTransport`. Na inicialização, lê a chave e a URL do ambiente; se a chave estiver ausente, encerra antes de registrar ferramentas.
-
-Cada chamada MCP é convertida em uma requisição à API sob `/api`, com `Authorization: Bearer {chave}` e conteúdo JSON. Respostas bem-sucedidas retornam ao cliente como conteúdo textual JSON; falhas são devolvidas como resultado MCP com `isError: true`.
-
-</details>
