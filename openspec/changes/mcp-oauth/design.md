@@ -29,8 +29,12 @@ e, nos testes, o `Client` com o provider OAuth para exercitar o fluxo real.
 
 ### 2. Rotas e URLs públicas
 
-A origem pública vem de `FRONTEND_URL` (já é a origem do SPA e do CORS),
-incluindo base path quando houver.
+A API não conhece o base path hoje: ele é injetado pelo proxy no SPA
+(`window.__BASE_PATH__`), e `FRONTEND_URL` é só a origem usada no CORS. Por
+isso entra a env `AZYBOARD_PUBLIC_URL` (origem pública + base path, ex.:
+`https://host/azyboard`). Sem ela, usa-se `FRONTEND_URL` (instalação na raiz).
+O issuer é essa URL; quando ela tem path, o metadata do AS segue a inserção do
+RFC 8414 (`/.well-known/oauth-authorization-server/azyboard`).
 
 | Rota | Função |
 | --- | --- |
@@ -62,6 +66,17 @@ relativos da própria aplicação.
 **nginx:** adicionar `location ^~ /.well-known/oauth-` e trocar
 `location = /mcp` por `location /mcp` (mantendo buffering desligado) nos
 templates `nginx-web.conf.template` e `nginx-web-cloudflare.conf.template`.
+Em desenvolvimento, o proxy do Vite ganha `/.well-known` (o `/mcp` já é
+prefixo e cobre `/mcp/projects/*`).
+
+**CORS:** discovery, `register`, `token` e `revoke` aceitam qualquer origem,
+sem credenciais, para clientes MCP que rodam no navegador. As rotas
+`authorize/*` e `grants` continuam presas à origem da aplicação.
+
+**Só sessão humana aprova e gerencia conexões:** `authorize/approve|deny` e
+`grants` exigem o cookie de sessão e recusam API Key e token OAuth. Sem essa
+regra, uma API Key restrita poderia aprovar um grant para o próprio Owner e
+obter um token sem as restrições da chave.
 
 ### 3. Persistência: token opaco no banco
 
@@ -94,13 +109,18 @@ requisição, a mesma que a API Key já faz.
 
 ### 4. Escopos
 
-Os escopos reaproveitam o vocabulário do `permissionScope` da API Key:
-`read`, `write`, `admin`, `delete`. O escopo concedido é a interseção
-entre o pedido (ou o padrão `read write` quando ausente), o conhecido e o que
-o papel do usuário permite; o consentimento mostra o resultado. O escopo do
-grant entra no contexto como `permissionScope`, e o recurso de projeto entra
-como `projectScope = [projectId]`, de modo que `authorizeProjectRole`,
-`requireRole` e as rotas que já leem esses escopos funcionam sem mudança.
+Os escopos reaproveitam o vocabulário do `permissionScope` da API Key
+(`API_KEY_PERMISSIONS`): `read`, `write`, `admin`, `delete`. O escopo
+concedido é **pedido ∩ conhecido** (padrão `read write` quando ausente). O
+papel do usuário não entra na concessão, porque é por projeto e o MCP geral não
+tem projeto no consentimento; ele continua sendo aplicado em cada chamada, como
+já acontece com a API Key (`hasKeyPermission` + membership).
+
+O escopo do grant entra no contexto como `permissionScope` e o recurso de
+projeto como `projectScope = [projectId]`. `requireRole` e as rotas que leem
+`apiKeyPermissionScope` funcionam sem mudança; a checagem de `projectScope`,
+que hoje fica no ramo de API Key do `authMiddleware` (params `projectId`/
+`id`), precisa ser repetida no ramo de identidade pré-resolvida.
 
 ### 5. Token só vale no MCP
 
@@ -110,15 +130,17 @@ O `/mcp` hoje reapresenta o mesmo `Authorization` às rotas REST
 - O `authMiddleware` de `/api/*` recusa `azo_` com 401.
 - O router do MCP valida o token e resolve a identidade; o `ApiCall` interno
   passa a identidade já resolvida pelo segundo argumento de
-  `app.fetch(request, env)` (bindings do Hono). Uma requisição externa não
-  tem como preencher esse argumento. O `authMiddleware` aceita essa identidade
-  pré-resolvida apenas a partir do binding.
+  `app.fetch(request, env)` (bindings do Hono). O `Bun.serve` já passa
+  `{ server }` nesse argumento, então o `authMiddleware` só aceita a
+  identidade pré-resolvida quando o binding traz um marcador específico (um
+  `Symbol` privado do módulo do MCP), nunca por "env preenchido".
 - Com API Key, o comportamento atual (reapresentar o header) é mantido.
 
 ### 6. Atribuição de agente
 
 Hoje `apiKeyId` marca a origem `MCP` e o ator `AGENT`, e `aiModelName`
-alimenta o badge de IA. O contexto ganha uma credencial de agente genérica
+alimenta o badge de IA. O `client_name` do DCR vira texto de UI, então é
+limitado (ex.: 100 caracteres) e sanitizado no registro. O contexto ganha uma credencial de agente genérica
 (`{ kind: 'API_KEY' | 'OAUTH', id, name, aiModelName }`). Para OAuth,
 `id` é o grant e `aiModelName` é o `client_name` registrado no DCR. Onde
 `apiKeyId` é persistido (claim do item), o grant fica numa coluna própria
@@ -143,7 +165,10 @@ e token geral; rota geral aceita só token geral.
 `/mcp/projects/:projectId` reutiliza `handleMcpHttpRequest` com
 `defaultProjectId` vindo do caminho. Na rota de projeto, um `projectId`
 explícito diferente nos argumentos é rejeitado. Projeto inexistente, de outro
-tenant ou sem acesso responde do mesmo jeito (sem revelar existência). O
+tenant ou sem acesso responde do mesmo jeito (sem revelar existência).
+Ferramentas sem contexto de projeto (`create_project` e administração global)
+não são listadas nem executáveis na rota de projeto; `list_projects` retorna
+só o projeto do caminho. O
 header `X-Azyboard-Project-Id` continua aceito na rota geral. A UI do projeto
 oferece a URL do MCP do projeto para copiar.
 
@@ -159,6 +184,10 @@ oferece a URL do MCP do projeto para copiar.
 - Sem data de remoção nesta change.
 
 ## Riscos
+
+- Detecção de reuso do refresh: dois processos do mesmo cliente renovando ao
+  mesmo tempo revogariam a conexão. Mitigação: janela de tolerância curta
+  (ex.: 30 s) em que o refresh recém-rotacionado devolve o mesmo par novo.
 
 - Clientes que não suportam OAuth no MCP continuam precisando da API Key
   (por isso só depreciação).

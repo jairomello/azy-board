@@ -2,7 +2,7 @@
 
 ### Requirement: Descoberta OAuth do MCP
 
-A instalação SHALL publicar Protected Resource Metadata (RFC 9728) para o MCP geral e para cada MCP de projeto, e Authorization Server Metadata (RFC 8414), com URLs derivadas da origem pública e do base path. O metadata SHALL anunciar Authorization Code com PKCE `S256`, `refresh_token`, autenticação de cliente `none`, registro dinâmico, revogação e os escopos `read`, `write`, `admin` e `delete`. O PRM de projeto NÃO SHALL consultar o banco nem revelar se o projeto existe.
+A instalação SHALL publicar Protected Resource Metadata (RFC 9728) para o MCP geral e para cada MCP de projeto, e Authorization Server Metadata (RFC 8414), com URLs derivadas da URL pública configurada (origem e base path). Discovery, registro, token e revogação SHALL aceitar CORS de qualquer origem sem credenciais. O metadata SHALL anunciar Authorization Code com PKCE `S256`, `refresh_token`, autenticação de cliente `none`, registro dinâmico, revogação e os escopos `read`, `write`, `admin` e `delete`. O PRM de projeto NÃO SHALL consultar o banco nem revelar se o projeto existe.
 
 #### Scenario: Cliente descobre o authorization server
 - **WHEN** um cliente MCP consulta o PRM do endpoint `/mcp`
@@ -36,9 +36,13 @@ A instalação SHALL aceitar registro dinâmico de cliente público (RFC 7591), 
 - **WHEN** uma origem ultrapassa o limite de registros
 - **THEN** a instalação responde 429 com indicação de retry
 
+#### Scenario: Nome do app sanitizado
+- **WHEN** o registro informa `client_name` longo ou com marcação
+- **THEN** o nome é truncado e armazenado como texto puro
+
 ### Requirement: Consentimento com usuário logado
 
-O `authorization_endpoint` SHALL ser uma tela da aplicação web que exige sessão do usuário. Sem sessão, o usuário SHALL passar pelo login configurado da instalação e voltar à mesma tela com os parâmetros originais. A tela SHALL mostrar o nome do app, o host do `redirect_uri` com aviso de app não verificado, a conta conectada, o projeto quando o recurso for de projeto e os escopos efetivos, e SHALL permitir aprovar ou negar. A validação SHALL exigir `response_type=code`, PKCE `S256`, cliente registrado, `redirect_uri` exato e `resource` conhecido.
+O `authorization_endpoint` SHALL ser uma tela da aplicação web que exige sessão do usuário. Sem sessão, o usuário SHALL passar pelo login configurado da instalação e voltar à mesma tela com os parâmetros originais. A tela SHALL mostrar o nome do app, o host do `redirect_uri` com aviso de app não verificado, a conta conectada, o projeto quando o recurso for de projeto e os escopos efetivos, e SHALL permitir aprovar ou negar. Aprovar e negar SHALL exigir sessão humana; API Key e token OAuth NÃO SHALL aprovar consentimento. A validação SHALL exigir `response_type=code`, PKCE `S256`, cliente registrado, `redirect_uri` exato e `resource` conhecido.
 
 #### Scenario: Usuário sem sessão
 - **WHEN** o cliente abre a tela de autorização e o usuário não está logado
@@ -64,13 +68,17 @@ O `authorization_endpoint` SHALL ser uma tela da aplicação web que exige sess�
 - **WHEN** o `resource` não é um MCP da instalação ou é de projeto sem acesso do usuário
 - **THEN** a autorização é recusada com `invalid_target` sem revelar se o projeto existe
 
+#### Scenario: Credencial de agente tenta aprovar
+- **WHEN** uma requisição de aprovação chega autenticada por API Key ou token OAuth, sem sessão humana
+- **THEN** a aprovação é recusada com 401 e nenhum code é emitido
+
 #### Scenario: Destino de login externo
 - **WHEN** o parâmetro de retorno pós-login aponta para fora da aplicação
 - **THEN** o retorno é ignorado e o usuário vai para a página padrão
 
 ### Requirement: Escopos OAuth do MCP
 
-Os escopos SHALL ser `read`, `write`, `admin` e `delete`, com o mesmo significado do `permissionScope` da API Key. O escopo concedido SHALL ser a interseção entre o pedido, os escopos conhecidos e o que o grupo do usuário permite. Pedido sem `scope` SHALL usar o padrão `read write`. Escopos desconhecidos SHALL ser descartados.
+Os escopos SHALL ser `read`, `write`, `admin` e `delete`, com o mesmo significado do `permissionScope` da API Key. O escopo concedido SHALL ser a interseção entre o pedido e os escopos conhecidos; o papel do usuário no projeto SHALL continuar sendo aplicado em cada chamada. Pedido sem `scope` SHALL usar o padrão `read write`. Escopos desconhecidos SHALL ser descartados.
 
 #### Scenario: Pedido sem escopo
 - **WHEN** o cliente inicia a autorização sem `scope`
@@ -110,11 +118,15 @@ O token endpoint SHALL trocar o code por um access token opaco de 1 hora e um re
 
 ### Requirement: Conexões MCP do usuário
 
-Minha conta SHALL listar as conexões MCP autorizadas pelo usuário (app, recurso, escopos, data de autorização e último uso) e SHALL permitir revogar cada uma. Revogar SHALL invalidar todos os tokens da conexão na próxima requisição. O usuário SHALL ver e revogar somente as próprias conexões.
+Minha conta SHALL listar as conexões MCP autorizadas pelo usuário (app, recurso, escopos, data de autorização e último uso) e SHALL permitir revogar cada uma. Revogar SHALL invalidar todos os tokens da conexão na próxima requisição. O usuário SHALL ver e revogar somente as próprias conexões, e a gestão SHALL exigir sessão humana.
 
 #### Scenario: Revogar conexão
 - **WHEN** o usuário revoga uma conexão em Minha conta
 - **THEN** a próxima chamada MCP feita com tokens daquela conexão recebe 401
+
+#### Scenario: Gestão por credencial de agente
+- **WHEN** uma API Key ou token OAuth tenta listar ou revogar conexões
+- **THEN** a operação é recusada com 401
 
 #### Scenario: Conexão de outro usuário
 - **WHEN** um usuário tenta revogar conexão de outro usuário
@@ -179,6 +191,10 @@ A instalação SHALL expor `/mcp/projects/{projectId}` com o mesmo catálogo e a
 #### Scenario: Projeto sem acesso
 - **WHEN** o usuário não tem acesso ao projeto do caminho
 - **THEN** a resposta é igual à de projeto inexistente
+
+#### Scenario: Ferramentas sem contexto de projeto
+- **WHEN** o cliente conectado ao MCP de um projeto lista ou chama ferramentas
+- **THEN** `create_project` e ferramentas de administração global não aparecem nem executam, e `list_projects` retorna só o projeto do caminho
 
 #### Scenario: URL do MCP do projeto copiável
 - **WHEN** o usuário abre a orientação de conexão MCP no projeto
