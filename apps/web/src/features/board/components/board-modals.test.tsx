@@ -103,13 +103,15 @@ describe('BoardModals (DOM por papel/rótulo)', () => {
     // indefinido) e a modal não abria por deduzir a abertura da presença dele.
     render(<BoardModals {...baseProps} storyOpen />)
 
-    expect(await screen.findByPlaceholderText(t('storyTitle'))).toBeInTheDocument()
+    // A modal é carregada sob demanda (lazy + tiptap); a primeira importação a
+    // frio passa de 1 s no runner do CI, então o timeout padrão do findBy não basta.
+    expect(await screen.findByPlaceholderText(t('storyTitle'), {}, { timeout: 4_000 })).toBeInTheDocument()
   })
 
   test('criação de épico abre a modal mesmo sem item de origem', async () => {
     render(<BoardModals {...baseProps} epicOpen />)
 
-    expect(await screen.findByPlaceholderText(t('epicTitle'))).toBeInTheDocument()
+    expect(await screen.findByPlaceholderText(t('epicTitle'), {}, { timeout: 4_000 })).toBeInTheDocument()
   })
 
   test('sem sinal de abertura, as modais de história e épico não são renderizadas', () => {
