@@ -1,0 +1,197 @@
+## ADDED Requirements
+
+### Requirement: Descoberta OAuth do MCP
+
+A instalação SHALL publicar Protected Resource Metadata (RFC 9728) para o MCP geral e para cada MCP de projeto, e Authorization Server Metadata (RFC 8414), com URLs derivadas da origem pública e do base path. O metadata SHALL anunciar Authorization Code com PKCE `S256`, `refresh_token`, autenticação de cliente `none`, registro dinâmico, revogação e os escopos `read`, `write`, `admin` e `delete`. O PRM de projeto NÃO SHALL consultar o banco nem revelar se o projeto existe.
+
+#### Scenario: Cliente descobre o authorization server
+- **WHEN** um cliente MCP consulta o PRM do endpoint `/mcp`
+- **THEN** recebe o `resource` igual à URL pública do `/mcp` e o `authorization_servers` da instalação
+
+#### Scenario: Metadata do authorization server
+- **WHEN** o cliente consulta `/.well-known/oauth-authorization-server`
+- **THEN** recebe `authorization_endpoint`, `token_endpoint`, `registration_endpoint`, `revocation_endpoint`, `code_challenge_methods_supported` com `S256` e os escopos suportados
+
+#### Scenario: PRM de projeto não revela existência
+- **WHEN** o cliente consulta o PRM de `/mcp/projects/{id}` para um UUID válido de projeto inexistente
+- **THEN** a resposta tem o mesmo formato da de um projeto existente
+
+#### Scenario: Instalação sob base path
+- **WHEN** a aplicação roda sob um base path
+- **THEN** o `resource` e as URLs do metadata incluem o base path
+
+### Requirement: Registro dinâmico de cliente
+
+A instalação SHALL aceitar registro dinâmico de cliente público (RFC 7591), sem segredo, exigindo ao menos um `redirect_uri`, com limite de taxa por origem. O `redirect_uri` usado depois SHALL coincidir exatamente com um registrado.
+
+#### Scenario: Registro de cliente público
+- **WHEN** um cliente MCP envia metadados de registro com `redirect_uris` válidos
+- **THEN** recebe um `client_id` e `token_endpoint_auth_method` igual a `none`
+
+#### Scenario: Registro sem redirect_uri
+- **WHEN** o registro não informa `redirect_uris`
+- **THEN** a instalação recusa com `invalid_redirect_uri` sem criar cliente
+
+#### Scenario: Excesso de registros
+- **WHEN** uma origem ultrapassa o limite de registros
+- **THEN** a instalação responde 429 com indicação de retry
+
+### Requirement: Consentimento com usuário logado
+
+O `authorization_endpoint` SHALL ser uma tela da aplicação web que exige sessão do usuário. Sem sessão, o usuário SHALL passar pelo login configurado da instalação e voltar à mesma tela com os parâmetros originais. A tela SHALL mostrar o nome do app, o host do `redirect_uri` com aviso de app não verificado, a conta conectada, o projeto quando o recurso for de projeto e os escopos efetivos, e SHALL permitir aprovar ou negar. A validação SHALL exigir `response_type=code`, PKCE `S256`, cliente registrado, `redirect_uri` exato e `resource` conhecido.
+
+#### Scenario: Usuário sem sessão
+- **WHEN** o cliente abre a tela de autorização e o usuário não está logado
+- **THEN** o usuário é levado ao login e, depois de autenticar, volta à tela de autorização com os parâmetros originais
+
+#### Scenario: Aprovação
+- **WHEN** o usuário aprova o consentimento
+- **THEN** o navegador é redirecionado ao `redirect_uri` com `code` e `state`, e o code vale uma única vez por 5 minutos
+
+#### Scenario: Negação
+- **WHEN** o usuário nega o consentimento
+- **THEN** o navegador é redirecionado ao `redirect_uri` registrado com `error=access_denied` e `state`
+
+#### Scenario: redirect_uri não registrado
+- **WHEN** o `redirect_uri` não coincide com um registrado pelo cliente
+- **THEN** a tela exibe erro e não redireciona para o endereço informado
+
+#### Scenario: Recurso de projeto exibido
+- **WHEN** o `resource` é o MCP de um projeto acessível ao usuário
+- **THEN** a tela mostra o nome do projeto e o code fica preso a esse recurso
+
+#### Scenario: Recurso desconhecido ou sem acesso
+- **WHEN** o `resource` não é um MCP da instalação ou é de projeto sem acesso do usuário
+- **THEN** a autorização é recusada com `invalid_target` sem revelar se o projeto existe
+
+#### Scenario: Destino de login externo
+- **WHEN** o parâmetro de retorno pós-login aponta para fora da aplicação
+- **THEN** o retorno é ignorado e o usuário vai para a página padrão
+
+### Requirement: Escopos OAuth do MCP
+
+Os escopos SHALL ser `read`, `write`, `admin` e `delete`, com o mesmo significado do `permissionScope` da API Key. O escopo concedido SHALL ser a interseção entre o pedido, os escopos conhecidos e o que o grupo do usuário permite. Pedido sem `scope` SHALL usar o padrão `read write`. Escopos desconhecidos SHALL ser descartados.
+
+#### Scenario: Pedido sem escopo
+- **WHEN** o cliente inicia a autorização sem `scope`
+- **THEN** o consentimento mostra e o token recebe `read write`
+
+#### Scenario: Escopo restringe operação
+- **WHEN** um token com escopo `read` chama ferramenta de mutação
+- **THEN** a operação é negada como a de uma API Key com `permissionScope` `read`
+
+### Requirement: Emissão, renovação e revogação de tokens
+
+O token endpoint SHALL trocar o code por um access token opaco de 1 hora e um refresh token de 30 dias, validando cliente, `redirect_uri`, PKCE e `resource`, e usando o `resource` como audiência. Tokens SHALL ser armazenados só como hash. Cada uso do refresh token SHALL emitir um novo par e invalidar o anterior; reapresentar um refresh já usado SHALL revogar a conexão inteira. A revogação (RFC 7009) SHALL responder com sucesso também para token desconhecido.
+
+#### Scenario: Troca do code
+- **WHEN** o cliente envia code válido com o `code_verifier` correto
+- **THEN** recebe `access_token`, `refresh_token`, `token_type` `Bearer`, `expires_in` e `scope`
+
+#### Scenario: PKCE inválido
+- **WHEN** o `code_verifier` não corresponde ao `code_challenge`
+- **THEN** a troca falha com `invalid_grant` e o code é consumido
+
+#### Scenario: Code reutilizado
+- **WHEN** um code já trocado é reapresentado
+- **THEN** a troca falha com `invalid_grant`
+
+#### Scenario: Renovação
+- **WHEN** o cliente usa um refresh token válido
+- **THEN** recebe novo par de tokens e o refresh anterior deixa de valer
+
+#### Scenario: Reuso de refresh token
+- **WHEN** um refresh token já usado é reapresentado
+- **THEN** a troca falha e todos os tokens da conexão são revogados
+
+#### Scenario: Revogação pelo cliente
+- **WHEN** o cliente revoga um token
+- **THEN** a próxima requisição MCP com ele é recusada com 401
+
+### Requirement: Conexões MCP do usuário
+
+Minha conta SHALL listar as conexões MCP autorizadas pelo usuário (app, recurso, escopos, data de autorização e último uso) e SHALL permitir revogar cada uma. Revogar SHALL invalidar todos os tokens da conexão na próxima requisição. O usuário SHALL ver e revogar somente as próprias conexões.
+
+#### Scenario: Revogar conexão
+- **WHEN** o usuário revoga uma conexão em Minha conta
+- **THEN** a próxima chamada MCP feita com tokens daquela conexão recebe 401
+
+#### Scenario: Conexão de outro usuário
+- **WHEN** um usuário tenta revogar conexão de outro usuário
+- **THEN** a operação é recusada sem revelar a conexão
+
+### Requirement: Token OAuth restrito ao MCP
+
+O access token OAuth SHALL autenticar somente o endpoint MCP para cuja audiência foi emitido. As rotas REST em `/api` NÃO SHALL aceitar o token OAuth como credencial; a execução interna das ferramentas SHALL receber a identidade já resolvida pelo MCP por um canal que requisições externas não alcançam.
+
+#### Scenario: Token OAuth na API REST
+- **WHEN** um token OAuth é enviado diretamente a uma rota `/api`
+- **THEN** a API responde 401
+
+#### Scenario: Token de projeto no MCP geral
+- **WHEN** um token emitido para `/mcp/projects/{id}` é usado em `/mcp`
+- **THEN** a requisição é recusada com 401
+
+#### Scenario: Token geral no MCP de projeto
+- **WHEN** um token emitido para `/mcp` é usado em `/mcp/projects/{id}` de projeto acessível
+- **THEN** a requisição é aceita
+
+### Requirement: Conexão OAuth equivale ao Owner
+
+Uma conexão OAuth SHALL operar com a identidade do usuário que a autorizou, recarregada do banco a cada requisição, aplicando as mesmas regras de grupo global, tenant, membership, políticas de ferramenta, defesa contra escalada e revalidação definidas para o Owner da API Key. O escopo concedido SHALL restringir como `permissionScope` e o recurso de projeto SHALL restringir como `projectScope`. As ações SHALL ser registradas com origem `MCP` e ator `AGENT`, identificando o app pelo nome registrado.
+
+#### Scenario: Usuário desativado
+- **WHEN** o usuário que autorizou a conexão é desativado
+- **THEN** a próxima requisição MCP com o token é recusada com 401
+
+#### Scenario: Grupo reduzido
+- **WHEN** o grupo global do usuário é reduzido depois da autorização
+- **THEN** a próxima chamada perde o acesso correspondente
+
+#### Scenario: Badge do agente
+- **WHEN** uma conexão OAuth faz claim de um card
+- **THEN** o card exibe o avatar do usuário com badge de IA e o nome do app registrado
+
+### Requirement: Desafio de autenticação no MCP
+
+Toda resposta 401 do endpoint MCP (geral ou de projeto) SHALL incluir `WWW-Authenticate: Bearer` com `resource_metadata` apontando para o PRM da rota requisitada, e `error="invalid_token"` quando um token foi apresentado.
+
+#### Scenario: Requisição sem credencial
+- **WHEN** um cliente chama `/mcp` sem `Authorization`
+- **THEN** recebe 401 com `WWW-Authenticate` apontando para o PRM do `/mcp`
+
+#### Scenario: Token expirado no MCP de projeto
+- **WHEN** um cliente chama `/mcp/projects/{id}` com access token expirado
+- **THEN** recebe 401 com `error="invalid_token"` e `resource_metadata` do PRM daquele projeto
+
+### Requirement: MCP por projeto
+
+A instalação SHALL expor `/mcp/projects/{projectId}` com o mesmo catálogo e as mesmas regras do `/mcp`, usando o projeto do caminho como contexto padrão. Um `projectId` explícito diferente do caminho SHALL ser rejeitado. Projeto inexistente, de outro tenant ou sem acesso SHALL ter a mesma resposta. A aplicação SHALL oferecer a URL do MCP do projeto para copiar.
+
+#### Scenario: Ferramenta sem projectId
+- **WHEN** o cliente conectado ao MCP de um projeto chama `list_tasks` sem `projectId`
+- **THEN** a ferramenta opera no projeto do caminho
+
+#### Scenario: projectId divergente
+- **WHEN** o cliente conectado ao MCP do projeto A envia `projectId` do projeto B
+- **THEN** a chamada é rejeitada sem ler nem alterar dados de B
+
+#### Scenario: Projeto sem acesso
+- **WHEN** o usuário não tem acesso ao projeto do caminho
+- **THEN** a resposta é igual à de projeto inexistente
+
+#### Scenario: URL do MCP do projeto copiável
+- **WHEN** o usuário abre a orientação de conexão MCP no projeto
+- **THEN** vê e copia a URL `<origem + base path>/mcp/projects/{projectId}`
+
+### Requirement: API Key depreciada no MCP
+
+A API Key SHALL continuar autenticando o MCP remoto e o stdio sem mudança de permissões, mas SHALL ser sinalizada como depreciada: respostas do MCP remoto autenticadas por API Key SHALL incluir `Deprecation` e `Link` com `rel="deprecation"` para a documentação, o uso SHALL gerar log estruturado sem o segredo, e o stdio SHALL emitir aviso ao iniciar.
+
+#### Scenario: API Key no MCP remoto
+- **WHEN** um cliente chama `/mcp` com API Key válida
+- **THEN** a chamada funciona como antes e a resposta traz `Deprecation` e `Link`
+
+#### Scenario: Inicialização do stdio
+- **WHEN** o servidor stdio inicia com `EASYBOARD_API_KEY`
+- **THEN** escreve em stderr um aviso de depreciação recomendando o MCP remoto com OAuth, sem expor a chave
