@@ -44,6 +44,7 @@
         "zod": "^4.6.4",
       },
       "devDependencies": {
+        "@modelcontextprotocol/sdk": "1.29.0",
         "@types/bcryptjs": "^2.4.6",
         "@types/pg": "^8.23.1",
         "bun-types": "latest",

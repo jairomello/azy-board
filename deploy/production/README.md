@@ -118,16 +118,30 @@ uploads. Backups automáticos da Vultr estão atualmente desativados.
 O endpoint MCP remoto vive na API (`/mcp`) e é alcançado pelo mesmo hostname
 público: Cloudflare Tunnel → Caddy (`https://azyboard.jairo.tools:8443`) →
 nginx do web (`web:80`) → API. O nginx do web repassa `/mcp` sem buffering com
-HTTP/1.1 (`location = /mcp`, ver `docker/nginx-web.conf.template`); o Caddy e o
-Tunnel não exigem regra nova porque todo o tráfego já passa por `web:80`.
+HTTP/1.1 (`location = /mcp` e `location /mcp/` para o MCP de projeto, ver
+`docker/nginx-web.conf.template`) e encaminha `/.well-known/oauth-*` (descoberta
+OAuth) à API; o Caddy e o Tunnel não exigem regra nova porque todo o tráfego já
+passa por `web:80`.
 
-Autenticação por `Authorization: Bearer azb_...`, revalidada a cada requisição.
+Autenticação recomendada por **OAuth 2.1**: o cliente MCP recebe 401 com
+`WWW-Authenticate`, descobre o authorization server em
+`/.well-known/oauth-protected-resource/mcp`, registra-se e o usuário aprova em
+`/oauth/authorize`. `AZYBOARD_PUBLIC_URL` define a URL pública usada no
+metadata (padrão: `FRONTEND_URL`). Teste da descoberta:
+
+```bash
+curl -sS https://azyboard.jairo.tools/.well-known/oauth-protected-resource/mcp
+curl -sS https://azyboard.jairo.tools/.well-known/oauth-authorization-server
+```
+
+API Key (`Authorization: Bearer azb_...`) continua aceita, **depreciada**: as
+respostas trazem `Deprecation: true`. Toda credencial é revalidada a cada requisição.
 Projeto informado no argumento da ferramenta ou no cabeçalho
 `X-Azyboard-Project-Id`; mutações aceitam `Idempotency-Key`. O endpoint é
 stateless (resposta JSON) e não adiciona container nem serviço.
 
 Teste de conectividade no host (ou de qualquer cliente com rede até o
-hostname), com uma API Key válida:
+hostname), com uma API Key válida (modo depreciado):
 
 ```bash
 curl -sS https://azyboard.jairo.tools/mcp \

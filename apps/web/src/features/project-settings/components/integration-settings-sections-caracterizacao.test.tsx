@@ -117,3 +117,17 @@ describe('IntegrationSettingsSections — Teams', () => {
     expect(within(secao).getByText('Nenhuma mensagem recebida ainda.', { exact: false })).toBeInTheDocument()
   })
 })
+
+describe('IntegrationSettingsSections — URL do MCP do projeto', () => {
+  test('exibe e copia a URL do MCP do projeto, também para não admin', async () => {
+    // O userEvent.setup() instala uma área de transferência própria no navigator.
+    const user = userEvent.setup()
+    renderSecao(false)
+    const secao = screen.getByRole('region', { name: 'Integrações' })
+    const url = within(secao).getByText('http://localhost/mcp/projects/p-1')
+    expect(url.tagName).toBe('CODE')
+    await user.click(within(secao).getByRole('button', { name: 'Copiar URL do MCP' }))
+    expect(await within(secao).findByRole('button', { name: 'URL copiada' })).toBeInTheDocument()
+    expect(await navigator.clipboard.readText()).toBe('http://localhost/mcp/projects/p-1')
+  })
+})

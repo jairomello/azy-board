@@ -8,6 +8,7 @@ import { lerEmailLembrado } from '../lib/rememberedEmail'
 import { CheckCircle2, LockKeyhole, Sparkles } from 'lucide-react'
 import { BrandLogo, BrandMark } from '../components/BrandLogo'
 import { getBuildInfo } from '../lib/buildInfo'
+import { internalRedirect } from '../lib/safeRedirect'
 
 const BASE_PATH = ((window as Window & { __BASE_PATH__?: string }).__BASE_PATH__ ?? '').replace(/\/+$/, '')
 
@@ -33,7 +34,12 @@ export default function LoginPage() {
     return () => { active = false }
   }, [])
 
-  const oauthUrl = providerInfo?.oauthStartUrl ? `${BASE_PATH}${providerInfo.oauthStartUrl}` : null
+  // Destino pós-login: só caminhos internos; o login integrado o leva adiante.
+  const redirect = internalRedirect(params.get('redirect'))
+  const oauthStartUrl = providerInfo?.oauthStartUrl
+  const oauthUrl = oauthStartUrl
+    ? `${BASE_PATH}${oauthStartUrl}${redirect ? `${oauthStartUrl.includes('?') ? '&' : '?'}redirect=${encodeURIComponent(redirect)}` : ''}`
+    : null
   const localMode = !providerInfo || providerInfo.provider === 'LOCAL'
 
   async function handleSubmit(e: FormEvent) {
@@ -42,7 +48,7 @@ export default function LoginPage() {
     setLoading(true)
     try {
       await login(email, password, remember)
-      navigate(params.get('redirect') ?? '/projects', { replace: true })
+      navigate(redirect ?? '/projects', { replace: true })
     } catch {
       setError(t('invalidCredentials'))
     } finally {

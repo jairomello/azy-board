@@ -84,17 +84,18 @@ O perfil SIMPLE não tem Redis, então tudo fica no banco (Drizzle, SQLite e
 PostgreSQL, com migrations nos dois):
 
 - `oauth_clients`: `id`, `client_name`, `redirect_uris` (JSON),
-  `created_at`, `last_used_at`. Sem tenant: o client é público e global;
+  `created_at`. Sem tenant: o client é público e global;
   o tenant vem do usuário no consentimento.
 - `oauth_authorization_codes`: `code_hash`, `client_id`, `tenant_id`,
   `user_id`, `redirect_uri`, `code_challenge`, `scope`, `resource`,
   `expires_at` (5 min). Consumo atômico (delete … returning).
 - `oauth_grants`: uma conexão autorizada (`tenant_id`, `user_id`,
-  `client_id`, `scope`, `resource`, `created_at`, `last_used_at`,
+  `client_id`, `client_name`, `scope`, `resource`, `project_id`,
+  `created_at`, `last_used_at`,
   `revoked_at`).
 - `oauth_tokens`: `token_hash` (SHA-256, como `api_keys`), `grant_id`,
-  `kind` (`ACCESS`|`REFRESH`), `expires_at`, `used_at` (refresh),
-  `revoked_at`.
+  `kind` (`ACCESS`|`REFRESH`), `expires_at`, `used_at` (refresh). A
+  revogação acontece no grant: revogar a conexão invalida todos os tokens dela.
 
 Prefixos: `azo_` (access) e `azr_` (refresh). O prefixo separa o caminho de
 validação do `azb_` da API Key sem consulta extra.
@@ -186,8 +187,13 @@ oferece a URL do MCP do projeto para copiar.
 ## Riscos
 
 - Detecção de reuso do refresh: dois processos do mesmo cliente renovando ao
-  mesmo tempo revogariam a conexão. Mitigação: janela de tolerância curta
-  (ex.: 30 s) em que o refresh recém-rotacionado devolve o mesmo par novo.
+  mesmo tempo revogariam a conexão. Mitigação: janela de tolerância de 30 s em
+  que reapresentar o refresh recém-rotacionado falha com `invalid_grant` sem
+  revogar a conexão; fora da janela, o reuso revoga a conexão inteira.
+- Clientes baseados no SDK oficial pedem todos os escopos anunciados no PRM
+  (`read write admin delete`); o padrão `read write` só vale para quem não
+  envia `scope`. O consentimento mostra o conjunto pedido.
+- O limite de registro dinâmico é em memória, por instância.
 
 - Clientes que não suportam OAuth no MCP continuam precisando da API Key
   (por isso só depreciação).

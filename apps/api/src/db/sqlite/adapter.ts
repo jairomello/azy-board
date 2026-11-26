@@ -66,6 +66,9 @@ import type {
   DashboardTokenGroupRow,
   ExportMappingRecord,
   ProjectIntegrationRecord,
+  OAuthClientRecord,
+  OAuthGrantRecord,
+  OAuthTokenRecord,
   IntegrationMessageRecord,
   IntegrationMessageStatus,
   TagRecord,
@@ -79,6 +82,7 @@ import {
    attachments, checklistItems, checklists, columns, idempotencyRecords, itemDependencies, itemEvents, itemLinks, itemLogs, itemSprints, itemTags, 
   items, loginAttempts, memberships, modules, projectAnalyticsCoverage, projectCostCenters, projectMetricsDaily, projectVersions, projects, squads, sprintCycleItems, sprintCycles, sprints,
   storageCleanupJobs, tags, tenantAttachmentSettings, tenants, userAvatars, users,
+  oauthAuthorizationCodes, oauthClients, oauthGrants, oauthTokens,
 } from '../schema'
 import { generateId } from '../../utils/id'
 import { runSqliteAtomic } from './atomicTransaction'
@@ -142,6 +146,10 @@ function mapUser(row: typeof users.$inferSelect): UserCredentialRecord {
 function mapPublicUser(row: typeof users.$inferSelect) {
   const { passwordHash: _passwordHash, ...publicUser } = mapUser(row)
   return publicUser
+}
+
+function mapOAuthClient(row: typeof oauthClients.$inferSelect): OAuthClientRecord {
+  return { id: row.id, clientName: row.clientName, redirectUris: JSON.parse(row.redirectUris) as string[], createdAt: row.createdAt }
 }
 
 function mapApiKey(row: typeof apiKeys.$inferSelect) {
@@ -747,6 +755,74 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           .where(eq(integrationMessages.integrationId, integration.id))
           .orderBy(desc(integrationMessages.createdAt)).limit(limit)
         return rows.map(mapIntegrationMessage)
+      },
+    },
+    oauth: {
+      async createClient(input) {
+        const [row] = await database.insert(oauthClients).values({
+          id: `mcp-${generateId()}`, clientName: input.clientName, redirectUris: JSON.stringify(input.redirectUris),
+          createdAt: new Date().toISOString(),
+        }).returning()
+        if (!row) throw new Error('Falha ao registrar cliente OAuth no adapter SQLite.')
+        return mapOAuthClient(row)
+      },
+      async getClient(clientId) {
+        const [row] = await database.select().from(oauthClients).where(eq(oauthClients.id, clientId))
+        return row ? mapOAuthClient(row) : null
+      },
+      async createCode(input) {
+        await database.insert(oauthAuthorizationCodes).values({ ...input, createdAt: new Date().toISOString() })
+      },
+      async consumeCode(codeHash) {
+        // DELETE ... RETURNING é atômico: só a primeira troca recebe o code.
+        const [row] = await database.delete(oauthAuthorizationCodes).where(eq(oauthAuthorizationCodes.codeHash, codeHash)).returning()
+        if (!row) return null
+        const { createdAt: _createdAt, ...code } = row
+        return code
+      },
+      async createGrant(input) {
+        const [row] = await database.insert(oauthGrants).values({ id: generateId(), ...input, createdAt: new Date().toISOString() }).returning()
+        if (!row) throw new Error('Falha ao criar conexão OAuth no adapter SQLite.')
+        return row as OAuthGrantRecord
+      },
+      async getGrant(grantId) {
+        const [row] = await database.select().from(oauthGrants).where(eq(oauthGrants.id, grantId))
+        return (row as OAuthGrantRecord | undefined) ?? null
+      },
+      async listUserGrants(tenantId, userId) {
+        return await database.select().from(oauthGrants).where(and(
+          eq(oauthGrants.tenantId, tenantId), eq(oauthGrants.userId, userId), isNull(oauthGrants.revokedAt),
+        )).orderBy(desc(oauthGrants.createdAt)) as OAuthGrantRecord[]
+      },
+      async revokeUserGrant(tenantId, userId, grantId, revokedAt) {
+        const rows = await database.update(oauthGrants).set({ revokedAt }).where(and(
+          eq(oauthGrants.id, grantId), eq(oauthGrants.tenantId, tenantId), eq(oauthGrants.userId, userId), isNull(oauthGrants.revokedAt),
+        )).returning({ id: oauthGrants.id })
+        return rows.length > 0
+      },
+      async revokeGrant(grantId, revokedAt) {
+        await database.update(oauthGrants).set({ revokedAt }).where(and(eq(oauthGrants.id, grantId), isNull(oauthGrants.revokedAt)))
+      },
+      async touchGrant(grantId, usedAt) {
+        await database.update(oauthGrants).set({ lastUsedAt: usedAt }).where(eq(oauthGrants.id, grantId))
+      },
+      async createToken(input) {
+        await database.insert(oauthTokens).values({ ...input, createdAt: new Date().toISOString() })
+      },
+      async findToken(tokenHash) {
+        const [row] = await database.select().from(oauthTokens).where(eq(oauthTokens.tokenHash, tokenHash))
+        if (!row) return null
+        const { createdAt: _createdAt, ...token } = row
+        return token as OAuthTokenRecord
+      },
+      async markTokenUsed(tokenHash, usedAt) {
+        const rows = await database.update(oauthTokens).set({ usedAt }).where(and(
+          eq(oauthTokens.tokenHash, tokenHash), isNull(oauthTokens.usedAt),
+        )).returning({ tokenHash: oauthTokens.tokenHash })
+        return rows.length > 0
+      },
+      async deleteToken(tokenHash) {
+        await database.delete(oauthTokens).where(eq(oauthTokens.tokenHash, tokenHash))
       },
     },
     health: {
@@ -1516,6 +1592,7 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
             itemSprints: { columns: { sprintId: true } },
             assignee: { columns: { id: true, name: true, avatarUrl: true } },
             assigneeApiKey: { columns: { id: true, name: true, aiModelName: true } },
+            assigneeOauthGrant: { columns: { id: true, clientName: true } },
             author: { columns: { id: true, name: true, avatarUrl: true } },
             version: { columns: { id: true, name: true, status: true } },
           },
@@ -1529,7 +1606,10 @@ export function createSqlitePersistencePorts(database: DrizzleDb, sqlite: Databa
           } })),
           itemSprints: row.itemSprints.map(link => ({ sprintId: link.sprintId })),
           assignee: row.assignee ? { id: row.assignee.id, name: row.assignee.name, avatarUrl: row.assignee.avatarUrl } : null,
-          assigneeApiKey: row.assigneeApiKey ? { id: row.assigneeApiKey.id, name: row.assigneeApiKey.name, aiModelName: row.assigneeApiKey.aiModelName } : null,
+          // Conexão OAuth do MCP usa o nome do app registrado como rótulo do agente.
+          assigneeApiKey: row.assigneeApiKey
+            ? { id: row.assigneeApiKey.id, name: row.assigneeApiKey.name, aiModelName: row.assigneeApiKey.aiModelName }
+            : row.assigneeOauthGrant ? { id: row.assigneeOauthGrant.id, name: row.assigneeOauthGrant.clientName, aiModelName: row.assigneeOauthGrant.clientName } : null,
           author: row.author ? { id: row.author.id, name: row.author.name, avatarUrl: row.author.avatarUrl } : null,
           version: row.version ? { id: row.version.id, name: row.version.name, status: row.version.status } : null,
         }))

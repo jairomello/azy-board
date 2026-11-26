@@ -88,6 +88,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET obrigatório}
       ASSISTANT_ENCRYPTION_KEY: ${ASSISTANT_ENCRYPTION_KEY:?ASSISTANT_ENCRYPTION_KEY obrigatório}
       FRONTEND_URL: https://azyboard.jairo.tools
+      # URL pública com base path usada no OAuth do MCP (issuer e metadata).
+      AZYBOARD_PUBLIC_URL: ${AZYBOARD_PUBLIC_URL:-https://azyboard.jairo.tools}
       NODE_ENV: production
       TRUST_PROXY: "true"
       AZYBOARD_AUTH_PROVIDER: ${AZYBOARD_AUTH_PROVIDER:-LOCAL}

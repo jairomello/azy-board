@@ -1,11 +1,12 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
-import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { AuthProvider } from './contexts/AuthContext'
 import { ToastProvider } from './components/Toast'
 import { AssistantProvider } from './contexts/AssistantContext'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { BuildUpdateNotice } from './components/BuildUpdateNotice'
 import RootAssistantSettings from './components/RootAssistantSettings'
+import { ProtectedRoute } from './components/ProtectedRoute'
 
 const AzyAgentDrawer = lazy(() => import('./components/AzyAgentDrawer').then(module => ({ default: module.AzyAgentDrawer })))
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -17,13 +18,7 @@ const AdminUsersPage = lazy(() => import('./pages/AdminUsersPage'))
 const AdminAttachmentsPage = lazy(() => import('./pages/AdminAttachmentsPage'))
 const ProjectDashboardPage = lazy(() => import('./pages/ProjectDashboardPage'))
 const HelpPage = lazy(() => import('./pages/HelpPage'))
-
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth()
-  if (loading) return <div className="flex items-center justify-center h-screen bg-background"><div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" /></div>
-  if (!user) return <Navigate to="/login" replace />
-  return <>{children}</>
-}
+const OAuthAuthorizePage = lazy(() => import('./pages/OAuthAuthorizePage'))
 
 export default function App() {
   return (
@@ -34,6 +29,7 @@ export default function App() {
       <Suspense fallback={<div className="flex items-center justify-center h-screen bg-background"><div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" /></div>}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/oauth/authorize" element={<ProtectedRoute><OAuthAuthorizePage /></ProtectedRoute>} />
           <Route path="/projects" element={<ProtectedRoute><ProjectsPage /></ProtectedRoute>} />
           <Route path="/projects/:projectId/board" element={<ProtectedRoute><BoardPage /></ProtectedRoute>} />
           <Route path="/projects/:projectId/dashboard" element={<ProtectedRoute><ProjectDashboardPage /></ProtectedRoute>} />

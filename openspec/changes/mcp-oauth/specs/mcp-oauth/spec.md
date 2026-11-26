@@ -2,7 +2,7 @@
 
 ### Requirement: Descoberta OAuth do MCP
 
-A instalação SHALL publicar Protected Resource Metadata (RFC 9728) para o MCP geral e para cada MCP de projeto, e Authorization Server Metadata (RFC 8414), com URLs derivadas da URL pública configurada (origem e base path). Discovery, registro, token e revogação SHALL aceitar CORS de qualquer origem sem credenciais. O metadata SHALL anunciar Authorization Code com PKCE `S256`, `refresh_token`, autenticação de cliente `none`, registro dinâmico, revogação e os escopos `read`, `write`, `admin` e `delete`. O PRM de projeto NÃO SHALL consultar o banco nem revelar se o projeto existe.
+A instalação SHALL publicar Protected Resource Metadata (RFC 9728) para o MCP geral e para cada MCP de projeto, e Authorization Server Metadata (RFC 8414), com URLs derivadas da URL pública configurada. O metadata SHALL anunciar Authorization Code com PKCE `S256`, `refresh_token`, cliente público, registro dinâmico, revogação e os escopos `read`, `write`, `admin` e `delete`. Descoberta, registro, token e revogação SHALL aceitar CORS de qualquer origem sem credenciais.
 
 #### Scenario: Cliente descobre o authorization server
 - **WHEN** um cliente MCP consulta o PRM do endpoint `/mcp`
@@ -42,7 +42,7 @@ A instalação SHALL aceitar registro dinâmico de cliente público (RFC 7591), 
 
 ### Requirement: Consentimento com usuário logado
 
-O `authorization_endpoint` SHALL ser uma tela da aplicação web que exige sessão do usuário. Sem sessão, o usuário SHALL passar pelo login configurado da instalação e voltar à mesma tela com os parâmetros originais. A tela SHALL mostrar o nome do app, o host do `redirect_uri` com aviso de app não verificado, a conta conectada, o projeto quando o recurso for de projeto e os escopos efetivos, e SHALL permitir aprovar ou negar. Aprovar e negar SHALL exigir sessão humana; API Key e token OAuth NÃO SHALL aprovar consentimento. A validação SHALL exigir `response_type=code`, PKCE `S256`, cliente registrado, `redirect_uri` exato e `resource` conhecido.
+O `authorization_endpoint` SHALL ser uma tela da aplicação web que exige sessão humana; sem sessão, o usuário passa pelo login e volta à tela com os parâmetros originais. A tela SHALL mostrar app, host do `redirect_uri` com aviso de app não verificado, conta, projeto (quando houver) e escopos, e SHALL permitir aprovar ou negar. Só a sessão humana aprova; a validação exige `response_type=code`, PKCE `S256`, cliente registrado, `redirect_uri` exato e `resource` conhecido.
 
 #### Scenario: Usuário sem sessão
 - **WHEN** o cliente abre a tela de autorização e o usuário não está logado
@@ -90,7 +90,7 @@ Os escopos SHALL ser `read`, `write`, `admin` e `delete`, com o mesmo significad
 
 ### Requirement: Emissão, renovação e revogação de tokens
 
-O token endpoint SHALL trocar o code por um access token opaco de 1 hora e um refresh token de 30 dias, validando cliente, `redirect_uri`, PKCE e `resource`, e usando o `resource` como audiência. Tokens SHALL ser armazenados só como hash. Cada uso do refresh token SHALL emitir um novo par e invalidar o anterior; reapresentar um refresh já usado SHALL revogar a conexão inteira. A revogação (RFC 7009) SHALL responder com sucesso também para token desconhecido.
+O token endpoint SHALL trocar o code por access token opaco de 1 hora e refresh token de 30 dias, validando cliente, `redirect_uri`, PKCE e `resource` (usado como audiência). Tokens SHALL ser guardados só como hash. Cada renovação SHALL emitir novo par e invalidar o anterior; reuso de refresh fora de uma janela curta de tolerância SHALL revogar a conexão. A revogação (RFC 7009) SHALL responder com sucesso também para token desconhecido.
 
 #### Scenario: Troca do code
 - **WHEN** o cliente envia code válido com o `code_verifier` correto
@@ -109,8 +109,12 @@ O token endpoint SHALL trocar o code por um access token opaco de 1 hora e um re
 - **THEN** recebe novo par de tokens e o refresh anterior deixa de valer
 
 #### Scenario: Reuso de refresh token
-- **WHEN** um refresh token já usado é reapresentado
+- **WHEN** um refresh token já usado é reapresentado depois da janela de tolerância
 - **THEN** a troca falha e todos os tokens da conexão são revogados
+
+#### Scenario: Renovação concorrente
+- **WHEN** um refresh token recém-rotacionado é reapresentado dentro da janela de tolerância
+- **THEN** a troca falha com `invalid_grant` e a conexão continua válida
 
 #### Scenario: Revogação pelo cliente
 - **WHEN** o cliente revoga um token
@@ -150,7 +154,7 @@ O access token OAuth SHALL autenticar somente o endpoint MCP para cuja audiênci
 
 ### Requirement: Conexão OAuth equivale ao Owner
 
-Uma conexão OAuth SHALL operar com a identidade do usuário que a autorizou, recarregada do banco a cada requisição, aplicando as mesmas regras de grupo global, tenant, membership, políticas de ferramenta, defesa contra escalada e revalidação definidas para o Owner da API Key. O escopo concedido SHALL restringir como `permissionScope` e o recurso de projeto SHALL restringir como `projectScope`. As ações SHALL ser registradas com origem `MCP` e ator `AGENT`, identificando o app pelo nome registrado.
+Uma conexão OAuth SHALL operar com a identidade do usuário que a autorizou, recarregada a cada requisição, com as mesmas regras de tenant, grupo, membership, políticas, anti-escalada e revalidação aplicadas ao Owner da API Key. O escopo concedido restringe como `permissionScope` e o recurso de projeto como `projectScope`. As ações SHALL ser registradas com origem `MCP`, ator `AGENT` e o nome do app.
 
 #### Scenario: Usuário desativado
 - **WHEN** o usuário que autorizou a conexão é desativado

@@ -12,6 +12,7 @@ describe('knowledge e importação do Azy Agent', () => {
   test('conhecimento cobre a configuração do MCP para o Azy Agent', () => {
     const [result] = retrieveKnowledge('como configurar o mcp do azy board no meu code agent')
     expect(result?.id).toBe('mcp-setup')
+    expect(result?.content).toContain('OAuth')
     expect(result?.content).toContain('EASYBOARD_API_KEY')
     expect(result?.content).toContain('nunca em arquivo versionado')
   })

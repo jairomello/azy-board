@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import type {
   ApiKeyListRecord,
@@ -27,6 +27,10 @@ import type {
   ProjectProgressAggregateRow,
   ProjectRecord,
   ProjectIntegrationRecord,
+  OAuthAuthorizationCodeRecord,
+  OAuthClientRecord,
+  OAuthGrantRecord,
+  OAuthTokenRecord,
   IntegrationMessageRecord,
   IntegrationMessageStatus,
   ProjectVersionRecord,
@@ -146,6 +150,15 @@ function mapPublicUser(row: PgRow): PublicUserRecord {
 
 function mapTenant(row: PgRow): TenantRecord {
   return { id: row.id as string, name: row.name as string, slug: row.slug as string, createdAt: row.created_at as string }
+}
+
+function mapOAuthGrantRow(row: PgRow): OAuthGrantRecord {
+  return {
+    id: String(row.id), tenantId: String(row.tenant_id), userId: String(row.user_id), clientId: String(row.client_id),
+    clientName: String(row.client_name), scope: String(row.scope), resource: String(row.resource),
+    projectId: (row.project_id as string | null) ?? null, createdAt: String(row.created_at),
+    lastUsedAt: (row.last_used_at as string | null) ?? null, revokedAt: (row.revoked_at as string | null) ?? null,
+  }
 }
 
 function mapApiKey(row: PgRow): ApiKeyRecord {
@@ -1253,6 +1266,80 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
     // -----------------------------------------------------------------------
     // HealthPort
     // -----------------------------------------------------------------------
+    oauth: {
+      async createClient(input): Promise<OAuthClientRecord> {
+        const id = `mcp-${randomUUID()}`
+        const createdAt = new Date().toISOString()
+        await q('INSERT INTO oauth_clients (id, client_name, redirect_uris, created_at) VALUES ($1, $2, $3, $4)',
+          [id, input.clientName, JSON.stringify(input.redirectUris), createdAt])
+        return { id, clientName: input.clientName, redirectUris: [...input.redirectUris], createdAt }
+      },
+      async getClient(clientId): Promise<OAuthClientRecord | null> {
+        const row = await q1('SELECT * FROM oauth_clients WHERE id = $1', [clientId])
+        return row ? { id: String(row.id), clientName: String(row.client_name), redirectUris: JSON.parse(String(row.redirect_uris)) as string[], createdAt: String(row.created_at) } : null
+      },
+      async createCode(input): Promise<void> {
+        await q(`INSERT INTO oauth_authorization_codes
+                 (code_hash, client_id, tenant_id, user_id, redirect_uri, code_challenge, scope, resource, project_id, expires_at, created_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [input.codeHash, input.clientId, input.tenantId, input.userId, input.redirectUri, input.codeChallenge,
+            input.scope, input.resource, input.projectId, input.expiresAt, new Date().toISOString()])
+      },
+      async consumeCode(codeHash): Promise<OAuthAuthorizationCodeRecord | null> {
+        // DELETE ... RETURNING é atômico: só a primeira troca recebe o code.
+        const row = await q1('DELETE FROM oauth_authorization_codes WHERE code_hash = $1 RETURNING *', [codeHash])
+        return row ? {
+          codeHash: String(row.code_hash), clientId: String(row.client_id), tenantId: String(row.tenant_id), userId: String(row.user_id),
+          redirectUri: String(row.redirect_uri), codeChallenge: String(row.code_challenge), scope: String(row.scope),
+          resource: String(row.resource), projectId: (row.project_id as string | null) ?? null, expiresAt: String(row.expires_at),
+        } : null
+      },
+      async createGrant(input): Promise<OAuthGrantRecord> {
+        const id = randomUUID()
+        const createdAt = new Date().toISOString()
+        await q(`INSERT INTO oauth_grants (id, tenant_id, user_id, client_id, client_name, scope, resource, project_id, created_at)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [id, input.tenantId, input.userId, input.clientId, input.clientName, input.scope, input.resource, input.projectId, createdAt])
+        return { id, ...input, createdAt, lastUsedAt: null, revokedAt: null }
+      },
+      async getGrant(grantId): Promise<OAuthGrantRecord | null> {
+        const row = await q1('SELECT * FROM oauth_grants WHERE id = $1', [grantId])
+        return row ? mapOAuthGrantRow(row) : null
+      },
+      async listUserGrants(tenantId, userId): Promise<OAuthGrantRecord[]> {
+        const rows = await q('SELECT * FROM oauth_grants WHERE tenant_id = $1 AND user_id = $2 AND revoked_at IS NULL ORDER BY created_at DESC', [tenantId, userId])
+        return rows.map(mapOAuthGrantRow)
+      },
+      async revokeUserGrant(tenantId, userId, grantId, revokedAt): Promise<boolean> {
+        const rows = await q('UPDATE oauth_grants SET revoked_at = $1 WHERE id = $2 AND tenant_id = $3 AND user_id = $4 AND revoked_at IS NULL RETURNING id',
+          [revokedAt, grantId, tenantId, userId])
+        return rows.length > 0
+      },
+      async revokeGrant(grantId, revokedAt): Promise<void> {
+        await q('UPDATE oauth_grants SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL', [revokedAt, grantId])
+      },
+      async touchGrant(grantId, usedAt): Promise<void> {
+        await q('UPDATE oauth_grants SET last_used_at = $1 WHERE id = $2', [usedAt, grantId])
+      },
+      async createToken(input): Promise<void> {
+        await q('INSERT INTO oauth_tokens (token_hash, grant_id, kind, expires_at, created_at) VALUES ($1, $2, $3, $4, $5)',
+          [input.tokenHash, input.grantId, input.kind, input.expiresAt, new Date().toISOString()])
+      },
+      async findToken(tokenHash): Promise<OAuthTokenRecord | null> {
+        const row = await q1('SELECT * FROM oauth_tokens WHERE token_hash = $1', [tokenHash])
+        return row ? {
+          tokenHash: String(row.token_hash), grantId: String(row.grant_id), kind: row.kind as OAuthTokenRecord['kind'],
+          expiresAt: String(row.expires_at), usedAt: (row.used_at as string | null) ?? null,
+        } : null
+      },
+      async markTokenUsed(tokenHash, usedAt): Promise<boolean> {
+        const rows = await q('UPDATE oauth_tokens SET used_at = $1 WHERE token_hash = $2 AND used_at IS NULL RETURNING token_hash', [usedAt, tokenHash])
+        return rows.length > 0
+      },
+      async deleteToken(tokenHash): Promise<void> {
+        await q('DELETE FROM oauth_tokens WHERE token_hash = $1', [tokenHash])
+      },
+    },
     integrations: {
       async getByProject(context: PersistenceContext, projectId: string, kind: string): Promise<ProjectIntegrationRecord | null> {
         const row = await q1('SELECT * FROM project_integrations WHERE tenant_id = $1 AND project_id = $2 AND kind = $3', [context.tenantId, projectId, kind])
@@ -2195,7 +2282,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           [context.tenantId, projectId])
         if (rows.length === 0) return []
         const ids = rows.map(row => String(row.id))
-        const [tagLinks, sprintLinks, userRows, apiKeyRows, versionRows] = await Promise.all([
+        const [tagLinks, sprintLinks, userRows, apiKeyRows, versionRows, grantRows] = await Promise.all([
           q(`SELECT it.item_id, t.id, t.tenant_id, t.project_id, t.name, t.color
              FROM item_tags it JOIN tags t ON t.tenant_id = it.tenant_id AND t.id = it.tag_id
              WHERE it.tenant_id = $1 AND it.item_id = ANY($2::text[])`, [context.tenantId, ids]),
@@ -2203,6 +2290,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           q('SELECT id, name, avatar_url FROM users WHERE tenant_id = $1', [context.tenantId]),
           q('SELECT id, name, ai_model_name FROM api_keys WHERE tenant_id = $1', [context.tenantId]),
           q('SELECT id, name, status FROM project_versions WHERE tenant_id = $1 AND project_id = $2', [context.tenantId, projectId]),
+          q('SELECT id, client_name FROM oauth_grants WHERE tenant_id = $1', [context.tenantId]),
         ])
         const tagsByItem = new Map<string, ItemWithRelationsRecord['itemTags']>()
         for (const link of tagLinks) {
@@ -2219,10 +2307,12 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         const usersById = new Map(userRows.map(row => [String(row.id), row]))
         const apiKeysById = new Map(apiKeyRows.map(row => [String(row.id), row]))
         const versionsById = new Map(versionRows.map(row => [String(row.id), row]))
+        const grantsById = new Map(grantRows.map(row => [String(row.id), row]))
         return rows.map(row => {
           const item = mapItem(row)
           const assignee = item.assigneeId ? usersById.get(item.assigneeId) : undefined
           const apiKey = item.assigneeApiKeyId ? apiKeysById.get(item.assigneeApiKeyId) : undefined
+          const grant = row.assignee_oauth_grant_id ? grantsById.get(String(row.assignee_oauth_grant_id)) : undefined
           const author = item.authorId ? usersById.get(item.authorId) : undefined
           const version = item.versionId ? versionsById.get(item.versionId) : undefined
           return {
@@ -2230,7 +2320,10 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
             itemTags: tagsByItem.get(item.id) ?? [],
             itemSprints: sprintsByItem.get(item.id) ?? [],
             assignee: assignee ? { id: String(assignee.id), name: String(assignee.name), avatarUrl: (assignee.avatar_url as string | null) ?? null } : null,
-            assigneeApiKey: apiKey ? { id: String(apiKey.id), name: String(apiKey.name), aiModelName: (apiKey.ai_model_name as string | null) ?? null } : null,
+            // Conexão OAuth do MCP usa o nome do app registrado como rótulo do agente.
+            assigneeApiKey: apiKey
+              ? { id: String(apiKey.id), name: String(apiKey.name), aiModelName: (apiKey.ai_model_name as string | null) ?? null }
+              : grant ? { id: String(grant.id), name: String(grant.client_name), aiModelName: String(grant.client_name) } : null,
             author: author ? { id: String(author.id), name: String(author.name), avatarUrl: (author.avatar_url as string | null) ?? null } : null,
             version: version ? { id: String(version.id), name: String(version.name), status: String(version.status) } : null,
           }
@@ -4816,11 +4909,11 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
           }
         })
       },
-      async claimItem(context, projectId, itemId, assigneeId, apiKeyId, columnId) {
+      async claimItem(context, projectId, itemId, assigneeId, apiKeyId, columnId, oauthGrantId) {
         const rows = await q(
-          `UPDATE items SET assignee_id = $1, assignee_api_key_id = $2, column_id = COALESCE($3, column_id), updated_at = now()
+          `UPDATE items SET assignee_id = $1, assignee_api_key_id = $2, column_id = COALESCE($3, column_id), assignee_oauth_grant_id = $7, updated_at = now()
            WHERE tenant_id = $4 AND project_id = $5 AND id = $6 AND assignee_id IS NULL RETURNING id`,
-          [assigneeId, apiKeyId ?? null, columnId ?? null, context.tenantId, projectId, itemId],
+          [assigneeId, apiKeyId ?? null, columnId ?? null, context.tenantId, projectId, itemId, oauthGrantId ?? null],
         )
         // [T57] Card assumido marca os ancestrais como alterados.
         if (rows.length > 0) await touchItemMarkerPgPool(context.tenantId, projectId, itemId)
@@ -4830,7 +4923,7 @@ export function createPostgresPersistencePorts(pool: Pool): PersistencePorts {
         await tx(async (client) => {
           // O status acompanha o baseStatus da coluna atual (paridade com o SQLite);
           // sem coluna conhecida, mantém o status gravado.
-          await client.query(`UPDATE items SET assignee_id = NULL, assignee_api_key_id = NULL,
+          await client.query(`UPDATE items SET assignee_id = NULL, assignee_api_key_id = NULL, assignee_oauth_grant_id = NULL,
             status = COALESCE((SELECT c.base_status FROM columns c
               WHERE c.tenant_id = items.tenant_id AND c.project_id = items.project_id AND c.id = items.column_id), status),
             updated_at = now()

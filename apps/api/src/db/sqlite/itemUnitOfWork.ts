@@ -806,13 +806,13 @@ export function createSqliteItemUnitOfWork(database: Database) {
       })
     },
 
-    claimItem(context: MutationContext, projectId: string, itemId: string, assigneeId: string, apiKeyId?: string, columnId?: string | null): boolean {
+    claimItem(context: MutationContext, projectId: string, itemId: string, assigneeId: string, apiKeyId?: string, columnId?: string | null, oauthGrantId?: string): boolean {
       return runSqliteAtomic(database, () => {
         const before = readItemSnapshot(database, context.tenantId, projectId, itemId)
         if (!before) return false
-        const result = database.query(`UPDATE items SET assignee_id = ?, assignee_api_key_id = ?, column_id = ?, status = 'IN_PROGRESS', updated_at = ?
+        const result = database.query(`UPDATE items SET assignee_id = ?, assignee_api_key_id = ?, assignee_oauth_grant_id = ?, column_id = ?, status = 'IN_PROGRESS', updated_at = ?
           WHERE tenant_id = ? AND project_id = ? AND id = ? AND assignee_id IS NULL`)
-          .run(assigneeId, apiKeyId ?? null, columnId ?? null, new Date().toISOString(), context.tenantId, projectId, itemId)
+          .run(assigneeId, apiKeyId ?? null, oauthGrantId ?? null, columnId ?? null, new Date().toISOString(), context.tenantId, projectId, itemId)
         if (!result.changes) return false
         insertActivity(database, context, itemId, context.mutation.activity ?? 'Card assumido para trabalho')
         recordItemEvent(database, context, { projectId, itemId, eventType: 'STATUS_CHANGED', before, after: readItemSnapshot(database, context.tenantId, projectId, itemId) })
@@ -824,7 +824,7 @@ export function createSqliteItemUnitOfWork(database: Database) {
       runSqliteAtomic(database, () => {
         const before = readItemSnapshot(database, context.tenantId, projectId, itemId)
         // O status acompanha o baseStatus da coluna atual; sem coluna, volta a NOT_STARTED.
-        database.query(`UPDATE items SET assignee_id = NULL, assignee_api_key_id = NULL,
+        database.query(`UPDATE items SET assignee_id = NULL, assignee_api_key_id = NULL, assignee_oauth_grant_id = NULL,
           status = COALESCE((SELECT c.base_status FROM columns c
             WHERE c.tenant_id = items.tenant_id AND c.project_id = items.project_id AND c.id = items.column_id), 'NOT_STARTED'),
           updated_at = ?

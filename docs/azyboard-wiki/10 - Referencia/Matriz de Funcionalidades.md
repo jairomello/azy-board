@@ -39,7 +39,7 @@ Esta matriz oferece uma visão rápida das capacidades do Azy Board e indica ond
 | Administração | Usuários do tenant, criação de contas e grupos globais | [[08 - Conta e Preferencias/Administrar Usuarios do Tenant|Administrar usuários do tenant]] |
 | Preferências | Tema claro ou escuro e idioma | [[08 - Conta e Preferencias/Configurar Tema e Idioma|Configurar tema e idioma]] |
 | API Keys | Criação, cópia, acompanhamento e revogação | [[08 - Conta e Preferencias/Gerenciar API Keys|Gerenciar API Keys]] |
-| Configuração MCP | Transporte `stdio`, ambiente e conexão do cliente | [[09 - Agentes e Integracoes/Configurar o Servidor MCP|Configurar o servidor MCP]] |
+| Configuração MCP | MCP remoto com OAuth (recomendado), MCP por projeto, revogação de conexões e alternativas depreciadas (API Key e `stdio`) | [[09 - Agentes e Integracoes/Configurar o Servidor MCP|Configurar o servidor MCP]] |
 | Azy Agent | Chat interno com aprovação humana, prévia e governança | [[09 - Agentes e Integracoes/Usar o Chat do Azy Agent|Usar o chat do Azy Agent]] |
 | Ferramentas MCP | Consulta, criação, claim, movimentação e checklists | [[09 - Agentes e Integracoes/Usar as Ferramentas MCP|Usar as ferramentas MCP]] |
 | Shadow Markdown | Leitura e atualização textual do Board | [[09 - Agentes e Integracoes/Ler e Atualizar o Board com Shadow Markdown|Ler e atualizar o Board com Shadow Markdown]] |

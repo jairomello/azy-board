@@ -90,7 +90,11 @@ function redirectToLogin(): never {
   if (BASE_PATH && currentPath.startsWith(BASE_PATH)) {
     currentPath = currentPath.slice(BASE_PATH.length) || '/'
   }
-  window.location.href = `${BASE_PATH}/login?redirect=${encodeURIComponent(currentPath)}`
+  // A query string acompanha o destino (ex.: parâmetros do consentimento OAuth).
+  // Já no login (ex.: 401 de credenciais inválidas), mantém o redirect original.
+  window.location.href = currentPath === '/login'
+    ? `${BASE_PATH}/login${window.location.search}`
+    : `${BASE_PATH}/login?redirect=${encodeURIComponent(currentPath + window.location.search)}`
   throw new Error('Sessão expirada')
 }
 

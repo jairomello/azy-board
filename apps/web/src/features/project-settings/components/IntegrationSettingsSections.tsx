@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Copy, Trash2 } from 'lucide-react'
+import { Check, Copy, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { AccordionSection } from '../../../components/AccordionSection'
 import { api } from '../../../lib/api'
+import { copyTextToClipboard } from '../../../lib/clipboard'
+import { resolveProjectMcpUrl } from '../../../lib/mcpUrl'
 import type { Module } from '../model/types'
 
 interface TeamsConfig {
@@ -36,6 +38,13 @@ export function IntegrationSettingsSections({ projectId, modules, isAdmin, openS
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [mcpCopy, setMcpCopy] = useState<'copied' | 'failed' | null>(null)
+  const projectMcpUrl = projectId ? resolveProjectMcpUrl(projectId) : null
+
+  const copyProjectMcpUrl = async () => {
+    if (!projectMcpUrl) return
+    setMcpCopy(await copyTextToClipboard(projectMcpUrl) ? 'copied' : 'failed')
+  }
 
   useEffect(() => {
     if (!projectId) return
@@ -78,6 +87,21 @@ export function IntegrationSettingsSections({ projectId, modules, isAdmin, openS
 
   return (
     <AccordionSection id="integrations" title={t('settings:integrations')} isOpen={openSections.has('integrations')} onToggle={() => onToggleSection('integrations')}>
+      {projectMcpUrl && (
+        <div className="mb-5">
+          <p className="mb-1 text-xs font-semibold text-foreground">{t('settings:projectMcpUrl')}</p>
+          <div className="flex items-center gap-2">
+            <code className="min-w-0 flex-1 break-all select-all rounded-lg border border-input bg-muted px-3 py-2 text-xs font-mono">{projectMcpUrl}</code>
+            <button type="button" onClick={() => void copyProjectMcpUrl()} className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs">
+              {mcpCopy === 'copied' ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
+              {mcpCopy === 'copied' ? t('settings:mcpGuideUrlCopied') : t('settings:projectMcpUrlCopy')}
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">{t('settings:projectMcpUrlHint')}</p>
+          {mcpCopy === 'failed' && <p className="mt-1 text-xs text-destructive">{t('settings:mcpGuideCopyFailed')}</p>}
+        </div>
+      )}
+
       <p className="mb-4 text-sm text-muted-foreground">{t('settings:teamsIntegrationDescription')}</p>
       {error && <p role="alert" className="mb-3 text-sm text-destructive">{error}</p>}
       {notice && <p role="status" className="mb-3 text-sm text-emerald-600 dark:text-emerald-400">{notice}</p>}

@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono'
 import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
 import type { MemberRole } from '@azy-board/domain'
-import { authMiddleware, requireRole } from '../middleware/auth'
+import { authMiddleware, requireRole, requestOrigin } from '../middleware/auth'
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext, userMutationContext } from '../persistence/context'
 import { authorizeProjectRole } from '../services/projectAuthorization'
@@ -88,7 +88,7 @@ itemDependenciesRouter.post('/', requireRole('MEMBER'), async (c) => {
   // [T38] Chave idempotente opcional (agente envia Idempotency-Key estável).
   const idempotencyKey = c.req.header('Idempotency-Key')
   const commandHash = idempotencyKey ? await payloadHash({ projectId: scope.projectId, itemId: scope.itemId, dependency: parsed.data }) : null
-  const mutationContext = userMutationContext(scope.ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  const mutationContext = userMutationContext(scope.ctx, requestOrigin(c))
   if (idempotencyKey && commandHash) {
     mutationContext.idempotency = {
       namespace: COMMAND_NAMESPACES.createItemDependency,

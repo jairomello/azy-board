@@ -3,6 +3,7 @@ import { Check, Palette, EyeOff, Clock } from 'lucide-react'
 import type { LightShellTheme, Theme } from '@azy-board/ui-contracts'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiKeysSection } from '../components/ApiKeysSection'
+import { McpConnectionsSection } from '../components/McpConnectionsSection'
 import { ProfilePhotoSection } from '../components/ProfilePhotoSection'
 import { PasswordSection } from '../components/PasswordSection'
 import { ShowHiddenProjectsSwitch } from '../components/ShowHiddenProjectsSwitch'
@@ -180,6 +181,11 @@ export default function AccountPage() {
           <ShowHiddenProjectsSwitch />
           <p className="text-xs text-muted-foreground mt-2">{t('showHiddenProjectsHint')}</p>
         </section>
+
+        {/* Conexões MCP autorizadas por OAuth */}
+        <div className="bg-card border border-border rounded-xl px-5 py-5 mb-5 shadow-sm">
+          <McpConnectionsSection />
+        </div>
 
         {/* Seção de API Keys */}
         <div className="bg-card border border-border rounded-xl px-5 py-5 shadow-sm">

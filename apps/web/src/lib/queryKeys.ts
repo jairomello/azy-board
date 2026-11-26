@@ -20,6 +20,11 @@ export const queryKeys = {
     ['auth', userId ?? 'anonymous', 'adminUsers'] as const,
   apiKeys: (userId: string | undefined) =>
     ['auth', userId ?? 'anonymous', 'apiKeys'] as const,
+  mcpGrants: (userId: string | undefined) =>
+    ['auth', userId ?? 'anonymous', 'mcpGrants'] as const,
+  // Validação de um pedido de consentimento OAuth (query string do authorize).
+  oauthAuthorize: (userId: string | undefined, request: string) =>
+    ['auth', userId ?? 'anonymous', 'oauthAuthorize', request] as const,
 }
 
 // Invalida a consulta da árvore do projeto (substitui o antigo refreshToken do

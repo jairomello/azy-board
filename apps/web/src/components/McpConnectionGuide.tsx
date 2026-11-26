@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, Copy, Download, Link2, Sparkles } from 'lucide-react'
+import { AlertTriangle, Check, Copy, Download, Link2, Sparkles } from 'lucide-react'
 import { copyTextToClipboard } from '../lib/clipboard'
 import { api } from '../lib/api'
 import { resolveAppUrl } from '../lib/appUrl'
@@ -26,7 +26,8 @@ function triggerBlobDownload(blob: Blob, fileName: string) {
 }
 
 // Orientação de conexão do MCP exibida no topo da seção de API Keys: explica a
-// finalidade da chave, mostra a URL do MCP da instalação e oferece a cópia da
+// finalidade da chave, avisa que a conexão por API Key está depreciada em favor
+// do OAuth (só a URL), mostra a URL do MCP da instalação e oferece a cópia da
 // URL e da instrução pronta para o code agent. Nunca exibe o valor da chave.
 export function McpConnectionGuide() {
   const { t } = useTranslation('settings')
@@ -92,6 +93,16 @@ export function McpConnectionGuide() {
         <Link2 className="w-4 h-4 mt-0.5 text-muted-foreground flex-shrink-0" aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <p className="text-sm text-foreground">{t('mcpGuideIntro')}</p>
+
+          <div role="note" className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-800 dark:text-amber-300">
+            <p className="flex items-start gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 mt-px flex-shrink-0" aria-hidden="true" />
+              <span>{t('mcpGuideApiKeyDeprecated')}</span>
+            </p>
+            <code className="mt-2 block text-xs font-mono break-all select-all rounded border border-border bg-background px-2 py-1.5 text-foreground">
+              {`claude mcp add --transport http azy-board ${mcpUrl}`}
+            </code>
+          </div>
 
           <p className="text-xs font-semibold text-muted-foreground mt-3 mb-1">{t('mcpGuideUrlLabel')}</p>
           <div className="flex items-center gap-2">

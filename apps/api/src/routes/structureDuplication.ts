@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { isIconColor, isIconName } from '@azy-board/ui-contracts'
 import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
-import { authMiddleware, requireRole } from '../middleware/auth'
+import { authMiddleware, requireRole, requestOrigin } from '../middleware/auth'
 import { parseJson } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
@@ -123,7 +123,7 @@ structureDuplicationRouter.post('/apply', requireRole('MEMBER'), async (c) => {
 
   const key = c.req.header('Idempotency-Key') ?? parsed.data.idempotencyKey ?? null
   const commandHash = key ? await payloadHash({ projectId, plan }) : null
-  const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  const mutationContext = userMutationContext(ctx, requestOrigin(c))
   if (key && commandHash) {
     mutationContext.idempotency = {
       namespace: COMMAND_NAMESPACES.duplicateStructure, projectScope: projectId, key,

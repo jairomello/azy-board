@@ -42,6 +42,10 @@ import type {
   DashboardTransitionRecord,
   ProjectIntegrationRecord,
   ProjectIntegrationInput,
+  OAuthClientRecord,
+  OAuthAuthorizationCodeRecord,
+  OAuthGrantRecord,
+  OAuthTokenRecord,
   IntegrationMessageRecord,
   PlanningGapQueryRequest,
   PlanningGapSnapshotRecord,
@@ -741,7 +745,7 @@ export interface UnitOfWork {
   createItemWithRelations(context: MutationContext, input: NewItemRecord, relations?: ItemRelationsMutation): Promise<ItemRecord>
   updateItemWithRelations(context: MutationContext, projectId: string, itemId: string, patch: ItemPatch, relations?: ItemRelationsMutation): Promise<ItemRecord | null>
   reparentSubtree(context: MutationContext, projectId: string, itemId: string, newParentId: string | null): Promise<void>
-  claimItem(context: MutationContext, projectId: string, itemId: string, assigneeId: string, apiKeyId?: string, columnId?: string | null): Promise<boolean>
+  claimItem(context: MutationContext, projectId: string, itemId: string, assigneeId: string, apiKeyId?: string, columnId?: string | null, oauthGrantId?: string): Promise<boolean>
   releaseItem(context: MutationContext, projectId: string, itemId: string, activity?: string): Promise<void>
   moveItem(context: MutationContext, projectId: string, itemId: string, column: { id: string; name: string; baseStatus: ColumnBaseStatus }, fromColumnName: string): Promise<void>
   deleteItemSubtree(context: MutationContext, projectId: string, itemId: string, options?: DeleteMutationOptions): Promise<string[]>
@@ -777,6 +781,30 @@ export interface IntegrationPort {
   listMessages(context: PersistenceContext, projectId: string, kind: string, limit: number): Promise<IntegrationMessageRecord[]>
 }
 
+/**
+ * Authorization server do MCP remoto. Clientes são globais (registro dinâmico
+ * público); grants e tokens carregam o tenant do usuário que aprovou.
+ */
+export interface OAuthPort {
+  createClient(input: Omit<OAuthClientRecord, 'id' | 'createdAt'>): Promise<OAuthClientRecord>
+  getClient(clientId: string): Promise<OAuthClientRecord | null>
+  createCode(input: OAuthAuthorizationCodeRecord): Promise<void>
+  /** Consome o code de forma atômica: só a primeira chamada o recebe. */
+  consumeCode(codeHash: string): Promise<OAuthAuthorizationCodeRecord | null>
+  createGrant(input: Omit<OAuthGrantRecord, 'id' | 'createdAt' | 'lastUsedAt' | 'revokedAt'>): Promise<OAuthGrantRecord>
+  getGrant(grantId: string): Promise<OAuthGrantRecord | null>
+  listUserGrants(tenantId: string, userId: string): Promise<OAuthGrantRecord[]>
+  /** Revoga o grant do próprio usuário; false quando não existe ou é de outro usuário. */
+  revokeUserGrant(tenantId: string, userId: string, grantId: string, revokedAt: string): Promise<boolean>
+  revokeGrant(grantId: string, revokedAt: string): Promise<void>
+  touchGrant(grantId: string, usedAt: string): Promise<void>
+  createToken(input: Omit<OAuthTokenRecord, 'usedAt'>): Promise<void>
+  findToken(tokenHash: string): Promise<OAuthTokenRecord | null>
+  /** Marca o refresh como usado de forma atômica; false se já estava usado. */
+  markTokenUsed(tokenHash: string, usedAt: string): Promise<boolean>
+  deleteToken(tokenHash: string): Promise<void>
+}
+
 export interface PersistencePorts extends PersistenceTransaction {
   health: HealthPort
   domainEvents: DomainEventPort
@@ -789,6 +817,7 @@ export interface PersistencePorts extends PersistenceTransaction {
   planningGapSnapshots: PlanningGapSnapshotPort
   exportMappings: ExportMappingPort
   integrations: IntegrationPort
+  oauth: OAuthPort
   unitOfWork: UnitOfWork
 }
 

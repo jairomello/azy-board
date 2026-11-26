@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import type { HonoEnv } from '../types/hono'
 import type { RequestContext } from '@azy-board/api-contracts'
-import { authMiddleware, requireRole } from '../middleware/auth'
+import { authMiddleware, requireRole, requestOrigin } from '../middleware/auth'
 import { parseJson } from '../validation'
 import { persistence } from '../persistence/runtime'
 import { userMutationContext, userPersistenceContext } from '../persistence/context'
@@ -90,7 +90,7 @@ sprintTransitionRouter.post('/apply', requireRole('ADMIN'), async (c) => {
 
   const key = c.req.header('Idempotency-Key') ?? parsed.data.idempotencyKey ?? null
   const commandHash = key ? await payloadHash({ projectId, plan }) : null
-  const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  const mutationContext = userMutationContext(ctx, requestOrigin(c))
   if (key && commandHash) {
     mutationContext.idempotency = {
       namespace: COMMAND_NAMESPACES.applySprintTransition, projectScope: projectId, key,

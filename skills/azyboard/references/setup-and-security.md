@@ -2,7 +2,11 @@
 
 ## Servidor MCP
 
-Configure o cliente com transporte `stdio` e o servidor `apps/mcp/src/index.ts` ou sua versão compilada. Use variáveis de ambiente:
+O caminho padrão é o MCP remoto com OAuth: registre no cliente só a URL do MCP (`https://<instalação>/mcp` ou, para fixar o projeto, `https://<instalação>/mcp/projects/<projectId>`), sem cabeçalho de credencial. O cliente conduz a autorização no navegador logado no Azy Board; nenhum segredo é copiado. O token vale só no MCP (não autentica a API REST), herda as permissões do Owner humano e fica restrito ao projeto quando emitido para a URL de projeto. Para desconectar, revogue a conexão em **Minha conta → Conexões MCP**. Roteiro completo em `references/mcp-setup.md`.
+
+### Alternativas depreciadas
+
+API Key no modo remoto (cabeçalho `Authorization`) e o transporte `stdio` continuam funcionando, mas estão **depreciados**; use-os só quando o cliente não suportar OAuth no MCP. No `stdio`, configure o servidor `apps/mcp/src/index.ts` ou sua versão compilada com variáveis de ambiente:
 
 ```text
 EASYBOARD_API_KEY=azb_sua_chave_aqui
@@ -12,7 +16,7 @@ AZYBOARD_PROJECT_ID=<uuid do projeto padrão>   # opcional
 
 Não coloque valores reais em arquivos versionados. Gere uma chave por agente, cliente e ambiente; use o cofre de segredos do cliente quando disponível.
 
-`AZYBOARD_PROJECT_ID` pré-define o projeto da codebase: com ela configurada, `projectId` torna-se opcional nas ferramentas e o servidor injeta o padrão em cada chamada. O ID do projeto não é segredo e pode ficar versionado na configuração MCP do repositório; a API Key não.
+`AZYBOARD_PROJECT_ID` (exclusiva do `stdio`; no remoto, use a URL do MCP do projeto) pré-define o projeto da codebase: com ela configurada, `projectId` torna-se opcional nas ferramentas e o servidor injeta o padrão em cada chamada. O ID do projeto não é segredo e pode ficar versionado na configuração MCP do repositório; a API Key não.
 
 Essa variável também é o sinal operacional de que a codebase está vinculada ao projeto padrão do Azy Board. Nesse caso, tarefas relevantes devem ser oferecidas para acompanhamento em card, respeitando a confirmação do usuário ou uma preferência explícita da sessão. Sem a variável, não presuma vínculo automático; descubra o projeto somente com autorização do usuário.
 

@@ -15,3 +15,9 @@ export function resolveMcpUrl(): string {
   const origin = win?.location?.origin ?? ''
   return `${origin}${basePath}/mcp`
 }
+
+// URL do MCP de um projeto (`/mcp/projects/<id>`): mesmo host e base path do MCP
+// geral, com o projeto fixado pelo caminho.
+export function resolveProjectMcpUrl(projectId: string): string {
+  return `${resolveMcpUrl()}/projects/${encodeURIComponent(projectId)}`
+}

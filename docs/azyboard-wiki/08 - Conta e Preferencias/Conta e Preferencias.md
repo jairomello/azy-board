@@ -39,6 +39,12 @@ Selecione o avatar no cabeçalho e abra **Configurações da conta**. A página 
   
   Crie credenciais para agentes, copie o segredo exibido uma única vez, acompanhe seu uso e revogue acessos.
 
+## Conexões MCP
+
+- [[09 - Agentes e Integracoes/Configurar o Servidor MCP|Configurar o servidor MCP]]
+
+  Consulte os code agents autorizados por OAuth a usar o MCP e revogue conexões na seção **Conexões MCP**.
+
 ## Funcionalidades relacionadas
 
 - [[01 - Acesso e Navegacao/Acesso e Navegacao|Acesso e Navegação]]

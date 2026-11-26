@@ -342,6 +342,7 @@ export const items = pgTable('items', {
   tokensOutput: integer('tokens_output'),
   assigneeId: text('assignee_id'),
   assigneeApiKeyId: text('assignee_api_key_id'),
+  assigneeOauthGrantId: text('assignee_oauth_grant_id'),
   blockedReason: text('blocked_reason'),
   position: integer('position').notNull().default(0),
   startDate: text('start_date'),

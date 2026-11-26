@@ -49,6 +49,7 @@ mockModule('../hooks/useAssistantCacheInvalidation', () => ({ useAssistantCacheI
 mockModule('../components/Toast', () => ({ useToast: () => ({ toast: () => {} }) }))
 // Seções vizinhas não fazem parte deste teste: evitam rede e estados próprios.
 mockModule('../components/ApiKeysSection', () => ({ ApiKeysSection: () => null }))
+mockModule('../components/McpConnectionsSection', () => ({ McpConnectionsSection: () => null }))
 mockModule('../components/ProfilePhotoSection', () => ({ ProfilePhotoSection: () => null }))
 mockModule('../components/PasswordSection', () => ({ PasswordSection: () => null }))
 mockModule('../components/ShowHiddenProjectsSwitch', () => ({ ShowHiddenProjectsSwitch: () => null }))

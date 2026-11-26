@@ -14,6 +14,8 @@ export type HonoEnv = {
     apiKeyProjectScope: string[] | null
     apiKeyPermissionScope: string[] | null
     apiKeyName: string | null
+    // Conexão OAuth do MCP que originou a requisição (ator AGENT, origem MCP).
+    oauthGrantId: string | null
     // IP de origem resolvido pelo clientIpMiddleware (rate limiting de login).
     clientIp: string
     // ID de requisição gerado ou propagado pelo requestObservabilityMiddleware.
