@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { authMiddleware, requireRole } from '../middleware/auth'
+import { authMiddleware, requireRole, requestOrigin } from '../middleware/auth'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { checklistItemSchema, checklistSchema, parseJson, updateChecklistItemSchema, updateChecklistSchema } from '../validation'
 import { persistence } from '../persistence/runtime'
@@ -93,7 +93,7 @@ checklistsRouter.post('/', requireRole('MEMBER'), async (c) => {
   const idempotencyKey = c.req.header('Idempotency-Key')
   const name = body.name.trim()
   const commandHash = idempotencyKey ? await payloadHash({ projectId, itemId, name }) : null
-  const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  const mutationContext = userMutationContext(ctx, requestOrigin(c))
   if (idempotencyKey && commandHash) {
     mutationContext.idempotency = {
       namespace: COMMAND_NAMESPACES.createChecklist, projectScope: projectId, key: idempotencyKey,
@@ -196,7 +196,7 @@ checklistsRouter.post('/:checklistId/items', requireRole('MEMBER'), async (c) =>
   }
   const idempotencyKey = c.req.header('Idempotency-Key')
   const commandHash = idempotencyKey ? await payloadHash({ projectId, itemId, checklistId, ...itemInput }) : null
-  const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  const mutationContext = userMutationContext(ctx, requestOrigin(c))
   if (idempotencyKey && commandHash) {
     mutationContext.idempotency = {
       namespace: COMMAND_NAMESPACES.createChecklistItem, projectScope: projectId, key: idempotencyKey,

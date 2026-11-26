@@ -52,6 +52,8 @@ A conta é global para o ambiente, enquanto papéis e squads são definidos por 
 
 As API Keys também pertencem à conta. Elas não concedem automaticamente acesso a todos os projetos; as operações continuam sujeitas às associações e permissões do proprietário.
 
+O mesmo vale para as **Conexões MCP**: a seção lista os code agents autorizados por OAuth a usar o MCP em nome da conta e permite revogar cada conexão. Veja [[09 - Agentes e Integracoes/Configurar o Servidor MCP|Configurar o servidor MCP]].
+
 ## Funcionalidades relacionadas
 
 - [[01 - Acesso e Navegacao/Entrar e Manter a Sessao|Entrar e manter a sessão]]

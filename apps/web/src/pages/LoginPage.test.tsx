@@ -2,7 +2,7 @@ import { screen } from '../test/setup'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { render, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import * as bunTest from 'bun:test'
 import i18n from '../i18n'
 import { limparEmailLembrado, gravarEmailLembrado } from '../lib/rememberedEmail'
@@ -86,5 +86,81 @@ describe('LoginPage — lembrar-me (card T31)', () => {
 
     delete (globalThis as Record<string, unknown>).__APP_VERSION__
     delete (globalThis as Record<string, unknown>).__BUILD_DATE__
+  })
+})
+
+describe('LoginPage — retorno pós-login (mcp-oauth)', () => {
+  const fetchOriginal = globalThis.fetch
+  const locationWithAssign = window.location as unknown as { assign: (url: string) => void }
+  const assignOriginal = locationWithAssign.assign
+
+  function Destino() {
+    const location = useLocation()
+    return <output data-testid="destino">{location.pathname + location.search}</output>
+  }
+
+  function renderAt(entry: string) {
+    return render(
+      <MemoryRouter initialEntries={[entry]}>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="*" element={<Destino />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+
+  beforeEach(async () => {
+    await i18n.changeLanguage('pt-BR')
+    loginCalls.length = 0
+    limparEmailLembrado()
+  })
+
+  test('volta ao caminho interno informado em redirect, com a query', async () => {
+    const user = userEvent.setup()
+    renderAt('/login?redirect=' + encodeURIComponent('/oauth/authorize?client_id=cli-1&state=xyz'))
+    await user.type(screen.getByLabelText('E-mail'), 'eu@test.local')
+    await user.type(screen.getByLabelText('Senha'), 'segredo')
+    await user.click(screen.getByRole('button', { name: 'Entrar' }))
+    expect((await screen.findByTestId('destino')).textContent).toBe('/oauth/authorize?client_id=cli-1&state=xyz')
+  })
+
+  test('ignora redirect externo e vai para a página padrão', async () => {
+    const user = userEvent.setup()
+    renderAt('/login?redirect=' + encodeURIComponent('//evil.example/x'))
+    await user.type(screen.getByLabelText('E-mail'), 'eu@test.local')
+    await user.type(screen.getByLabelText('Senha'), 'segredo')
+    await user.click(screen.getByRole('button', { name: 'Entrar' }))
+    expect((await screen.findByTestId('destino')).textContent).toBe('/projects')
+  })
+
+  test('o login integrado leva o redirect interno para o início do OIDC', async () => {
+    const assigned: string[] = []
+    globalThis.fetch = (async () => new Response(JSON.stringify({ provider: 'OIDC', providerName: 'Entra ID', oauthStartUrl: '/api/auth/oauth/entra/start' }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch
+    locationWithAssign.assign = (url: string) => { assigned.push(url) }
+    try {
+      const user = userEvent.setup()
+      renderAt('/login?redirect=' + encodeURIComponent('/oauth/authorize?client_id=cli-1'))
+      await user.click(await screen.findByRole('button', { name: /Entra ID/ }))
+      expect(assigned).toEqual(['/api/auth/oauth/entra/start?redirect=' + encodeURIComponent('/oauth/authorize?client_id=cli-1')])
+    } finally {
+      globalThis.fetch = fetchOriginal
+      locationWithAssign.assign = assignOriginal
+    }
+  })
+
+  test('o login integrado não repassa redirect externo', async () => {
+    const assigned: string[] = []
+    globalThis.fetch = (async () => new Response(JSON.stringify({ provider: 'OIDC', providerName: 'Entra ID', oauthStartUrl: '/api/auth/oauth/entra/start' }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch
+    locationWithAssign.assign = (url: string) => { assigned.push(url) }
+    try {
+      const user = userEvent.setup()
+      renderAt('/login?redirect=' + encodeURIComponent('https://evil.example'))
+      await user.click(await screen.findByRole('button', { name: /Entra ID/ }))
+      expect(assigned).toEqual(['/api/auth/oauth/entra/start'])
+    } finally {
+      globalThis.fetch = fetchOriginal
+      locationWithAssign.assign = assignOriginal
+    }
   })
 })

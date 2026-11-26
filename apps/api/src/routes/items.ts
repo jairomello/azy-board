@@ -1,6 +1,6 @@
 import { Hono, type Context } from 'hono'
 import type { HonoEnv } from '../types/hono'
-import { authMiddleware, requireRole } from '../middleware/auth'
+import { authMiddleware, requireRole, requestOrigin, isAgentRequest } from '../middleware/auth'
 import { addTreeProgress, type TreeProgressContext, type TreeProgressNode } from '../services/treeProgress'
 import type { RequestContext } from '@azy-board/api-contracts'
 import type { ActivityActorType, ActivitySource, ItemType } from '@azy-board/domain'
@@ -90,11 +90,11 @@ async function resolveCrossProjectDependencyTargets(
 }
 
 function auditContext(c: Context<HonoEnv>): { actorType: ActivityActorType; source: ActivitySource; actorLabel: string | null } {
-  const apiKeyId = c.get('apiKeyId')
+  const agent = isAgentRequest(c)
   return {
-    actorType: apiKeyId ? 'AGENT' : 'HUMAN',
-    source: apiKeyId ? 'MCP' : 'REST',
-    actorLabel: apiKeyId ? c.get('apiKeyName') : null,
+    actorType: agent ? 'AGENT' : 'HUMAN',
+    source: agent ? 'MCP' : 'REST',
+    actorLabel: agent ? c.get('apiKeyName') : null,
   }
 }
 
@@ -616,7 +616,7 @@ itemsRouter.post('/', requireRole('MEMBER'), async (c) => {
   // entram no mesmo comando síncrono/atômico do adapter SQLite.
   let id: string | null = null
   try {
-    const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST', idempotencyKey)
+    const mutationContext = userMutationContext(ctx, requestOrigin(c), idempotencyKey)
     mutationContext.mutation.actorType = audit.actorType
     mutationContext.mutation.actorSource = audit.source
     mutationContext.mutation.actorLabel = audit.actorLabel
@@ -699,7 +699,7 @@ itemsRouter.post('/tokens', requireRole('MEMBER'), async (c) => {
   const body = parsed.data
 
   const audit = auditContext(c)
-  const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  const mutationContext = userMutationContext(ctx, requestOrigin(c))
   mutationContext.mutation.actorType = audit.actorType
   mutationContext.mutation.actorSource = audit.source
   mutationContext.mutation.actorLabel = audit.actorLabel
@@ -761,7 +761,7 @@ itemsRouter.patch('/:itemId/move', requireRole('MEMBER'), async (c) => {
   const audit = auditContext(c)
   let moveStatus: string | null = null
   try {
-    const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST', idempotencyKey)
+    const mutationContext = userMutationContext(ctx, requestOrigin(c), idempotencyKey)
     mutationContext.mutation.actorType = audit.actorType
     mutationContext.mutation.actorSource = audit.source
     mutationContext.mutation.actorLabel = audit.actorLabel
@@ -821,10 +821,11 @@ itemsRouter.patch('/:itemId/claim', requireRole('MEMBER'), async (c) => {
   if (item.assigneeId) return c.json({ error: 'Item já está sendo trabalhado por outro usuário' }, 409)
 
   const apiKeyId = c.get('apiKeyId') as string | undefined
+  const oauthGrantId = c.get('oauthGrantId') as string | undefined
 
   const audit = auditContext(c)
   const progressColumn = (await persistence.projects.listColumns(projectContext, projectId)).find(column => column.baseStatus === 'IN_PROGRESS')
-  const claimed = await claimItem({ tenantId: ctx.tenantId, projectId, itemId, userId: ctx.userId, apiKeyId, actor: audit, columnId: progressColumn?.id ?? item.columnId })
+  const claimed = await claimItem({ tenantId: ctx.tenantId, projectId, itemId, userId: ctx.userId, apiKeyId, oauthGrantId, actor: audit, columnId: progressColumn?.id ?? item.columnId })
   if (!claimed) return c.json({ error: 'Item já está sendo trabalhado por outro usuário' }, 409)
 
   void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'TASK_CLAIMED', payload: { itemId, assigneeId: ctx.userId, apiKeyId } })
@@ -842,7 +843,7 @@ itemsRouter.patch('/:itemId/release', requireRole('MEMBER'), async (c) => {
   if (!item) return c.json({ error: 'Item não encontrado' }, 404)
 
   const audit = auditContext(c)
-  await releaseItem({ tenantId: ctx.tenantId, projectId, itemId, userId: ctx.userId, apiKeyId: c.get('apiKeyId') as string | undefined, actor: audit })
+  await releaseItem({ tenantId: ctx.tenantId, projectId, itemId, userId: ctx.userId, apiKeyId: c.get('apiKeyId') as string | undefined, oauthGrantId: c.get('oauthGrantId') as string | undefined, actor: audit })
 
   void emitDomainEvent({ tenantId: ctx.tenantId, projectId: projectId, type: 'CARD_UPDATED', payload: { itemId, assigneeId: null } })
   const updated = await persistence.items.getItem(projectContext, projectId, itemId)
@@ -857,7 +858,7 @@ itemsRouter.patch('/:itemId', requireRole('MEMBER'), async (c) => {
   if (!parsed.ok) return parsed.response
   const body = parsed.data
 
-  const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  const mutationContext = userMutationContext(ctx, requestOrigin(c))
   const audit = auditContext(c)
   let updatedRecord: ItemRecord | null = null
   let safeBody: Record<string, unknown> = {}
@@ -910,7 +911,7 @@ itemsRouter.delete('/:itemId', requireRole('MEMBER'), async (c) => {
   }
 
   const allIds = await persistence.unitOfWork.deleteItemSubtree(
-    userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST'), projectId, itemId,
+    userMutationContext(ctx, requestOrigin(c)), projectId, itemId,
   )
 
   // Pós-commit: limpeza dos objetos físicos de anexos via outbox (Item 12)
@@ -1035,7 +1036,7 @@ itemsRouter.post('/:itemId/work-log', requireRole('MEMBER'), async (c) => {
   }
 
   const audit = auditContext(c)
-  const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  const mutationContext = userMutationContext(ctx, requestOrigin(c))
   mutationContext.mutation.actorType = audit.actorType
   mutationContext.mutation.actorSource = audit.source
   mutationContext.mutation.actorLabel = audit.actorLabel
@@ -1246,7 +1247,7 @@ itemsRouter.post('/:itemId/archive', requireRole('MEMBER'), async (c) => {
   }
 
   const audit = auditContext(c)
-  const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  const mutationContext = userMutationContext(ctx, requestOrigin(c))
   mutationContext.mutation.actorType = audit.actorType
   mutationContext.mutation.actorSource = audit.source
   mutationContext.mutation.actorLabel = audit.actorLabel
@@ -1287,7 +1288,7 @@ itemsRouter.post('/:itemId/unarchive', requireRole('MEMBER'), async (c) => {
   }
 
   const audit = auditContext(c)
-  const mutationContext = userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST')
+  const mutationContext = userMutationContext(ctx, requestOrigin(c))
   mutationContext.mutation.actorType = audit.actorType
   mutationContext.mutation.actorSource = audit.source
   mutationContext.mutation.actorLabel = audit.actorLabel

@@ -8,11 +8,15 @@ agent descubra, configure e execute um projeto sem operar a interface manualment
 
 O mesmo catálogo de ferramentas é servido por dois transportes:
 
-- **stdio (local)**: processo `bun run apps/mcp/src/index.ts` na sua máquina,
-  com a API Key e o projeto padrão em variáveis de ambiente.
-- **Streamable HTTP (remoto)**: endpoint `/mcp` hospedado junto da API da
-  instalação. O cliente se conecta por URL + `Authorization`, sem processo local
-  e sem `AZYBOARD_PROJECT_ID`. O endpoint é stateless (resposta JSON), revalida
+- **Streamable HTTP (remoto, recomendado)**: endpoint `/mcp` hospedado junto
+  da API da instalação, ou `/mcp/projects/<id>` para fixar um projeto. O cliente
+  se conecta só pela URL e autoriza por **OAuth** no navegador logado no Azy
+  Board (sem chave para copiar); conexões são revogadas em Minha conta >
+  Conexões MCP. O header `Authorization: Bearer azb_...` (API Key) continua
+  aceito, mas está **depreciado**. Sem processo local e sem `AZYBOARD_PROJECT_ID`.
+- **stdio (local, depreciado)**: processo `bun run apps/mcp/src/index.ts` na sua
+  máquina, com a API Key e o projeto padrão em variáveis de ambiente. Continua
+  funcionando, mas avisa no stderr que está depreciado em favor do MCP remoto. O endpoint é stateless (resposta JSON), revalida
   a credencial a cada requisição e aceita `Idempotency-Key` nas mutações. O
   projeto é informado por argumento ou pelo cabeçalho `X-Azyboard-Project-Id`.
 

@@ -301,6 +301,8 @@ jobs:
         run: bun test apps/api/src/db/postgres/parity.test.ts
       - name: Jornada HTTP ADVANCED (dois tenants, RBAC)
         run: bun test apps/api/src/advanced-http.test.ts
+      - name: OAuth do MCP ADVANCED (registro, consentimento, tokens, MCP de projeto)
+        run: bun test apps/api/src/advanced-mcp-oauth.test.ts
       - name: Agente ADVANCED (provider determinístico, tool/aprovação/SSE)
         run: bun test apps/api/src/advanced-agent.test.ts
       - name: Worker ADVANCED fenced (dois workers reais, lease expirado)

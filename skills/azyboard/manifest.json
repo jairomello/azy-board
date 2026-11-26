@@ -1,6 +1,6 @@
 {
   "name": "azyboard",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "entrypoint": "SKILL.md",
   "toolCatalogSource": "packages/tool-registry/src/fields.ts",
   "policySource": "packages/tool-registry/src/policies.ts",

@@ -136,7 +136,7 @@ Para criar estruturas completas de uma vez, prefira `create_project_structure` o
 2. Escolha uma `TASK` ou `BUG` sem responsável.
 3. Execute `claim_task` com `projectId` e `taskId`.
 
-O card passa para trabalho em andamento e registra o proprietário humano e a API Key do agente. Se já estiver atribuído, a ferramenta retorna conflito em vez de sobrescrever o responsável. Use `release_task` para liberar a reivindicação.
+O card passa para trabalho em andamento e registra o proprietário humano e a credencial do agente (conexão OAuth ou API Key). Se já estiver atribuído, a ferramenta retorna conflito em vez de sobrescrever o responsável. Use `release_task` para liberar a reivindicação.
 
 ## Movimentar e concluir
 

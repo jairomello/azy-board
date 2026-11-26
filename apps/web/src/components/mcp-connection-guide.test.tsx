@@ -60,6 +60,23 @@ describe('McpConnectionGuide — orientação de conexão do MCP', () => {
     expect(await screen.findByRole('button', { name: /Instrução copiada/ })).toBeInTheDocument()
   })
 
+  test('a instrução copiada pede conexão por OAuth só com a URL', async () => {
+    const user = userEvent.setup()
+    render(<McpConnectionGuide />)
+    await user.click(screen.getByRole('button', { name: /Copiar instrução para o agente/ }))
+    expect(state.copied[0]).toContain('OAuth')
+    expect(state.copied[0]).toContain('sem API Key')
+    expect(state.copied[0]?.includes('autentique com sua API Key')).toBe(false)
+  })
+
+  test('avisa que a API Key no MCP está depreciada e mostra o comando OAuth com a URL', () => {
+    render(<McpConnectionGuide />)
+    const aviso = screen.getByRole('note')
+    expect(aviso.textContent).toContain('Conectar o MCP por API Key está depreciado')
+    expect(aviso.textContent).toContain('claude mcp add --transport http azy-board http://localhost/mcp')
+    expect(aviso.textContent?.includes('azb_')).toBe(false)
+  })
+
   test('na falha do clipboard mantém a URL visível e comunica o erro', async () => {
     const user = userEvent.setup()
     state.result = false

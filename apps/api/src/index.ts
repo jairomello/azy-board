@@ -32,7 +32,7 @@ import { structureDuplicationRouter } from './routes/structureDuplication'
 import { sprintTransitionRouter } from './routes/sprintTransition'
 import { assistantRouter } from './routes/assistant'
 import { openApiDocument } from './validation'
-import { classifyDatabaseError, errorResponseMiddleware, normalizeErrorPayload } from './middleware/errorResponse'
+import { classifyDatabaseError, errorResponseMiddleware, isOAuthProtocolPath, normalizeErrorPayload } from './middleware/errorResponse'
 import { clientIpMiddleware } from './middleware/clientIp'
 import { requestObservabilityMiddleware } from './middleware/requestObservability'
 import { securityHeadersMiddleware } from './middleware/securityHeaders'
@@ -41,6 +41,7 @@ import { configureReadinessProbes, healthRouter, runtimeReadinessProbes } from '
 import { operationsRouter } from './routes/operations'
 import { versionRouter } from './routes/version'
 import { mcpRouter } from './routes/mcp'
+import { mcpOAuthRouter, wellKnownRouter } from './routes/mcpOAuth'
 import type { HonoEnv } from './types/hono'
 import { startStorageCleanupWorker } from './services/storageCleanup'
 import { startAgentWorker } from './services/agentWorker'
@@ -95,10 +96,14 @@ app.onError((error, c) => {
 app.use('*', securityHeadersMiddleware)
 app.use('*', requestObservabilityMiddleware)
 app.use('*', otelMiddleware)
-app.use('*', cors({
+const appCors = cors({
   origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
   credentials: true,
-}))
+})
+// Descoberta, registro, token e revogação do OAuth do MCP atendem clientes de
+// qualquer origem, sem credenciais (RFC 8414/9728; clientes MCP no navegador).
+const oauthProtocolCors = cors({ origin: '*' })
+app.use('*', (c, next) => isOAuthProtocolPath(c.req.path) ? oauthProtocolCors(c, next) : appCors(c, next))
 app.use('*', errorResponseMiddleware)
 app.use('*', clientIpMiddleware)
 
@@ -113,8 +118,11 @@ app.route('/api/auth', authRouter)
 app.route('/api/integrations/teams', teamsIntegrationRouter)
 
 // MCP remoto (Streamable HTTP) — fora de /api (corpo JSON-RPC) e com auth por
-// requisição; ver routes/mcp.ts e DEPLOY.md.
+// requisição (OAuth ou API Key depreciada); ver routes/mcp.ts e DEPLOY.md.
 app.route('/mcp', mcpRouter)
+// OAuth do MCP: descoberta pública e authorization server (routes/mcpOAuth.ts).
+app.route('/.well-known', wellKnownRouter)
+app.route('/api/oauth/mcp', mcpOAuthRouter)
 
 // Rotas protegidas
 const api = app.basePath('/api')

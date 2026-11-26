@@ -67,6 +67,8 @@ export default defineConfig(({ mode }) => {
       // MCP remoto: sem o proxy, `/mcp` cairia no SPA em desenvolvimento e a URL
       // exibida na conta não funcionaria.
       '/mcp': { target: apiTarget, changeOrigin: true },
+      // Descoberta OAuth do MCP (/.well-known/oauth-*), servida pela API.
+      '/.well-known': { target: apiTarget, changeOrigin: true },
       // Versão do build (T60): a rota pública vive fora de /api; sem o proxy ela
       // cairia no SPA em desenvolvimento e o comportamento divergiria do deploy.
       '/version': { target: apiTarget, changeOrigin: true },

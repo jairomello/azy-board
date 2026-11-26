@@ -10,7 +10,7 @@ Use o Azy Board como fonte compartilhada de planejamento e execução para pesso
 ## Fluxo obrigatório
 
 0. **Nunca paralelize chamadas de ferramentas MCP** (`azy-board_*` ou outros servidores): emita uma única chamada por vez. Chamadas paralelas do mesmo tipo corrompem a serialização dos argumentos no cliente, produzindo `JSON parsing failed: Text: {...` com `Unexpected EOF` ou argumentos mesclados entre chamadas (o que pode criar duplicatas silenciosas). Chamadas paralelas entre ferramentas não-MCP (bash, read, grep) são permitidas.
-1. Descubra o projeto: se `AZYBOARD_PROJECT_ID` estiver configurada no ambiente MCP, o projeto da codebase já é o padrão e `projectId` pode ser omitido nas ferramentas. Caso contrário, use `list_projects` para localizar o projeto. `projectId` também aceita o nome exato do projeto. Confirme o modo com `get_project`.
+1. Descubra o projeto: se `AZYBOARD_PROJECT_ID` estiver configurada no ambiente MCP (stdio) ou se o MCP estiver conectado pela URL de projeto (`/mcp/projects/<projectId>`), o projeto da codebase já é o padrão e `projectId` pode ser omitido nas ferramentas. Caso contrário, use `list_projects` para localizar o projeto. `projectId` também aceita o nome exato do projeto. Confirme o modo com `get_project`.
 2. Use `get_board` ou `get_tree` e consulte sprint, colunas e recursos necessários.
 3. Planeje no nível correto: EPIC -> STORY -> TASK/BUG em projetos `HIERARCHICAL`; TASK/BUG direto em projetos `SIMPLE`.
 4. Antes de codificar qualquer tarefa, confirme no `get_board`/`get_tree` que ela está em uma coluna iniciável: `baseStatus` `PLANNED` (a coluna `Planejado`/`A Fazer`, já priorizada) ou `NOT_STARTED` fora do `Backlog`. Se estiver em `Backlog`, não a pegue: o usuário ainda não decidiu iniciá-la. `PLANNED` e `NOT_STARTED` têm o mesmo peso de avanço (0); o que separa os dois é a coluna, não o status.
@@ -56,12 +56,13 @@ Use o Azy Board como fonte compartilhada de planejamento e execução para pesso
 
 ## Regras de segurança
 
-- A API Key identifica um Owner humano. O agente herda tenant, grupo, membership, papel e escopos restritivos; nunca tente informar ou elevar esses valores.
+- A credencial do MCP (conexão OAuth ou API Key) identifica um Owner humano. O agente herda tenant, grupo, membership, papel e escopos restritivos; nunca tente informar ou elevar esses valores.
 - Só itens folha são cards móveis. Não use `move_task` em itens com filhos.
 - Não crie TASK/BUG diretamente sob EPIC. Consulte EPICs e STORYs com `list_tasks` e `onlyLeaves: false`.
 - Não repita cegamente operações após conflito. Trate `retryable: false` como erro definitivo.
 - Use `dryRun` antes de arquivar ou excluir em cascata e peça confirmação antes da ação destrutiva.
-- A skill e os roteiros usam apenas placeholders de credencial; a API Key vai em variável de ambiente ou cofre do cliente, nunca em arquivo versionado. O `projectId` não é segredo; a chave é. Ao configurar o MCP em um code agent (OpenCode, Claude Code ou Codex; Windows, Linux ou macOS), siga `references/mcp-setup.md` (comando `/azyboard-setup-mcp`). Quando o usuário já tem a URL do MCP e a chave, conduza a conexão com o script cross-platform `scripts/connect-mcp.mjs`, que pergunta a chave no terminal e grava a configuração — nunca peça a chave no chat.
+- Ao configurar o MCP em um code agent (OpenCode, Claude Code ou Codex; Windows, Linux ou macOS), siga `references/mcp-setup.md` (comando `/azyboard-setup-mcp`). O padrão é o MCP remoto com **OAuth**: registre só a URL do MCP (`/mcp`, ou `/mcp/projects/<projectId>` para fixar o projeto), sem cabeçalho de credencial, e deixe o cliente conduzir a autorização no navegador logado no Azy Board. Nenhum segredo é copiado; a conexão é revogada em Minha conta → Conexões MCP. O script cross-platform `scripts/connect-mcp.mjs` grava essa configuração.
+- API Key remota e o modo stdio (`EASYBOARD_API_KEY`) estão **depreciados**: ofereça-os só quando o cliente não suportar OAuth no MCP e avise da depreciação. Nesses modos, a skill e os roteiros usam apenas placeholders de credencial; a API Key vai em variável de ambiente ou cofre do cliente, nunca em arquivo versionado, e o script a pergunta no terminal (`--api-key`) — nunca peça a chave no chat. O `projectId` não é segredo; a chave é.
 
 ## Payload, limites e erros comuns
 

@@ -780,6 +780,51 @@ export interface DashboardSnapshotAggregateRow {
 export type DashboardLeafPopulation = 'WORK' | 'EXTERNAL'
 
 /** E5 — integração de entrada do Teams por projeto. */
+// OAuth do MCP remoto (change mcp-oauth). Tokens e codes trafegam só como hash.
+export interface OAuthClientRecord {
+  id: string
+  clientName: string
+  redirectUris: string[]
+  createdAt: string
+}
+
+export interface OAuthAuthorizationCodeRecord {
+  codeHash: string
+  clientId: string
+  tenantId: string
+  userId: string
+  redirectUri: string
+  codeChallenge: string
+  scope: string
+  resource: string
+  projectId: string | null
+  expiresAt: string
+}
+
+export interface OAuthGrantRecord {
+  id: string
+  tenantId: string
+  userId: string
+  clientId: string
+  clientName: string
+  scope: string
+  resource: string
+  projectId: string | null
+  createdAt: string
+  lastUsedAt: string | null
+  revokedAt: string | null
+}
+
+export type OAuthTokenKind = 'ACCESS' | 'REFRESH'
+
+export interface OAuthTokenRecord {
+  tokenHash: string
+  grantId: string
+  kind: OAuthTokenKind
+  expiresAt: string
+  usedAt: string | null
+}
+
 export interface ProjectIntegrationRecord {
   id: string
   tenantId: string

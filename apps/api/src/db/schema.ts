@@ -140,6 +140,66 @@ export const apiKeys = sqliteTable('api_keys', {
 }))
 
 // ---------------------------------------------------------------------------
+// OAUTH DO MCP — authorization server próprio do MCP remoto (change mcp-oauth)
+// Clientes são públicos e globais (registro dinâmico); o tenant vem do usuário
+// que aprova o consentimento. Codes e tokens são guardados só como hash.
+// ---------------------------------------------------------------------------
+export const oauthClients = sqliteTable('oauth_clients', {
+  id: text('id').primaryKey(),
+  clientName: text('client_name').notNull(),
+  // JSON: lista de redirect_uris registrados (comparação exata).
+  redirectUris: text('redirect_uris').notNull(),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+})
+
+export const oauthAuthorizationCodes = sqliteTable('oauth_authorization_codes', {
+  codeHash: text('code_hash').primaryKey(),
+  clientId: text('client_id').notNull().references(() => oauthClients.id),
+  tenantId: text('tenant_id').notNull(),
+  userId: text('user_id').notNull(),
+  redirectUri: text('redirect_uri').notNull(),
+  codeChallenge: text('code_challenge').notNull(),
+  scope: text('scope').notNull(),
+  resource: text('resource').notNull(),
+  projectId: text('project_id'),
+  expiresAt: text('expires_at').notNull(),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+}, (table) => ({
+  userFk: foreignKey(() => ({ columns: [table.tenantId, table.userId], foreignColumns: [users.tenantId, users.id] })),
+}))
+
+export const oauthGrants = sqliteTable('oauth_grants', {
+  id: text('id').primaryKey(),
+  tenantId: text('tenant_id').notNull().references(() => tenants.id),
+  userId: text('user_id').notNull(),
+  clientId: text('client_id').notNull().references(() => oauthClients.id),
+  // Cópia do nome do app no momento do consentimento (badge e lista de conexões).
+  clientName: text('client_name').notNull(),
+  scope: text('scope').notNull(),
+  resource: text('resource').notNull(),
+  projectId: text('project_id'),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+  lastUsedAt: text('last_used_at'),
+  revokedAt: text('revoked_at'),
+}, (table) => ({
+  userFk: foreignKey(() => ({ columns: [table.tenantId, table.userId], foreignColumns: [users.tenantId, users.id] })),
+  userIdx: index('oauth_grants_tenant_user_idx').on(table.tenantId, table.userId),
+}))
+
+export const oauthTokens = sqliteTable('oauth_tokens', {
+  tokenHash: text('token_hash').primaryKey(),
+  grantId: text('grant_id').notNull().references(() => oauthGrants.id),
+  kind: text('kind', { enum: ['ACCESS', 'REFRESH'] }).notNull(),
+  expiresAt: text('expires_at').notNull(),
+  // Refresh já trocado (rotação); reapresentação fora da tolerância revoga o grant.
+  usedAt: text('used_at'),
+  createdAt: text('created_at').notNull().default(defaultNowIso()),
+}, (table) => ({
+  grantIdx: index('oauth_tokens_grant_idx').on(table.grantId),
+  kindCheck: check('oauth_tokens_kind_check', sql`${table.kind} IN ('ACCESS','REFRESH')`),
+}))
+
+// ---------------------------------------------------------------------------
 // AZY AGENT — configuração e execução persistida, sempre escopada por tenant
 // ---------------------------------------------------------------------------
 export const assistantCredentials = sqliteTable('assistant_credentials', {
@@ -607,6 +667,8 @@ export const items = sqliteTable('items', {
   tokensOutput: integer('tokens_output'),
   assigneeId: text('assignee_id'),
   assigneeApiKeyId: text('assignee_api_key_id'),
+  // Conexão OAuth do MCP que assumiu o card (badge de IA com o nome do app).
+  assigneeOauthGrantId: text('assignee_oauth_grant_id'),
   blockedReason: text('blocked_reason'),
   position: integer('position').notNull().default(0),
   startDate: text('start_date'),
@@ -1181,6 +1243,7 @@ export const itemsRelations = relations(items, ({ one, many }) => ({
   column: one(columns, { fields: [items.columnId], references: [columns.id] }),
   assignee: one(users, { fields: [items.assigneeId], references: [users.id], relationName: 'assignee' }),
   assigneeApiKey: one(apiKeys, { fields: [items.assigneeApiKeyId], references: [apiKeys.id] }),
+  assigneeOauthGrant: one(oauthGrants, { fields: [items.assigneeOauthGrantId], references: [oauthGrants.id] }),
   author: one(users, { fields: [items.authorId], references: [users.id], relationName: 'author' }),
   version: one(projectVersions, { fields: [items.versionId], references: [projectVersions.id] }),
   costCenter: one(projectCostCenters, { fields: [items.costCenterId], references: [projectCostCenters.id] }),

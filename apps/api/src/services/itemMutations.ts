@@ -15,7 +15,7 @@ function persistenceMutationContext(input: ItemMutationInput): MutationContext {
     actorUserId: input.userId,
     actorKind: 'USER',
     mutation: {
-      origin: input.apiKeyId ? 'MCP' : 'REST',
+      origin: input.apiKeyId || input.oauthGrantId ? 'MCP' : 'REST',
       actorType: input.actor.actorType,
       actorSource: input.actor.source,
       actorLabel: input.actor.actorLabel,
@@ -29,13 +29,14 @@ type ItemMutationInput = {
   itemId: string
   userId: string
   apiKeyId?: string
+  oauthGrantId?: string
   columnId?: string | null
   actor: MutationActor
 }
 
 export async function claimItem(input: ItemMutationInput): Promise<boolean> {
   return persistence.unitOfWork.claimItem(
-    persistenceMutationContext(input), input.projectId, input.itemId, input.userId, input.apiKeyId, input.columnId,
+    persistenceMutationContext(input), input.projectId, input.itemId, input.userId, input.apiKeyId, input.columnId, input.oauthGrantId,
   )
 }
 

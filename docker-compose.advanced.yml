@@ -83,6 +83,8 @@ services:
     ports:
       - "${AZYBOARD_API_PORT:-3000}:3000"
     environment:
+      # Opcional: AZYBOARD_PUBLIC_URL=<URL pública com base path, ex.: https://host/azyboard>
+      # usada no OAuth do MCP (issuer e metadata). Sem ela, a API usa FRONTEND_URL.
       - AZYBOARD_INSTALL_PROFILE=ADVANCED
       - DATABASE_URL=postgresql://${POSTGRES_USER:-azyboard}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-azyboard}
       - REDIS_URL=redis://:${VALKEY_PASSWORD:-change-me}@valkey:6379

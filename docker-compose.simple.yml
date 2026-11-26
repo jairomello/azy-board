@@ -40,6 +40,8 @@ services:
     ports:
       - "${AZYBOARD_API_PORT:-3000}:3000"
     environment:
+      # Opcional: AZYBOARD_PUBLIC_URL=<URL pública com base path, ex.: https://host/azyboard>
+      # usada no OAuth do MCP (issuer e metadata). Sem ela, a API usa FRONTEND_URL.
       - DATABASE_URL=/data/dev.db
       - AZYBOARD_INSTALL_PROFILE=SIMPLE
       - AZYBOARD_INSTANCE_DIR=/data

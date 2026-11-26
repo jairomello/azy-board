@@ -63,8 +63,15 @@ versionados; ajuste conforme a rede do seu ambiente):
 3. `/app/ws` → `azyboard:3000`, com rewrite para `/ws` e suporte a
    upgrade WebSocket HTTP/1.1.
 
-4. `/app/mcp` → `azyboard:3000`, com rewrite para `/mcp` e **sem** buffering de
-   resposta (JSON-RPC em resposta JSON; ver `## MCP remoto (Streamable HTTP)`).
+4. `/app/mcp` (por prefixo, cobrindo `/app/mcp/projects/*`) → `azyboard:3000`,
+   com rewrite para `/mcp` e **sem** buffering de resposta (JSON-RPC em resposta
+   JSON; ver `## MCP remoto (Streamable HTTP)`).
+
+5. Na **raiz do host**, os documentos de descoberta OAuth do MCP com o base path
+   inserido → `azyboard:3000`: `/.well-known/oauth-protected-resource/app/mcp`
+   (e `/.well-known/oauth-protected-resource/app/mcp/projects/*`) e
+   `/.well-known/oauth-authorization-server/app`. Defina também
+   `AZYBOARD_PUBLIC_URL=https://example.com/app` na API (ver variáveis abaixo).
 
 ## MCP remoto (Streamable HTTP)
 
@@ -72,12 +79,22 @@ Além do transporte `stdio` local (`apps/mcp`), a instalação publica um endpoi
 MCP remoto no mesmo serviço da API, na rota `/mcp` (fora de `/api`, pois o corpo
 é JSON-RPC e não o envelope REST).
 
-- **Autenticação**: API Key no cabeçalho `Authorization: Bearer azb_...`,
+- **Autenticação (recomendada)**: OAuth 2.1. O cliente MCP só recebe a URL; o
+  `401` traz `WWW-Authenticate` com o metadata de recurso protegido
+  (`/.well-known/oauth-protected-resource/...`), o cliente se registra e a
+  pessoa aprova a conexão na tela `/oauth/authorize` com a sessão do Azy Board.
+  Escopos `read`, `write`, `admin` e `delete` (padrão `read write`). O token
+  vale só no MCP e as conexões são revogadas em Minha conta → Conexões MCP. As
+  URLs públicas (issuer, metadata) vêm de `AZYBOARD_PUBLIC_URL` (fallback
+  `FRONTEND_URL`).
+- **Autenticação (depreciada)**: API Key no cabeçalho `Authorization: Bearer azb_...`,
   revalidada a cada requisição (Owner, tenant, grupo, membership, `projectScope`
-  e `permissionScope`). A chave nunca é repassada a terceiros nem logada.
-- **Projeto**: não há projeto padrão por ambiente. Informe `projectId` no
-  argumento da ferramenta ou, opcionalmente, no cabeçalho
-  `X-Azyboard-Project-Id` como contexto de sessão.
+  e `permissionScope`). A chave nunca é repassada a terceiros nem logada. As
+  respostas trazem `Deprecation` e `Link`. O `stdio` também está depreciado.
+- **Projeto**: não há projeto padrão por ambiente. Use o MCP de projeto
+  (`/mcp/projects/<projectId>`, que fixa o projeto e restringe o token a ele),
+  informe `projectId` no argumento da ferramenta ou, opcionalmente, envie o
+  cabeçalho `X-Azyboard-Project-Id` como contexto de sessão.
 - **Idempotência**: mutações aceitam `Idempotency-Key`; repetir a mesma chave e
   payload devolve o mesmo resultado sem efeito duplicado.
 - **Escala**: modo stateless com resposta JSON (sem afinidade de sessão), sem
@@ -90,10 +107,15 @@ MCP remoto no mesmo serviço da API, na rota `/mcp` (fora de `/api`, pois o corp
   feita no cliente a partir de `window.location.origin` e `window.__BASE_PATH__`,
   então a URL exibida acompanha a publicação (raiz ou subpath).
 
-O nginx do web precisa repassar `/mcp` **sem buffering** e com HTTP/1.1:
+O nginx do web precisa repassar `/mcp` (por prefixo) **sem buffering** e com
+HTTP/1.1, e encaminhar os documentos `/.well-known/oauth-*` à API:
 
 ```nginx
-location = /mcp {
+location ^~ /.well-known/oauth- {
+  proxy_pass ${AZYBOARD_API_UPSTREAM};
+}
+
+location /mcp {
   proxy_pass ${AZYBOARD_API_UPSTREAM};
   proxy_http_version 1.1;
   proxy_buffering off;
@@ -126,6 +148,19 @@ curl -sS "$HOST/mcp" \
 A resposta é JSON-RPC; o segundo comando deve listar as ferramentas (`list_tasks`,
 `list_modules`, ...). Sem credencial válida a resposta é `401`.
 
+Para conferir que o OAuth está pronto, sem credencial:
+
+```bash
+curl -sS -i "$HOST/mcp" -X POST \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | grep -i www-authenticate
+curl -sS "$HOST/.well-known/oauth-protected-resource/mcp"
+```
+
+O primeiro deve mostrar `WWW-Authenticate: Bearer resource_metadata="..."`; o
+segundo, o metadata com `resource` e `authorization_servers`. Com base path
+(ex.: `/app`), o metadata fica em `/.well-known/oauth-protected-resource/app/mcp`.
+
 ## Pré-requisitos
 
 - **Docker** e **Docker Compose v2** (`docker compose` — o serviço `migrate`
@@ -150,6 +185,9 @@ A resposta é JSON-RPC; o segundo comando deve listar as ferramentas (`list_task
 - `AZYBOARD_SKILL_DIR=/app/skills/azyboard` — skill oficial embarcada, servida
   para download em Minha conta.
 - `FRONTEND_URL=https://example.com/app/` (origem permitido pelo CORS).
+- `AZYBOARD_PUBLIC_URL=https://example.com/app` (opcional): URL pública da
+  instalação com o base path, usada como issuer e nas URLs de metadata do OAuth
+  do MCP. Sem ela, usa `FRONTEND_URL` (correto só para instalação na raiz).
 - `JWT_SECRET`: segredo para assinar o cookie de sessão.
 - `AZYBOARD_MCP_HTTP_ENABLED` (opcional): `false` desliga o endpoint MCP remoto
   `/mcp` para rollback rápido; ausente ou qualquer outro valor mantém ligado.

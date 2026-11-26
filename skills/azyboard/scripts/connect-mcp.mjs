@@ -3,15 +3,17 @@
  * connect-mcp.mjs — conecta um code agent ao MCP remoto do Azy Board.
  *
  * Cross-platform (Windows, Linux e macOS), sem dependências externas: usa o
- * `fetch` global do Node 18+. O script PEDE a API Key no terminal (entrada
- * oculta), valida o handshake e grava a configuração do cliente — a chave não
- * passa pelo chat nem por arquivo versionado.
+ * `fetch` global do Node 18+. No modo padrão (OAuth) o script grava só a URL
+ * do MCP na configuração do cliente, sem segredo; o cliente conduz a
+ * autorização no navegador logado no Azy Board. O modo API Key (depreciado)
+ * PEDE a chave no terminal (entrada oculta) — a chave não passa pelo chat.
  *
  * Uso:
  *   node connect-mcp.mjs --client opencode --url https://host/mcp
- *   node connect-mcp.mjs --client claude   --url https://host/mcp --scope user
+ *   node connect-mcp.mjs --client claude   --url https://host/mcp/projects/<id> --scope user
  *   node connect-mcp.mjs --client codex    --url https://host/mcp
  *   node connect-mcp.mjs --client opencode --url https://host/mcp --print
+ *   node connect-mcp.mjs --client claude   --url https://host/mcp --api-key   (depreciado)
  *
  * Clientes: opencode | claude | codex | generic
  * Escopos:  project (padrão para opencode/claude) | user (padrão para codex)
@@ -22,9 +24,11 @@
  *   --scope <s>        project | user
  *   --config <arquivo> caminho explícito do arquivo de configuração
  *   --name <nome>      nome do servidor no cliente (padrão: azy-board)
- *   --project-id <id>  contexto de projeto (cabeçalho X-Azyboard-Project-Id)
+ *   --project-id <id>  fixa o projeto: OAuth usa a URL <url>/projects/<id>;
+ *                      API Key usa o cabeçalho X-Azyboard-Project-Id
+ *   --api-key          DEPRECIADO: autentica com API Key em vez de OAuth
  *   --print            só valida e imprime a configuração, sem gravar
- *   --force            permite gravar em arquivo versionado (com aviso)
+ *   --force            permite gravar a API Key em arquivo versionado (com aviso)
  *   -h, --help         ajuda
  */
 
@@ -37,12 +41,12 @@ const CLIENTS = ['opencode', 'claude', 'codex', 'generic']
 
 function usage() {
   const src = readFileSync(new URL(import.meta.url), 'utf8')
-  const header = src.split('\n').filter(line => line.startsWith(' *')).slice(7).map(line => line.replace(/^ \* ?/, ''))
+  const header = src.split('\n').filter(line => line.startsWith(' *')).slice(8).map(line => line.replace(/^ \* ?/, ''))
   console.log(header.join('\n'))
 }
 
 function parseArgs(argv) {
-  const args = { name: 'azy-board', print: false, force: false }
+  const args = { name: 'azy-board', print: false, force: false, apiKey: false }
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i]
     const value = argv[i + 1]
@@ -53,6 +57,7 @@ function parseArgs(argv) {
       case '--config': args.config = value; i += 1; break
       case '--name': args.name = value ?? args.name; i += 1; break
       case '--project-id': args.projectId = value; i += 1; break
+      case '--api-key': args.apiKey = true; break
       case '--print': args.print = true; break
       case '--force': args.force = true; break
       case '-h': case '--help': args.help = true; break
@@ -136,7 +141,14 @@ function headersFor(key, projectId) {
   return headers
 }
 
+// Sem chave (OAuth), a entrada leva só a URL: o cliente descobre o servidor de
+// autorização pelo 401 com WWW-Authenticate e conduz o login no navegador.
 function entryFor(client, url, key, projectId) {
+  if (!key) {
+    if (client === 'opencode') return { type: 'remote', url, enabled: true, timeout: 30000 }
+    if (client === 'claude') return { type: 'http', url }
+    return { url }
+  }
   const headers = headersFor(key, projectId)
   if (client === 'opencode') return { type: 'remote', url, enabled: true, oauth: false, timeout: 30000, headers }
   if (client === 'claude') return { type: 'http', url, headers }
@@ -144,6 +156,7 @@ function entryFor(client, url, key, projectId) {
 }
 
 function masked(entry) {
+  if (!entry.headers) return entry
   const copy = JSON.parse(JSON.stringify(entry))
   copy.headers.Authorization = `Bearer ${String(entry.headers.Authorization).slice(7, 13)}…`
   return copy
@@ -151,13 +164,26 @@ function masked(entry) {
 
 function tomlBlock(name, url, key, projectId) {
   const esc = value => String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  if (!key) return `[mcp_servers.${name}]\nurl = "${esc(url)}"\n`
   const headers = [`"Authorization" = "Bearer ${esc(key)}"`]
   if (projectId) headers.push(`"X-Azyboard-Project-Id" = "${esc(projectId)}"`)
   return `[mcp_servers.${name}]\nurl = "${esc(url)}"\nhttp_headers = { ${headers.join(', ')} }\n`
 }
 
 function maskedToml(name, url, key, projectId) {
-  return tomlBlock(name, url, `Bearer ${key.slice(0, 6)}…`, projectId)
+  return tomlBlock(name, url, key ? `${key.slice(0, 6)}…` : '', projectId)
+}
+
+// No OAuth o projeto é fixado pela URL do MCP de projeto, não por cabeçalho.
+function projectUrl(url, projectId) {
+  if (!projectId) return url
+  const base = url.replace(/\/+$/, '')
+  if (/\/mcp\/projects\/[^/]+$/.test(base)) {
+    if (!base.endsWith(`/projects/${projectId}`)) throw new Error('--project-id diverge do projeto já presente na URL.')
+    return base
+  }
+  if (!base.endsWith('/mcp')) throw new Error('Para usar --project-id, informe a URL geral terminada em /mcp.')
+  return `${base}/projects/${encodeURIComponent(projectId)}`
 }
 
 function isTracked(file) {
@@ -201,7 +227,7 @@ function writeToml(file, name, url, key, projectId) {
 
 async function validate(url, key, projectId) {
   const headers = {
-    Authorization: `Bearer ${key}`,
+    ...(key ? { Authorization: `Bearer ${key}` } : {}),
     'Content-Type': 'application/json',
     Accept: 'application/json, text/event-stream',
     ...(projectId ? { 'X-Azyboard-Project-Id': projectId } : {}),
@@ -209,9 +235,17 @@ async function validate(url, key, projectId) {
   const post = async body => {
     const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
     const text = await response.text()
-    return { status: response.status, text }
+    return { status: response.status, text, authenticate: response.headers.get('www-authenticate') }
   }
   const init = await post({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'connect-mcp', version: '1' } } })
+  if (!key) {
+    // Sem credencial, o servidor OAuth pronto responde 401 com WWW-Authenticate
+    // apontando o metadata de recurso protegido.
+    if (init.status === 401 && /bearer/i.test(init.authenticate ?? '')) return null
+    if (init.status === 401) throw new Error('initialize respondeu 401 sem WWW-Authenticate: a instalação ainda não oferece OAuth no MCP. Use --api-key (depreciado).')
+    if (init.status === 404) throw new Error('initialize falhou (HTTP 404): URL errada, projeto inexistente ou endpoint MCP desabilitado na instalação.')
+    throw new Error(`initialize falhou (HTTP ${init.status}).`)
+  }
   if (init.status !== 200) {
     throw new Error(`initialize falhou (HTTP ${init.status}).\n  - 401: API Key ausente/inválida/revogada ou fora do escopo.\n  - 404: URL errada ou endpoint MCP desabilitado na instalação.`)
   }
@@ -240,12 +274,22 @@ async function main() {
   if (!args.scope) args.scope = args.client === 'codex' ? 'user' : 'project'
   if (!['project', 'user'].includes(args.scope)) throw new Error(`Escopo inválido: ${args.scope}. Use: project, user`)
 
-  const key = (await ask('API Key (não aparece enquanto digita): ', { hidden: true })).trim()
-  if (!key) throw new Error('API Key é obrigatória.')
+  let key = ''
+  if (args.apiKey) {
+    console.warn('AVISO: API Key no MCP está DEPRECIADA. Prefira OAuth (rode sem --api-key); use a chave só se o cliente não suportar OAuth.')
+    key = (await ask('API Key (não aparece enquanto digita): ', { hidden: true })).trim()
+    if (!key) throw new Error('API Key é obrigatória.')
+  } else {
+    args.url = projectUrl(args.url, args.projectId)
+  }
 
   const tools = await validate(args.url, key, args.projectId)
-  console.log(`Conexão validada: handshake OK, ${tools} ferramentas disponíveis.`)
-  console.log(`Credencial: ${key.slice(0, 6)}… (mascarada).`)
+  if (key) {
+    console.log(`Conexão validada: handshake OK, ${tools} ferramentas disponíveis.`)
+    console.log(`Credencial: ${key.slice(0, 6)}… (mascarada).`)
+  } else {
+    console.log(`Servidor OAuth pronto em ${args.url} (401 com WWW-Authenticate).`)
+  }
 
   const entry = entryFor(args.client, args.url, key, args.projectId)
 
@@ -264,7 +308,7 @@ async function main() {
     return
   }
 
-  if (isTracked(config) && !args.force) {
+  if (key && isTracked(config) && !args.force) {
     console.error(`AVISO: '${config}' é versionado no git e passaria a conter a API Key.`)
     console.error('Use --force para continuar mesmo assim, ou escolha um arquivo ignorado (--config).')
     process.exit(3)
@@ -282,8 +326,19 @@ async function main() {
 
   console.log('\nPróximos passos:')
   console.log('  1. Reinicie/recarregue o cliente de code agent para reconectar o MCP.')
-  console.log('  2. Confirme que "list_tasks" e "list_modules" aparecem e respondem.')
-  console.log('  3. A chave é segredo: se ela foi exposta, revogue em Minha conta e gere outra.')
+  if (key) {
+    console.log('  2. Confirme que "list_tasks" e "list_modules" aparecem e respondem.')
+    console.log('  3. A chave é segredo: se ela foi exposta, revogue em Minha conta e gere outra.')
+    return
+  }
+  const login = {
+    claude: `no Claude Code, rode /mcp, escolha '${args.name}' e "Authenticate"`,
+    codex: `rode: codex mcp login ${args.name}`,
+    opencode: `rode: opencode mcp auth ${args.name} (ou use o servidor e o OpenCode abre a autorização)`,
+  }[args.client] ?? 'inicie a autenticação OAuth do servidor no seu cliente'
+  console.log(`  2. Autorize a conexão: ${login}; aprove no navegador logado no Azy Board.`)
+  console.log('  3. Confirme que "list_tasks" e "list_modules" aparecem e respondem.')
+  console.log('  4. Para desconectar, revogue em Minha conta > Conexões MCP.')
 }
 
 main().catch(error => {

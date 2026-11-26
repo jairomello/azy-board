@@ -88,6 +88,20 @@ export type McpServerOptions = {
   defaultProjectId?: string
   /** Identidade resolvida no servidor. No stdio o adaptador usa placeholders do Owner (a autorização real ocorre na API). */
   context?: McpResolvedContext
+  /**
+   * MCP de projeto: fixa o projeto. Ferramentas sem contexto de projeto
+   * (criação de projeto) somem e um `projectId` divergente é rejeitado; a API
+   * ainda restringe o escopo de projeto da credencial (list_projects incluso).
+   */
+  projectLock?: string
+}
+
+// Ferramentas sem projeto que continuam disponíveis no MCP de projeto (a API
+// filtra a listagem para o projeto travado).
+const PROJECT_LOCK_GLOBAL_TOOLS = new Set(['list_projects'])
+
+function availableInProjectLock(tool: ToolDefinition): boolean {
+  return tool.inputSchema.properties.projectId !== undefined || PROJECT_LOCK_GLOBAL_TOOLS.has(tool.name)
 }
 
 // Identidade placeholder do transporte stdio: a API resolve o Owner real da
@@ -116,7 +130,7 @@ function withOptionalProjectId(tool: ToolDefinition, defaultProjectId: string, s
 }
 
 export function createMcpServer(apiCall: ApiCall, options: McpServerOptions = {}) {
-  const { defaultProjectId } = options
+  const { defaultProjectId, projectLock } = options
   const resolved = options.context ?? STDIO_CONTEXT
   const projectSource = options.context ? 'contexto de sessão' : 'projeto pré-configurado via AZYBOARD_PROJECT_ID'
   const server = new Server(
@@ -126,6 +140,7 @@ export function createMcpServer(apiCall: ApiCall, options: McpServerOptions = {}
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: getSharedToolDefinitions()
+      .filter(tool => !projectLock || availableInProjectLock(tool))
       .map(withOptionalFields)
       .map(tool => defaultProjectId ? withOptionalProjectId(tool, defaultProjectId, projectSource) : tool)
       .map(({ policy: _policy, namespace: _namespace, ...tool }) => tool),
@@ -152,6 +167,12 @@ export function createMcpServer(apiCall: ApiCall, options: McpServerOptions = {}
 
     try {
       if (!hasMcpPolicy(name)) throw new ApiError('MCP_POLICY_REQUIRED', 'Ferramenta não autorizada', false)
+      if (projectLock && definition && !availableInProjectLock(definition)) {
+        throw new ApiError('MCP_TOOL_UNAVAILABLE_IN_PROJECT', 'Ferramenta indisponível no MCP de projeto; use o MCP geral da instalação.', false)
+      }
+      if (projectLock && typeof args.projectId === 'string' && args.projectId.toLowerCase() !== projectLock.toLowerCase()) {
+        throw new ApiError('MCP_PROJECT_LOCKED', `Este servidor MCP está fixado no projeto ${projectLock}; omita projectId.`, false, { path: 'projectId' })
+      }
       // [SEGURANÇA] Recusa identidade/tenant/grupo/escopo vindos do payload.
       const forged = Object.keys(args).filter(key => FORBIDDEN_ARGUMENT_KEYS.has(key))
       if (forged.length) throw new ApiError('MCP_IDENTITY_ARGUMENT_FORBIDDEN', `Identidade, tenant, grupo e escopo são resolvidos no servidor; remova: ${forged.join(', ')}`, false, { fields: forged })

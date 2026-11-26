@@ -67,6 +67,30 @@ server {
     proxy_send_timeout 300s;
   }
 
+  # MCP de projeto (/mcp/projects/<id>): mesmo tratamento do /mcp.
+  location /mcp/ {
+    proxy_pass ${AZYBOARD_API_UPSTREAM};
+    proxy_http_version 1.1;
+    proxy_buffering off;
+    proxy_set_header Connection '';
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+  }
+
+  # Descoberta OAuth do MCP (RFC 9728 / RFC 8414): servida pela API, não pelo SPA.
+  location ^~ /.well-known/oauth- {
+    proxy_pass ${AZYBOARD_API_UPSTREAM};
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
   # Versão do build (T60): rota pública da API montada fora de /api, que de outra
   # forma cairia no SPA. Sem sessão, serve para conferir qual build está no ar.
   location = /version {

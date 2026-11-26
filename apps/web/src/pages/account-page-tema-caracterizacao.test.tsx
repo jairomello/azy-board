@@ -30,6 +30,7 @@ mockModule('../contexts/AssistantContext', () => ({ useAssistant: () => ({ setPa
 mockModule('../hooks/useAssistantCacheInvalidation', () => ({ useAssistantCacheInvalidation: () => {} }))
 mockModule('../components/Toast', () => ({ useToast: () => ({ toast: (mensagem: string, tipo?: string) => { toasts.push([mensagem, tipo]) } }) }))
 mockModule('../components/ApiKeysSection', () => ({ ApiKeysSection: () => null }))
+mockModule('../components/McpConnectionsSection', () => ({ McpConnectionsSection: () => null }))
 mockModule('../components/ProfilePhotoSection', () => ({ ProfilePhotoSection: () => null }))
 mockModule('../components/PasswordSection', () => ({ PasswordSection: () => null }))
 mockModule('../components/ShowHiddenProjectsSwitch', () => ({ ShowHiddenProjectsSwitch: () => null }))

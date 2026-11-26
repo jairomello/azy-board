@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { z } from 'zod'
 import type { HonoEnv } from '../types/hono'
-import { authMiddleware, requireRole } from '../middleware/auth'
+import { authMiddleware, requireRole, requestOrigin } from '../middleware/auth'
 import type { RequestContext } from '@azy-board/api-contracts'
 import type { ExportMappingInput, ExportMappingRecord } from '@azy-board/domain'
 import { validateExportMapping } from '@azy-board/domain'
@@ -88,7 +88,7 @@ exportRouter.post('/export-mappings', requireRole('MEMBER'), async (c) => {
   const invalid = assertMappingValid(body.fields)
   if (invalid) return c.json({ error: `Mapeamento inválido: ${invalid}`, code: 'INVALID_EXPORT_MAPPING', retryable: false }, 422)
   try {
-    const created = await persistence.exportMappings.createMapping(userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST'), projectId, { name: body.name, fields: body.fields })
+    const created = await persistence.exportMappings.createMapping(userMutationContext(ctx, requestOrigin(c)), projectId, { name: body.name, fields: body.fields })
     return c.json(mappingPayload(created), 201)
   } catch (error) {
     if (isUniqueViolation(error)) return c.json({ error: 'Já existe um mapeamento com esse nome neste projeto.', code: 'EXPORT_MAPPING_NAME_CONFLICT', retryable: false }, 409)
@@ -108,7 +108,7 @@ exportRouter.put('/export-mappings/:mappingId', requireRole('MEMBER'), async (c)
     if (invalid) return c.json({ error: `Mapeamento inválido: ${invalid}`, code: 'INVALID_EXPORT_MAPPING', retryable: false }, 422)
   }
   try {
-    const updated = await persistence.exportMappings.updateMapping(userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST'), projectId, mappingId, body)
+    const updated = await persistence.exportMappings.updateMapping(userMutationContext(ctx, requestOrigin(c)), projectId, mappingId, body)
     if (!updated) return c.json({ error: 'Mapeamento não encontrado', code: 'EXPORT_MAPPING_NOT_FOUND', retryable: false }, 404)
     return c.json(mappingPayload(updated))
   } catch (error) {
@@ -121,7 +121,7 @@ exportRouter.put('/export-mappings/:mappingId', requireRole('MEMBER'), async (c)
 exportRouter.delete('/export-mappings/:mappingId', requireRole('MEMBER'), async (c) => {
   const ctx = c.get('ctx') as RequestContext
   const { projectId, mappingId } = c.req.param()
-  const deleted = await persistence.exportMappings.deleteMapping(userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST'), projectId, mappingId)
+  const deleted = await persistence.exportMappings.deleteMapping(userMutationContext(ctx, requestOrigin(c)), projectId, mappingId)
   if (!deleted) return c.json({ error: 'Mapeamento não encontrado', code: 'EXPORT_MAPPING_NOT_FOUND', retryable: false }, 404)
   return c.json({ ok: true })
 })

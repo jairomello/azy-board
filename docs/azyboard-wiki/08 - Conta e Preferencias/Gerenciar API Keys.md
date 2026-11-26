@@ -11,6 +11,9 @@ Uma API Key é uma credencial pessoal para autenticar agentes de IA, clientes MC
 > [!danger] Trate a chave como uma senha
 > Quem obtiver o segredo poderá tentar operar em nome do proprietário. Nunca publique a chave em repositórios, mensagens, documentação ou logs.
 
+> [!warning] API Key no MCP está depreciada
+> Para conectar code agents ao MCP, prefira OAuth: registre só a URL do MCP no cliente e autorize no navegador, sem copiar chave. As conexões autorizadas são revogadas em **Minha conta → Conexões MCP**. API Key no MCP (remoto ou `stdio`) continua funcionando, mas está depreciada. Veja [[09 - Agentes e Integracoes/Configurar o Servidor MCP|Configurar o servidor MCP]]. O uso de API Key na API REST não muda.
+
 ## Onde encontrar
 
 1. Abra o menu do avatar.

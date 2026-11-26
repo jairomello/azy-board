@@ -6,7 +6,7 @@ order: 9
 
 # Agentes e Integrações
 
-Agentes de IA são colaboradores autenticados que consultam e atualizam os mesmos projetos usados pelas pessoas, respeitando as permissões do proprietário da API Key.
+Agentes de IA são colaboradores autenticados que consultam e atualizam os mesmos projetos usados pelas pessoas, respeitando as permissões do proprietário da credencial (conexão OAuth do MCP ou API Key).
 
 ## Escolher uma integração
 

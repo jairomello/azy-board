@@ -57,6 +57,10 @@ export async function startStdioServer(): Promise<void> {
     console.error('EASYBOARD_API_KEY não configurada')
     process.exit(1)
   }
+  // [DEPRECIADO] O stdio depende de API Key; o caminho recomendado é o MCP
+  // remoto com OAuth (só a URL da instalação + /mcp). stderr não interfere no
+  // protocolo, que trafega em stdout.
+  console.error('[azy-board] Aviso: o MCP por stdio com API Key está depreciado. Conecte o code agent ao MCP remoto (<URL da instalação>/mcp) com OAuth; a API Key não é necessária.')
   const apiUrl = process.env.EASYBOARD_URL ?? 'http://localhost:3000'
   const defaultProjectId = process.env.AZYBOARD_PROJECT_ID?.trim() || undefined
   const apiCall = await makeApiCall(apiUrl, apiKey)

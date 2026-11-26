@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { resolveMcpUrl } from './mcpUrl'
+import { resolveMcpUrl, resolveProjectMcpUrl } from './mcpUrl'
 
 const globalWithWindow = globalThis as unknown as {
   window?: { location?: { origin?: string }; __BASE_PATH__?: string } | undefined
@@ -36,5 +36,17 @@ describe('resolveMcpUrl', () => {
   test('tolera window sem location', () => {
     globalWithWindow.window = {}
     expect(resolveMcpUrl()).toBe('/mcp')
+  })
+})
+
+describe('resolveProjectMcpUrl', () => {
+  test('monta a URL do MCP do projeto com origem e base path', () => {
+    globalWithWindow.window = { __BASE_PATH__: '/azyboard/', location: { origin: 'https://host' } }
+    expect(resolveProjectMcpUrl('p-123')).toBe('https://host/azyboard/mcp/projects/p-123')
+  })
+
+  test('na raiz da instalação', () => {
+    globalWithWindow.window = { location: { origin: 'https://board.exemplo.com' } }
+    expect(resolveProjectMcpUrl('p-123')).toBe('https://board.exemplo.com/mcp/projects/p-123')
   })
 })

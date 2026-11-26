@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { HonoEnv } from '../types/hono'
-import { authMiddleware, requireRole } from '../middleware/auth'
+import { authMiddleware, requireRole, requestOrigin } from '../middleware/auth'
 import type { RequestContext } from '@azy-board/api-contracts'
 import { aggregatedAdvance, countsForProgress } from '@azy-board/domain'
 import type { ColumnRecord, ProjectProgressAggregateRow } from '../persistence/models'
@@ -128,7 +128,7 @@ projectsRouter.post('/', async (c) => {
   if (duplicate) return c.json({ error: 'Já existe um projeto com esse nome' }, 409)
 
   const created = await persistence.unitOfWork.createProjectAggregate(
-    userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST'),
+    userMutationContext(ctx, requestOrigin(c)),
     {
       project: {
         name: normalizedName,
@@ -273,7 +273,7 @@ projectsRouter.delete('/:id', requireRole('ADMIN'), async (c) => {
 
   try {
     await persistence.unitOfWork.deleteProjectAggregate(
-      userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST'), projectId,
+      userMutationContext(ctx, requestOrigin(c)), projectId,
     )
   } catch (error) {
     logger.error('falha ao excluir projeto', { projectId, error: error instanceof Error ? error.message : 'erro desconhecido' })
@@ -435,7 +435,7 @@ projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
   if (collapseNeeded) {
     try {
       const collapsed = await persistence.unitOfWork.collapseProjectHierarchy(
-        userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST'), id,
+        userMutationContext(ctx, requestOrigin(c)), id,
         { hideModules: Boolean(desiredHideModules), hideEpics: Boolean(desiredHideEpics) }, updates,
       )
       if (!collapsed) return c.json({ error: 'Projeto não encontrado' }, 404)
@@ -448,7 +448,7 @@ projectsRouter.patch('/:id', requireRole('ADMIN'), async (c) => {
   if (boardModeChanged) {
     try {
       await persistence.unitOfWork.convertProjectBoardMode(
-        userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST'), id, body.boardMode!, updates,
+        userMutationContext(ctx, requestOrigin(c)), id, body.boardMode!, updates,
       )
     } catch {
       return c.json({ error: 'Não foi possível converter o formato do board' }, 500)
@@ -556,7 +556,7 @@ projectsRouter.delete('/:id/modules/:moduleId', requireRole('ADMIN'), async (c) 
   }
 
   const outcome = await persistence.unitOfWork.deleteModuleAggregate(
-    userMutationContext(ctx, c.get('apiKeyId') ? 'MCP' : 'REST'),
+    userMutationContext(ctx, requestOrigin(c)),
     projectId,
     moduleId,
     { targetModuleId: body.targetModuleId ?? null, cascade: body.cascade ?? false },

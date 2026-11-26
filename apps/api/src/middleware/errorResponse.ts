@@ -86,11 +86,20 @@ function databaseErrorCode(error: unknown): string | null {
   return null
 }
 
+const OAUTH_PROTOCOL_PATHS = ['/.well-known/', '/api/oauth/mcp/register', '/api/oauth/mcp/token', '/api/oauth/mcp/revoke']
+
+export function isOAuthProtocolPath(path: string): boolean {
+  return OAUTH_PROTOCOL_PATHS.some(prefix => path.startsWith(prefix))
+}
+
 export async function errorResponseMiddleware(c: Context, next: Next) {
   await next()
   // [OPS] Liveness/readiness expõem estado operacional (nomes de dependências),
   // não o envelope de erro de negócio; não normalizar essas respostas.
   if (c.req.path.startsWith('/health')) return
+  // [OAUTH] Endpoints OAuth do MCP seguem o formato de erro dos RFCs
+  // (`error`/`error_description`), consumido por clientes MCP de terceiros.
+  if (isOAuthProtocolPath(c.req.path)) return
   if (c.res.status < 400 || !c.res.headers.get('content-type')?.includes('application/json')) return
   const body = await c.res.json().catch(() => null)
   const normalized = normalizeErrorPayload(body, c.res.status)
@@ -98,6 +107,9 @@ export async function errorResponseMiddleware(c: Context, next: Next) {
   const retryAfter = c.res.headers.get('Retry-After')
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (c.res.status === 429) headers['Retry-After'] = retryAfter ?? '60'
+  // O desafio Bearer (RFC 6750/9728) orienta o cliente MCP a se autenticar.
+  const challenge = c.res.headers.get('WWW-Authenticate')
+  if (challenge) headers['WWW-Authenticate'] = challenge
   c.res = new Response(JSON.stringify(normalized), {
     status: c.res.status,
     headers,

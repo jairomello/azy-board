@@ -11,6 +11,7 @@ import { evaluateLoginThrottle, recordLoginAttempt, resetIdentityFailures } from
 import { persistence } from '../persistence/runtime'
 import { userPersistenceContext } from '../persistence/context'
 import { resolveAuthConfig } from '../services/authConfig'
+import { publicBaseUrl } from '../services/mcpOAuth'
 import { createOauthState, createPkce, oauthAuthorizeUrl, exchangeAuthorizationCode, base64urlEncode } from '../services/oauth'
 
 export const authRouter = new Hono<HonoEnv>()
@@ -144,7 +145,9 @@ authRouter.get('/oauth/:provider/start', async (c) => {
   const state = createOauthState()
   const pkce = createPkce()
   const url = oauthAuthorizeUrl(config, state, pkce.challenge)
-  setCookie(c, OAUTH_COOKIE, encodeOauthEnvelope({ provider, state, verifier: pkce.verifier }), {
+  // Destino pós-login (ex.: consentimento OAuth do MCP); só caminhos internos.
+  const redirect = safeInternalRedirect(c.req.query('redirect'))
+  setCookie(c, OAUTH_COOKIE, encodeOauthEnvelope({ provider, state, verifier: pkce.verifier, ...(redirect ? { redirect } : {}) }), {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'Lax',
@@ -156,7 +159,7 @@ authRouter.get('/oauth/:provider/start', async (c) => {
 
 authRouter.get('/oauth/:provider/callback', async (c) => {
   const provider = c.req.param('provider').toUpperCase() as Extract<AuthProvider, 'MICROSOFT' | 'GOOGLE'>
-  const envelope = decodeOauthEnvelope(getCookie(c, OAUTH_COOKIE) ?? '') as { provider?: string; state?: string; verifier?: string } | null
+  const envelope = decodeOauthEnvelope(getCookie(c, OAUTH_COOKIE) ?? '') as { provider?: string; state?: string; verifier?: string; redirect?: string } | null
   clearOauthCookie(c)
   if (!envelope || envelope.provider !== provider || typeof envelope.state !== 'string' || typeof envelope.verifier !== 'string') {
     return c.json({ error: 'Fluxo de login inválido ou expirado', code: 'OAUTH_FLOW_INVALID', retryable: false }, 400)
@@ -208,8 +211,28 @@ authRouter.get('/oauth/:provider/callback', async (c) => {
     sub: user.id, tenantId: user.tenantId, email: user.email, role: 'user', globalGroup: user.globalGroup,
   }, { ttlSeconds, remembered: false })
   setCookie(c, SESSION_COOKIE, token, sessionCookieOptions(ttlSeconds))
-  return c.redirect('/')
+  // O destino é caminho da aplicação; sob base path, prefixa o caminho público.
+  return c.redirect(`${new URL(publicBaseUrl()).pathname.replace(/\/+$/, '')}${safeInternalRedirect(envelope.redirect) ?? '/'}`)
 })
+
+const REDIRECT_PROBE_ORIGIN = 'http://azyboard.invalid'
+
+/**
+ * Aceita apenas caminho interno da aplicação ("/x"). Recusa barra invertida e
+ * caracteres de controle (o navegador descarta tab/quebra de linha e "/\t/host"
+ * viraria "//host") e confirma que o caminho resolve na própria origem.
+ */
+export function safeInternalRedirect(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > 2048 || !value.startsWith('/')) return null
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: caracteres de controle são exatamente o que se recusa
+  if (/[\x00-\x1f\x7f\\]/.test(value)) return null
+  try {
+    if (new URL(value, REDIRECT_PROBE_ORIGIN).origin !== REDIRECT_PROBE_ORIGIN) return null
+  } catch {
+    return null
+  }
+  return value
+}
 
 function clearOauthCookie(c: Parameters<typeof deleteCookie>[0]) {
   deleteCookie(c, OAUTH_COOKIE, { path: '/' })

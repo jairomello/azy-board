@@ -106,8 +106,12 @@ raw stack traces.
 
 Azy Board exposes project management operations through the
 [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Agents
-registered with an API key can call typed MCP tools to inspect and act on
-board state programmatically:
+connect to the remote MCP endpoint (`/mcp`, or `/mcp/projects/<projectId>` to
+pin a project) with OAuth — the client only needs the URL and the user approves
+the connection in the browser — and call typed MCP tools to inspect and act on
+board state programmatically. Connections are revoked in **My account → MCP
+connections**. API keys on the MCP (remote header or `stdio`) still work but
+are deprecated:
 
 | Tool | Description |
 |------|-------------|
@@ -233,9 +237,10 @@ The runtime architecture shows how humans and agents reach the same board
 state through parallel entry points. Human traffic flows from the browser into
 the React 18 SPA, which talks to the Hono API over REST (`/api`) and stays in
 sync through the native Bun WebSocket (`/ws`, per-project rooms). External AI
-agents connect through the MCP server (stdio transport, 40+ typed tools) and
-execute mutations against the same API, authenticated by an API key that
-resolves to the human owner's identity, tenant and RBAC role. The built-in Azy
+agents connect through the MCP server (remote Streamable HTTP with OAuth, or
+the deprecated stdio transport; 40+ typed tools) and execute mutations against
+the same API, authenticated by an OAuth connection or API key that resolves to
+the human owner's identity, tenant and RBAC role. The built-in Azy
 Agent lives inside the API as an assistant harness: it calls LLM providers
 (OpenAI/OpenRouter) with encrypted tenant credentials and executes tools
 through the same shared registry, with guardrails, budgets and a human
@@ -329,7 +334,9 @@ bun run dev:mcp    # MCP stdio server for configured agent clients
 **Environment**: copy `apps/api/.env.example` to `apps/api/.env` and fill in
 the required values before running `setup`. The setup requires an explicit
 administrator password through its fourth argument or `ADMIN_PASSWORD`.
-For MCP usage, copy
+For MCP usage, prefer the remote endpoint with OAuth (see
+[Configurar o Servidor MCP](docs/azyboard-wiki/09%20-%20Agentes%20e%20Integracoes/Configurar%20o%20Servidor%20MCP.md)).
+The `stdio` transport is deprecated; to use it, copy
 `apps/mcp/.env.example` to `apps/mcp/.env` and set an API key generated in the
 web app. Never commit `.env` files.
 
