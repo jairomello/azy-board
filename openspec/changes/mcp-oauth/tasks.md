@@ -48,4 +48,5 @@ Board ref: 30737386-371d-4c7c-a9cd-d2b28613645a
 - [x] 7.2 Teste e2e com o `Client` do SDK: DCR → approve → token → initialize → tools/call → refresh → revoke, geral e por projeto.
 - [x] 7.3 Testes de regressão da API Key no MCP (remoto e stdio) com headers de depreciação.
 - [x] 7.4 `bun run check` (etapas; testes com o Bun 1.3.14 do CI), `bun run test:agent-skill`, `bun run check:docs` e `bun run openspec:validate`.
-- [ ] 7.5 `bun run test:smoke` contra ambiente com `SMOKE_ADMIN_*` (pendente: exige credenciais).
+- [x] 7.5 `bun run test:smoke` no ambiente local equivalente ao job `smoke` do CI.
+- [x] 7.6 Jornada OAuth contra PostgreSQL real (`advanced-mcp-oauth.test.ts`, incluída no job `advanced`) e migrations PG aplicadas em banco novo.

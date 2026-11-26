@@ -215,10 +215,22 @@ authRouter.get('/oauth/:provider/callback', async (c) => {
   return c.redirect(`${new URL(publicBaseUrl()).pathname.replace(/\/+$/, '')}${safeInternalRedirect(envelope.redirect) ?? '/'}`)
 })
 
-/** Aceita apenas caminho interno da aplicação ("/x", nunca "//host" nem URL absoluta). */
+const REDIRECT_PROBE_ORIGIN = 'http://azyboard.invalid'
+
+/**
+ * Aceita apenas caminho interno da aplicação ("/x"). Recusa barra invertida e
+ * caracteres de controle (o navegador descarta tab/quebra de linha e "/\t/host"
+ * viraria "//host") e confirma que o caminho resolve na própria origem.
+ */
 export function safeInternalRedirect(value: unknown): string | null {
-  if (typeof value !== 'string' || value.length > 2048) return null
-  if (!value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) return null
+  if (typeof value !== 'string' || value.length > 2048 || !value.startsWith('/')) return null
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: caracteres de controle são exatamente o que se recusa
+  if (/[\x00-\x1f\x7f\\]/.test(value)) return null
+  try {
+    if (new URL(value, REDIRECT_PROBE_ORIGIN).origin !== REDIRECT_PROBE_ORIGIN) return null
+  } catch {
+    return null
+  }
   return value
 }
 

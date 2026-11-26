@@ -377,6 +377,40 @@ describe('OAuth do MCP remoto', () => {
     expect(await project.text()).not.toContain('Projeto OAuth B')
   })
 
+  test('retorno do login integrado aceita só caminho interno', async () => {
+    const { safeInternalRedirect } = await import('./routes/auth')
+    expect(safeInternalRedirect('/oauth/authorize?client_id=a&state=b')).toBe('/oauth/authorize?client_id=a&state=b')
+    for (const unsafe of ['//evil.example', '/\\evil.example', '/\t/evil.example', '/\n/evil.example', 'https://evil.example', 'x']) {
+      expect(safeInternalRedirect(unsafe)).toBeNull()
+    }
+  })
+
+  test('URLs com base path seguem RFC 9728/8414', async () => {
+    const oauth = await import('./services/mcpOAuth')
+    const base = 'https://host.example/azyboard'
+    const projectResource = `${base}/mcp/projects/${projectId}`
+    expect(oauth.generalMcpResource(base)).toBe(`${base}/mcp`)
+    expect(oauth.protectedResourceMetadataUrl(`${base}/mcp`)).toBe('https://host.example/.well-known/oauth-protected-resource/azyboard/mcp')
+    expect(oauth.resourceFromMetadataPath('/azyboard/mcp', base)).toEqual({ kind: 'general', resource: `${base}/mcp` })
+    expect(oauth.resourceFromMetadataPath(`/azyboard/mcp/projects/${projectId}`, base)).toEqual({ kind: 'project', resource: projectResource, projectId })
+    expect(oauth.resourceFromMetadataPath('/outro/mcp', base)).toBeNull()
+    expect(oauth.isAuthorizationServerMetadataPath('/azyboard', base)).toBe(true)
+    expect(oauth.isAuthorizationServerMetadataPath('/outro', base)).toBe(false)
+    expect(oauth.authorizationServerMetadata(base).token_endpoint).toBe(`${base}/api/oauth/mcp/token`)
+  })
+
+  test('registro dinâmico tem limite por IP', async () => {
+    resetRegisterLimit()
+    const statuses: number[] = []
+    for (let attempt = 0; attempt < 21; attempt++) {
+      const response = await app.fetch(new Request(`${BASE}/api/oauth/mcp/register`, json({ client_name: 'x', redirect_uris: [REDIRECT] })))
+      statuses.push(response.status)
+    }
+    expect(statuses.slice(0, 20).every(status => status === 201)).toBe(true)
+    expect(statuses[20]).toBe(429)
+    resetRegisterLimit()
+  })
+
   test('registro dinâmico recusa redirect inseguro e sanitiza o nome', async () => {
     resetRegisterLimit()
     const unsafe = await app.fetch(new Request(`${BASE}/api/oauth/mcp/register`, json({ client_name: 'x', redirect_uris: ['http://evil.example/cb'] })))
