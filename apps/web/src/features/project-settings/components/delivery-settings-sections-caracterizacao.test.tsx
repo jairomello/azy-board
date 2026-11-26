@@ -183,6 +183,36 @@ describe('DeliverySettingsSections — versões', () => {
   })
 })
 
+describe('DeliverySettingsSections — detalhe da versão (PB1: diálogo sob demanda)', () => {
+  test('Ver abre o detalhe da versão e Editar abre o mesmo diálogo em modo de edição', async () => {
+    const fetchOriginal = globalThis.fetch
+    const pedidos: string[] = []
+    globalThis.fetch = (async (entrada: RequestInfo | URL) => {
+      pedidos.push(String(entrada))
+      return new Response(JSON.stringify({ data: [], total: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }) as typeof fetch
+    try {
+      const user = userEvent.setup()
+      render(<DeliverySettingsSections {...baseProps()} />)
+      const linha = linhaDe(regiao('Versões'), 'v1.0.0')
+      const [ver, editar] = within(linha).getAllByRole('button')
+
+      await user.click(ver!)
+      // O diálogo chega sob demanda: aparece depois que o chunk carrega.
+      expect(await screen.findByText('Detalhes da versão')).toBeInTheDocument()
+      await waitFor(() => expect(pedidos.some(url => url.includes('/projects/p-1/') && url.includes('v1'))).toBe(true))
+      expect(screen.queryByText('Editar versão')).toBeNull()
+      await user.click(document.querySelector('.bg-black\\/50') as HTMLElement)
+      await waitFor(() => expect(screen.queryByText('Detalhes da versão')).toBeNull())
+
+      await user.click(editar!)
+      expect(await screen.findByText('Editar versão')).toBeInTheDocument()
+    } finally {
+      globalThis.fetch = fetchOriginal
+    }
+  })
+})
+
 describe('DeliverySettingsSections — gating de admin (A8-05)', () => {
   test('sem admin somem criar módulo, criar/editar/abrir/fechar sprint e criar/editar/excluir versão', () => {
     render(<DeliverySettingsSections {...baseProps({ isAdmin: false })} />)
